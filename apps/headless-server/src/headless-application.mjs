@@ -47,6 +47,7 @@ import { ConversationResourceTransport } from './conversation-resource-transport
 import { RemoteBrowserService } from './remote-browser-service.mjs';
 import { RemoteBrowserCapabilities } from './remote-browser/capabilities.ts';
 import { createCapabilityContextResolver } from './capability-execution-context.ts';
+import { createGitStatusCapability } from './git-status-capability.ts';
 import { createBrowserGrantResolver } from './remote-browser/execution-grant.ts';
 import { connectBrowserOwner } from './remote-browser-owner.mjs';
 
@@ -392,6 +393,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let workspaceRouting;
   let ownedWorkspaceRouting;
   let humanGitExecution;
+  let withdrawGitStatus;
   // The one opaque ENV vault-owner port: a downstream port or the core vault Worker.
   let environmentLaunch;
   let actorStore;
@@ -448,7 +450,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       let entryClosing;
       const closeEntry = () => entryClosing ??= settle([
         () => hubController?.close(), () => relay?.close(), () => ingress?.close(), () => sshNativeRpc?.close(),
-        () => codexReadiness?.close(), () => usageQueries?.close(), async () => { await browserCapabilities?.close(); await remoteBrowser?.close(); },
+        () => codexReadiness?.close(), () => usageQueries?.close(), async () => { withdrawGitStatus?.(); await browserCapabilities?.close(); await remoteBrowser?.close(); },
         () => fileDownloads?.close(), () => desktop?.close(), () => turnPush?.close(),
         () => availabilityNotification?.close(), () => imPlugins?.close(),
       ]);
@@ -604,6 +606,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           return state==='active'&&!closing&&(await resolveExecutionNative(handoff.scope.threadId))?.incarnation===native.incarnation;
         },
       });
+      // The personal Git status tool exists only where the human Git owner does.
+      withdrawGitStatus=capabilities.register(createGitStatusCapability(humanGitExecution));
     }
     environmentLaunch = identity?.environmentLaunch ?? assetsStorage?.environmentLaunch;
     if (coreEnvironmentLaunch && !assetsStorage?.environmentLaunch) throw new Error('Environment delivery requires the sole vault owner');

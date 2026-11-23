@@ -40,6 +40,25 @@ resolves it again, so providers authorize invocations against current state.
 Credentials and resource ownership key on the Actor; `bindings` lists its
 verified login identities for providers that map to an external account.
 
+## Personal Git status provider
+
+When the Headless Host has a human Git execution owner, it registers
+`opencraft.git-status`, which contributes one read-only tool,
+`git_identity_status`, with no arguments. It is listed and callable only when
+core resolved the run's Host (`local-codex` or `opencraft-server`), a verified
+Actor and an active lease; otherwise it is absent and calls fail closed. The
+provider asks the owner about that exact lease input. The owner re-verifies the
+sealed grant against current Actor authority and native liveness, and the
+provider rejects an answer for a different Actor, execution or lease generation.
+
+The result is `{ available, hosts: [{ host, bound, transport, signing,
+username }] }`: per configured Git host, whether the person has a credential
+bound, whether it authenticates over `ssh` or `https`, whether commits are
+signed, and the bound username. Tokens, keys, sealed grants and the account key
+never leave the owner. The tool reports binding state only; it does not run a
+Git command or probe the remote. Ordinary `git` commands in the run use the
+identity through the existing execution environment.
+
 ## Protocol and lifecycle
 
 The Streamable HTTP MCP outlet uses the pinned MCP SDK on a dedicated loopback
