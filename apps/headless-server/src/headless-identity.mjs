@@ -13,7 +13,8 @@ export function validateHeadlessIdentity(identity) {
     || (identity.sshAccess !== undefined && (!identity.sshAccess
       || ['publicKeys', 'authorize'].some(method => typeof identity.sshAccess[method] !== 'function')))
     || (identity.admissionPolicy !== undefined && (!identity.admissionPolicy
-      || ['prepare', 'allows', 'allowsBinding'].some(method => typeof identity.admissionPolicy[method] !== 'function')))
+      || ['prepare', 'allows', 'allowsBinding'].some(method => typeof identity.admissionPolicy[method] !== 'function')
+      || (identity.admissionPolicy.handle !== undefined && typeof identity.admissionPolicy.handle !== 'function')))
     // Opaque ENV delivery replaces, never accompanies, the synchronous runtime.
     || (identity.environmentLaunch !== undefined && (!identity.environmentLaunch || typeof identity.environmentLaunch.seal !== 'function'
       || typeof identity.environmentLaunch.issuer !== 'string' || !/^[A-Za-z0-9_-]{1,256}$/u.test(identity.environmentLaunch.issuer)
@@ -89,4 +90,16 @@ export function environmentDeliveryOptions(env) {
   if (generation !== undefined && !/^[A-Za-z0-9._-]{1,64}$/u.test(generation)) throw new Error('Invalid OPENCRAFT_ENVIRONMENT_ISSUER_GENERATION');
   return { environmentDelivery: ENVIRONMENT_DELIVERY, ...(publish || generation ? { environmentIssuer: {
     ...(publish ? { publish } : {}), ...(generation ? { generation } : {}) } } : {}) };
+}
+
+/** Composition `loginAdmission: { provider, attribute }` enables the core login
+ * admission policy for that provider. Only the scope is configurable here; a
+ * composition that needs a custom function input supplies the policy itself as
+ * `identity.admissionPolicy` (see `@opencraft/plugin-login-admission/server`). */
+export function validateLoginAdmission(value) {
+  if (value === undefined) return null;
+  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => !['provider', 'attribute'].includes(key))
+    || typeof value.provider !== 'string' || !/^[a-z0-9][a-z0-9._-]{0,63}$/u.test(value.provider)
+    || typeof value.attribute !== 'string' || !/^[a-zA-Z][a-zA-Z0-9._-]{0,63}$/u.test(value.attribute)) throw new Error('Invalid Headless login admission');
+  return Object.freeze({ provider: value.provider, attribute: value.attribute });
 }

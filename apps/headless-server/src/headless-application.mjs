@@ -143,7 +143,8 @@ import { IdentityWrites } from '@opencraft/access-control/identity-writes';
 import { createCommitFenceBuffer } from '@opencraft/access-control/commit-fence';
 import { humanLoginPage } from './human-login-page.ts';
 import { connectRelay, loadRelayConnection } from '@opencraft/plugin-relay-connect/server';
-import { validateHeadlessIdentity, environmentLaunchOwner, environmentDeliveryOptions } from "./headless-identity.mjs";
+import { validateHeadlessIdentity, validateLoginAdmission, environmentLaunchOwner, environmentDeliveryOptions } from "./headless-identity.mjs";
+import { openLoginAdmissionPolicy } from '@opencraft/plugin-login-admission/server';
 import { startHeadlessRuntimePlugins, validateRuntimePluginOptions } from "./runtime-plugins.mjs";
 import { installHeadlessExtensions, loadHeadlessExtensions, validateHeadlessExtensions } from "./headless-extensions.mjs";
 import { createHubController } from '@opencraft/hub-network/controller';
@@ -352,6 +353,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   const workspaceExecution = configuredWorkspaceExecution(options);
   if (composition.close !== undefined && typeof composition.close !== "function") throw new Error("Invalid Headless disposer");
   if (composition.isHuman !== undefined && typeof composition.isHuman !== "function") throw new Error("Invalid Headless human qualification");
+  const loginAdmissionScope = validateLoginAdmission(composition.loginAdmission);
   const runtimePluginConfiguration = validateRuntimePluginOptions(composition.runtimePlugins);
   // Extension modules are imported and validated before startup creates any resource.
   const extensions = await loadHeadlessExtensions(validateHeadlessExtensions(composition.extensions));
@@ -419,6 +421,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let mcpApps;
   let ingress;
   let instanceAccess;
+  let loginAdmission;
   let modelPolicy;
   let membership;
   let assetsService;
@@ -521,7 +524,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       // Each writer finishes before the root kernel lock is released. A failed
       // disposer is reported, but must not skip the remaining flushes.
       for (const dispose of [() => executionDatabase?.close(),
-        () => modelPolicy?.close(), () => mcpApps?.close(), () => sshManagement?.close(), () => identity?.executionEnvironment?.close(), () => identity?.close?.(),
+        () => modelPolicy?.close(), () => mcpApps?.close(), () => sshManagement?.close(), () => identity?.executionEnvironment?.close(), () => identity?.close?.(), () => loginAdmission?.close(),
 
         () => ownedWorkspaceRouting?.close(), () => installedBotProvider?.close(), () => botAdmission?.close(), () => humanGitExecution?.close(), () => assetsService?.close(), () => assetsStorage?.close(), () => composition.close?.(), () => accountApplication?.close(), () => accountManagement?.close(), () => humanAuth?.close(), () => humanAccounts?.close(),
         () => identityWrites?.close(), () => capabilityBindings?.close(), () => actorStore?.close(), () => membership?.close()]) {
@@ -627,7 +630,14 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       }
     }
     const providers = [...(humanAuth ? [humanAuth] : []), ...externalProviders];
-    if (membership) instanceAccess = new InstanceAccess(membership, providers, actorStore, options.accessMemberProviders ?? [], identity?.admissionPolicy);
+    // The optional core login admission policy (composition `loginAdmission`); an
+    // identity composition that supplies its own policy cannot also enable it.
+    if (loginAdmissionScope) {
+      if (identity?.admissionPolicy) throw new Error('Login admission cannot have two owners');
+      if (!membership) throw new Error('Login admission requires instance access');
+      loginAdmission = await openLoginAdmissionPolicy({ ...loginAdmissionScope, path: join(dataDirectory, 'login-admission.sqlite') });
+    }
+    if (membership) instanceAccess = new InstanceAccess(membership, providers, actorStore, options.accessMemberProviders ?? [], identity?.admissionPolicy ?? loginAdmission);
     // An identity product that owns configurations keeps its route and legacy partitions.
     // Never start a second resource writer alongside that composition.
     if (!identity?.assistantEnvironmentConfigurationManaged) {
@@ -1518,7 +1528,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         ...(agentIdentity ? [{ name: "thread-identity", hostId: "opencraft-server", status: agentIdentity.store.outcome.status,
           appliedVersion: agentIdentity.store.outcome.appliedVersion, backupPath: agentIdentity.store.outcome.backupPath,
           movedAside: agentIdentity.store.outcome.movedAsidePaths.length > 0 }] : []),
-        ...(identity?.getStorageOutcomes?.() ?? []), ...[...codexStorageOutcomes.values()].flat(),
+        ...(identity?.getStorageOutcomes?.() ?? []), ...(loginAdmission ? [{ name: 'login-admission', status: loginAdmission.outcome.status, appliedVersion: loginAdmission.outcome.appliedVersion, movedAside: loginAdmission.outcome.movedAsidePaths.length > 0 }] : []), ...[...codexStorageOutcomes.values()].flat(),
         ...(sshManagement ? [{ name: "ssh-connections", status: sshManagement.store.outcome.status,
           appliedVersion: sshManagement.store.outcome.appliedVersion, backupPath: sshManagement.store.outcome.backupPath,
           movedAside: sshManagement.store.outcome.movedAsidePaths.length > 0 }] : []),
