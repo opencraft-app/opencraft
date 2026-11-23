@@ -5,7 +5,7 @@ import { spawn, execFileSync } from 'node:child_process';
 import { cpus, arch, platform } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { scenarios, summarize, compare, candidate, markdown, annotations, sidebarEvidence } from './report.mjs';
+import { summarize, compare, candidate, markdown, annotations, sidebarEvidence, workloadIdentity } from './report.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const options = { output: path.join(root, '.local/performance', new Date().toISOString().replaceAll(':', '-')), baseline: path.join(root, 'config/performance-baseline.json') };
@@ -19,11 +19,7 @@ assert.ok(!(options.control && options.record), 'A negative control cannot creat
 await mkdir(options.output, { recursive: true });
 // Every invocation uses fresh evidence; stale or concurrent output must never pass.
 const marker = await open(path.join(options.output, 'run.lock'), 'wx'); await marker.close();
-const hash = createHash('sha256');
-for (const file of ['scripts/performance/benchmark-workbench.ts', 'scripts/smoke/conversation/smoke-session-cold-open.ts', 'scripts/performance/build-cold-open.mjs', 'scripts/performance/run.mjs', 'scripts/performance/report.mjs', 'scripts/smoke/shell/smoke-sidebar-menu-latency.ts', 'scripts/smoke/shell/smoke-sidebar-conversation-latency.ts', 'tests/fixtures/catalog-entry-browser.tsx', 'tests/fixtures/session-loading-browser.tsx']) {
-  hash.update(file); hash.update(await readFile(path.join(root, file)));
-}
-const workload = { version: 3, sha256: hash.digest('hex'), scenarios, samples: 10, warmupWorkbench: 1, navigation: { workloadVersion: 5, rpcDelayMs: 40, cachedResources: 'cold', initialize: 'held-until-cached-paint', serve: 'compressed-release', warmup: 1 }, profiles: { desktop: { width: 1100, cpuRate: 1 }, narrow: { width: 390, cpuRate: 4 }, sidebar: { width: 1000, cpuRate: 4 } } };
+const workload = await workloadIdentity(root);
 const git = args => { try { return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return 'unavailable'; } };
 const environment = { timestamp: new Date().toISOString(), sourceRevision: git(['rev-parse', 'HEAD']), dirty: git(['status', '--porcelain', '--', '.']) !== '', node: process.version, platform: platform(), arch: arch(), cpu: cpus()[0]?.model, cpuCount: cpus().length };
 const started = performance.now();

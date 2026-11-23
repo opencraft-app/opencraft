@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 
 export const scenarios = Object.freeze({
   'catalog-desktop': ['firstPaintMs', 'completePaintMs'],
@@ -99,4 +102,14 @@ export function annotations(report) {
   const messages = failures.map(row => `${row.scenario}/${row.metric}/${row.quantile}: ${row.actual.toFixed(1)}ms vs baseline ${row.baseline.toFixed(1)}ms (${row.deltaPercent === null ? 'n/a' : `${row.deltaPercent.toFixed(1)}%`}, +${row.deltaMs.toFixed(1)}ms); budget ${row.limit.toFixed(1)}ms. See performance report artifact.`);
   if (report.error) messages.push(`Performance measurement/behavior failed: ${report.error}. See performance report and child logs.`);
   return messages.map(message => `::error title=Performance regression::${escape(message)}`);
+}
+
+// The files whose behavior and measurement define the workload. Changing any of
+// them changes its identity, which config/performance-baseline.json must name.
+export const workloadFiles = Object.freeze(['scripts/performance/benchmark-workbench.ts', 'scripts/smoke/conversation/smoke-session-cold-open.ts', 'scripts/performance/build-cold-open.mjs', 'scripts/performance/run.mjs', 'scripts/performance/report.mjs', 'scripts/smoke/shell/smoke-sidebar-menu-latency.ts', 'scripts/smoke/shell/smoke-sidebar-conversation-latency.ts', 'scripts/smoke/extensions/smoke-catalog-entry.ts', 'tests/fixtures/catalog-entry-browser.tsx', 'tests/fixtures/session-loading-browser.tsx']);
+
+export async function workloadIdentity(root) {
+  const hash = createHash('sha256');
+  for (const file of workloadFiles) { hash.update(file); hash.update(await readFile(path.join(root, file))); }
+  return { version: 3, sha256: hash.digest('hex'), scenarios, samples: 10, warmupWorkbench: 1, navigation: { workloadVersion: 5, rpcDelayMs: 40, cachedResources: 'cold', initialize: 'held-until-cached-paint', serve: 'compressed-release', warmup: 1 }, profiles: { desktop: { width: 1100, cpuRate: 1 }, narrow: { width: 390, cpuRate: 4 }, sidebar: { width: 1000, cpuRate: 4 } } };
 }

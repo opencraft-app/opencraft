@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "workload": {
     "version": 3,
-    "sha256": "8944516fcedcf07d81ab0953a8a28dd719e539b9a0b240ad501acd6cafd71452",
+    "sha256": "bf47308623c2c4270048e4a320cdd78a3baa739d1076f7c7fb38ded708026231",
     "scenarios": {
       "catalog-desktop": [
         "firstPaintMs",
@@ -122,7 +122,11 @@
       "cpuCount": 4,
       "browser": "153.0.8010.12",
       "priorWorkloadSha256": "87a35e1f9d630b373e0ecc4f204484be27014142932ece6fd9927084d9c3e133",
-      "reason": "Behavior assertions followed the product: retained work regions, preview preservation, display-cache block shape, accordion sidebar, ten-turn initial read window. Numeric budgets are unchanged; this candidate passed all 40 comparisons against them."
+      "reason": "Behavior assertions followed the product: retained work regions, preview preservation, display-cache block shape, accordion sidebar, ten-turn initial read window. Numeric budgets are unchanged; this candidate passed all 40 comparisons against them. The cold-open clock is now read in one layout snapshot (#499), which changes only how the existing assertion is measured. The workload identity now also covers the catalog smoke and is computed by report.mjs workloadIdentity(); the committed baseline is checked against it in tests.",
+      "sha256History": [
+        "8944516fcedcf07d81ab0953a8a28dd719e539b9a0b240ad501acd6cafd71452",
+        "af6e5e3e00e0076dd7def14615ce776dff9354b069447053b0642d1c3a389bb8"
+      ]
     }
   },
   "scenarios": {

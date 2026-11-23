@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { scenarios, summarize, candidate, compare, markdown, annotations, sidebarEvidence } from '../../scripts/performance/report.mjs';
+import { scenarios, summarize, candidate, compare, markdown, annotations, sidebarEvidence, workloadIdentity } from '../../scripts/performance/report.mjs';
 
 const evidence = () => Object.entries(scenarios).map(([id, metrics]) => ({ id, samples: Array.from({ length: 10 }, (_, n) => Object.fromEntries(metrics.map(metric => [metric, n < 9 ? 100 : 200]))) }));
 const workload = { version: 1, sha256: 'test-workload' };
@@ -53,6 +53,14 @@ test('incompatible or incomplete baselines cannot silently approve a release', (
     b => b.scenarios['catalog-desktop'].firstPaintMs.relativeTolerance = Infinity]) {
     const b = structuredClone(baseline()); mutate(b); assert.throws(() => compare(summarize(evidence()), b, workload));
   }
+});
+test('the committed baseline names the current workload', async () => {
+  // Any change to a workload file must revalidate the baseline in the same
+  // change, rather than failing the next stable release.
+  const root = fileURLToPath(new URL('../../', import.meta.url));
+  const baseline = JSON.parse(readFileSync(new URL('../../config/performance-baseline.json', import.meta.url), 'utf8'));
+  assert.deepEqual(baseline.workload, await workloadIdentity(root),
+    'A performance workload file changed: revalidate config/performance-baseline.json (docs/develop/startup-performance.md)');
 });
 test('stable app releases are gated unconditionally before staging, with retained failure evidence', () => {
   const source = readFileSync(new URL('../../.github/workflows/app-release.yml', import.meta.url), 'utf8');

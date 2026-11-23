@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { mkdtemp, mkdir, open, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { basename, join, resolve } from "node:path";
+import { copyFile, mkdtemp, mkdir, open, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { basename, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { setTimeout as delay } from "node:timers/promises";
@@ -176,9 +176,31 @@ try {
       try { process.kill(-child.pid, "SIGKILL"); } catch (error) { if (error.code !== "ESRCH") throw error; }
     }
     await log.close();
+    // The launch log is only the app's stdout. A failed launch also keeps the
+    // isolated profile's Main and daemon logs, which name the startup error.
+    if (!receipt.passed) await retainProfileLogs(join(directory, "profile"), join(output, "profile-logs"));
     await writeFile(join(output, "receipt.json"), JSON.stringify(receipt, null, 2));
     if (mounted) await run("hdiutil", ["detach", mount]);
     // Retain failed package/profile state on the runner for diagnosis.
     if (receipt.passed && !output.startsWith(directory + "/")) await rm(directory, { recursive: true, force: true });
+  }
+}
+
+async function retainProfileLogs(profile, destination) {
+  const pending = [profile];
+  while (pending.length) {
+    const current = pending.pop();
+    let entries;
+    try { entries = await readdir(current, { withFileTypes: true }); }
+    catch (error) { if (error.code === "ENOENT") continue; throw error; }
+    for (const entry of entries) {
+      const path = join(current, entry.name);
+      if (entry.isDirectory()) pending.push(path);
+      else if (entry.isFile() && /\.log(?:\.1)?$/u.test(entry.name) && (await stat(path)).size <= 8 * 1024 * 1024) {
+        const target = join(destination, relative(profile, path));
+        await mkdir(resolve(target, ".."), { recursive: true });
+        await copyFile(path, target);
+      }
+    }
   }
 }
