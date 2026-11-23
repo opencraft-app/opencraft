@@ -2,7 +2,7 @@
 
 [Architecture index](../README.md) · [可选 Cloudflare 部署](cloudflare-deployment.md) · [Gateway／Brain 按工作区拆分](workspace-host-split.md) · [存储端口](storage-ports.md) · [执行所有权](../execution/execution-ownership.md#client--hub--server-拓扑) · [Docker 三角色部署](../../../deploy/docker/README.md)
 
-状态：**设计草案，未实施任何部分。** 下文"现状"以引用的源码行为准（2026-11-22 核对，行号随并行改动可能漂移）；"目标"与"步骤"均为提议，第 6 节列出需要用户决定的问题。Node／Docker（以及 Electron）是一等公民：每一步先在 Node 上独立成立并可发布；Cloudflare 只是另一组装配，不替换 Node 路径，也不为它另造领域实现。
+状态：**设计草案，部分步骤已实施，各步进度见 §5.1 状态列（2026-11-23 核对）。** 下文"现状"以引用的源码行为准（§2 的行号为 2026-11-22 核对，已随并行改动漂移；组合根的当前行号以 §4.1.1 为准）；"目标"与"步骤"均为提议，第 6 节列出需要用户决定的问题。Node／Docker（以及 Electron）是一等公民：每一步先在 Node 上独立成立并可发布；Cloudflare 只是另一组装配，不替换 Node 路径，也不为它另造领域实现。
 
 ## 1. 目的与范围
 
@@ -232,7 +232,124 @@
 | `edge` | HTTP 路由表、静态资源、登录页、webhook 验签 | `createWorkbenchWebServer` | EW |
 | `node-local` | SSH、本机桌面、relay、观测、可用性通知、匿名模式、本机文件 | Gateway | 不装配 |
 
-`HA` 最终只剩 Node 组合根：读取 CLI 选项与私有文件、选择 Node 适配器、按配置调用上述模块，并保留现有关闭顺序（HA:416-466）。Cloudflare 的每个 DO 类各有一个小组合根，调用同一模块的 DO 适配器版本。领域类（`access-control`、`host-schedules`、`host-recovery`、`CodexEngineAdapter` overlays 等）只写一份。
+`HA` 最终只剩 Node 组合根：读取 CLI 选项与私有文件、选择 Node 适配器、按配置调用上述模块，并保留现有关闭顺序（见 §4.1.1 第 2 部分）。Cloudflare 的每个 DO 类各有一个小组合根，调用同一模块的 DO 适配器版本。领域类（`access-control`、`host-schedules`、`host-recovery`、`CodexEngineAdapter` overlays 等）只写一份。
+
+#### 4.1.1 现状映射（2026-11-23，main `0be3cf047`）
+
+本节以 main `0be3cf047` 的 `apps/headless-server/src/headless-application.mjs`（1678 行，145 个 `import`）为准，`startHeadlessServer` 位于 320–1656 行；下文不带文件名的行号均指该文件。这是 G1 的第一步：只描述现状并给出抽取顺序，不改代码。"组合根"表示留在 Node 根的选项校验、配置读取与连线；"前向"表示闭包读取的对象在更后的行才构造，只因调用发生在构造之后才成立。
+
+**1. 分段。** 按源码顺序列出连续段；同一段跨模块时在"目标模块"中写明拆分点。"需关闭"只列该段创建、由 `close` 释放的资源。
+
+| 行 | 构造 | 目标模块 | 消费的上游 | 需关闭 |
+| --- | --- | --- | --- | --- |
+| 320–393 | 选项与 `composition` 校验；`readCodexBridgeConfiguration`（334）、agent bridge（344）、`loadLocalMachineAccess`（347）、`loadHeadlessExtensions`（359）、路径、SSH Server 绑定（376–379）、桌面访问策略（380–384）、`assertHeadlessWebRelease`（386）、`secureDataDirectory`（387）、`prepareProductPluginRelease`（391） | 组合根；347、376–384 的结果交给 node-local，386、391 交给 edge | `options`、`composition` | 无 |
+| 394–407 | `createCommitFenceBuffer`、`installHeadlessExtensions`、`openServerCoreOwner`、`OrchestrationRuntimeWorker`、`releaseLock` | installation | 扩展（359）、`dataDirectory` | `serverStorage`、`orchestrationStorage`、扩展安装（均经 `releaseLock`，最后释放） |
+| 408–483 | 约 60 个 `let` 前向槽；`terminalServices`（445）、`createHostFileSystem`（446）、`SessionCapabilities`＋`capabilitiesReady`（461–465）、`remoteExecutionAuthorities`（478） | 组合根（共享可变状态，见第 3 部分）；446 归 workspace-host | `options.fileSystemOwner` | `fileSystem`、`terminalServices` |
+| 484–540 | `close` 组装 | 组合根 | 全部槽 | — |
+| 542–546 | SSH 入口、relay、human auth、IM 配置读取 | 组合根（读取）；结果分属 node-local（SSH、relay、IM）与 installation（human auth） | `options`、`composition.relayAssertionOptions` | 无 |
+| 547–549 | `createHubController`、`MembershipStore` | installation | `serverStorage`、human auth／relay 配置 | `hubController`（入口阶段）、`membership` |
+| 550 | `readDaemonMachineIdentity` | installation（machine identity，所有模块消费） | `dataDirectory` | 无 |
+| 551–552 | `modelPolicyPath`、`ModelPolicyStore` | account | `dataDirectory` | `modelPolicy` |
+| 554 | `ActorStore` | installation | `serverStorage` | `actorStore` |
+| 555–611 | ENV 交付校验、`composition.createIdentity`（562–576，含 capability provider 注册 575）、ENV owner 选择、工作区路由校验、外部 provider 与 `externalHuman` | installation | `membership`、relay 配置、`hubController`、`machineIdentity`、`actorStore`、`instanceAccess`（567–568 前向） | `identity`、`identity.executionEnvironment` |
+| 612–640 | `HumanAccounts`、`LocalAccountServerPlugin`、`HumanAuth`、setup token、`HumanAccountManagement`、`LocalAccountApplication`、`openLoginAdmissionPolicy`、`InstanceAccess` | installation | `serverStorage`、`actorStore`、`membership`、`externalHuman`、`identity.admissionPolicy` | `humanAccounts`、`humanAuth`、`accountManagement`、`accountApplication`、`loginAdmission` |
+| 641–670 | `openHeadlessAssetsStorage`、`WorkspaceNativeAdmission`、`createWorkspaceBotProvider`、`openWorkspaceExecutionService` | installation（分配账本与 vault Worker；分配动作是 workspace-host 的创建者） | `machineIdentity`、`instanceAccess`、`actorStore`、`conversationResources`（666 前向） | `assetsStorage`、`botAdmission`、`installedBotProvider`、`ownedWorkspaceRouting` |
+| 671–732 | `authorizeExecutionHandoff`、`inspectExecutionHandoff`、`openHumanAssets`、`gitExecutionOwner`、`createHumanGitExecution`＋Git 状态能力、ENV launch／metadata／handoff、`coreCodexEnvironmentLaunch` | installation（`inspectExecutionHandoff` 读 workspace-host 的 `executionRecovery`／`resolveExecutionNative`，抽取时作为端口传入） | `actorStore`、`instanceAccess`、`humanAuth`、`assetsStorage`、`identity`、`serverStorage`、`capabilities` | `assetsService`、`humanGitExecution`、`withdrawGitStatus` |
+| 733–761 | `authenticateHuman`、`ActorAccess`、`IdentityWrites` 与各 `useOwnerWrites` | installation | `providers`、`instanceAccess`、`humanAuth`、`actorStore`、`identityFence` | `identityWrites` |
+| 762–791 | 引擎校验、`piEngine`／`independentEngine` 槽、`createRoutedConversationExecution` | workspace-host（Thread→Host／server 路由与 Host 输入提交；installation 的 `Collaboration` 消费它） | `machineIdentity`、`appHostServer`（前向）、`startDsh`（774，995 才声明）、`executionStore`、`resolveExecutionNative` | 无 |
+| 792–795、808–809 | `ServerSpacesRuntime`、`ThreadAccessStore`（`permissionOwner` 为网络线程过渡连接）、`threadNotes` | installation | `serverStorage`、`actorStore` | `serverSpaces`、`threadAccess` |
+| 796–807 | `anonymousDeployment`、`deploymentOperator`、`anonymousDriver`、`signExecutionCli` | node-local（匿名部署）；`signExecutionCli` 归 workspace-host | `membership`、`hubController`、`serverSpaces`、`actorCollaboration`（805 前向）、`capabilityKey`（803，937 才声明） | 无 |
+| 810–842 | `accessServerForHost`、`createThreadPolicySession`、`createThreadAccessSession` | client-session | `threadAccess`、`serverSpaces`、`identity.isThreadCreator`、`instanceAccess`、`membership`、`threadNotes`、`appHostServer`（819、834 前向） | 无（每连接对象随连接关闭） |
+| 843–865 | `Collaboration`、`attachSpaces`、`ThreadOrchestrationBroker`、`createProjectAutomations`、`CollaborationHttpApi`、三者 `start` | installation | `serverStorage`、`actorStore`、`conversationExecution`、`operator`、`orchestrationStorage`、`threadAccess`、`serverSpaces`、`appHostServer`（849、858 前向）、`codexAgentBridge`（861 getter，读 989 的重新赋值） | `actorCollaboration`、`threadOrchestration`、`projectAutomations` |
+| 866–876 | `LocalDesktopService` | node-local | `desktopAccess`、`dataDirectory` | `desktop` |
+| 877–882 | `HeadlessConnectors` | installation | `actorAccess`、`capabilities`、`instanceAccess`、`conversationExecution` | `connectorService` |
+| 883–912 | `RemoteBrowserService`、`connectBrowserRouting`、`authorizeBrowserExecution`、`RemoteBrowserCapabilities` | workspace-host | `workspaceRouting`、`actorStore`、`instanceAccess`、`threadAccess`、`actorCollaboration`、`capabilities`、`remoteExecutionAuthorities`、`appHostServer`（910 前向） | `remoteBrowser`、`browserCapabilities` |
+| 913–933 | `capabilities.resolveContext`、`CapabilityBindingProjection` | 解析器归 workspace-host；绑定投影归 installation | `conversationExecution`、`actorCollaboration`、`actorStore`、`humanGitExecution`、`serverStorage` | `capabilityBindings` |
+| 934–978 | `capabilitySigningKey`、`SessionCapabilityMcp`（hostGit、hostEnvironment、orchestration 回调）、`listen`、`localExecutionCli` | workspace-host | `capabilities`、`capabilityBindings`、`humanGitExecution`、`gitExecutionOwner`、`environmentLaunch`／`environmentHandoff`、`actorCollaboration`、`threadOrchestration` | `capabilityMcp`、`connectedExecutionCli` |
+| 979–993 | `startCodexEngineHost`、`createBridgeSessionMcp` | workspace-host | `capabilityMcp`、`machineIdentity` | `codexEngineHost` |
+| 994–1062 | `startDsh`、`attachEngineHost`、`pi-owner` 锁、`PiEngine`、`startEngineHost` | workspace-host（引擎；目标载体是容器） | `connectedExecutionCli`、`modelPolicyPath`、`capabilities`、`fileSystem`、`identity`、`environmentLaunch`、`humanGitExecution`、`actorCollaboration`、`threadOrchestration`、`appHostServer`（1020 前向） | `agent`、`dshAgent`、`releasePiOwner`（Pi 附件随 `piEngine.close`） |
+| 1063–1108 | 存储 outcome 表、`AppServerIdentityOverlay` 或 `ThreadIdentityDatabase`＋`ExecutionLeaseStore`、`resolveExecutionNative`（`/proc`）、`createWebSocketExecutionTurnInspector`、未定租约对账 | workspace-host | `agent`、`identity.createThreadMetadata`、`piEngine`、`startDsh` | `agentIdentity`、`executionDatabase`、`executionRecovery` |
+| 1109 | `McpAppsService` | installation | `dataDirectory` | `mcpApps` |
+| 1110–1121 | `TokenUsageQueryService` | workspace-host（AC 汇总待 workspace-host-split §4.2） | `machineIdentity` | `usageQueries` |
+| 1122–1136 | 终端 owner 工厂 `terminalService` | workspace-host | `options.terminalOwner`、`identity`、`environmentLaunch` | `terminalServices`（445 的槽） |
+| 1137–1174 | `workspaceLifecycleRouting`、`ConversationResourceLifecycle.open`、`resourceAuthority`、`terminalScope` | workspace-host（释放动作；行在 installation 的核心库，§2.3） | `serverStorage`、`remoteBrowser`、`terminalService`、`ownedWorkspaceRouting`、`identity` | `conversationResources` |
+| 1175–1191 | `createCodexTransport`、SSH 远端 `createRemoteCodexTransport` | workspace-host；SSH 分支归 node-local | `remoteExecutionAuthorities`、`browserCapabilities`、`storageOpened` | 无（随 AppHost transport） |
+| 1192–1396 | `AppHostServer` 与 `createTransport` 链：IM 频道（1197）、DSH／Pi（1199–1207）、预置／SSH 远端（1208–1213）、`local-codex` 的 `CodexEngineAdapter`＋bridge＋`CodexHostServices`（1214–1356）、ENV／工作区目录／模型网关设置／终端／文件／资源／Push 装饰（1357–1394） | 拆分：`AppHostServer` 与访问会话归 client-session；每 Host transport 链归 workspace-host；`ModelGatewaySettingsTransport`（1365–1371）消费 account | 几乎全部上游；`sshManagement`（1211 前向）、`turnPush`（1392 前向） | `appHostServer` |
+| 1397–1405 | `ServerInformationStore`、`serverInformationHttp` | installation | `actorAccess`、`actorStore`、`instanceAccess` | 无 |
+| 1406–1423 | `humanActorAccess`、`accountModelDefaultsHttp`、`ActorSshKeys`、`actorSshKeysHttp` | installation | `actorAccess`、`actorStore`、`instanceAccess`、`serverStorage`、SSH 入口配置 | `personalSshKeys` |
+| 1424–1446 | `TurnPushService`（`openPushStore`） | installation（订阅；发送端待 `fetch` 端口） | `serverInformation`、`identity`、`imPlugins`（前向）、`actorAccess`、`humanAuth`、`humanAccounts`、`threadAccess`、`appHostServer` | `turnPush`（入口阶段） |
+| 1447–1460 | `SshManagement`、`createObservabilityIngress` | node-local | `appHostServer`、`sshServers`、`instanceAccess`、`actorStore` | `sshManagement`、`observability` |
+| 1461–1467 | `HostFileDownloads` | workspace-host（`"local"` 模式归 node-local） | `fileSystem`、`ownedWorkspaceRouting`、`remoteServers`、`sshManagement` | `fileDownloads` |
+| 1468–1471 | `startHeadlessRuntimePlugins` | edge（声明的路由挂到入口） | `instanceAccess`、`humanAuth` | `runtimePlugins` |
+| 1472–1582 | `createWebServer`：服务表、`createTerminalSession`、`getStorageOutcomes`、`modelPolicyService`（1538–1564）、`speechService`（1580–1581） | edge；1538–1564 与 1580–1581 归 account；`getStorageOutcomes` 汇总留组合根 | 全部服务对象 | `web`（`speechService` 由 `serve-workbench-web.mjs:1442` 随 Web 关闭） |
+| 1583–1606 | `conversationResources.retry`、`reconcileResources`、60 s `setInterval` | workspace-host（G5 改为 owner 定时器） | `remoteBrowser`、`workspaceLifecycle`、`terminalService`、`appHostServer` | `resourceReconciliationTimer` |
+| 1607–1627 | 监听：`web.listen`，或 `createSshNativeRpcGateway`＋`createSshHttpIngress`；`connectRelay`；`hubController.node.start`；`maintainHeadlessCodexHost` | 监听归 edge；SSH 入口与 relay 归 node-local；Hub 启动归 installation；readiness 归 workspace-host | `web`、`appHostServer`、`personalSshKeys`、`identity.sshAccess` | `ingress`、`sshNativeRpc`、`relay`、`codexReadiness` |
+| 1628–1646 | `createPersonalAssistantHost` | node-local（§6 问题 5 待决） | `installedBotProvider`、`botAdmission`、`assetsStorage`、`identity`、`actorCollaboration`、`modelPolicyPath` | `personalAssistantHost` |
+| 1647–1649 | `startImPlugins`、`startAvailabilityNotification` | node-local（IM 归属待决，§6 问题 3） | `capabilities`、`capabilityMcp`、`actorStore`、`actorCollaboration`、`actorAccess`、`appHostServer`、`instanceAccess`、relay 配置 | `imPlugins`、`availabilityNotification` |
+| 1650–1655 | `capabilitiesReadyResolve`、返回值、启动失败时 `close()` | 组合根 | — | — |
+
+**2. 关闭顺序（484–540）。** `close` 幂等（483–488：先发布共享 promise 再调用任何 disposer）；`settle` 收集失败而不中断后续步骤。下表按执行顺序列出；同一格内标"并行"的为 `Promise.allSettled`，其余串行。
+
+| # | 行 | 内容 | 模块 |
+| --- | --- | --- | --- |
+| 1 | 493–495 | `capabilitiesReadyResolve()`；`clearInterval(resourceReconciliationTimer)`；`conversationResources.close()` | 组合根；workspace-host |
+| 2 | 503 | `web.close(update, closeEntry)`：Web 停止接受后在载体阶段调用 `closeEntry` | edge |
+| 3 | 497–502、505 | `closeEntry`（并行、只执行一次）：`hubController`、`turnPush`（installation）；`relay`、`ingress`、`sshNativeRpc`、`desktop`、`availabilityNotification`、`imPlugins`（node-local）；`codexReadiness`、`usageQueries`、`fileDownloads`（workspace-host）；以及串行一组 `withdrawGitStatus`（installation 的 Git 能力撤回）→`browserCapabilities`→`remoteBrowser`（workspace-host） | 多模块 |
+| 4 | 508 | `runtimePlugins` | edge |
+| 5 | 509 | `personalSshKeys.close()`（同步，未经 `settle`） | installation |
+| 6 | 510 | `observability` | node-local |
+| 7 | 511–515 | 逐个：`projectAutomations`、`threadOrchestration`（installation）→ `personalAssistantHost`（node-local）→ `appHostServer`（client-session）→ `codexEngineHost`（workspace-host） | 多模块 |
+| 8 | 516–518 | `terminalServices` 逐个关闭并清空；`fileSystem.close()` | workspace-host |
+| 9 | 519–520 | 并行：`threadOrchestration`（第二次）、`connectorService`、`actorCollaboration`、`threadAccess`、`serverSpaces`；然后 `orchestrationStorage` | installation |
+| 10 | 521–523 | 并行：`agent`、`dshAgent`、`connectedExecutionCli`、`capabilityMcp`；然后 `releasePiOwner`；然后并行 `executionRecovery`、`agentIdentity` | workspace-host |
+| 11 | 526–532 | 串行写入者：`executionDatabase`（workspace-host）→ `modelPolicy`（account）→ `mcpApps`（installation）→ `sshManagement`（node-local）→ `identity.executionEnvironment`、`identity.close`、`loginAdmission`、`ownedWorkspaceRouting`、`installedBotProvider`、`botAdmission`、`humanGitExecution`、`assetsService`、`assetsStorage`（installation）→ `composition.close`（组合根）→ `accountApplication`、`accountManagement`、`humanAuth`、`humanAccounts`、`identityWrites`、`capabilityBindings`、`actorStore`、`membership`（installation） | 多模块 |
+| 12 | 533–537 | 有失败：抛 `AggregateError`，不释放写锁（进程退出才释放）；否则 `releaseLock`：`orchestrationStorage`、`serverStorage`、`releaseExtensions` | installation |
+
+由此得出：installation、workspace-host 与 node-local 的关闭在第 3、7、9–11 步交错，任何模块都不能只返回一个 `close`。抽取后的模块应返回**具名 disposer**（按所属步骤分组），由组合根在原位置逐个调用，`close` 的结构与顺序保持字面不变。两处现有行为照原样保留：`threadOrchestration.close()` 被调用两次（512、519），依赖其幂等；509 的同步异常不经 `settle`，会使 `closing` 直接拒绝并跳过其后的全部步骤（与第 12 步一样不释放写锁）。
+
+**3. 跨模块依赖、环与共享可变状态。** 以下各项决定抽取顺序；抽取相应模块时它们都要变成显式端口，而不是继续读组合根的 `let`。
+
+1. **`closing`（483）。** installation（675、679、683、722、1262）与 workspace-host（891、897、953、1587、1602）的授权闭包直接读它。抽取 installation 或 workspace-host 之前需要一个由组合根持有的 `lifecycle.closing()` 端口。
+2. **`appHostServer`（412 声明，1192 赋值）形成环。** installation 的 `Collaboration` 经 `conversationExecution`（771）、编排执行（849、858）与 Push 历史读取（1444）调用 AppHost；AppHost 的 transport 又调用 `actorCollaboration`／`threadOrchestration`（1205–1206、1278–1304、1325–1341）。client-session（819、834）、workspace-host（910、1020、1597、1627）与 node-local（1452–1453、1612、1619、1621、1647）也经前向闭包读取。在 client-session 抽取前，组合根需提供迟绑定的 AppHost 端口（getter），各模块只接收该端口。
+3. **`conversationResources`（475 声明，1140 构造）形成 installation↔workspace-host 环。** Assets 的工作区执行服务在 666 用 `assertThreadActive` 读它；生命周期的 `workspace` 释放又调用该路由（1139、1153）。
+4. **`executionStore`／`resolveExecutionNative`（419–420，1075–1092 赋值）。** workspace-host 的产物被更早构造的 installation 闭包（678–683）与 `conversationExecution` 输入提交（777–787）读取；installation 需要接收一个执行观察端口。
+5. **TDZ 前向常量。** `signExecutionCli`（803）引用 937 才声明的 `const capabilityKey`；`getInputs`（774）引用 995 才声明的 `const startDsh`。两段移入不同模块后必须改为迟绑定端口，否则抽取本身会改变求值时机。
+6. **共享 capability 注册表与就绪门。** `capabilities`（461）被 installation（575、706、877）与 workspace-host（901、915、938、999、1046）注册或使用；`capabilitiesReady`（464–465）在 493、1650 解决，在 Codex adapter 中等待（1229、1238、1246）。注册表与就绪门留在组合根，作为输入传给两侧。
+7. **`codexAgentBridge`（334 `let`）。** workspace-host 在 989 重新赋值，installation 的项目自动化经 getter 读取（861），adapter 在 1324 读取。
+8. **迟读的槽（不构成环，但需要 getter 端口）。** `turnPush`（1424）在 1392 被读；`imPlugins`（1647）在 1428–1431、1508、1516 被读；`sshManagement`（1449）在 1211、1464 被读；`instanceAccess`（640）在 567–568 被读（installation 内部）。
+9. **`remoteExecutionAuthorities`（478）。** SSH 远端 transport（1180–1182，node-local）写入，浏览器授权与 capability 上下文解析（902–905、917–925，workspace-host）读取。
+10. **网络线程过渡连接。** `ThreadAccessStore` 以 `serverStorage.database` 为 `permissionOwner`（794）；这是 G2 的剩余部分，在 installation 内部，不阻塞模块边界。
+
+**4. 推荐抽取顺序（每个 PR 一个模块）。**
+
+1. **account**（理由见下）。
+2. **组合根前置（不移动服务）**：引入 `lifecycle.closing()` 与迟绑定端口（AppHost、`executionStore`／`resolveExecutionNative`、`capabilityKey`、`startDsh`、`codexAgentBridge`、第 3 部分第 8 项的槽），把直接读 `let` 改为读端口；行为不变。之后各模块只接收端口。
+3. **node-local**：347、376–384、796–807、866–876、1447–1460、1610–1625 中的 SSH 入口与 relay、1628–1649。依赖 AppHost 端口与 installation 的 `instanceAccess`／`actorStore`；其 disposer 分布在关闭第 3、6、7、11 步。
+4. **installation**：段落多，建议分两个 PR 落到同一模块：先身份与准入（394–407、547–761 中除 account 外的部分），再协作与部署级服务（792–795、808–809、843–865、877–882、913–933 的绑定投影、1109、1397–1446）。
+5. **workspace-host**：762–791、883–1191、1196–1394 中的 transport 链、1461–1467、1583–1606、1627。依赖 installation 的全部输出；P4-2 已把 overlays 移入 `packages/workspace-host`，这里只是装配。
+6. **client-session**：810–842、`AppHostServer` 外壳（1192–1196）与 `createWebServer` 中的会话工厂（1482–1503）；与 G6 一并考虑。
+7. **edge**：1468–1582 与 1607–1624 中的监听；它消费所有服务，最后抽取。
+
+**第一个模块：account。** 入站依赖最少：构造只需要 `dataDirectory` 与 Codex Core 端点／令牌；HTTP 鉴权需要的 `actorAccess`／`actorStore`／`instanceAccess` 在调用点（1538）已经存在，作为参数传入即可。它不读 `closing`、不读任何前向槽，不参与第 3 部分的任何环；被移动的行与频繁修改的身份、ENV、工作区段落不重叠；关闭只有第 11 步的一个位置。
+
+- **移动的行。** 551–552（`modelPolicyPath`、`new ModelPolicyStore`）；1538–1564（`modelPolicyService` 的立即执行函数：`configuredModelGatewayPath`、`gatewayContributions`、个人订阅的 `CodexCoreControlClient`、`modelGatewayHttp`、`modelPolicyHttp` 与两者的组合）；1580–1581（`SpeechTranscriptionService`＋`SpeechModelConfiguration`）。527 的 `() => modelPolicy?.close()` 改为同一位置的 `() => account?.close()`；425 的 `let modelPolicy` 改为 `let account`。随之移出的 import：`ModelPolicyStore`（38）、`modelPolicyHttp`（39）、17 行中的 `modelGatewayHttp`、`gatewayContributions`（18）、`SpeechModelConfiguration`（122）、`SpeechTranscriptionService`（123）；`configuredModelGatewayPath` 与 `CodexCoreControlClient` 仍被 1352、1365、1640 使用，`ModelConfigurationRepository`／`ModelCredentialRepository` 仍被 1043、1205 使用，留在原文件。
+- **不移动。** `ModelPolicyTransport`（1198、1356）、`ModelGatewaySettingsTransport`（1365–1371）、Pi 模型配置（1043）、DSH transport 内的模型仓库（1205）、`codexAccountsService`（1352）、个人助理模型源（1636–1643）：它们属于 transport 链、引擎或个人助理，随 workspace-host／node-local 抽取，届时消费 account 的输出。
+- **签名（提议，`apps/headless-server/src/assembly/account.mjs`）。**
+
+  ```js
+  export function assembleAccount({ dataDirectory, codexCoreEndpoint, codexCoreAuthToken }) {
+    // 返回：
+    // modelPolicyPath   供 997、1046、1314、1356、1636 原样使用
+    // modelPolicy       model-usage-policy.sqlite 的唯一写入者
+    // createHttpService({ actorAccess, actorStore, instanceAccess }) → (request, response) => Promise<boolean>
+    //                   在原 1538 位置调用，configuredModelGatewayPath() 与订阅客户端仍在 Web 构造时求值一次
+    // createSpeechService() → SpeechTranscriptionService；关闭仍由 Web（serve-workbench-web.mjs:1442）负责
+    // close()           = modelPolicy.close()，同步；只在关闭第 11 步第 2 位调用
+  }
+  ```
+
+  组合根在原 551 位置调用 `assembleAccount`（仍在 `machineIdentity` 之后、`ActorStore` 之前），打开顺序与启动失败回滚路径不变。
+- **现有测试。** 领域与 HTTP：`tests/execution/model-usage-policy.test.ts`（`ModelPolicyStore`、`modelPolicyHttp`、`ModelPolicyTransport`）、`tests/usage/model-gateway.test.ts`（`modelGatewayHttp` 与 contributions）、`tests/execution/personal-subscription.test.ts`（个人订阅经 Core）、`tests/composer/speech-model-configuration.test.ts` 与 `tests/composer/hunyuan-speech.test.ts`（语音服务）。组合根：`tests/server/headless-composition.test.mjs` 的"a disposal failure settles other resources but retains the writer until process exit"（403 行：`close` 幂等、失败不释放写锁）与 `tests/server/headless-server.test.mjs` 的启动与服务用例。**缺口**：没有测试在真实 `startHeadlessServer` 上请求 `/__opencraft_model_policy` 或 `/__opencraft_model_gateway`；该 PR 应补一个组合测试（匿名、成员、管理员三种响应，以及关闭后同一数据目录可再次启动，证明策略库写入者在写锁释放前关闭）。
 
 ### 4.2 需要成为端口的部分
 
@@ -255,21 +372,23 @@
 
 每步在 Node 上独立可发布、可回退；"P4-n"指 [workspace-host-split §7](workspace-host-split.md#7-分步计划) 第 n 步。
 
-| 步 | 内容 | Node 价值 | 依赖 |
-| --- | --- | --- | --- |
-| G1 | 把 `HA` 按 §4.1 拆成装配模块，行为与关闭顺序不变 | 组合根可测、可读；嵌入方（Docker gateway）复用模块 | 无 |
-| G2 | 合并 `opencraft-server.sqlite` 的编排与空间连接到核心 owner（已实施，见 [server-core-owner §4](../server/server-core-owner.md#4-分阶段实施)）；网络线程过渡连接随 server-core-owner 第 2–6 阶段移除 | 消除同库多 Worker 写入者；减少主线程同步 IO 登记 | G1 |
-| G3 | 剩余直接 `node:sqlite` 的部署级库（模型策略、MCP apps、push、connectors）迁到 `SqlDatabase` 端口 | 统一迁移与 outcome 报告 | 存储端口第 1–2 阶段（已实施） |
-| G4 | HTTP 处理改为 `Request`→`Response` 端口，Node 包装（身份与准入处理器已完成，§3.4；其余服务待迁） | 服务单测不需要真实监听 | G1 |
-| G5 | 定时器端口；资源对账、心跳、观测改为 owner 定时器 | 关闭排空与时钟回拨可测 | G1；与 P4-3 同一抽象 |
-| G6 | 拆出 `client-session`：AppHost 逻辑路由与访问会话脱离 `ws` | 连接逻辑可用内存 transport 测试 | G4 |
-| P4-2 | 抽出 `WorkspaceHost`（Codex overlays 以工作区根打开） | 见原文 | G1 |
-| P4-3 | 定时任务 owner 驱动 | 见原文 | G5 |
-| P4-4 | `WorkspaceLink` 与 `workspace-agent` | 见原文 | P4-2 |
-| P4-5 | 化身经通道上报，去除 `/proc` 与 `pid: host` | 见原文 | P4-4 |
-| G7 | Node 组合根声明能力清单；Cloudflare 不提供的服务集中在 `node-local` | 能力声明与实现一致 | G1 |
-| C1 | DO／Container 适配器（storage-ports 第 5 阶段剩余：`sandbox-cloudflare`、Secrets 信封加密） | — | P4-4 |
-| C2 | 第一个 Cloudflare 里程碑（§5.2） | — | G1–G7、P4-2–P4-5、C1 |
+状态列按 main `0be3cf047`（2026-11-23）核对；"完成"只指本表该步的内容，PR 号来自 `git log origin/main -- <路径>`。
+
+| 步 | 内容 | Node 价值 | 依赖 | 状态（2026-11-23） |
+| --- | --- | --- | --- | --- |
+| G1 | 把 `HA` 按 §4.1 拆成装配模块，行为与关闭顺序不变 | 组合根可测、可读；嵌入方（Docker gateway）复用模块 | 无 | **未开始**：`startHeadlessServer` 仍是单个函数（`headless-application.mjs:320-1656`），`apps/headless-server/src` 下没有装配模块；现状映射与抽取顺序见 §4.1.1 |
+| G2 | 合并 `opencraft-server.sqlite` 的编排与空间连接到核心 owner（已实施，见 [server-core-owner §4](../server/server-core-owner.md#4-分阶段实施)）；网络线程过渡连接随 server-core-owner 第 2–6 阶段移除 | 消除同库多 Worker 写入者；减少主线程同步 IO 登记 | G1 | **部分**：合并已完成（`orchestration-runtime-domain`、`server-spaces-domain` 注册在 `apps/headless-server/src/server-core-worker.mjs`，#511；身份写入 #463）；过渡连接仍在（`ThreadAccessStore` 的 `permissionOwner: serverStorage.database`，`headless-application.mjs:794`），server-core-owner 第 2–6 阶段未完成 |
+| G3 | 剩余直接 `node:sqlite` 的部署级库（模型策略、MCP apps、push、connectors）迁到 `SqlDatabase` 端口 | 统一迁移与 outcome 报告 | 存储端口第 1–2 阶段（已实施） | **部分**：模型策略已在 `SqlDatabase` 上（`packages/model-usage-policy/src/index.ts:1-12`，Node 打开仍经 `openManagedDatabase`＋`nodeSqlDatabase`，#511）；MCP apps（`packages/mcp-apps/src/store.ts:38`）、push（`packages/web-push-node/src/store.ts:2`）、connectors（`packages/connector-host/src/store.ts:1`）仍直接使用 `DatabaseSync` |
+| G4 | HTTP 处理改为 `Request`→`Response` 端口，Node 包装（身份与准入处理器已完成，§3.4；其余服务待迁） | 服务单测不需要真实监听 | G1 | **部分**：`@opencraft/identity-core/http-exchange{,-node,-fetch}` 与身份、准入处理器已迁（#511；Web 入口经 `serveNodeHttpExchange`，`serve-workbench-web.mjs:22`）；协作、AppHost、Hub、模型策略／网关等仍是 `(request, response)` 处理器 |
+| G5 | 定时器端口；资源对账、心跳、观测改为 owner 定时器 | 关闭排空与时钟回拨可测 | G1；与 P4-3 同一抽象 | **部分**：端口已有（`OwnerWakeTimer`／`boundedWakeTimer`，`packages/workspace-host/src/index.ts:171-246`，#511），仅定时任务使用；资源对账（`headless-application.mjs:1606`、`conversation-resource-lifecycle.mjs:62`）、观测（`observability-ingress.mjs:49`）、心跳（`serve-workbench-web.mjs:399、1196`）仍是 `setInterval` |
+| G6 | 拆出 `client-session`：AppHost 逻辑路由与访问会话脱离 `ws` | 连接逻辑可用内存 transport 测试 | G4 | **未开始**：`AppHostServer` 仍在组合根构造（`headless-application.mjs:1192`）；只有 workerd 原型（`tests/protocol/workerd/client-do-worker.ts`，§3.3） |
+| P4-2 | 抽出 `WorkspaceHost`（Codex overlays 以工作区根打开） | 见原文 | G1 | **完成（Node）**：`packages/workspace-host`（#511）；Gateway 只装配 `default`（`headless-application.mjs:1310`） |
+| P4-3 | 定时任务 owner 驱动 | 见原文 | G5 | **完成（Node）**：`packages/host-schedules/src/index.ts` 经 `OwnerWakeTimer`（#511）；唤醒仍在 Gateway 主线程，DO alarm 未做 |
+| P4-4 | `WorkspaceLink` 与 `workspace-agent` | 见原文 | P4-2 | **部分**：第 4a–4c 步已实现（`packages/sandbox/src/endpoint.ts`、`scripts/container-deployment/workspace-agent*.mjs`、`packages/sandbox-node/src/static-docker.ts`、`scripts/container-deployment/gateway-workspace.mjs`，#511；7b `docker-provisioner` #532）；第 4d 步（反向 RPC 进程）未做（workspace-host-split §7"第 4d 步"） |
+| P4-5 | 化身经通道上报，去除 `/proc` 与 `pid: host` | 见原文 | P4-4 | **未开始**：执行租约仍经 `/proc` 观察化身（`headless-application.mjs:1090`）；`deploy/docker/compose.yaml:134、227` 仍有 `pid: host` |
+| G7 | Node 组合根声明能力清单；Cloudflare 不提供的服务集中在 `node-local` | 能力声明与实现一致 | G1 | **未开始**：没有能力清单；Node-only 服务仍散在组合根（§4.1.1 第 1 部分中标 node-local 的段） |
+| C1 | DO／Container 适配器（storage-ports 第 5 阶段剩余：`sandbox-cloudflare`、Secrets 信封加密） | — | P4-4 | **部分**：`packages/sandbox-cloudflare` provider 已实现（#531）；`@opencraft/storage-cloudflare` 适配器在本地 workerd 通过一致性测试但未接入装配（#511）；Secrets 信封加密未做（`packages/storage-cloudflare/src/secrets.ts:11-15`） |
+| C2 | 第一个 Cloudflare 里程碑（§5.2） | — | G1–G7、P4-2–P4-5、C1 | **未开始** |
 
 P4-1（`proxy` 默认、全部 provider 经代理）是 AC 的前提，必须在 C2 之前完成；P4-6～8（冷迁移、多工作区、跨工作区投影）对第一里程碑不是前提，因为 Cloudflare 是全新安装，不迁移 Node 数据。
 
