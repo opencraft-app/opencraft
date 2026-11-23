@@ -131,6 +131,7 @@ import { humanLoginPage } from './human-login-page.ts';
 import { connectRelay, loadRelayConnection } from '@opencraft/plugin-relay-connect/server';
 import { validateHeadlessIdentity, validateEnvironmentDelivery } from "./headless-identity.mjs";
 import { startHeadlessRuntimePlugins, validateRuntimePluginOptions } from "./runtime-plugins.mjs";
+import { installHeadlessExtensions, loadHeadlessExtensions, validateHeadlessExtensions } from "./headless-extensions.mjs";
 import { createHubController } from '@opencraft/hub-network/controller';
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -330,6 +331,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   if (composition.close !== undefined && typeof composition.close !== "function") throw new Error("Invalid Headless disposer");
   if (composition.isHuman !== undefined && typeof composition.isHuman !== "function") throw new Error("Invalid Headless human qualification");
   const runtimePluginConfiguration = validateRuntimePluginOptions(composition.runtimePlugins);
+  // Extension modules are imported and validated before startup creates any resource.
+  const extensions = await loadHeadlessExtensions(validateHeadlessExtensions(composition.extensions));
   const root = resolve(options.root ?? packageRoot);
   const dataDirectory = resolve(options.dataDirectory ?? join(homedir(), ".opencraft-server"));
   const webRoot = resolve(options.webRoot ?? join(root, "web"));
@@ -365,10 +368,16 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     cacheDirectory: process.env.OPENCRAFT_PRODUCT_PLUGIN_CACHE_DIRECTORY || join(dataDirectory, 'product-plugin-packs'),
     metadata: releaseManifest.productPlugins ?? null });
   const identityFence = createCommitFenceBuffer();
-  const serverStorage = await openServerCoreOwner(dataDirectory, { entry: ownerEntry(import.meta.url, 'server-core'), data: { identityFence } });
+  // Installed before the storage owners: the orchestration Worker receives the
+  // communication module, and every later owner reads the installed extensions.
+  // Released only once both owners have closed.
+  const releaseExtensions = installHeadlessExtensions(extensions);
+  let serverStorage;
+  try { serverStorage = await openServerCoreOwner(dataDirectory, { entry: ownerEntry(import.meta.url, 'server-core'), data: { identityFence } }); }
+  catch (error) { releaseExtensions(); throw error; }
   const orchestrationStorage = new OrchestrationRuntimeWorker(join(dataDirectory, 'opencraft-server.sqlite'));
-  try { await orchestrationStorage.start(); } catch (error) { await orchestrationStorage.close().catch(()=>{}); await serverStorage.close(); throw error; }
-  const releaseLock = async () => { await orchestrationStorage.close(); await serverStorage.close(); };
+  try { await orchestrationStorage.start(); } catch (error) { await orchestrationStorage.close().catch(()=>{}); await serverStorage.close(); releaseExtensions(); throw error; }
+  const releaseLock = async () => { await orchestrationStorage.close(); await serverStorage.close(); releaseExtensions(); };
   let agent;
   let dshAgent;
   let releasePiOwner;
