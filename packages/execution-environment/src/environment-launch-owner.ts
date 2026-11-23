@@ -5,7 +5,7 @@ import {
   type EnvironmentLaunchContext,
   type EnvironmentLaunchTarget,
 } from "./environment-delivery.js";
-import { environmentProjectId, environmentThreadProject } from "./execution-environment.js";
+import { environmentProjectId, environmentThreadProject } from "./environment-metadata.js";
 import type { GitExecutionHandoff, GitExecutionLocator } from "./git-execution.js";
 
 const unavailable = (): never => {

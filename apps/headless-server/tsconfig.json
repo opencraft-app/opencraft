@@ -17,6 +17,7 @@
     "src/workspaces/execution-service.ts",
     "src/workspaces/bot-client.ts",
     "src/host-environment-launch.ts",
+    "src/environment-metadata-transport.ts",
     "src/capability-execution-context.ts",
     "src/execution-admission.worker.ts"
   ]

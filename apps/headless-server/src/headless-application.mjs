@@ -34,6 +34,7 @@ import { modelPolicyHttp } from '@opencraft/model-usage-policy/http';
 import { ModelPolicyTransport } from '@opencraft/model-usage-policy/transport';
 import { startAvailabilityNotification } from './availability-notification.mjs';
 import { ExecutionEnvironmentTransport } from './execution-environment-transport.ts';
+import { EnvironmentMetadataTransport } from './environment-metadata-transport.ts';
 import { createHostEnvironmentLaunch } from './host-environment-launch.ts';
 import { composeHostTerminalSelector, createHandsTerminalService, HostTerminalSession, HostTerminalTransport, terminalResourceOwnerId } from './host-terminal-transport.js';
 import { createHostFileSystem } from './host-filesystem.js';
@@ -394,6 +395,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let humanGitExecution;
   // The one opaque ENV vault-owner port: a downstream port or the core vault Worker.
   let environmentLaunch;
+  // Non-secret ENV metadata (bindings, creators, catalog) on the core vault Worker.
+  let environmentMetadata;
   let actorStore;
   const terminalServices = new Map();
   const fileSystem = options.fileSystemOwner ? createHostFileSystem(options.fileSystemOwner) : null;
@@ -607,6 +610,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     }
     environmentLaunch = identity?.environmentLaunch ?? assetsStorage?.environmentLaunch;
     if (coreEnvironmentLaunch && !assetsStorage?.environmentLaunch) throw new Error('Environment delivery requires the sole vault owner');
+    environmentMetadata = coreEnvironmentLaunch ? assetsStorage.environmentMetadata : undefined;
+    if (coreEnvironmentLaunch && !environmentMetadata) throw new Error('Environment delivery requires the sole vault owner');
     const authenticateHuman = request => {
       if (instanceAccess) return instanceAccess.authenticate(request);
       const identities = providers.map(provider => provider.authenticate(request)).filter(Boolean);
@@ -1216,8 +1221,9 @@ export async function startHeadlessServer(options = {}, composition = {}) {
             codexPinsService(codexReader, clients, { toNative: id => codexRouting?.threadIdentities?.()?.toNative(id), toPublic: id => codexRouting?.threadIdentities?.()?.toPublic(id) }),
             { handles: () => false, request: () => null, close: () => codexReader.close() }] : [])])), mcpApps), hostId);
         })(), modelPolicyPath, hostId === 'opencraft-server' ? 'dsh' : 'codex', serverStorage.call.projectModelCatalog);
-        let scopedTransport = identity?.executionEnvironment && ['local-codex', 'opencraft-server'].includes(hostId)
-          ? new ExecutionEnvironmentTransport(transport, identity.executionEnvironment, hostId) : transport;
+        let scopedTransport = !['local-codex', 'opencraft-server'].includes(hostId) ? transport
+          : identity?.executionEnvironment ? new ExecutionEnvironmentTransport(transport, identity.executionEnvironment, hostId)
+            : environmentMetadata ? new EnvironmentMetadataTransport(transport, environmentMetadata, hostId) : transport;
         if (hostId === 'local-codex' && workspaceRouting)
           scopedTransport = new HostWorkspaceCatalogTransport(scopedTransport,
             context => workspaceRouting.readCatalog(hostId, context),

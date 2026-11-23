@@ -7,6 +7,11 @@ import type { SandboxIdentity, SandboxResources } from "@opencraft/sandbox";
 import { parseGitExecutionLocator, type GitExecutionResolver } from "@opencraft/execution-environment/git-execution";
 import { EmployeeGitVaultStore, GitVaultError } from "@opencraft/execution-environment/employee-git-vault-store";
 import { EnvironmentLaunchOwner } from "@opencraft/execution-environment/environment-launch-owner";
+import {
+  EnvironmentMetadata,
+  type EnvironmentExecutionScope,
+  type EnvironmentScopeRequest,
+} from "@opencraft/execution-environment/environment-metadata";
 import type {
   EnvironmentLaunchContext,
   EnvironmentLaunchTarget,
@@ -22,7 +27,8 @@ export async function createAssetsStorage(
   providers: readonly GitConnectionProvider[] = [githubConnectionProvider()],
   execution?: GitExecutionResolver,
   createWorkspaces?: CreateAssetWorkspaceExecutionOwner,
-  /** Issue opaque execution ENV capsules from this sole vault owner. */
+  /** Issue opaque execution ENV capsules from this sole vault owner, which
+   * then also owns the non-secret ENV metadata (bindings, creators, catalog). */
   options: { environmentLaunch?: boolean } = {},
 ) {
   // ENV for a launch needs the durable admission this owner reads itself.
@@ -48,6 +54,15 @@ export async function createAssetsStorage(
       options.environmentLaunch && execution
         ? new EnvironmentLaunchOwner(vault, (input) => execution.resolve(input))
         : undefined;
+    const metadata = environment ? new EnvironmentMetadata(vault) : undefined;
+    // Metadata runs FIFO with every other vault write; nothing it returns is a value.
+    const metadataCall = <T>(operation: (owner: EnvironmentMetadata) => T): T => {
+      try {
+        return operation(metadata!);
+      } catch {
+        throw new SandboxConfigurationError("environment_unavailable", 503);
+      }
+    };
     const configurations = new SandboxConfigurations(vault);
     const workspaceCatalog = new InstalledWorkspaceCatalog(configurations);
     const workspaceBudget = new WorkspaceBudgetStore(vault, () => {
@@ -124,7 +139,15 @@ export async function createAssetsStorage(
     });
     return {
       concurrentReads: execution
-        ? ["executionGitGrant", "executionGitReservation", ...(environment ? ["executionEnvironmentLaunch"] : [])]
+        ? [
+            "executionGitGrant",
+            "executionGitReservation",
+            // Metadata reads see committed bindings; a Gateway forwards a Thread
+            // only after its binding committed, so later reads observe it.
+            ...(environment
+              ? ["executionEnvironmentLaunch", "environmentMetadataAdmit", "environmentMetadataProject"]
+              : []),
+          ]
         : [],
       ready: {
         outcome: vault.outcome,
@@ -252,6 +275,15 @@ export async function createAssetsStorage(
                   throw new SandboxConfigurationError("execution_unavailable", 503);
                 }
               },
+              environmentMetadataAdmit: (request: EnvironmentScopeRequest) => metadataCall((m) => m.admit(request)),
+              environmentMetadataProject: (hostId: string, threadId: string) =>
+                metadataCall((m) => m.project(hostId, threadId)),
+              environmentMetadataBind: (hostId: string, threadId: string, projectId: string | null) =>
+                metadataCall((m) => m.bind(hostId, threadId, projectId)),
+              environmentMetadataBindCreator: (scope: EnvironmentExecutionScope, threadId: string) =>
+                metadataCall((m) => m.bindCreator(scope, threadId)),
+              environmentMetadataRememberProjects: (hostId: string, projects: readonly { id: string; name: string }[]) =>
+                metadataCall((m) => m.rememberProjects(hostId, projects)),
             }
           : {}),
         gitSnapshot: (access: AssetAdmission) => run(access, () => git.snapshot(access.scope)),

@@ -11,6 +11,11 @@ import type {
   EnvironmentLaunchContext,
   EnvironmentLaunchTarget,
 } from "@opencraft/execution-environment/environment-delivery";
+import type {
+  EnvironmentExecutionScope,
+  EnvironmentMetadataPort,
+  EnvironmentScopeRequest,
+} from "@opencraft/execution-environment/environment-metadata";
 import { WorkerOwner, ownerEntry } from "@opencraft/worker-owner";
 import type { DatabaseOutcome } from "@opencraft/sqlite-node";
 import type { SandboxConfigurationsSnapshot } from "../contract.js";
@@ -44,6 +49,11 @@ export interface AssetStoragePort extends AssetConfigurationPort, WorkspaceBudge
   executionGitReservation(locator: GitExecutionLocator): Promise<GitExecutionReservation | null>;
   executionGitGrant(locator: GitExecutionLocator): Promise<GitExecutionHandoff | null>;
   executionEnvironmentLaunch(target: EnvironmentLaunchTarget, context: EnvironmentLaunchContext): Promise<string>;
+  environmentMetadataAdmit(request: EnvironmentScopeRequest): Promise<EnvironmentExecutionScope>;
+  environmentMetadataProject(hostId: string, threadId: string): Promise<string | null>;
+  environmentMetadataBind(hostId: string, threadId: string, projectId: string | null): Promise<void>;
+  environmentMetadataBindCreator(scope: EnvironmentExecutionScope, threadId: string): Promise<void>;
+  environmentMetadataRememberProjects(hostId: string, projects: readonly { id: string; name: string }[]): Promise<void>;
   gitSnapshot(access: AssetAdmission): Promise<GitConnectionsSnapshot>;
   gitUpdate(access: AssetAdmission, input: unknown): Promise<GitConnectionsSnapshot>;
 }
@@ -122,6 +132,18 @@ export async function openAssetConfigurations(
             issuer: ready.environmentIssuer,
             seal: (target: EnvironmentLaunchTarget, context: EnvironmentLaunchContext) =>
               owner.call.executionEnvironmentLaunch(target, context),
+          })
+        : undefined,
+    /** The same owner's FIFO port for non-secret ENV metadata. Main awaits it;
+     * there is no synchronous vault read to fall back to. */
+    environmentMetadata:
+      typeof ready.environmentIssuer === "string"
+        ? Object.freeze<EnvironmentMetadataPort>({
+            admit: (request) => owner.call.environmentMetadataAdmit(request),
+            project: (hostId, threadId) => owner.call.environmentMetadataProject(hostId, threadId),
+            bind: (hostId, threadId, projectId) => owner.call.environmentMetadataBind(hostId, threadId, projectId),
+            bindCreator: (scope, threadId) => owner.call.environmentMetadataBindCreator(scope, threadId),
+            rememberProjects: (hostId, projects) => owner.call.environmentMetadataRememberProjects(hostId, projects),
           })
         : undefined,
     close: () => owner.close(),

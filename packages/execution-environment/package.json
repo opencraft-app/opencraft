@@ -18,6 +18,7 @@
     "./remote-environment-launch": "./src/remote-environment-launch.ts",
     "./execution-admission": "./src/execution-admission.ts",
     "./environment-launch-owner": "./src/environment-launch-owner.ts",
+    "./environment-metadata": "./src/environment-metadata.ts",
     "./git-keys": "./src/git-keys.ts",
     "./human-git-execution": "./src/human-git-execution.ts",
     "./remote-human-git-execution": "./src/remote-human-git-execution.ts",

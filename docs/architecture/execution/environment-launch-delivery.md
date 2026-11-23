@@ -1,11 +1,12 @@
 # Execution ENV launch delivery
 
-Status: slices 1 and 3 implemented, with the receiver taking its expected
-context from the execution owner's own durable admission (Decision 1). DSH in
-`assets` mode receives Turn ENV through `EnvironmentLaunchReceiver` when either
-the identity composition supplies a vault-owner port or the installation sets
-`environmentDelivery: 'vault-owner'`, which makes the core vault Worker the
-issuer. Every other consumer still reads a decrypted snapshot from
+Status: slices 1 and 3 implemented, slice 8 partially implemented. The
+receiver takes its expected context from the execution owner's own durable
+admission (Decision 1). DSH in `assets` mode receives Turn ENV through
+`EnvironmentLaunchReceiver` when either the identity composition supplies a
+vault-owner port or the installation sets `environmentDelivery: 'vault-owner'`,
+which makes the core vault Worker the issuer and the owner of ENV metadata.
+Every other consumer still reads a decrypted snapshot from
 `ExecutionEnvironmentRuntime` synchronously in its own process.
 
 Related: [account environment variables](../identity/account-environment.md),
@@ -159,10 +160,12 @@ Closing the Worker retires the issuer key first, then the admission reader and
 the vault; seals accepted before close are drained, later ones are refused. A
 Worker that was asked to issue but did not start an issuer fails startup.
 
-In this mode nothing in Main writes Thread->Project bindings (the synchronous
-`ExecutionEnvironmentTransport.bind` writer is not composed); bindings recorded
-earlier keep applying and new Threads receive personal values only until the
-metadata owner (slice 8) moves `bind` to an asynchronous owner port.
+In this mode the same Worker also owns the non-secret ENV metadata (slice 8):
+Main composes `EnvironmentMetadataTransport` instead of the synchronous
+`ExecutionEnvironmentTransport`, and Thread->Project bindings, creator
+provenance and the Project catalog are written through the Worker's
+asynchronous `EnvironmentMetadataPort`, so new Threads receive their Project
+values.
 
 ## Compatibility
 
@@ -226,10 +229,54 @@ synchronous runtime.
    advertised through `opencraft/environment/capability`; the adapter forwards
    capsules instead of `shell_environment_policy.set` values and stops
    redacting in Main. Requires a native Core release.
-8. **Metadata owner.** Move `scope`, `bind`, `bindCreator`, `rememberProjects`,
-   `creation`, `execution` reads to an asynchronous owner port, then retire
-   `identity.executionEnvironment` for installations with a separate vault
-   owner. Evidence: `check-main-thread-sync-io` count decreases.
+8. **Metadata owner (partially implemented).** Move `scope`, `bind`,
+   `bindCreator`, `rememberProjects`, `creation`, `execution` reads to an
+   asynchronous owner port, then retire `identity.executionEnvironment` for
+   installations with a separate vault owner. Evidence:
+   `check-main-thread-sync-io` count decreases.
+
+   Implemented. `EnvironmentMetadata` (`environment-metadata.ts`) is the one
+   implementation of the metadata rules; `ExecutionEnvironmentRuntime` delegates
+   to it, so installations without a separate vault owner are unchanged. With
+   `environmentDelivery: 'vault-owner'` the assets Worker serves it as
+   `EnvironmentMetadataPort` (`admit`, `project`, `bind`, `bindCreator`,
+   `rememberProjects`): writes run FIFO with every other vault write, `admit` and
+   `project` are committed-state reads. Scope admission is split at the process
+   boundary: `environmentScopeRequest` checks the authenticated submission in
+   Main without IO, `admit` applies the Thread binding and creator provenance in
+   the Worker. `EnvironmentMetadataTransport` admits and dispatches requests in
+   arrival order and rechecks the submission after each await; it forwards a
+   Host response only after its metadata committed, in the Host's order, and
+   drops a delayed frame whose native owner was retired. It mints no scope
+   envelope (Main no longer signs scope) and never opens the vault; a failed
+   owner rejects admission as not submitted and turns an uncommitted creation,
+   binding or catalog response into an error. Close drains admitted requests and
+   committing responses; the Worker drains accepted writes before it exits, and
+   a restarted owner reads every committed document. `identity.executionEnvironment`
+   is refused together with the core vault owner (`validateEnvironmentDelivery`).
+   Tests (`environment-metadata-owner.test.ts`): same rules as the synchronous
+   runtime, response and request ordering, fail-closed Worker loss, close drain
+   and restart, Main timers running while the Worker waits on a held vault lock,
+   no port without a separate owner.
+
+   Remaining, and why:
+   - Hands terminal scope (consumer 4) stays synchronous: `HostTerminalTransport`
+     derives scope synchronously, so with a separate vault owner it uses the
+     requested Project only. It moves with the asynchronous terminal prepare
+     step of slice 6.
+   - `creation`, `rememberCreation` and `execution` stay on the synchronous
+     runtime: their only consumers hold values in their own process. ACP needs
+     creation capsules (slices 4 and 5), Codex the native Core receiver
+     (slice 7), and the Pi Harness `env` callback and the DSH `legacy`
+     `environment(nativeId)` hook are synchronous APIs.
+   - A downstream `identity.environmentLaunch` port has no metadata port; that
+     owner records its own bindings.
+   - The `check-main-thread-sync-io` count is unchanged (257 calls, 1017 SQL
+     statements), not decreased: the count is per file, and the lease read in
+     `ExecutionEnvironmentRuntime.execution` and the vault store's SQL are still
+     loaded on the main thread of the processes that run the synchronous
+     consumers above. The vault-owner composition adds no call. The count
+     drops when the last synchronous consumer of those files migrates.
 
 ## Decisions
 
