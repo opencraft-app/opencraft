@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { chown, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { chown, mkdtemp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -83,6 +83,19 @@ try {
   };
   const ready = () => waitFor(health, value => value.status === 200 && value.body.ok && value.body.hosts?.['local-codex']?.state === 'ready', 'three-owner readiness');
   const first = await ready();
+  // Brain and Hands each run one workspace agent with a container-private run directory.
+  const agent = service => JSON.parse(docker(['exec', compose(['ps', '-q', service]), '/opt/opencraft/bin/opencraft-health', 'agent']));
+  const agents = { brain: agent('brain'), hands: agent('hands') };
+  assert.deepEqual(agents.brain.roles, ['brain']);
+  assert.deepEqual(agents.hands.roles, ['hands', 'browser']);
+  for (const value of Object.values(agents)) assert.equal(value.type, 'healthy');
+  assert.deepEqual(agents.brain.components.map(c => c.name), ['codex-app-server', 'dsh-host', 'engine-host']);
+  assert.deepEqual(agents.hands.components.map(c => c.name), ['exec', 'terminal', 'files', 'browser']);
+  const sharedRun = await readdir(join(data, 'run'));
+  for (const privateName of ['engine-host-config.json', 'dsh-host-config.json', 'codex-hands-sandbox.json', 'native-internal.sock', 'control.sock'])
+    assert.ok(!sharedRun.includes(privateName), `${privateName} must stay container-private`);
+  assert.notEqual(spawnSync('docker', ['exec', compose(['ps', '-q', 'gateway']), 'test', '-e', '/run/opencraft-agent/control.sock']).status, 0,
+    'Gateway cannot see an agent run directory');
   const terminalProbe = await readFile(join(root, 'scripts/smoke/server/hands-terminal-probe.mjs'), 'utf8');
   const gatewayContainer = compose(['ps', '-q', 'gateway']);
   const terminal = JSON.parse(docker(['exec', '-i', gatewayContainer, '/opt/opencraft/bin/node', '--input-type=module', '-', 'start', workspace], { input: terminalProbe }));
@@ -139,9 +152,26 @@ try {
     'Brain restart must replace its leased Hands execution process');
   assert.equal(topIncludesNativeExecServer('brain'), false,
     'Brain must not reacquire an embedded Codex exec-server');
+  const restarted = agent('brain');
+  assert.notEqual(restarted.incarnation.id, agents.brain.incarnation.id, 'a Brain restart is a new agent incarnation');
+  assert.equal(agent('hands').incarnation.id, agents.hands.incarnation.id);
+
+  // A critical child failure ends the whole agent; Docker restarts the container as a new incarnation.
+  const brainId = compose(['ps', '-q', 'brain']);
+  const startedAt = () => docker(['inspect', '-f', '{{.State.StartedAt}}', brainId]);
+  const before = startedAt();
+  process.kill(topPid('brain', 'runtime/engine-host.mjs'), 'SIGKILL');
+  await waitFor(async () => startedAt(), value => value !== before, 'Brain agent exit and container restart');
+  const replaced = await ready();
+  assert.equal(replaced.body.core.pid, proxyCore, 'a Brain child failure must not restart the model proxy');
+  const reincarnated = agent('brain');
+  assert.notEqual(reincarnated.incarnation.id, restarted.incarnation.id);
+  assert.match(await readFile(join(logs, 'brain', 'service.log'), 'utf8'), /workspace-agent-child-failed[^\n]*engine-host/);
+  assert.equal(agent('hands').incarnation.id, agents.hands.incarnation.id, 'Hands is a separate agent');
   passed = true;
   console.log(JSON.stringify({ ok: true, origin, persistence: true,
-    gatewayRestartKeepsBrain: true, gatewayRestartKeepsHands: true, brainUnavailable: 503, brainRecovery: true }));
+    gatewayRestartKeepsBrain: true, gatewayRestartKeepsHands: true, brainUnavailable: 503, brainRecovery: true,
+    agentIncarnations: [agents.brain.incarnation.id, restarted.incarnation.id, reincarnated.incarnation.id], criticalChildExit: true }));
 } catch (error) {
   const logs = spawnSync('docker', ['compose', '--env-file', '/dev/null', '-f', join(root, 'deploy/docker/compose.yaml'), '-p', name, 'logs', '--tail=100'],
     { cwd: root, env, encoding: 'utf8' });

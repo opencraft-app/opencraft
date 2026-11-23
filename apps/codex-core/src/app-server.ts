@@ -1,7 +1,7 @@
 import { privateWorkspaceExecutionPolicy } from "./workspace-execution-policy.js";
 import { configureCodexExecutionSandbox, codexSandboxRequestPolicy, type CodexExecutionSandbox, type CodexWorkspaceResolver } from "./execution-sandbox.js";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { chmod, mkdir, readFile, realpath, unlink } from "node:fs/promises";
+import { chmod, mkdir, readFile, realpath, stat, unlink } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { acquireCodexWriter, CODEX_CORE_PROTOCOL_VERSION, CodexCoreControlClient, CodexCoreUnavailableError, type CodexAppServerHealth } from "@opencraft/account-pool-host";
@@ -20,6 +20,9 @@ export interface CodexAppServerOptions {
   /** Generation-local owner root. Account identity still uses dataDirectory. */
   readonly runtimeDataDirectory?: string;
   readonly runtimeDirectory: string;
+  /** Owner-private directory for the native listener (never reached by other owners).
+   * Defaults to the control endpoint's directory. */
+  readonly privateDirectory?: string;
   readonly executable: string;
   readonly executionSandbox?: CodexExecutionSandbox;
   readonly projectlessWorkspaceDirectory?: string;
@@ -46,7 +49,9 @@ export async function startCodexAppServer(options: CodexAppServerOptions) {
   if (!isAbsolute(runtimeDataDirectory)) throw new Error("Codex runtime directory must be absolute");
   const release = await acquireCodexWriter(runtimeDataDirectory, "runtime");
   const nativeSocket = join(dirname(options.endpoint), "native.sock");
-  const nativeListener = join(dirname(options.endpoint), "native-internal.sock");
+  if (options.privateDirectory !== undefined && (!isAbsolute(options.privateDirectory) || options.privateDirectory.includes("\0")))
+    throw new Error("Invalid Codex AppServer private directory");
+  const nativeListener = join(options.privateDirectory ?? dirname(options.endpoint), "native-internal.sock");
   let relay: Awaited<ReturnType<typeof startOrchestrationCallbackRelay>> | undefined;
   let child: ChildProcessWithoutNullStreams | undefined;
   let control: Awaited<ReturnType<typeof startControlServer>> | undefined;
@@ -121,6 +126,11 @@ export async function startCodexAppServer(options: CodexAppServerOptions) {
       };
     });
     if (nativeSocket === options.endpoint) throw new Error("AppServer control endpoint must differ from native.sock");
+    if (options.privateDirectory) {
+      await mkdir(options.privateDirectory, { recursive: true, mode: 0o700 });
+      const info = await stat(options.privateDirectory);
+      if (!info.isDirectory() || info.uid !== process.getuid?.() || (info.mode & 0o077) !== 0) throw new Error("Codex AppServer private directory must be private");
+    }
     await removeStaleSocket(nativeListener);
     await mkdir(runtimeRoot, { recursive: true, mode: 0o700 });
     if (options.runtimeDataDirectory && await realpath(runtimeRoot) !== runtimeRoot) throw new Error("Generation HOME must not alias another directory");

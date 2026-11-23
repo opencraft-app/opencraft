@@ -171,6 +171,16 @@ exposes an endpoint as a Unix socket in a private 0700 directory for clients tha
 dial a path; it authorizes each connection, back-pressures local input on the
 provider, closes a connection whose undrained output exceeds its bound, and
 reports unconfirmed relay cleanup. The browser owner attachment uses the endpoint.
+A target is either a name from `SANDBOX_ENDPOINT_NAMES`, resolved only as
+`<endpointDirectory>/<name>` (default `SANDBOX_ENDPOINT_DIRECTORY`, an image property
+where the in-environment `workspace-agent` publishes its allow-listed endpoints), or a
+caller-validated `{ unix }` path kept for owners not yet supervised by that agent.
+Unknown names, mixed targets and relative directories are refused before any spawn.
+
+The sandbox file port (`SandboxWorkspaceFiles`) uses one attached resident helper per
+binding instead of a process per operation: requests are id-tagged JSON lines over
+that one process stream, answered concurrently and written whole. Losing the helper
+fails only its in-flight requests (never resent); the next request starts a new one.
 Every backend that advertises endpoints must pass
 `tests/execution/sandbox-endpoint-conformance.test.ts` (binary round trip,
 half-close, close from either side, back-pressure, attached failure isolation and

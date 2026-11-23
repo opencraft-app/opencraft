@@ -12,7 +12,20 @@ containers:
 
 Recreating `gateway` leaves Brain tasks and Hands tabs alive. The Gateway
 reattaches to both through private descriptors/sockets and never receives a
-Docker socket. All four services use the same reviewed image, so Docker stores
+Docker socket.
+
+Brain and Hands each run one **workspace agent** as their main process
+(`workspace-agent.mjs --role brain`; Hands uses the same agent with the `hands`
+and `browser` roles). It starts and supervises that container's owners, reports
+a fresh incarnation on every start, and keeps its control socket, named
+endpoints, engine launch configuration and the native Codex listener in a
+container-private tmpfs at `/run/opencraft-agent` that no other service mounts.
+If any critical child (AppServer/native Codex, Pi, DSH, exec, terminal, files,
+browser) exits, the agent stops the others and exits; Docker restarts the
+container as a new incarnation and the Gateway's interrupted-turn recovery
+continues tracked turns. The agent never restarts a single child in place.
+`docker compose exec brain opencraft-health agent` prints its state, roles,
+components and incarnation. All four services use the same reviewed image, so Docker stores
 the large runtime layers once.
 
 Brain keeps Codex AppServer and its writable native session state. Its managed
@@ -139,6 +152,7 @@ Container paths have one convention, independent of the deployment user's home:
 | Projects and source checkouts | `/workspace/projects/<name>` | `/srv/opencraft/workspaces/projects/<name>` |
 | Conversations without a project | `/workspace/sessions/codex/<id>`, `/workspace/sessions/dsh/<id>` | Under `/srv/opencraft/workspaces/sessions` |
 | Service logs | `/var/log/opencraft/<service>/service.log` | `/srv/opencraft/logs/<service>/service.log` |
+| Workspace agent run directory (Brain, Hands) | `/run/opencraft-agent` | None: a private tmpfs per container, fresh on each start |
 
 Keep an OpenCraft source checkout at `/workspace/projects/opencraft` when the
 agent needs to maintain it. A checkout under `/tmp` is temporary, not a deployment
@@ -149,7 +163,7 @@ The Gateway creates execution-bound CLI launchers in the shared execution mount,
 so the paths returned to Hands exist there. Signing keys and account state remain
 in private application state; they are not exposed with the CLI directory.
 
-Hands also supervises the unified Workbench terminal owner. Gateway routes
+The Hands workspace agent also supervises the unified Workbench terminal owner. Gateway routes
 authenticated local Host `process/*` requests through `execution/terminal.sock`
 using the private `execution/terminal.token`. The shell runs in Hands, within
 its declared cgroup limits, and uses the conversation's explicit cwd. This does
@@ -330,7 +344,9 @@ Build a content-addressed or versioned image reference, then use the transaction
 tool. It checks paths, ownership, capacity, disk and rendered Compose config,
 and that the deployment UID can write `deploy/docker/` (for `.env`) and
 `$OPENCRAFT_HOST_DATA_DIR/deployment/` (for `compose-state.json`), so a release
-never fails after replacing every owner;
+never fails after replacing every owner; that the rendered `brain` and `hands`
+services keep `/run/opencraft-agent` on a private tmpfs (Compose files older than
+the workspace agent lack it; update `deploy/docker/` first);
 uses a deployment lock; applies and waits for each owner in strict dependency
 order (`hands`, `proxy`, `brain`, `gateway`); and writes `.env` only after all four are
 healthy. A Brain that still embeds the account Core is stopped before `proxy`
@@ -352,6 +368,10 @@ Gateway. Data stays in place. Fix the cause and run `upgrade` again; it performs
 the switch. Until then do not run a plain `docker compose up`, which would start
 `proxy` beside the embedded Core. The two `OPENCRAFT_BRAIN_PROXY_*` variables are
 not deployment settings; `doctor` refuses them in `.env`.
+Rolling back from a workspace-agent image to an older one needs no extra step:
+the older image ignores the tmpfs and `OPENCRAFT_AGENT_RUN_DIR` and writes its
+launch configuration to `$OPENCRAFT_DATA_DIR/run` again, which the newer Brain
+removes on its next start.
 After a successful change, this explicit command reuses the recorded previous
 image:
 
@@ -441,7 +461,7 @@ opencraft-github-build.timer` shows the next run; build logs are available throu
 ## Validation
 
 ```sh
-node --test ../tests/server/container-deployment.test.mjs ../tests/server/container-service.test.mjs
+node --import tsx --test ../tests/server/container-deployment.test.mjs ../tests/server/container-service.test.mjs ../tests/server/workspace-agent.test.mjs
 OPENCRAFT_IMAGE=opencraft:local node ../scripts/smoke/server/smoke-container.mjs
 ```
 

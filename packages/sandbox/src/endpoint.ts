@@ -36,13 +36,26 @@ while True:
 s.close()
 `;
 
-/** A stream socket inside the selected environment. Step 4a accepts a caller-validated
- * path; named endpoints resolved by the in-container agent replace it later. */
-export interface SandboxEndpointTarget {
-  readonly unix: string;
+/** Endpoint names an image's `workspace-agent` may publish. The agent fixes the name →
+ * socket mapping inside the environment; Host callers never choose an in-environment path. */
+export const SANDBOX_ENDPOINT_NAMES = Object.freeze([
+  "control", "codex-control", "codex-native", "pi", "dsh", "exec", "terminal", "files", "browser",
+] as const);
+export type SandboxEndpointName = typeof SANDBOX_ENDPOINT_NAMES[number];
+/** Default directory where the agent publishes named endpoints (an image/template property). */
+export const SANDBOX_ENDPOINT_DIRECTORY = "/run/opencraft-agent/endpoints";
+export function isSandboxEndpointName(value: unknown): value is SandboxEndpointName {
+  return typeof value === "string" && (SANDBOX_ENDPOINT_NAMES as readonly string[]).includes(value);
 }
+
+/** A stream socket inside the selected environment: a named agent endpoint, or (only for
+ * owners not yet supervised by `workspace-agent`, e.g. the E2B browser owner) a
+ * caller-validated absolute path. */
+export type SandboxEndpointTarget = { readonly name: SandboxEndpointName } | { readonly unix: string };
 export interface SandboxEndpointOptions {
   readonly target: SandboxEndpointTarget;
+  /** Where the environment's agent publishes named endpoints; a provider/image property. */
+  readonly endpointDirectory?: string;
   /** Bytes from the target, in order. Called until the connection ends. */
   onData(data: Uint8Array): void;
   /** Absolute interpreter path provided by the image/template. */
@@ -73,7 +86,13 @@ export async function openSandboxEndpoint(
   environment: Pick<SandboxEnvironment, "spawn">,
   options: SandboxEndpointOptions,
 ): Promise<SandboxEndpointConnection> {
-  const path = options.target?.unix, python = options.python ?? "/usr/bin/python3";
+  const target = options.target as { name?: unknown; unix?: unknown } | undefined;
+  const directory = options.endpointDirectory ?? SANDBOX_ENDPOINT_DIRECTORY;
+  if (target && "name" in target && (!isSandboxEndpointName(target.name) || "unix" in target
+    || typeof directory !== "string" || !directory.startsWith("/") || directory.endsWith("/")))
+    throw fault("SANDBOX_POLICY", "Unknown sandbox endpoint name");
+  const path = target && "name" in target ? `${directory}/${target.name as string}` : target?.unix;
+  const python = options.python ?? "/usr/bin/python3";
   if (typeof path !== "string" || !path.startsWith("/") || path.includes("\0") || /(^|\/)\.\.?(\/|$)/u.test(path)
     || new TextEncoder().encode(path).byteLength > maximumUnixPath || !python.startsWith("/") || python.includes("\0"))
     throw fault("SANDBOX_POLICY", "Invalid sandbox endpoint target");

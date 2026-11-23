@@ -85,7 +85,7 @@ function runCompose(args, image, options = {}) {
   // The shell value wins over `.env`; only a restore to the embedded Core passes these.
   for (const name of Object.keys(EMBEDDED_CORE_ENVIRONMENT)) delete env[name];
   if (options.embeddedCore) Object.assign(env, EMBEDDED_CORE_ENVIRONMENT);
-  execFileSync('docker', ['compose', '--env-file', '.env', ...args], {
+  return execFileSync('docker', ['compose', '--env-file', '.env', ...args], {
     cwd: dockerDirectory, stdio: options.capture ? 'pipe' : 'inherit', encoding: options.capture ? 'utf8' : undefined, env,
   });
 }
@@ -120,6 +120,23 @@ export async function inspectDeploymentWritable(environment, deployDirectory = d
   }
 }
 
+/** Brain and Hands run the workspace agent, whose run directory must be container-private
+ * (a tmpfs per container, never a shared bind mount). Older Compose files lack it. */
+export const AGENT_RUN_DIRECTORY = '/run/opencraft-agent';
+export function inspectWorkspaceAgentServices(config) {
+  for (const name of ['brain', 'hands']) {
+    const service = config?.services?.[name];
+    if (!service) throw new Error(`Compose configuration has no ${name} service`);
+    const tmpfs = [service.tmpfs ?? []].flat();
+    if (!tmpfs.some(entry => String(entry).split(':')[0] === AGENT_RUN_DIRECTORY))
+      throw new Error(`${name} has no private ${AGENT_RUN_DIRECTORY} tmpfs; update deploy/docker to this release's Compose files`);
+    if ((service.volumes ?? []).some(volume => volume.target === AGENT_RUN_DIRECTORY || String(volume.target ?? '').startsWith(AGENT_RUN_DIRECTORY + '/')))
+      throw new Error(`${name} must not share ${AGENT_RUN_DIRECTORY} through a volume`);
+    if (service.environment?.OPENCRAFT_AGENT_RUN_DIR !== undefined && service.environment.OPENCRAFT_AGENT_RUN_DIR !== AGENT_RUN_DIRECTORY)
+      throw new Error(`${name} must use ${AGENT_RUN_DIRECTORY} as its agent run directory`);
+  }
+}
+
 export async function doctor(environment, { allowOversubscription = false, deployDirectory = dockerDirectory } = {}) {
   const required = ['OPENCRAFT_HOST_DATA_DIR', 'OPENCRAFT_DATA_DIR', 'OPENCRAFT_HOST_WORKSPACE_DIR', 'OPENCRAFT_WORKSPACE_DIR', 'OPENCRAFT_UID', 'OPENCRAFT_GID'];
   for (const name of required) if (!environment[name]) throw new Error(`Missing ${name}`);
@@ -142,7 +159,7 @@ export async function doctor(environment, { allowOversubscription = false, deplo
     throw new Error('Host CPU count is below the declared Hands budget');
   const disk = await statfs(environment.OPENCRAFT_HOST_DATA_DIR);
   if (disk.bavail * disk.bsize < 5 * 1024 ** 3) throw new Error('Less than 5 GiB is available in the data filesystem');
-  runCompose(['config', '--quiet'], undefined, { capture: true });
+  inspectWorkspaceAgentServices(JSON.parse(runCompose(['config', '--format', 'json'], undefined, { capture: true })));
   return { hostname: hostname(), resources, memoryBytes: totalmem(), cpuCount: cpus().length,
     availableDataBytes: disk.bavail * disk.bsize };
 }

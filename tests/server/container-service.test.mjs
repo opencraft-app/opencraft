@@ -122,13 +122,14 @@ test('the bundled service entry launches the packaged owner and records startup 
   await symlink(process.execPath, join(directory, 'bin', 'node'));
   await build({ entryPoints: [new URL('../../scripts/container-deployment/service.mjs', import.meta.url).pathname],
     outfile: join(runtime, 'container-service.mjs'), bundle: true, platform: 'node', format: 'esm', target: 'node26' });
-  await writeFile(join(runtime, 'native-host.mjs'), 'console.log("Brain started");console.error("startup failed");process.exitCode=9');
+  // Brain runs the workspace agent with the brain role; the role arrives as arguments.
+  await writeFile(join(runtime, 'workspace-agent.mjs'), 'console.log("Brain started", process.argv.slice(2).join(" "));console.error("startup failed");process.exitCode=9');
   const child = spawn(process.execPath, [join(runtime, 'container-service.mjs'), 'brain'], {
     env: { ...process.env, OPENCRAFT_LOG_DIR: join(directory, 'logs') }, stdio: ['ignore', 'pipe', 'pipe'],
   });
   const out = collect(child.stdout), err = collect(child.stderr);
   const [code] = await once(child, 'close');
-  assert.equal(code, 9); assert.match(out(), /Brain started/); assert.match(err(), /startup failed/);
+  assert.equal(code, 9); assert.match(out(), /Brain started --role brain/); assert.match(err(), /startup failed/);
   assert.match(await readFile(join(directory, 'logs', 'brain', 'service.log'), 'utf8'), /startup failed/);
 });
 

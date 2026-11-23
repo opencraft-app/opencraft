@@ -28,7 +28,7 @@ for (const [source, target] of [
 for (const [source, target, format] of [
   ['apps/codex-core/src/bin.ts', 'codex-core.cjs', 'cjs'],
   ['apps/codex-core/src/app-server-bin.ts', 'codex-app-server.cjs', 'cjs'],
-  ['scripts/container-deployment/host.mjs', 'native-host.mjs', 'esm'],
+  ['scripts/container-deployment/workspace-agent.mjs', 'workspace-agent.mjs', 'esm'],
   [process.env.OPENCRAFT_CONTAINER_HANDS_ENTRY || 'scripts/container-deployment/hands.mjs', 'native-hands.mjs', 'esm'],
   ['scripts/container-deployment/proxy.mjs', 'proxy-host.mjs', 'esm'],
   ['scripts/container-deployment/service.mjs', 'container-service.mjs', 'esm'],
@@ -38,7 +38,7 @@ for (const [source, target, format] of [
 // Trusted distribution assembly must also ship its process/worker sidecars.
 if (process.env.OPENCRAFT_CONTAINER_GATEWAY_BUILD_SCRIPT)
   execFileSync(process.execPath, [resolve(repository, process.env.OPENCRAFT_CONTAINER_GATEWAY_BUILD_SCRIPT), join(root, 'runtime/container-gateway.mjs')], { cwd: repository, env: process.env, stdio: 'inherit' });
-await writeFile(join(root, 'bin/opencraft-host'), '#!/bin/sh\nset -eu\nopencraft_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)\nexec "$opencraft_root/bin/node" --env-file-if-exists=.env "$opencraft_root/runtime/native-host.mjs" "$@"\n');
+await writeFile(join(root, 'bin/opencraft-host'), '#!/bin/sh\nset -eu\nopencraft_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)\nexec "$opencraft_root/bin/node" --env-file-if-exists=.env "$opencraft_root/runtime/workspace-agent.mjs" --role brain "$@"\n');
 await chmod(join(root, 'bin/opencraft-host'), 0o755);
 await writeFile(join(root, 'bin/opencraft-hands'), '#!/bin/sh\nset -eu\nopencraft_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)\nexec "$opencraft_root/bin/node" "$opencraft_root/runtime/native-hands.mjs"\n');
 await chmod(join(root, 'bin/opencraft-hands'), 0o755);

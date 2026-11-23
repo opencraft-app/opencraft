@@ -5,6 +5,7 @@ import { proxyHealth } from './proxy-core.mjs';
 import { readDshHostIdentity } from '../../apps/headless-server/src/server-deployment/dsh-host-client.mjs';
 import { readEngineHostIdentity } from '../../apps/headless-server/src/server-deployment/engine-host-client.mjs';
 import { createHostFileSystem } from '../../apps/headless-server/src/host-filesystem.ts';
+import { probeWorkspaceAgent } from './workspace-agent-supervisor.mjs';
 
 const timeoutMs = 4000;
 function probeSocket(path, frame, expected) {
@@ -32,8 +33,18 @@ function probeSocket(path, frame, expected) {
   });
 }
 
+/** The container's workspace agent must be ready: every critical child started and none failed. */
+export async function checkAgent(environment = process.env, roles) {
+  const paths = deploymentPaths(environment);
+  const value = await probeWorkspaceAgent(paths.agentControlEndpoint, { timeoutMs });
+  if (value.type !== 'healthy') throw new Error(`Workspace agent is ${value.state}`);
+  if (roles && !roles.every(role => value.roles.includes(role))) throw new Error('Workspace agent runs different roles');
+  return value;
+}
+
 export async function checkHands(environment = process.env) {
   const paths = deploymentPaths(environment);
+  await checkAgent(environment, ['hands']);
   const files = createHostFileSystem({ endpoint: paths.fileSystemEndpoint, tokenFile: paths.fileSystemToken });
   const terminalToken = await readPrivateToken(paths.terminalToken);
   const browserDirectory = environment.OPENCRAFT_BROWSER_DATA_DIR;
@@ -55,6 +66,7 @@ export async function checkProxy(environment = process.env) {
 export async function checkBrain(environment = process.env) {
   const paths = deploymentPaths(environment);
   await Promise.all([
+    checkAgent(environment, ['brain']),
     coreHealth(paths.coreEndpoint, paths.tokenPath),
     readEngineHostIdentity(paths.engineDescriptor),
     readDshHostIdentity(paths.dshDescriptor),
@@ -63,7 +75,8 @@ export async function checkBrain(environment = process.env) {
 
 const mode = process.argv[2];
 if (mode) {
-  const check = mode === 'hands' ? checkHands : mode === 'brain' ? checkBrain : mode === 'proxy' ? checkProxy : null;
-  if (!check) throw new Error('Usage: opencraft-health hands|brain|proxy');
+  const check = mode === 'hands' ? checkHands : mode === 'brain' ? checkBrain : mode === 'proxy' ? checkProxy
+    : mode === 'agent' ? async () => console.log(JSON.stringify(await probeWorkspaceAgent(deploymentPaths().agentControlEndpoint, { timeoutMs }))) : null;
+  if (!check) throw new Error('Usage: opencraft-health hands|brain|proxy|agent');
   await check();
 }

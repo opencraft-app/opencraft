@@ -31,6 +31,10 @@ export function deploymentPaths(env = process.env) {
   const executionContext=env.OPENCRAFT_EXECUTION_CONTEXT??'assets';
   if(!['assets','legacy'].includes(executionContext))throw Error('OPENCRAFT_EXECUTION_CONTEXT must be assets or legacy');
   const executionDirectory = absolute('OPENCRAFT_EXECUTION_DIR', join(dataDirectory, 'execution'));
+  // Container-private (tmpfs in Compose): never under the shared data or execution mounts.
+  const agentRunDirectory = absolute('OPENCRAFT_AGENT_RUN_DIR', '/run/opencraft-agent');
+  if ([dataDirectory, runtimeDirectory, executionDirectory].some(root => agentRunDirectory === root || agentRunDirectory.startsWith(root + '/')))
+    throw new Error('OPENCRAFT_AGENT_RUN_DIR must be container-private, outside the shared mounts');
   return {
     dataDirectory, runtimeDirectory, executionDirectory, executionContext, ...proxyConfiguration(env),
     threadCliDirectory: join(executionDirectory, 'cli'),
@@ -41,15 +45,20 @@ export function deploymentPaths(env = process.env) {
     fileSystemToken: join(executionDirectory, 'files.token'),
     logDirectory: absolute('OPENCRAFT_LOG_DIR', '/var/log/opencraft'),
     browserDirectory: absolute('OPENCRAFT_BROWSER_DATA_DIR', join(executionDirectory, 'browser')),
+    // Shared with Gateway/proxy until step 4c: daemon.token, codex-core.sock (proxy),
+    // codex-app-server.sock, native.sock and the engine-host/dsh-host descriptors.
     runDirectory: join(dataDirectory, 'run'),
+    agentRunDirectory,
+    agentControlEndpoint: join(agentRunDirectory, 'control.sock'),
+    codexPrivateDirectory: join(agentRunDirectory, 'codex'),
     tokenPath: join(dataDirectory, 'daemon.token'),
     coreEndpoint: join(dataDirectory, 'run', 'codex-core.sock'),
     appServerEndpoint: join(dataDirectory, 'run', 'codex-app-server.sock'),
     engineDescriptor: join(dataDirectory, 'run', 'engine-host.json'),
-    engineConfig: join(dataDirectory, 'run', 'engine-host-config.json'),
+    engineConfig: join(agentRunDirectory, 'engine-host-config.json'),
     dshDescriptor: join(dataDirectory, 'run', 'dsh-host.json'),
-    dshConfig: join(dataDirectory, 'run', 'dsh-host-config.json'),
-    sandboxConfig: join(dataDirectory, 'run', 'codex-hands-sandbox.json'),
+    dshConfig: join(agentRunDirectory, 'dsh-host-config.json'),
+    sandboxConfig: join(agentRunDirectory, 'codex-hands-sandbox.json'),
     handsExecutionEndpoint: join(executionDirectory, 'exec-owner.sock'),
     handsExecutionToken: join(executionDirectory, 'exec-owner.token'),
     codexProjectlessDirectory: absolute('OPENCRAFT_CODEX_PROJECTLESS_DIR', codexProjectlessDirectory(runtimeDirectory)),

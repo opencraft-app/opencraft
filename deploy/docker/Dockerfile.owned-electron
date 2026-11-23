@@ -50,6 +50,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     && if ! getent group "${OPENCRAFT_GID}" >/dev/null; then groupadd --gid "${OPENCRAFT_GID}" opencraft; fi \
     && if ! getent passwd "${OPENCRAFT_UID}" >/dev/null; then useradd --uid "${OPENCRAFT_UID}" --gid "${OPENCRAFT_GID}" --no-create-home opencraft; fi
 COPY --from=build-control /out/opencraft-server /opt/opencraft
+RUN install -d -o "${OPENCRAFT_UID}" -g "${OPENCRAFT_GID}" -m 0700 /run/opencraft-agent
 LABEL org.opencontainers.image.revision="${OPENCRAFT_SOURCE_REVISION}" \
       org.opencontainers.image.version="${OPENCRAFT_BUILD_ID}" \
       org.opencontainers.image.licenses="Apache-2.0"
@@ -82,7 +83,8 @@ LABEL org.opencontainers.image.title="OpenCraft" \
       org.opencontainers.image.version="${OPENCRAFT_BUILD_ID}" \
       org.opencontainers.image.revision="${OPENCRAFT_SOURCE_REVISION}"
 RUN chown root:root /opt/opencraft/runtime/browser/electron/chrome-sandbox \
-    && chmod 4755 /opt/opencraft/runtime/browser/electron/chrome-sandbox
+    && chmod 4755 /opt/opencraft/runtime/browser/electron/chrome-sandbox \
+    && install -d -o "${OPENCRAFT_UID}" -g "${OPENCRAFT_GID}" -m 0700 /run/opencraft-agent
 ENV PATH=/opt/opencraft/bin:$PATH
 ARG OPENCRAFT_GIT_HOSTS=github.com
 ENV OPENCRAFT_GIT_HOSTS=${OPENCRAFT_GIT_HOSTS}

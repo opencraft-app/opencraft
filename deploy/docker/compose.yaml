@@ -57,6 +57,11 @@ x-log-volume: &log-volume
   bind:
     create_host_path: false
 
+# Each workspace agent's private run directory (control socket, endpoint names, launch
+# configuration, native-internal socket). Fresh per container start, never shared.
+x-agent-run: &agent-run
+  - /run/opencraft-agent:uid=${OPENCRAFT_UID},gid=${OPENCRAFT_GID},mode=0700,size=16m
+
 x-environment: &environment
   OPENCRAFT_GIT_RUNTIME_DIRECTORY: /var/lib/opencraft/git-credentials
   OPENCRAFT_DATA_DIR: ${OPENCRAFT_DATA_DIR}
@@ -68,6 +73,7 @@ x-environment: &environment
   OPENCRAFT_DSH_PROJECTLESS_DIR: ${OPENCRAFT_DSH_PROJECTLESS_DIR:-${OPENCRAFT_WORKSPACE_DIR}/sessions/dsh}
   OPENCRAFT_LOG_DIR: ${OPENCRAFT_LOG_DIR:-/var/log/opencraft}
   OPENCRAFT_GATEWAY_HOME: ${OPENCRAFT_GATEWAY_HOME:-${OPENCRAFT_DATA_DIR}/home/gateway}
+  OPENCRAFT_AGENT_RUN_DIR: /run/opencraft-agent
 
 services:
   # The model proxy is the split Codex account Core: account pool, configured
@@ -103,11 +109,13 @@ services:
     # Let accepted model requests and credential refreshes finish before exit.
     stop_grace_period: 150s
 
-  # Brain owns task and engine lifetime. Recreating Gateway must not stop it.
+  # Brain owns task and engine lifetime. Recreating Gateway must not stop it. Its
+  # workspace agent ends the container when any critical child fails.
   brain:
     <<: *runtime
     build: *build
     pid: host
+    tmpfs: *agent-run
     entrypoint: ["/opt/opencraft/bin/node", "/opt/opencraft/runtime/container-service.mjs", "brain"]
     environment:
       <<: *environment
@@ -142,9 +150,11 @@ services:
       retries: 6
     stop_grace_period: 60s
 
-  # Hands owns live browser tabs plus the fixed Codex exec-server process.
+  # Hands owns live browser tabs, terminal PTYs, the filesystem owner and the fixed
+  # Codex exec-server process, all supervised by its workspace agent.
   hands:
     <<: *runtime
+    tmpfs: *agent-run
     cpus: ${OPENCRAFT_HANDS_CPUS:-4.0}
     mem_limit: ${OPENCRAFT_HANDS_MEMORY_BYTES:-8589934592}
     pids_limit: 4096

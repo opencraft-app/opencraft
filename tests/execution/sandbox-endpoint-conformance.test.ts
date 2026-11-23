@@ -134,6 +134,28 @@ for (const make of await harnesses()) {
       await sandbox.close();
     });
 
+    await t.test("named targets resolve only inside the agent endpoint directory", async () => {
+      const sandbox = await createSandbox(pool, { owner: "conformance" });
+      const path = await h.listen(echo, "files"), endpointDirectory = path.slice(0, path.lastIndexOf("/"));
+      const chunks: Buffer[] = [];
+      const connection = await openSandboxEndpoint(sandbox, { target: { name: "files" }, endpointDirectory, python: h.python,
+        onData: data => chunks.push(Buffer.from(data)) });
+      await connection.write(Buffer.from("named"));
+      await until(() => Buffer.concat(chunks).toString() === "named");
+      assert.equal(h.commands.at(-1)!.command.at(-1), endpointDirectory + "/files");
+      await connection.close();
+      const count = h.commands.length;
+      for (const name of ["../files", "files/../x", "/etc/passwd", "unknown", "", "Files"])
+        await assert.rejects(openSandboxEndpoint(sandbox, { target: { name } as never, endpointDirectory, onData() {} }),
+          (e: unknown) => e instanceof SandboxFault && e.code === "SANDBOX_POLICY");
+      await assert.rejects(openSandboxEndpoint(sandbox, { target: { name: "files" }, endpointDirectory: "relative", onData() {} }),
+        (e: unknown) => e instanceof SandboxFault && e.code === "SANDBOX_POLICY");
+      await assert.rejects(openSandboxEndpoint(sandbox, { target: { name: "files", unix: path } as never, endpointDirectory, onData() {} }),
+        (e: unknown) => e instanceof SandboxFault && e.code === "SANDBOX_POLICY");
+      assert.equal(h.commands.length, count, "rejected names never spawn a relay");
+      await sandbox.close();
+    });
+
     await t.test("contract validation: attached is pipe-only and invalid targets never spawn", async () => {
       const sandbox = await createSandbox(pool, { owner: "conformance" });
       const count = h.commands.length;

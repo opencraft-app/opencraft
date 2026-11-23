@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { deploymentPaths, proxyConfiguration, readPrivateToken } from '../../scripts/container-deployment/paths.mjs';
 import { handsResources } from '../../scripts/container-deployment/resources.mjs';
-import { OWNER_ORDER, RESTORE_PROXY_MODE_VARIABLE, RESTORE_PROXY_PORT_VARIABLE, EMBEDDED_CORE_ENVIRONMENT, brainEmbedsAccountCore, ownerSteps, restoreSteps, assertImageReference, deploymentIdentity, parseEnvironment, setEnvironmentValue } from '../../scripts/container-deployment/compose-release.mjs';
+import { AGENT_RUN_DIRECTORY, inspectWorkspaceAgentServices, OWNER_ORDER, RESTORE_PROXY_MODE_VARIABLE, RESTORE_PROXY_PORT_VARIABLE, EMBEDDED_CORE_ENVIRONMENT, brainEmbedsAccountCore, ownerSteps, restoreSteps, assertImageReference, deploymentIdentity, parseEnvironment, setEnvironmentValue } from '../../scripts/container-deployment/compose-release.mjs';
 import { legacyLayoutValues } from '../../scripts/container-deployment/layout.mjs';
 
 const composeExecutable = process.env.OPENCRAFT_COMPOSE_EXECUTABLE ?? 'docker';
@@ -226,6 +226,29 @@ test('rendered Compose separates gateway, brain and hands while preserving path 
   assert.equal(service.command[service.command.indexOf('--data-dir') + 1], paths.dataDirectory);
   assert.equal(service.command[service.command.indexOf('--engines') + 1], 'dsh,pi');
   assert.equal(service.environment.OPENCRAFT_BROWSER_OWNER_SOCKET, '/var/lib/opencraft/execution/browser/owner.sock');
+  // Brain and Hands workspace agents keep their run directory private to each container.
+  for (const value of [brain, hands]) {
+    assert.deepEqual(value.tmpfs, [`${AGENT_RUN_DIRECTORY}:uid=1234,gid=2345,mode=0700,size=16m`]);
+    assert.equal(value.environment.OPENCRAFT_AGENT_RUN_DIR, AGENT_RUN_DIRECTORY);
+    assert.equal(deploymentPaths(value.environment).engineConfig.startsWith(AGENT_RUN_DIRECTORY + '/'), true);
+  }
+  assert.equal(service.tmpfs, undefined, 'Gateway never sees an agent run directory');
+  inspectWorkspaceAgentServices(config);
+  const { tmpfs, ...withoutTmpfs } = brain;
+  assert.throws(() => inspectWorkspaceAgentServices({ services: { ...config.services, brain: withoutTmpfs } }), /brain has no private/);
+  assert.throws(() => inspectWorkspaceAgentServices({ services: { ...config.services, hands: { ...hands,
+    volumes: [...hands.volumes, { type: 'bind', source: '/srv/x', target: AGENT_RUN_DIRECTORY }] } } }), /must not share/);
+});
+
+test('the agent run directory is container-private and launch configuration leaves the shared data mount', () => {
+  const paths = deploymentPaths({ OPENCRAFT_DATA_DIR: '/var/lib/opencraft', OPENCRAFT_WORKSPACE_DIR: '/workspace' });
+  assert.equal(paths.agentRunDirectory, '/run/opencraft-agent');
+  assert.equal(paths.agentControlEndpoint, '/run/opencraft-agent/control.sock');
+  for (const key of ['engineConfig', 'dshConfig', 'sandboxConfig', 'codexPrivateDirectory']) assert.ok(paths[key].startsWith('/run/opencraft-agent/'), key);
+  // Still shared until step 4c (Gateway and proxy reach them through the data mount).
+  for (const key of ['appServerEndpoint', 'engineDescriptor', 'dshDescriptor', 'coreEndpoint']) assert.ok(paths[key].startsWith('/var/lib/opencraft/run/'), key);
+  for (const shared of ['/var/lib/opencraft/run', '/workspace/agent', '/var/lib/opencraft/execution/agent'])
+    assert.throws(() => deploymentPaths({ OPENCRAFT_DATA_DIR: '/var/lib/opencraft', OPENCRAFT_WORKSPACE_DIR: '/workspace', OPENCRAFT_AGENT_RUN_DIR: shared }), /container-private/);
 });
 
 test('prebuilt role images preserve the runtime service contract and project paths', t => {

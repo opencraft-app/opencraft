@@ -51,8 +51,9 @@ export interface EndpointHarness {
   readonly resources: { cpuMillis: number; memoryBytes: number };
   /** A long-running non-attached pipe process (reads stdin, echoes it). */
   readonly catCommand: readonly string[];
-  /** Listen on a stream socket reachable from environments; returns its in-environment path. */
-  listen(handler: (socket: Socket) => void): Promise<string>;
+  /** Listen on a stream socket reachable from environments; returns its in-environment path.
+   * `fileName` places it under that exact name (named-endpoint checks). */
+  listen(handler: (socket: Socket) => void, fileName?: string): Promise<string>;
   /** A path where nothing listens. */
   missing(): string;
   /** Commands the backend has received, in order. */
@@ -71,8 +72,8 @@ async function socketHost(mount?: { host: string; guest: string }) {
   const servers: Server[] = [], sockets = new Set<Socket>();
   return {
     directory,
-    async listen(handler: (socket: Socket) => void) {
-      const name = randomUUID().slice(0, 8) + ".sock", path = join(directory, name);
+    async listen(handler: (socket: Socket) => void, fileName?: string) {
+      const name = fileName ?? randomUUID().slice(0, 8) + ".sock", path = join(directory, name);
       const server = createServer({ allowHalfOpen: true }, socket => {
         sockets.add(socket);
         socket.once("close", () => sockets.delete(socket));
