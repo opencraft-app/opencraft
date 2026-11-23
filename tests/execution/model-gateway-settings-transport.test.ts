@@ -1,3 +1,4 @@
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {mkdtemp,rm} from 'node:fs/promises';
@@ -10,7 +11,7 @@ import {ModelConfigurationRepository} from '../../apps/local-agent-host/src/mode
 test('gateway settings guard closes legacy mutation/probe routes and redacts model catalogs per current caller',async t=>{
  const root=await mkdtemp(join(tmpdir(),'gateway-settings-')),path=join(root,'gateway.sqlite'),directory=join(root,'models');
  const store=new ModelGatewayStore(path);store.prepareContribution('private','alice','approved');store.contributionState('private','alice','shared');
- await new ModelConfigurationRepository(directory).initialize({schemaVersion:1,revision:0,defaultModel:null,providers:[{id:'private',name:'Alice secret label',catalogId:'opencraft-human-contribution',baseUrl:'https://provider.invalid',protocol:'openai-responses',credentialRef:'ALICE_SECRET_REF',enabled:true,models:[{id:'m',enabled:true}]}]});
+ await new ModelConfigurationRepository(fileStateDocumentStore(directory)).initialize({schemaVersion:1,revision:0,defaultModel:null,providers:[{id:'private',name:'Alice secret label',catalogId:'opencraft-human-contribution',baseUrl:'https://provider.invalid',protocol:'openai-responses',credentialRef:'ALICE_SECRET_REF',enabled:true,models:[{id:'m',enabled:true}]}]});
  let listener:(frame:string)=>void=()=>{},current=true;const sent:any[]=[],replies:any[]=[];
  const inner:any={status:{state:'open'},subscribeMessage:(fn:any)=>{listener=fn;return()=>{};},subscribeStatus:()=>()=>{},sendWithContext:async(frame:string)=>{sent.push(JSON.parse(frame));},close:async()=>{}};
  const transport=new ModelGatewaySettingsTransport(inner,path,directory,c=>current?{actor:c.actorContext!.actorId,administrator:c.actorContext!.actorId==='admin'}:null);

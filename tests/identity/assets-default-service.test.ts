@@ -12,6 +12,7 @@ import { HumanAuth } from "@opencraft/access-control/human-auth";
 import { MembershipStore, InstanceAccess } from "@opencraft/access-control";
 import { HumanAccountManagement } from "@opencraft/access-control/account-management";
 import { LocalAccountServerPlugin } from "../../plugins/local-account/src/server.js";
+import { createNodePasswordHasher } from "../../plugins/local-account/src/password-hash-node.js";
 import { LocalAccountApplication } from "../../plugins/local-account/src/application.js";
 import { openAssetConfigurations } from "../../plugins/assets/src/server/worker.js";
 import { githubApiFixture } from "../support/github-api-fixture.js";
@@ -36,7 +37,7 @@ async function fixture(t: test.TestContext, router = true, openStorage?: typeof 
   const storage = await openServerDatabase(directory),
     actors = new ActorStore(storage),
     accounts = new HumanAccounts(storage, actors);
-  const provider = new LocalAccountServerPlugin(accounts.localAccountRepository);
+  const provider = new LocalAccountServerPlugin(accounts.localAccountRepository, createNodePasswordHasher());
   accounts.registerLocalAccounts(provider);
   const members = new MembershipStore(storage),
     management = new HumanAccountManagement(storage, accounts, actors, members);
@@ -198,7 +199,7 @@ for (const mutation of ["logout", "password", "membership", "binding", "actor", 
     res.resume();
     // Verify through the real encrypted domain after the network Worker drains.
     const { EmployeeGitVaultStore } = await import("@opencraft/execution-environment/employee-git-vault-store");
-    const vault = new EmployeeGitVaultStore(f.directory);
+    const vault = await EmployeeGitVaultStore.open(f.directory);
     try {
       assert.equal(vault.readDocument(f.scope, "document-sandbox-configurations").revision, 0);
       assert.equal(
@@ -352,7 +353,7 @@ for (const mutation of ["logout", "password", "membership", "actor", "role"] as 
     }
     assert.equal((await pending).status, 403);
     const { EmployeeGitVaultStore } = await import("@opencraft/execution-environment/employee-git-vault-store");
-    const vault = new EmployeeGitVaultStore(f.directory);
+    const vault = await EmployeeGitVaultStore.open(f.directory);
     try {
       assert.equal(vault.read(f.scope, "github.com").revision, 0);
     } finally {

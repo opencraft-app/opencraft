@@ -27,6 +27,7 @@ import { THREAD_ORCHESTRATION_TOOLS } from "../../packages/appserver-protocol/sr
 import { SessionCapabilities } from "../../packages/session-capabilities/src/index.js";
 import { RemoteSessionCapabilities } from "../../packages/session-capabilities/src/remote.js";
 import { capabilitySigningKey, SessionCapabilityMcp } from "../../packages/session-capabilities/src/mcp.js";
+import { fileKeyMaterial } from "@opencraft/secret-storage/file";
 
 const [kind, path] = process.argv.slice(2), config = JSON.parse(await readFile(path!, "utf8"));
 const root = config.root, shared = join(root, "shared"), machineId = "synthetic-mixed-drivers";
@@ -58,7 +59,7 @@ if (kind === "pi" || kind === "dsh-acp") {
     else if (command === "hold" && faux) { faux.setResponses([fauxAssistantMessage("Pi held native execution. ".repeat(2000)), ...Array.from({ length: 20 }, () => fauxAssistantMessage("Synthetic Pi done."))]); result = true; }
     else throw new Error("Unknown isolated native control operation");
     response.setHeader("content-type", "application/json"); response.end(JSON.stringify({ result }));
-  })().catch(error => { response.writeHead(500); response.end(JSON.stringify({ error: String(error) })); }); });
+  })().catch(error => { response.writeHead(500, { "content-type": "application/json" }); response.end(JSON.stringify({ error: error instanceof Error ? error.message : "Non-error fixture failure" })); }); });
   await new Promise<void>(resolve => control.listen(0, "127.0.0.1", resolve));
   await writeFile(join(root, `${kind}-host.json`), JSON.stringify({ websocketUrl: host.websocketUrl,
     controlUrl: `http://127.0.0.1:${(control.address() as any).port}`, token }), { mode: 0o600 });
@@ -101,7 +102,7 @@ if (kind === "pi" || kind === "dsh-acp") {
   service = new Collaboration(join(shared, "collaboration.sqlite"), actors, native);
   const execution = createThreadOrchestrationExecution(() => appHost, { enabled: ["codex", "pi", "dsh-acp"], prepared: (id: string) => service.spawnPreparation(id) });
   broker = new ThreadOrchestrationBroker(service, execution); service.start();
-  const mcp = new SessionCapabilityMcp(new SessionCapabilities(), await capabilitySigningKey(join(shared, "session-capabilities.key")), undefined, { descriptorPath: join(shared, "session-capabilities.json"),
+  const mcp = new SessionCapabilityMcp(new SessionCapabilities(), await capabilitySigningKey(fileKeyMaterial(shared)), undefined, { descriptorPath: join(shared, "session-capabilities.json"),
     async orchestration(session, request) {
       // Same envelope validation/binding as headless-application.mjs. The real
       // production MCP server authenticates this synthetic native session.

@@ -11,6 +11,9 @@ import { AppHostServer } from '@opencraft/app-host-server';
 import { connect } from 'node:net';
 import { DaemonJsonLineChannel, OPENCRAFT_DAEMON_BUILD_ID, OPENCRAFT_DAEMON_PROTOCOL_VERSION } from '@opencraft/daemon-ipc';
 import { humanLoginPage } from '../../apps/headless-server/src/human-login-page';
+import { scryptSync } from 'node:crypto';
+import { storedPasswordShape } from '../../plugins/local-account/src/password-hash';
+import { createPortablePasswordHasher } from '../../plugins/local-account/src/password-hash-portable';
 
 test('real desktop static entry uses Main-held HttpOnly proof, shares one Human with the daemon and retires revoked sessions', async t => {
   const root = await mkdtemp(join(tmpdir(), 'desktop-account-')); t.after(() => rm(root, { recursive: true, force: true }));
@@ -57,4 +60,52 @@ test('real desktop static entry uses Main-held HttpOnly proof, shares one Human 
   assert.throws(() => context?.resourceOwner?.assertCurrent(), /revoked/);
   assert.equal(daemonAuthority.authenticateSession(host.createNativeSession()), null);
   await Promise.race([closed, new Promise((_, reject) => { const timer = setTimeout(() => reject(new Error('Revoked native connection survived')), 2000); timer.unref(); })]);
+});
+
+test('desktop local passwords: new records are Argon2id, scrypt upgrades through the owner Worker by compare-and-set, Headless records interoperate', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'desktop-password-')); t.after(() => rm(root, { recursive: true, force: true }));
+  await writeFile(join(root, 'index.html'), '<title>Desktop</title>');
+  const host = await createDesktopAccountHost(join(root, 'account'), humanLoginPage);
+  const web = await createWorkbenchStaticServer({ root, accountService: host });
+  const address = await web.listen({ host: '127.0.0.1', port: 0 }), origin = `http://127.0.0.1:${address.port}`;
+  host.setOrigin(origin); t.after(async () => { await web.close(); await host.close(); });
+  const auth = (path: string, body: unknown, cookie = '') => fetch(origin + '/__opencraft_auth' + path, { method: 'POST',
+    headers: { origin, cookie, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const db = host.storage.database;
+  const record = () => ({ ...db.prepare('SELECT id,salt,password_digest AS passwordDigest,version,enabled FROM local_accounts WHERE username=?').get('desk-user') }) as
+    { id: string; salt: string; passwordDigest: string; version: number; enabled: number };
+  const password = 'desktop-password-long';
+  const owner = `oc_desktop_owner=${host.browserProof}; oc_human=${host.browserSessionToken}`;
+  assert.equal((await auth('/local/create', { mode: 'link', username: 'desk-user', password }, owner)).status, 200);
+  const created = record();
+  assert.equal(storedPasswordShape(created), 'argon2id', 'desktop writes Argon2id');
+  assert.match(created.passwordDigest, /^\$argon2id\$v=19\$m=19456,t=2,p=1\$/u);
+  // Headless on workerd (portable hasher) reads the desktop record without a rehash.
+  assert.deepEqual(await createPortablePasswordHasher().verify(password, created), { ok: true, needsRehash: false });
+
+  // A pre-Argon2id record: a wrong password never rewrites it, the right one upgrades it in place.
+  const salt = 'f'.repeat(64);
+  const scrypt = scryptSync(password, salt, 32, { N: 131072, r: 8, p: 1, maxmem: 192 * 1024 * 1024 }).toString('hex');
+  db.prepare('UPDATE local_accounts SET salt=?, password_digest=? WHERE id=?').run(salt, scrypt, created.id);
+  assert.equal((await auth('/local', { mode: 'login', username: 'desk-user', password: password + '-wrong' })).status, 401);
+  assert.deepEqual(record(), { ...created, salt, passwordDigest: scrypt }, 'wrong password keeps the scrypt record');
+  assert.equal((await auth('/local', { mode: 'login', username: 'desk-user', password })).status, 200);
+  const upgraded = record();
+  assert.equal(storedPasswordShape(upgraded), 'argon2id');
+  assert.equal(upgraded.salt, '');
+  assert.equal(upgraded.version, created.version, 'an upgrade is not a password change');
+  assert.equal((await auth('/local', { mode: 'login', username: 'desk-user', password })).status, 200, 'the upgraded record still logs in');
+  assert.deepEqual(record(), upgraded, 'a current Argon2id record is not rewritten');
+
+  // The owner commits only while the verified record and version are current.
+  const call = (host.storage as unknown as { call: { upgradeLocalPassword(id: string, expected: unknown, salt: string, digest: string): Promise<boolean> } }).call;
+  const replacement = await createPortablePasswordHasher().hash(password);
+  assert.equal(await call.upgradeLocalPassword(upgraded.id, { version: upgraded.version, salt, passwordDigest: scrypt }, '', replacement), false, 'stale record');
+  assert.equal(await call.upgradeLocalPassword(upgraded.id, { version: upgraded.version + 1, salt: '', passwordDigest: upgraded.passwordDigest }, '', replacement), false, 'stale version');
+  assert.deepEqual(record(), upgraded, 'a refused compare-and-set leaves the record');
+
+  // A record a Headless (workerd) installation wrote verifies on desktop unchanged.
+  db.prepare('UPDATE local_accounts SET salt=?, password_digest=? WHERE id=?').run('', replacement, upgraded.id);
+  assert.equal((await auth('/local', { mode: 'login', username: 'desk-user', password })).status, 200);
+  assert.equal(record().passwordDigest, replacement);
 });

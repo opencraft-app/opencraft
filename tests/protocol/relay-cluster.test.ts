@@ -12,7 +12,7 @@ import { RelayRedis, type RelayRedisConfiguration } from '../../apps/relay-serve
 import { RedisRelayCluster } from '../../apps/relay-server/src/cluster.js';
 import { createRelayServer } from '../../apps/relay-server/src/server.js';
 import { HubNetwork } from '../../packages/hub-network/src/node.js';
-import { HubStore } from '../../packages/hub-network/src/store-file.js';
+import { HubStateFile, openLocalHubNetwork } from '../../packages/hub-network/src/store-file.js';
 import { AssertionProvider, AssertionSigner } from '../../packages/identity-core/src/node.js';
 import { connectRelay } from '../../plugins/relay-connect/src/server.js';
 import { MemoryRelaySessionStore } from '../../apps/relay-server/src/session-store.js';
@@ -44,7 +44,7 @@ test('authentication storage bounds live records and consumes once under concurr
 test('shared Hub changes refuse synchronous acknowledgement and fail closed when durable commit fails', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'hub-durability-'));
   try {
-    const seed = new HubNetwork(new HubStore(join(directory, 'seed.json'))), state = structuredClone(seed.store.state); seed.close();
+    const seed = await HubStateFile.open(join(directory, 'seed.json')), state = structuredClone(seed.state); await seed.close();
     const node = new HubNetwork(new MemoryHubStore(state), { localService: false, persist: async () => { throw new Error('unavailable'); } });
     assert.throws(() => node.command({ action: 'inspect' }, 'test'), /durableCommand/u);
     const input = { revision: state.revision, action: 'configure', name: 'Changed', endpoint: 'https://relay.test', origin: '', accepting: true, forwarding: true };
@@ -65,8 +65,8 @@ test('five real Redis replicas share login, consume tickets once, route HTTP/WS 
   const pair = generateKeyPairSync('ed25519'), privateKey = pair.privateKey.export({ format: 'pem', type: 'pkcs8' }).toString();
   const publicKey = pair.publicKey.export({ format: 'pem', type: 'spki' }).toString();
   const authority = { issuer: 'cluster-test', publicKey, providers: ['test'] };
-  const initial = new HubNetwork(new HubStore(stateFile), { authority, localService: false });
-  initial.command({ revision: initial.store.state.revision, action: 'configure', name: 'Cluster test', endpoint: 'https://entry.test', origin: '', accepting: true, forwarding: true }, 'test');
+  const initial = await openLocalHubNetwork(stateFile, { authority, localService: false });
+  await initial.apply({ revision: initial.store.state.revision, action: 'configure', name: 'Cluster test', endpoint: 'https://entry.test', origin: '', accepting: true, forwarding: true }, 'test');
   const hubId = initial.snapshot().hubId; initial.close();
   const scope = { issuer: authority.issuer, instanceId: 'target', origin: 'https://entry.test' };
   const credential = secret(), principal = { provider: 'test', subject: 'user', displayName: 'Test User', expiresAt: Date.now() + 120_000 };
@@ -180,8 +180,8 @@ test('five real Redis replicas share login, consume tickets once, route HTTP/WS 
   const invitation = await replicas[2]!.cluster.hub.command({ revision: hubSnapshot.revision, action: 'invite', origins: ['https://team.test'], allowTransit: false }, 'test');
   assert.ok('invitation' in invitation && invitation.invitation);
   const invitationId = JSON.parse(Buffer.from(invitation.invitation!, 'base64url').toString()).payload.id;
-  peer = new HubNetwork(new HubStore(join(directory, 'peer.json')));
-  peer.command({ revision: peer.store.state.revision, action: 'connect', invitation: invitation.invitation, trustIdentity: true, publishOrigin: 'https://team.test' }, 'test');
+  peer = await openLocalHubNetwork(join(directory, 'peer.json'));
+  await peer.apply({ revision: peer.store.state.revision, action: 'connect', invitation: invitation.invitation, trustIdentity: true, publishOrigin: 'https://team.test' }, 'test');
   peerServer = createServer((req, res) => { if (!peer!.authenticate(req)) { res.writeHead(401); res.end(); } else res.end('shared-hub-target'); });
   await listen(peerServer); peer.start((peerServer.address() as AddressInfo).port);
   const peerPath = '/servers/' + peer.snapshot().hubId + '/hub-echo';

@@ -1,5 +1,5 @@
 import { randomUUID, createHash } from 'node:crypto';
-import type { DatabaseSync } from 'node:sqlite';
+import type { SqlDatabase } from '@opencraft/sql';
 import type { ActorContext, Actor } from '@opencraft/identity-core/actors';
 import type { PersonalAssistant, PersonalAssistantAccess } from '@opencraft/appserver-protocol';
 import type { Collaboration } from './collaboration.js';
@@ -18,7 +18,7 @@ function bounded(value: unknown): string {
 /** Storage-owner operations, called within the existing communication transaction.
  * Desktop and headless use this same authority; transport never supplies an owner. */
 export class PersonalAssistants {
-  constructor(private readonly service: Collaboration, private readonly db: DatabaseSync) {}
+  constructor(private readonly service: Collaboration, private readonly db: SqlDatabase) {}
   /** Trusted installation Host inventory; never available through public RPC. */
   assignments(after = '') {
     const rows = this.db.prepare("SELECT p.* FROM personal_assistants p JOIN actors a ON a.id=p.owner_human_id WHERE p.state='claimed' AND p.paused=0 AND a.enabled=1 AND a.generation=p.owner_generation AND p.bot_id>? ORDER BY p.bot_id LIMIT 100").all(after);

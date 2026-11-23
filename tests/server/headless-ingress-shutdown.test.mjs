@@ -1,4 +1,4 @@
-import { HubStore } from '../../packages/hub-network/src/store-file.js';
+import { openLocalHubNetwork } from '../../packages/hub-network/src/store-file.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
@@ -10,7 +10,6 @@ import { WebSocket } from 'ws';
 import { generateKeyPairSync, randomBytes } from 'node:crypto';
 import { AssertionSigner } from '../../packages/identity-core/src/node.ts';
 import { createRelayServer } from '../../apps/relay-server/src/server.ts';
-import { HubNetwork } from '../../packages/hub-network/src/node.ts';
 import { startHeadlessServer } from '../../apps/headless-server/src/headless-application.mjs';
 import { createWorkbenchWebServer } from '../../apps/headless-server/src/serve-workbench-web.mjs';
 import { generateEd25519KeyPair } from '../support/ssh-ed25519.mjs';
@@ -28,7 +27,7 @@ test('a real admitted Hub peer cannot hold Headless HTTP shutdown open', {timeou
   const f=await fixture();let app,peer,server,hub;
   try {
     app=await startHeadlessServer({...f.options,createWebServer:async options=>{hub=options.hubService.node;return createWorkbenchWebServer(options);}});
-    peer=new HubNetwork(new HubStore(join(f.root,'peer.json')));
+    peer=await openLocalHubNetwork(join(f.root,'peer.json'));
     server=createServer((_req,res)=>res.end('{}'));server.on('upgrade',(req,socket,head)=>{if(!peer.handleUpgrade(req,socket,head))socket.destroy();});
     server.listen(0,'127.0.0.1');await once(server,'listening');peer.start(server.address().port);
     for(const [node,endpoint] of [[hub,app.url],[peer,`http://127.0.0.1:${server.address().port}`]])

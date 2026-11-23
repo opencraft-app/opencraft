@@ -24,7 +24,6 @@
 
 | 资源 | 唯一 owner | 生命周期 |
 |---|---|---|
-| 可选 generation registry、稳定 native socket | 独立 routing owner | 固定 Thread 归属/接纳 epoch；CLI 升级不重启路由进程；路由进程自身维护先排空 PTY lease |
 | 原生 CLI | 兼容 core 或独立 APP Server owner | 网站/Headless 断开不终止原 turn；拆分后账号 Core 重启不停止 native |
 | account-pool、OAuth、账户代理 | 账号 core | 独立单写；拆分升级先排空已接收代理流与凭据写入 |
 | Host queue、sender、企业身份、附件、私有 Tasks、pins 投影 | Headless 的 CodexEngineAdapter | 原生 transport 只提供帧，不绕过 overlay；实例关闭释放存储 |
@@ -57,7 +56,7 @@ queue/Goal 恢复不依赖浏览器首次重连；初始化失败时就绪检查
 
 - 退回旧路径：在网关环境中设置 `OPENCRAFT_CODEX_BRIDGE=0` 后重启网关。已有会话照常可用；bridge 新建的会话在重新开启前不可用。
 - 外部 bridge 配置（`--codex-agent-bridge-config`）存在时不另起 Engine Host。
-- 四容器部署（`deploy/docker`）同样默认开启：Engine Host 在 gateway 容器内运行（镜像内 `runtime/codex-bridge/`），命令仍在 hands 执行，`OPENCRAFT_CODEX_BRIDGE=0` 退回旧路径。daemon profile 执行单元（`scripts/server-deployment/gateway.mjs`）同样默认开启，由 daemon 对已有 Core 启动 Engine Host，`OPENCRAFT_CODEX_BRIDGE=0` 退回旧路径。
+- 四容器部署（`deploy/docker`）同样默认开启：Engine Host 在 gateway 容器内运行（镜像内 `runtime/codex-bridge/`），provider 从 proxy 的账号 Core 取 broker 认证，经工作区 `codex-native` 端点连到 brain 的 Codex APP Server，命令仍在 hands 执行；`OPENCRAFT_CODEX_BRIDGE=0` 退回旧路径。daemon profile 执行单元（`scripts/server-deployment/gateway.mjs`）同样默认开启，由 daemon 对已有 Core 启动 Engine Host，`OPENCRAFT_CODEX_BRIDGE=0` 退回旧路径。
 - 验收：`node --import tsx scripts/smoke/server/smoke-codex-server-upgrade.ts`（可加 `DRILL_RELEASE_PROGRAMS=1` 使用发行包同一构建），见 [Codex 对齐](../../design/agent-bridge/codex-parity.md)。
 
 ## Codex 原生会话与保留数据

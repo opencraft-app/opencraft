@@ -1,6 +1,6 @@
-import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, open, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { createHash, randomUUID } from "node:crypto";
+import type { BlobUpload } from "@opencraft/blob-storage";
+import type { HostFileBlobStore } from "../storage/host-file-blobs.js";
 import {
   ATTACHMENT_CHUNK_BYTES, ATTACHMENT_MAX_BYTES,
   type AttachmentUploadParams, type AttachmentUploadResponse, type AttachmentStageResponse,
@@ -8,23 +8,26 @@ import {
 
 type Upload = {
   request: AttachmentUploadParams;
-  directory: string;
-  path: string;
+  key: string;
+  blob: BlobUpload;
   received: number;
-  hash: ReturnType<typeof createHash>;
   last?: { offset: number; digest: string; response: AttachmentUploadResponse };
   timer: ReturnType<typeof setTimeout>;
 };
 type Commit = (request: AttachmentUploadParams, path: string, sha256: string) => Promise<AttachmentStageResponse>;
 
-/** In-process sequential replay only; spool files do not provide restart recovery. */
+/**
+ * In-process sequential replay only; uploads do not survive a Host restart.
+ * Bytes stay invisible in the blob store until the final chunk completes the
+ * object; `commit` then receives its host file and may move it away.
+ */
 export class AttachmentUploadStore {
   private readonly receipts = new Map<string, { request: AttachmentUploadParams; digest: string; response: AttachmentUploadResponse; expires: number }>();
   private readonly uploads = new Map<string, Upload>();
   private readonly operations = new Map<string, Promise<unknown>>();
   private closed = false;
   private admissions = 0;
-  constructor(private readonly root: string, private readonly commit: Commit) {}
+  constructor(private readonly spool: HostFileBlobStore, private readonly commit: Commit) {}
 
   private serial<T>(id: string, run: () => Promise<T>): Promise<T> {
     if (typeof id !== "string" || !/^[A-Za-z0-9_-]{16,128}$/u.test(id)) throw new Error("Invalid upload identity");
@@ -40,7 +43,8 @@ export class AttachmentUploadStore {
     if (!upload) return { removed: false };
     this.uploads.delete(id);
     clearTimeout(upload.timer);
-    await rm(upload.directory, { recursive: true, force: true });
+    await upload.blob.abort();
+    await this.spool.blobs.delete(upload.key);
     return { removed: true };
   }
 
@@ -87,10 +91,9 @@ export class AttachmentUploadStore {
         if (this.uploads.size + this.admissions >= 8) throw new Error("Too many active attachment uploads");
         this.admissions++;
         try {
-          await mkdir(this.root, { recursive: true, mode: 0o700 });
-          const directory = await mkdtemp(join(this.root, "upload-"));
-          upload = { request: { ...request, dataBase64: "" }, directory, path: join(directory, "content"), received: 0,
-            hash: createHash("sha256"), timer: this.expiry(request.uploadId) };
+          const key = `upload-${randomUUID()}`;
+          const blob = await this.spool.blobs.upload(key, { maxBytes: request.size });
+          upload = { request: { ...request, dataBase64: "" }, key, blob, received: 0, timer: this.expiry(request.uploadId) };
           this.uploads.set(request.uploadId, upload);
         } finally { this.admissions--; }
       }
@@ -100,12 +103,11 @@ export class AttachmentUploadStore {
       }
       clearTimeout(upload.timer);
       try {
-        const file = await open(upload.path, request.offset === 0 ? "wx" : "a", 0o600);
-        try { await file.writeFile(bytes); } finally { await file.close(); }
-        upload.hash.update(bytes);
+        await upload.blob.write(bytes);
         upload.received += bytes.length;
         if (upload.received === request.size) {
-          const result = await this.commit(request, upload.path, upload.hash.digest("hex"));
+          const { sha256 } = await upload.blob.complete();
+          const result = await this.commit(request, this.spool.path(upload.key), sha256);
           const response = { receivedBytes: upload.received, ref: result.ref };
           this.receipts.set(request.uploadId, { request: { ...request, dataBase64: "" }, digest, response, expires: Date.now() + 10 * 60_000 });
           return response;

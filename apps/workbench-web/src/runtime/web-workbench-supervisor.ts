@@ -61,11 +61,11 @@ import {
   provideExtensionInstallationRepository
 } from "@opencraft/extension-runtime";
 import { ImageProcessingService } from "@opencraft/image-processing";
+import { chooseInitialConversationHost, conversationDeploymentDefaultHost } from "./initial-conversation-host";
 import { processBrowserImage } from "@opencraft/image-processing/browser";
 import { createCordisProfileSkillsRuntime } from "@opencraft/profile-skills-appserver";
 import { SidebarLayoutStore } from "@opencraft/sidebar-layout";
 import {
-  chooseNewConversationHost,
   AgentRuntimeDirectory,
   asRouteScopeId,
   AUTHENTICATION_PROVIDER_CHANNEL,
@@ -745,11 +745,8 @@ export async function createWebWorkbenchApplicationSupervisor(
     window.localStorage, persistedHostId, options.hostProfileMode,
     fixedPresentation ? clientPersistenceScope.getSnapshot().threadMemoryScope : undefined,
   ) !== null;
-  const initialHostId = requestedHostId !== undefined && profiles.some(host => host.hostId === requestedHostId)
-    ? requestedHostId
-    : profiles.some(host => host.hostId === persistedHostId && (host.hideFromNewChat !== true || persistedHasThread))
-      ? persistedHostId!
-      : chooseNewConversationHost(profiles)?.hostId;
+  const deploymentDefaultHostId = conversationDeploymentDefaultHost({ platform, headlessAppHost: headlessAppHost !== null });
+  const initialHostId = chooseInitialConversationHost({ profiles, requestedHostId, persistedHostId, persistedHasThread, deploymentDefaultHostId });
   if (initialHostId === undefined) {
     const navigation = createApplicationNavigation(null, routerOptions);
     startupRollback.push(() => navigation.dispose());
@@ -1210,6 +1207,7 @@ export async function createWebWorkbenchApplicationSupervisor(
     navigation,
     queryClient,
     hostProfiles,
+    deploymentDefaultHostId,
     createHostRegistration,
     connectionProviders: connectionProviders.providers,
     onThreadCreated: (intent, receipt) => taskConversationFlow?.created(intent, receipt) ?? Promise.resolve(),

@@ -1,7 +1,6 @@
 import { readChannelMentions } from './channel-mentions.js';
-import { sqliteTransaction } from '@opencraft/sqlite-node';
 import { createHash, randomUUID } from 'node:crypto';
-import type { DatabaseSync } from 'node:sqlite';
+import type { SqlDatabase } from '@opencraft/sql';
 import { CHANNEL_AVATAR_PARTICIPANT_LIMIT, type ChannelActor, type ChannelSearchPage, type ChannelHistoryPage, type ChannelInviteCandidate, type ChannelMember, type ChannelMessage, type ChannelSummary, type ChannelSyncPage } from '@opencraft/appserver-protocol';
 import type { Actor, ActorContext } from '@opencraft/identity-core/actors';
 import type { ActorCapability, ActorStore } from './actors.js';
@@ -29,7 +28,7 @@ export class NativeChannels {
   /** Installation-owned display projection; never used for rename or membership writes. */
   groupDisplayTitle?: (id: string) => string | null;
   readonly #listeners = new Set<(change: NativeChannelChange) => void>();
-  constructor(private readonly db: DatabaseSync, private readonly actors: ActorStore,
+  constructor(private readonly db: SqlDatabase, private readonly actors: ActorStore,
     private readonly admitted: (actorId: string) => boolean,
     /** The owner's complete direct-message decision; projections never re-derive it. */
     private readonly canMessage: (c: ActorContext, target: string) => boolean = (c, target) => actors.can(c, target, 'message.send'),
@@ -490,7 +489,7 @@ export class NativeChannels {
   }
 
   sync(context: ActorContext, id: string, cursor?: string): ChannelSyncPage {
-    return sqliteTransaction(this.db, () => this.syncPage(context,id,cursor));
+    return this.db.transaction(() => this.syncPage(context,id,cursor));
   }
 
   private syncPage(context: ActorContext, id: string, cursor?: string): ChannelSyncPage {

@@ -89,7 +89,7 @@ test("real Worker reuses encrypted namespace, metadata-only projections, CAS and
     assert.ok(!(await readFile(join(f.directory, name))).includes(Buffer.from(secret)));
   }
   // The existing synchronous runtime owner still reads the same original partition.
-  const vault = new EmployeeGitVaultStore(f.directory);
+  const vault = await EmployeeGitVaultStore.open(f.directory);
   try {
     assert.equal(
       new SandboxConfigurations(vault).runtime(scope, false)[0]!.credential.apiKey,
@@ -153,12 +153,13 @@ test("custom endpoints and platform writes require independent trusted permissio
 test("legacy installed policy and verified NFS declaration remain runtime-owned, generation-pinned and secret-free", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "asset-installed-"));
   t.after(() => rm(directory, { force: true, recursive: true }));
-  const vault = new EmployeeGitVaultStore(directory),
+  const vault = await EmployeeGitVaultStore.open(directory),
     store = new SandboxConfigurations(vault);
   try {
     assert.equal(
       store.adoptInstallation(
         {
+          backend: "e2b",
           apiUrl: "https://api.e2b.dev",
           sandboxUrl: "https://e2b.dev",
           capacity: { cpuMillis: 4000, memoryBytes: 8 * 1024 ** 3 },

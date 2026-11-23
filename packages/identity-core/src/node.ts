@@ -2,18 +2,10 @@ import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 import { createPrivateKey, createPublicKey, randomUUID, sign, verify, type KeyObject } from "node:crypto";
-import type { IncomingMessage } from "node:http";
 import { parsePrincipal, type Principal } from "./index.js";
+import type { IdentityProvider, IdentityRequest } from "./identity-request.js";
+export type { IdentityProvider, IdentityRequest };
 export const ASSERTION_HEADER = "x-opencraft-relay-assertion";
-export type IdentityRequest = Pick<IncomingMessage, "headers"> & Partial<Pick<IncomingMessage, "rawHeaders" | "method" | "url">>;
-export interface IdentityProvider {
-  authenticate(request: IdentityRequest): Principal | null;
-  /** Authentication-owner enrichment using fresh independently verified directory evidence. */
-  preparePrincipal?(principal: Principal): Promise<Principal>;
-  trustedOrigin?(request: IdentityRequest): string | null;
-  /** Revalidate server-owned browser sessions when a connection outlives its request. */
-  isCurrent?(principal: Principal): boolean;
-}
 export async function readPrivateJson(path: string): Promise<unknown> {
   if (!isAbsolute(path)) throw new Error("Private configuration requires an absolute path");
   const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);

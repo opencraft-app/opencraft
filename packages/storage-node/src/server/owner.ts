@@ -5,9 +5,11 @@ import type { ServerDatabase } from "./index.js";
 import { installedServerMigrationComposition, type ServerDataContract } from "./migration-composition.js";
 
 import type { CreationReceiptMethods } from "./conversation-creation-receipts.js";
+import type { ConversationResourceMethods } from "./conversation-resources.js";
 import type { AccountModelDefaultsMethods } from "./account-model-defaults.js";
 import type { EnvironmentCreationReservationMethods } from "./environment-creation-reservations.js";
 export type { CreationReceipt, CreationReceiptMethods } from "./conversation-creation-receipts.js";
+export type { ConversationResourceMethods, ConversationResourceRow } from "./conversation-resources.js";
 export type { AccountModelDefaultsMethods, StoredAccountModelDefaults } from "./account-model-defaults.js";
 export type {
   EnvironmentCreationReservation,
@@ -15,12 +17,18 @@ export type {
   EnvironmentCreationOutcome,
 } from "./environment-creation-reservations.js";
 
-type CoreMethods = CreationReceiptMethods & AccountModelDefaultsMethods & EnvironmentCreationReservationMethods;
+type CoreMethods = CreationReceiptMethods & ConversationResourceMethods & AccountModelDefaultsMethods & EnvironmentCreationReservationMethods;
 
 /** The Server installation as a network process holds it. */
 export interface ServerCoreStorage<T = object> extends ServerDatabase {
   /** Async ports of the domain services that run in the owner Worker. */
   readonly call: OwnerCalls<T & CoreMethods>;
+  /**
+   * Reports, once, that the owner Worker was lost (crash, exit or a fatal
+   * error). Every pending and later call already rejects; projections built
+   * from owner replies use this to fail closed before their next call.
+   */
+  onUnavailable(listener: (error: Error) => void): () => void;
 }
 
 /**
@@ -42,6 +50,8 @@ export async function openServerCoreOwner<T = object>(
     data?: Record<string, unknown>;
   } = {},
 ): Promise<ServerCoreStorage<T>> {
+  const unavailable = new Set<(error: Error) => void>();
+  let lost: Error | undefined;
   const { owner, ready } = await WorkerOwner.open<
     T & CoreMethods,
     { outcome: DatabaseOutcome; contract: ServerDataContract }
@@ -49,6 +59,16 @@ export async function openServerCoreOwner<T = object>(
     name: "Server storage",
     workerData: { directory, composition: installedServerMigrationComposition(), data },
     errors: [SqliteLifecycleError],
+    onFailure: (error) => {
+      lost = error;
+      for (const listener of [...unavailable]) {
+        try {
+          listener(error);
+        } catch {
+          // A listener only revokes its own projection; others still run.
+        }
+      }
+    },
   });
   let connection: ReturnType<typeof borrowServerDatabase>;
   try {
@@ -66,7 +86,16 @@ export async function openServerCoreOwner<T = object>(
   let closing: Promise<void> | undefined;
   return {
     call: owner.call,
+    onUnavailable: (listener) => {
+      if (lost) {
+        listener(lost);
+        return () => {};
+      }
+      unavailable.add(listener);
+      return () => unavailable.delete(listener);
+    },
     database: connection.database,
+    location: connection.location,
     outcome: ready.outcome,
     contract: ready.contract,
     close: () =>

@@ -1,4 +1,4 @@
-import type { DatabaseSync } from "node:sqlite";
+import type { SqlDatabase } from "@opencraft/sql";
 
 /**
  * A stored record as the owner returns it. `selection` is the JSON value written by the
@@ -33,7 +33,7 @@ function key(actorId: unknown, hostId: unknown): void {
 }
 
 /** Invoked only in the Server owner Worker; the network thread reaches it through async calls. */
-export function accountModelDefaultsMethods(db: DatabaseSync): AccountModelDefaultsMethods {
+export function accountModelDefaultsMethods(db: SqlDatabase): AccountModelDefaultsMethods {
   const read = db.prepare(
     "SELECT revision, format, selection FROM account_model_defaults WHERE actor_id=? AND host_id=?",
   );

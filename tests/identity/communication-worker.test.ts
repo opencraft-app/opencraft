@@ -58,7 +58,7 @@ test('queued writes recheck revoked credentials and unavailable wakes roll back 
  const f=await fixture(t);
  // Initialize the Worker identity cache before revoking from the Server owner.
  await f.send(f.botContext,'warmup');
- const rawWorker=new OrchestrationRuntimeWorker(f.storage.database.location()!);
+ const rawWorker=new OrchestrationRuntimeWorker(f.storage.location!);
  await rawWorker.communicate({context:f.botContext,method:'opencraft/channels/list',params:{}});
  f.actors.revokeCredential(f.credential.credentialId,f.alice.actorId);
  try { await assert.rejects(rawWorker.communicate({context:f.botContext,method:'opencraft/channels/list',params:{}}),/actor_authentication_required/); }

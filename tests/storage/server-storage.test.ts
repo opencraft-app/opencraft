@@ -23,10 +23,12 @@ import { MembershipStore } from "@opencraft/access-control";
 import { Collaboration } from "../../packages/access-control/src/collaboration.js";
 import { CapabilityBindings } from "@opencraft/session-capabilities/bindings";
 import { LocalAccountServerPlugin } from "../../plugins/local-account/src/server.js";
-import { openManagedDatabase, sqliteTransaction, createSchemaValidator } from "@opencraft/sqlite-node";
+import { createNodePasswordHasher } from "../../plugins/local-account/src/password-hash-node.js";
+import { nodeSqlDatabase, openManagedDatabase, createSchemaValidator } from "@opencraft/sqlite-node";
 import { accountModelDefaultsMethods } from "../../packages/storage-node/src/server/account-model-defaults.js";
 import { conversationCreationReceiptMethods } from "../../packages/storage-node/src/server/conversation-creation-receipts.js";
 import { environmentCreationReservationMethods, readEnvironmentCreationReservation } from "../../packages/storage-node/src/server/environment-creation-reservations.js";
+const serverSource = (managed: { database: import('node:sqlite').DatabaseSync; outcome: import('@opencraft/sqlite-node').DatabaseOutcome }) => ({ database: nodeSqlDatabase(managed.database), outcome: managed.outcome });
 
 function fixture(t: test.TestContext) {
   const root = mkdtempSync(join(tmpdir(), "opencraft-server-storage-"));
@@ -38,7 +40,7 @@ async function seed(root: string) {
   const actors = new ActorStore(join(root, "actors.sqlite"));
   const members = new MembershipStore(join(root, "memberships.sqlite"));
   const accounts = new HumanAccounts(join(root, "human-logins.sqlite"), actors);
-  const provider = new LocalAccountServerPlugin(accounts.localAccountRepository); accounts.registerLocalAccounts(provider);
+  const provider = new LocalAccountServerPlugin(accounts.localAccountRepository, createNodePasswordHasher()); accounts.registerLocalAccounts(provider);
   const management = new HumanAccountManagement(join(root, "account-onboarding.sqlite"), accounts, actors, members);
   const principal = await management.initialize({ mode: "web", username: "owner", password });
   const context = actors.resolveHuman(principal)!;
@@ -100,7 +102,7 @@ test("registered populated stores consolidate without changing authority, sessio
   try {
     assert.equal(storage.outcome.status, "migrated");
     const actors = new ActorStore(storage), accounts = new HumanAccounts(storage, actors), members = new MembershipStore(storage);
-    const provider = new LocalAccountServerPlugin(accounts.localAccountRepository); accounts.registerLocalAccounts(provider);
+    const provider = new LocalAccountServerPlugin(accounts.localAccountRepository, createNodePasswordHasher()); accounts.registerLocalAccounts(provider);
     const management = new HumanAccountManagement(storage, accounts, actors, members);
     const collaboration = new Collaboration(storage, actors, execution), bindings = new CapabilityBindings(storage);
     assert.equal(actors.authority, before.authority);
@@ -157,11 +159,11 @@ test("fresh installs have one core file; the writer fence also covers maintenanc
     assert.deepEqual(readdirSync(root).filter(f => f.endsWith(".sqlite")), ["opencraft-server.sqlite"]);
     assert.equal(storage.database.prepare("SELECT count(*) AS n FROM opencraft_server_imports WHERE source_digest='absent'").get()?.n, Object.keys(SERVER_LEGACY_MIGRATIONS).length);
     const actors = new ActorStore(storage);
-    assert.throws(() => sqliteTransaction(storage.database, () => { actors.createSession("cancelled", "test"); throw new Error("cancel"); }), /cancel/);
+    assert.throws(() => storage.database.transaction(() => { actors.createSession("cancelled", "test"); throw new Error("cancel"); }), /cancel/);
     assert.equal(actors.list().length, 0, "nested repository transaction participates in rollback"); actors.close();
     const borrowed = openServerRepository(storage, "actors");
     const statement = borrowed.database.prepare("SELECT count(*) AS n FROM actors");
-    borrowed.database.close();
+    borrowed.close();
     assert.throws(() => statement.get(), /closed/);
     assert.equal(storage.database.prepare("SELECT count(*) AS n FROM actors").get()?.n, 0);
   } finally { await storage.close(); }
@@ -244,7 +246,7 @@ test("official account and access commands use the consolidated authority", asyn
   const storage = await openServerDatabase(root);
   try {
     const actors = new ActorStore(storage), members = new MembershipStore(storage), accounts = new HumanAccounts(storage, actors);
-    const provider = new LocalAccountServerPlugin(accounts.localAccountRepository); accounts.registerLocalAccounts(provider);
+    const provider = new LocalAccountServerPlugin(accounts.localAccountRepository, createNodePasswordHasher()); accounts.registerLocalAccounts(provider);
     assert.equal(members.actorMembership(before.context.actorId)?.enabled, false);
     assert.equal(await provider.verify("owner", password), null);
     assert.equal((await provider.verify("owner", nextPassword))?.subject, before.subject);
@@ -257,7 +259,7 @@ test("the previous consolidated contract upgrades while preserving actors and le
   const root = fixture(t);
   const previous = openManagedDatabase({ path: join(root, "opencraft-server.sqlite"), migrations: SERVER_MIGRATIONS.slice(0, 1) });
   importServerData(previous.database, root, { productVersion: "0.1.0", hash: "previous-contract" });
-  const actors = new ActorStore(previous), session = actors.createSession("Retained actor", "fixture");
+  const actors = new ActorStore(serverSource(previous)), session = actors.createSession("Retained actor", "fixture");
   const authority = actors.authority;
   const history = previous.database.prepare("SELECT * FROM schema_migrations WHERE version=1").get();
   actors.close(); previous.database.close();
@@ -265,7 +267,7 @@ test("the previous consolidated contract upgrades while preserving actors and le
   try {
     assert.equal(current.outcome.status, "migrated");
     assert.deepEqual(current.database.prepare("SELECT * FROM schema_migrations WHERE version=1").get(), history);
-    const restored = new ActorStore(current), bindings = new CapabilityBindings(current);
+    const restored = new ActorStore(serverSource(current)), bindings = new CapabilityBindings(serverSource(current));
     assert.equal(restored.authority, authority); assert.deepEqual(restored.get(session.id), session);
     bindings.prepareExecution("new-execution", { serverId: "test", threadId: "thread" });
     assert.equal(bindings.executionId({ serverId: "test", threadId: "thread" }), "new-execution");
@@ -280,7 +282,7 @@ test("the published capability v1 upgrades only its working copy", async t => {
   previous.database.close(); const bytes = readFileSync(path);
   const current = await openServerDatabase(root);
   try {
-    const bindings = new CapabilityBindings(current);
+    const bindings = new CapabilityBindings(serverSource(current));
     assert.deepEqual(bindings.get("retained"), { serverId: "server", threadId: "thread" });
     bindings.prepareExecution("new", { serverId: "server", threadId: "thread" });
     assert.equal(bindings.executionId({ serverId: "server", threadId: "thread" }), "new");
@@ -403,7 +405,7 @@ test("creation receipts upgrade the preceding Server contract and reject a tampe
   const priorVersion = 21;
   const prior = openManagedDatabase({ path, migrations: SERVER_MIGRATIONS.slice(0, priorVersion) });
   importServerData(prior.database, root, { productVersion: "0.1.0", hash: "previous-crew-contract" });
-  const actors = new ActorStore(prior);
+  const actors = new ActorStore(serverSource(prior));
   const retained = actors.createSession("Retained session", "fixture");
   actors.close();
   const ledger = prior.database.prepare("SELECT * FROM schema_migrations ORDER BY version").all();
@@ -432,12 +434,12 @@ test("account model defaults upgrade the preceding Server contract, keep its dat
   assert.equal(SERVER_MIGRATIONS[priorVersion]?.name, "0022_account_model_defaults");
   const prior = openManagedDatabase({ path, migrations: SERVER_MIGRATIONS.slice(0, priorVersion) });
   importServerData(prior.database, root, { productVersion: "0.1.0", hash: "previous-creation-receipts-contract" });
-  const actors = new ActorStore(prior);
+  const actors = new ActorStore(serverSource(prior));
   const person = actors.resolveHuman({ provider: "local", subject: "retained-person", displayName: "Retained", expiresAt: Date.now() + 60_000 });
   actors.close();
   assert.ok(person);
   const receipt = { actorId: person.actorId, operationKey: "retained", serverId: "server", fingerprint: "hash" };
-  conversationCreationReceiptMethods(prior.database).claimConversationCreation(receipt);
+  conversationCreationReceiptMethods(nodeSqlDatabase(prior.database)).claimConversationCreation(receipt);
   const ledger = prior.database.prepare("SELECT * FROM schema_migrations ORDER BY version").all();
   prior.database.close();
 
@@ -467,18 +469,18 @@ test("environment creation reservations upgrade the preceding Server contract, k
   assert.equal(SERVER_MIGRATIONS[priorVersion]?.name, "0023_environment_creation_reservations");
   const prior = openManagedDatabase({ path, migrations: SERVER_MIGRATIONS.slice(0, priorVersion) });
   importServerData(prior.database, root, { productVersion: "0.1.0", hash: "previous-model-defaults-contract" });
-  const actors = new ActorStore(prior);
+  const actors = new ActorStore(serverSource(prior));
   const person = actors.resolveHuman({ provider: "local", subject: "retained-person", displayName: "Retained", expiresAt: Date.now() + 60_000 });
   actors.close();
   assert.ok(person);
-  accountModelDefaultsMethods(prior.database).compareAndSetAccountModelDefaults(person.actorId, "host", 0, { model: "kept", effort: null });
+  accountModelDefaultsMethods(nodeSqlDatabase(prior.database)).compareAndSetAccountModelDefaults(person.actorId, "host", 0, { model: "kept", effort: null });
   const ledger = prior.database.prepare("SELECT * FROM schema_migrations ORDER BY version").all();
   prior.database.close();
 
   const owner = await openServerDatabase(root);
   try {
     assert.equal(owner.outcome.status, "migrated");
-    assert.equal(owner.outcome.appliedVersion, priorVersion + 1);
+    assert.equal(owner.outcome.appliedVersion, SERVER_MIGRATIONS.length);
     assert.deepEqual(owner.database.prepare("SELECT * FROM schema_migrations WHERE version<=? ORDER BY version").all(priorVersion), ledger);
     assert.deepEqual(accountModelDefaultsMethods(owner.database).readAccountModelDefaults(person.actorId, "host").selection, { model: "kept", effort: null });
     const reservations = environmentCreationReservationMethods(owner.database);
@@ -497,6 +499,42 @@ test("environment creation reservations upgrade the preceding Server contract, k
     for (const invalid of [{ ...reservation, actorId: "session://x/y" }, { ...reservation, actorGeneration: 0 },
       { ...reservation, extra: 1 }, { ...reservation, hostId: "other" }])
       assert.throws(() => reservations.reserveEnvironmentCreation({ ...invalid, operationId: "invalid" } as never));
+  } finally { await owner.close(); }
+
+  const changed = new DatabaseSync(path);
+  changed.prepare("UPDATE schema_migrations SET checksum=? WHERE version=?").run("0".repeat(64), priorVersion + 1);
+  changed.close();
+  await assert.rejects(openServerDatabase(root), { kind: "history-mismatch" });
+});
+test("conversation resources upgrade the preceding Server contract, keep its data, and reject a tampered checksum", async t => {
+  const root = fixture(t), path = join(root, "opencraft-server.sqlite");
+  const priorVersion = 24;
+  assert.equal(SERVER_MIGRATIONS[priorVersion]?.name, "0024_conversation_resources");
+  const prior = openManagedDatabase({ path, migrations: SERVER_MIGRATIONS.slice(0, priorVersion) });
+  importServerData(prior.database, root, { productVersion: "0.1.0", hash: "previous-environment-creation-reservations-contract" });
+  const actors = new ActorStore(serverSource(prior));
+  const retained = actors.createSession("Retained session", "fixture");
+  actors.close();
+  prior.database.prepare("INSERT INTO conversation_creation_receipts(actor_id, operation_key, server_id, fingerprint, state) VALUES('a', 'k', 's', 'f', 'claimed')").run();
+  const reservation = { hostId: "local-codex" as const, operationId: "retained", actorId: "human://fixture/one", actorGeneration: 1,
+    membershipRevision: 0, source: null, incarnation: "native", project: null };
+  environmentCreationReservationMethods(nodeSqlDatabase(prior.database)).reserveEnvironmentCreation(reservation);
+  const ledger = prior.database.prepare("SELECT * FROM schema_migrations ORDER BY version").all();
+  prior.database.close();
+
+  const owner = await openServerDatabase(root);
+  try {
+    assert.equal(owner.outcome.status, "migrated");
+    assert.equal(owner.outcome.appliedVersion, SERVER_MIGRATIONS.length);
+    assert.deepEqual(owner.database.prepare("SELECT * FROM schema_migrations WHERE version<=? ORDER BY version").all(priorVersion), ledger);
+    const restored = new ActorStore(owner);
+    assert.deepEqual(restored.get(retained.id), retained);
+    restored.close();
+    assert.equal(owner.database.prepare("SELECT state FROM conversation_creation_receipts WHERE actor_id='a'").get()?.state, "claimed");
+    assert.deepEqual(readEnvironmentCreationReservation(owner.database, "local-codex", "retained"), reservation);
+    assert.equal(owner.database.prepare("SELECT count(*) n FROM conversation_resources").get()?.n, 0);
+    assert.throws(() => owner.database.prepare("INSERT INTO conversation_resources VALUES('h', 't', 'closed', 1, '[]')").run(), /CHECK/);
+    assert.throws(() => owner.database.prepare("INSERT INTO conversation_resources VALUES('h', 't', 'archived', 1, '{}')").run(), /CHECK/);
   } finally { await owner.close(); }
 
   const changed = new DatabaseSync(path);

@@ -1,0 +1,15 @@
+{
+  "name": "@opencraft/blob-storage",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/contract.ts",
+    "./file": "./src/file.ts",
+    "./conformance": "./src/conformance.ts",
+    "./memory": "./src/memory.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

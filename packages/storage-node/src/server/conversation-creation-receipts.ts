@@ -1,4 +1,4 @@
-import type { DatabaseSync } from "node:sqlite";
+import type { SqlDatabase } from "@opencraft/sql";
 
 export type CreationReceipt =
   | { state: "claimed" }
@@ -43,7 +43,7 @@ function receipt(row: Record<string, unknown>): CreationReceipt {
 }
 
 /** Invoked only in the Server owner Worker. No creation payload is stored. */
-export function conversationCreationReceiptMethods(db: DatabaseSync): CreationReceiptMethods {
+export function conversationCreationReceiptMethods(db: SqlDatabase): CreationReceiptMethods {
   const read = db.prepare(`SELECT server_id, fingerprint, state, thread_id, rejection_status, rejection_code
     FROM conversation_creation_receipts WHERE actor_id=? AND operation_key=?`);
   const claim =

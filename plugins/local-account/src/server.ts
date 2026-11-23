@@ -1,15 +1,16 @@
-import { randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { parsePrincipal, type Principal } from '@opencraft/identity-core';
-import type { LocalAccountProvider, LocalAccountRepository } from '@opencraft/identity-core/local-account';
+import type { LocalAccountPasswordUpgrades, LocalAccountProvider, LocalAccountRepository } from '@opencraft/identity-core/local-account';
+import { UNKNOWN_ACCOUNT_PASSWORD, type PasswordHasher } from './password-hash.js';
 
+export type { PasswordHasher } from './password-hash.js';
+
+// At most two password derivations (hash, verify or login upgrade) run at once per process.
 let hashing = 0;
-async function passwordHash(password: string, salt: string): Promise<Buffer> {
+async function hashingSlot<T>(password: string, work: () => Promise<T>): Promise<T> {
   if (typeof password !== 'string' || Buffer.byteLength(password) > 1024 || hashing >= 2) throw new Error('Password verification unavailable');
   hashing++;
-  try {
-    return await new Promise<Buffer>((resolve, reject) => scrypt(password, salt, 32,
-      { N: 131072, r: 8, p: 1, maxmem: 192 * 1024 * 1024 }, (error, result) => error ? reject(error) : resolve(result)));
-  } finally { hashing--; }
+  try { return await work(); } finally { hashing--; }
 }
 export function localUsername(value: unknown): string {
   if (typeof value !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{2,63}$/u.test(value)) throw new Error('Invalid username');
@@ -25,8 +26,15 @@ export class LocalAccountServerPlugin implements LocalAccountProvider {
   readonly label = '本地账号';
   #closed = false;
   readonly #verified = new WeakMap<Principal, number>();
-  constructor(readonly repository: LocalAccountRepository, readonly now = Date.now) {}
+  #upgrades: LocalAccountPasswordUpgrades | null = null;
+  /** `hasher` is chosen by the runtime composition (Node native or portable Argon2id). */
+  constructor(readonly repository: LocalAccountRepository, readonly hasher: PasswordHasher, readonly now = Date.now) {}
   get available() { return !this.#closed; }
+  /**
+   * The storage owner that commits login-time record upgrades (Headless: the Server owner Worker).
+   * Without it a proven weaker record is kept as is and still verifies.
+   */
+  useOwnerWrites(upgrades: LocalAccountPasswordUpgrades) { this.#upgrades = upgrades; }
   #assertOpen() { if (this.#closed) throw new Error('Local account plugin unavailable'); }
   #proof(id: string, displayName: string, version: number): Principal {
     const proof = parsePrincipal({ provider: 'local', subject: id, displayName, expiresAt: this.now() + 8 * 3600_000 });
@@ -39,9 +47,9 @@ export class LocalAccountServerPlugin implements LocalAccountProvider {
     if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/u.test(id)) throw new Error('Invalid reserved local account');
     this.#assertOpen(); username = localUsername(username); validNewPassword(password);
     if (typeof displayName !== 'string' || !displayName.trim() || displayName.length > 256 || /[\x00-\x1f]/u.test(displayName)) throw new Error('Invalid display name');
-    const salt = randomBytes(32).toString('hex'), digest = await passwordHash(password, salt);
+    const passwordDigest = await hashingSlot(password, () => this.hasher.hash(password));
     this.#assertOpen();
-    this.repository.insert({ id, username, displayName, salt, passwordDigest: digest.toString('hex'), enabled: true, version: 1 });
+    this.repository.insert({ id, username, displayName, salt: '', passwordDigest, enabled: true, version: 1 });
     return this.#proof(id, displayName, 1);
   }
   async verify(username: string, password: string): Promise<Principal | null> {
@@ -49,22 +57,37 @@ export class LocalAccountServerPlugin implements LocalAccountProvider {
     let normalized: string;
     try { normalized = localUsername(username); } catch { normalized = ''; }
     const account = this.repository.byUsername(normalized);
-    const actual = await passwordHash(password, account?.salt ?? 'opencraft-unknown-account-password-salt');
+    // Unknown users pay one Argon2id derivation at the current parameters too.
+    const upgrades = this.#upgrades;
+    const { ok, upgrade } = await hashingSlot(password, async () => {
+      const result = await this.hasher.verify(password, account ?? UNKNOWN_ACCOUNT_PASSWORD);
+      if (!upgrades || !account?.enabled || !result.ok || !result.needsRehash) return { ok: result.ok, upgrade: null };
+      // Upgrade is best effort: the password was proven, an unavailable rehash keeps the old record.
+      try { return { ok: true, upgrade: await this.hasher.hash(password) }; } catch { return { ok: true, upgrade: null }; }
+    });
     this.#assertOpen();
-    const expected = account ? Buffer.from(account.passwordDigest, 'hex') : Buffer.alloc(32);
-    if (expected.length !== actual.length || !timingSafeEqual(actual, expected) || !account?.enabled) return null;
+    if (!ok || !account?.enabled) return null;
     const current = this.repository.byId(account.id);
     if (!current?.enabled || current.version !== account.version) return null;
+    if (upgrade && upgrades) {
+      // The owner compares-and-sets on the verified version and record; a refused or failed
+      // upgrade keeps the old record and never changes this login's result.
+      try { await upgrades.upgradeLocalPassword(account.id,
+        { version: account.version, salt: account.salt, passwordDigest: account.passwordDigest }, '', upgrade); } catch { /* best effort */ }
+      this.#assertOpen();
+      const after = this.repository.byId(account.id);
+      if (!after?.enabled || after.version !== account.version) return null;
+    }
     return this.#proof(account.id, account.displayName, account.version);
   }
   async resetPassword(username: string, password: string, assertCurrent?: () => void): Promise<void> {
     this.#assertOpen(); validNewPassword(password);
     const account = this.repository.byUsername(localUsername(username));
     if (!account) throw new Error('Unknown local account');
-    const salt = randomBytes(32).toString('hex'), digest = await passwordHash(password, salt);
+    const passwordDigest = await hashingSlot(password, () => this.hasher.hash(password));
     this.#assertOpen();
     assertCurrent?.();
-    if (!this.repository.updatePassword(account.id, salt, digest.toString('hex'))) throw new Error('Unknown local account');
+    if (!this.repository.updatePassword(account.id, '', passwordDigest)) throw new Error('Unknown local account');
   }
   setEnabled(username: string, enabled: boolean) {
     this.#assertOpen();

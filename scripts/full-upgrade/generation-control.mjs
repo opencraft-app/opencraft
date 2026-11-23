@@ -2,7 +2,6 @@ import { readFile, realpath } from 'node:fs/promises';
 import { join, isAbsolute, sep } from 'node:path';
 import { acceptManifest, parseStrictJson, sha256 } from '../full-release/contract.mjs';
 import { verifyRetainedRelease } from '../full-release/retained.mjs';
-import { createHash } from 'node:crypto';
 import { collectInventory, fingerprint, inventoryIdentity } from './inventory.mjs';
 import { rootOwned, readAuthority } from './service-config.mjs';
 import { readReleasePolicy } from './release-policy.mjs';
@@ -51,7 +50,7 @@ export async function generationControl(config, input, journal, bootId) {
   await rootOwned(config.generationRecipePath);
   const recipeBytes = await readFile(config.generationRecipePath);
   const recipe = parseStrictJson(recipeBytes);
-  invariant(recipe.schemaVersion === 1 && ['codex', 'acp'].includes(recipe.kind) && identifier(recipe.targetId), 'invalid-generation-recipe');
+  invariant(recipe.schemaVersion === 1 && recipe.kind === 'acp' && identifier(recipe.targetId), 'invalid-generation-recipe');
   for (const key of ['matrixPath', 'signaturePath']) { invariant(isAbsolute(recipe[key]), 'invalid-matrix-path'); await rootOwned(recipe[key]); }
   const matrixBytes = await readFile(recipe.matrixPath), signature = parseStrictJson(await readFile(recipe.signaturePath));
   const { trust, state } = await readAuthority(config);
@@ -70,45 +69,23 @@ export async function generationControl(config, input, journal, bootId) {
   await verifyRetainedRelease(releaseRoot, trust, state);
   const root = await realpath(releaseRoot);
   invariant(!recipe.definition.externalUnit, 'candidate-adoption-unavailable');
-  if (recipe.kind === 'codex') for (const key of ['executable', 'bundle', 'node']) {
-    invariant((await realpath(recipe.definition[key])).startsWith(root + sep), 'target-outside-signed-closure');
-  }
-  let endpoint, token, ownerDataDirectory;
-  if (recipe.kind === 'codex') {
-    invariant(isAbsolute(recipe.registryDirectory), 'invalid-registry-directory');
-    await rootOwned(recipe.tokenFile); endpoint = recipe.endpoint; token = (await readFile(recipe.tokenFile, 'utf8')).trim();
-    invariant(isAbsolute(endpoint), 'invalid-owner-endpoint');
-  } else {
-    await rootOwned(recipe.descriptorPath); await rootOwned(recipe.definition.configPath);
-    const descriptor = parseStrictJson(await readFile(recipe.descriptorPath));
-    endpoint = descriptor.controlUrl; token = descriptor.token; ownerDataDirectory = descriptor.dataDirectory;
-  }
+  await rootOwned(recipe.descriptorPath); await rootOwned(recipe.definition.configPath);
+  const descriptor = parseStrictJson(await readFile(recipe.descriptorPath));
+  const endpoint = descriptor.controlUrl, token = descriptor.token, ownerDataDirectory = descriptor.dataDirectory;
   const owner = generationOwner({ kind: recipe.kind, endpoint, token, definition: recipe.definition });
-  const executionSha256 = recipe.kind === 'acp' ? await acpExecutionIdentity(parseStrictJson(await readFile(recipe.definition.configPath)), root) : null;
+  const executionSha256 = await acpExecutionIdentity(parseStrictJson(await readFile(recipe.definition.configPath)), root);
   const profile = parseStrictJson(await readFile(config.profilePath));
   const inventory = await collectInventory(profile), before = await owner.snapshot();
-  const candidateUnit = recipe.kind === 'codex' ? `opencraft-codex-${createHash('sha256').update(recipe.registryDirectory).digest('hex').slice(0, 12)}-${recipe.targetId}.service` : null;
-  const candidateRoot = recipe.kind === 'codex' ? recipe.definition.runtimeDataDirectory : null;
   const basis = inventory => {
     const result = structuredClone(inventoryIdentity(inventory));
-    if (candidateRoot) {
-      result.stores = result.stores.filter(store => store.path !== candidateRoot && !store.path.startsWith(candidateRoot + sep));
-      result.storeDiscovery.roots = result.storeDiscovery.roots.filter(path => path !== candidateRoot);
+    for (const entry of result.owners) for (const unit of entry.units) for (const process of unit.processes) for (const config of process.configs) {
+      if (ownerDataDirectory && config.paths.dataDirectory === ownerDataDirectory && config.acpGenerations) config.acpGenerations.entries = config.acpGenerations.entries.filter(g => g.id !== recipe.targetId);
     }
-    for (const store of result.stores) if (recipe.kind === 'codex' && store.path === join(recipe.registryDirectory, 'codex-generations.sqlite') && store.generations) store.generations.entries = store.generations.entries.filter(g => g.id !== recipe.targetId);
-    for (const entry of result.owners) {
-      entry.units = entry.units.filter(unit => unit.unit !== candidateUnit);
-      for (const unit of entry.units) for (const process of unit.processes) for (const config of process.configs) {
-        if (recipe.kind === 'acp' && ownerDataDirectory && config.paths.dataDirectory === ownerDataDirectory && config.acpGenerations) config.acpGenerations.entries = config.acpGenerations.entries.filter(g => g.id !== recipe.targetId);
-      }
-    }
-    result.unmanagedUnits = result.unmanagedUnits.filter(unit => unit !== candidateUnit);
-    result.unsupportedComponents = result.unsupportedComponents.filter(component => component.unit !== candidateUnit);
     return fingerprint(result);
   };
   const expectedBasis = basis(inventory);
   const policy = { mode: config.mode, recipeSha256: sha256(await readFile(config.generationRecipePath)),
-    executionSha256, privateConfigSha256: recipe.kind === 'acp' ? sha256(await readFile(recipe.definition.configPath)) : null };
+    executionSha256, privateConfigSha256: sha256(await readFile(recipe.definition.configPath)) };
   const combination = { ownerId: owner.id, targetId: recipe.targetId, from: fingerprint(before),
     to: fingerprint({ definition: recipe.definition, configurationSha256: policy.privateConfigSha256, executionSha256 }), profile: inventory.profile, platform: inventory.platform, arch: inventory.arch };
   const plan = acceptGenerationPlan({ manifestSha256: sha256(manifestBytes), inventoryFingerprint: inventory.fingerprint,
@@ -123,8 +100,8 @@ export async function generationControl(config, input, journal, bootId) {
     acceptGenerationPlan({ manifestSha256: sha256(manifestBytes), inventoryFingerprint: inventory.fingerprint,
       policy, matrixBytes, signature, release: signedManifest.release, trust: { ...live.trust, revokedKeyIds: [...(live.trust.revokedKeyIds ?? []), ...(live.state.revokedKeyIds ?? [])] }, combination });
     return sha256(await readFile(config.generationRecipePath)) === policy.recipeSha256
-      && (recipe.kind !== 'acp' || sha256(await readFile(recipe.definition.configPath)) === policy.privateConfigSha256)
-      && (recipe.kind !== 'acp' || await acpExecutionIdentity(parseStrictJson(await readFile(recipe.definition.configPath)), root) === executionSha256)
+      && sha256(await readFile(recipe.definition.configPath)) === policy.privateConfigSha256
+      && await acpExecutionIdentity(parseStrictJson(await readFile(recipe.definition.configPath)), root) === executionSha256
       && sha256(await readFile(recipe.matrixPath)) === sha256(matrixBytes)
       && sha256(await readFile(join(config.targetRoot, 'release/full-release.json'))) === plan.manifestSha256
       && sha256(await readFile(join(releaseRoot, 'release/full-release.json'))) === plan.manifestSha256

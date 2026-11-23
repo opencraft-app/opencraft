@@ -51,9 +51,6 @@ for (const [entry, target, format] of [
   ["apps/opencraft-daemon/src/bin.ts", "daemon.cjs", "cjs"],
   // The workers packaging places beside them (scripts/packaging/package-web-server.mjs).
   ...([
-    "apps/codex-core/src/router-evidence.worker.ts:router-evidence-worker.mjs",
-    "apps/opencraft-daemon/src/execution-fault.worker.ts:execution-fault-worker.mjs",
-    "apps/codex-core/src/generation-registry.worker.ts:generation-registry-worker.mjs",
     "apps/local-agent-host/src/dsh-session-routing.worker.ts:dsh-session-routing-worker.mjs",
     "apps/opencraft-daemon/src/token-usage-query-worker.ts:token-usage-query-worker.mjs",
     "packages/access-control/src/orchestration-runtime.worker.ts:orchestration-runtime-worker.mjs",

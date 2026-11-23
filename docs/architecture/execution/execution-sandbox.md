@@ -137,10 +137,197 @@ not echo commands, credentials or environment values.
 Deployment assembly explicitly selects the provider and policy for engine execution.
 Unconfigured Hosts retain existing behavior and do not claim sandbox containment.
 A selected uninstalled provider rejects execution instead of falling back to host
-execution. An optional `@opencraft/sandbox-e2b` execution adapter is included, but is not
-automatically registered in engine or Bot assembly. Its transport, resource and
+execution. An optional `@opencraft/sandbox-e2b` execution adapter is included; it is not
+registered in engine assembly, and Bot/workspace assembly registers it only
+through the provider registry described below. Its transport, resource and
 lifetime scope is documented in [the E2B adapter](../../../packages/sandbox-e2b/README.md).
 Provider tests must not be described as complete production Bot integration.
+
+### Provider registry, shared broker and persistent workspaces
+
+Remote providers are pluggable without touching workspace or Bot owners. Only
+E2B is implemented (plus `static-docker` for WorkspaceHost placement); no
+Cloudflare or other provider exists yet, and a registry entry alone is not a claim of
+compatibility.
+
+- **Registry.** `@opencraft/sandbox/providers` defines a provider as
+  `{ id, createBackend(request) → SandboxBackend, persistentWorkspaces? }`.
+  Deployment assembly (`apps/headless-server/src/sandbox-providers.ts` in the
+  Assets Worker; `apps/opencraft-daemon/src/assistant-environments.ts`) registers
+  providers explicitly. Consumers resolve by the installation's configured
+  `backend`; an unknown or unregistered ID fails closed with
+  `SANDBOX_UNAVAILABLE`, never falling back to local execution or E2B. Provider
+  IDs are at most 23 characters so the per-provider pool ID stays valid. The
+  headless Worker reports its registered IDs (`botBackends`) to Main, which keys
+  Bot environment providers by them.
+- **Request.** `createBackend` receives the secret-free provider-typed
+  installation, an installation-owned `readSecret()`, template, interpreter,
+  timeouts, and optional workspace binding, creation receipt and bounded lease
+  callbacks. Credentials and endpoints never come from Bot or task input.
+- **Shared broker.** `@opencraft/sandbox/broker` owns the Python NDJSON broker
+  program and the host-side framing and process state machine: `start`, `stdin`,
+  `resize`, `eof` and `terminate` frames to the broker; `started`, `output`, `exit`
+  and `error` frames back; base64 payloads; 400000-byte broker lines; one PTY output
+  stream; process-group SIGKILL; no reconnect or replay after transport loss; for
+  ordinary processes transport loss or an unacknowledged termination retires the
+  environment. `attached` processes are the exception described below; the flag
+  is Host-side lifetime and is never sent to the broker. It has no Node, vendor SDK
+  or E2B types. A provider supplies only a launch port that starts
+  `python3 -u <broker>` and returns `{ write(frame), ended }` plus stdout text
+  chunks. E2B keeps only the upload (`files.write`) and launch
+  (`commands.run(..., stdin)`) calls; fault codes and messages are unchanged.
+- **Persistent workspaces.** The optional `PersistentWorkspaceProvider`
+  capability supplies `receipt()` (sole instance member plus stable private volume
+  ID after create), `inspect(binding)` (`absent`/`present`/`unknown`, never an
+  allocation lock) and `verifyMounts(environment)` (never mounts). The ordinary
+  allocator and Bot owner require it whenever the installation enables persistent
+  workspaces; a provider without it cannot be selected. E2B's implementation keeps
+  its existing schemaVersion 2 workspace/volume API calls and NFS `/workspace` and
+  `/shared` rules.
+- **Configuration compatibility.** Installation files and vault credentials are
+  provider-typed by a `backend` discriminant; the E2B variant keeps its fields.
+  A schemaVersion 1 installation file or version-1 vault credential without
+  `backend` is E2B. E2B credentials are still stored without `backend`, so existing
+  documents are rewritten only by existing write paths and in the same shape.
+  Workspace configuration revisions keep the E2B endpoint facts in their original
+  positions, so persisted selections stay valid. Resource checks, unknown-creation
+  retention, confirmed destruction, lease renewal and error codes are unchanged.
+
+### Endpoints and attached processes
+
+`SandboxCommand.attached: true` (pipe processes only; `createSandbox` rejects it
+with a terminal) marks a connection-scoped relay. Its transport loss, startup
+failure or unacknowledged termination ends only that process: `exited` rejects,
+`terminate()` rejects with `SANDBOX_CLEANUP`, and the environment and its other
+processes stay alive. Environment close still reclaims it; capacity rules are
+unchanged. Without the flag a backend that cannot account for a lost process
+retires the environment as before.
+
+`openSandboxEndpoint(environment, { target: { unix }, onData })`
+(`@opencraft/sandbox/endpoint`, no Node types) is the provider-neutral byte
+connection to a stream socket inside an environment: one attached process running
+a fixed Python relay per connection, with `write` (resolves when the provider
+accepted the bytes), `end` (half-close), idempotent `close` and a `closed` outcome
+(`ended`/`failed`). There is no reconnect or replay. The process contract has no
+output flow control, so consumers must bound undrained output.
+`createSandboxEndpointListener` (`@opencraft/sandbox-node/endpoint-listener`)
+exposes an endpoint as a Unix socket in a private 0700 directory for clients that
+dial a path; it authorizes each connection, back-pressures local input on the
+provider, closes a connection whose undrained output exceeds its bound, and
+reports unconfirmed relay cleanup. The browser owner attachment uses the endpoint.
+A target is either a name from `SANDBOX_ENDPOINT_NAMES`, resolved only as
+`<endpointDirectory>/<name>` (default `SANDBOX_ENDPOINT_DIRECTORY`, an image property
+where the in-environment `workspace-agent` publishes its allow-listed endpoints), or a
+caller-validated `{ unix }` path kept for owners not yet supervised by that agent.
+Unknown names, mixed targets and relative directories are refused before any spawn.
+
+The sandbox file port (`SandboxWorkspaceFiles`) uses one attached resident helper per
+binding instead of a process per operation: requests are id-tagged JSON lines over
+that one process stream, answered concurrently and written whole. Losing the helper
+fails only its in-flight requests (never resent); the next request starts a new one.
+Every backend that advertises endpoints must pass
+`tests/execution/sandbox-endpoint-conformance.test.ts` (binary round trip,
+half-close, close from either side, back-pressure, attached failure isolation and
+validation, receipt re-attach, `workspace://` resolution); the suite runs
+in-process, local child-process, E2B adapter (vendor SDK replaced by local
+processes) and static-docker link (agent link server in-process) harnesses, plus
+opt-in real-container harnesses: `docker exec` + broker
+(`OPENCRAFT_SANDBOX_CONFORMANCE_DOCKER=<image with python3>`) and static-docker
+(`OPENCRAFT_SANDBOX_CONFORMANCE_STATIC_DOCKER=<opencraft runtime image>`, the image's
+`workspace-agent --bare` as container main process). Placement use and measurements
+are in [workspace-host-split](../platform/workspace-host-split.md).
+
+### Workspace addresses, receipts and re-attach
+
+Addresses are URIs only at configuration and client boundaries
+(`@opencraft/sandbox/uri`); they are parsed into typed values and never carry
+credentials, ports, queries or fragments:
+
+- `workspace://<workspaceId>/endpoints/<name>` — an endpoint a workspace's agent
+  publishes (`name` ∈ `SANDBOX_ENDPOINT_NAMES`). Clients hold only this.
+- `<provider>://<target>` — where an environment runs; the scheme is a registered
+  provider id and the target is that provider's selector: `static-docker://<service>`,
+  `e2b://<template>`, later `docker-provisioner://<image>` and
+  `cloudflare://<container-class>`. `SandboxProviderRegistry.environment(installation,
+  address)` refuses a URI whose provider is not the installation's or whose target the
+  provider's `acceptsTarget` rejects. Schemes already used elsewhere (`unix`, `stdio`,
+  `ws`, `http(s)`, `workspace`, `human`, `session`, `opencraft`, …) are reserved.
+
+A backend may set `SandboxEnvironment.receipt` (`{backend, instanceId}`, secret-free)
+and implement `attach(identity, receipt, resources, signal)`; `SandboxPool.attachSandbox`
+admits it like `create`. Attach never creates or replaces: when the provider cannot
+prove the receipt names the same live instance it rejects `SANDBOX_UNAVAILABLE`, and the
+owner decides whether to create a new environment and recover.
+
+`createWorkspaceRuntime` (`@opencraft/sandbox/workspace`, no Node types) owns one
+workspace's environment bindings: per environment it re-attaches the persisted receipt
+or creates, reads the agent's identity over the `control` endpoint (`probe`:
+incarnation, roles, published names; `describe`: an endpoint's credentials and engine
+descriptor), persists `{receipt, agentIncarnation}` through a WorkspaceHost store
+before use, resolves an endpoint name to the first environment whose agent publishes
+it, and rebinds once when a relay cannot start (stale binding). `observe()` re-probes
+and reports a changed incarnation. It never replays bytes.
+
+| Provider | Process channel | `receipt.instanceId` | `attach` |
+| --- | --- | --- | --- |
+| `static-docker` (`@opencraft/sandbox-node/static-docker`) | the agent's link: a Unix socket in a directory mounted only into the Host and that container; per process one connection carrying the shared broker | agent incarnation | same incarnation only (link `attach` with expected incarnation) |
+| `e2b` | `commands.run` + shared broker | sandbox id | `Sandbox.connect` (pinned SDK 2.x); missing/unverifiable → lost |
+| in-process / local process (tests, Hands-style owners) | direct | none | not offered |
+
+static-docker link protocol (one JSON line per connection): `attach {ticket,
+incarnation?}` — the ticket is written by the agent to `<link>/ticket` (0600) after it
+listens and rotated after every successful attach (one-time); a newer attach revokes the
+previous session and kills its processes. `open {session}` then carries one broker
+process; the agent checks the broker `start` frame against its policy: `relay-only`
+(default) admits only the fixed endpoint relay to an allow-listed name under its
+endpoint directory, `any` is for bare/dev images and conformance. A refused or
+unstartable broker answers with a broker `error` frame whose `reason` comes from a fixed
+vocabulary (`policy`, `broker-unavailable`, `start-failed`); the Host carries it as the
+`SANDBOX_START` fault's `cause`. The broker interpreter (`OPENCRAFT_AGENT_PYTHON`,
+default `/usr/bin/python3`) is an image requirement of every container that runs an
+agent: an agent whose interpreter is not executable fails its start instead of serving a
+link that refuses every process. `release {session}` closes. The effective budget is the container's cgroup limit as the agent reads it; the
+backend refuses a binding whose enforced limits differ from the requested budget.
+A newer attach revokes the previous session by ending each broker's control input:
+the broker then kills its process's own session (processes run in a new session, so
+killing only the broker would orphan them); SIGKILL of the broker is a fallback.
+
+### Provider lifecycle obligations (from the Cloudflare Containers probe)
+
+A backend whose provider can host several incarnations under one name, stop an
+environment on its own, or lose a process handle must still fit this contract. The
+obligations come from a real Cloudflare Containers probe (2026-11-23; measured facts
+are in [workspace-host-split §3.6](../platform/workspace-host-split.md#36-部署形态统一建模)),
+but each one applies to every provider. Status after step 4c:
+
+| Obligation | Status |
+| --- | --- |
+| `receipt.instanceId` is the agent incarnation (or a provider id that changes whenever the instance restarts), never a reusable name such as a Durable Object or container name (one DO name hosts several incarnations over time) | static-docker: incarnation (implemented); E2B: sandbox id plus incarnation comparison in `WorkspaceRuntime` (implemented); Cloudflare: required, not implemented |
+| Process transport has real backpressure and half-close (`exec` stdin/stdout or raw TCP); WebSocket without backpressure is not an endpoint transport | contract and conformance suite (implemented). Cloudflare probe: `ctx.container.exec` stdin back-pressures and the fixed relay round-trips bytes; raw TCP `getTcpPort().connect()` has backpressure and half-close; WebSocket upgrade has none. A `sandbox-cloudflare` adapter is not implemented |
+| A lost process handle must not leave orphans: every broker process runs in its own session and the broker kills that session on control-input EOF; `workspace-agent` stops every child when it stops | implemented (broker `setsid`/`killpg` on EOF, link revocation by EOF; the AppServer child is a `detached` group signalled as a group, other children are signalled directly and are expected to own their descendants). Follow-up: a provider whose handle loss does **not** EOF the process stdin (Cloudflare DO reset: processes that do not read stdin are orphaned) needs `workspace-agent` to reap the process session when its link/endpoint connection ends |
+| Termination of an already exited process is not a cleanup failure and never signals a reused PID | follow-up: check that the process still belongs to the same session before kill; an exited process counts as confirmed termination |
+| The container main process handles SIGTERM | implemented: `container-service.mjs` forwards SIGTERM/SIGINT to `workspace-agent`, which drains and stops its children (the probe container without a handler did not stop for 30 s) |
+| Environment loss reported by the provider (crash without restart, provider-initiated stop, idle backstop) | follow-up: a minimal optional loss signal on `SandboxEnvironment`, driven by the provider (Cloudflare `monitor()` rejects with the exit code; Docker container exit). Today a loss is seen only as a failed relay start (`WorkspaceRuntime` rebinds once) or by `observe()` |
+| Native endpoint connection (`connectEndpoint(target)`, for example a container TCP port with the agent routing each connection by its first line to the endpoint socket) preferred over the relay | follow-up, optional: same semantics as the relay (backpressure, half-close, no replay); the relay stays the fallback |
+| Provider idle timers are re-armed by the owner | follow-up: Cloudflare's container inactivity timeout is not retained across DO restarts and must be set in every DO construction; it is only a backstop for the WorkspaceHost idle policy |
+| Resource limits the provider does not enforce | Cloudflare containers report `cpu.max`/`pids.max` as `max` and nofile 1048576: the default 4096 tasks and 65536 FD per process must be applied by `workspace-agent`; CPU and memory (custom 4 vCPU / 8 GiB accepted) are reported by the provider |
+
+### Optional persistence and sleep capabilities (design, not implemented)
+
+The workspace content's durable source of truth is Git; a sandbox (disk, volume,
+engine-private data) is a rebuildable cache for every provider. A provider may
+declare an optional `snapshot` capability — `retained` (sleep/stop keeps the disk:
+Docker volume, E2B pause) or `captured` (explicit `captureSnapshot` /
+`restoreSnapshot`: Cloudflare `snapshotContainer`, 30-day TTL, not deletable from the
+Worker API) — and an optional `sleep(environment)`. Both only speed up recovery and
+lower the chance of losing uncommitted changes; a provider without them is still
+correct, and no provider's beta feature is relied upon. A restored snapshot is always
+a new instance (new receipt, new incarnation) and never a reason to replay
+unconfirmed input. When the owner requests capture, how it reconciles a restore with
+Git, and the WorkspaceHost-owned idle policy (default sleep after 15 minutes, optional
+resident) are specified in
+[workspace-host-split §3.7](../platform/workspace-host-split.md#37-工作区持久化与空闲设计2026-11-23-用户决定未实现).
+The existing `PersistentWorkspaceProvider` for Assets workspaces is unchanged.
 
 The independent durable terminal owner keeps its existing process RPC and lifetime.
 This integration does not route that separate Workbench terminal owner through

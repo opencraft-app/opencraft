@@ -1,21 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { TextDecoder } from 'node:util';
-import type { SandboxEnvironment, SandboxProcess } from '@opencraft/sandbox';
+import { openSandboxEndpoint, type SandboxEndpointConnection, type SandboxEnvironment } from '@opencraft/sandbox';
 
-const proxy = `import os,socket,select,sys
-s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
-s.connect(sys.argv[1])
-while True:
- ready,_,_=select.select([s,sys.stdin.buffer],[],[])
- if s in ready:
-  data=s.recv(65536)
-  if not data: break
-  sys.stdout.buffer.write(data);sys.stdout.buffer.flush()
- if sys.stdin.buffer in ready:
-  data=os.read(0,65536)
-  if not data: break
-  s.sendall(data)
-s.close()`;
 export interface SandboxBrowserOwnerTransport extends EventEmitter {
   connected: boolean;
   inventory: unknown[];
@@ -27,7 +13,8 @@ export interface SandboxBrowserOwnerTransport extends EventEmitter {
   kill(): void;
   close(): Promise<void>;
 }
-/** Existing private Browser Owner v1 protocol over sandbox process pipes. No CDP
+/** Existing private Browser Owner v1 protocol over a provider-neutral sandbox endpoint
+ * (one attached relay process; its loss ends this attachment only). No CDP
  * listener, new page owner, local browser fallback or write replay is introduced.
  * Runtime preparation/startup and per-page authority remain with their owners. */
 export async function connectSandboxBrowserOwner(options: {
@@ -43,7 +30,7 @@ export async function connectSandboxBrowserOwner(options: {
   await options.authorize();
   const transport = new EventEmitter() as SandboxBrowserOwnerTransport;
   transport.connected = false;
-  let child: SandboxProcess | undefined, stopped = false, attached = false, cleanup: Promise<void> | undefined;
+  let child: SandboxEndpointConnection | undefined, stopped = false, attached = false, cleanup: Promise<void> | undefined;
   let resolve!: (value: SandboxBrowserOwnerTransport) => void, reject!: (error: Error) => void;
   const ready = new Promise<SandboxBrowserOwnerTransport>((yes, no) => { resolve = yes; reject = no; });
   // Attach may fail during spawn before the caller starts awaiting ready.
@@ -52,7 +39,7 @@ export async function connectSandboxBrowserOwner(options: {
   const close = (): Promise<void> => cleanup ??= (async () => {
     stopped = true; transport.connected = false; clearTimeout(timer);
     reject(Error('Sandbox browser transport closed'));
-    if (child) try { await child.terminate(); } catch { options.onCleanupUnconfirmed(); throw Error('Sandbox browser transport cleanup unconfirmed'); }
+    if (child) try { await child.close(); } catch { options.onCleanupUnconfirmed(); throw Error('Sandbox browser transport cleanup unconfirmed'); }
   })();
   const fail = () => {
     if (stopped) return;
@@ -81,7 +68,7 @@ export async function connectSandboxBrowserOwner(options: {
     const operation = writes.then(async () => {
       await options.authorize();
       if (stopped || !child) throw Error('Browser owner transport unavailable');
-      await child.writeStdin(bytes);
+      await child.write(bytes);
     });
     writes = operation.catch(() => { fail(); });
     void operation.then(() => { callback?.(); }, () => { callback?.(Error('Browser owner transport unavailable')); })
@@ -114,13 +101,12 @@ export async function connectSandboxBrowserOwner(options: {
     } catch { fail(); }
   };
   try {
-    child = await options.sandbox.spawn({ command: ['/usr/bin/python3', '-I', '-u', '-c', proxy, options.socketPath], cwd: '/workspace', env: {} },
-      output => { if (output.stream === 'stdout') receive(output.data); });
-    if (stopped) { try { await child.terminate(); } catch { options.onCleanupUnconfirmed(); } throw Error('Sandbox browser attach expired'); }
-    void child.exited.then(fail, fail);
+    child = await openSandboxEndpoint(options.sandbox, { target: { unix: options.socketPath }, cwd: '/workspace', onData: receive });
+    if (stopped) { try { await child.close(); } catch { options.onCleanupUnconfirmed(); } throw Error('Sandbox browser attach expired'); }
+    void child.closed.then(fail);
     await options.authorize();
     if (stopped) throw Error('Sandbox browser attach expired');
-    await child.writeStdin(Buffer.from('{"type":"attach","protocol":1}\n'));
+    await child.write(Buffer.from('{"type":"attach","protocol":1}\n'));
     const attachedOwner = await ready;
     await options.authorize();
     if (stopped) throw Error('Sandbox browser attach expired');

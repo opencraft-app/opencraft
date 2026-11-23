@@ -43,6 +43,24 @@ test("Hands validates equivalent cgroup v2 and v1 resource controllers", async t
   await assert.rejects(verifyHandsCgroup(resources, root), /does not enforce/);
 });
 
+test("Hands cgroup v1 verification accepts a separately mounted cpu controller and fails closed without one", async t => {
+  const root = await mkdtemp(join(tmpdir(), "hands-cgroup-v1-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const resources = { cpuMillis: 2000, memoryBytes: 4294967296 };
+  await Promise.all(["cpu", "cpuacct", "memory", "pids"].map(path => mkdir(join(root, path))));
+  await Promise.all([
+    writeFile(join(root, "cpu/cpu.cfs_quota_us"), "200000\n"),
+    writeFile(join(root, "cpu/cpu.cfs_period_us"), "100000\n"),
+    writeFile(join(root, "memory/memory.limit_in_bytes"), "4294967296\n"),
+    writeFile(join(root, "pids/pids.max"), "4096\n"),
+  ]);
+  await verifyHandsCgroup(resources, root);
+  await writeFile(join(root, "cpu/cpu.cfs_quota_us"), "100000\n");
+  await assert.rejects(verifyHandsCgroup(resources, root), /does not enforce/);
+  await rm(join(root, "cpu"), { recursive: true });
+  await assert.rejects(verifyHandsCgroup(resources, root), /does not enforce/);
+});
+
 test("Hands Unix owner runs only the pinned Codex exec-server and fences its lease", async t => {
   const root = await mkdtemp(join(tmpdir(), "opencraft-hands-unix-"));
   t.after(() => rm(root, { recursive: true, force: true }));

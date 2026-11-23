@@ -4,9 +4,9 @@ import { mkdtemp, readFile, writeFile, chmod, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { deploymentPaths, readPrivateToken } from '../../scripts/container-deployment/paths.mjs';
+import { deploymentPaths, proxyConfiguration, readPrivateToken } from '../../scripts/container-deployment/paths.mjs';
 import { handsResources } from '../../scripts/container-deployment/resources.mjs';
-import { OWNER_ORDER, assertImageReference, deploymentIdentity, parseEnvironment, setEnvironmentValue } from '../../scripts/container-deployment/compose-release.mjs';
+import { AGENT_RUN_DIRECTORY, inspectWorkspaceAgentServices, OWNER_ORDER, RESTORE_PROXY_MODE_VARIABLE, RESTORE_PROXY_PORT_VARIABLE, EMBEDDED_CORE_ENVIRONMENT, brainEmbedsAccountCore, ownerSteps, restoreSteps, assertImageReference, deploymentIdentity, parseEnvironment, setEnvironmentValue } from '../../scripts/container-deployment/compose-release.mjs';
 import { legacyLayoutValues } from '../../scripts/container-deployment/layout.mjs';
 
 const composeExecutable = process.env.OPENCRAFT_COMPOSE_EXECUTABLE ?? 'docker';
@@ -15,7 +15,7 @@ const composeAvailable = () => spawnSync(composeExecutable, [...composePrefix, '
 const compose = (args, options) => execFileSync(composeExecutable, [...composePrefix, ...args], options);
 
 test('Compose release transactions preserve env content and owner dependency order', () => {
-  assert.deepEqual(OWNER_ORDER, ['hands', 'brain', 'gateway']);
+  assert.deepEqual(OWNER_ORDER, ['hands', 'proxy', 'brain', 'gateway']);
   const source = '# deployment\nOPENCRAFT_IMAGE=opencraft:v1\nOPENCRAFT_PORT=10000\n';
   assert.deepEqual(parseEnvironment(source), { OPENCRAFT_IMAGE: 'opencraft:v1', OPENCRAFT_PORT: '10000' });
   assert.equal(setEnvironmentValue(source, 'OPENCRAFT_IMAGE', 'ghcr.io/opencraft-app/opencraft@sha256:abc'),
@@ -50,7 +50,8 @@ test('external execution uses one absolute data identity and a separate runtime 
   assert.equal(paths.dataDirectory, '/srv/state');
   assert.equal(paths.runtimeDirectory, '/srv/projects');
   assert.equal(paths.coreEndpoint, '/srv/state/run/codex-core.sock');
-  assert.equal(paths.engineDescriptor, '/srv/state/run/engine-host.json');
+  // Engine descriptors are agent-private; the Gateway reads them through workspace endpoints.
+  assert.equal(paths.engineDescriptor, '/run/opencraft-agent/engine-host.json');
   assert.equal(paths.executionContext,'assets');
   assert.equal(deploymentPaths({OPENCRAFT_DATA_DIR:'/state',OPENCRAFT_WORKSPACE_DIR:'/work',OPENCRAFT_EXECUTION_CONTEXT:'legacy'}).executionContext,'legacy');
   assert.throws(()=>deploymentPaths({OPENCRAFT_DATA_DIR:'/state',OPENCRAFT_WORKSPACE_DIR:'/work',OPENCRAFT_EXECUTION_CONTEXT:'fallback'}),/EXECUTION_CONTEXT/);
@@ -69,6 +70,103 @@ test('core authentication refuses readable-by-others and empty files', async t =
   await assert.rejects(readPrivateToken(path), /Invalid core token/);
 });
 
+test('the first proxy-default release stops an embedded-Core Brain before the proxy takes the account writer', () => {
+  const steps = ownerSteps({ brainEmbedsCore: true });
+  assert.deepEqual(steps, [['stop', 'brain'], ['up', 'hands'], ['up', 'proxy'], ['up', 'brain'], ['up', 'gateway']]);
+  assert.ok(steps.findIndex(([, s]) => s === 'proxy') < steps.findIndex(([a, s]) => a === 'up' && s === 'brain'));
+  // Already switched: Brain keeps serving while the proxy is replaced; nothing is stopped first.
+  assert.deepEqual(ownerSteps({ brainEmbedsCore: false }), OWNER_ORDER.map(service => ['up', service]));
+  assert.equal(brainEmbedsAccountCore(['PATH=/bin', 'OPENCRAFT_DATA_DIR=/d']), true, 'pre-proxy Brain had no proxy mode');
+  assert.equal(brainEmbedsAccountCore(['OPENCRAFT_PROXY_MODE=embedded']), true);
+  assert.equal(brainEmbedsAccountCore(['OPENCRAFT_PROXY_MODE=external', 'OPENCRAFT_PROXY_PORT=45071']), false);
+  assert.equal(brainEmbedsAccountCore(null), false, 'no Brain container: nothing holds the writer');
+});
+
+test('a failed switch from an embedded-Core release restores that topology, not only the previous image', t => {
+  // The previous release had no proxy owner (and its image may not provide one): remove it and embed the Core again.
+  const steps = restoreSteps({ embeddedCoreBefore: true });
+  // Gateway is recreated: when the failed release never reached it, its health may already be failing after Brain stopped.
+  assert.deepEqual(steps, [['stop', 'brain'], ['remove', 'proxy'], ['up', 'hands'], ['up-embedded', 'brain'], ['recreate', 'gateway']]);
+  assert.ok(steps.findIndex(([a]) => a === 'remove') < steps.findIndex(([a]) => a === 'up-embedded'), 'the proxy releases the account writer first');
+  assert.equal(steps.some(([a, s]) => a.startsWith('up') && s === 'proxy'), false);
+  // A release that already ran the proxy topology restores the same four owners in order.
+  assert.deepEqual(restoreSteps({ embeddedCoreBefore: false }), OWNER_ORDER.map(service => ['up', service]));
+  if (!composeAvailable()) return t.skip('Docker Compose CLI is unavailable');
+  const render = extra => JSON.parse(compose(['-f', 'deploy/docker/compose.yaml', 'config', '--format', 'json', 'brain'], {
+    cwd: new URL('../..', import.meta.url), encoding: 'utf8',
+    env: { ...process.env, OPENCRAFT_UID: '1234', OPENCRAFT_GID: '2345', OPENCRAFT_HOST_DATA_DIR: '/srv/opencraft/state',
+      OPENCRAFT_DATA_DIR: '/var/lib/opencraft', OPENCRAFT_HOST_WORKSPACE_DIR: '/srv/opencraft/workspaces', OPENCRAFT_WORKSPACE_DIR: '/workspace', ...extra },
+  })).services.brain.environment;
+  const restored = render({ ...EMBEDDED_CORE_ENVIRONMENT, OPENCRAFT_PROXY_PORT: '45931' });
+  assert.equal(restored.OPENCRAFT_PROXY_MODE, 'embedded');
+  // No fixed port: the embedded Core picks a free one, as before the switch, even if a failed proxy still holds it.
+  assert.equal(restored.OPENCRAFT_PROXY_PORT ?? '', '');
+  assert.deepEqual(proxyConfiguration(restored), { proxyMode: 'embedded', proxyPort: null });
+  assert.equal(brainEmbedsAccountCore(Object.entries(restored).map(([k, v]) => `${k}=${v}`)), true, 'the next upgrade switches it again');
+  const normal = render({ OPENCRAFT_PROXY_PORT: '45931' });
+  assert.deepEqual(proxyConfiguration(normal), { proxyMode: 'external', proxyPort: 45931 });
+  assert.deepEqual(proxyConfiguration(render({})), { proxyMode: 'external', proxyPort: 45071 });
+});
+
+test('doctor refuses a restore-only proxy mode persisted in .env', async () => {
+  const { doctor } = await import('../../scripts/container-deployment/compose-release.mjs');
+  for (const [name, value] of [[RESTORE_PROXY_MODE_VARIABLE, 'embedded'], [RESTORE_PROXY_PORT_VARIABLE, '']])
+    await assert.rejects(doctor({ OPENCRAFT_HOST_DATA_DIR: '/srv/s', OPENCRAFT_DATA_DIR: '/var/lib/opencraft', OPENCRAFT_HOST_WORKSPACE_DIR: '/srv/w',
+      OPENCRAFT_WORKSPACE_DIR: '/workspace', OPENCRAFT_UID: '1000', OPENCRAFT_GID: '1000', [name]: value }), new RegExp(`Remove ${name}`));
+});
+
+test('doctor fails before any release step when .env or deployment state cannot be committed by the deployment UID', async t => {
+  // A release writes .env and compose-state.json by atomic rename only after all four owners were applied.
+  const root_ = process.getuid() === 0;
+  // The unprivileged child must traverse every ancestor; an isolated test TMPDIR may be private to root.
+  const root = await mkdtemp(join(root_ ? '/tmp' : tmpdir(), 'opencraft-doctor-writable-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  // access(2) ignores modes for root, so the check runs as an unprivileged deployment identity.
+  const uid = root_ ? 65534 : process.getuid(), gid = root_ ? 65534 : process.getgid();
+  const { mkdir, chown } = await import('node:fs/promises');
+  const own = async (path, mode) => { await mkdir(path, { recursive: true, mode }); await chmod(path, mode); if (root_) await chown(path, uid, gid); };
+  await chmod(root, 0o755);
+  const state = join(root, 'state'), deploy = join(root, 'deploy');
+  for (const path of [state, join(state, 'execution'), join(state, 'execution', 'git-credentials'), join(state, 'logs'),
+    ...['brain', 'gateway', 'hands', 'proxy'].map(service => join(state, 'logs', service)), join(root, 'work'), deploy]) await own(path, 0o700);
+  const environment = { OPENCRAFT_HOST_DATA_DIR: state, OPENCRAFT_DATA_DIR: '/var/lib/opencraft', OPENCRAFT_HOST_WORKSPACE_DIR: join(root, 'work'),
+    OPENCRAFT_WORKSPACE_DIR: '/workspace', OPENCRAFT_UID: String(uid), OPENCRAFT_GID: String(gid) };
+  const doctorAs = () => spawnSync(process.execPath, ['--input-type=module', '-e', `
+    import { doctor } from ${JSON.stringify(new URL('../../scripts/container-deployment/compose-release.mjs', import.meta.url).href)};
+    try { await doctor(${JSON.stringify(environment)}, { allowOversubscription: true, deployDirectory: ${JSON.stringify(deploy)} }); console.log('doctor-passed-writable'); }
+    catch (error) { console.log(/not writable/.test(error.message) ? 'doctor-refused ' + error.message : 'doctor-later ' + error.message); }
+  `], { encoding: 'utf8', ...(root_ ? { uid, gid } : {}) });
+  const outcome = () => { const result = doctorAs(); assert.equal(result.status, 0, String(result.stderr)); return result.stdout.trim(); };
+  if (root_ && doctorAs().error?.code === 'EACCES') return t.skip('this Node executable is not runnable by an unprivileged deployment UID');
+  // Writable: the check passes (any later failure, e.g. Compose rendering in this sandbox, is a different check).
+  assert.doesNotMatch(outcome(), /^doctor-refused/);
+  await chmod(deploy, 0o500);
+  assert.match(outcome(), /^doctor-refused .*deploy.*\.env/);
+  await chmod(deploy, 0o700);
+  await own(join(state, 'deployment'), 0o500);
+  assert.match(outcome(), /^doctor-refused .*deployment.*compose-state\.json/);
+  await chmod(join(state, 'deployment'), 0o700);
+  assert.doesNotMatch(outcome(), /^doctor-refused/);
+});
+
+test('Brain and Hands render the same non-default execution budget', t => {
+  if (!composeAvailable())
+    return t.skip('Docker Compose CLI is unavailable');
+  const config = JSON.parse(compose(['-f', 'deploy/docker/compose.yaml', 'config', '--format', 'json'], {
+    cwd: new URL('../..', import.meta.url), encoding: 'utf8',
+    env: { ...process.env, OPENCRAFT_UID: '1234', OPENCRAFT_GID: '2345',
+      OPENCRAFT_HOST_DATA_DIR: '/srv/opencraft/state', OPENCRAFT_DATA_DIR: '/var/lib/opencraft',
+      OPENCRAFT_HOST_WORKSPACE_DIR: '/srv/opencraft/workspaces', OPENCRAFT_WORKSPACE_DIR: '/workspace',
+      OPENCRAFT_HANDS_CPUS: '2.0', OPENCRAFT_HANDS_MEMORY_BYTES: '4294967296' },
+  }));
+  const { brain, hands } = config.services;
+  // Hands rejects a lease whose declared resources differ from its own budget.
+  assert.deepEqual(handsResources(brain.environment), { cpuMillis: 2000, memoryBytes: 4294967296 });
+  assert.deepEqual(handsResources(brain.environment), handsResources(hands.environment));
+  assert.equal(hands.cpus, 2);
+  assert.equal(hands.mem_limit, '4294967296');
+});
+
 test('rendered Compose separates gateway, brain and hands while preserving path identity', t => {
   if (!composeAvailable())
     return t.skip('Docker Compose CLI is unavailable');
@@ -79,9 +177,9 @@ test('rendered Compose separates gateway, brain and hands while preserving path 
       OPENCRAFT_HOST_LOG_DIR: '/srv/opencraft/logs', OPENCRAFT_LOG_DIR: '/var/log/opencraft',
       OPENCRAFT_HOST_WORKSPACE_DIR: '/srv/opencraft/workspaces', OPENCRAFT_WORKSPACE_DIR: '/workspace' },
   }));
-  assert.deepEqual(Object.keys(config.services).sort(), ['brain', 'gateway', 'hands']);
-  const service = config.services.gateway, brain = config.services.brain, hands = config.services.hands;
-  for (const value of [service, brain, hands]) {
+  assert.deepEqual(Object.keys(config.services).sort(), ['brain', 'gateway', 'hands', 'proxy']);
+  const service = config.services.gateway, brain = config.services.brain, hands = config.services.hands, proxy = config.services.proxy;
+  for (const value of [service, brain, hands, proxy]) {
     assert.equal(value.user, '1234:2345');
     assert.deepEqual(value.build.args, { OPENCRAFT_UID: '1234', OPENCRAFT_GID: '2345' });
     assert.equal(value.network_mode, 'host');
@@ -94,7 +192,7 @@ test('rendered Compose separates gateway, brain and hands while preserving path 
   assert.deepEqual(hands.cap_drop, ['ALL']);
   assert.deepEqual([...hands.cap_add].sort(), ['SETGID', 'SETUID', 'SYS_ADMIN', 'SYS_CHROOT']);
   assert.equal(hands.environment.HOME, '/var/lib/opencraft/execution');
-  assert.deepEqual(hands.volumes.map(v => [v.source, v.target]), [
+  assert.deepEqual(hands.volumes.filter(v => v.type === 'bind').map(v => [v.source, v.target]), [
     ['/srv/opencraft/state/execution/git-credentials', '/var/lib/opencraft/git-credentials'],
     ['/srv/opencraft/state/execution', '/var/lib/opencraft/execution'],
     ['/srv/opencraft/workspaces', '/workspace'],
@@ -105,17 +203,35 @@ test('rendered Compose separates gateway, brain and hands while preserving path 
     assert.equal(value.volumes.find(v => v.target === '/var/log/opencraft').read_only, true);
     assert.notEqual(value.volumes.find(v => v.target === `/var/log/opencraft/${name}`).read_only, true);
     assert.deepEqual(value.entrypoint, ['/opt/opencraft/bin/node', '/opt/opencraft/runtime/container-service.mjs', name]);
+    if (name === 'proxy') continue; // The account Core owns no thread cwd or browser state.
     assert.equal(value.environment.OPENCRAFT_CODEX_PROJECTLESS_DIR, '/workspace/sessions/codex');
     assert.equal(value.environment.OPENCRAFT_BROWSER_DATA_DIR, '/var/lib/opencraft/execution/browser');
   }
+  assert.equal(proxy.pid, undefined);
+  assert.equal(brain.environment.OPENCRAFT_PROXY_MODE, 'external');
+  assert.equal(brain.depends_on.proxy.condition, 'service_healthy');
+  assert.equal(service.environment.OPENCRAFT_ASSISTANT_PROXY_CALLER_FILE, '/var/lib/opencraft/run/proxy-callers/assistant.json');
   assert.equal(hands.environment.OPENCRAFT_HANDS_EXECUTION_SOCKET, '/var/lib/opencraft/execution/exec-owner.sock');
   assert.equal(hands.environment.OPENCRAFT_WORKSPACE_DIR, '/workspace');
   assert.equal(hands.environment.OPENCRAFT_HANDS_CPUS, '4.0');
   assert.equal(hands.environment.OPENCRAFT_HANDS_MEMORY_BYTES, '8589934592');
   assert.equal(hands.cpus, 4);
   assert.equal(hands.mem_limit, '8589934592');
+  // The Gateway reaches Brain and Hands only through their static-docker links.
+  assert.equal(service.environment.OPENCRAFT_WORKSPACE_ENVIRONMENTS, 'static-docker://brain static-docker://hands');
+  assert.equal(service.environment.OPENCRAFT_BROWSER_OWNER_SOCKET, undefined);
+  assert.equal(brain.cpus, 4);
+  assert.equal(brain.mem_limit, '8589934592');
+  assert.deepEqual(service.volumes.filter(v => v.type === 'volume').map(v => [v.source, v.target]),
+    [['brain-link', '/run/opencraft-links/brain'], ['hands-link', '/run/opencraft-links/hands']]);
+  for (const [name, value] of [['brain', brain], ['hands', hands]]) {
+    assert.deepEqual(value.volumes.filter(v => v.type === 'volume').map(v => [v.source, v.target]), [[`${name}-link`, '/run/opencraft-link']]);
+    assert.equal(value.environment.OPENCRAFT_AGENT_LINK_DIR, '/run/opencraft-link');
+  }
+  assert.equal(proxy.volumes.some(v => v.type === 'volume'), false, 'the proxy never sees a workspace link');
+  assert.equal(config.volumes['brain-link'].driver_opts.type, 'tmpfs');
   // Some Compose versions omit false-valued bind options from JSON output.
-  assert.deepEqual(service.volumes.map(v => [v.type, v.source, v.target, v.bind?.create_host_path ?? false]), [
+  assert.deepEqual(service.volumes.filter(v => v.type === 'bind').map(v => [v.type, v.source, v.target, v.bind?.create_host_path ?? false]), [
     ['bind', '/srv/opencraft/state/execution/git-credentials', '/var/lib/opencraft/git-credentials', false],
     ['bind', '/srv/opencraft/state', '/var/lib/opencraft', false], ['bind', '/srv/opencraft/workspaces', '/workspace', false],
     ['bind', '/srv/opencraft/logs', '/var/log/opencraft', false], ['bind', '/srv/opencraft/logs/gateway', '/var/log/opencraft/gateway', false],
@@ -123,14 +239,48 @@ test('rendered Compose separates gateway, brain and hands while preserving path 
   const paths = deploymentPaths(service.environment);
   assert.equal(service.command[service.command.indexOf('--data-dir') + 1], paths.dataDirectory);
   assert.equal(service.command[service.command.indexOf('--engines') + 1], 'dsh,pi');
-  assert.equal(service.environment.OPENCRAFT_BROWSER_OWNER_SOCKET, '/var/lib/opencraft/execution/browser/owner.sock');
+  // Brain and Hands workspace agents keep their run directory private to each container.
+  for (const value of [brain, hands]) {
+    assert.deepEqual(value.tmpfs, [`${AGENT_RUN_DIRECTORY}:uid=1234,gid=2345,mode=0700,size=16m`]);
+    assert.equal(value.environment.OPENCRAFT_AGENT_RUN_DIR, AGENT_RUN_DIRECTORY);
+    assert.equal(deploymentPaths(value.environment).engineConfig.startsWith(AGENT_RUN_DIRECTORY + '/'), true);
+  }
+  assert.deepEqual(service.tmpfs, ['/run/opencraft-gateway:uid=1234,gid=2345,mode=0700,size=1m'], 'Gateway never sees an agent run directory');
+  inspectWorkspaceAgentServices(config);
+  const { tmpfs, ...withoutTmpfs } = brain;
+  assert.throws(() => inspectWorkspaceAgentServices({ services: { ...config.services, brain: withoutTmpfs } }), /brain has no private/);
+  assert.throws(() => inspectWorkspaceAgentServices({ services: { ...config.services, hands: { ...hands,
+    volumes: [...hands.volumes, { type: 'bind', source: '/srv/x', target: AGENT_RUN_DIRECTORY }] } } }), /must not share/);
+  assert.throws(() => inspectWorkspaceAgentServices({ services: { ...config.services, brain: { ...brain,
+    volumes: brain.volumes.filter(v => v.type !== 'volume') } } }), /no private static-docker link/);
+  assert.throws(() => inspectWorkspaceAgentServices({ services: { ...config.services, proxy: { ...proxy,
+    volumes: [...proxy.volumes, { type: 'volume', source: 'hands-link', target: '/x' }] } } }), /proxy must not mount the hands link/);
+  assert.throws(() => inspectWorkspaceAgentServices({ services: { ...config.services, gateway: { ...service,
+    volumes: service.volumes.filter(v => v.source !== 'brain-link') } } }), /gateway does not mount the brain link/);
+});
+
+test('the agent run directory is container-private and launch configuration leaves the shared data mount', () => {
+  const paths = deploymentPaths({ OPENCRAFT_DATA_DIR: '/var/lib/opencraft', OPENCRAFT_WORKSPACE_DIR: '/workspace' });
+  assert.equal(paths.agentRunDirectory, '/run/opencraft-agent');
+  assert.equal(paths.agentControlEndpoint, '/run/opencraft-agent/control.sock');
+  for (const key of ['engineConfig', 'dshConfig', 'sandboxConfig', 'codexPrivateDirectory']) assert.ok(paths[key].startsWith('/run/opencraft-agent/'), key);
+  // Brain owners publish nothing in the shared run directory (step 4c); only AccountCore remains there.
+  for (const key of ['appServerEndpoint', 'appServerNativeSocket', 'appServerTokenFile', 'engineSocket', 'engineDescriptor', 'dshSocket', 'dshDescriptor'])
+    assert.ok(paths[key].startsWith('/run/opencraft-agent/'), key);
+  assert.ok(paths.coreEndpoint.startsWith('/var/lib/opencraft/run/'));
+  assert.equal(paths.agentLinkDirectory, null);
+  assert.equal(deploymentPaths({ OPENCRAFT_DATA_DIR: '/var/lib/opencraft', OPENCRAFT_WORKSPACE_DIR: '/workspace', OPENCRAFT_AGENT_LINK_DIR: '/run/opencraft-link' }).agentLinkDirectory, '/run/opencraft-link');
+  for (const shared of ['/var/lib/opencraft/run/link', '/run/opencraft-agent/link', '/workspace/link', 'relative'])
+    assert.throws(() => deploymentPaths({ OPENCRAFT_DATA_DIR: '/var/lib/opencraft', OPENCRAFT_WORKSPACE_DIR: '/workspace', OPENCRAFT_AGENT_LINK_DIR: shared }));
+  for (const shared of ['/var/lib/opencraft/run', '/workspace/agent', '/var/lib/opencraft/execution/agent'])
+    assert.throws(() => deploymentPaths({ OPENCRAFT_DATA_DIR: '/var/lib/opencraft', OPENCRAFT_WORKSPACE_DIR: '/workspace', OPENCRAFT_AGENT_RUN_DIR: shared }), /container-private/);
 });
 
 test('prebuilt role images preserve the runtime service contract and project paths', t => {
   if (spawnSync('docker', ['compose', 'version'], { stdio: 'ignore' }).status !== 0)
     return t.skip('Docker Compose CLI is unavailable');
   const env = { ...process.env, OPENCRAFT_HOST_WORKSPACE_DIR: '/srv/projects', OPENCRAFT_WORKSPACE_DIR: '/srv/projects' };
-  const roles = ['gateway', 'brain', 'hands'];
+  const roles = ['gateway', 'brain', 'hands', 'proxy'];
   const image = role => `example.org/opencraft/${role}:v1`;
   for (const role of roles) env[`OPENCRAFT_${role.toUpperCase()}_IMAGE`] = image(role);
   const render = (...extra) => JSON.parse(execFileSync('docker', ['compose', '--env-file', 'deploy/docker/.env.example',
@@ -146,6 +296,8 @@ test('prebuilt role images preserve the runtime service contract and project pat
     assert.deepEqual(rendered[role], { ...expected, image: image(role) });
     assert.ok(rendered[role].volumes.some(v => v.source === '/srv/projects' && v.target === v.source));
   }
+  delete env.OPENCRAFT_PROXY_IMAGE;
+  assert.equal(render(...overlay).proxy.image, image('brain'), 'the proxy defaults to the Brain role image');
   env.OPENCRAFT_HANDS_IMAGE = '';
   assert.throws(() => render(...overlay), /OPENCRAFT_HANDS_IMAGE/u);
 });
@@ -167,7 +319,6 @@ test('adopted legacy deployments render the existing browser, execution and thre
   }));
   const hands = config.services.hands, brain = config.services.brain;
   assert.equal(hands.environment.OPENCRAFT_BROWSER_DATA_DIR, '/data/.opencraft/hands');
-  assert.equal(config.services.gateway.environment.OPENCRAFT_BROWSER_OWNER_SOCKET, '/data/.opencraft/hands/owner.sock');
   assert.equal(config.services.gateway.environment.OPENCRAFT_GATEWAY_HOME, '/data/.opencraft/container-home');
   assert.equal(brain.environment.OPENCRAFT_CODEX_PROJECTLESS_DIR, '/data/.opencraft/hands/projectless-workspaces');
   assert.equal(hands.environment.OPENCRAFT_CODEX_PROJECTLESS_DIR, brain.environment.OPENCRAFT_CODEX_PROJECTLESS_DIR);
@@ -203,6 +354,43 @@ test('custom container candidates carry pinned bases, source identity and a veri
   assert.ok(installIndex >= 0 && testIndex > installIndex, 'install dependencies before the container regressions');
 });
 
+test('every image stage that runs a workspace agent installs the static-docker link interpreter', async () => {
+  const root = new URL('../..', import.meta.url);
+  // The agent's link broker runs /usr/bin/python3 (OPENCRAFT_AGENT_PYTHON default); an image
+  // without it attaches the Gateway and then refuses every endpoint process.
+  const stages = text => {
+    const result = new Map();
+    // A stage chosen by a global build argument (`FROM brain-dsh-${OPENCRAFT_BRAIN_DSH}`)
+    // is checked with the argument's default.
+    const globals = new Map();
+    let current;
+    for (const line of text.replace(/\\\n/gu, ' ').split('\n')) {
+      const argument = /^ARG\s+([A-Z_]+)=(\S*)$/u.exec(line);
+      if (argument && !current) globals.set(argument[1], argument[2]);
+      const from = /^FROM\s+(\S+)(?:\s+AS\s+(\S+))?/iu.exec(line.replace(/\$\{([A-Z_]+)\}/gu, (whole, name) => globals.get(name) ?? whole));
+      if (from) { current = { base: from[1], body: '' }; if (from[2]) result.set(from[2], current); continue; }
+      if (current) current.body += line + '\n';
+    }
+    return result;
+  };
+  const installsPython = (all, name) => {
+    for (let stage = all.get(name); stage; stage = all.get(stage.base))
+      if (/apt-get install[^\n]*\spython3(\s|$)/u.test(stage.body)) return true;
+    return false;
+  };
+  for (const [file, agentStages] of [
+    ['deploy/docker/Dockerfile', ['runtime']],
+    // `runtime` is the image every Compose service runs (CI builds --target runtime).
+    ['deploy/docker/Dockerfile.owned-electron', ['runtime', 'brain', 'hands', 'full']],
+  ]) {
+    const all = stages(await readFile(new URL(file, root), 'utf8'));
+    for (const name of agentStages) {
+      assert.ok(all.has(name), `${file} declares ${name}`);
+      assert.ok(installsPython(all, name), `${file} stage ${name} must install python3 for the link broker`);
+    }
+  }
+});
+
 test('product prefix and Brain DSH are opt-in build arguments whose defaults keep the core images', async () => {
   const dockerfile = await readFile(new URL('../../deploy/docker/Dockerfile.owned-electron', import.meta.url), 'utf8');
   const stages = dockerfile.split(/^(?=FROM )/mu);
@@ -210,7 +398,11 @@ test('product prefix and Brain DSH are opt-in build arguments whose defaults kee
   // The stage name is chosen by a global argument whose default adds nothing to Brain.
   assert.match(stages[0], /^ARG OPENCRAFT_BRAIN_DSH=none$/mu);
   assert.equal(stage('brain'), 'FROM brain-dsh-${OPENCRAFT_BRAIN_DSH} AS brain\n\n');
-  assert.match(stage('brain-dsh-none'), /^FROM control-runtime AS brain-dsh-none\nLABEL org\.opencraft\.role=brain\nENTRYPOINT \[[^\n]+"brain"\]\n\n$/u);
+  // The default Brain stage adds only the link broker interpreter (checked above), never DSH.
+  const brain = stage('brain-dsh-none');
+  assert.match(brain, /^FROM control-runtime AS brain-dsh-none\nLABEL org\.opencraft\.role=brain\n/u);
+  assert.match(brain, /\nENTRYPOINT \[[^\n]+"brain"\]\n\n$/u);
+  assert.doesNotMatch(brain, /dsh-runtime|OPENCRAFT_DSH_EXECUTABLE/u);
   const packaged = stage('brain-dsh-packaged');
   assert.match(packaged, /^FROM brain-dsh-none AS/u);
   assert.match(packaged, /COPY --from=dsh-runtime \/src\/runtime\/dsh\/node_modules \/opt\/opencraft\/runtime\/dsh\/node_modules/u);
@@ -227,13 +419,6 @@ test('product prefix and Brain DSH are opt-in build arguments whose defaults kee
   assert.match(stages.at(-1), /^FROM runtime AS full\n/u);
   const packager = await readFile(new URL('../../scripts/packaging/package-headless-linux.mjs', import.meta.url), 'utf8');
   assert.match(packager, /process\.env\.OPENCRAFT_PRODUCT_PREFIX \? \{ prefix: process\.env\.OPENCRAFT_PRODUCT_PREFIX \} : \{\}/u);
-});
-
-test('standalone container Core entries ship the registry and recovery Workers beside the runtime', async () => {
-  const packager = await readFile(new URL('../../scripts/packaging/package-container.mjs', import.meta.url), 'utf8');
-  for (const [source, target] of [['generation-registry.worker.ts', 'generation-registry-worker.mjs'], ['router-evidence.worker.ts', 'router-evidence-worker.mjs']]) {
-    assert.ok(packager.includes(`['apps/codex-core/src/${source}', '${target}', 'esm']`));
-  }
 });
 
 test('the local GitHub builder is portable, locked, revision-pinned and advances its moving tag only after success', async () => {

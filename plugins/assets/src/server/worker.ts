@@ -34,6 +34,13 @@ export type {
   AssetEnvironmentProject,
   AssetEnvironmentSettingsMethods,
 } from "./actor-settings.js";
+/** Worker-reported Bot backend IDs; malformed reports fail closed to none. */
+function botBackends(ready: Ready): readonly string[] {
+  const ids = ready.botExecution === true ? ready.botBackends : undefined;
+  if (!Array.isArray(ids) || ids.length > 16 || ids.some((id) => typeof id !== "string" || !/^[a-z0-9][a-z0-9-]{0,22}$/u.test(id)))
+    return [];
+  return Object.freeze([...new Set(ids)]);
+}
 
 /** A request-local revocable admission, not an identity supplied by HTTP input.
  * The authenticated owner invalidates permit[0] on account/role/session changes.
@@ -103,6 +110,7 @@ interface Ready {
   environmentSettings?: boolean;
   workspaceExecution: boolean;
   botExecution?: boolean;
+  botBackends?: readonly string[];
 }
 /** All vault opens, migrations, reads and writes belong to this FIFO Worker.
  * There is no local fallback, runtime-secret RPC or automatic mutation retry. */
@@ -174,6 +182,7 @@ export async function openAssetConfigurations(
     botExecution: ready.botExecution === true,
     /** This owner serves personal ENV settings for an original Human proof. */
     environmentSettings: ready.environmentSettings === true,
+    botBackends: botBackends(ready),
     /** Vault-owner port for `/host-environment`: only routing metadata goes in
      * and only an opaque capsule comes back to this thread. */
     environmentLaunch:

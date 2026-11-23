@@ -6,6 +6,7 @@ import {once} from 'node:events';
 import {createServer} from 'vite';
 import {WebSocketServer} from 'ws';
 import {AttachmentUploadStore} from '../../../apps/local-agent-host/src/attachments/attachment-upload-store';
+import {hostFileBlobStore} from '../../../apps/local-agent-host/src/storage/host-file-blobs';
 
 // Actual Composer, browser resolver, Workbench runtime, WebSocket transport and
 // Host upload store. Only initialize/control and the final file location are
@@ -46,7 +47,7 @@ try {
     let commits = 0, cancels = 0, removes = 0, connections = 0, dropped = false;
     const chunks: Array<{id: string; offset: number; retry: boolean}> = [];
     const held: Array<() => void> = [];
-    const store = new AttachmentUploadStore(join(root, '.uploads'), async (request, path, hash) => {
+    const store = new AttachmentUploadStore(hostFileBlobStore(join(root, '.uploads')), async (request, path, hash) => {
       commits++; const target = join(root, request.clientAttachmentId); await copyFile(path, target); refs.set(request.clientAttachmentId, target);
       return {ref: {id: request.clientAttachmentId, name: request.name, mimeType: request.mimeType, size: request.size, sha256: hash,
         location: {kind: 'host-file', path: target}}};

@@ -15,21 +15,21 @@ const credential = () => ({ identity: { username: 'synthetic', name: 'Synthetic 
 test('a managed data-directory alias shares its canonical vault but never follows a key symlink', async t => {
   const root = await mkdtemp(join(tmpdir(), 'git-vault-alias-')); t.after(() => rm(root, { recursive: true, force: true }));
   const physical = join(root, 'physical'), alias = join(root, 'alias'); await mkdir(physical, { mode: 0o700 }); await symlink(physical, alias);
-  const first = new EmployeeGitVaultStore(alias); first.write('employee:1', 'github.com', 0, credential()); first.close();
-  const second = new EmployeeGitVaultStore(physical); assert.equal(second.status('employee:1', 'github.com').revision, 1); second.close();
+  const first = await EmployeeGitVaultStore.open(alias); first.write('employee:1', 'github.com', 0, credential()); first.close();
+  const second = await EmployeeGitVaultStore.open(physical); assert.equal(second.status('employee:1', 'github.com').revision, 1); second.close();
   const key = join(physical, 'employee-git-vault.key'); assert.equal((await stat(key)).mode & 0o077, 0);
   await rename(key, key + '.saved'); await symlink(key + '.saved', key);
-  assert.throws(() => new EmployeeGitVaultStore(alias));
+  await assert.rejects(EmployeeGitVaultStore.open(alias));
 });
 test('vault encrypts, binds account/host with AAD, persists CAS tombstones and rejects checksum mismatch', async t => {
   const root = await mkdtemp(join(tmpdir(), 'git-vault-test-')); t.after(() => rm(root, { recursive: true, force: true }));
-  let store = new EmployeeGitVaultStore(root);
+  let store = await EmployeeGitVaultStore.open(root);
   assert.equal(store.outcome.status, 'fresh');
   assert.equal(store.status('employee:1', 'github.com').configured, false);
   store.write('employee:1', 'github.com', 0, credential());
   assert.throws(() => store.write('employee:1', 'github.com', 0, credential()), /conflict/);
   assert.equal(store.status('employee:2', 'github.com').configured, false);
-  store.close(); store = new EmployeeGitVaultStore(root);
+  store.close(); store = await EmployeeGitVaultStore.open(root);
   assert.equal(store.outcome.status, 'up-to-date');
   assert.equal(store.read('employee:1', 'github.com').credential?.token === credential().token, true);
   store.write('employee:1', 'github.com', 1, null);
@@ -43,18 +43,33 @@ test('vault encrypts, binds account/host with AAD, persists CAS tombstones and r
   }
   const db = new DatabaseSync(join(root, 'employee-git-vault.sqlite'));
   db.prepare('UPDATE employee_git_credentials SET account=?').run('employee:2'); db.close();
-  store = new EmployeeGitVaultStore(root);
+  store = await EmployeeGitVaultStore.open(root);
   assert.throws(() => store.read('employee:2', 'github.com')); store.close();
   const corrupt = new DatabaseSync(join(root, 'employee-git-vault.sqlite'));
   corrupt.prepare('UPDATE schema_migrations SET checksum=?').run('invalid'); corrupt.close();
-  assert.throws(() => new EmployeeGitVaultStore(root));
+  await assert.rejects(EmployeeGitVaultStore.open(root));
 });
 test('nonempty vault never recreates a lost encryption key', async t => {
   const root = await mkdtemp(join(tmpdir(), 'git-vault-key-test-')); t.after(() => rm(root, { recursive: true, force: true }));
-  const store = new EmployeeGitVaultStore(root); store.write('employee:1', 'github.com', 0, credential()); store.close();
+  const store = await EmployeeGitVaultStore.open(root); store.write('employee:1', 'github.com', 0, credential()); store.close();
   await unlink(join(root, 'employee-git-vault.key'));
-  assert.throws(() => new EmployeeGitVaultStore(root));
+  await assert.rejects(EmployeeGitVaultStore.open(root));
   await assert.rejects(stat(join(root, 'employee-git-vault.key')));
+});
+test('vault key material is created once with the fresh database and only read afterwards', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'git-vault-key-material-')); t.after(() => rm(root, { recursive: true, force: true }));
+  const keyPath = join(root, 'employee-git-vault.key');
+  const first = await EmployeeGitVaultStore.open(root); first.write('employee:1', 'github.com', 0, credential()); first.close();
+  const created = await stat(keyPath);
+  assert.equal(created.mode & 0o777, 0o600); assert.equal(created.size, 32);
+  const original = await readFile(keyPath);
+  const reopened = await EmployeeGitVaultStore.open(root);
+  assert.equal(reopened.read('employee:1', 'github.com').credential?.token, credential().token); reopened.close();
+  assert.deepEqual(await readFile(keyPath), original);
+  await unlink(keyPath);
+  await assert.rejects(EmployeeGitVaultStore.open(root), (error: Error & { code?: string; status?: number }) => error.code === 'unavailable' && error.status === 503);
+  await assert.rejects(stat(keyPath));
+  assert.deepEqual((await readdir(root)).filter(name => name.startsWith('employee-git-vault.key')), []);
 });
 async function run(command: string, args: string[], env: NodeJS.ProcessEnv, cwd: string) {
   const child = spawn(command, args, { env, cwd, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -124,7 +139,7 @@ test('authentication agent scopes signatures to Git userauth and revokes immedia
 
 test('an explicit SSH identity draft preserves metadata without retaining a retired token', async t => {
   const root = await mkdtemp(join(tmpdir(), 'git-draft-test-')); t.after(() => rm(root, { recursive: true, force: true }));
-  const store = new EmployeeGitVaultStore(root); t.after(() => store.close());
+  const store = await EmployeeGitVaultStore.open(root); t.after(() => store.close());
   const draft = { ...credential(), token: '', sshAuth: null };
   store.write('employee:1', 'git.example.test', 0, draft);
   assert.deepEqual(store.read('employee:1', 'git.example.test').credential, draft);

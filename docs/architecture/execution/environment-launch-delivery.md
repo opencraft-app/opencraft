@@ -447,20 +447,28 @@ which vault owner publishes is decided by the Gateway's composition alone:
   in the data directory. Brain has no notion of the owner: it pins whatever key
   is published there. Both services take the same value, so an installation
   whose identity composition owns the vault sets it on both, exactly like one
-  that uses core's Worker. The Gateway passes that path to the vault owner. Brain
-  starts before the Gateway's vault owner exists, so only this stable published
-  key (or an unissuable one until it is published) can be pinned. Brain writes
+  that uses core's Worker. The Gateway passes that path to the vault owner. Brain's
+  workspace agent (`workspace-agent-roles.mjs`, `brain` role) starts before the
+  Gateway's vault owner exists, so only this stable published key (or an
+  unissuable one until it is published) can be pinned. The role writes
   `environmentIssuer` into the DSH and Pi host configurations and
-  `run/codex-app-server-environment.json` for the split Codex AppServer
+  `codex-app-server-environment.json` for the split Codex AppServer
   (`{issuer, instance: "server:<machine>:codex", admissionWorkerFile, directory}`:
   the same key, the machine read from the shared data directory's `machine-id`,
   `runtime/execution-admission-worker.mjs` of the Brain payload and the data
-  directory), passes that file as `--environment-launch-config`, then starts
-  them and polls the publication. When a valid key differs from the pinned
-  one, Brain stops Pi, DSH and the AppServer, rewrites all three files and
-  starts the AppServer, then DSH and Pi again. AppServer replacements (this one
-  and a Hands rebinding) run one at a time. Until that completes all three keep
-  the previous key and deliveries fail closed. A failed relaunch stops Brain.
+  directory), all three in the agent's container-private run directory
+  (`OPENCRAFT_AGENT_RUN_DIR`), passes the last as `--environment-launch-config`,
+  then starts them and polls the publication. When a valid key differs from the
+  pinned one, the role retires Pi, DSH and the AppServer (its native process
+  group included) through the agent supervisor, so none of these stops counts as
+  a critical child failure, rewrites all three files and starts the AppServer,
+  then DSH and Pi again as ordinary critical children. AppServer replacements
+  (this one and a Hands rebinding) run one at a time. Until that completes all
+  three keep the previous key and deliveries fail closed. A successor that does
+  not become ready, or a failed rewrite, ends the agent (a new Brain incarnation).
+  Once the successors are ready the agent's `endpointGeneration` moves, so the
+  Gateway's workspace runtime drops the DSH and Pi descriptors it cached for the
+  retired owners at its next observation (Gateway health) and reattaches.
   The container packaging checks that the admission Worker is in the payload.
 - **systemd.** The engine and DSH host configurations name the publication as
   `environmentIssuerFile`. Each host resolves it once at launch, with the same
@@ -957,7 +965,17 @@ Recorded after the first slice; later slices follow them.
   checks stay unchanged. The read-only credential Worker of that execution
   owner still reads the installation's vault in the data directory, as in
   core vault-owner mode; Main's thread never opens it. Combined and routed
-  Cores keep refusing at input time. Codex without a Core endpoint has no
+  Cores keep refusing at input time. An accounts-only Core (the container
+  delivery's `proxy`) owns no runtime: the adapter reads the receiver from the
+  runtime owner's health (the workspace AppServer reached through its
+  `codex-control` endpoint). With `OPENCRAFT_ENVIRONMENT_DELIVERY=opaque`
+  Brain starts that AppServer with the pinned receiver above, whose admission
+  Worker reads the Gateway's durable admission read-only from the shared data
+  directory, so human Codex creations and Turns are delivered. An identity
+  composition's vault owner publishes no issuer Brain could pin; Brain then
+  starts the AppServer without a receiver and human Codex creations and Turns
+  are refused at input time (see `deploy/docker/README.md`, "Personal execution
+  ENV for Codex"). Codex without a Core endpoint has no
   receiver and is outside this rule (open question).
 - **The Codex Core issuer key is pinned by deployment configuration: the
   stable published key.** As for DSH and the Pi engine host, the AppServer's

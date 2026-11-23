@@ -16,6 +16,7 @@ import { ExecutionEnvironmentSnapshot } from "@opencraft/execution-environment/e
 import { createRemoteEnvironmentLaunch } from "@opencraft/execution-environment/remote-environment-launch";
 import type { GitExecutionHandoff, GitExecutionLocator } from "@opencraft/execution-environment/git-execution";
 import { SessionCapabilityMcp, capabilitySigningKey } from "@opencraft/session-capabilities/mcp";
+import { fileKeyMaterial } from "@opencraft/secret-storage/file";
 import { SessionCapabilities, type CapabilitySession } from "@opencraft/session-capabilities";
 import { RemoteSessionCapabilities } from "@opencraft/session-capabilities/remote";
 import { createHostEnvironmentLaunch } from "../../apps/headless-server/src/host-environment-launch.ts";
@@ -79,7 +80,7 @@ function gitPort(state: { owned: EnvironmentLaunchContext | null; capability: st
 async function fixture(t: test.TestContext) {
   const directory = await mkdtemp(join(tmpdir(), "pi-env-launch-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  const key = await capabilitySigningKey(join(directory, "session-capabilities.key"));
+  const key = await capabilitySigningKey(fileKeyMaterial(directory));
   const vault = new EnvironmentLaunchIssuer();
   const state = {
     lease: admitted() as GitExecutionHandoff | null,

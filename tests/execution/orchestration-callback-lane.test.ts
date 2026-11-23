@@ -4,6 +4,7 @@ import { mkdtemp,rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:http';
+import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import WebSocket,{WebSocketServer} from 'ws';
 import {CodexNativeCoreTransport} from '../../apps/opencraft-daemon/src/codex-native-core-transport';
@@ -135,15 +136,6 @@ test('a replacement Engine Host refuses an old prepared creation identity before
  await until(()=>f.requests.some(m=>m.method==='thread/start'));assert.equal(f.requests.find(m=>m.method==='thread/start').params.__opencraftOrchestrationIncarnation,undefined);
 });
 
-
-test('a routing epoch alone cannot advertise orchestration, while the new facade can attach under a legacy default',async t=>{
- const f=await fixture(t);
- for(const scenario of [{version:undefined,callback:1},{version:1,callback:undefined}]){
-  const transport=new CodexNativeCoreTransport('/unused/core.sock','synthetic-token',`capability-${scenario.version??0}`);
-  transport.control.health=async()=>({protocolVersion:1,pid:1,codexPid:2,nativeSocket:f.proxy,routingEpoch:'routing',...(scenario.callback?{callbackProtocolVersion:1 as const,pendingCallbacks:0,pendingOrchestrationMutations:0}:{}),...(scenario.version?{orchestrationRoutingVersion:1 as const}:{})});
-  await transport.connect();assert.equal(transport.supportsOrchestration,false);assert.equal(transport.supportsOrchestrationRouting,scenario.version===1);await transport.close();
- }
-});
 
 test('all human waits arriving detached replay, retain submitted state and retire only on native confirmation',async t=>{
  const f=await fixture(t,30),first=await f.connect();await until(()=>f.requests.some(m=>m.method==='initialized'));
@@ -559,9 +551,11 @@ test('self-title tool callbacks retain their stable identity across gateway repl
 
 test('the self-title tool is supported only when its specific callback capability is advertised',async t=>{
  const f=await fixture(t);
+ // Standalone health attests a direct native child of the runtime owner.
+ const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});t.after(()=>{child.kill();});
  for(const titleVersion of [undefined,1] as const){
   const transport=new CodexNativeCoreTransport('/unused/core.sock','synthetic-token','title-capability');
-  transport.control.health=async()=>({protocolVersion:1,pid:1,codexPid:2,nativeSocket:f.proxy,routingEpoch:'router',orchestrationRoutingVersion:1,callbackProtocolVersion:1,pendingCallbacks:0,pendingOrchestrationMutations:0,...(titleVersion?{threadTitleToolVersion:titleVersion}:{})});
+  transport.control.health=async()=>({protocolVersion:1,pid:process.pid,codexPid:child.pid!,nativeSocket:f.proxy,callbackProtocolVersion:1,pendingCallbacks:0,pendingOrchestrationMutations:0,...(titleVersion?{threadTitleToolVersion:titleVersion}:{})});
   await transport.connect();assert.equal(transport.supportsOrchestration,true);assert.equal(transport.supportsThreadTitle,titleVersion===1);await transport.close();
  }
 });

@@ -1,5 +1,5 @@
 import { AssertionSigner, readPrivateJson, type IdentityProvider } from '@opencraft/identity-core/node';
-import { createRelayServer, type RelayEntryIdentity, type RelayIngress, type RelayRoute } from './server.js';
+import { createRelayServer, type RelayEntryIdentity, type RelayIngress, type RelayRequestHandler, type RelayRoute, type RelayUpgradeHandler } from './server.js';
 import { createServer as createHttpsServer } from 'node:https';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 import type { Duplex } from 'node:stream';
@@ -15,6 +15,9 @@ import { parseSelectionDefaults, parseServerPaths, type ServerPaths } from './se
 import { RelayRedis, readRelayRedisConfiguration } from './redis.js';
 import { RedisRelayCluster } from './cluster.js';
 import type { RelayHub } from './cluster-port.js';
+import { parseCidr, createSourceAllowList } from './cidr.js';
+import { createSourceEnrollmentIngress, HUB_ENROLLMENT_PATH } from './source-enrollment.js';
+import { createChannelCallbackIngress, parseChannelCallbacks } from './channel-callback.js';
 
 export interface RelayAuthenticationConfiguration {
   issuer: string;
@@ -35,7 +38,11 @@ export interface RelayConfiguration {
   serverSelectionDefaultsFile?: string;
   serverPaths?: ServerPaths;
   clusterFile?: string;
-  hubNetwork?: { stateFile: string; operatorCredentialFile: string; caFile?: string; tlsCertFile?: string; tlsKeyFile?: string; port?: number };
+  hubNetwork?: { stateFile: string; operatorCredentialFile: string; caFile?: string; tlsCertFile?: string; tlsKeyFile?: string; port?: number;
+    /** Machines whose direct TLS peer address is inside these networks may join this Hub by address. */
+    sourceEnrollment?: { cidrs: string[] } };
+  /** Provider webhooks forwarded over the Hub to the gateway that owns the channel. */
+  channelCallbacks?: { path: string; provider: string; hubId: string; origin: string; timeoutMs?: number }[];
 }
 /** Trusted server composition, never a module named by browser or private JSON input. */
 export interface RelayIdentityAdapter {
@@ -46,6 +53,17 @@ export type OpenRelayHubStream = (target: { hubId: string; origin: string }, sig
 
 export interface RelayComposition {
   peerRequestPaths?: readonly string[];
+  /**
+   * Trusted pre-routing hooks, run in order after admission and before every
+   * core route except `/__opencraft_relay/*` and `/__opencraft_hub/*`. A handler
+   * returns true when it owns the response or socket. A throw fails that request
+   * closed (503, or a destroyed socket) instead of falling through. Handled
+   * requests and upgrades count toward drain; after close() resolves no handler
+   * runs again and their sockets are destroyed. The composition owns any
+   * resources the handlers hold and releases them after close().
+   */
+  requestHandlers?: readonly RelayRequestHandler[];
+  upgradeHandlers?: readonly RelayUpgradeHandler[];
   createIngress?: (services: { beginEntryAuthentication: (request: IncomingMessage, response: ServerResponse) => Promise<void>; hub?: RelayHub; sharedRedis?: RelayRedis; openHubStream?: OpenRelayHubStream; listServers: (principal: Principal) => Promise<RelayServerDirectory>; authenticateEntryRequest: (request: IncomingMessage) => Promise<RelayEntryIdentity | null> }) => RelayIngress | Promise<RelayIngress>;
   entryOrigin?: EntryOriginResolver;
   createIdentity?: (configuration: Readonly<RelayAuthenticationConfiguration>) => Promise<RelayIdentityAdapter>;
@@ -60,7 +78,7 @@ function file(value: unknown) { return typeof value === 'string' && value.starts
 
 export function parseRelayConfiguration(value: unknown): RelayConfiguration {
   if (!record(value) || value.schemaVersion !== 1 || !port(value.port) || !['127.0.0.1', '0.0.0.0'].includes(String(value.host)) || !Array.isArray(value.routes)
-    || !only(value, ['schemaVersion', 'authentication', 'port', 'host', 'routes', 'tlsCertFile', 'tlsKeyFile', 'tlsTermination', 'hubNetwork', 'serverSelection', 'serverSelectionDefaultsFile', 'serverPaths', 'clusterFile'])) throw new Error('Invalid relay configuration');
+    || !only(value, ['schemaVersion', 'authentication', 'port', 'host', 'routes', 'tlsCertFile', 'tlsKeyFile', 'tlsTermination', 'hubNetwork', 'serverSelection', 'serverSelectionDefaultsFile', 'serverPaths', 'clusterFile', 'channelCallbacks'])) throw new Error('Invalid relay configuration');
   if (value.clusterFile !== undefined && (!file(value.clusterFile) || !value.hubNetwork)) throw new Error('Redis relay requires a private cluster file and initial Hub identity');
   if (value.serverSelection !== undefined && typeof value.serverSelection !== 'boolean') throw new Error('Invalid server selection policy');
   if (value.serverSelectionDefaultsFile !== undefined && (value.serverSelection !== true || !file(value.serverSelectionDefaultsFile))) throw new Error('Invalid selection defaults configuration');
@@ -88,9 +106,20 @@ export function parseRelayConfiguration(value: unknown): RelayConfiguration {
   }
   const network = value.hubNetwork;
   if (network !== undefined) {
-    if (!record(network) || !only(network, ['stateFile', 'operatorCredentialFile', 'caFile', 'tlsCertFile', 'tlsKeyFile', 'port']) || !file(network.stateFile) || !file(network.operatorCredentialFile)
+    if (!record(network) || !only(network, ['stateFile', 'operatorCredentialFile', 'caFile', 'tlsCertFile', 'tlsKeyFile', 'port', 'sourceEnrollment']) || !file(network.stateFile) || !file(network.operatorCredentialFile)
       || (network.caFile !== undefined && !file(network.caFile)) || (network.port !== undefined && (!port(network.port) || network.port === value.port || !file(network.tlsCertFile) || !file(network.tlsKeyFile)))
       || ((network.tlsCertFile !== undefined || network.tlsKeyFile !== undefined) && (!file(network.tlsCertFile) || !file(network.tlsKeyFile)))) throw new Error('Invalid Hub configuration');
+    const enrollment = network.sourceEnrollment;
+    if (enrollment !== undefined) {
+      if (!record(enrollment) || !only(enrollment, ['cidrs']) || !Array.isArray(enrollment.cidrs) || !enrollment.cidrs.length || enrollment.cidrs.length > 64) throw new Error('Invalid source enrollment configuration');
+      for (const cidr of enrollment.cidrs) parseCidr(cidr);
+      // The source address is authority only on a TLS socket this process terminates itself.
+      if (network.port === undefined && value.tlsCertFile === undefined) throw new Error('Source enrollment requires a relay-terminated TLS listener');
+    }
+  }
+  if (value.channelCallbacks !== undefined) {
+    if (!network) throw new Error('Channel callbacks require a Relay Hub network');
+    parseChannelCallbacks(value.channelCallbacks);
   }
   return value as unknown as RelayConfiguration;
 }
@@ -196,8 +225,19 @@ export async function startRelayApplication(input: unknown, composition: RelayCo
       }
       return relayHub.open(hubId, undefined, signal);
     });
-    ingress = await composition.createIngress?.({ beginEntryAuthentication: (request, response) => app!.beginEntryAuthentication(request, response), hub: relayHub, sharedRedis: redis, openHubStream, listServers: principal => app!.listServers(principal), authenticateEntryRequest: request => app!.authenticateEntryRequest(request) });
-    app = createRelayServer(routes, { ingress, serverSelection: config.serverSelection === true, selectionDefaults, serverPaths: config.serverPaths, ...(provider ? { authentication: { origin: auth!.origin, provider } } : {}),
+    const product = await composition.createIngress?.({ beginEntryAuthentication: (request, response) => app!.beginEntryAuthentication(request, response), hub: relayHub, sharedRedis: redis, openHubStream, listServers: principal => app!.listServers(principal), authenticateEntryRequest: request => app!.authenticateEntryRequest(request) });
+    // Core ingress runs before product ingress; every part is retired by close().
+    const ingresses: RelayIngress[] = [];
+    if (network?.sourceEnrollment) ingresses.push(createSourceEnrollmentIngress({ hub: relayHub!, allowSource: createSourceAllowList(network.sourceEnrollment.cidrs), redis,
+      reservedOrigins: [...(auth ? [auth.origin] : []), ...config.routes.map(route => route.origin)] }));
+    if (config.channelCallbacks) ingresses.push(createChannelCallbackIngress(parseChannelCallbacks(config.channelCallbacks), openHubStream!));
+    if (product) ingresses.push(product);
+    ingress = ingresses.length <= 1 ? ingresses[0] : Object.assign((request: IncomingMessage, response: ServerResponse) => ingresses.some(handle => handle(request, response)), {
+      close: async () => {
+        const failures = (await Promise.allSettled(ingresses.map(part => part.close?.()))).flatMap(result => result.status === 'rejected' ? [result.reason] : []);
+        if (failures.length) throw new AggregateError(failures, 'Relay ingress shutdown failed');
+      } });
+    app = createRelayServer(routes, { ingress, requestHandlers: composition.requestHandlers, upgradeHandlers: composition.upgradeHandlers, serverSelection: config.serverSelection === true, selectionDefaults, serverPaths: config.serverPaths, ...(provider ? { authentication: { origin: auth!.origin, provider } } : {}),
       ...(cluster ? { cluster } : {}),
       ...(relayHub ? { hub: relayHub, operator: { credential: operatorCredential as string }, networkRoute: service => {
         if (!authority || !provider || JSON.stringify(service.authority) !== JSON.stringify(authority)) return null;
@@ -212,7 +252,7 @@ export async function startRelayApplication(input: unknown, composition: RelayCo
     }
     if (network?.port) {
       peerListener = createHttpsServer({ cert: await readFile(network.tlsCertFile!), key: await readFile(network.tlsKeyFile!) }, (req, res) => {
-        if (composition.peerRequestPaths?.some(path => req.url?.startsWith(path))) { app!.server.emit('request', req, res); return; }
+        if (composition.peerRequestPaths?.some(path => req.url?.startsWith(path)) || (network.sourceEnrollment && req.url === HUB_ENROLLMENT_PATH)) { app!.server.emit('request', req, res); return; }
         res.writeHead(404); res.end();
       });
       peerListener.on('upgrade', (req, socket, head) => {

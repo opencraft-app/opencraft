@@ -1,11 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { constants, createWriteStream, mkdirSync, chmodSync } from 'node:fs';
-import { open, rm } from 'node:fs/promises';
+import { constants, mkdirSync, chmodSync } from 'node:fs';
+import { open } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { Transform, Readable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
+import { addAbortSignal, Readable } from 'node:stream';
 import { DatabaseSync } from 'node:sqlite';
+import { BlobDigestError, BlobLimitError, type BlobUpload } from '@opencraft/blob-storage';
 import { openManagedDatabase, createSchemaValidator } from '@opencraft/sqlite-node';
+import { hostFileBlobStore, type HostFileBlobStore } from '../storage/host-file-blobs.js';
 
 export interface Artifact {
   id: string; name: string; mimeType: string; size: number; sha256: string; path: string;
@@ -47,8 +48,14 @@ export class ArtifactCatalog {
   private readonly db: DatabaseSync;
   private closed=false;
   readonly root: string;
-  constructor(root: string) {
+  private readonly content: HostFileBlobStore;
+  /**
+   * `content` owns the object bytes; this catalog owns their SQL index and cleanup.
+   * The default keeps key `content/<ingestionId>` at the historical `root/content/<ingestionId>`.
+   */
+  constructor(root: string, content?: HostFileBlobStore) {
     this.root = resolve(root); mkdirSync(join(this.root, 'content'), { recursive: true, mode: 0o700 });
+    this.content = content ?? hostFileBlobStore(this.root);
     // Serialize schema opening across Gateway/engine owners; ordinary writes use SQLite transactions.
     const schemaPath=join(this.root,'schema-lock.sqlite'),schemaLock=new DatabaseSync(schemaPath);
     chmodSync(schemaPath,0o600);
@@ -136,33 +143,39 @@ export class ArtifactCatalog {
     this.id(identity);
     if (!Number.isSafeInteger(options.maxBytes) || options.maxBytes < 0 || options.size !== undefined && (!Number.isSafeInteger(options.size) || options.size < 0 || options.size > options.maxBytes)
       || !options.reference.owner || !options.reference.slot || !metadata.name || metadata.name.length > 255 || metadata.mimeType.length > 255) {body.destroy();throw Error('Invalid artifact admission');}
-    const ingestionId=randomUUID(),path = join(this.root, 'content', ingestionId); let size = 0; const hash = createHash('sha256');
-    const check = new Transform({ transform(chunk: Buffer, _encoding, done) {
-      size += chunk.length;
-      if (size > options.maxBytes || (options.size !== undefined && size > options.size)) { done(Error('Artifact exceeds declared size')); return; }
-      hash.update(chunk); done(null,chunk);
-    } });
+    const ingestionId=randomUUID(),key=`content/${ingestionId}`,path=this.content.path(key);
+    const limit=options.size ?? options.maxBytes;
+    let upload: BlobUpload | undefined;
     try {
       this.db.prepare("INSERT INTO artifact_ingestions VALUES(?,?,?,?,?)").run(ingestionId,this.id(identity),path,"receiving",Date.now());
-      await pipeline(body,check,createWriteStream(path,{flags:'wx',mode:0o600}),{signal:options.signal});
-      const sha256 = hash.digest('hex');
-      if (options.size !== undefined && size !== options.size || options.sha256 !== undefined && sha256 !== options.sha256) throw Error('Artifact content mismatch');
-      const file = await open(path,'r+'); try { await file.sync(); } finally { await file.close(); }
-      if (process.platform !== 'win32') {
-        const directory=await open(join(this.root,'content'),'r');try {await directory.sync();}finally{await directory.close();}
+      upload = await this.content.blobs.upload(key,{maxBytes:limit});
+      if (options.signal) addAbortSignal(options.signal,body);
+      let size=0;
+      for await (const value of body as AsyncIterable<Uint8Array | string>) {
+        options.signal?.throwIfAborted();
+        const chunk = typeof value === 'string' ? Buffer.from(value) : value;
+        size += chunk.byteLength;
+        await upload.write(chunk);
       }
+      if (options.size !== undefined && size !== options.size) throw Error('Artifact content mismatch');
+      // The blob store fsyncs the object and its directory before it becomes visible.
+      const {size: stored, sha256} = await upload.complete(options.sha256 === undefined ? {} : {sha256:options.sha256});
       const existing=this.get(this.id(identity));
       if(existing){const actual=await inspectArtifactFile(existing.path,options.signal);if(actual.sha256!==existing.sha256 || actual.size!==existing.size)throw Error('Registered artifact content changed');}
-      const result = this.register(identity,{...metadata,path,size,sha256},options.reference);
-      if (result.path !== path) await rm(path,{force:true});
+      const result = this.register(identity,{...metadata,path,size:stored,sha256},options.reference);
+      if (result.path !== path) await this.content.blobs.delete(key);
       this.db.prepare("UPDATE artifact_ingestions SET phase='committed' WHERE id=?").run(ingestionId);
       return result;
-    } catch (error) {
+    } catch (cause) {
+      body.destroy();
+      const error = cause instanceof BlobLimitError ? Error('Artifact exceeds declared size')
+        : cause instanceof BlobDigestError ? Error('Artifact content mismatch') : cause;
       // A lost acknowledgement after COMMIT must not delete the published object.
       let uncertain=this.closed;
       if(!uncertain){try{uncertain=this.get(this.id(identity))?.path===path;}catch{uncertain=true;}}
       if(!uncertain){
-        await rm(path,{force:true});
+        await upload?.abort();
+        await this.content.blobs.delete(key);
         this.db.prepare("UPDATE artifact_ingestions SET phase='failed' WHERE id=?").run(ingestionId);
       }
       throw error;

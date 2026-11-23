@@ -1,6 +1,6 @@
 import { AuthorityChanges } from "./authority-changes.js";
 import { createHash, randomBytes } from 'node:crypto';
-import type { DatabaseSync } from 'node:sqlite';
+import type { SqlDatabase } from '@opencraft/sql';
 import type { DatabaseOutcome } from "@opencraft/sqlite-node";
 import { openServerRepository, type ServerDatabaseSource } from "@opencraft/storage-node/server-repository";
 import { parsePrincipal, type Principal } from '@opencraft/identity-core';
@@ -22,7 +22,7 @@ export class HumanAccounts {
   /** Every committed account/permission mutation; not a login or grant. */
   onAuthorityChanged = (listener: () => void) => this.#changes.subscribe(listener);
 
-  readonly #db: DatabaseSync;
+  readonly #db: SqlDatabase;
   #closed = false;
   #local: { provider: LocalAccountProvider; owner: symbol } | null = null;
   readonly localAccountRepository: LocalAccountRepository;
@@ -32,7 +32,7 @@ export class HumanAccounts {
     const managed = openServerRepository(path, "human-logins");
     this.#closeDatabase = managed.close;
     this.#db = managed.database; this.#changes = new AuthorityChanges(typeof path === "string" ? this.#db : path.database); this.outcome = managed.outcome;
-    const record = (row: ReturnType<ReturnType<DatabaseSync['prepare']>['get']>): LocalAccountRecord | null => row ? {
+    const record = (row: ReturnType<ReturnType<SqlDatabase['prepare']>['get']>): LocalAccountRecord | null => row ? {
       id: row.id as string, username: row.username as string, displayName: row.display_name as string,
       salt: row.salt as string, passwordDigest: row.password_digest as string, enabled: row.enabled === 1, version: row.version as number,
     } : null;

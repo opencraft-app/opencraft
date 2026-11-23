@@ -1,3 +1,4 @@
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import assert from "node:assert/strict";
 import { mkdtemp, realpath, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -10,12 +11,13 @@ import {
   ModelConfigurationRepository,
   ModelCredentialRepository,
 } from "../../../apps/local-agent-host/src/model-config/repository.js";
+import { fileSecretStore } from "@opencraft/secret-storage/file";
 
 const root = await mkdtemp(join(tmpdir(), "opencraft-projectless-smoke-"));
 const modelDirectory = join(root, "models");
 const projectlessRoot = join(root, "OpenCraft");
-await new ModelCredentialRepository(modelDirectory).set("FIXTURE_KEY", "synthetic-only");
-await new ModelConfigurationRepository(modelDirectory).initialize({
+await new ModelCredentialRepository(fileSecretStore(modelDirectory)).set("FIXTURE_KEY", "synthetic-only");
+await new ModelConfigurationRepository(fileStateDocumentStore(modelDirectory)).initialize({
   schemaVersion: 1,
   revision: 0,
   providers: [{

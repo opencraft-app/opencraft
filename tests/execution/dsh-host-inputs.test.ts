@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SessionCapabilities } from '../../packages/session-capabilities/src/index.js';
 import { SessionCapabilityMcp, capabilitySigningKey } from '../../packages/session-capabilities/src/mcp.js';
+import { fileKeyMaterial } from '@opencraft/secret-storage/file';
 import { RemoteSessionCapabilities } from '../../packages/session-capabilities/src/remote.js';
 import { DshCapabilityBroker } from '../../apps/local-agent-host/src/dsh-capability-broker.js';
 import { DshExecutionAuthority } from '../../apps/local-agent-host/src/dsh-execution-authority.js';
@@ -23,7 +24,7 @@ test('independent DSH consumes signed session tools, preserves browser owner and
  const capabilities=new SessionCapabilities();let allowed=true,calls=0;
  const tool={name:'im_reply',description:'Reply',inputSchema:{type:'object',properties:{}}};
  capabilities.register({id:'im.reply',tools:session=>allowed&&session.serverId==='server:fixture:dsh'&&session.threadId==='same'?[tool]:[],async call(){calls++;return {delivered:true};}});
- const key=await capabilitySigningKey(join(directory,'session-capabilities.key'));
+ const key=await capabilitySigningKey(fileKeyMaterial(directory));
  const options={descriptorPath:join(directory,'session-capabilities.json'),authorizeInput:(session:any,id:string)=>allowed&&session.serverId==='server:fixture:dsh'&&session.threadId==='same'&&id==='actor-input:one'};
  let mcp=new SessionCapabilityMcp(capabilities,key,undefined,options);await mcp.listen();t.after(()=>mcp.close());
  const remote=new RemoteSessionCapabilities(directory,'server:fixture:dsh');await remote.refresh('same');assert.equal(remote.tools('same')[0]?.name,'im_reply');

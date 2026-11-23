@@ -14,7 +14,7 @@ import { CodexSubscriptionService } from "./codex-usage.js";
 import { CodexResetCreditService } from "./codex-reset-credits.js";
 import { createCodexMaintenanceClient } from "./codex-maintenance-client.js";
 import { createCodexAccountPoolLaunch } from "./codex-launch.js";
-import type { ConfiguredCodexResponses } from "./configured-responses.js";
+import type { ConfiguredCodexResponses, ConfiguredModelCredentials } from "./configured-responses.js";
 import { startCodexAccountPoolServer, type AccountPoolUncertainDiagnostic } from "./server.js";
 
 function string(value: unknown): string { return typeof value === "string" ? value : ""; }
@@ -27,6 +27,8 @@ export interface CodexAccountServiceOptions {
   /** Fixed loopback port for an independently running AppServer. */
   readonly proxyPort?: number;
   readonly configuredResponses?: ConfiguredCodexResponses;
+  /** Proxy-mode credential writes from engine settings (caller:pi, caller:dsh). */
+  readonly modelCredentials?: ConfiguredModelCredentials;
   readonly fetch?: typeof fetch;
   readonly createMaintenanceClient?: CodexMaintenanceClientFactory;
   readonly ownerHandoff?: {
@@ -101,6 +103,7 @@ export class CodexAccountService {
           return route;
         },
       } : undefined,
+      modelCredentials: personal ? undefined : options.modelCredentials,
       upstreamBaseUrl: options.upstreamBaseUrl ?? "https://chatgpt.com/backend-api/codex",
       fetch: options.fetch, resolveCredential: (account, secret, reason) => refresh.resolve(account, secret, reason) });
     if (options.ownerHandoff?.retained) {
@@ -319,7 +322,7 @@ export class CodexAccountService {
       if(this.personalPools.size>=128)throw Error('Personal subscription capacity reached');
       const directory=join(this.options.dataDirectory,'personal-subscriptions',namespace);
       pending=(async()=>{
-        const pool=new CodexAccountService({...this.options,nativeCodexHomeDirectory:join(directory,'native'),proxyPort:undefined,configuredResponses:undefined,ownerHandoff:undefined},actor);
+        const pool=new CodexAccountService({...this.options,nativeCodexHomeDirectory:join(directory,'native'),proxyPort:undefined,configuredResponses:undefined,modelCredentials:undefined,ownerHandoff:undefined},actor);
         try{await pool.login.ready();await pool.activate();this.personalInstances.set(namespace,pool);return pool;}catch(error){await pool.close();throw error;}
       })();
       this.personalPools.set(namespace,pending);

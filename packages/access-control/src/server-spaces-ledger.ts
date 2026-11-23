@@ -1,6 +1,5 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import type { DatabaseSync } from 'node:sqlite';
-import { sqliteTransaction } from '@opencraft/sqlite-node';
+import type { SqlDatabase } from '@opencraft/sql';
 import type { ActorContext } from '@opencraft/identity-core/actors';
 import type { ServerSpaceCommand, ServerSpaceDirectory, ServerSpaceMember } from '@opencraft/appserver-protocol/server-spaces';
 
@@ -20,7 +19,7 @@ export interface SpaceProjection {
 }
 /** Only the storage Worker calls this ledger. Context comes from a trusted adapter. */
 export class ServerSpacesLedger {
-  constructor(readonly db: DatabaseSync, readonly now = Date.now) {}
+  constructor(readonly db: SqlDatabase, readonly now = Date.now) {}
   private actor(context: ActorContext) {
     const actor = this.db.prepare('SELECT * FROM actors WHERE id=?').get(context.actorId);
     if (!actor || actor.kind !== 'human' || actor.enabled !== 1 || actor.generation !== context.generation || context.expiresAt <= this.now())
@@ -40,7 +39,7 @@ export class ServerSpacesLedger {
     if (this.db.prepare('SELECT id FROM collaboration_spaces WHERE id=?').get('myself')) return;
     const actor = this.db.prepare('SELECT * FROM actors WHERE id=?').get(ownerActorId);
     if (!actor || actor.kind !== 'human' || actor.enabled !== 1) deny();
-    sqliteTransaction(this.db, () => {
+    this.db.transaction(() => {
       // The historical default space keeps per-target grants; only new spaces open contact by default.
       this.db.prepare("INSERT INTO collaboration_spaces(id,name,owner_actor_id,created_at,open_contact) VALUES('myself','myself',?,?,0)").run(ownerActorId,this.now());
       const insert = this.db.prepare("INSERT OR IGNORE INTO collaboration_space_members VALUES('myself',?,?,?)");
@@ -81,7 +80,7 @@ export class ServerSpacesLedger {
     // older than installation bootstrap can enter the historical default space.
     const cutoff=Math.floor(Number(root.created_at)/1000)*1000;
     let changed=false;
-    sqliteTransaction(this.db,()=>{
+    this.db.transaction(()=>{
       for(const thread of threads) {
         if(!valid(thread.id)||!Number.isFinite(thread.createdAt)||thread.createdAt<=0)continue;
         const created=thread.createdAt<1e12?thread.createdAt*1000:thread.createdAt;
@@ -129,7 +128,7 @@ export class ServerSpacesLedger {
         if (typeof input.name !== 'string' || !input.name.trim() || input.name.trim().length > 80 || /[\x00-\x1f\x7f]/u.test(input.name)) throw new ServerSpaceError('invalid', -32602);
         if (Number(this.db.prepare('SELECT COUNT(*) AS n FROM collaboration_spaces WHERE owner_actor_id=?').get(context.actorId)?.n) >= 100) throw new ServerSpaceError('invalid', -32602);
         const id = randomUUID();
-        sqliteTransaction(this.db, () => {
+        this.db.transaction(() => {
           this.db.prepare('INSERT INTO collaboration_spaces(id,name,owner_actor_id,created_at,open_contact) VALUES(?,?,?,?,1)').run(id,input.name.trim(),context.actorId,this.now());
           this.db.prepare("INSERT INTO collaboration_space_members VALUES(?,?,'owner',?)").run(id,context.actorId,this.now());
         });
@@ -146,7 +145,7 @@ export class ServerSpacesLedger {
       }
       case 'join': {
         if (typeof input.code !== 'string' || !/^[A-Za-z0-9_-]{43}$/u.test(input.code)) throw new ServerSpaceError('invitation');
-        return sqliteTransaction(this.db, () => {
+        return this.db.transaction(() => {
           const row = this.db.prepare('SELECT * FROM collaboration_space_invitations WHERE digest=?').get(digest(input.code));
           if (!row || Number(row.expires_at) <= this.now() || row.used_by !== null && row.used_by !== context.actorId
             || this.role(String(row.space_id),String(row.created_by)) !== 'owner') throw new ServerSpaceError('invitation');

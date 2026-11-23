@@ -6,8 +6,9 @@ import { AcpHostHandoff } from '../../plugins/acp-engine/src/host-handoff.ts';
 /** The persistent owner protocol is shared with ACP. Pi supplies its own
  * native/store authority; it never derives idle from a gateway catalog. */
 export class PiOwnerHandoff {
-  constructor(directory, runtime, inspectOsWork) {
-    this.directory = directory; this.runtime = runtime; this.inspectOsWork = inspectOsWork;
+  /** `credentialsExternal`: proxy mode, where model keys belong to the account Core and are neither read nor hashed. */
+  constructor(directory, runtime, inspectOsWork, { credentialsExternal = false } = {}) {
+    this.directory = directory; this.runtime = runtime; this.inspectOsWork = inspectOsWork; this.credentialsExternal = credentialsExternal;
     this.authority = new AcpHostHandoff(join(directory, 'pi'), randomUUID());
     this.operation = Promise.resolve();
   }
@@ -35,6 +36,7 @@ export class PiOwnerHandoff {
     const visit = async (path, relative, attachments = false) => {
       for (const entry of (await readdir(path, { withFileTypes: true })).sort((a,b) => a.name.localeCompare(b.name))) {
         if (entry.name === 'handoff-cache' || entry.name.endsWith('.lock') || entry.name === 'host-handoff.json') continue;
+        if (this.credentialsExternal && relative === 'models' && entry.name === 'credentials.json') continue;
         const file = join(path, entry.name), name = join(relative, entry.name), stat = await lstat(file);
         if (stat.isSymbolicLink() || !stat.isDirectory() && !stat.isFile()) throw new Error('Unknown Pi store entry');
         if (stat.isDirectory()) { await visit(file, name, attachments); continue; }

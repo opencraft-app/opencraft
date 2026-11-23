@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { execFileSync } from "node:child_process";
 import { generateKeyPairSync } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readFile, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -34,9 +35,15 @@ const exists = (path) =>
 async function deployment(t, extra = {}) {
   const root = await mkdtemp(join(tmpdir(), "opencraft-issuer-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const env = { OPENCRAFT_DATA_DIR: join(root, "state"), OPENCRAFT_WORKSPACE_DIR: join(root, "work"), ...extra };
+  const env = {
+    OPENCRAFT_DATA_DIR: join(root, "state"),
+    OPENCRAFT_WORKSPACE_DIR: join(root, "work"),
+    OPENCRAFT_AGENT_RUN_DIR: join(root, "agent-run"),
+    ...extra,
+  };
   const paths = deploymentPaths(env);
   await mkdir(paths.runDirectory, { recursive: true, mode: 0o700 });
+  await mkdir(paths.agentRunDirectory, { recursive: true, mode: 0o700 });
   return { root, env, paths };
 }
 // Publishes like the owner does: a complete file with its final mode replaces the old one at once, so a polling
@@ -58,6 +65,7 @@ test("without ENV delivery Brain writes exactly the previous host configurations
     dsh = await readJson(paths.dshConfig);
   const previousEngine = {
     descriptorPath: paths.engineDescriptor,
+    socketPath: paths.engineSocket,
     dataDirectory: paths.dataDirectory,
     runtimeDirectory: paths.runtimeDirectory,
     engines: ["dsh", "pi"],
@@ -70,6 +78,17 @@ test("without ENV delivery Brain writes exactly the previous host configurations
   assert.deepEqual(engine, previousEngine);
   assert.ok(!("environmentIssuer" in dsh));
   assert.equal(dsh.descriptorPath, paths.dshDescriptor);
+  // Workspace endpoints: DSH listens on agent-private sockets and reads Codex Threads
+  // from this container's AppServer with its control credential.
+  assert.equal(dsh.socketPath, paths.dshSocket);
+  assert.equal(dsh.controlSocketPath, paths.dshControlSocket);
+  assert.equal(dsh.taskCodexCoreEndpoint, paths.appServerEndpoint);
+  assert.equal(dsh.taskCodexCoreTokenFile, paths.tokenPath);
+  assert.equal(
+    dshHostConfiguration(deploymentPaths({ ...env, OPENCRAFT_PROXY_MODE: "external", OPENCRAFT_PROXY_PORT: "45071" }), "/opt/opencraft", env)
+      .taskCodexCoreTokenFile,
+    paths.appServerTokenFile,
+  );
   // Byte-identical to the configurations written before ENV delivery existed.
   assert.equal(await readFile(paths.engineConfig, "utf8"), JSON.stringify(previousEngine) + "\n");
   assert.equal(
@@ -101,7 +120,11 @@ test("without ENV delivery Brain writes exactly the previous host configurations
 
 test("ENV delivery is a deployment setting that needs the Assets context and the deployment issuer path", async (t) => {
   const { root } = await deployment(t);
-  const base = { OPENCRAFT_DATA_DIR: join(root, "state"), OPENCRAFT_WORKSPACE_DIR: join(root, "work") };
+  const base = {
+    OPENCRAFT_DATA_DIR: join(root, "state"),
+    OPENCRAFT_WORKSPACE_DIR: join(root, "work"),
+    OPENCRAFT_AGENT_RUN_DIR: join(root, "agent-run"),
+  };
   const paths = deploymentPaths({ ...base, OPENCRAFT_ENVIRONMENT_DELIVERY: "opaque" });
   assert.equal(paths.environmentDelivery, "opaque");
   // The earlier spelling has the same meaning; neither names a vault owner.
@@ -143,7 +166,10 @@ test("Brain pins the published issuer into the DSH, Pi and Codex AppServer confi
     directory: paths.dataDirectory,
   });
   assert.equal((await stat(paths.codexEnvironmentLaunchConfig)).mode & 0o777, 0o600);
-  assert.equal(paths.codexEnvironmentLaunchConfig, join(paths.runDirectory, "codex-app-server-environment.json"));
+  // Launch configuration is agent-private: the container's tmpfs run directory, never the shared data mount.
+  assert.equal(paths.codexEnvironmentLaunchConfig, join(paths.agentRunDirectory, "codex-app-server-environment.json"));
+  for (const path of [paths.codexEnvironmentLaunchConfig, paths.engineConfig, paths.dshConfig])
+    assert.ok(!path.startsWith(paths.dataDirectory + "/"), path);
   assert.deepEqual(codexAppServerEnvironmentArguments(paths), [
     "--environment-launch-config",
     paths.codexEnvironmentLaunchConfig,
@@ -212,6 +238,8 @@ test("a missing or untrusted publication never supplies a key: hosts pin an unis
     ],
     ["other schema", () => writeFile(path, JSON.stringify({ schemaVersion: 2, issuer: forged }), { mode: 0o600 })],
     ["not JSON", () => writeFile(path, forged, { mode: 0o600 })],
+    // A FIFO must be refused without blocking the reader on open.
+    ["named pipe", async () => execFileSync("mkfifo", ["-m", "600", path])],
   ];
   for (const [name, plant] of cases) {
     await rm(path, { force: true });
@@ -367,21 +395,25 @@ test("the Codex AppServer resolves a named publication once at launch with the s
   await assert.rejects(readEnvironmentLaunchConfiguration(file, quiet));
 });
 
-test("Brain passes the launch file to the AppServer, relaunches it on rotation and ships its admission Worker", async () => {
+test("Brain's workspace agent passes the launch file to the AppServer, relaunches through its supervisor and ships its admission Worker", async () => {
   const read = (path) => readFile(new URL(`../../${path}`, import.meta.url), "utf8");
-  const [host, packager, gitRuntime, unitService, dropIn, example] = await Promise.all([
-    read("scripts/container-deployment/host.mjs"),
+  const [roles, packager, gitRuntime, unitService, dropIn, example] = await Promise.all([
+    read("scripts/container-deployment/workspace-agent-roles.mjs"),
     read("scripts/packaging/package-container.mjs"),
     read("scripts/packaging/package-git-identity-runtime.mjs"),
     read("deploy/web-server/opencraft-environment-issuer.service.example"),
     read("deploy/web-server/opencraft-codex-appserver-environment.conf.example"),
     read("deploy/web-server/opencraft-codex-appserver-environment.json.example"),
   ]);
-  assert.match(host, /\.\.\.codexAppServerEnvironmentArguments\(paths\)/u);
-  assert.match(host, /relaunchOnIssuerChange\(\{[^}]*machineId/u);
-  // The rotation relaunch stops and restarts the AppServer like DSH and Pi.
-  const relaunch = host.slice(host.indexOf("relaunchOnIssuerChange("));
-  assert.ok(relaunch.indexOf("stopAppServer()") > 0 && relaunch.indexOf("startAppServer()") > 0);
+  const brain = roles.slice(roles.indexOf("export const brainRole"), roles.indexOf("export const HANDS_OWNER_PROCESSES"));
+  assert.match(brain, /\.\.\.codexAppServerEnvironmentArguments\(paths\)/u);
+  assert.match(brain, /writeExecutionHostConfigurations\(\s*paths,\s*root,\s*env,\s*pinnedIssuer,\s*machineId,?\s*\)/u);
+  assert.match(brain, /relaunchOnIssuerChange\(\{[^}]*machineId/u);
+  // The rotation relaunch goes through the supervisor (behaviour: workspace-agent.test.mjs),
+  // serialised with Hands rebinding; no process is signalled outside it.
+  const relaunch = brain.slice(brain.indexOf("relaunchOnIssuerChange("));
+  assert.match(relaunch, /serially\(\s*\(\)\s*=>\s*relaunchBrainOwners\(\s*agent,\s*owners/u);
+  assert.doesNotMatch(brain, /\.signal\(\s*['"`]SIG/u);
   // Brain's runtime ships the Worker its owners name by configuration.
   assert.match(packager, /'execution-admission-worker\.mjs'/u);
   assert.match(packager, /access\(join\(root, 'runtime', name\)\)/u);

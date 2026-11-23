@@ -9,7 +9,7 @@ import { acquireLock, bootIdentity } from '../full-upgrade/durable.mjs';
 import { inspectOwnerCgroup } from './owner-cgroup.mjs';
 import { DshOwnerHandoff } from './dsh-owner-handoff.mjs';
 import { readDshColdResources } from './dsh-cold-resources.mjs';
-import { mkdir, rename, rm, writeFile, readFile, stat } from 'node:fs/promises';
+import { chmod, mkdir, rename, rm, writeFile, readFile, stat } from 'node:fs/promises';
 import { dirname, isAbsolute, resolve, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { acquireLocalAgentStorageOwner, startLocalAgentHost } from '../../apps/local-agent-host/src/main.ts';
@@ -20,7 +20,7 @@ import { RemoteSessionCapabilities } from '../../packages/session-capabilities/s
 import { pinPublishedEnvironmentIssuer } from './environment-issuer.mjs';
 
 export async function startIndependentDshHost(configuration) {
-  const {descriptorPath, machineIdentityDirectory, machineName, taskCodexCoreEndpoint, taskCodexCoreTokenFile, coldDependencyRoots = [], fileSystemOwner, environmentIssuer, ...options} = configuration;
+  const {descriptorPath, machineIdentityDirectory, machineName, taskCodexCoreEndpoint, taskCodexCoreTokenFile, coldDependencyRoots = [], fileSystemOwner, controlSocketPath, environmentIssuer, ...options} = configuration;
   // Opaque ENV delivery: the issuer key is pinned by this process's own trusted
   // configuration (written by its supervisor), never by the Gateway.
   if (environmentIssuer !== undefined && ((options.executionContext ?? 'legacy') !== 'assets'
@@ -28,6 +28,11 @@ export async function startIndependentDshHost(configuration) {
     throw new Error('Environment delivery requires the native execution attachment');
   if (!isAbsolute(descriptorPath) || !isAbsolute(options.dataDirectory ?? ''))
     throw new Error('Independent DSH Host requires absolute descriptor and data paths');
+  // Unix socket mode (a workspace endpoint): the Host and its owner-handoff control each
+  // listen on a private socket instead of loopback TCP.
+  if ((options.socketPath === undefined) !== (controlSocketPath === undefined)
+    || options.socketPath !== undefined && (!isAbsolute(options.socketPath) || !isAbsolute(controlSocketPath)))
+    throw new Error('Independent DSH Host sockets must both be absolute paths');
   if (process.env.OPENCRAFT_DSH_URL?.trim() || options.dshUrl)
     throw new Error('Independent DSH Host must own its engine');
   // Validate configured Core credentials before acquiring any native writer.
@@ -104,7 +109,9 @@ export async function startIndependentDshHost(configuration) {
         return readDshColdResources({identity:join(machineIdentityDirectory ?? dirname(options.dataDirectory),"machine-id"),
           dependencyRoots:coldDependencyRoots,agent:options.dataDirectory,models:options.modelStorageDirectory,
           projects:options.projectStorageDirectory,skills:options.skillsDirectory,
-          nativeRuntime:resolve(dirname(options.dshExecutable),"../../../.."),plugins:dirname(options.dshCapabilityPlugin),...attachments});
+          nativeRuntime:resolve(dirname(options.dshExecutable),"../../../.."),plugins:dirname(options.dshCapabilityPlugin),...attachments,
+          // Proxy mode: model keys belong to the account Core; the DSH owner neither reads nor hashes them.
+          excluded:process.env.OPENCRAFT_PROXY_CALLER_FILE&&options.modelStorageDirectory?[join(options.modelStorageDirectory,'credentials.json')]:[]});
       },
     });
     const controlToken = randomUUID();
@@ -120,11 +127,15 @@ export async function startIndependentDshHost(configuration) {
         response.end(JSON.stringify({pid:process.pid,bootId,runtime,...await handoff.control(action,input)}));
       })().catch(()=>{response.writeHead(409).end(JSON.stringify({error:'owner_handoff_rejected'}));});
     });
-    await new Promise((resolve,reject)=>{controlServer.once('error',reject);controlServer.listen(0,'127.0.0.1',resolve);});
-    const controlUrl = 'http://127.0.0.1:'+controlServer.address().port+'/owner-handoff';
+    if (controlSocketPath) await rm(controlSocketPath, { force: true });
+    await new Promise((resolve,reject)=>{controlServer.once('error',reject);
+      if (controlSocketPath) controlServer.listen(controlSocketPath,resolve); else controlServer.listen(0,'127.0.0.1',resolve);});
+    if (controlSocketPath) await chmod(controlSocketPath, 0o600);
+    const ownerHandoff = controlSocketPath ? {protocol:1,socketPath:controlSocketPath,path:'/owner-handoff',token:controlToken}
+      : {protocol:1,url:'http://127.0.0.1:'+controlServer.address().port+'/owner-handoff',token:controlToken};
     await mkdir(dirname(descriptorPath), { recursive: true, mode: 0o700 });
     await writeFile(temporary, JSON.stringify({ schemaVersion: 1, pid: process.pid, machineId: machineIdentity.machineId,
-      dataDirectory: resolve(options.dataDirectory), websocketUrl: agent.websocketUrl, ownerHandoff:{protocol:1,url:controlUrl,token:controlToken} }), { mode: 0o600 });
+      dataDirectory: resolve(options.dataDirectory), websocketUrl: agent.websocketUrl, ownerHandoff }), { mode: 0o600 });
     await rename(temporary, descriptorPath);
     return { ...agent, handoff,
       get engineProcessId() { return agent.engineProcessId; },

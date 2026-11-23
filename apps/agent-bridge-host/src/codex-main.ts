@@ -13,6 +13,8 @@ const metadata = await lstat(path);
 if (!metadata.isFile() || metadata.size > 65536 || (process.platform !== 'win32' && (metadata.mode & 0o077 || process.getuid && metadata.uid !== process.getuid()))) throw Error('Private owned Core attachment configuration required');
 const config = JSON.parse(await readFile(path, 'utf8'));
 if (!isAbsolute(config.endpoint) || typeof config.token !== 'string') throw Error('Invalid Core attachment configuration');
+// A Core that owns accounts only does not report the native socket; the deployment names it.
+if (config.nativeSocket !== undefined && (typeof config.nativeSocket !== 'string' || !isAbsolute(config.nativeSocket))) throw Error('Invalid native socket in Core attachment configuration');
 let runtime: CodexBridgeRuntime;
 let outputBytes = 0;
 let output = Promise.resolve();
@@ -29,7 +31,7 @@ const owner = new CodexOwnerConnection(config.endpoint, config.token,
   fault => {
     if (fault) process.stderr.write(`codex-native-fault:${fault.method}:${fault.reason}\n`);
     runtime.lost(); process.stdin.destroy(); process.exitCode = 1;
-  });
+  }, config.nativeSocket);
 runtime = new CodexBridgeRuntime(owner, send);
 const tasks = new Set<Promise<void>>();
 try {

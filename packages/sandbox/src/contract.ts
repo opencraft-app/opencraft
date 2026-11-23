@@ -39,6 +39,13 @@ export interface SandboxCommand {
   readonly cwd: string;
   readonly env: Readonly<Record<string, string>>;
   readonly terminal?: { readonly cols: number; readonly rows: number };
+  /** Connection-scoped lifetime for relay processes (non-terminal only). Loss of an
+   * attached process's transport, or its unacknowledged termination, ends only that
+   * process: `exited` rejects and `terminate()` rejects with SANDBOX_CLEANUP, but the
+   * environment and its other processes stay alive; environment close still reclaims
+   * it. Absent: a backend that cannot account for a lost process retires the whole
+   * environment (fail closed). Host-side lifetime only; never sent to the guest. */
+  readonly attached?: true;
 }
 export interface SandboxOutput { readonly stream: "stdout" | "stderr"; readonly data: Uint8Array }
 export interface SandboxExit { readonly code: number | null; readonly signal?: string }
@@ -52,7 +59,17 @@ export type SandboxProcess = (Process & { readonly kind: "process"; closeStdin()
   readonly kind: "terminal";
   resize(size: { cols: number; rows: number }): Promise<void>;
 });
+/** Secret-free identity of one provider instance, persisted by its WorkspaceHost so a
+ * restarted Host can re-attach (`SandboxBackend.attach`) instead of re-creating. */
+export interface SandboxReceipt {
+  /** The backend id that issued it; another backend never accepts it. */
+  readonly backend: string;
+  /** Provider instance identity (E2B sandbox id; a static provider's agent incarnation). */
+  readonly instanceId: string;
+}
 export interface SandboxEnvironment {
+  /** Present when the backend can re-attach to this exact instance after a Host restart. */
+  readonly receipt?: SandboxReceipt;
   /** Effective constraints reported by the backend; absent fields are unclaimed. */
   readonly resources: Readonly<SandboxResources>;
   readonly capabilities: { readonly terminal: boolean };
@@ -74,11 +91,16 @@ export interface SandboxBackend {
   initialize(policy: SandboxPoolPolicy, signal: AbortSignal): Promise<void>;
   /** Resources must be applied before user code runs. Do not retry unknown creation. */
   create(identity: SandboxIdentity, resources: SandboxResources, signal: AbortSignal): Promise<SandboxEnvironment>;
+  /** Optional: reconnect to the instance a receipt names, with the same effective
+   * resources. Never creates or replaces an instance: when the provider cannot prove
+   * it is the same instance (gone, restarted, different incarnation) it rejects with
+   * SANDBOX_UNAVAILABLE and the owner decides whether to create a new one and recover. */
+  attach?(identity: SandboxIdentity, receipt: SandboxReceipt, resources: SandboxResources, signal: AbortSignal): Promise<SandboxEnvironment>;
   close(): Promise<void>;
 }
 export class SandboxFault extends Error {
-  constructor(readonly code: "SANDBOX_UNAVAILABLE" | "SANDBOX_POLICY" | "SANDBOX_CAPACITY" | "SANDBOX_CLOSED" | "SANDBOX_START" | "SANDBOX_CLEANUP" | "SANDBOX_CREATION_UNCONFIRMED", message: string) {
-    super(message); this.name = "SandboxFault";
+  constructor(readonly code: "SANDBOX_UNAVAILABLE" | "SANDBOX_POLICY" | "SANDBOX_CAPACITY" | "SANDBOX_CLOSED" | "SANDBOX_START" | "SANDBOX_CLEANUP" | "SANDBOX_CREATION_UNCONFIRMED", message: string, options?: { readonly cause?: unknown }) {
+    super(message, options); this.name = "SandboxFault";
   }
 }
 export class SandboxCreationFault extends SandboxFault {

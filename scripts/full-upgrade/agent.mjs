@@ -52,7 +52,7 @@ export async function startAgent(config, entry = process.argv[1]) {
     }
     if (input.action === 'web-child') return webChildControl(config, input, journal, bootId);
     if (input.action === 'status') return { ...PROTOCOL, role: 'agent', identity, pid: process.pid, bootId,
-      mode: config.mode, ownerAdapters: config.generationRecipePath ? ['codex-generation', 'acp-generation'] : [], jobs: await journal.list() };
+      mode: config.mode, ownerAdapters: config.generationRecipePath ? ['acp-generation'] : [], jobs: await journal.list() };
     if (input.action === 'request-ci') {
       invariant(config.mode === 'ci' && identifier(input.operationId), 'ci-only');
       // This is a CI wake-up request, not acceptance of a full-upgrade plan.

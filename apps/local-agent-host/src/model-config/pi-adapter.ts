@@ -1,15 +1,18 @@
-import {join} from 'node:path';
 import {ModelRuntime} from '@earendil-works/pi-coding-agent';
 import {createProvider, InMemoryCredentialStore, type Api, type Model, type Provider} from '@earendil-works/pi-ai';
 import {getApiProvider} from '@earendil-works/pi-ai/compat';
 import {piModel} from '@opencraft/plugin-pi-engine';
 import type {ConfiguredProvider, ModelDocument} from './model-document.js';
-import {ModelConfigurationApplyError, ModelConfigurationService, type ModelCredentialResolver, type ModelEnginePort} from './service.js';
-import {ModelConfigurationRepository, ModelCredentialRepository} from './repository.js';
-import {locked, readJson, writeJson} from './json-file.js';
+import {ModelConfigurationApplyError, ModelConfigurationService, type ModelCredentialPort, type ModelCredentialResolver, type ModelEnginePort, type ProxyCaller} from './service.js';
+import {ModelConfigurationRepository} from './repository.js';
+import type {StateDocumentStore} from '@opencraft/document-storage/state';
+import {configurationDocument} from './state-documents.js';
 
 const levels = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
 type Bindings = Record<string, string>;
+const BINDINGS_KEY = 'model-provider-bindings.json';
+/** Pi's own legacy models.json in the Pi directory, read once for identity migration. */
+const LEGACY_PI_MODELS_KEY = 'models.json';
 
 /** Execution projection only: the product document and credential repository remain authoritative. */
 export class PiModelEngineAdapter implements ModelEnginePort {
@@ -18,15 +21,15 @@ export class PiModelEngineAdapter implements ModelEnginePort {
   private readonly catalog: readonly Model<Api>[];
   private readonly endpoints: Map<string, string | undefined>;
   private defaults: {model: string | null; effort?: string} = {model: null};
-  private constructor(readonly runtime: ModelRuntime, private readonly directory: string) {
+  private constructor(readonly runtime: ModelRuntime, private readonly documents: StateDocumentStore) {
     this.catalog = [...runtime.getModels()];
     this.endpoints = new Map(runtime.getProviders().map(provider => [provider.id, provider.baseUrl]));
   }
-  static async create(directory: string) {
+  static async create(documents: StateDocumentStore) {
     // No native auth/config files, ambient credentials or network catalog are product configuration.
     const runtime = await ModelRuntime.create({modelsPath: null, credentials: new InMemoryCredentialStore(),
       allowModelNetwork: false, refreshOnCreate: false});
-    const adapter = new PiModelEngineAdapter(runtime, directory);
+    const adapter = new PiModelEngineAdapter(runtime, documents);
     for (const provider of runtime.getProviders()) adapter.hide(provider);
     await runtime.refresh({allowNetwork: false});
     return adapter;
@@ -36,17 +39,18 @@ export class PiModelEngineAdapter implements ModelEnginePort {
       auth: {apiKey: {name: 'OpenCraft configuration', check: async () => undefined, resolve: async () => undefined}}});
   }
   private async providerBindings(providers: ConfiguredProvider[]) {
-    const path = join(this.directory, 'model-provider-bindings.json');
-    return locked(path, async () => {
-      const saved = await readJson(path) as {version?: number; providers?: Bindings} | null;
+    // Read legacy metadata only for the first identity migration. Never resolve its apiKey commands.
+    // The bindings change is synchronous, so the legacy document is read beforehand while no bindings exist.
+    const legacy = await configurationDocument(this.documents.read(BINDINGS_KEY)) === null
+      ? await configurationDocument(this.documents.read(LEGACY_PI_MODELS_KEY)) as {providers?: Record<string, any>} | null : null;
+    return configurationDocument(this.documents.update(BINDINGS_KEY, value => {
+      const saved = value as {version?: number; providers?: Bindings} | null;
       if (saved && (saved.version !== 1 || !saved.providers || typeof saved.providers !== 'object' || Array.isArray(saved.providers)
         || new Set(Object.values(saved.providers)).size !== Object.values(saved.providers).length
         || Object.entries(saved.providers).some(([id, alias]) => !id || typeof alias !== 'string' || !alias)))
         throw new ModelConfigurationApplyError('Pi模型身份映射损坏，请修复后重试。');
       const bindings: Bindings = Object.assign(Object.create(null), saved?.providers);
-      // Read legacy metadata only for the first identity migration. Never resolve its apiKey commands.
-      const legacy = saved ? null : await readJson(join(this.directory, 'models.json')) as {providers?: Record<string, any>} | null;
-      const previous = Object.entries(legacy?.providers ?? {});
+      const previous = Object.entries(saved ? {} : legacy?.providers ?? {});
       for (const provider of providers) {
         if (bindings[provider.id]) continue;
         const exact = previous.find(([id]) => id === provider.id);
@@ -58,9 +62,9 @@ export class PiModelEngineAdapter implements ModelEnginePort {
           throw new ModelConfigurationApplyError('Pi模型提供商身份冲突，请检查配置。');
         bindings[provider.id] = alias;
       }
-      if (!saved || JSON.stringify(saved.providers) !== JSON.stringify(bindings)) await writeJson(path, {version: 1, providers: bindings});
-      return bindings;
-    });
+      return !saved || JSON.stringify(saved.providers) !== JSON.stringify(bindings)
+        ? {result: bindings, next: {version: 1, providers: bindings}} : {result: bindings};
+    }));
   }
   async apply(document: ModelDocument, credentials: ModelCredentialResolver) {
     document = {...document,providers:document.providers.filter(p=>!p.catalogId?.startsWith('opencraft-human-'))};
@@ -124,10 +128,10 @@ export class PiModelEngineAdapter implements ModelEnginePort {
 }
 
 /** The same revision/stamp owner used by the DSH adapter; Pi only supplies its execution port. */
-export async function createPiModelConfiguration(modelDirectory: string, piDirectory: string) {
-  const adapter = await PiModelEngineAdapter.create(piDirectory);
-  const repository = new ModelConfigurationRepository(modelDirectory);
-  const service = new ModelConfigurationService(repository, new ModelCredentialRepository(modelDirectory), adapter);
+/** `caller` is the proxy-mode caller record; with it `credentials` is the account Core port and Pi never holds a provider key. */
+export async function createPiModelConfiguration(repository: ModelConfigurationRepository, credentials: ModelCredentialPort, piDocuments: StateDocumentStore, caller: ProxyCaller | null = null) {
+  const adapter = await PiModelEngineAdapter.create(piDocuments);
+  const service = new ModelConfigurationService(repository, credentials, adapter, caller);
   return {models: adapter.runtime,
     configuration: {
       async synchronize() {

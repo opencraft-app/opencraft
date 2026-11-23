@@ -4,7 +4,8 @@ import { setTimeout as delay } from "node:timers/promises";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { sessionCapabilityToken } from "./mcp.js";
-import { nativeToolCapabilityToken, hostGitToken, hostEnvironmentToken, type HostGitSource } from './credentials.js';
+import { fileKeyMaterial } from "@opencraft/secret-storage/file";
+import { nativeToolCapabilityToken, hostGitToken, hostEnvironmentToken, SESSION_CAPABILITY_KEY, type HostGitSource } from './credentials.js';
 import type { CapabilityExecution, CapabilityResult, CapabilityTool, SessionCapabilityPort } from "./index.js";
 import { capabilityResultFromMcp } from "./content.js";
 
@@ -18,13 +19,18 @@ export class RemoteSessionCapabilities implements SessionCapabilityPort {
     if (!info.isFile() || !process.getuid || info.uid !== process.getuid() || (info.mode & 0o077)) throw new Error("Session capability attachment requires owned private files");
     return readFile(path);
   }
+  /** Read-only: an attachment never creates the owner's signing key. */
+  private async signingKey() {
+    const key = await fileKeyMaterial(this.directory).read(SESSION_CAPABILITY_KEY);
+    if (key?.length !== 32) throw new Error("Invalid session capability key");
+    return Buffer.from(key);
+  }
   private async connection(threadId: string, execution?: CapabilityExecution, nativeTool = false) {
     const descriptor = JSON.parse((await this.privateFile(join(this.directory, "session-capabilities.json"))).toString());
     const url = new URL(descriptor.url);
     if (descriptor.schemaVersion !== 1 || url.protocol !== "http:" || url.hostname !== "127.0.0.1" || url.pathname !== "/mcp"
       || url.search || url.hash || url.username || url.password) throw new Error("Invalid session capability descriptor");
-    const key = await this.privateFile(join(this.directory, "session-capabilities.key"));
-    if (key.length !== 32) throw new Error("Invalid session capability key");
+    const key = await this.signingKey();
     return { url, headers: { Authorization: "Bearer " + (nativeTool ? nativeToolCapabilityToken : sessionCapabilityToken)(key, { serverId: this.serverId, threadId, execution }) } };
   }
   private async client<T>(threadId: string, run: (client: Client, transport: StreamableHTTPClientTransport) => Promise<T>, execution?: CapabilityExecution, nativeTool = false, signal?: AbortSignal): Promise<T> {
@@ -55,7 +61,7 @@ export class RemoteSessionCapabilities implements SessionCapabilityPort {
   /** Compiled native owner only: no retries, no account selector, no clear Git secrets. */
   async hostGit(threadId:string,source:HostGitSource,signal?:AbortSignal):Promise<unknown> {
     const {url}=await this.connection(threadId);
-    const key=await this.privateFile(join(this.directory,'session-capabilities.key'));
+    const key=await this.signingKey();
     const token=hostGitToken(key,{serverId:this.serverId,threadId,source});
     const response=await fetch(new URL('/host-git',url),{method:'POST',redirect:'error',
       headers:{authorization:'Bearer '+token,'content-type':'application/json'},body:'{}',signal:signal?AbortSignal.any([signal,AbortSignal.timeout(5000)]):AbortSignal.timeout(5000)});
@@ -69,7 +75,7 @@ export class RemoteSessionCapabilities implements SessionCapabilityPort {
    * the reply is an opaque capsule the Gateway cannot open. No retries. */
   async hostEnvironment(threadId:string,source:HostGitSource,recipient:string,signal?:AbortSignal):Promise<unknown> {
     const {url}=await this.connection(threadId);
-    const key=await this.privateFile(join(this.directory,'session-capabilities.key'));
+    const key=await this.signingKey();
     const token=hostEnvironmentToken(key,{serverId:this.serverId,threadId,source});
     const response=await fetch(new URL('/host-environment',url),{method:'POST',redirect:'error',
       headers:{authorization:'Bearer '+token,'content-type':'application/json'},body:JSON.stringify({recipient}),

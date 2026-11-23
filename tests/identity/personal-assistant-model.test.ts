@@ -1,3 +1,4 @@
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,rm,readFile} from 'node:fs/promises';
@@ -8,6 +9,7 @@ import {ActorStore} from '../../packages/access-control/src/actors';
 import {Collaboration} from '../../packages/access-control/src/collaboration';
 import {createAssistantModelSource} from '../../apps/local-agent-host/src/model-config/assistant';
 import {ModelConfigurationRepository,ModelCredentialRepository} from '../../apps/local-agent-host/src/model-config/repository';
+import { fileSecretStore } from "@opencraft/secret-storage/file";
 import {ModelPolicyStore} from '@opencraft/model-usage-policy';
 import {createPersonalAssistantHost} from '../../apps/personal-assistant/src/runtime/host-supervisor.mjs';
 const model={providerId:'test',modelId:'synthetic'};
@@ -15,7 +17,7 @@ async function fixture(t:test.TestContext) {
  const directory=await mkdtemp(join(tmpdir(),'assistant-model-')),storage=await openServerDatabase(directory),actors=new ActorStore(storage),service=new Collaboration(storage,actors);
  const human=(subject:string)=>actors.resolveHuman({provider:'local',subject,displayName:subject,expiresAt:Date.now()+3600000})!;
  const alice=human('alice'),bob=human('bob');
- const repository=new ModelConfigurationRepository(join(directory,'models')),credentials=new ModelCredentialRepository(join(directory,'models'));
+ const repository=new ModelConfigurationRepository(fileStateDocumentStore(join(directory,'models'))),credentials=new ModelCredentialRepository(fileSecretStore(join(directory,'models')));
  await repository.initialize();await credentials.set('TEST','synthetic-secret');
  await repository.update(0,d=>{d.providers=[{id:'test',name:'Test connection',protocol:'openai-responses',baseUrl:'https://example.invalid/v1',enabled:true,credentialRef:'TEST',models:[{id:'synthetic',name:'Test model',enabled:true,reasoningEfforts:false},{id:'other',enabled:true}]}];});
  let host:any;
@@ -67,7 +69,7 @@ test('shared model source filters incompatible/missing-key/denied routes and con
  await f.repository.update(1,d=>{d.providers[0]!.protocol='openai-completions';});assert.equal((await source.catalog()).models.length,0);
  await f.repository.update(2,d=>{d.providers[0]!.protocol='openai-responses';d.providers[0]!.credentialRef=null;});assert.equal((await source.catalog()).models.length,0);
  await f.repository.update(3,d=>{d.providers[0]!.authentication='none';});assert.equal((await source.catalog()).models.length,1);await invoke({providerId:'test',modelId:'other'});assert.equal(sent.at(-1),null);
- assert.ok(!(await readFile(f.repository.path,'utf8')).includes('rotated-synthetic'));
+ assert.ok(!(await readFile(join(f.directory,'models','models.json'),'utf8')).includes('rotated-synthetic'));
 });
 
 

@@ -3,7 +3,7 @@ import { access, lstat, mkdir, readFile, rename, writeFile } from 'node:fs/promi
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const SERVICES = Object.freeze(['brain', 'gateway', 'hands']);
+export const SERVICES = Object.freeze(['brain', 'gateway', 'hands', 'proxy']);
 
 export function hostLayout(environment) {
   const absolute = (key, fallback) => {

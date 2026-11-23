@@ -97,7 +97,7 @@ export async function apply(ctx, config) {
       return owned;
     },
   }):undefined;
-  const environmentRuntime = mode==='legacy'&&config.environmentDataDirectory ? ExecutionEnvironmentRuntime.open(config.environmentDataDirectory, { create: true }) : undefined;
+  const environmentRuntime = mode==='legacy'&&config.environmentDataDirectory ? await ExecutionEnvironmentRuntime.open(config.environmentDataDirectory, { create: true }) : undefined;
   ctx.on("dispose", async () => {await git?.close();environmentLaunch?.close();await admission?.close();environmentRuntime?.close();});
   registerDshExecutionEnvironment(ctx, nativeId => generations.get(nativeId)?.logicalSessionId ?? nativeId, environmentRuntime,git,environmentLaunch);
   ctx.on("session/event", (session, event) => {

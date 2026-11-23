@@ -28,6 +28,7 @@ import {
 } from "@opencraft/execution-environment/environment-account";
 import type { CapabilitySession } from "@opencraft/session-capabilities";
 import { LocalAccountServerPlugin } from "../../plugins/local-account/src/server.js";
+import { createNodePasswordHasher } from "../../plugins/local-account/src/password-hash-node.js";
 import { openAssetConfigurations } from "../../plugins/assets/src/server/worker.js";
 import { openHeadlessAssetsStorage } from "../../apps/headless-server/src/headless-assets-storage.js";
 import { createHostEnvironmentLaunch } from "../../apps/headless-server/src/host-environment-launch.ts";
@@ -174,7 +175,7 @@ test("a binding revoked after an await point is refused at the recheck", async (
 test("the issuer rechecks the mapping around the value read and refuses a binding revoked meanwhile", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "env-account-issuer-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const store = new EmployeeGitVaultStore(join(root, "data"));
+  const store = await EmployeeGitVaultStore.open(join(root, "data"));
   t.after(() => store.close());
   new AccountEnvironment(store).replace("directory:staff-7", { projectId: null }, 0, [
     { name: "SERVICE_KEY", value: LOGIN_SECRET, secret: true },
@@ -221,7 +222,7 @@ test("the issuer rechecks the mapping around the value read and refuses a bindin
 test("metadata admission records the mapped partition; without a mapping it is unchanged", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "env-account-metadata-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const vault = new EmployeeGitVaultStore(join(root, "data"));
+  const vault = await EmployeeGitVaultStore.open(join(root, "data"));
   t.after(() => vault.close());
   const p = projection({ "human://fixture/a": ownerA() });
   const mapped = new EnvironmentMetadata(vault, new EnvironmentAccountPartitions(p.reader, directory));
@@ -251,7 +252,7 @@ async function durable(t: test.TestContext) {
     actors = new ActorStore(storage),
     accounts = new HumanAccounts(storage, actors),
     members = new MembershipStore(storage);
-  accounts.registerLocalAccounts(new LocalAccountServerPlugin(accounts.localAccountRepository));
+  accounts.registerLocalAccounts(new LocalAccountServerPlugin(accounts.localAccountRepository, createNodePasswordHasher()));
   const management = new HumanAccountManagement(storage, accounts, actors, members);
   const principal = await management.initialize({
     mode: "web",
@@ -305,8 +306,8 @@ async function durable(t: test.TestContext) {
 }
 /** Values exist under the login partition (existing data) and, differently,
  * under the canonical partition; the Thread is bound to Project alpha. */
-function seed(directoryPath: string, canonical: string, threadId: string) {
-  const vault = new EmployeeGitVaultStore(directoryPath);
+async function seed(directoryPath: string, canonical: string, threadId: string) {
+  const vault = await EmployeeGitVaultStore.open(directoryPath);
   try {
     const environment = new AccountEnvironment(vault);
     environment.replace("directory:staff-7", { projectId: null }, 0, [
@@ -357,7 +358,7 @@ test("a compiled mapping delivers existing login-partition data unchanged; nothi
   const alpha = { hostId: HOST, threadId: "dsh-alpha", turnId: "dsh-turn-dsh-alpha-1" } as const;
   f.bind("staff-7");
   f.admit(alpha.threadId, "alpha-input", alpha.turnId);
-  seed(f.directory, f.canonical, alpha.threadId);
+  await seed(f.directory, f.canonical, alpha.threadId);
   const seen: string[] = [];
   const emit = Worker.prototype.emit;
   Worker.prototype.emit = function (this: Worker, event: string | symbol, ...args: unknown[]) {
@@ -401,7 +402,7 @@ test("a partition outside the verified bindings or an ambiguous one is refused b
   const alpha = { hostId: HOST, threadId: "dsh-alpha", turnId: "dsh-turn-dsh-alpha-1" } as const;
   f.bind("staff-7");
   f.admit(alpha.threadId, "alpha-input", alpha.turnId);
-  seed(f.directory, f.canonical, alpha.threadId);
+  await seed(f.directory, f.canonical, alpha.threadId);
   const reader = openExecutionAdmission({ workerFile: admissionWorker, directory: f.directory });
   t.after(() => reader.close());
   const foreign = await mappedOwner(f.directory, "foreign");
@@ -443,7 +444,7 @@ test("without a mapping the core vault owner still reads only the canonical part
   const alpha = { hostId: HOST, threadId: "dsh-alpha", turnId: "dsh-turn-dsh-alpha-1" } as const;
   f.bind("staff-7");
   f.admit(alpha.threadId, "alpha-input", alpha.turnId);
-  seed(f.directory, f.canonical, alpha.threadId);
+  await seed(f.directory, f.canonical, alpha.threadId);
   const reader = openExecutionAdmission({ workerFile: admissionWorker, directory: f.directory });
   t.after(() => reader.close());
   const assets = await openHeadlessAssetsStorage(f.directory, { environmentLaunch: true });

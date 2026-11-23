@@ -1,0 +1,22 @@
+{
+  "name": "@opencraft/storage-cloudflare",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./sql": "./src/sql.ts",
+    "./state": "./src/state.ts",
+    "./secrets": "./src/secrets.ts",
+    "./blob": "./src/blob.ts",
+    "./bindings": "./src/bindings.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opencraft/blob-storage": "0.1.0",
+    "@opencraft/document-storage": "0.1.0",
+    "@opencraft/secret-storage": "0.1.0",
+    "@opencraft/sql": "0.1.0"
+  }
+}

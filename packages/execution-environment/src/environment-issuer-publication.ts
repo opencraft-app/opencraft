@@ -1,5 +1,6 @@
 import { generateKeyPair } from "node:crypto";
-import { lstat, readFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { open } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 import { promisify } from "node:util";
 
@@ -16,18 +17,29 @@ const ISSUER = /^[A-Za-z0-9_-]{1,256}$/u;
 export async function readPublishedEnvironmentIssuer(path: string): Promise<string | null> {
   if (typeof path !== "string" || !isAbsolute(path))
     throw new Error("The ENV issuer publication requires an absolute path");
-  let info;
+  // Check and read the same open file: a path checked by lstat and then read
+  // again by name could be swapped in between, trusting an unchecked file.
+  let handle;
   try {
-    info = await lstat(path);
+    handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    if ((error as NodeJS.ErrnoException).code === "ELOOP")
+      throw new Error("The ENV issuer publication must be an owned private file");
     throw error;
   }
-  if (!info.isFile() || info.uid !== process.getuid?.() || (info.mode & 0o077) !== 0 || info.size > 1024)
-    throw new Error("The ENV issuer publication must be an owned private file");
+  let text: string;
+  try {
+    const info = await handle.stat();
+    if (!info.isFile() || info.uid !== process.getuid?.() || (info.mode & 0o077) !== 0 || info.size > 1024)
+      throw new Error("The ENV issuer publication must be an owned private file");
+    text = await handle.readFile("utf8");
+  } finally {
+    await handle.close();
+  }
   let value: unknown;
   try {
-    value = JSON.parse(await readFile(path, "utf8"));
+    value = JSON.parse(text);
   } catch {
     throw new Error("Invalid ENV issuer publication");
   }

@@ -14,6 +14,7 @@ import { parseHeadlessArguments, startHeadlessServer } from "../../apps/headless
 import { applyExecutionProfile } from "../../scripts/server-deployment/headless-gateway-application.mjs";
 import { assertHeadlessBuildHost, buildHeadlessBundle, headlessWebHostDefinitions } from "../../scripts/packaging/package-headless-linux.mjs";
 import { createWorkbenchWebServer } from "../../apps/headless-server/src/serve-workbench-web.mjs";
+import { ownedCleanup } from '../support/owned-cleanup.mjs';
 
 async function writeHeadlessVersion(webRoot) {
   await writeFile(join(webRoot, "version.json"), JSON.stringify({
@@ -127,15 +128,16 @@ test("headless command accepts a private data root and rejects unsupported flags
 });
 
 test("local desktop gateway requires loopback, exact Origin and credential-free URL", async context => {
+  const cleanup = ownedCleanup(context);
   const root = await mkdtemp(join(tmpdir(), "opencraft-desktop-gateway-"));
-  context.after(() => rm(root, { recursive: true, force: true }));
+  cleanup.last(()=>rm(root, { recursive: true, force: true }));
   await writeFile(join(root, "index.html"), "<!doctype html>");
   let accepted = 0;
   const desktopService = { accept(socket) { accepted++; socket.close(); } };
   await assert.rejects(createWorkbenchWebServer({ root, desktopService }), /loopback-only/u);
   await assert.rejects(startHeadlessServer({ root, host: "0.0.0.0", allowUnauthenticatedPublic: true, localDesktop: true }), /loopback-only/u);
   const web = await createWorkbenchWebServer({ root, appServerTarget: null, loopbackOnly: true, desktopService });
-  context.after(() => web.close());
+  cleanup.own(() => web.close());
   await assert.rejects(web.listen({ host: "0.0.0.0", port: 0 }), /loopback/u);
   const address = await web.listen({ host: "127.0.0.1", port: 0 });
   const origin = `http://127.0.0.1:${address.port}`;
@@ -155,8 +157,9 @@ test("local desktop gateway requires loopback, exact Origin and credential-free 
 });
 
 test("trusted-internal desktop is explicit and still requires same-origin, credential-free viewing", async context => {
+  const cleanup = ownedCleanup(context);
   const root = await mkdtemp(join(tmpdir(), "opencraft-internal-desktop-gateway-"));
-  context.after(() => rm(root, { recursive: true, force: true }));
+  cleanup.last(()=>rm(root, { recursive: true, force: true }));
   await writeFile(join(root, "index.html"), "<!doctype html>");
   let accepted = 0;
   const desktopService = { accept(socket) { accepted++; setImmediate(() => socket.close()); } };
@@ -164,7 +167,7 @@ test("trusted-internal desktop is explicit and still requires same-origin, crede
   await assert.rejects(startHeadlessServer({ desktopAccess: "trusted-internal" }), /requires local desktop/u);
   await assert.rejects(startHeadlessServer({ localDesktop: true, desktopAccess: "public" }), /Invalid desktop access/u);
   const web = await createWorkbenchWebServer({ root, appServerTarget: null, desktopService, desktopAccess: "trusted-internal" });
-  context.after(() => web.close());
+  cleanup.own(() => web.close());
   const address = await web.listen({ host: "0.0.0.0", port: 0 });
   const endpoint = `ws://127.0.0.1:${address.port}/desktop/connect`;
   const headers = { Host: "workspace.internal" };
@@ -200,8 +203,9 @@ test("public SSH can explicitly allow changing addresses without removing authen
 });
 
 test("public headless mode requires explicit acknowledgement and keeps one HTTP and WebSocket server", async (context) => {
+  const cleanup = ownedCleanup(context);
   const root = await mkdtemp(join(tmpdir(), "opencraft-public-headless-test-"));
-  context.after(() => rm(root, { recursive: true, force: true }));
+  cleanup.last(()=>rm(root, { recursive: true, force: true }));
   const webRoot = join(root, "web");
   await mkdir(webRoot);
   await writeFile(join(webRoot, "index.html"), "<!doctype html><title>Public fixture</title>");
@@ -220,7 +224,7 @@ test("public headless mode requires explicit acknowledgement and keeps one HTTP 
   await assert.rejects(startHeadlessServer({ root, webRoot, dataDirectory, host: "0.0.0.0", port: 8089, startAgentHost, createWebServer }), /acknowledgement/u);
   const server = await startHeadlessServer({ root, webRoot, dataDirectory, host: "0.0.0.0", port: 8089,
     allowUnauthenticatedPublic: true, startAgentHost, createWebServer });
-  context.after(() => server.close());
+  cleanup.own(() => server.close());
   assert.deepEqual(listenOptions, { host: "0.0.0.0", port: 8089 });
   assert.equal(webOptions.loopbackOnly, false);
   assert.equal(webOptions.sameOriginOnly, undefined);
@@ -293,15 +297,16 @@ test("bundled headless help exits without starting the imported static gateway",
 });
 
 test("headless server serves WebUI through a loopback-only owned AppServer gateway", { timeout: 20_000 }, async (context) => {
+  const cleanup = ownedCleanup(context);
   const root = await mkdtemp(join(tmpdir(), "opencraft-headless-test-"));
-  context.after(() => rm(root, { recursive: true, force: true }));
+  cleanup.last(()=>rm(root, { recursive: true, force: true }));
   const webRoot = join(root, "web");
   await mkdir(webRoot);
   await writeFile(join(webRoot, "index.html"), "<!doctype html><title>OpenCraft headless</title>");
   await writeHeadlessVersion(webRoot);
   const upstream = new WebSocketServer({ port: 0, host: "127.0.0.1" });
   await new Promise((resolvePromise) => upstream.once("listening", resolvePromise));
-  context.after(() => new Promise((resolvePromise) => upstream.close(resolvePromise)));
+  cleanup.own(() => new Promise((resolvePromise) => upstream.close(resolvePromise)));
   upstream.on("connection", (socket) => socket.on("message", (message) => {
     const request = JSON.parse(message.toString());
     socket.send(JSON.stringify({ id: request.id, result: "hello" }));
@@ -314,7 +319,7 @@ test("headless server serves WebUI through a loopback-only owned AppServer gatew
   });
   const dataDirectory = join(root, "data");
   const server = await startHeadlessServer({ root, webRoot, dataDirectory, port: 0, startAgentHost });
-  context.after(() => server.close());
+  cleanup.own(() => server.close());
   assert.ok((await readdir(dataDirectory)).includes("server.lock"));
   await assert.rejects(access(`${dataDirectory}.lock`), { code: "ENOENT" });
   assert.match(server.url, /^http:\/\/127\.0\.0\.1:\d+$/u);
@@ -338,19 +343,20 @@ test("headless server serves WebUI through a loopback-only owned AppServer gatew
 });
 
 test("direct public gateway accepts proxy HTTPS Origin for static WebUI and WebSockets", async (context) => {
+  const cleanup = ownedCleanup(context);
   const root = await mkdtemp(join(tmpdir(), "opencraft-public-origin-test-"));
-  context.after(() => rm(root, { recursive: true, force: true }));
+  cleanup.last(()=>rm(root, { recursive: true, force: true }));
   await writeFile(join(root, "index.html"), "<!doctype html><title>Public fixture</title>");
   const upstream = new WebSocketServer({ port: 0, host: "127.0.0.1" });
   await new Promise(resolvePromise => upstream.once("listening", resolvePromise));
-  context.after(() => new Promise(resolvePromise => upstream.close(resolvePromise)));
+  cleanup.own(() => new Promise(resolvePromise => upstream.close(resolvePromise)));
   upstream.on("connection", socket => socket.on("message", message => socket.send(message)));
   const appHost = new AppHostServer({ logicalClientRouting: true,
     createTransport() { throw new Error("The transport is not needed for a handshake test"); } });
-  context.after(() => appHost.close());
+  cleanup.own(() => appHost.close());
   const host = await createWorkbenchWebServer({ root,
     appServerTarget: `ws://127.0.0.1:${upstream.address().port}/rpc`, appHostServer: appHost });
-  context.after(() => host.close());
+  cleanup.own(() => host.close());
   const address = await host.listen({ host: "127.0.0.1", port: 0 });
   const externalHost = `remote.example:${address.port}`;
   const externalOrigin = `http://${externalHost}`;
@@ -367,7 +373,7 @@ test("direct public gateway accepts proxy HTTPS Origin for static WebUI and WebS
   const foreign = new WebSocket(`ws://127.0.0.1:${address.port}/appserver`, {
     headers: { Host: externalHost }, origin: "https://workbench.example.com",
   });
-  context.after(() => foreign.terminate());
+  cleanup.own(() => foreign.terminate());
   await new Promise((resolvePromise, reject) => {
     foreign.once("open", resolvePromise);
     foreign.once("error", reject);
@@ -376,7 +382,7 @@ test("direct public gateway accepts proxy HTTPS Origin for static WebUI and WebS
   const socket = new WebSocket(`ws://127.0.0.1:${address.port}/appserver`, {
     headers: { Host: externalHost }, origin: externalOrigin,
   });
-  context.after(() => socket.terminate());
+  cleanup.own(() => socket.terminate());
   await new Promise((resolvePromise, reject) => {
     socket.once("open", resolvePromise);
     socket.once("error", reject);
@@ -387,7 +393,7 @@ test("direct public gateway accepts proxy HTTPS Origin for static WebUI and WebS
   const appHostSocket = new WebSocket(`ws://127.0.0.1:${address.port}/apphost`, {
     headers: { Host: externalHost }, origin: "https://workbench.example.com",
   });
-  context.after(() => appHostSocket.terminate());
+  cleanup.own(() => appHostSocket.terminate());
   await new Promise((resolvePromise, reject) => {
     appHostSocket.once("open", resolvePromise);
     appHostSocket.once("error", reject);
@@ -396,8 +402,9 @@ test("direct public gateway accepts proxy HTTPS Origin for static WebUI and WebS
 });
 
 test("browser AppHost bridge routes Codex frames through one leased Server transport", async (context) => {
+  const cleanup = ownedCleanup(context);
   const root = await mkdtemp(join(tmpdir(), "opencraft-headless-server-"));
-  context.after(() => rm(root, { recursive: true, force: true }));
+  cleanup.last(()=>rm(root, { recursive: true, force: true }));
   await writeFile(join(root, "index.html"), "<!doctype html><title>AppHost bridge fixture</title>");
   await writeHeadlessVersion(root);
   const messageListeners = new Set();
@@ -433,7 +440,7 @@ test("browser AppHost bridge routes Codex frames through one leased Server trans
       };
     },
   });
-  context.after(() => host.close());
+  cleanup.own(() => host.close());
   const origin = host.url;
   const appHostUrl = `${origin.replace(/^http/u, "ws")}/apphost`;
   const foreign = new WebSocket(appHostUrl, { origin: "https://evil.example" });
@@ -449,7 +456,7 @@ test("browser AppHost bridge routes Codex frames through one leased Server trans
   invalid.send(JSON.stringify({ type: "host/connect", hostId: "local-codex" }));
   assert.equal(await new Promise(resolvePromise => invalid.once("close", resolvePromise)), 1008);
   const socket = new WebSocket(appHostUrl, { origin });
-  context.after(() => socket.terminate());
+  cleanup.own(() => socket.terminate());
   await new Promise((resolvePromise, reject) => {
     socket.once("open", resolvePromise);
     socket.once("error", reject);
@@ -495,7 +502,7 @@ test("browser AppHost bridge routes Codex frames through one leased Server trans
   await new Promise(resolvePromise => socket.once("close", resolvePromise));
   assert.equal(transportClosed, false);
   const reconnected = new WebSocket(appHostUrl, { origin });
-  context.after(() => reconnected.terminate());
+  cleanup.own(() => reconnected.terminate());
   await new Promise((resolvePromise, reject) => {
     reconnected.once("open", resolvePromise);
     reconnected.once("error", reject);
@@ -523,8 +530,9 @@ test("browser AppHost bridge routes Codex frames through one leased Server trans
 });
 
 test("Web host terminates a half-open AppHost socket after missed heartbeat", async (context) => {
+  const cleanup = ownedCleanup(context);
   const root = await mkdtemp(join(tmpdir(), "opencraft-apphost-heartbeat-"));
-  context.after(() => rm(root, { recursive: true, force: true }));
+  cleanup.last(()=>rm(root, { recursive: true, force: true }));
   await writeFile(join(root, "index.html"), "<!doctype html><title>Heartbeat fixture</title>");
   const appHost = new AppHostServer({
     createTransport() { throw new Error("Host activation is not expected"); },
@@ -538,9 +546,9 @@ test("Web host terminates a half-open AppHost socket after missed heartbeat", as
   const address = await web.listen({ host: "127.0.0.1", port: 0 });
   const origin = `http://127.0.0.1:${address.port}`;
   const socket = new WebSocket(`${origin.replace(/^http/u, "ws")}/apphost`, { origin });
-  context.after(() => socket.terminate());
-  context.after(() => web.close());
-  context.after(() => appHost.close());
+  cleanup.own(() => socket.terminate());
+  cleanup.own(() => web.close());
+  cleanup.own(() => appHost.close());
   await new Promise((resolvePromise, reject) => {
     socket.once("open", resolvePromise);
     socket.once("error", reject);
@@ -558,8 +566,9 @@ test("Web host terminates a half-open AppHost socket after missed heartbeat", as
 });
 
 test("AppHost diagnostics correlate two browser sockets and reject payload fields", async (context) => {
+  const cleanup = ownedCleanup(context);
   const root = await mkdtemp(join(tmpdir(), "opencraft-apphost-diagnostics-"));
-  context.after(() => rm(root, { recursive: true, force: true }));
+  cleanup.last(()=>rm(root, { recursive: true, force: true }));
   await writeFile(join(root, "index.html"), "<!doctype html><title>Diagnostics fixture</title>");
   const appHost = new AppHostServer({
     createTransport() {
@@ -590,11 +599,11 @@ test("AppHost diagnostics correlate two browser sockets and reject payload field
   });
   const address = await web.listen({ host: "127.0.0.1", port: 0 });
   const origin = `http://127.0.0.1:${address.port}`;
-  context.after(() => web.close());
-  context.after(() => appHost.close());
+  cleanup.own(() => web.close());
+  cleanup.own(() => appHost.close());
   const attempts = ["00000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-000000000002"];
   const sockets = attempts.map(attempt => new WebSocket(`${origin.replace(/^http/u, "ws")}/apphost?attempt=${attempt}`, { origin }));
-  context.after(() => sockets.forEach(socket => socket.terminate()));
+  cleanup.own(() => sockets.forEach(socket => socket.terminate()));
   await Promise.all(sockets.map((socket, index) => new Promise((resolvePromise, reject) => {
     socket.once("open", () => {
       socket.send(JSON.stringify({ type: "hello", protocolVersion: 2, rendererId: attempts[index] }));
@@ -737,20 +746,21 @@ test('authenticated provider membership is explicit, validated and requires auth
 });
 
 test('Headless provider policy reaches Actor admission and accepts an unenrolled verified employee', async t => {
+  const cleanup = ownedCleanup(t);
   const { generateKeyPairSync, randomBytes } = await import('node:crypto');
   const { once } = await import('node:events');
   const { AssertionSigner, ASSERTION_HEADER } = await import("../../packages/identity-core/src/node.ts");
   const { createRelayServer } = await import("../../apps/relay-server/src/server.ts");
-  const dir=await mkdtemp(join(tmpdir(),'headless-employee-'));t.after(()=>rm(dir,{recursive:true,force:true}));
+  const dir=await mkdtemp(join(tmpdir(),'headless-employee-'));cleanup.last(()=>rm(dir,{recursive:true,force:true}));
   const webRoot=join(dir,'web');await mkdir(webRoot);await writeFile(join(webRoot,'index.html'),'Employee workbench');await writeHeadlessVersion(webRoot);
   const pair=generateKeyPairSync('ed25519'),publicKey=pair.publicKey.export({format:'pem',type:'spki'}).toString(),privateKey=pair.privateKey.export({format:'pem',type:'pkcs8'}).toString();
   const scope={issuer:'fixture',instanceId:'fixture',origin:'http://fixture.test'},credential=randomBytes(32).toString('base64url');
   const signer=new AssertionSigner(scope,privateKey),relay=createRelayServer([{...scope,credential,signer,identityProvider:{authenticate:()=>null}}]);
-  relay.server.listen(0,'127.0.0.1');await once(relay.server,'listening');t.after(()=>relay.close());
+  relay.server.listen(0,'127.0.0.1');await once(relay.server,'listening');cleanup.own(()=>relay.close());
   const relayFile=join(dir,'relay.json');await writeFile(relayFile,JSON.stringify({schemaVersion:1,...scope,credential,publicKey,relay:`http://127.0.0.1:${relay.server.address().port}`,allowLoopbackInsecure:true}),{mode:0o600});
   await assert.rejects(startHeadlessServer({root:dir,webRoot,dataDirectory:join(dir,'misconfigured'),accessMemberProviders:['enterprise-identity'],startAgentHost:async()=>{throw new Error('must not start');}}),/identity provider/);
   const options=parseHeadlessArguments(['--data-dir',join(dir,'instance'),'--relay-connect-file',relayFile,'--access-member-provider','enterprise-identity'],{});
-  const server=await startHeadlessServer({...options,port:0,root:dir,webRoot,startAgentHost:async()=>({websocketUrl:'ws://127.0.0.1:1',close:async()=>{}})});t.after(()=>server.close());
+  const server=await startHeadlessServer({...options,port:0,root:dir,webRoot,startAgentHost:async()=>({websocketUrl:'ws://127.0.0.1:1',close:async()=>{}})});cleanup.own(()=>server.close());
   const identity={provider:'enterprise-identity',subject:'777777',displayName:'fixture.employee',expiresAt:Date.now()+60000};
   const read=(path,signed=true)=>new Promise((resolve,reject)=>{
     const req=request(server.url+path,{headers:{host:'fixture.test',accept:'text/html',...(signed?{[ASSERTION_HEADER]:signer.issue(identity,'GET',path)}:{staffid:'777777'})}},res=>{let body='';res.on('data',c=>body+=c);res.on('end',()=>resolve({status:res.statusCode,body}));});req.on('error',reject);req.end();

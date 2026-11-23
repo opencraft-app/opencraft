@@ -13,7 +13,7 @@ import {EmployeeGitVaultStore} from '@opencraft/execution-environment/employee-g
 async function sharedCredentialAdapter(t:test.TestContext) {
   const root=await mkdtemp(join(tmpdir(),'native-control-model-'));
   const frames:any[]=[],writes:any[]=[];
-  const vault=new EmployeeGitVaultStore(root),runtime=new ExecutionEnvironmentRuntime(root,vault);
+  const vault=await EmployeeGitVaultStore.open(root),runtime=new ExecutionEnvironmentRuntime(root,vault);
   for(const user of ['alice','bob']) new AccountEnvironment(vault).replace('employee:'+user,{projectId:null},0,[{name:'SERVICE_KEY',value:'synthetic-'+user,secret:true}]);
   const adapter=new CodexEngineAdapter({executable:process.execPath,runtimeDirectory:root,dataDirectory:join(root,'codex'),nativeCodexHomeDirectory:join(root,'native'),
     upstreamBaseUrl:'http://127.0.0.1:9/backend-api/codex',fetch:async()=>Response.json({ok:true}),

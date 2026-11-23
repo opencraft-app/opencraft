@@ -3,10 +3,18 @@ import { rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { resolveEnvironmentIssuer, watchEnvironmentIssuer } from "../server-deployment/environment-issuer.mjs";
 
-/** Pi engine host configuration. `issuer` is set only with ENV delivery. */
+/** The AppServer owner's control credential: its own per-incarnation file with an
+ * external proxy; the embedded account Core (restore path) forwards health with the
+ * account token, so that mode keeps one token. */
+export function appServerControlTokenFile(paths) {
+  return paths.proxyMode === "external" ? paths.appServerTokenFile : paths.tokenPath;
+}
+
+/** Pi engine host configuration (agent-private). `issuer` is set only with ENV delivery. */
 export function engineHostConfiguration(paths, root, issuer) {
   return {
     descriptorPath: paths.engineDescriptor,
+    socketPath: paths.engineSocket,
     dataDirectory: paths.dataDirectory,
     runtimeDirectory: paths.runtimeDirectory,
     engines: ["dsh", "pi"],
@@ -39,13 +47,15 @@ export function codexAppServerEnvironmentArguments(paths) {
   return paths.environmentDelivery ? ["--environment-launch-config", paths.codexEnvironmentLaunchConfig] : [];
 }
 
-/** DSH host configuration. `issuer` is set only with ENV delivery. */
+/** DSH host configuration (agent-private). `issuer` is set only with ENV delivery. */
 export function dshHostConfiguration(paths, root, env, issuer) {
   return {
     executionContext: paths.executionContext,
     fileSystemOwner: { endpoint: paths.fileSystemEndpoint, tokenFile: paths.fileSystemToken },
     artifactDirectory: join(paths.dataDirectory, "artifacts"),
     descriptorPath: paths.dshDescriptor,
+    socketPath: paths.dshSocket,
+    controlSocketPath: paths.dshControlSocket,
     dataDirectory: join(paths.dataDirectory, "agent"),
     machineIdentityDirectory: paths.dataDirectory,
     runtimeDirectory: paths.runtimeDirectory,
@@ -57,8 +67,9 @@ export function dshHostConfiguration(paths, root, env, issuer) {
     projectStorageDirectory: join(paths.dataDirectory, "projects"),
     projectlessWorkspaceDirectory: paths.dshProjectlessDirectory,
     skillsDirectory: join(paths.dataDirectory, "skills"),
-    taskCodexCoreEndpoint: paths.coreEndpoint,
-    taskCodexCoreTokenFile: paths.tokenPath,
+    // Task catalog reads Codex threads from this container's AppServer, not through the account Core.
+    taskCodexCoreEndpoint: paths.appServerEndpoint,
+    taskCodexCoreTokenFile: appServerControlTokenFile(paths),
     ...(issuer === undefined ? {} : { environmentIssuer: issuer }),
   };
 }
@@ -90,7 +101,7 @@ export async function writeExecutionHostConfigurations(paths, root, env, issuer,
     );
 }
 
-/** The issuer Brain pins at launch. Without ENV delivery: none, and the host
+/** The issuer the Brain role pins at launch. Without ENV delivery: none, and the host
  * configurations are exactly as before. With it: the vault owner's published
  * key, or an unissuable key until one is published (deliveries fail closed). */
 export async function executionHostIssuer(paths, log = (message) => console.error(message)) {
@@ -102,7 +113,8 @@ export async function executionHostIssuer(paths, log = (message) => console.erro
 
 /** With ENV delivery, relaunch DSH, Pi and the Codex AppServer whenever the
  * vault owner publishes a new key (first enablement or explicit rotation).
- * `relaunch(configure)` stops them, awaits `configure()` and starts them again.
+ * `relaunch(configure)` stops them, awaits `configure()` and starts them again
+ * (the Brain role does this through its workspace-agent supervisor).
  * Until it completes, they stay pinned to the previous key and deliveries fail
  * closed. */
 export function relaunchOnIssuerChange({

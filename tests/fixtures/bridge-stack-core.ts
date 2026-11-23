@@ -15,6 +15,7 @@ void (async () => {
   const core = await startCodexCore({
     endpoint: argument("--endpoint")!,
     appServerEndpoint: argument("--app-server-endpoint"),
+    accountsOnly: process.argv.includes("--accounts-only"),
     proxyPort: Number(argument("--proxy-port")),
     authToken: readFileSync(argument("--token-file")!, "utf8").trim(),
     executable: argument("--codex-executable")!,
