@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { HubNetwork } from "../../packages/hub-network/src/node";
-import { HubStore } from "../../packages/hub-network/src/store-file.js";
+import { openLocalHubNetwork } from "../../packages/hub-network/src/store-file.js";
 import { parseRelayConfiguration, startRelayApplication } from "../../apps/relay-server/src/application";
 import {
   channelCallbackHeaders,
@@ -135,8 +135,8 @@ test("a provider callback crosses a real Hub stream to the owning gateway receiv
     publicKey: pair.publicKey.export({ format: "pem", type: "spki" }).toString(),
     providers: ["fixture"],
   };
-  const relayHub = new HubNetwork(new HubStore(join(dir, "relay.json")), { authority }),
-    gatewayHub = new HubNetwork(new HubStore(join(dir, "gateway.json")), { authority });
+  const relayHub = await openLocalHubNetwork(join(dir, "relay.json"), { authority }),
+    gatewayHub = await openLocalHubNetwork(join(dir, "gateway.json"), { authority });
   const received: { method?: string; url?: string; headers: IncomingHttpHeaders; body: string }[] = [];
   let hold: Promise<void> | undefined;
   const gateway = createServer((req, res) => {
@@ -178,8 +178,8 @@ test("a provider callback crosses a real Hub stream to the owning gateway receiv
   relayHub.start(hubPort);
   gatewayHub.start(gatewayPort);
   const command = (node: HubNetwork, input: Record<string, unknown>) =>
-    node.command({ revision: node.store.state.revision, ...input }, "fixture");
-  command(relayHub, {
+    node.apply({ revision: node.store.state.revision, ...input }, "fixture");
+  await command(relayHub, {
     action: "configure",
     name: "Relay",
     endpoint: `http://127.0.0.1:${hubPort}`,
@@ -187,7 +187,7 @@ test("a provider callback crosses a real Hub stream to the owning gateway receiv
     accepting: true,
     forwarding: true,
   });
-  command(gatewayHub, {
+  await command(gatewayHub, {
     action: "configure",
     name: "Gateway",
     endpoint: `http://127.0.0.1:${gatewayPort}`,
@@ -196,11 +196,11 @@ test("a provider callback crosses a real Hub stream to the owning gateway receiv
     forwarding: true,
   });
   const invitation = (
-    command(relayHub, { action: "invite", origins: ["http://gateway.test"], allowTransit: false }) as {
+    (await command(relayHub, { action: "invite", origins: ["http://gateway.test"], allowTransit: false })) as {
       invitation: string;
     }
   ).invitation;
-  command(gatewayHub, { action: "connect", invitation, trustIdentity: true });
+  await command(gatewayHub, { action: "connect", invitation, trustIdentity: true });
   await waitFor(() => relayHub.routes().some((route) => route.service.hubId === gatewayHub.store.id));
   const target = { hubId: gatewayHub.store.id, origin: "http://gateway.test" };
   // The same route check the Relay application applies before opening a Hub stream.
