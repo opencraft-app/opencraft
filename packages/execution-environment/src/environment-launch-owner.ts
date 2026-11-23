@@ -14,7 +14,7 @@ import {
   type EnvironmentTerminalAdmission,
 } from "./environment-delivery.js";
 import { environmentProjectId, environmentThreadProject } from "./environment-metadata.js";
-import type { GitExecutionHandoff, GitExecutionLocator } from "./git-execution.js";
+import type { EnvironmentActorEpoch, GitExecutionHandoff, GitExecutionLocator } from "./git-execution.js";
 
 const unavailable = (): never => {
   throw Error("environment_launch_unavailable");
@@ -48,12 +48,32 @@ export interface EnvironmentLaunchRecordReaders {
     hostId: EnvironmentCreationAdmission["hostId"];
     operationId: string;
   }): EnvironmentRecordAdmission<EnvironmentCreationAdmission> | null;
-  /** Unlaunched terminal reservation by Host, resource and operation. */
-  terminal?(locator: {
-    hostId: EnvironmentTerminalAdmission["hostId"];
-    resource: string;
-    operation: string;
-  }): EnvironmentRecordAdmission<EnvironmentTerminalAdmission> | null;
+  /** A terminal claim checked against core's own stores. The reservation lives
+   * in the terminal owner's journal, which this owner cannot read (another
+   * process, possibly another container); the reader returns the admission as
+   * core's stores hold it (Actor epoch) with the Project of the Thread binding.
+   * The reservation fields are authenticated into the capsule and checked by
+   * the terminal owner against its journal. */
+  terminal?(claim: EnvironmentTerminalAdmission): EnvironmentRecordAdmission<EnvironmentTerminalAdmission> | null;
+}
+/** Terminal records from the current Actor epoch and the Thread's Project
+ * binding. A threadless terminal gets no Project: the request never selects one. */
+export function environmentTerminalRecords(
+  vault: Pick<EmployeeGitVaultStore, "readDocument">,
+  actor: (account: string) => EnvironmentActorEpoch | null,
+): NonNullable<EnvironmentLaunchRecordReaders["terminal"]> {
+  return (claim) => {
+    const epoch = actor(claim.account);
+    if (!epoch || epoch.account !== claim.account) return null;
+    return {
+      admission: environmentLaunchAdmission({
+        ...claim,
+        actorGeneration: epoch.actorGeneration,
+        membershipRevision: epoch.membershipRevision,
+      }) as EnvironmentTerminalAdmission,
+      project: claim.threadId === null ? null : environmentThreadProject(vault, claim.hostId, claim.threadId),
+    };
+  };
 }
 /** v2 Turn admission from a handoff-shaped durable admission. */
 const turnAdmission = (a: Omit<GitExecutionHandoff, "authority" | "capability">) =>
@@ -157,8 +177,7 @@ export class EnvironmentLaunchOwner {
     } else {
       const reader = this.records.terminal;
       if (!reader) return unavailable();
-      const locator = { hostId: claim.hostId, resource: claim.resource, operation: claim.operation };
-      read = () => reader(locator);
+      read = () => reader(claim);
     }
     const first = read();
     if (!first || (first.project !== null && (typeof first.project !== "string" || !first.project)))

@@ -1020,7 +1020,10 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       if (!options.terminalOwner) return unavailableTerminal;
       let service = terminalServices.get(hostId);
       if (!service) {
-        service = createHandsTerminalService({ ...options.terminalOwner, environment: identity?.executionEnvironment });
+        // A vault owner that admits terminal launches delivers ENV to the Hands
+        // terminal owner as capsules; otherwise the synchronous path is unchanged.
+        service = createHandsTerminalService({ ...options.terminalOwner, environment: identity?.executionEnvironment,
+          ...(typeof environmentLaunch?.terminalActor === 'function' ? {environmentLaunch} : {}) });
         terminalServices.set(hostId, service);
       }
       return service;

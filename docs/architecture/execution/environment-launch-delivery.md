@@ -1,15 +1,18 @@
 # Execution ENV launch delivery
 
-Status: slices 1, 2, 3 and 4 implemented, slice 8 partially implemented. The
+Status: slices 1, 2, 3, 4 and 6 implemented, slice 8 partially implemented. The
 receiver takes its expected context from the execution owner's own durable
 admission (Decision 1). Slice 4 adds the v2 launch context (Turn, creation and
-terminal admissions) to the protocol, the issuer and the receiver only; no
-consumer uses it yet. DSH in `assets` mode receives Turn ENV through
+terminal admissions) to the protocol, the issuer and the receiver; slice 6
+makes the Hands terminal owner its first consumer (terminal admissions). DSH in
+`assets` mode receives Turn ENV through
 `EnvironmentLaunchReceiver` when either the identity composition supplies a
 vault-owner port or the installation sets `environmentDelivery: 'vault-owner'`,
 which makes the core vault Worker the issuer and the owner of ENV metadata. Pi
 receives it the same way in the independent engine host when that host's
-configuration pins `environmentIssuer`. Every other consumer still reads a
+configuration pins `environmentIssuer`. The Hands terminal owner receives it
+for every terminal it launches when the core vault owner is configured (see
+[Hands terminal](#hands-terminal)). Every other consumer still reads a
 decrypted snapshot from `ExecutionEnvironmentRuntime` synchronously in its own
 process.
 
@@ -166,18 +169,20 @@ claim with it field by field and reread it around the value read and the
 decryption. A request, a relayed context or a Main-signed scope envelope is
 never the authority.
 
-| Kind       | Durable record                                                                                                                                                                                                                                                        | Admissible while                                                      | Project source (vault owner)                                     |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| `turn`     | Execution lease and submission plus the Actor store, as for v1 (`GitExecutionAuthority`).                                                                                                                                                                             | the lease is active for that Turn and native incarnation              | the Thread binding                                               |
-| `creation` | A creation reservation keyed by Host and creation `operationId`, written by core when it accepts the authenticated creation request and before the native creation: Actor and epoch at admission, source Thread (fork), Project and the owner incarnation holding it. | the reservation is pending; it stops being admissible once it commits | the reservation (fork: the source Thread binding at admission)   |
-| `terminal` | The terminal owner's reservation (Host, `resource`, `operation`), written before spawn, together with the Actor epoch it was admitted under and the owner incarnation.                                                                                                | the reservation is held and nothing has been launched for it          | the Thread binding, or the reservation for a threadless terminal |
+| Kind       | Durable record                                                                                                                                                                                                                                                        | Admissible while                                                      | Project source (vault owner)                                   |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `turn`     | Execution lease and submission plus the Actor store, as for v1 (`GitExecutionAuthority`).                                                                                                                                                                             | the lease is active for that Turn and native incarnation              | the Thread binding                                             |
+| `creation` | A creation reservation keyed by Host and creation `operationId`, written by core when it accepts the authenticated creation request and before the native creation: Actor and epoch at admission, source Thread (fork), Project and the owner incarnation holding it. | the reservation is pending; it stops being admissible once it commits | the reservation (fork: the source Thread binding at admission) |
+| `terminal` | The terminal owner's reservation (Host, `resource`, `operation`), written before spawn, together with the Actor epoch it was admitted under and the owner incarnation (terminal journal v2).                                                                          | the reservation is held and nothing has been launched for it          | the Thread binding; none for a threadless terminal             |
 
 Ports in this slice:
 
 - Issuer: `new EnvironmentLaunchOwner(vault, turnAdmission, { creation?, terminal? })`.
   A reader returns `{ admission, project }` from the durable record, or `null`.
-  A kind without a reader is refused before any value is read; the Headless
-  composition passes none, so it issues only Turns.
+  A kind without a reader is refused before any value is read. The Headless
+  composition passes `terminal` (slice 6) and no `creation` reader. The terminal
+  reader receives the claim, because the reservation lives in the terminal
+  owner's journal (see [Hands terminal](#hands-terminal)).
 - Receiver: `createEnvironmentLaunchAdmissionReceiver({ purpose, instance,
 issuer, admission: { turn?, creation?, terminal? } })` (subpath
   `environment-launch-receiver`). `kinds` lists what it can admit (allowed for
@@ -257,6 +262,10 @@ values.
   receiver against a Gateway without the route fails closed.
 - Independently installed execution owners must be updated before their
   delivery is effective; installing a Gateway alone does not migrate them.
+- A Hands terminal owner opts in (`environmentLaunch`); an owner that did not
+  opt in, or an old one, ignores the declared issuer and a delivery Host
+  refuses to spawn on it. An old Host attaching to a new owner declares no
+  issuer and spawns as before.
 
 ## Slices
 
@@ -315,10 +324,19 @@ synchronous runtime.
    with a creation capsule; keep per-session environment and local
    `redactError`. Tests: session reopen, account/Project switch requires a new
    session, revocation.
-6. **Hands terminal.** The terminal owner becomes the receiver; the Host's
-   prepare step becomes asynchronous and forwards the capsule instead of clear
-   `identity.env`. Tests: attach/list/control keep original scope, capacity,
-   managed-name override refusal.
+6. **Hands terminal (implemented).** The terminal owner becomes the receiver;
+   the Host's prepare step becomes asynchronous and forwards the capsule instead
+   of clear `identity.env`. See [Hands terminal](#hands-terminal). Tests
+   (`terminal-environment-launch.test.ts`, `terminal-admission-journal.test.ts`):
+   an opaque capsule and no value in any Main-to-owner or Worker-to-Main
+   message, the owner opening under its own reservation, the Thread's Project
+   and none for a threadless terminal, replay, unheld, abandoned, already
+   launched, foreign quota owner, wrong kind, stale epoch, other recipient and
+   v1/wrong-purpose capsules refused, held reservations expiring and released
+   with their attachment, attach/list/control keeping their scope, capacity,
+   managed-name override refusal, the unconfigured path unchanged, a delivery
+   Host refusing an owner that cannot receive, the v1 journal upgrade, and the
+   released v1 owner refusing a v2 journal.
 7. **Codex native Core.** Receiver inside the native Core (purpose `codex`),
    advertised through `opencraft/environment/capability`; the adapter forwards
    capsules instead of `shell_environment_policy.set` values and stops
@@ -354,10 +372,10 @@ synchronous runtime.
    no port without a separate owner.
 
    Remaining, and why:
-   - Hands terminal scope (consumer 4) stays synchronous: `HostTerminalTransport`
-     derives scope synchronously, so with a separate vault owner it uses the
-     requested Project only. It moves with the asynchronous terminal prepare
-     step of slice 6.
+   - Hands terminal scope (consumer 4) stays synchronous. With slice 6 it no
+     longer selects values: the vault owner takes the Project from the Thread
+     binding. The scope only filters attach, list and control, and keeps the
+     requested Project for that, so existing terminals keep their scope.
    - `creation`, `rememberCreation` and `execution` stay on the synchronous
      runtime: their only consumers hold values in their own process. ACP needs
      creation capsules (slices 4 and 5), Codex the native Core receiver
@@ -371,6 +389,69 @@ synchronous runtime.
      loaded on the main thread of the processes that run the synchronous
      consumers above. The vault-owner composition adds no call. The count
      drops when the last synchronous consumer of those files migrates.
+
+## Hands terminal
+
+With `environmentDelivery: 'vault-owner'` the core vault owner offers
+`terminalActor(account)` next to `seal`. Headless then composes the Hands
+terminal service with it; otherwise `prepare` is the synchronous path as
+before. A downstream `identity.environmentLaunch` port without `terminalActor`
+leaves terminals on that path (they receive no personal ENV, as before).
+
+`process/spawn` from a delivery Host:
+
+1. Main checks the request scope synchronously (unchanged) and asks the vault
+   Worker for the Actor epoch (`terminalActor`). A revoked or unknown Actor
+   stops here.
+2. Main asks the terminal owner to reserve (`process/environmentReserve`). The
+   owner writes the reservation before anything is sealed, with the Actor epoch
+   and its own incarnation; the existing capacity limits apply here. It answers
+   with the terminal admission and its receiver target.
+3. Main has the vault owner seal for that target and admission, then forwards
+   `{context, capsule}` with the spawn, plus the requested variables. Main never
+   holds a value. A failure abandons the reservation.
+4. The owner opens the capsule against its own held reservation (same quota
+   owner, account, Host and Thread), refuses a requested name that would
+   override a delivered one, runs its adapter, removes the launch admission
+   from the journal (the one-shot fence), and only then spawns.
+
+`process/attach`, `list`, `writeStdin`, `resizePty` and `kill` are unchanged and
+keep their original scope. An attachment that pinned an issuer spawns only
+through a capsule; an attachment without one cannot send a capsule. A Host with
+delivery configured refuses to spawn on an owner that did not accept its issuer
+(an old or not opted-in owner), instead of launching without ENV. A
+reservation held but not launched is released after 90 s, when its attachment
+closes, and when the owner restarts.
+
+### Terminal journal v2
+
+`terminal-admission.json` is a JSON journal with one writer (the admission
+Worker under the writer lock), so its format changes by version, not by a SQL
+migration.
+
+- A v2 row is a v1 row plus `launch: { account, actorGeneration,
+membershipRevision, hostId, threadId, incarnation }`, only on a local
+  reservation and only while it is held. `incarnation` equals the row's
+  `resource`.
+- Launching removes `launch` in the same durable write that marks the row
+  launched, before spawn. A row carrying `launch` is therefore proof that
+  nothing was launched for it.
+- The owner writes `version: 2` only while some row carries `launch`, and
+  otherwise `version: 1` byte for byte as before. It reads both.
+- On open, every row carrying `launch` belongs to an earlier incarnation and was
+  never launched, so it is released and the journal is written back as v1.
+- An owner without v2 support refuses `version: 2` as an invalid journal and
+  does not start. It never drops a reservation it cannot read.
+
+Rollback plan, to an owner without delivery support:
+
+1. Remove `environmentDelivery: 'vault-owner'` (or roll back the Host); new
+   spawns stop writing held rows.
+2. Stop the terminal owner cleanly. Held rows are released on close; launched
+   rows are v1 rows already. The journal is v1.
+3. If the owner crashed with a held row, start the current owner once (it
+   releases the rows and rewrites v1) and stop it, then install the old one.
+   Removing only the rows that carry `launch` by hand is equivalent.
 
 ## Decisions
 
@@ -426,7 +507,27 @@ Recorded after the first slice; later slices follow them.
 - **An issuer or receiver without a reader for a kind refuses that kind.** There
   is no fallback from a missing creation or terminal record to a Turn, to the
   relayed claim or to the synchronous runtime.
-- **The durable creation and terminal records are not added in this slice.**
+- **The durable creation and terminal records are not added in slice 4.**
   Both can be added additively (a new table through an appended migration, or a
   new journal version written only by an upgraded owner); slices 5 and 6 own
-  them together with their readers.
+  them together with their readers. Slice 6 added the terminal record as
+  terminal journal v2.
+- **The terminal owner pins its issuer per attachment.** It outlives Hosts and
+  keeps PTYs across their restarts, while the core issuer key lives for one
+  vault Worker lifetime, so a key in the owner's own configuration would force a
+  PTY-killing restart. The Host declares the key from its trusted composition
+  in the token-authenticated attach frame; the owner builds one receiver for
+  that attachment, and the receiver dies with it. A browser frame or process
+  request never carries it.
+- **The vault owner checks a terminal claim against core's stores, not the
+  journal.** The journal belongs to the terminal owner (another process,
+  possibly another container). The issuer reads the Actor epoch from the Actor
+  store and the Project from the Thread binding; `resource`, `operation` and
+  owner incarnation are authenticated into the capsule and the terminal owner
+  checks them against its journal.
+- **A threadless terminal gets no Project ENV.** The request never selects a
+  Project (Decision 2), and there is no Thread binding to read.
+- **A terminal admission is keyed by the process handle.** Clients use a fresh
+  handle per spawn. One admission opens at most once per attachment, so a
+  handle refused after its capsule opened (for example a managed-name override)
+  is not reused; its reservation is released.

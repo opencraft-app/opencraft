@@ -14,10 +14,14 @@ export class DurableHostProcessService {
   private closed = false;
   private next = 0;
   private terminalAdmission = false;
+  private environmentLaunch = false;
   private readonly pending = new Map<number, { resolve(value: unknown): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> }>();
   constructor(private readonly directory: string, private readonly environment?: ExecutionEnvironmentRuntime,
     private readonly external?: { endpoint: string; tokenFile: string;
-      prepare(method: string, params: unknown, scope?: EnvironmentExecutionScope): PreparedProcessIdentity }) {}
+      /** Issuer key from trusted composition; the owner pins it for this attachment. */
+      environmentIssuer?: string;
+      prepare(method: string, params: unknown, scope: EnvironmentExecutionScope | undefined,
+        context: { service: DurableHostProcessService; assertCurrent?: () => void }): PreparedProcessIdentity | Promise<PreparedProcessIdentity> }) {}
   subscribe(listener: (method: string, params: unknown) => void) { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; }
   async probe(): Promise<void> { await this.connection(); if (this.terminalAdmission) await this.probeTerminalAdmission(); }
   private async connection(): Promise<Socket> {
@@ -60,17 +64,20 @@ export class DurableHostProcessService {
         clearTimeout(timer);
         if (!attached) reject(new Error('Terminal owner attach closed'));
         if (this.socket !== socket) return;
-        this.socket = undefined; this.terminalAdmission = false; this.watched.clear();
+        this.socket = undefined; this.terminalAdmission = false; this.environmentLaunch = false; this.watched.clear();
         for (const request of this.pending.values()) { clearTimeout(request.timer); request.reject(new Error('Terminal owner disconnected; operation outcome may be unknown')); }
         this.pending.clear();
       });
-      socket.once('connect', () => sendOwnerFrame(socket, { type: 'attach', protocol: TERMINAL_OWNER_PROTOCOL, ...(token ? { token } : {}) }));
+      socket.once('connect', () => sendOwnerFrame(socket, { type: 'attach', protocol: TERMINAL_OWNER_PROTOCOL, ...(token ? { token } : {}),
+        ...(this.external?.environmentIssuer ? { environmentIssuer: this.external.environmentIssuer } : {}) }));
       readOwnerFrames(socket, message => {
         if (!attached) {
           if (message?.type !== 'attached' || message.protocol !== TERMINAL_OWNER_PROTOCOL || this.closed) {
             clearTimeout(timer); reject(new Error('Terminal owner protocol incompatible or Host closed')); socket.destroy(); return;
           }
-          attached = true; this.terminalAdmission = message.terminalAdmission === 1; clearTimeout(timer); this.socket = socket; resolve(socket); return;
+          attached = true; this.terminalAdmission = message.terminalAdmission === 1;
+          this.environmentLaunch = !!this.external?.environmentIssuer && message.environmentLaunch === 1;
+          clearTimeout(timer); this.socket = socket; resolve(socket); return;
         }
         if (typeof message.method === 'string') {
           if (this.watched.has(message.params?.processHandle)) for (const listener of this.listeners) listener(message.method, message.params);
@@ -104,6 +111,17 @@ export class DurableHostProcessService {
     await this.connection(); if (!this.terminalAdmission) throw Error('Hands terminal admission unavailable');
     await this.dispatchIdentity('process/quotaResourceDestroyed', {resource}, {quotaOwner, lifecycleAuthority:true});
   }
+  /** Delivered ENV: the owner writes its reservation (with the Actor epoch the
+   * Host admitted) and answers with the admission and its receiver target. An
+   * owner that did not accept the pinned issuer is refused, never bypassed. */
+  async reserveEnvironmentLaunch(identity: PreparedProcessIdentity, processHandle: unknown, admission: unknown): Promise<unknown> {
+    await this.connection(); if (!this.environmentLaunch) throw Error('Terminal owner does not accept delivered ENV; upgrade it');
+    return this.dispatchIdentity('process/environmentReserve', { processHandle, admission }, identity);
+  }
+  async abandonEnvironmentLaunch(identity: PreparedProcessIdentity, processHandle: unknown): Promise<void> {
+    await this.connection(); if (!this.environmentLaunch) return;
+    await this.dispatchIdentity('process/environmentAbandon', { processHandle }, identity);
+  }
   async threadScopes(): Promise<{hostId: string; threadId: string}[]> {
     return await this.dispatchIdentity('process/threadScopes', {}, { quotaOwner: 'server-lifecycle', lifecycleAuthority: true }) as {hostId: string; threadId: string}[];
   }
@@ -123,7 +141,8 @@ export class DurableHostProcessService {
     }
   }
   async dispatch(method: string, params: unknown, scope?: EnvironmentExecutionScope, assertCurrent?: () => void, onAccepted?: () => void): Promise<unknown> {
-    const identity = this.external ? this.external.prepare(method, params, scope) : prepareProcessIdentity(this.environment, scope, method, params);
+    const identity = this.external ? await this.external.prepare(method, params, scope, { service: this, assertCurrent })
+      : prepareProcessIdentity(this.environment, scope, method, params);
     return this.dispatchIdentity(method, params, identity, assertCurrent, onAccepted);
   }
   private async dispatchIdentity(method: string, params: unknown, identity: PreparedProcessIdentity, assertCurrent?: () => void, onAccepted?: () => void): Promise<unknown> {

@@ -21,10 +21,19 @@ export interface GitExecutionReservation {
   readonly capability: string;
   readonly native: { readonly incarnation: string };
 }
+/** The Actor epoch a terminal launch is admitted under. Not a secret. */
+export interface EnvironmentActorEpoch {
+  readonly account: string;
+  readonly actorGeneration: number;
+  readonly membershipRevision: number;
+}
 export interface GitExecutionResolver {
   /** Trusted compiled owner reads the original immutable lease, not a browser identity. */
   resolve(input: GitExecutionLocator): Omit<GitExecutionHandoff, "authority" | "capability"> | null;
   reserve?(input: GitExecutionLocator): Omit<GitExecutionReservation, "authority" | "capability"> | null;
+  /** The current epoch of an enabled Human Actor member (`actor:human://…`), read
+   * from the Actor store; `null` when that Actor holds no admission. */
+  actor?(account: string): EnvironmentActorEpoch | null;
   close(): void;
 }
 export function parseGitExecutionLocator(value: unknown): GitExecutionLocator {

@@ -27,6 +27,7 @@ export function createHeadlessAssetsStorage(
         }
         return { scope: executionScope(input, current), native: { incarnation: current.incarnation } };
       },
+      actor: (account) => authority.actor(account),
       close: () => authority.close(),
     },
     async (context) => {

@@ -6,7 +6,10 @@ import type { TerminalAdmissionStore } from "./terminal-admission-store.js";
  * and be replaced by a second writer. No synchronous store IO in the IPC loop. */
 export async function openTerminalAdmission(directory: string) {
   const { owner } = await WorkerOwner.open<
-    Pick<TerminalAdmissionStore, "probe" | "reserve" | "release" | "destroyRemoteResource">
+    Pick<
+      TerminalAdmissionStore,
+      "probe" | "reserve" | "release" | "destroyRemoteResource" | "held" | "launch" | "abandon"
+    >
   >(ownerEntry(import.meta.url, "terminal-admission"), {
     name: "Hands terminal admission",
     workerData: { directory },
@@ -18,6 +21,9 @@ export async function openTerminalAdmission(directory: string) {
     reserve: owner.call.reserve,
     release: owner.call.release,
     destroyRemoteResource: owner.call.destroyRemoteResource,
+    held: owner.call.held,
+    launch: owner.call.launch,
+    abandon: owner.call.abandon,
     close: () => owner.close(),
   };
 }

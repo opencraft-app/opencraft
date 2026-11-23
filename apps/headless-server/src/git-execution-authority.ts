@@ -147,6 +147,47 @@ export class GitExecutionAuthority {
     }
   }
 
+  /** The current epoch of an enabled Human Actor member, from the same Actor
+   * projection as `resolve` (Actor mode only). Used for terminal ENV admission. */
+  actor(account: string): { account: string; actorGeneration: number; membershipRevision: number } | null {
+    if (this.closed) throw Error("git_authority_store_unavailable");
+    if (this.accountMode !== "actor" || typeof account !== "string" || !/^actor:human:\/\/[^/]+\/[^/]+$/u.test(account))
+      return null;
+    const actorId = account.slice("actor:".length);
+    try {
+      if (!this.actors) {
+        this.actors = new DatabaseSync(join(this.directory, "opencraft-server.sqlite"), { readOnly: true });
+        this.actors.exec("PRAGMA query_only=ON; PRAGMA busy_timeout=1000");
+      }
+      const actor = this.actors
+        .prepare(
+          `SELECT a.id,a.kind,a.enabled,a.generation AS actor_generation,m.enabled AS member_enabled FROM actors a
+      LEFT JOIN actor_members m ON m.actor_id=a.id WHERE a.id=?`,
+        )
+        .get(actorId);
+      if (!actor || actor.kind !== "human" || actor.enabled !== 1 || actor.member_enabled === 0) return null;
+      if (
+        this.actors
+          .prepare(
+            `SELECT 1 FROM actor_bindings b JOIN members m ON m.binding=b.binding WHERE b.actor_id=? AND m.enabled=0 LIMIT 1`,
+          )
+          .get(actorId)
+      )
+        return null;
+      const bindings = this.actors
+        .prepare("SELECT binding FROM actor_bindings WHERE actor_id=?")
+        .all(actorId)
+        .map((row) => String(row.binding));
+      return {
+        account,
+        actorGeneration: Number(actor.actor_generation),
+        membershipRevision: membershipRevocationRevision(this.actors, actorId, bindings),
+      };
+    } catch {
+      throw Error("git_authority_store_unavailable");
+    }
+  }
+
   unowned(scope: GitExecutionQuery, phase: "active" | "pending" = "active"): boolean {
     if (this.closed) throw Error("git_authority_store_unavailable");
     if (
