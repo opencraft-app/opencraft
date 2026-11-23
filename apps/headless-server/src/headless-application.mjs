@@ -37,6 +37,7 @@ import { startAvailabilityNotification } from './availability-notification.mjs';
 import { ExecutionEnvironmentTransport } from './execution-environment-transport.ts';
 import { EnvironmentMetadataTransport } from './environment-metadata-transport.ts';
 import { createHostEnvironmentLaunch } from './host-environment-launch.ts';
+import { createEnvironmentAdmissionHandoff } from './environment-admission-handoff.ts';
 import { composeHostTerminalSelector, createHandsTerminalService, HostTerminalSession, HostTerminalTransport, terminalResourceOwnerId } from './host-terminal-transport.js';
 import { createHostFileSystem } from './host-filesystem.js';
 import { composeHostFileSelector, HostFileSystemSession, HostFileSystemTransport } from './host-filesystem-transport.js';
@@ -407,8 +408,10 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let withdrawGitStatus;
   // The one opaque ENV vault-owner port: a downstream port or the core vault Worker.
   let environmentLaunch;
-  // Non-secret ENV metadata (bindings, creators, catalog) on the core vault Worker.
+  // Non-secret ENV metadata (bindings, creators, catalog) on that vault owner.
   let environmentMetadata;
+  // The live Actor/lease handoff ENV delivery seals against.
+  let environmentHandoff;
   let actorStore;
   const terminalServices = new Map();
   const fileSystem = options.fileSystemOwner ? createHostFileSystem(options.fileSystemOwner) : null;
@@ -599,6 +602,20 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         workspaceRouting = ownedWorkspaceRouting;
       }
     }
+    // Live checks shared by every Actor/lease handoff: the Actor is current and
+    // admitted, and the lease is active for the live native process.
+    const authorizeExecutionHandoff=scope=>{
+      const actorId=scope.account.slice('actor:'.length),actor=actorStore.get(actorId);
+      return !closing&&actor?.enabled===true&&actor.kind==='human'&&actor.generation===scope.actorGeneration&&instanceAccess.admitsActor(actorId);
+    };
+    const inspectExecutionHandoff=async handoff=>{
+      const native=await resolveExecutionNative?.(handoff.scope.threadId);
+      if(closing||!executionRecovery||!native||native.incarnation!==handoff.native.incarnation)return false;
+      const state=await executionRecovery.inspect({threadId:handoff.scope.threadId,inputId:handoff.scope.inputId,
+        executionId:handoff.scope.executionId,generation:handoff.scope.leaseGeneration,turnId:handoff.native.turnId,
+        engineIncarnation:handoff.native.incarnation,principal:null,ownership:'unknown',admittedAtMs:0,endedAtMs:null});
+      return state==='active'&&!closing&&(await resolveExecutionNative(handoff.scope.threadId))?.incarnation===native.incarnation;
+    };
     if (humanAuth && instanceAccess && !identity?.assistantEnvironmentConfigurationManaged) {
       assetsService = await openHumanAssets({ directory: dataDirectory, auth: humanAuth, actors: actorStore, access: instanceAccess,
         openStorage: async () => ({...assetsStorage, close:async()=>{}}) });
@@ -606,26 +623,27 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       humanGitExecution=createHumanGitExecution({directory:dataDirectory,
         runtimeDirectory:humanGitRuntimeDirectory(join(dataDirectory,'git-runtime'),'gateway'),workerFile:options.gitWorkerFile??fileURLToPath(new URL('./personal-git-worker.mjs',import.meta.url)),
         hosts:assetsService.gitHosts,authority:assetsService.gitAuthority,grant:assetsService.executionGitGrant,
-        authorize:scope=>{
-          const actorId=scope.account.slice('actor:'.length),actor=actorStore.get(actorId);
-          return !closing&&actor?.enabled===true&&actor.kind==='human'&&actor.generation===scope.actorGeneration&&instanceAccess.admitsActor(actorId);
-        },
-        inspect:async handoff=>{
-          const native=await resolveExecutionNative?.(handoff.scope.threadId);
-          if(closing||!executionRecovery||!native||native.incarnation!==handoff.native.incarnation)return false;
-          const state=await executionRecovery.inspect({threadId:handoff.scope.threadId,inputId:handoff.scope.inputId,
-            executionId:handoff.scope.executionId,generation:handoff.scope.leaseGeneration,turnId:handoff.native.turnId,
-            engineIncarnation:handoff.native.incarnation,principal:null,ownership:'unknown',admittedAtMs:0,endedAtMs:null});
-          return state==='active'&&!closing&&(await resolveExecutionNative(handoff.scope.threadId))?.incarnation===native.incarnation;
-        },
+        authorize:authorizeExecutionHandoff,inspect:inspectExecutionHandoff,
       });
       // The personal Git status tool exists only where the human Git owner does.
       withdrawGitStatus=capabilities.register(createGitStatusCapability(humanGitExecution));
     }
-    environmentLaunch = identity?.environmentLaunch ?? assetsStorage?.environmentLaunch;
+    const identityLaunch = identity?.environmentLaunch;
+    environmentLaunch = identityLaunch ?? assetsStorage?.environmentLaunch;
     if (coreEnvironmentLaunch && !assetsStorage?.environmentLaunch) throw new Error('Environment delivery requires the sole vault owner');
-    environmentMetadata = coreEnvironmentLaunch ? assetsStorage.environmentMetadata : undefined;
+    // A vault-owner port from the identity composition may bring its own
+    // metadata port; core relays it exactly as for its own vault Worker.
+    environmentMetadata = coreEnvironmentLaunch ? assetsStorage.environmentMetadata : identityLaunch?.metadata;
     if (coreEnvironmentLaunch && !environmentMetadata) throw new Error('Environment delivery requires the sole vault owner');
+    if (environmentLaunch && humanGitExecution) {
+      if (identityLaunch?.admission) throw new Error('Execution admission cannot have two owners');
+      environmentHandoff = locator => humanGitExecution.handoff(locator);
+    } else if (identityLaunch?.admission) {
+      // The composition owns the durable read; core keeps the live checks.
+      if (!instanceAccess) throw new Error('Environment delivery requires Human instance authority');
+      environmentHandoff = createEnvironmentAdmissionHandoff({ admission: locator => identityLaunch.admission(locator),
+        authorize: authorizeExecutionHandoff, inspect: inspectExecutionHandoff, closed: () => closing });
+    }
     const authenticateHuman = request => {
       if (instanceAccess) return instanceAccess.authenticate(request);
       const identities = providers.map(provider => provider.authenticate(request)).filter(Boolean);
@@ -827,7 +845,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       error => console.error('[capability-bindings] unavailable', error.message));
     // Opaque ENV delivery needs the same live Actor/lease handoff as Git; a
     // configured vault owner without it fails here, not at every command.
-    if (environmentLaunch && !humanGitExecution) throw new Error('Environment delivery requires execution admission');
+    if (environmentLaunch && !environmentHandoff) throw new Error('Environment delivery requires execution admission');
     const capabilityKey=await capabilitySigningKey(join(dataDirectory,"session-capabilities.key"));
     capabilityMcp = new SessionCapabilityMcp(capabilities, capabilityKey, capabilityBindings, {
       descriptorPath:join(dataDirectory,'session-capabilities.json'), retainEndpoint: true,
@@ -843,7 +861,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         return {authority:assetsService.gitAuthority,hosts:assetsService.gitHosts,grant};
       },
       ...(environmentLaunch ? {hostEnvironment:createHostEnvironmentLaunch({port:environmentLaunch,
-        handoff:locator=>humanGitExecution.handoff(locator),
+        handoff:environmentHandoff,
         routes:session=>!closing&&session.serverId===conversationExecution.serverForHost('opencraft-server',session.threadId)
           &&conversationExecution.hostForServer(session.serverId)==='opencraft-server'})} : {}),
       authorizeExecution:async session=>{

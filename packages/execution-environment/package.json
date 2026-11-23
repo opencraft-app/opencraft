@@ -17,6 +17,7 @@
     "./environment-delivery": "./src/environment-delivery.ts",
     "./remote-environment-launch": "./src/remote-environment-launch.ts",
     "./execution-admission": "./src/execution-admission.ts",
+    "./environment-account": "./src/environment-account.ts",
     "./environment-launch-owner": "./src/environment-launch-owner.ts",
     "./environment-launch-receiver": "./src/environment-launch-receiver.ts",
     "./environment-metadata": "./src/environment-metadata.ts",

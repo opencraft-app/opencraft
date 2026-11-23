@@ -7,6 +7,7 @@ import type { SandboxIdentity, SandboxResources } from "@opencraft/sandbox";
 import { parseGitExecutionLocator, type GitExecutionResolver } from "@opencraft/execution-environment/git-execution";
 import { EmployeeGitVaultStore, GitVaultError } from "@opencraft/execution-environment/employee-git-vault-store";
 import { EnvironmentLaunchOwner } from "@opencraft/execution-environment/environment-launch-owner";
+import type { EnvironmentAccountResolver } from "@opencraft/execution-environment/environment-account";
 import {
   EnvironmentMetadata,
   type EnvironmentExecutionScope,
@@ -29,10 +30,22 @@ export async function createAssetsStorage(
   createWorkspaces?: CreateAssetWorkspaceExecutionOwner,
   /** Issue opaque execution ENV capsules from this sole vault owner, which
    * then also owns the non-secret ENV metadata (bindings, creators, catalog). */
-  options: { environmentLaunch?: boolean } = {},
+  options: {
+    environmentLaunch?: boolean;
+    /** Trusted composition only: the vault partition an admitted owner's ENV
+     * and creator provenance use. Without it, the canonical Actor partition. */
+    environmentAccounts?: EnvironmentAccountResolver;
+  } = {},
 ) {
   // ENV for a launch needs the durable admission this owner reads itself.
   if (options.environmentLaunch && !execution) throw new Error("Environment delivery requires execution admission");
+  if (
+    options.environmentAccounts !== undefined &&
+    (!options.environmentLaunch ||
+      typeof options.environmentAccounts?.forActor !== "function" ||
+      typeof options.environmentAccounts.forLogin !== "function")
+  )
+    throw new Error("Environment account mapping requires the vault owner");
   const vault = new EmployeeGitVaultStore(directory);
   let workspaces: AssetWorkspaceExecutionOwner | undefined;
   let environment: EnvironmentLaunchOwner | undefined;
@@ -52,9 +65,16 @@ export async function createAssetsStorage(
   try {
     environment =
       options.environmentLaunch && execution
-        ? new EnvironmentLaunchOwner(vault, (input) => execution.resolve(input))
+        ? new EnvironmentLaunchOwner(
+            vault,
+            (input) => execution.resolve(input),
+            {},
+            options.environmentAccounts ? { accounts: options.environmentAccounts } : {},
+          )
         : undefined;
-    const metadata = environment ? new EnvironmentMetadata(vault) : undefined;
+    // Issuer and metadata share one mapping, so a Thread's creator and its
+    // values name the same partition.
+    const metadata = environment ? new EnvironmentMetadata(vault, options.environmentAccounts) : undefined;
     // Metadata runs FIFO with every other vault write; nothing it returns is a value.
     const metadataCall = <T>(operation: (owner: EnvironmentMetadata) => T): T => {
       try {

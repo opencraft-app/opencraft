@@ -13,6 +13,7 @@ import {
   type EnvironmentLaunchTarget,
   type EnvironmentTerminalAdmission,
 } from "./environment-delivery.js";
+import type { EnvironmentAccountResolver, EnvironmentAccountSelection } from "./environment-account.js";
 import { environmentProjectId, environmentThreadProject } from "./environment-metadata.js";
 import type { GitExecutionHandoff, GitExecutionLocator } from "./git-execution.js";
 
@@ -89,6 +90,10 @@ export class EnvironmentLaunchOwner {
     ) => Omit<GitExecutionHandoff, "authority" | "capability"> | null,
     /** Durable creation and terminal records. A kind without a reader is refused. */
     private readonly records: EnvironmentLaunchRecordReaders = {},
+    /** Trusted composition only. Without it values come from the canonical
+     * `actor:<id>` partition; with it, from the partition the installation maps
+     * the verified owner to, rechecked with the admission. */
+    private readonly options: { accounts?: EnvironmentAccountResolver } = {},
   ) {
     this.#environment = new AccountEnvironment(vault);
   }
@@ -115,20 +120,37 @@ export class EnvironmentLaunchOwner {
           unavailable();
       };
       current();
+      const account = this.#account(context.scope.account, context.scope.actorGeneration);
+      const checked = () => {
+        current();
+        if (account.selection && !account.selection.current()) unavailable();
+      };
       return this.#issuer.seal(
         target,
         context,
         () =>
           this.#environment.launchEnvironment(
-            context.scope.account,
+            account.partition,
             { projectId: project === null ? null : environmentProjectId(hostId, project) },
             {},
           ),
-        current,
+        checked,
       );
     } catch {
       return unavailable();
     }
+  }
+
+  /** The vault partition of the admitted owner: canonical unless the
+   * installation maps it, and then only as long as the mapping still holds. */
+  #account(
+    account: string,
+    actorGeneration: number | undefined,
+  ): { partition: string; selection?: EnvironmentAccountSelection } {
+    const accounts = this.options.accounts;
+    if (!accounts) return { partition: account };
+    const selection = accounts.forActor(account, actorGeneration ?? Number.NaN);
+    return { partition: selection.partition, selection };
   }
 
   /** One admission check per kind; each compares the claim with the durable
@@ -175,16 +197,21 @@ export class EnvironmentLaunchOwner {
         unavailable();
     };
     current();
+    const account = this.#account(claim.account, claim.actorGeneration);
+    const checked = () => {
+      current();
+      if (account.selection && !account.selection.current()) unavailable();
+    };
     return this.#issuer.seal(
       target,
       { version: 2, admission: claim },
       () =>
         this.#environment.launchEnvironment(
-          claim.account,
+          account.partition,
           { projectId: project === null ? null : environmentProjectId(claim.hostId, project) },
           {},
         ),
-      current,
+      checked,
     );
   }
 

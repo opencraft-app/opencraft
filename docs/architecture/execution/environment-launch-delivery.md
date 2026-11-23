@@ -7,7 +7,10 @@ terminal admissions) to the protocol, the issuer and the receiver only; no
 consumer uses it yet. DSH in `assets` mode receives Turn ENV through
 `EnvironmentLaunchReceiver` when either the identity composition supplies a
 vault-owner port or the installation sets `environmentDelivery: 'vault-owner'`,
-which makes the core vault Worker the issuer and the owner of ENV metadata. Pi
+which makes the core vault Worker the issuer and the owner of ENV metadata. An
+identity composition that owns the vault itself can supply its durable
+execution admission and its metadata port with that port, and is then relayed
+on the same path (see [Compatibility](#compatibility)). Pi
 receives it the same way in the independent engine host when that host's
 configuration pins `environmentIssuer`. Every other consumer still reads a
 decrypted snapshot from `ExecutionEnvironmentRuntime` synchronously in its own
@@ -239,6 +242,40 @@ provenance and the Project catalog are written through the Worker's
 asynchronous `EnvironmentMetadataPort`, so new Threads receive their Project
 values.
 
+### Account partition mapping
+
+By default the issuer reads the canonical Actor partition (`actor:<id>`). An
+installation whose existing vault data is partitioned by a login account can
+compile a mapping into its vault-owner Worker entry instead of rewriting data:
+`createHeadlessAssetsStorage(directory, providers, workspaces,
+{ environmentLaunch: true, environmentAccount })`, where
+`environmentAccount: EnvironmentAccountMapping` is
+`(owner: { actorId, actorGeneration, bindings }) => string | null`
+(`environment-account.ts`). Worker data, requests and configuration cannot
+supply or select it.
+
+- `EnvironmentAccountPartitions` reads the owner from the Actor store in the
+  Worker (`GitExecutionAuthority.environmentAccountOwner`: an enabled, admitted
+  Human Actor and its verified login bindings) and calls the mapping with a
+  frozen copy.
+- The result must be the owner's canonical partition or the login partition
+  (`<provider>:<subject>`, the form core already uses for login accounts) of
+  exactly one verified binding, whose provider the Actor holds no other binding
+  of. Another Actor's canonical partition, `platform:` documents, `null`, a
+  thenable or a throw are refused. Two bindings that spell the same partition,
+  or a provider with two logins, are ambiguous and refused.
+- The mapping runs synchronously in the vault owner's turn. After it returns
+  the owner is reread; the issuer rereads owner and mapping with the admission
+  before reading values, after reading them and after encryption, so a binding
+  revoked meanwhile, or a changed generation, refuses the capsule.
+- `EnvironmentMetadata.admit` applies the same resolver to the submission's
+  login account (`forLogin`): the admitted scope, and the creator recorded for a
+  new Thread, name the partition its values are read from. Thread->Project
+  bindings and the Project catalog are installation documents and are not
+  partitioned by account.
+- Without a mapping both are unchanged. Personal Git grants still carry the
+  canonical Actor account; mapping their partition is not part of this change.
+
 ## Compatibility
 
 - No `identity.environmentLaunch` and no `environmentDelivery`: every path is
@@ -248,8 +285,25 @@ values.
   (`environmentDelivery: 'vault-owner'`) together with either of them is
   rejected at startup (`validateEnvironmentDelivery`), as is a core issuer
   without the assets vault Worker or without execution admission.
-- `environmentLaunch` without the Actor/lease handoff (`humanGitExecution`) is
-  rejected at startup instead of failing every command.
+- `environmentLaunch` without an Actor/lease handoff is rejected at startup
+  instead of failing every command. The handoff is core's own
+  (`humanGitExecution`) or, for an identity composition that owns the vault,
+  `identity.environmentLaunch.admission(locator): Promise<{scope, native} | null>`:
+  only the durable read of the exact Turn, with no Git authority or capability,
+  because the relay seals against nothing else. Core wraps it
+  (`createEnvironmentAdmissionHandoff`) with the same live checks as its Git
+  handoff: the record must belong to the locator, be a Human Actor account and
+  name no Project; the Actor must be current and admitted by Human instance
+  authority and the lease active for the live native process, before and after
+  every await. A failing read is an error, never an empty launch. Supplying an
+  admission where core already owns the handoff is rejected (one admission
+  owner), as is one without Human instance authority.
+- Such a port may carry `metadata: EnvironmentMetadataPort`; core then composes
+  `EnvironmentMetadataTransport` for it exactly as in `vault-owner` mode, so new
+  Threads record their Project binding and creator. A port with an admission but
+  no metadata, or with malformed parts, is rejected by
+  `validateHeadlessIdentity` before anything starts. A port without either
+  keeps its previous behaviour (core handoff, owner records its own bindings).
 - Delivery together with Pi running inside Main (no `engineHostDescriptor`) is
   rejected at startup instead of launching Pi without ENV. An engine host given
   `environmentIssuer` outside the Assets execution context is rejected too.
@@ -363,8 +417,12 @@ synchronous runtime.
      creation capsules (slices 4 and 5), Codex the native Core receiver
      (slice 7), and the Pi Harness `env` callback and the DSH `legacy`
      `environment(nativeId)` hook are synchronous APIs.
-   - A downstream `identity.environmentLaunch` port has no metadata port; that
-     owner records its own bindings.
+   - An identity `environmentLaunch` port may now carry its own metadata port
+     (see [Compatibility](#compatibility)); core composes the same
+     `EnvironmentMetadataTransport` for it. A port without one still records
+     its own bindings. With an account mapping the metadata owner and the
+     issuer share one resolver (see
+     [Account partition mapping](#account-partition-mapping)).
    - The `check-main-thread-sync-io` count is unchanged (257 calls, 1017 SQL
      statements), not decreased: the count is per file, and the lease read in
      `ExecutionEnvironmentRuntime.execution` and the vault store's SQL are still
@@ -426,6 +484,13 @@ Recorded after the first slice; later slices follow them.
 - **An issuer or receiver without a reader for a kind refuses that kind.** There
   is no fallback from a missing creation or terminal record to a Turn, to the
   relayed claim or to the synchronous runtime.
+- **An installation may map the verified owner to its vault partition, only
+  among that Actor's own partitions.** The mapping is compiled into the vault
+  owner, chooses the canonical partition or the login partition of exactly one
+  verified binding, and is reread with every admission check; ambiguity, a
+  foreign partition or a revoked binding refuse the launch. It lets existing
+  vault data keep its partition and AAD; the default remains the canonical
+  Actor partition. Issuer and metadata owner share the resolver.
 - **The durable creation and terminal records are not added in this slice.**
   Both can be added additively (a new table through an appended migration, or a
   new journal version written only by an upgraded owner); slices 5 and 6 own
