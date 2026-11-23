@@ -165,3 +165,12 @@ turn. The worker advertises only execution-owned brokers; a Gateway restart must
 not revoke a live command. Disabling the profile is explicit legacy deployment
 configuration, never permission to fall back to server credentials. Managed Git
 operations with missing authority intentionally fail closed.
+
+Optional opaque account ENV delivery (`OPENCRAFT_ENVIRONMENT_DELIVERY=opaque`,
+alias `vault-owner`; see the [container README](../README.md#optional-account-env-delivery))
+is one decision for the Gateway and Brain: the compose file passes the
+`site.env` value to both, and preflight rejects a pair that disagrees, an issuer
+setting without delivery, a non-Assets execution context, an issuer file other
+than `$OPENCRAFT_DATA_DIR/run/environment-issuer.json`, or Gateway and Brain
+state directories that are not the same host directory. Hands and Proxy do not
+receive it. `OPENCRAFT_ENVIRONMENT_ISSUER_GENERATION` goes to the Gateway only.

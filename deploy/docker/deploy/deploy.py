@@ -92,6 +92,7 @@ def validate(config, release):
                 raise ValueError('Roles must share the same host ' + key)
             shared[key] = mounts[0]['source']
     personal_git_check(services)
+    environment_delivery_check(services)
     command = services['gateway']['command']
     if '--access-control' not in command:
         raise ValueError('Gateway authentication must remain enabled')
@@ -129,6 +130,43 @@ def personal_git_check(services):
         if role == 'hands' and service['user'] == '0:0' and (runtime == execution or Path(execution) in Path(runtime).parents):
             raise ValueError('Git IPC must stay outside private root execution state')
 
+
+ENVIRONMENT_DELIVERY = {'': None, 'opaque': 'opaque', 'vault-owner': 'opaque'}
+
+
+def environment_delivery_check(services):
+    # Opaque account ENV delivery is one decision shared by the Gateway (its vault
+    # owner publishes the issuer) and Brain (pins that issuer into DSH, Pi and the
+    # Codex AppServer). A half-enabled pair fails at startup or runs unpinned.
+    def mode(role):
+        value = services[role]['environment'].get('OPENCRAFT_ENVIRONMENT_DELIVERY', '')
+        if value not in ENVIRONMENT_DELIVERY:
+            raise ValueError('OPENCRAFT_ENVIRONMENT_DELIVERY must be opaque (alias vault-owner) or empty: ' + role)
+        return ENVIRONMENT_DELIVERY[value]
+    delivery = mode('gateway')
+    for role in ROLES:
+        if mode(role) != delivery and (role in ('gateway', 'brain') or mode(role) is not None):
+            raise ValueError('Gateway and Brain must agree on OPENCRAFT_ENVIRONMENT_DELIVERY: ' + role)
+    for role in ROLES:
+        env = services[role]['environment']
+        issuer = env.get('OPENCRAFT_ENVIRONMENT_ISSUER_FILE', '')
+        generation = env.get('OPENCRAFT_ENVIRONMENT_ISSUER_GENERATION', '')
+        if delivery is None or mode(role) is None:
+            if issuer or generation:
+                raise ValueError('The ENV issuer requires OPENCRAFT_ENVIRONMENT_DELIVERY=opaque: ' + role)
+            continue
+        if env.get('OPENCRAFT_EXECUTION_CONTEXT', 'assets') != 'assets':
+            raise ValueError('ENV delivery requires OPENCRAFT_EXECUTION_CONTEXT=assets: ' + role)
+        if issuer and str(absolute(issuer)) != str(absolute(env['OPENCRAFT_DATA_DIR']) / 'run' / 'environment-issuer.json'):
+            raise ValueError('ENV issuer must be the deployment issuer path: ' + role)
+        if generation and not re.fullmatch(r'[A-Za-z0-9._-]{1,64}', generation):
+            raise ValueError('Invalid OPENCRAFT_ENVIRONMENT_ISSUER_GENERATION: ' + role)
+    if delivery is None: return
+    # Brain reads the issuer the Gateway publishes under the shared state directory.
+    state = [(services[role]['environment']['OPENCRAFT_DATA_DIR'],
+              mounted_path(services[role], services[role]['environment']['OPENCRAFT_DATA_DIR'])) for role in ('gateway', 'brain')]
+    if state[0] != state[1] or state[0][1] is None:
+        raise ValueError('ENV delivery requires Gateway and Brain to share the same state directory')
 
 def root_hands_check(service, identity):
     env = service['environment']
