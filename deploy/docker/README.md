@@ -519,6 +519,15 @@ keys). Replace `$DATA` with the host data directory.
    recover without action; Brain's `StartedAt` is unchanged and its threads keep
    answering after the proxy is healthy.
 
+## Runtime plugin utility modes
+
+The Gateway entry (`runtime/container-gateway.mjs`) also runs two explicit platform
+tools that never start the Gateway: `--runtime-plugin-admin check|install ...` and
+`--runtime-plugin-executor ABSOLUTE_SELECTION_STORE`. The executor loads selected
+plugins in the `execution` role and can read their bytes through the Hands file owner.
+Hands itself never loads plugins. See
+[runtime-plugin-host](../../packages/runtime-plugin-host/README.md#hands-file-source-and-container-utility-modes).
+
 ## Upgrade and rollback
 
 Build a content-addressed or versioned image reference, then use the transaction

@@ -102,7 +102,7 @@
     "serve:web:static": "node scripts/dev/serve-workbench-web-cli.mjs",
     "package:headless:linux:amd64": "node scripts/packaging/package-headless-linux.mjs",
     "package:container": "node scripts/packaging/package-container.mjs",
-    "test:container": "node --import tsx --test tests/server/container-deployment.test.mjs tests/server/environment-issuer-supervision.test.mjs tests/server/hands-owner-roles.test.mjs tests/server/hands-owner-privileges.test.mjs tests/server/root-hands.test.mjs tests/server/container-service.test.mjs tests/server/upgrade-environment.test.mjs tests/server/workspace-agent.test.mjs tests/server/gateway-workspace.test.mjs",
+    "test:container": "node --import tsx --test tests/server/container-deployment.test.mjs tests/server/environment-issuer-supervision.test.mjs tests/server/hands-owner-roles.test.mjs tests/server/hands-owner-privileges.test.mjs tests/server/root-hands.test.mjs tests/server/container-service.test.mjs tests/server/upgrade-environment.test.mjs tests/server/workspace-agent.test.mjs tests/server/gateway-workspace.test.mjs tests/server/runtime-plugin-executor.test.mjs",
     "smoke:container": "node scripts/smoke/server/smoke-container.mjs",
     "smoke:upgrade:environment": "node scripts/smoke/server/smoke-upgrade-environment.mjs",
     "smoke:upgrade": "node scripts/smoke/server/smoke-upgrade.mjs",

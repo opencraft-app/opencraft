@@ -82,6 +82,38 @@ await startHeadlessServer(options, {
 - A split static launcher forwards only core Headless routes; plugin routes require the
   Headless listener itself.
 
+## Hands file source and container utility modes
+
+`@opencraft/headless-server/host-filesystem-plugin-source` exports
+`createHostFileSystemPluginSource({ root, endpoint, tokenFile })`: a `source` byte provider
+that reads `root/packages/<id>/<revision>` through the Hands host-filesystem RPC
+(`fs/readFile`). It enforces the per-file byte budget and canonical base64 before
+`createVfsPluginSource` re-verifies digests; `close()` releases the RPC client. Pass it as
+`runtimePlugins.packageSource` or to the executor below. It never discovers, installs,
+enables or launches plugins on the file owner's side.
+
+The container Gateway entry (`scripts/container-deployment/gateway.mjs`) has two explicit
+utility modes that never start the Gateway or another owner. A distribution's own Gateway
+entry composes the same modes with `runGatewayUtilityMode(process.argv.slice(2))` from
+`scripts/container-deployment/runtime-plugin-tools.mjs`, starting its Gateway when it
+returns `false`:
+
+```sh
+# Administrator check/install; prints the result as JSON.
+container-gateway.mjs --runtime-plugin-admin check STORE
+container-gateway.mjs --runtime-plugin-admin install PACKAGE STORE [--enable] [--gid=N] [--configuration-file=FILE]
+# Long-running execution-role host, closed by SIGINT/SIGTERM.
+container-gateway.mjs --runtime-plugin-executor ABSOLUTE_SELECTION_STORE
+```
+
+The executor activates only the `execution` role (legacy `hands` alias) and prints one
+`runtime-plugin-executor-ready` line. Package bytes come from the selection store unless
+all of `OPENCRAFT_RUNTIME_PLUGIN_VFS_DIRECTORY`, `OPENCRAFT_RUNTIME_PLUGIN_VFS_ENDPOINT` and
+`OPENCRAFT_RUNTIME_PLUGIN_VFS_TOKEN_FILE` are set; then they are read through the Hands file
+RPC into `OPENCRAFT_RUNTIME_PLUGIN_CACHE_DIRECTORY` (default `<store>/executor-cache`). A
+partial configuration fails. The Hands environment bootstrap never calls either mode; the
+platform supervises the executor process.
+
 A manifest uses schemaVersion/hostApi 1, nodeMajor 26, a stable plugin ID,
 sourceRevision, gateway/execution role entries and a bounded file inventory
 (path, size, sha256). Refer to the synthetic fixtures for executable examples.
@@ -92,5 +124,6 @@ must not be retried automatically.
 Run regressions from the repository root:
 
 ```sh
-node --test tests/server/runtime-plugin-data.test.ts tests/server/runtime-plugin-source.test.ts
+node --import tsx --test tests/server/runtime-plugin-data.test.ts tests/server/runtime-plugin-source.test.ts \
+  tests/server/runtime-plugin-host-filesystem-source.test.ts tests/server/runtime-plugin-executor.test.mjs
 ```
