@@ -779,6 +779,31 @@ export const accountModelDefaults = sqliteTable("account_model_defaults", {
   check("account_model_defaults_revision", sql.raw("revision > 0")),
 ]);
 
+/**
+ * Durable creation reservation for execution ENV delivery: written before a native
+ * Thread creation (start or fork) for one Human Actor, admissible only while
+ * `pending` and before `expires_at`. Launching (or abandoning) it is a state change,
+ * never a delete, so a settled reservation can never admit a second launch. Holds no
+ * variable values. Written only by the reservation methods of the owner Worker.
+ */
+export const environmentCreationReservations = sqliteTable("environment_creation_reservations", {
+  hostId: text("host_id").notNull(),
+  operationId: text("operation_id").notNull(),
+  actorId: text("actor_id").notNull(),
+  actorGeneration: integer("actor_generation").notNull(),
+  membershipRevision: integer("membership_revision").notNull(),
+  source: text("source"),
+  incarnation: text("incarnation").notNull(),
+  project: text("project"),
+  state: text("state").notNull(),
+  createdAt: integer("created_at").notNull(),
+  expiresAt: integer("expires_at").notNull(),
+}, table => [
+  primaryKey({ columns: [table.hostId, table.operationId] }),
+  check("environment_creation_reservation_state", sql.raw("state IN ('pending', 'launched', 'abandoned')")),
+  check("environment_creation_reservation_epoch", sql.raw("actor_generation > 0 AND membership_revision >= 0")),
+]);
+
 // The Headless conversation resource lifecycle (formerly conversation-resources.json):
 // one row per (Host, Thread) lifecycle observation and the cleanup owners still pending.
 export const conversationResources = sqliteTable("conversation_resources", {

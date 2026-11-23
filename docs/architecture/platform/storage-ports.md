@@ -94,7 +94,7 @@ Node 适配器 `fileStateDocumentStore(directory)` 每键一个文件，保持�
 
 事务性账本不是 KV 语义，按各自写入 owner 进入 SQL（2026-11-23）：
 
-- `conversation-resources.json` → 服务器核心库（InstallationCore）表 `conversation_resources`＋导入回执 `conversation_resource_imports`（服务器迁移 v24 `0023_conversation_resources`）。领域 `conversationResourceMethods`（`@opencraft/storage-node/server-conversation-resources`）只依赖 `SqlDatabase`，Node 上在服务器核心 owner Worker 内执行，网络线程只持有已提交行的投影；归属理由见 [workspace-host-split §4.1](workspace-host-split.md#41-归属)。
+- `conversation-resources.json` → 服务器核心库（InstallationCore）表 `conversation_resources`＋导入回执 `conversation_resource_imports`（服务器迁移 v25 `0024_conversation_resources`）。领域 `conversationResourceMethods`（`@opencraft/storage-node/server-conversation-resources`）只依赖 `SqlDatabase`，Node 上在服务器核心 owner Worker 内执行，网络线程只持有已提交行的投影；归属理由见 [workspace-host-split §4.1](workspace-host-split.md#41-归属)。
 - Git broker 账本（旧 PID 来源 broker 的 `ownerStateFile` JSON）：**暂不迁移**。服务端 `GitIdentityBroker`／`GitBrokerOwner` 当前无生产装配（见 [Git identity](../identity/git-identity.md#execution-attested-personal-git-protocol)），保留原 JSON 实现供下一代使用，不迁移也不退役；若将来迁移，它只能是 broker 进程独占的独立库，新增库一经发布即成为不可删除的迁移，届时再按实际装配决定。
 
 `conversation-resources.json` 的导入规则：owner 打开时在一个事务内导入旧 JSON 并记录其 SHA-256（文件缺失记为 `absent`）；旧文件不改名、不再写入，保留为只读备份（回退旧版本时旧版本仍能读取导入前的快照）；导入回执存在而文件内容不同或导入时不存在、之后又出现（例如回退后旧版本又写过）、JSON 损坏或部分写入、记录不合法时拒绝启动且不导入任何行，由运维者处置后再启动。导入后删除备份文件不视为变化，照常启动。

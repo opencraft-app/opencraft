@@ -34,6 +34,10 @@ async function main() {
     runtimeDataDirectory: process.argv.includes("--runtime-data-directory") ? argument("--runtime-data-directory") : undefined,
     privateDirectory: process.argv.includes("--private-directory") ? argument("--private-directory") : undefined,
     executable: argument("--codex-executable"),
+    // Trusted private file: the pinned issuer key, this owner's attachment and
+    // where it reads its own durable admission. Omitted: no delivery.
+    environmentLaunch: process.argv.includes("--environment-launch-config")
+      ? JSON.parse(await readFile(argument("--environment-launch-config"), "utf8")) : undefined,
     waitForCore: true, signal: startup.signal,
     onFailure: error => { console.error(error.message); void shutdown?.(1); },
   });

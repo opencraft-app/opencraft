@@ -354,7 +354,7 @@ interface SandboxBackend {
 | `message_senders`、`message_sender_origins`、`ioa_*`、`codex_bot_*` | 待定 | SQL | 与主体协作、Bot 房间相关；若 Bot 跨工作区，应进入 IC，否则留 WH |
 | `token-usage.sqlite` | 待定 | SQL | 4.2 |
 | `tasks.sqlite` | IC | SQL | 跨会话业务记录 |
-| 会话资源生命周期（原 `conversation-resources.json`） | IC | SQL（服务器核心表 `conversation_resources`，迁移 v24 `0023_conversation_resources`） | 决定见下 |
+| 会话资源生命周期（原 `conversation-resources.json`） | IC | SQL（服务器核心表 `conversation_resources`，迁移 v25 `0024_conversation_resources`） | 决定见下 |
 | Git broker 账本（旧 PID 来源 broker 的 `ownerStateFile` JSON） | 暂不迁移 | —（保留原 JSON） | 暂不迁移：服务端 broker 当前无生产装配，保留供下一代使用；见下 |
 
 **会话资源生命周期与 Git broker 账本的归属（2026-11-23 决定）。** 本表原未列出二者；[存储端口](storage-ports.md#32-statedocumentstore) 只写了"并入 SQL 核心"，[Gateway 拆分](gateway-split.md) 曾暂列为 WH。决定与理由：

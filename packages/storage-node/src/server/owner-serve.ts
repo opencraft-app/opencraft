@@ -4,6 +4,7 @@ import { conversationCreationReceiptMethods } from "./conversation-creation-rece
 import { conversationResourceMethods } from "./conversation-resources.js";
 import { conversationResourceLegacyJournal } from "./conversation-resource-journal.js";
 import { accountModelDefaultsMethods } from "./account-model-defaults.js";
+import { environmentCreationReservationMethods } from "./environment-creation-reservations.js";
 import type { ServerMigrationComposition } from "./migration-composition.js";
 
 /** Domain services that run beside the Server owner, on its connection. */
@@ -41,12 +42,14 @@ export function serveServerCoreOwner(
       let creation: ReturnType<typeof conversationCreationReceiptMethods>;
       let resources: ReturnType<typeof conversationResourceMethods>;
       let modelDefaults: ReturnType<typeof accountModelDefaultsMethods>;
+      let reservations: ReturnType<typeof environmentCreationReservationMethods>;
       try {
         creation = conversationCreationReceiptMethods(owner.database);
         // The retired journal lives beside the database; it is imported when the
         // lifecycle opens, not here, because only the lifecycle knows its owners.
         resources = conversationResourceMethods(owner.database, conversationResourceLegacyJournal(directory));
         modelDefaults = accountModelDefaultsMethods(owner.database);
+        reservations = environmentCreationReservationMethods(owner.database);
         served = domains?.(owner, data ?? {}) ?? { methods: {} };
       } catch (error) {
         await owner.close();
@@ -54,7 +57,7 @@ export function serveServerCoreOwner(
       }
       return {
         ready: { outcome: owner.outcome, contract: owner.contract },
-        methods: { ...served.methods, ...creation, ...resources, ...modelDefaults },
+        methods: { ...served.methods, ...creation, ...resources, ...modelDefaults, ...reservations },
         close: async () => {
           try {
             await served.close?.();

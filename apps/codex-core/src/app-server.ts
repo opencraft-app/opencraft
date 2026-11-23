@@ -13,6 +13,9 @@ import { makeNativeFamilyKillable, nativeReady, nativeOwnerRequest, removeStaleS
 import { startOrchestrationCallbackRelay } from "./orchestration-callback-lane.js";
 import { ExecutionLifecycleObserver } from "./execution-lifecycle-observer.js";
 import { sandboxLifecycleLogger } from "@opencraft/sandbox-node/lifecycle";
+import { openExecutionAdmission, type ExecutionAdmissionReader } from "@opencraft/execution-environment/execution-admission";
+import { observeNativeExecutionProcess } from "@opencraft/execution-environment/native-execution-origin";
+import { createCodexEnvironmentLaunch, type CodexEnvironmentLaunch } from "./environment-launch.js";
 
 export interface CodexAppServerOptions {
   readonly endpoint: string;
@@ -36,6 +39,16 @@ export interface CodexAppServerOptions {
   /** Private Gateway authority. Matching Gateway admission is mandatory when enabled. */
   readonly workspaceAuthoritySocket?: string;
   readonly spawnAppServer?: CodexCoreOptions["spawnAppServer"];
+  /** Opaque execution ENV delivery. This process is the receiver: it opens
+   * capsules against its own durable admission (read in a Worker from the
+   * server data `directory`) and installs the values into native Threads. The
+   * issuer key comes only from this trusted configuration. */
+  readonly environmentLaunch?: {
+    readonly issuer: string;
+    readonly instance: string;
+    readonly admissionWorkerFile: string;
+    readonly directory: string;
+  };
   readonly onFailure?: (error: Error) => void;
   readonly waitForCore?: boolean;
   readonly signal?: AbortSignal;
@@ -48,6 +61,10 @@ export async function startCodexAppServer(options: CodexAppServerOptions) {
     || Buffer.byteLength(options.workspaceAuthoritySocket) > 103))
     throw new Error("Invalid private workspace authority configuration");
   if (options.resolveWorkspace && !options.executionSandbox) throw new Error("Workspace routing requires execution sandbox policy");
+  const launch = options.environmentLaunch;
+  if (launch !== undefined && (!launch || typeof launch.issuer !== "string" || !launch.issuer || typeof launch.instance !== "string"
+    || !/^[\x21-\x7e]{1,256}$/u.test(launch.instance) || ![launch.admissionWorkerFile, launch.directory].every(path => typeof path === "string" && isAbsolute(path))))
+    throw new Error("Invalid execution environment delivery configuration");
   if (![options.endpoint, options.coreEndpoint, options.dataDirectory, options.runtimeDirectory].every(isAbsolute)
     || options.endpoint === options.coreEndpoint || options.authToken.length < 32
     || options.controlToken !== undefined && options.controlToken.length < 32) throw new Error("Invalid Codex AppServer configuration");
@@ -68,6 +85,8 @@ export async function startCodexAppServer(options: CodexAppServerOptions) {
   let child: ChildProcessWithoutNullStreams | undefined;
   let control: Awaited<ReturnType<typeof startControlServer>> | undefined;
   let authSocket: Awaited<ReturnType<typeof nativeReady>> | undefined;
+  let admission: ExecutionAdmissionReader | undefined;
+  let environment: CodexEnvironmentLaunch | undefined;
   let ownsNative = false, failed = false, ready = false;
   let closing: Promise<void> | undefined;
   const lifecycle = options.executionSandbox ? sandboxLifecycleLogger(join(runtimeDataDirectory, "runtime", "exec-server-lifecycle.jsonl")) : undefined;
@@ -95,7 +114,7 @@ export async function startCodexAppServer(options: CodexAppServerOptions) {
     ready = false; clearInterval(healthTimer);
     lifecycle?.({event: "owner-stop", reason: "owner-close"});
     try {
-      await control?.close(); await relay?.close(); authSocket?.terminate();
+      await control?.close(); await relay?.close(); environment?.close(); await admission?.close(); authSocket?.terminate();
       if (child && child.exitCode === null && child.signalCode === null) await new Promise<void>(resolve => {
         const timer = setTimeout(() => child?.kill("SIGKILL"), 2_000);
         child!.once("close", () => { clearTimeout(timer); resolve(); }); child!.kill("SIGTERM");
@@ -130,7 +149,7 @@ export async function startCodexAppServer(options: CodexAppServerOptions) {
       const healthy = request.method === "GET" && (request.url === "/health" || nativeOnly) && !failed && ready && (nativeOnly || await executable());
       return { status: healthy ? 200 : 503,
       value: healthy
-        ? { environmentVariablesVersion: 1, ...(options.workspaceAuthoritySocket ? { workspaceExecutionVersion: 1 as const } : {}), protocolVersion: CODEX_CORE_PROTOCOL_VERSION, pid: process.pid, codexPid: child!.pid!, nativeSocket,
+        ? { environmentVariablesVersion: 1, ...(environment ? { environmentLaunchVersion: 1 as const } : {}), ...(options.workspaceAuthoritySocket ? { workspaceExecutionVersion: 1 as const } : {}), protocolVersion: CODEX_CORE_PROTOCOL_VERSION, pid: process.pid, codexPid: child!.pid!, nativeSocket,
           dataDirectory, runtimeDataDirectory: runtimeOwnerRoot, codexHome: runtimeRoot, proxyBaseUrl,
           callbackProtocolVersion: 1, threadTitleToolVersion: 1, callbackIncarnation: relay?.incarnation, pendingCallbacks: relay?.pendingCallbacks ?? 0, pendingOrchestrationMutations: relay?.pendingMutations ?? 0 } satisfies CodexAppServerHealth
         : { error: ready && !failed && options.executionSandbox ? "Execution environment unavailable" : "Codex AppServer unavailable",
@@ -178,8 +197,23 @@ export async function startCodexAppServer(options: CodexAppServerOptions) {
     // The npm launcher may have forked native during its own initialization.
     if (protectedApp) await makeNativeFamilyKillable(child.pid!);
     if (options.executionSandbox) await nativeOwnerRequest(authSocket, "environment/info", { environmentId: "opencraft" }, 50_000);
-    relay = await startOrchestrationCallbackRelay(nativeSocket, nativeListener, options.executionSandbox ? {
-      requestPolicy: options.workspaceAuthoritySocket ? privateWorkspaceExecutionPolicy({
+    if (options.environmentLaunch) {
+      const launch = options.environmentLaunch;
+      admission = openExecutionAdmission({ workerFile: launch.admissionWorkerFile, directory: launch.directory });
+      const native = child;
+      environment = createCodexEnvironmentLaunch({
+        issuer: launch.issuer, instance: launch.instance,
+        admission: locator => admission!.admission(locator),
+        // The admission must name the live native process this owner spawned.
+        incarnation: async () => {
+          if (!native.pid || native.exitCode !== null || native.signalCode !== null || failed || closing) throw Error("environment_launch_unavailable");
+          return (await observeNativeExecutionProcess(native.pid)).incarnation;
+        },
+      });
+    }
+    relay = await startOrchestrationCallbackRelay(nativeSocket, nativeListener, {
+      ...(environment ? { environment } : {}),
+      ...(options.executionSandbox ? { requestPolicy: options.workspaceAuthoritySocket ? privateWorkspaceExecutionPolicy({
         socketPath: options.workspaceAuthoritySocket, token: options.authToken,
         readThread: threadId => nativeOwnerRequest(authSocket!, "thread/read", { threadId, includeTurns: false }),
         projectlessRoot: options.projectlessWorkspaceDirectory ?? join(dataDirectory, "projectless-workspaces"),
@@ -190,8 +224,8 @@ export async function startCodexAppServer(options: CodexAppServerOptions) {
         options.resolveWorkspace,
         (method, params) => nativeOwnerRequest(authSocket!, method, params, 50_000),
         async () => { if (!await executable()) throw new Error("Execution environment unavailable"); },
-      ),
-    } : undefined);
+      ) } : {}),
+    });
     options.signal?.throwIfAborted();
     if (failed) throw new Error("Codex AppServer exited during startup");
     if (!isNamedPipe(nativeSocket)) await chmod(nativeSocket, 0o600);

@@ -14,6 +14,8 @@ export interface CodexCoreHealth {
   /** Present only when a separate runtime owner is configured. */
   readonly appServerPid?: number;
   readonly environmentVariablesVersion?: 1;
+  /** The owner opens opaque ENV launch capsules itself (no plaintext from the adapter). */
+  readonly environmentLaunchVersion?: 1;
   /** Strict private Gateway placement admission. */
   readonly workspaceExecutionVersion?: 1;
   readonly callbackProtocolVersion?: 1;

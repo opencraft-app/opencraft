@@ -11,6 +11,9 @@ import type {
   AnyEnvironmentLaunchContext,
   EnvironmentLaunchTarget,
 } from "@opencraft/execution-environment/environment-delivery";
+import type { EnvironmentLaunchReply } from "@opencraft/execution-environment/environment-launch-owner";
+import type { EnvironmentLaunchLocator } from "@opencraft/execution-environment/environment-launch-receiver";
+import type { EnvironmentCreationRequest } from "./storage.js";
 import type { EnvironmentActorEpoch } from "@opencraft/execution-environment/git-execution";
 import type {
   EnvironmentExecutionScope,
@@ -45,6 +48,17 @@ export interface AssetConfigurationPort {
   snapshot(access: AssetAdmission): Promise<SandboxConfigurationsSnapshot>;
   update(access: AssetAdmission, input: unknown): Promise<SandboxConfigurationsSnapshot>;
 }
+/** The non-secret record a creation reservation is written from. */
+export interface EnvironmentCreationRecord {
+  readonly hostId: "local-codex" | "opencraft-server";
+  readonly operationId: string;
+  readonly actorId: string;
+  readonly actorGeneration: number;
+  readonly membershipRevision: number;
+  readonly source: string | null;
+  readonly incarnation: string;
+  readonly project: string | null;
+}
 export interface AssetStoragePort extends AssetConfigurationPort, WorkspaceBudgetPort {
   adoptWorkspaceInstallation(path: string): Promise<boolean>;
   workspaceCatalog(access: AssetAdmission): Promise<WorkspaceCatalog>;
@@ -60,6 +74,8 @@ export interface AssetStoragePort extends AssetConfigurationPort, WorkspaceBudge
   executionGitGrant(locator: GitExecutionLocator): Promise<GitExecutionHandoff | null>;
   executionEnvironmentLaunch(target: EnvironmentLaunchTarget, context: AnyEnvironmentLaunchContext): Promise<string>;
   executionEnvironmentActor(account: string): Promise<EnvironmentActorEpoch | null>;
+  environmentLaunchRecord(target: EnvironmentLaunchTarget, locator: EnvironmentLaunchLocator): Promise<EnvironmentLaunchReply>;
+  environmentCreationAdmission(request: EnvironmentCreationRequest): Promise<EnvironmentCreationRecord>;
   personalGitSeal(scope: GitGrantScope): Promise<string>;
   environmentMetadataAdmit(request: EnvironmentScopeRequest): Promise<EnvironmentExecutionScope>;
   environmentMetadataProject(hostId: string, threadId: string): Promise<string | null>;
@@ -151,6 +167,11 @@ export async function openAssetConfigurations(
             issuer: ready.environmentIssuer,
             seal: (target: EnvironmentLaunchTarget, context: AnyEnvironmentLaunchContext) =>
               owner.call.executionEnvironmentLaunch(target, context),
+            /** Seals for the durable record `locator` names (read by the owner). */
+            launch: (target: EnvironmentLaunchTarget, locator: EnvironmentLaunchLocator) =>
+              owner.call.environmentLaunchRecord(target, locator),
+            /** Admits a creation: the Actor's current epoch and its Project. */
+            admitCreation: (request: EnvironmentCreationRequest) => owner.call.environmentCreationAdmission(request),
             // Terminal admission: the Actor epoch a reservation is written under.
             ...(ready.environmentTerminal === true
               ? { terminalActor: (account: string) => owner.call.executionEnvironmentActor(account) }

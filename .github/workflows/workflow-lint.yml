@@ -7,6 +7,8 @@ on:
   pull_request:
     paths:
       - .github/**
+  # Merge queue groups take no path filter, so the lint runs for every group.
+  merge_group:
   push:
     branches: [main]
     paths:

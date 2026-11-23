@@ -37,6 +37,17 @@ durable admission and the caller rechecks after the await; grants are
 byte-compatible with in-process ones. See
 [ENV launch delivery](../execution/environment-launch-delivery.md#core-vault-owner-issuer).
 
+An identity composition that owns the vault Worker and supplies
+`identity.environmentLaunch` gives Headless its Git execution owner as
+`environmentLaunch.git = { hosts, authority, grant(locator), reservation(locator) }`,
+the members the core assets Worker offers (`gitHosts`, `gitAuthority`,
+`executionGitGrant`, `executionGitReservation`). Headless composes the Gateway
+owner (DSH `hostGit`, the Git status tool) and the Codex adapter's
+`createExecutionGit` from it with the same live Actor and native-process checks
+as for the core Worker. One installation has one Git owner: a `git` beside core's
+assets vault is refused. With a split Codex Core, a vault owner without a Git
+owner fails startup instead of running Codex Turns without personal Git.
+
 Workers query vault/lease stores off the routing event loop. No private key is
 exported to command environment, files, responses or image layers.
 

@@ -5,6 +5,7 @@ import type { GitConnectionProvider } from "@opencraft/plugin-assets/server/git-
 import { GitExecutionAuthority, executionScope, resolveExecutionAdmission } from "./git-execution-authority.js";
 import { parseGitExecutionLocator } from "@opencraft/execution-environment/git-execution";
 import { createHeadlessSandboxProviders } from "./sandbox-providers.js";
+import { codexTurnAdmission, creationAdmission } from "./environment-launch-admission.js";
 import {
   EnvironmentAccountPartitions,
   type EnvironmentAccountMapping,
@@ -74,6 +75,20 @@ export function createHeadlessAssetsStorage(
         },
       };
     },
-    { ...storageOptions, ...(environmentAccounts ? { environmentAccounts } : {}) },
+    {
+      ...storageOptions,
+      ...(environmentAccounts ? { environmentAccounts } : {}),
+      ...(storageOptions.environmentLaunch
+        ? {
+            // Core's own durable records: the pending Codex input lease and the
+            // Server owner's creation reservation, with the current Actor epoch.
+            environmentRecords: {
+              codexTurn: (locator) => codexTurnAdmission(authority, locator),
+              creation: (locator) => creationAdmission(authority, locator),
+              actorEpoch: (actorId) => authority.actorEpoch(actorId),
+            },
+          }
+        : {}),
+    },
   );
 }

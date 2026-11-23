@@ -9,12 +9,14 @@ import { EmployeeGitVaultStore, GitVaultError } from "@opencraft/execution-envir
 import {
   EnvironmentLaunchOwner,
   environmentTerminalRecords,
+  type EnvironmentLaunchRecordReaders,
 } from "@opencraft/execution-environment/environment-launch-owner";
 import type { EnvironmentAccountResolver } from "@opencraft/execution-environment/environment-account";
 import { PersonalGitSealOwner } from "@opencraft/execution-environment/personal-git-seal";
 import type { GitGrantScope } from "@opencraft/execution-environment/personal-git-protocol";
 import {
   EnvironmentMetadata,
+  environmentThreadProject,
   type EnvironmentExecutionScope,
   type EnvironmentScopeRequest,
 } from "@opencraft/execution-environment/environment-metadata";
@@ -34,9 +36,15 @@ export async function createAssetsStorage(
   execution?: GitExecutionResolver,
   createWorkspaces?: CreateAssetWorkspaceExecutionOwner,
   /** Issue opaque execution ENV capsules from this sole vault owner, which
-   * then also owns the non-secret ENV metadata (bindings, creators, catalog). */
+   * then also owns the non-secret ENV metadata (bindings, creators, catalog).
+   * `environmentRecords` are core's durable records for launches without an
+   * active native Turn (pending Codex inputs, creation reservations) and the
+   * current Actor epoch they are admitted under. */
   options: {
     environmentLaunch?: boolean;
+    environmentRecords?: Pick<EnvironmentLaunchRecordReaders, "codexTurn" | "creation"> & {
+      actorEpoch(actorId: string): { actorGeneration: number; membershipRevision: number } | null;
+    };
     /** Trusted composition only: the vault partition an admitted owner's ENV
      * and creator provenance use. Without it, the canonical Actor partition. */
     environmentAccounts?: EnvironmentAccountResolver;
@@ -75,13 +83,19 @@ export async function createAssetsStorage(
         ? new EnvironmentLaunchOwner(
             vault,
             (input) => execution.resolve(input),
-            // Terminal launches are admitted under the current Actor epoch.
-            execution.actor
-              ? { terminal: environmentTerminalRecords(vault, (account) => execution.actor!(account)) }
-              : {},
+            {
+              // Terminal launches are admitted under the current Actor epoch.
+              ...(execution.actor
+                ? { terminal: environmentTerminalRecords(vault, (account) => execution.actor!(account)) }
+                : {}),
+              // Codex pending inputs and creation reservations (slice 7).
+              ...(options.environmentRecords?.codexTurn ? { codexTurn: options.environmentRecords.codexTurn } : {}),
+              ...(options.environmentRecords?.creation ? { creation: options.environmentRecords.creation } : {}),
+            },
             options.environmentAccounts ? { accounts: options.environmentAccounts } : {},
           )
         : undefined;
+    const records = environment ? options.environmentRecords : undefined;
     // The same owner serves `PersonalGitSealPort`: Main awaits a grant and never
     // holds the vault key. A scope is sealed only while it is this owner's own
     // durable admission (an active Turn, or a Codex pending reservation).
@@ -193,6 +207,7 @@ export async function createAssetsStorage(
             ...(environment
               ? [
                   "executionEnvironmentLaunch",
+                  "environmentLaunchRecord",
                   "personalGitSeal",
                   "environmentMetadataAdmit",
                   "environmentMetadataProject",
@@ -329,6 +344,14 @@ export async function createAssetsStorage(
                   throw new SandboxConfigurationError("execution_unavailable", 503);
                 }
               },
+              // Seals for the durable record the locator names, read by this owner.
+              environmentLaunchRecord: (target: EnvironmentLaunchTarget, locator: unknown) => {
+                try {
+                  return environment!.launch(target, locator);
+                } catch {
+                  throw new SandboxConfigurationError("execution_unavailable", 503);
+                }
+              },
               // Returns only the opaque grant; the key never leaves this Worker.
               personalGitSeal: (scope: GitGrantScope) => {
                 try {
@@ -337,6 +360,21 @@ export async function createAssetsStorage(
                   throw new SandboxConfigurationError("execution_unavailable", 503);
                 }
               },
+              // The non-secret record a creation reservation is written from: the
+              // Actor's current epoch and the Project (fork: the source binding).
+              ...(records
+                ? {
+                    environmentCreationAdmission: (request: EnvironmentCreationRequest) => {
+                      try {
+                        return creationRecord(request, records.actorEpoch, (hostId, threadId) =>
+                          environmentThreadProject(vault, hostId, threadId),
+                        );
+                      } catch {
+                        throw new SandboxConfigurationError("execution_unavailable", 503);
+                      }
+                    },
+                  }
+                : {}),
               // The epoch a terminal reservation records; no value, no Project.
               ...(execution?.actor
                 ? {
@@ -378,4 +416,47 @@ export async function createAssetsStorage(
     await release();
     throw error;
   }
+}
+
+/** What an execution owner asks before a native creation. The Actor comes from
+ * the authenticated submission; the Project is requested only for a new Thread. */
+export interface EnvironmentCreationRequest {
+  readonly hostId: "local-codex" | "opencraft-server";
+  readonly operationId: string;
+  readonly actorId: string;
+  readonly actorGeneration: number;
+  readonly source: string | null;
+  readonly incarnation: string;
+  readonly projectId: string | null;
+}
+const creationText = (v: unknown): v is string =>
+  typeof v === "string" && v.length > 0 && v.length <= 512 && !/[\x00-\x1f\x7f]/u.test(v);
+function creationRecord(
+  request: EnvironmentCreationRequest,
+  epoch: (actorId: string) => { actorGeneration: number; membershipRevision: number } | null,
+  project: (hostId: string, threadId: string) => string | null,
+) {
+  if (
+    !request ||
+    typeof request !== "object" ||
+    Object.keys(request).length !== 7 ||
+    !(request.hostId === "local-codex" || request.hostId === "opencraft-server") ||
+    ![request.operationId, request.actorId, request.incarnation].every(creationText) ||
+    !(request.source === null || creationText(request.source)) ||
+    !(request.projectId === null || creationText(request.projectId)) ||
+    (request.source !== null && request.projectId !== null)
+  )
+    throw new Error("invalid");
+  const current = epoch(request.actorId);
+  if (!current || current.actorGeneration !== request.actorGeneration) throw new Error("unavailable");
+  return {
+    hostId: request.hostId,
+    operationId: request.operationId,
+    actorId: request.actorId,
+    actorGeneration: current.actorGeneration,
+    membershipRevision: current.membershipRevision,
+    source: request.source,
+    incarnation: request.incarnation,
+    project: request.source === null ? request.projectId : project(request.hostId, request.source),
+  };
 }

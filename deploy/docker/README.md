@@ -349,6 +349,24 @@ Brain to the proxy, which stores it and answers only "configured / not
 configured". Image generation, speech transcription, IM channels and the
 personal assistant run in the Gateway, which remains the owner of those keys.
 
+### Personal execution ENV for Codex
+
+The `proxy` service runs `--accounts-only`: it owns accounts and models but no
+Codex runtime, so it is not the receiver that opens Codex ENV launch capsules.
+Codex Threads run on Brain's own AppServer, which this delivery starts without
+`--environment-launch-config`: wiring a receiver there needs the vault owner's
+pinned issuer and a read of the Server core's creation reservations from inside
+Brain, which this deployment does not yet provide (Brain does not open the
+Server database). Codex ENV delivery is therefore not enabled in this delivery.
+
+The core runs no vault owner here unless a product composition supplies one
+(`identity.environmentLaunch`). When it does, the Gateway keeps Headless's
+startup rule (Codex ENV and personal Git must both be wired) and every human
+Codex Thread creation or Turn is refused with `environment-delivery-refused`,
+because the Brain AppServer's health does not report a receiver; a human Codex
+Turn never runs without its personal ENV. DSH, Pi and terminal delivery are
+unaffected. Without a vault owner, Codex behaves as before.
+
 | Provider configuration | In this deployment |
 | --- | --- |
 | Anthropic Messages, OpenAI Responses or OpenAI-compatible Chat Completions with an explicit HTTPS (or loopback) endpoint, including native DeepSeek | through the proxy |

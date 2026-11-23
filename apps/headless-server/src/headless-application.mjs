@@ -38,6 +38,7 @@ import { startAvailabilityNotification } from './availability-notification.mjs';
 import { ExecutionEnvironmentTransport } from './execution-environment-transport.ts';
 import { EnvironmentMetadataTransport } from './environment-metadata-transport.ts';
 import { createHostEnvironmentLaunch } from './host-environment-launch.ts';
+import { coreCodexEnvironmentLaunch, codexExecutionGit } from './codex-environment-launch.ts';
 import { createEnvironmentAdmissionHandoff } from './environment-admission-handoff.ts';
 import { composeHostTerminalSelector, createHandsTerminalService, HostTerminalSession, HostTerminalTransport, terminalResourceOwnerId } from './host-terminal-transport.js';
 import { createHostFileSystem } from './host-filesystem.js';
@@ -428,6 +429,10 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let environmentMetadata;
   // The live Actor/lease handoff ENV delivery seals against.
   let environmentHandoff;
+  // The one personal Git execution owner (core assets Worker or identity port).
+  let gitExecutionOwner;
+  // Codex creation and Turn ENV delivery to the split Codex Core.
+  let codexEnvironmentLaunch;
   let actorStore;
   const terminalServices = new Map();
   const fileSystem = options.fileSystemOwner ? createHostFileSystem(options.fileSystemOwner) : null;
@@ -638,15 +643,25 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       assetsService = await openHumanAssets({ directory: dataDirectory, auth: humanAuth, actors: actorStore, access: instanceAccess,
         openStorage: async () => ({...assetsStorage, close:async()=>{}}) });
       if(!assetsService.gitAuthority)throw Error('Assets execution authority unavailable');
+    }
+    const identityLaunch = identity?.environmentLaunch;
+    // One personal Git execution owner: core's assets vault Worker, or the
+    // identity composition that owns the vault. Both hand off sealed grants only.
+    if (identityLaunch?.git && assetsService) throw new Error('Personal Git execution cannot have two owners');
+    if (identityLaunch?.git && !instanceAccess) throw new Error('Personal Git execution requires Human instance authority');
+    gitExecutionOwner = assetsService ? Object.freeze({hosts:assetsService.gitHosts,authority:assetsService.gitAuthority,
+      grant:locator=>assetsService.executionGitGrant(locator),reservation:locator=>assetsService.executionGitReservation(locator)})
+      : identityLaunch?.git && Object.freeze({hosts:Object.freeze([...identityLaunch.git.hosts]),authority:identityLaunch.git.authority,
+        grant:locator=>identityLaunch.git.grant(locator),reservation:locator=>identityLaunch.git.reservation(locator)});
+    if (gitExecutionOwner) {
       humanGitExecution=createHumanGitExecution({directory:dataDirectory,
         runtimeDirectory:humanGitRuntimeDirectory(join(dataDirectory,'git-runtime'),'gateway'),workerFile:options.gitWorkerFile??fileURLToPath(new URL('./personal-git-worker.mjs',import.meta.url)),
-        hosts:assetsService.gitHosts,authority:assetsService.gitAuthority,grant:assetsService.executionGitGrant,
+        hosts:gitExecutionOwner.hosts,authority:gitExecutionOwner.authority,grant:gitExecutionOwner.grant,
         authorize:authorizeExecutionHandoff,inspect:inspectExecutionHandoff,
       });
       // The personal Git status tool exists only where the human Git owner does.
       withdrawGitStatus=capabilities.register(createGitStatusCapability(humanGitExecution));
     }
-    const identityLaunch = identity?.environmentLaunch;
     environmentLaunch = identityLaunch ?? assetsStorage?.environmentLaunch;
     if (coreEnvironmentLaunch && !assetsStorage?.environmentLaunch) throw new Error('Environment delivery requires the sole vault owner');
     // A vault-owner port from the identity composition may bring its own
@@ -655,15 +670,23 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     if (coreEnvironmentLaunch && !environmentMetadata) throw new Error('Environment delivery requires the sole vault owner');
     // The same owner signs personal Git grants; Main never holds the vault key.
     if (coreEnvironmentLaunch && !assetsStorage.personalGitSeal) throw new Error('Environment delivery requires the sole vault owner');
-    if (environmentLaunch && humanGitExecution) {
-      if (identityLaunch?.admission) throw new Error('Execution admission cannot have two owners');
-      environmentHandoff = locator => humanGitExecution.handoff(locator);
-    } else if (identityLaunch?.admission) {
+    if (identityLaunch?.admission) {
+      // Core's own vault Worker already owns the Actor/lease handoff.
+      if (assetsService) throw new Error('Execution admission cannot have two owners');
       // The composition owns the durable read; core keeps the live checks.
       if (!instanceAccess) throw new Error('Environment delivery requires Human instance authority');
       environmentHandoff = createEnvironmentAdmissionHandoff({ admission: locator => identityLaunch.admission(locator),
         authorize: authorizeExecutionHandoff, inspect: inspectExecutionHandoff, closed: () => closing });
-    }
+    } else if (environmentLaunch && humanGitExecution) environmentHandoff = locator => humanGitExecution.handoff(locator);
+    // Codex: the split Codex Core receives creation and Turn ENV sealed for
+    // core's durable records, and the adapter's Git owner hands off grants.
+    codexEnvironmentLaunch = coreCodexEnvironmentLaunch(environmentLaunch, serverStorage,
+      options.codexCoreEndpoint, `server:${machineIdentity.machineId}:codex`,
+      actor => authorizeExecutionHandoff({account:`actor:${actor.actorId}`,actorGeneration:actor.actorGeneration}));
+    // Missing delivery fails closed: a configured vault owner never lets Codex
+    // run human Turns without its personal ENV or Git.
+    if (environmentLaunch && options.codexCoreEndpoint && (!codexEnvironmentLaunch || !gitExecutionOwner))
+      throw new Error('Codex environment delivery requires launch, creation admission and a personal Git owner');
     const authenticateHuman = request => {
       if (instanceAccess) return instanceAccess.authenticate(request);
       const identities = providers.map(provider => provider.authenticate(request)).filter(Boolean);
@@ -880,7 +903,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         // personal authority. Missing login/observer/issuer is never fallback.
         if(!humanGitExecution){if(anonymousDeployment)return {mode:'anonymous'};throw Error('git_execution_unavailable');}
         const grant=await humanGitExecution.handoff({hostId:'opencraft-server',threadId:session.threadId,...(session.execution.inputId?{inputId:session.execution.inputId}:{turnId:session.execution.turnId})});
-        return {authority:assetsService.gitAuthority,hosts:assetsService.gitHosts,grant};
+        return {authority:gitExecutionOwner.authority,hosts:gitExecutionOwner.hosts,grant};
       },
       ...(environmentLaunch ? {hostEnvironment:createHostEnvironmentLaunch({port:environmentLaunch,
         handoff:environmentHandoff,
@@ -1181,12 +1204,12 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           createThreadMetadata,
           nativeTool: codexNativeTool,
           executionEnvironment: identity?.executionEnvironment,
-          ...(assetsService ? {createExecutionGit: native => createHumanGitExecution({
+          // Vault owner (core or identity): Codex Core opens the capsules; this
+          // process relays them and writes creation reservations through the Server owner.
+          ...(codexEnvironmentLaunch && gitExecutionOwner ? {environmentLaunch: codexEnvironmentLaunch} : {}),
+          ...(gitExecutionOwner ? {createExecutionGit: codexExecutionGit(gitExecutionOwner, {
             directory: dataDirectory, runtimeDirectory: humanGitRuntimeDirectory(join(dataDirectory, 'codex-git-runtime'), 'codex'),
             workerFile: options.gitWorkerFile ?? fileURLToPath(new URL('./personal-git-worker.mjs', import.meta.url)),
-            hosts: assetsService.gitHosts, authority: assetsService.gitAuthority,
-            grant: assetsService.executionGitGrant, inspect: native.inspect,
-            reservation: {grant: assetsService.executionGitReservation, inspect: native.inspectReservation},
             authorize: scope => {
               const actorId = scope.account.slice('actor:'.length), actor = actorStore.get(actorId);
               return !closing && actor?.enabled === true && actor.kind === 'human'

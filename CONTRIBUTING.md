@@ -102,6 +102,10 @@ must preserve existing behavior; incompatible changes need a new API version and
 an explicit migration proposal. Current host compatibility is API **1**, not a
 version-range resolver.
 
+`main` merges through a merge queue: once checks pass, add the pull request to
+the queue, which runs `build-checks` and `security-checks` again on it combined
+with the pull requests ahead of it, then squashes it in.
+
 Original contributions use MIT-0. Preserve third-party notices and record
 source provenance for imported/adapted material in the owning integration's
 source records and license notices. Describe imported material, its license and

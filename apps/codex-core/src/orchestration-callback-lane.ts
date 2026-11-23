@@ -30,6 +30,14 @@ export interface CallbackRelayLimits {
 }
 interface ExecutionPreparation { cancelled: boolean }
 export type NativeRequestPolicy = (method: unknown, params: Record<string, unknown>) => Promise<Record<string, unknown>>;
+/** ENV receiver of this owner process (see environment-launch.ts). */
+export interface NativeEnvironmentLaunch {
+  capability(): unknown;
+  stage(params: unknown): Promise<unknown>;
+  apply: NativeRequestPolicy;
+  redact(value: unknown): unknown;
+}
+const ENVIRONMENT_LAUNCH_FIELD = '__opencraftEnvironmentLaunch';
 interface Callback { message: Record<string, unknown>; answered: boolean; human?: boolean; timer?: ReturnType<typeof setTimeout> }
 
 
@@ -66,7 +74,7 @@ class CallbackLane {
   private readonly threadDelegations = new Map<string,string>();
   private readonly heldStarts = new Map<string,Record<string,unknown>>();
   private readonly releasePublication: () => void;
-  constructor(target: string, private readonly incarnation:string, private readonly disconnectWindowMs: number, private readonly replay: boolean, private readonly retired: () => void, private readonly requestPolicy?: NativeRequestPolicy, private readonly preparations = new Map<string, Set<ExecutionPreparation>>(), private readonly publication = new ThreadPublication(), private readonly limits: CallbackRelayLimits = {}, private readonly owner = new OperationOwner()) {
+  constructor(target: string, private readonly incarnation:string, private readonly disconnectWindowMs: number, private readonly replay: boolean, private readonly retired: () => void, private readonly requestPolicy?: NativeRequestPolicy, private readonly preparations = new Map<string, Set<ExecutionPreparation>>(), private readonly publication = new ThreadPublication(), private readonly limits: CallbackRelayLimits = {}, private readonly owner = new OperationOwner(), private readonly environment?: NativeEnvironmentLaunch) {
     this.releasePublication = publication.subscribe(() => {
       for (const [id,message] of this.heldStarts) if (this.ready && publication.allowed(id)) { this.heldStarts.delete(id); send(this.client,message); }
     });
@@ -76,6 +84,8 @@ class CallbackLane {
     this.upstream.on('message',frame=>{
       let message:Record<string,unknown>;
       try { message=object(JSON.parse(String(frame))); } catch { this.close();return; }
+      // Only this owner holds delivered values; native errors never carry them out.
+      if (this.environment && message.error !== undefined) message={...message,error:this.environment.redact(message.error)};
       if (message.id!==undefined && typeof message.method!=='string') {
         const key=String(message.id),pending=this.pending.get(key);
         if (!pending) return;
@@ -184,6 +194,14 @@ class CallbackLane {
       return;
     }
     if (method==='opencraft/orchestration/private-capability') { send(socket,{id:message.id,result:{version:1}});return; }
+    if (method==='opencraft/environment/launch' || method==='opencraft/environment/stage') {
+      // Answered by this owner's receiver; never forwarded to native.
+      try {
+        if (!this.environment) throw Error('environment_launch_unavailable');
+        send(socket,{id:message.id,result:method==='opencraft/environment/launch'?this.environment.capability():await this.environment.stage(params)});
+      } catch { send(socket,{id:message.id,error:{code:-32084,message:'Execution environment unavailable',data:{notSubmitted:true}}}); }
+      return;
+    }
     if (method==='opencraft/orchestration/publish') {
       const operation=typeof params.operationId==='string'?params.operationId:'';
       send(socket,{id:message.id,result:{published:this.publication.publish(operation,this.owner)}});return;
@@ -268,7 +286,13 @@ class CallbackLane {
     }
     this.preparing.add(id);this.owner.preparations.add(id);
     if (operation) this.preparingOperations.set(id,operation);
-    try { executionParams = await this.requestPolicy?.(method, nativeParams) ?? nativeParams; }
+    try {
+      // A delivered ENV launch is opened by this owner's receiver only; without
+      // one the request is refused rather than forwarded without its values.
+      if (!this.environment && Object.hasOwn(nativeParams, ENVIRONMENT_LAUNCH_FIELD)) throw Error('environment_launch_unavailable');
+      const prepared = this.environment ? await this.environment.apply(method, nativeParams) : nativeParams;
+      executionParams = await this.requestPolicy?.(method, prepared) ?? prepared;
+    }
     catch (cause) {
       if (!this.requests.has(id)) return;
       this.finishRequest(id);
@@ -353,7 +377,7 @@ class CallbackLane {
 
 /** Private UDS facade. A stable lane query opts a gateway into reconnect/replay;
  * unmarked native clients keep the previous connection-scoped lifetime. */
-export async function startOrchestrationCallbackRelay(endpoint: string,target: string,options: {disconnectWindowMs?:number;requestPolicy?:NativeRequestPolicy} & CallbackRelayLimits={}) {
+export async function startOrchestrationCallbackRelay(endpoint: string,target: string,options: {disconnectWindowMs?:number;requestPolicy?:NativeRequestPolicy;environment?:NativeEnvironmentLaunch} & CallbackRelayLimits={}) {
   await removeStaleSocket(endpoint);
   const publication=new ThreadPublication();
   const incarnation=randomUUID(),lanes=new Map<string,CallbackLane>(),server=createServer(),websockets=new WebSocketServer({server,maxPayload:32*1024*1024});
@@ -372,7 +396,7 @@ export async function startOrchestrationCallbackRelay(endpoint: string,target: s
         if (owners.size>=32) {socket.close(1013,'Operation owner capacity exhausted');return;}
         owner=new OperationOwner();owners.set(key,owner);
       }
-      lane=new CallbackLane(target,incarnation,options.disconnectWindowMs??15_000,laneId!==null,()=>lanes.delete(key),options.requestPolicy,preparations,publication,options,owner);lanes.set(key,lane);
+      lane=new CallbackLane(target,incarnation,options.disconnectWindowMs??15_000,laneId!==null,()=>lanes.delete(key),options.requestPolicy,preparations,publication,options,owner,options.environment);lanes.set(key,lane);
     }
     lane.attach(socket);
     if (laneId===null) socket.once('close',()=>lane?.close());

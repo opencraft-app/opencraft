@@ -10,14 +10,14 @@ Server 存储入口复用 Headless 的 `server.lock` 内核进程锁，离线管
 
 OpenCraft 自有 SQLite 共两类，全部经 `openManagedDatabase` 打开并在打开时向前迁移：
 
-- **Server 核心库** `opencraft-server.sqlite`：迁移链在 `packages/storage-node/src/server/migrations/`，canonical 链 v1–v24；另有一条已发布分叉 `generic-legacy-v13`，在 v13 之后追加收敛迁移，最终结构与 canonical 相同。
+- **Server 核心库** `opencraft-server.sqlite`：迁移链在 `packages/storage-node/src/server/migrations/`，canonical 链 v1–v25；另有一条已发布分叉 `generic-legacy-v13`，在 v13 之后追加收敛迁移，最终结构与 canonical 相同。
 - **36 个独立 owner**：登记在 `packages/storage-node/stores.json`，每个 owner 的迁移在 `packages/storage-node/src/stores/<id>/`，账本互不相关。
 
 下表“版本”是当前源码中该库账本的最高 version。`ui-preferences-store`、`connector-configuration-store`、`client-resources-sqlite` 已退休，只供桌面导入器读取旧文件，不在表中。
 
 | 组件（进程） | 库文件 | owner id | 版本 | 何时打开并迁移 |
 |---|---|---|---|---|
-| **Headless 服务器**（`apps/headless-server`，数据目录 `<H>` = `OPENCRAFT_SERVER_DATA_DIR`） | `<H>/opencraft-server.sqlite` | Server 核心 | v24 | 启动时，业务服务之前；同目录离线管理工具 `access-admin`、`human-account` 须先停服 |
+| **Headless 服务器**（`apps/headless-server`，数据目录 `<H>` = `OPENCRAFT_SERVER_DATA_DIR`） | `<H>/opencraft-server.sqlite` | Server 核心 | v25 | 启动时，业务服务之前；同目录离线管理工具 `access-admin`、`human-account` 须先停服 |
 | | `web-push.sqlite` | web-push-node | v3 | 启动时 |
 | | `im-posts.sqlite`、`im-switchboard.sqlite` | post-receipts、im | v1、v3 | 启动后段（IM 插件） |
 | | `mcp-apps.sqlite` | mcp-apps | v1 | 启动时 |
@@ -34,7 +34,7 @@ OpenCraft 自有 SQLite 共两类，全部经 `openManagedDatabase` 打开并在
 | | `opencraft-managed-connectors.sqlite` | connector-host | v1 | 同上 |
 | | `tasks.sqlite` | tasks | v5 | 同上（配置了数据目录时） |
 | | `conversation-schedules.sqlite`、`interrupted-turn-recovery.sqlite` | host-schedules、host-recovery | v1、v1 | Host 启动时 |
-| | `collaboration/opencraft-server.sqlite` | Server 核心 | v24 | Host 启动时（协作空间） |
+| | `collaboration/opencraft-server.sqlite` | Server 核心 | v25 | Host 启动时（协作空间） |
 | | `cache/transcript-index.sqlite`、`artifacts/catalog.sqlite` | transcript-read-cache、artifact-catalog | v1、v1 | 首次读历史 / 首次用附件时 |
 | **Codex 适配器组**（桌面在 daemon 内；Headless 在 `<H>/codex`） | `opencraft-host-state.sqlite`（旧目录沿用 `codex-host-queue.sqlite`） | opencraft-host-state-database | v17 | 首次连接 Codex Host 时 |
 | | `opencraft-message-attachments.sqlite`（旧名 `codex-message-attachments.sqlite`） | opencraft-message-attachments | v2 | 同上 |
@@ -44,7 +44,7 @@ OpenCraft 自有 SQLite 共两类，全部经 `openManagedDatabase` 打开并在
 | | `account-pool.sqlite` | account-pool-host | v4 | 同上，仅内嵌模式（未配置 codex-core 地址，桌面默认） |
 | | `tasks.sqlite`、`cache/transcript-index.sqlite` | tasks、transcript-read-cache | v5、v1 | 首次请求 Tasks / 首次读历史时 |
 | **Electron Main**（`apps/desktop`，`userData` 目录，只存客户端角色数据） | `opencraft-desktop.sqlite`：界面偏好、连接器选择、扩展本地文档、客户端资源 | desktop-client | v1 | 启动时；首次启动时导入旧版的四个独立文件，见[客户端库合并](#electron-main-客户端库合并) |
-| **桌面 daemon**（服务端角色，随托盘常驻） | `userData/human-account/opencraft-server.sqlite` | Server 核心 | v24 | daemon 启动、监听 IPC 之前打开、迁移并持有 `server.lock`，同时提供本机账号服务；Electron Main 不打开该库，只把账号路由转发给 daemon，见[桌面服务端角色](#桌面服务端角色与账号服务) |
+| **桌面 daemon**（服务端角色，随托盘常驻） | `userData/human-account/opencraft-server.sqlite` | Server 核心 | v25 | daemon 启动、监听 IPC 之前打开、迁移并持有 `server.lock`，同时提供本机账号服务；Electron Main 不打开该库，只把账号路由转发给 daemon，见[桌面服务端角色](#桌面服务端角色与账号服务) |
 | **codex-core**（`apps/codex-core`，独立升级） | `account-pool.sqlite` | account-pool-host | v4 | 账号 Core 启动时 |
 | | `codex-generations.sqlite` | generation-registry | v2 | generation 路由服务启动时 |
 | **其他独立进程** | agent-bridge-host 配置的库路径 | agent-bridge-host | v4（含共享线程排队表） | 进程启动时 |
@@ -112,7 +112,7 @@ OpenCraft 自有 SQLite 共两类，全部经 `openManagedDatabase` 打开并在
 
 | 文件名 | Owner 进程与源码 | 数据目录 | 数据职责 |
 |---|---|---|---|
-| `opencraft-server.sqlite` | [Server storage owner](../../../packages/storage-node/src/server/index.ts)；Headless 与离线管理工具独占同一 fence | Headless installation data directory | Actors、human logins/local accounts、memberships、account onboarding、collaboration/orchestration、session capability bindings、conversation access、shared notes、personal model defaults (keyed by human Actor and Host; v23)、conversation resource lifecycle（v24；旧 `conversation-resources.json` 一次性导入，见 [server-core-owner](server-core-owner.md)） |
+| `opencraft-server.sqlite` | [Server storage owner](../../../packages/storage-node/src/server/index.ts)；Headless 与离线管理工具独占同一 fence | Headless installation data directory | Actors、human logins/local accounts、memberships、account onboarding、collaboration/orchestration、session capability bindings、conversation access、shared notes、personal model defaults (keyed by human Actor and Host; v23)、execution ENV creation reservations（v24）、conversation resource lifecycle（v25；旧 `conversation-resources.json` 一次性导入，见 [server-core-owner](server-core-owner.md)） |
 | `im-posts.sqlite` | Headless IM composition：[ImPostReceipts](../../../plugins/im/src/post-receipts.ts) | IM data directory | Standalone native channel post claims/receipts; schema v1, hashes and official IDs only, interrupted claims become unknown without resend |
 | `thread-identity.sqlite` | Headless Hub：[ThreadIdentityDatabase](../../../apps/opencraft-daemon/src/thread-identity-database.ts) / AppServerIdentityOverlay | Headless `thread-identities/opencraft-server` | DSH trusted sender/creator, fork origins and derived 企业身份 presence/completion; no native messages or execution state |
 | `thread-read-receipts.sqlite` | [ThreadReadReceiptStore](../../../scripts/thread-read-receipt-store.ts)；当前没有运行时调用方，仅测试构造 | — | Verified-account exact read receipts; existing document-store migrations/CAS |
