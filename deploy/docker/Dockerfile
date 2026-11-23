@@ -41,9 +41,14 @@ LABEL org.opencontainers.image.title="OpenCraft" \
       org.opencontainers.image.licenses="MIT-0" \
       org.opencontainers.image.version="${OPENCRAFT_BUILD_ID}" \
       org.opencontainers.image.revision="${OPENCRAFT_SOURCE_REVISION}"
+# /var/lib/opencraft-workspace is the layout of a provisioned workspace volume
+# (docker-provisioner): Docker copies it into the empty named volume on first mount.
 RUN chown root:root /opt/opencraft/runtime/browser/electron/chrome-sandbox \
     && chmod 4755 /opt/opencraft/runtime/browser/electron/chrome-sandbox \
-    && install -d -o "${OPENCRAFT_UID}" -g "${OPENCRAFT_GID}" -m 0700 /run/opencraft-agent
+    && install -d -o "${OPENCRAFT_UID}" -g "${OPENCRAFT_GID}" -m 0700 /run/opencraft-agent \
+    && install -d -o "${OPENCRAFT_UID}" -g "${OPENCRAFT_GID}" -m 0700 /var/lib/opencraft-workspace \
+       /var/lib/opencraft-workspace/data /var/lib/opencraft-workspace/data/execution \
+       /var/lib/opencraft-workspace/workspace /var/lib/opencraft-workspace/logs
 ENV PATH=/opt/opencraft/bin:$PATH
 WORKDIR /opt/opencraft
 USER ${OPENCRAFT_UID}:${OPENCRAFT_GID}

@@ -385,6 +385,147 @@ function linkRequest(
 }
 const gone = (error: unknown) => ["ENOENT", "ECONNREFUSED"].includes((error as NodeJS.ErrnoException)?.code ?? "");
 
+export interface SandboxLinkBindOptions {
+  /** `<link directory>/link.sock` as mounted in the Host. */
+  readonly socketPath: string;
+  readTicket(): Promise<string>;
+  readonly timeoutMs: number;
+  /** Provider label for messages and the broker. */
+  readonly label: string;
+  /** The receipt naming the bound instance (the agent incarnation, plus provider identity). */
+  receipt(incarnation: WorkspaceAgentIncarnation): SandboxReceipt;
+  /** Bind only this agent incarnation (re-attach after a Host restart). */
+  readonly expected?: string;
+}
+
+/** Host side of one link session, shared by every provider whose agent serves a link
+ * (`static-docker`, `docker-provisioner`): attaches with the one-time ticket, requires the
+ * enforced budget to equal the request and returns an environment whose processes each
+ * run over one link connection. `close` ends this Host's session and its processes; the
+ * container itself is untouched. */
+export async function bindSandboxLink(
+  options: SandboxLinkBindOptions,
+  resources: SandboxResources,
+): Promise<SandboxEnvironment & { readonly incarnation: WorkspaceAgentIncarnation }> {
+  const { socketPath, timeoutMs, label, expected } = options;
+  const answer = await linkRequest(
+    socketPath,
+    { type: "attach", ticket: await options.readTicket(), ...(expected ? { incarnation: expected } : {}) },
+    timeoutMs,
+  );
+  if (answer.type === "rejected")
+    throw fault(
+      "SANDBOX_UNAVAILABLE",
+      answer.reason === "incarnation"
+        ? `The ${label} container runs a different incarnation`
+        : `The ${label} container refused the link`,
+    );
+  const incarnation = answer.incarnation as WorkspaceAgentIncarnation | undefined,
+    limits = answer.limits as Record<string, unknown> | undefined;
+  if (
+    answer.type !== "attached" ||
+    typeof answer.session !== "string" ||
+    answer.session.length !== 64 ||
+    typeof incarnation?.id !== "string" ||
+    !/^[a-f0-9]{32}$/u.test(incarnation.id) ||
+    (expected && incarnation.id !== expected) ||
+    !limits
+  )
+    throw fault("SANDBOX_UNAVAILABLE", `The ${label} container returned an invalid link identity`);
+  const session = answer.session,
+    receipt: SandboxReceipt = Object.freeze({ ...options.receipt(incarnation) });
+  // The container's limits apply before the agent starts; the requested budget must be what is enforced.
+  if (limits.cpuMillis !== resources.cpuMillis || limits.memoryBytes !== resources.memoryBytes) {
+    await linkRequest(socketPath, { type: "release", session }, timeoutMs).catch(() => {});
+    throw fault("SANDBOX_POLICY", `The ${label} container does not enforce the requested budget`);
+  }
+  const channels = new Set<Promise<unknown>>();
+  let ended = false,
+    closing: Promise<void> | undefined;
+  const environment: SandboxEnvironment & { readonly incarnation: WorkspaceAgentIncarnation } = {
+    incarnation: Object.freeze({ ...incarnation }),
+    receipt,
+    resources: Object.freeze({ cpuMillis: resources.cpuMillis, memoryBytes: resources.memoryBytes }),
+    capabilities: { terminal: answer.terminal === true },
+    ...(Number.isSafeInteger(limits.tasks)
+      ? { processLimits: { tasks: limits.tasks as number, fileDescriptorsPerProcess: 65536 } }
+      : {}),
+    async spawn(command, onOutput): Promise<SandboxProcess> {
+      if (ended) throw fault("SANDBOX_CLOSED", `${label} environment is closed`);
+      return startBrokerProcess({
+        id: randomBytes(12).toString("hex"),
+        command,
+        onOutput,
+        requestTimeoutMs: timeoutMs,
+        label,
+        closeEnvironment: () => environment.close(),
+        launch: (onStdout) =>
+          new Promise((resolve, reject) => {
+            const socket = createConnection({ path: socketPath, allowHalfOpen: true });
+            const end = new Promise<void>((settle) => socket.once("close", () => settle()));
+            socket.once("error", reject);
+            socket.once("connect", () => {
+              socket.write(frame({ type: "open", session }));
+              firstLine(socket, 4096, timeoutMs).then(
+                ({ value, rest }) => {
+                  if (value.type !== "opened") {
+                    socket.destroy();
+                    reject(fault("SANDBOX_START", `${label} link refused the process`));
+                    return;
+                  }
+                  socket.setEncoding("utf8");
+                  socket.on("data", onStdout);
+                  if (rest.length) onStdout(rest.toString("utf8"));
+                  socket.on("error", () => {});
+                  // The broker ended (the agent half-closed): finish our side so `ended` settles.
+                  socket.once("end", () => socket.end());
+                  socket.resume();
+                  channels.add(end);
+                  void end.finally(() => channels.delete(end));
+                  resolve({
+                    ended: end,
+                    write: (data) =>
+                      new Promise<void>((accept, fail) => {
+                        if (socket.destroyed || !socket.writable) {
+                          fail(Error("Link stream closed"));
+                          return;
+                        }
+                        socket.write(data, (error) => (error ? fail(error) : accept()));
+                      }),
+                  });
+                },
+                (error) => {
+                  socket.destroy();
+                  reject(error);
+                },
+              );
+            });
+          }),
+      });
+    },
+    close: () =>
+      (closing ??= (async () => {
+        ended = true;
+        try {
+          await linkRequest(socketPath, { type: "release", session }, timeoutMs);
+        } catch (error) {
+          // The agent is the container's main process: no listener means no processes.
+          if (!gone(error)) throw fault("SANDBOX_CLEANUP", `${label} session release is unconfirmed`);
+        }
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const settled = await Promise.race([
+          Promise.allSettled([...channels]).then(() => true),
+          new Promise<boolean>((resolve) => {
+            timer = setTimeout(() => resolve(false), timeoutMs);
+          }),
+        ]);
+        clearTimeout(timer);
+        if (!settled) throw fault("SANDBOX_CLEANUP", `${label} processes did not end`);
+      })()),
+  };
+  return environment;
+}
+
 export interface StaticDockerBackendOptions {
   /** The container's link directory as mounted in the Host. */
   readonly directory: string;
@@ -409,120 +550,17 @@ export function staticDockerSandboxBackend(options: StaticDockerBackendOptions):
     expected?: string,
   ): Promise<SandboxEnvironment> => {
     if (closed || signal.aborted) throw fault("SANDBOX_CLOSED", "static-docker backend is closed");
-    const answer = await linkRequest(
-      socketPath,
-      { type: "attach", ticket: await readTicket(), ...(expected ? { incarnation: expected } : {}) },
-      timeoutMs,
-    );
-    if (answer.type === "rejected")
-      throw fault(
-        "SANDBOX_UNAVAILABLE",
-        answer.reason === "incarnation"
-          ? "The declared container runs a different incarnation"
-          : "The declared container refused the link",
-      );
-    const incarnation = answer.incarnation as WorkspaceAgentIncarnation | undefined,
-      limits = answer.limits as Record<string, unknown> | undefined;
-    if (
-      answer.type !== "attached" ||
-      typeof answer.session !== "string" ||
-      answer.session.length !== 64 ||
-      typeof incarnation?.id !== "string" ||
-      !/^[a-f0-9]{32}$/u.test(incarnation.id) ||
-      (expected && incarnation.id !== expected) ||
-      !limits
-    )
-      throw fault("SANDBOX_UNAVAILABLE", "The declared container returned an invalid link identity");
-    const session = answer.session,
-      receipt: SandboxReceipt = Object.freeze({ backend: "static-docker", instanceId: incarnation.id });
-    // Compose applies the limits before the agent starts; the declared budget must be what is enforced.
-    if (limits.cpuMillis !== resources.cpuMillis || limits.memoryBytes !== resources.memoryBytes) {
-      await linkRequest(socketPath, { type: "release", session }, timeoutMs).catch(() => {});
-      throw fault("SANDBOX_POLICY", "The declared container does not enforce the requested budget");
-    }
-    const channels = new Set<Promise<unknown>>();
-    let ended = false,
-      closing: Promise<void> | undefined;
-    const environment: SandboxEnvironment = {
-      receipt,
-      resources: Object.freeze({ cpuMillis: resources.cpuMillis, memoryBytes: resources.memoryBytes }),
-      capabilities: { terminal: answer.terminal === true },
-      ...(Number.isSafeInteger(limits.tasks)
-        ? { processLimits: { tasks: limits.tasks as number, fileDescriptorsPerProcess: 65536 } }
-        : {}),
-      async spawn(command, onOutput): Promise<SandboxProcess> {
-        if (ended) throw fault("SANDBOX_CLOSED", "static-docker environment is closed");
-        return startBrokerProcess({
-          id: randomBytes(12).toString("hex"),
-          command,
-          onOutput,
-          requestTimeoutMs: timeoutMs,
-          label: "static-docker",
-          closeEnvironment: () => environment.close(),
-          launch: (onStdout) =>
-            new Promise((resolve, reject) => {
-              const socket = createConnection({ path: socketPath, allowHalfOpen: true });
-              const end = new Promise<void>((settle) => socket.once("close", () => settle()));
-              socket.once("error", reject);
-              socket.once("connect", () => {
-                socket.write(frame({ type: "open", session }));
-                firstLine(socket, 4096, timeoutMs).then(
-                  ({ value, rest }) => {
-                    if (value.type !== "opened") {
-                      socket.destroy();
-                      reject(fault("SANDBOX_START", "static-docker link refused the process"));
-                      return;
-                    }
-                    socket.setEncoding("utf8");
-                    socket.on("data", onStdout);
-                    if (rest.length) onStdout(rest.toString("utf8"));
-                    socket.on("error", () => {});
-                    // The broker ended (the agent half-closed): finish our side so `ended` settles.
-                    socket.once("end", () => socket.end());
-                    socket.resume();
-                    channels.add(end);
-                    void end.finally(() => channels.delete(end));
-                    resolve({
-                      ended: end,
-                      write: (data) =>
-                        new Promise<void>((accept, fail) => {
-                          if (socket.destroyed || !socket.writable) {
-                            fail(Error("Link stream closed"));
-                            return;
-                          }
-                          socket.write(data, (error) => (error ? fail(error) : accept()));
-                        }),
-                    });
-                  },
-                  (error) => {
-                    socket.destroy();
-                    reject(error);
-                  },
-                );
-              });
-            }),
-        });
+    const { incarnation: _incarnation, ...environment } = await bindSandboxLink(
+      {
+        socketPath,
+        readTicket,
+        timeoutMs,
+        label: "static-docker",
+        receipt: (incarnation) => ({ backend: "static-docker", instanceId: incarnation.id }),
+        ...(expected ? { expected } : {}),
       },
-      close: () =>
-        (closing ??= (async () => {
-          ended = true;
-          try {
-            await linkRequest(socketPath, { type: "release", session }, timeoutMs);
-          } catch (error) {
-            // The agent is the container's main process: no listener means no processes.
-            if (!gone(error)) throw fault("SANDBOX_CLEANUP", "static-docker session release is unconfirmed");
-          }
-          let timer: ReturnType<typeof setTimeout> | undefined;
-          const settled = await Promise.race([
-            Promise.allSettled([...channels]).then(() => true),
-            new Promise<boolean>((resolve) => {
-              timer = setTimeout(() => resolve(false), timeoutMs);
-            }),
-          ]);
-          clearTimeout(timer);
-          if (!settled) throw fault("SANDBOX_CLEANUP", "static-docker processes did not end");
-        })()),
-    };
+      resources,
+    );
     return environment;
   };
   return {

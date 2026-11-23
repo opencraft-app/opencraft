@@ -35,6 +35,8 @@ for (const [source, target, format] of [
   ['scripts/container-deployment/workspace-agent.mjs', 'workspace-agent.mjs', 'esm'],
   [process.env.OPENCRAFT_CONTAINER_HANDS_ENTRY || 'scripts/container-deployment/hands.mjs', 'native-hands.mjs', 'esm'],
   ['scripts/container-deployment/proxy.mjs', 'proxy-host.mjs', 'esm'],
+  ['scripts/container-deployment/provisioner.mjs', 'provisioner.mjs', 'esm'],
+  ['scripts/container-deployment/workspace-admin.mjs', 'workspace-admin.mjs', 'esm'],
   ['scripts/container-deployment/service.mjs', 'container-service.mjs', 'esm'],
 ]) await build({ entryPoints: [join(repository, source)], outfile: join(root, 'runtime', target),
   bundle: true, platform: 'node', format, target: 'node26',

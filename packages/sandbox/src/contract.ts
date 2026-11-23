@@ -84,6 +84,8 @@ export interface Sandbox extends SandboxEnvironment {
   readonly identity: SandboxIdentity;
   /** Always resolved, so consumers never present a weaker environment as isolated. */
   readonly enforcement: Readonly<SandboxEnforcement>;
+  /** Present when the backend can sleep (`SandboxBackend.sleep`); afterwards the sandbox is closed. */
+  sleep?(): Promise<void>;
 }
 export interface SandboxBackend {
   readonly id: string;
@@ -96,6 +98,15 @@ export interface SandboxBackend {
    * it is the same instance (gone, restarted, different incarnation) it rejects with
    * SANDBOX_UNAVAILABLE and the owner decides whether to create a new one and recover. */
   attach?(identity: SandboxIdentity, receipt: SandboxReceipt, resources: SandboxResources, signal: AbortSignal): Promise<SandboxEnvironment>;
+  /** Optional idle sleep (workspace-host-split §3.7.2): end this Host's processes, then stop
+   * the instance while keeping its retained disk. Resolves once the instance is stopped; the
+   * environment is closed afterwards. Waking is `attach`/`create` and yields a new incarnation
+   * whenever the provider restarts the instance. Without it, the environment stays resident. */
+  sleep?(environment: SandboxEnvironment, signal: AbortSignal): Promise<void>;
+  /** Optional: remove the instance a receipt names together with its retained cache (volumes).
+   * Idempotent (an absent instance resolves). Workspace content is owned by Git (§3.7.1), so
+   * nothing here is recoverable afterwards. Never called while the environment is in use. */
+  discard?(identity: SandboxIdentity, receipt: SandboxReceipt, signal: AbortSignal): Promise<void>;
   close(): Promise<void>;
 }
 export class SandboxFault extends Error {

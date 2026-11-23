@@ -16,6 +16,8 @@
     "./workspace-execution-channel": "./src/workspace-execution-channel.ts",
     "./endpoint-listener": "./src/endpoint-listener.ts",
     "./static-docker": "./src/static-docker.ts",
+    "./docker-provisioner": "./src/docker-provisioner.ts",
+    "./docker-provisioner-service": "./src/docker-provisioner-service.ts",
     "./cgroup": "./src/cgroup.ts"
   },
   "scripts": {

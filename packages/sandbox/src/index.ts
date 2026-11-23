@@ -45,6 +45,10 @@ export interface SandboxPool {
    * and budget as create). Rejects SANDBOX_UNAVAILABLE when the backend has no attach,
    * the receipt is another backend's, or the instance cannot be proven the same. */
   attachSandbox(options: { owner: string; receipt: SandboxReceipt; resources?: Partial<SandboxResources>; signal?: AbortSignal }): Promise<Sandbox>;
+  /** Remove the instance a receipt names and its retained cache (`SandboxBackend.discard`).
+   * Rejects SANDBOX_UNAVAILABLE when the backend cannot discard or the receipt is another
+   * backend's. The caller closes any sandbox bound to that instance first. */
+  discardSandbox?(options: { owner: string; receipt: SandboxReceipt; signal?: AbortSignal }): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -129,6 +133,16 @@ export async function createSandboxPool(input: SandboxPoolPolicy, backend: Sandb
           active.delete(sandbox); release(request.resources);
         })();
       },
+      // Sleeping ends the binding like close: budget returns once the instance is stopped.
+      ...(backend.sleep ? { sleep() {
+        if (cleanup) return cleanup;
+        ended = true;
+        return cleanup = (async () => {
+          await Promise.allSettled([...executions]);
+          await backend.sleep!(environment, request.controller.signal);
+          active.delete(sandbox); release(request.resources);
+        })();
+      } } : {}),
     };
     active.add(sandbox);
     const mismatch = dimensions.some(k => effective[k] !== request.resources[k]);
@@ -173,6 +187,14 @@ export async function createSandboxPool(input: SandboxPoolPolicy, backend: Sandb
     createSandbox: options => admit(options),
     attachSandbox: options => validReceipt(options.receipt, backend.id) ? admit(options, options.receipt)
       : Promise.reject(fault("SANDBOX_UNAVAILABLE", "Sandbox backend cannot re-attach this receipt")),
+    async discardSandbox(options) {
+      if (closed) throw fault("SANDBOX_CLOSED", "Sandbox pool is closed");
+      if (!backend.discard || !validReceipt(options?.receipt, backend.id)) throw fault("SANDBOX_UNAVAILABLE", "Sandbox backend cannot discard this receipt");
+      if (typeof options.owner !== "string" || !options.owner.trim() || options.owner.length > 256 || options.owner.includes("\0")) throw fault("SANDBOX_POLICY", "Sandbox requires an execution owner");
+      try { await ready(); } catch { throw fault("SANDBOX_UNAVAILABLE", "Execution environment provider could not initialize"); }
+      const identity = Object.freeze({ id: globalThis.crypto.randomUUID().replaceAll("-", ""), owner: options.owner, backend: backend.id });
+      await backend.discard(identity, Object.freeze({ backend: options.receipt.backend, instanceId: options.receipt.instanceId }), options.signal ?? initializationController.signal);
+    },
     close() {
       if (closing) return closing;
       closed = true;

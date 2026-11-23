@@ -5,12 +5,14 @@ import {
   createSandboxPool,
   createWorkspaceRuntime,
   formatSandboxEnvironmentUri,
+  isWorkspaceId,
   parseSandboxEnvironmentUris,
   parseWorkspaceEndpointUri,
 } from "@opencraft/sandbox";
 import { createSandboxProviderRegistry } from "@opencraft/sandbox/providers";
 import { createSandboxEndpointListener } from "@opencraft/sandbox-node/endpoint-listener";
 import { staticDockerSandboxProvider } from "@opencraft/sandbox-node/static-docker";
+import { dockerProvisionerSandboxProvider } from "@opencraft/sandbox-node/docker-provisioner";
 import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import { CodexCoreControlClient } from "@opencraft/account-pool-host";
 import { websocketOnSocket } from "../../apps/headless-server/src/server-deployment/dsh-host-client.mjs";
@@ -21,7 +23,13 @@ import { proxyHealth } from "./proxy-core.mjs";
  * `OPENCRAFT_WORKSPACE_ENVIRONMENTS` lists environment URIs (`static-docker://brain
  * static-docker://hands` until Brain and Hands merge). Existing clients keep dialling
  * sockets: each endpoint gets a private local listener whose every connection is one
- * workspace endpoint connection. Nothing is read from the shared `$DATA/run`. */
+ * workspace endpoint connection. Nothing is read from the shared `$DATA/run`.
+ *
+ * Further workspaces (§3.6, step 7b) resolve the same way: a workspace id selects its
+ * environment URIs from configuration (`default` → `OPENCRAFT_WORKSPACE_ENVIRONMENTS`,
+ * every other id → `OPENCRAFT_WORKSPACE_PROVISIONED_ENVIRONMENTS`, e.g.
+ * `docker-provisioner://workspace`), and each gets its own WorkspaceRuntime, placement
+ * record and local endpoint listeners. No code below branches on the provider. */
 
 export const WORKSPACE_ID = "default";
 export const DEFAULT_WORKSPACE_ENVIRONMENTS = "static-docker://brain static-docker://hands";
@@ -37,7 +45,11 @@ const CONSUMED = Object.freeze({
   browser: 8,
 });
 
-const uri = (name) => parseWorkspaceEndpointUri(`workspace://${WORKSPACE_ID}/endpoints/${name}`);
+const uri = (name, workspaceId = WORKSPACE_ID) =>
+  parseWorkspaceEndpointUri(`workspace://${workspaceId}/endpoints/${name}`);
+/** Endpoints a provisioned workspace serves through this Gateway today (Hands owners). */
+const PROVISIONED_CONSUMED = Object.freeze({ terminal: 8, files: 32 });
+const TOKEN_ENDPOINTS = Object.freeze(["terminal", "files"]);
 const positive = (name, raw) => {
   const value = Number(raw);
   if (!Number.isFinite(value) || value <= 0) throw new Error(`${name} must be a positive number`);
@@ -72,51 +84,38 @@ function placementStore(documents) {
   };
 }
 
-export async function openGatewayWorkspace({
-  dataDirectory,
-  env = process.env,
-  log = (value) => console.log(JSON.stringify(value)),
-  providers = { "static-docker": staticDockerSandboxProvider() },
-  endpointDirectories = {},
-} = {}) {
-  if (!isAbsolute(dataDirectory)) throw new Error("Gateway data directory must be absolute");
-  const linkRoot = env.OPENCRAFT_WORKSPACE_LINK_ROOT ?? "/run/opencraft-links";
-  if (!isAbsolute(linkRoot)) throw new Error("OPENCRAFT_WORKSPACE_LINK_ROOT must be absolute");
-  // Provider installations are deployment composition; a URI only selects among them.
+/** Provider installations are deployment composition; a URI only selects among them. */
+function providerComposition(env, linkRoot) {
   const installations = { "static-docker": { backend: "static-docker", linkRoot } };
-  const registry = createSandboxProviderRegistry(providers);
-  const addresses = parseSandboxEnvironmentUris(env.OPENCRAFT_WORKSPACE_ENVIRONMENTS ?? DEFAULT_WORKSPACE_ENVIRONMENTS);
-  const hostDirectory = join(dataDirectory, "workspaces", WORKSPACE_ID, "host");
-  await mkdir(hostDirectory, { recursive: true, mode: 0o700 });
-  // Local endpoint sockets and credential copies: a container-private tmpfs when the
-  // deployment provides one (stable paths for operators and smoke probes), else temporary.
-  const runDirectory = env.OPENCRAFT_GATEWAY_RUN_DIR || undefined;
-  if (runDirectory !== undefined) {
-    if (
-      !isAbsolute(runDirectory) ||
-      [dataDirectory, linkRoot].some((root) => runDirectory === root || runDirectory.startsWith(root + "/"))
-    )
-      throw new Error("OPENCRAFT_GATEWAY_RUN_DIR must be container-private");
-    const info = await lstat(runDirectory);
-    if (!info.isDirectory() || info.isSymbolicLink() || info.uid !== process.getuid() || (info.mode & 0o077) !== 0)
-      throw new Error("OPENCRAFT_GATEWAY_RUN_DIR must be a private directory owned by this user");
-    for (const name of ["endpoints", "credentials"]) {
-      await rm(join(runDirectory, name), { recursive: true, force: true });
-      await mkdir(join(runDirectory, name), { mode: 0o700 });
-    }
+  const providers = { "static-docker": staticDockerSandboxProvider() };
+  if (env.OPENCRAFT_PROVISIONER_DIR) {
+    const directory = env.OPENCRAFT_PROVISIONER_DIR,
+      provisionedLinkRoot = env.OPENCRAFT_WORKSPACE_PROVISIONED_LINK_ROOT ?? join(linkRoot, "provisioned");
+    if (!isAbsolute(directory) || !isAbsolute(provisionedLinkRoot))
+      throw new Error("OPENCRAFT_PROVISIONER_DIR and OPENCRAFT_WORKSPACE_PROVISIONED_LINK_ROOT must be absolute");
+    installations["docker-provisioner"] = { backend: "docker-provisioner", directory, linkRoot: provisionedLinkRoot };
+    providers["docker-provisioner"] = dockerProvisionerSandboxProvider({
+      aliases: (env.OPENCRAFT_PROVISIONER_IMAGES ?? "workspace").split(/[\s,]+/u).filter(Boolean),
+    });
   }
-  const pools = [],
-    listeners = [];
-  let runtime, credentials;
-  const close = async () => {
-    // Local connections end first (their relays terminate), then the environment sessions.
-    const results = await Promise.allSettled(listeners.map((listener) => listener.close()));
-    results.push(...(await Promise.allSettled([runtime?.close()])));
-    await Promise.allSettled(pools.map((pool) => pool.close()));
-    if (credentials) await rm(credentials, { recursive: true, force: true });
-    if (results.some((result) => result.status === "rejected"))
-      throw new Error("Workspace endpoint cleanup is unconfirmed");
-  };
+  return { installations, providers };
+}
+
+/** One workspace's placement: a pool per environment over its registered provider and a
+ * WorkspaceRuntime with the workspace's own placement record. */
+async function placeWorkspace({
+  workspaceId,
+  addresses,
+  registry,
+  installations,
+  dataDirectory,
+  env,
+  endpointDirectories,
+  log,
+}) {
+  const hostDirectory = join(dataDirectory, "workspaces", workspaceId, "host");
+  await mkdir(hostDirectory, { recursive: true, mode: 0o700 });
+  const pools = [];
   try {
     const environments = [];
     for (const address of addresses) {
@@ -129,10 +128,12 @@ export async function openGatewayWorkspace({
         templateId,
         timeoutMs: 300_000,
         requestTimeoutMs: 15_000,
-        // static-docker reads its per-incarnation link ticket itself; no installation secret.
+        // Link providers read their per-incarnation ticket themselves; no installation secret.
         readSecret: async () => {
           throw new Error("This provider has no installation secret");
         },
+        // Providers that create per-workspace instances place this workspace only.
+        readWorkspaceId: async () => workspaceId,
       });
       const pool = await createSandboxPool(
         {
@@ -147,27 +148,230 @@ export async function openGatewayWorkspace({
       const endpointDirectory = endpointDirectories[templateId];
       environments.push({ address, pool, ...(endpointDirectory ? { endpointDirectory } : {}) });
     }
-    runtime = createWorkspaceRuntime({
-      workspaceId: WORKSPACE_ID,
-      owner: `workspace:${WORKSPACE_ID}`,
+    const runtime = createWorkspaceRuntime({
+      workspaceId,
+      owner: `workspace:${workspaceId}`,
       environments,
       store: placementStore(fileStateDocumentStore(hostDirectory, { private: { maxBytes: 64 * 1024 } })),
-      onEvent: ({ type, ...event }) =>
-        log({ type: "workspace-placement", workspace: WORKSPACE_ID, change: type, ...event }),
+      onEvent: ({ type, ...event }) => log({ type: "workspace-placement", workspace: workspaceId, change: type, ...event }),
     });
-    const sockets = {};
-    for (const [name, maxConnections] of Object.entries(CONSUMED)) {
-      const listener = await createSandboxEndpointListener({
-        connect: (onData) => runtime.connect(uri(name), onData),
-        maxConnections,
-        ...(runDirectory ? { path: join(runDirectory, "endpoints", name) } : {}),
-        authorize: async () => {},
-        onCleanupUnconfirmed: () =>
-          log({ type: "workspace-endpoint-cleanup-unconfirmed", workspace: WORKSPACE_ID, endpoint: name }),
-      });
-      listeners.push(listener);
-      sockets[name] = listener.path;
+    return { runtime, pools };
+  } catch (error) {
+    await Promise.allSettled(pools.map((pool) => pool.close()));
+    throw error;
+  }
+}
+
+/** Local listeners for a workspace's endpoints, each connection one endpoint connection. */
+async function listenEndpoints({ runtime, workspaceId, consumed, directory, log, listeners }) {
+  const sockets = {};
+  for (const [name, maxConnections] of Object.entries(consumed)) {
+    const listener = await createSandboxEndpointListener({
+      connect: (onData) => runtime.connect(uri(name, workspaceId), onData),
+      maxConnections,
+      ...(directory ? { path: join(directory, name) } : {}),
+      authorize: async () => {},
+      onCleanupUnconfirmed: () =>
+        log({ type: "workspace-endpoint-cleanup-unconfirmed", workspace: workspaceId, endpoint: name }),
+    });
+    listeners.push(listener);
+    sockets[name] = listener.path;
+  }
+  return sockets;
+}
+
+const privateRunDirectory = async (path) => {
+  for (const name of ["endpoints", "credentials"]) {
+    await rm(join(path, name), { recursive: true, force: true });
+    await mkdir(join(path, name), { recursive: true, mode: 0o700 });
+  }
+};
+
+/** Workspaces other than `default` (§3.6, step 7b): each id is placed on first use over
+ * the configured provisioned environments, with its own placement record, local endpoint
+ * listeners under `<run>/workspaces/<id>/` and credential copies. Also the operator tool's
+ * entry (workspace-admin.mjs), which never touches the `default` workspace. */
+export function provisionedWorkspaces({
+  dataDirectory,
+  env = process.env,
+  log = (value) => console.log(JSON.stringify(value)),
+  providers,
+  endpointDirectories = {},
+  runDirectory,
+  credentialsRoot,
+}) {
+  if (!isAbsolute(dataDirectory) || !isAbsolute(credentialsRoot ?? runDirectory ?? ""))
+    throw new Error("Provisioned workspaces need absolute data and local directories");
+  const linkRoot = env.OPENCRAFT_WORKSPACE_LINK_ROOT ?? "/run/opencraft-links";
+  const composition = providerComposition(env, linkRoot);
+  const registry = createSandboxProviderRegistry(providers ?? composition.providers);
+  // Where every other workspace runs; unset means this deployment places only `default`.
+  const provisioned = env.OPENCRAFT_WORKSPACE_PROVISIONED_ENVIRONMENTS
+    ? parseSandboxEnvironmentUris(env.OPENCRAFT_WORKSPACE_PROVISIONED_ENVIRONMENTS)
+    : undefined;
+  const others = new Map();
+  const localOf = (workspaceId) =>
+    runDirectory ? join(runDirectory, "workspaces", workspaceId) : join(credentialsRoot, "workspaces", workspaceId);
+  const credentialsOf = (workspaceId) =>
+    runDirectory ? join(localOf(workspaceId), "credentials") : localOf(workspaceId);
+  const closeEntry = async (entry) => {
+    const results = await Promise.allSettled(entry.listeners.map((listener) => listener.close()));
+    results.push(...(await Promise.allSettled([entry.runtime.close()])));
+    await Promise.allSettled(entry.pools.map((pool) => pool.close()));
+    await rm(localOf(entry.workspaceId), { recursive: true, force: true });
+    if (results.some((result) => result.status === "rejected"))
+      throw new Error("Workspace endpoint cleanup is unconfirmed");
+  };
+  /** Copies endpoint credentials (only for endpoints the agents publish) into a private directory. */
+  const writeTokens = async (runtime, workspaceId, published) => {
+    const files = {};
+    for (const name of TOKEN_ENDPOINTS) {
+      if (!published.has(name)) continue;
+      const value = (await runtime.describe(uri(name, workspaceId))).token;
+      if (typeof value !== "string" || value.length < 32 || value.length > 512)
+        throw new Error(`Workspace endpoint ${name} has no credential`);
+      files[name] = join(credentialsOf(workspaceId), `${name}.token`);
+      await writeFile(files[name], value + "\n", { mode: 0o600 });
     }
+    return files;
+  };
+  const open = (workspaceId) => {
+    if (!isWorkspaceId(workspaceId) || workspaceId === WORKSPACE_ID) throw new Error("Invalid workspace id");
+    if (!provisioned) throw new Error(`This deployment places no workspace other than ${WORKSPACE_ID}`);
+    let opening = others.get(workspaceId);
+    if (opening) return opening;
+    opening = (async () => {
+      const placed = await placeWorkspace({
+        workspaceId,
+        addresses: provisioned,
+        registry,
+        installations: composition.installations,
+        dataDirectory,
+        env,
+        endpointDirectories,
+        log,
+      });
+      const entry = { workspaceId, ...placed, listeners: [] };
+      try {
+        if (runDirectory) await privateRunDirectory(localOf(workspaceId));
+        else await mkdir(credentialsOf(workspaceId), { recursive: true, mode: 0o700 });
+        entry.sockets = await listenEndpoints({
+          runtime: placed.runtime,
+          workspaceId,
+          consumed: PROVISIONED_CONSUMED,
+          directory: runDirectory && join(localOf(workspaceId), "endpoints"),
+          log,
+          listeners: entry.listeners,
+        });
+        entry.observe = async () => {
+          const environments = await placed.runtime.observe();
+          const published = new Set(environments.flatMap((environment) => environment.endpoints));
+          entry.tokenFiles = await writeTokens(placed.runtime, workspaceId, published);
+          return environments;
+        };
+        // Placing the workspace now (not on its first connection) reports a failure to the caller.
+        await entry.observe();
+        return entry;
+      } catch (error) {
+        await closeEntry(entry).catch(() => {});
+        throw error;
+      }
+    })();
+    others.set(workspaceId, opening);
+    opening.catch(() => {
+      if (others.get(workspaceId) === opening) others.delete(workspaceId);
+    });
+    return opening;
+  };
+  return {
+    ids: () => [...others.keys()],
+    /** Places (create, or re-attach by receipt) and serves a workspace's endpoints. */
+    open: async (workspaceId) => open(workspaceId),
+    /** Idle sleep (§3.7.2): providers that can sleep stop; the others stay resident. */
+    async sleep(workspaceId) {
+      return (await open(workspaceId)).runtime.sleep();
+    },
+    /** Removes the workspace's instances and cached volumes (content truth is Git). */
+    async discard(workspaceId) {
+      const entry = await open(workspaceId);
+      others.delete(workspaceId);
+      // Local connections end before their environment goes away.
+      await Promise.allSettled(entry.listeners.splice(0).map((listener) => listener.close()));
+      await entry.runtime.discard();
+      await closeEntry(entry);
+      log({ type: "workspace-discarded", workspace: workspaceId });
+    },
+    async close() {
+      const results = await Promise.allSettled([...others.values()].map(async (opening) => closeEntry(await opening)));
+      others.clear();
+      if (results.some((result) => result.status === "rejected"))
+        throw new Error("Workspace endpoint cleanup is unconfirmed");
+    },
+  };
+}
+
+export async function openGatewayWorkspace({
+  dataDirectory,
+  env = process.env,
+  log = (value) => console.log(JSON.stringify(value)),
+  providers,
+  endpointDirectories = {},
+} = {}) {
+  if (!isAbsolute(dataDirectory)) throw new Error("Gateway data directory must be absolute");
+  const linkRoot = env.OPENCRAFT_WORKSPACE_LINK_ROOT ?? "/run/opencraft-links";
+  if (!isAbsolute(linkRoot)) throw new Error("OPENCRAFT_WORKSPACE_LINK_ROOT must be absolute");
+  const composition = providerComposition(env, linkRoot);
+  const installations = composition.installations;
+  const registry = createSandboxProviderRegistry(providers ?? composition.providers);
+  const addresses = parseSandboxEnvironmentUris(env.OPENCRAFT_WORKSPACE_ENVIRONMENTS ?? DEFAULT_WORKSPACE_ENVIRONMENTS);
+  // Local endpoint sockets and credential copies: a container-private tmpfs when the
+  // deployment provides one (stable paths for operators and smoke probes), else temporary.
+  const runDirectory = env.OPENCRAFT_GATEWAY_RUN_DIR || undefined;
+  if (runDirectory !== undefined) {
+    if (
+      !isAbsolute(runDirectory) ||
+      [dataDirectory, linkRoot].some((root) => runDirectory === root || runDirectory.startsWith(root + "/"))
+    )
+      throw new Error("OPENCRAFT_GATEWAY_RUN_DIR must be container-private");
+    const info = await lstat(runDirectory);
+    if (!info.isDirectory() || info.isSymbolicLink() || info.uid !== process.getuid() || (info.mode & 0o077) !== 0)
+      throw new Error("OPENCRAFT_GATEWAY_RUN_DIR must be a private directory owned by this user");
+    await privateRunDirectory(runDirectory);
+    await rm(join(runDirectory, "workspaces"), { recursive: true, force: true });
+  }
+  const pools = [],
+    listeners = [];
+  let runtime, credentials, others;
+  const close = async () => {
+    // Local connections end first (their relays terminate), then the environment sessions.
+    const results = await Promise.allSettled([others?.close(), ...listeners.map((listener) => listener.close())]);
+    results.push(...(await Promise.allSettled([runtime?.close()])));
+    await Promise.allSettled(pools.map((pool) => pool.close()));
+    if (credentials) await rm(credentials, { recursive: true, force: true });
+    if (results.some((result) => result.status === "rejected"))
+      throw new Error("Workspace endpoint cleanup is unconfirmed");
+  };
+  try {
+    const placed = await placeWorkspace({
+      workspaceId: WORKSPACE_ID,
+      addresses,
+      registry,
+      installations,
+      dataDirectory,
+      env,
+      endpointDirectories,
+      log,
+    });
+    runtime = placed.runtime;
+    pools.push(...placed.pools);
+    const sockets = await listenEndpoints({
+      runtime,
+      workspaceId: WORKSPACE_ID,
+      consumed: CONSUMED,
+      directory: runDirectory && join(runDirectory, "endpoints"),
+      log,
+      listeners,
+    });
     const describe = (name) => runtime.describe(uri(name));
     const token = async (name) => {
       const value = (await describe(name)).token;
@@ -181,6 +385,15 @@ export async function openGatewayWorkspace({
       ? join(runDirectory, "credentials")
       : await mkdtemp(join(tmpdir(), "opencraft-workspace-credentials-"));
     await chmod(credentials, 0o700);
+    others = provisionedWorkspaces({
+      dataDirectory,
+      env,
+      log,
+      providers,
+      endpointDirectories,
+      runDirectory,
+      credentialsRoot: credentials,
+    });
     const tokenFiles = { terminal: join(credentials, "terminal.token"), files: join(credentials, "files.token") };
     const refreshTokens = async () => {
       for (const [name, path] of Object.entries(tokenFiles))
@@ -197,11 +410,24 @@ export async function openGatewayWorkspace({
       nativeSocket: sockets["codex-native"],
       token: () => token("codex-control"),
     };
+    /** Workspaces resolved by id through configuration (§3.6): `default` here, others provisioned. */
+    const workspaces = {
+      ids: () => [WORKSPACE_ID, ...others.ids()],
+      open: others.open,
+      sleep: (workspaceId) => (workspaceId === WORKSPACE_ID ? runtime.sleep() : others.sleep(workspaceId)),
+      discard: others.discard,
+    };
+    // Workspaces this deployment keeps placed from startup; one failing never blocks the Gateway.
+    for (const workspaceId of (env.OPENCRAFT_WORKSPACES ?? "").split(/[\s,]+/u).filter(Boolean))
+      void others.open(workspaceId).catch((error) =>
+        log({ type: "workspace-open-failed", workspace: workspaceId, error: error.message }),
+      );
     return {
       runtime,
       sockets,
       tokenFiles,
       codexRuntime,
+      workspaces,
       piDescriptor: engineDescriptor("pi"),
       dshDescriptor: engineDescriptor("dsh"),
       async codexHealth() {
