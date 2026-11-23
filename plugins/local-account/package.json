@@ -26,6 +26,7 @@
     "@opencraft/workbench-runtime": "*",
     "react": "19.3.1",
     "@opencraft/storage-node": "*",
+    "@opencraft/worker-owner": "0.1.0",
     "@opencraft/plugin-assets": "0.1.0",
     "@noble/hashes": "2.4.0"
   },

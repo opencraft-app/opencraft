@@ -1,5 +1,7 @@
 import { openServerCoreOwner } from '@opencraft/storage-node/server-owner';
 import { borrowServerDatabase } from '@opencraft/storage-node/server-borrow';
+import { ownerEntry } from '@opencraft/worker-owner';
+import type { localAccountPasswordUpgrade } from '@opencraft/access-control/local-account-upgrade-owner';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -24,10 +26,17 @@ import { LocalAccountServerPlugin } from './server.js';
 import { createNodePasswordHasher } from './password-hash-node.js';
 import { LocalAccountApplication } from './application.js';
 
+/** Methods `desktop-account-owner.worker.ts` serves on the owner connection. */
+type DesktopAccountOwner = { upgradeLocalPassword: ReturnType<typeof localAccountPasswordUpgrade> };
+
 /** Native Main owns these stores and the private browser proof. No renderer supplies identity. */
 export async function createDesktopAccountHost(directory: string, renderLogin: (nonce: string) => string, options: { openRemote?: (origin: string) => Promise<void>; storageRole?: 'owner' | 'borrower'; assetsStorage?: Parameters<typeof openHumanAssets>[0]['openStorage'] } = {}) {
   await mkdir(directory, { recursive: true, mode: 0o700 });
-  const storage=options.storageRole==='borrower'?borrowServerDatabase(directory):await openServerCoreOwner(directory);
+  // The owner Worker holds the writer lock and commits login-time password upgrades
+  // (compare-and-set SQL off Main); a borrower (the Daemon) never upgrades.
+  const owned = options.storageRole === 'borrower' ? null
+    : await openServerCoreOwner<DesktopAccountOwner>(directory, { entry: ownerEntry(import.meta.url, 'desktop-account-owner') });
+  const storage = owned ?? borrowServerDatabase(directory);
   const disposers: (() => void | Promise<void>)[] = [];
   const disposeAll = async () => {
     const failures: unknown[] = [];
@@ -40,7 +49,9 @@ export async function createDesktopAccountHost(directory: string, renderLogin: (
     disposers.push(() => actors.close());
     const accounts = new HumanAccounts(storage, actors);
     disposers.push(() => accounts.close());
-    accounts.registerLocalAccounts(new LocalAccountServerPlugin(accounts.localAccountRepository, createNodePasswordHasher()));
+    const localAccounts = new LocalAccountServerPlugin(accounts.localAccountRepository, createNodePasswordHasher());
+    if (owned) localAccounts.useOwnerWrites({ upgradeLocalPassword: (...args) => owned.call.upgradeLocalPassword(...args) });
+    accounts.registerLocalAccounts(localAccounts);
     const members = new MembershipStore(storage,{permissionProjection:false});
     disposers.push(() => members.close());
     const management = new HumanAccountManagement(storage, accounts, actors, members);
