@@ -19,6 +19,7 @@ class Engine {
   messages = new Set<(frame: string) => void>();
   statuses = new Set<(status: unknown) => void>();
   frames: string[] = [];
+  archived: string[] = [];
   async connect() {
     this.status = { state: "open" };
     for (const l of this.statuses) l(this.status);
@@ -48,7 +49,7 @@ class Engine {
             },
           }
         : value.method === "thread/list"
-          ? { data: [], nextCursor: null }
+          ? { data: value.params?.archived ? this.archived.map((id) => ({ id })) : [], nextCursor: null }
           : {};
     for (const l of this.messages)
       l(JSON.stringify({ id: value.id, [LOGICAL_CLIENT_FIELD]: value[LOGICAL_CLIENT_FIELD], result }));
@@ -318,4 +319,56 @@ test("default workspace startup refuses missing instance admission and respects 
     /cannot share custom Native hooks/,
   );
   assert.equal(invoked, false);
+});
+
+test("identity-owned workspace routing is the one conversation lifecycle owner: it gets reconciliation and release calls", async (t) => {
+  const f = await fixture(t);
+  f.engine.archived = ["identity-archived"];
+  const scopes: number[] = [],
+    released: any[] = [];
+  const routing = {
+    createCodexWorkspaceHooks: () => ({
+      decorateNativeTransport: (native: unknown) => native,
+      finalizeNativeCreation: async () => {},
+      finalizeNativeResume: async () => {},
+      requiresWorkspaceResume: () => false,
+    }),
+    readCatalog: async () => ({ version: 1, environments: [], libraries: [] }),
+    conversationScopes: () => {
+      scopes.push(Date.now());
+      return [{ hostId: "local-codex", threadId: "identity-archived" }];
+    },
+    releaseConversation: async (row: unknown) => {
+      released.push(row);
+    },
+  };
+  const identity = (extra: object) => async () => ({
+    ...(await f.composition.createIdentity()),
+    codexWorkspaceRouting: { ...routing, ...extra },
+  });
+  await assert.rejects(
+    startHeadlessServer(f.options, { createIdentity: identity({ conversationScopes: undefined }) }),
+    /both lifecycle members/,
+  );
+  const app = await startHeadlessServer(f.options, { createIdentity: identity({}) });
+  try {
+    for (let i = 0; i < 500 && !released.length; i++) await new Promise((r) => setTimeout(r, 10));
+    assert.ok(scopes.length > 0, "Archive reconciliation reads the identity routing's conversation scopes");
+    assert.equal(released.length, 1, "The archived conversation is released through the identity routing");
+    assert.deepEqual(
+      (({ hostId, threadId, state, generation }) => ({ hostId, threadId, state, generation }))(released[0]),
+      { hostId: "local-codex", threadId: "identity-archived", state: "archived", generation: 1 },
+    );
+  } finally {
+    await app.close();
+  }
+  // Routing without lifecycle members still starts, with no workspace owner.
+  const { conversationScopes: _scopes, releaseConversation: _release, ...plain } = routing;
+  const legacy = await startHeadlessServer(
+    { ...f.options, dataDirectory: join(f.root, "data-plain") },
+    {
+      createIdentity: async () => ({ ...(await f.composition.createIdentity()), codexWorkspaceRouting: plain }),
+    },
+  );
+  await legacy.close();
 });

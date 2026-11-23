@@ -596,6 +596,17 @@ test("Gateway workspace service composes the existing Worker catalog and scoped 
     },
   };
   assert.equal((await service.readCatalog("local-codex", context)).environments.length, 1);
+  // The composition's own Worker calls use the Human proof the service issues.
+  const proof = service.admit(context),
+    durable = service.admitResource(actor.actorId);
+  assert.equal(proof.actorId, actor.actorId);
+  assert.equal(durable.resourcePermit, proof.resourcePermit, "One resource permit per Actor generation and revision");
+  assert.notEqual(durable.requestPermit, proof.requestPermit);
+  assert.deepEqual(await f.port.workspaceFileScope(proof, "native-gateway-service"), {
+    kind: "workspace",
+    threadId: "native-gateway-service",
+    root: "/workspace",
+  });
   assert.deepEqual(await service.readFileScope("local-codex", context, "native-gateway-service"), {
     kind: "workspace",
     threadId: "native-gateway-service",
@@ -665,6 +676,8 @@ test("Gateway workspace service composes the existing Worker catalog and scoped 
   await assert.rejects(service.readCatalog("local-codex", context));
   assert.equal((await f.port.fixtureCounters()).allocated, 1);
   await service.close();
+  assert.equal(Atomics.load(proof.resourcePermit, 0), 0, "Closing the service retires the proofs it issued");
+  assert.throws(() => service.admit(context));
   await assert.rejects(service.readFileScope("local-codex", context, "native-gateway-service"));
   assert.equal((await f.port.fixtureCounters()).retained, 1, "The composition does not own/close the caller Worker");
 });

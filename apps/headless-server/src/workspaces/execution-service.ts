@@ -76,6 +76,23 @@ export async function openWorkspaceExecutionService(options: WorkspaceExecutionS
     };
   };
   return {
+    /** The Human proof this service sends with every call to the Worker, for a
+     * composition that calls its own Worker port directly (the Worker rechecks
+     * it against the committed Actor and membership state). Gateway main thread
+     * only, inside the trusted composition, never from an HTTP body or a Native
+     * wire actor. `admit` takes the authenticated request context; its request
+     * permit is per call and its resource permit is shared per Actor generation
+     * and membership revision. Actor or membership changes, and `close()`,
+     * retire every resource permit it issued. */
+    admit: admission.admit,
+    /** The same proof for durable resources (a stored page or Thread grant),
+     * valid for 30 seconds. The caller must authorize that stored grant
+     * itself; this does not authenticate a login. */
+    admitResource: admission.admitResource,
+    /** Lifecycle members. Headless registers them as the conversation
+     * resources `workspace` owner (archive/delete cleanup) and as a source of
+     * archive reconciliation scopes, for core's own routing or for an
+     * identity's `codexWorkspaceRouting` that carries them. */
     conversationScopes: () => placement.conversationScopes(),
     async releaseConversation(row: {
       hostId: string;
