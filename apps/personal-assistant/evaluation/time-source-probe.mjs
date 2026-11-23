@@ -17,9 +17,7 @@ const { values: v } = parseArgs({
   },
 });
 if (!v.profile || !v["model-config"] || !v.output)
-  throw new Error(
-    "Expected --profile EVALUATED_PROFILE --model-config PRIVATE_JSON --output NEW_FILE",
-  );
+  throw new Error("Expected --profile EVALUATED_PROFILE --model-config PRIVATE_JSON --output NEW_FILE");
 const config = await readModelConfiguration(v["model-config"]);
 process.env[
   {
@@ -48,9 +46,7 @@ try {
   // Query time comes from the original evaluated query, not current wall time.
   app.receptionQueries.now = () => turn.created_at;
   const input = app.reception.context(turn);
-  const baselineMessagesHaveTime = input.messages.some(
-    (message) => "occurredAt" in message || "at" in message,
-  );
+  const baselineMessagesHaveTime = input.messages.some((message) => "occurredAt" in message || "at" in message);
   input.messages = input.messages.map((message) => ({
     ...message,
     occurredAt: new Date(byId.get(message.id).at).toISOString(),

@@ -13,9 +13,7 @@ const { values } = parseArgs({
   options: { "codex-config": { type: "string" }, output: { type: "string" } },
 });
 if (!values["codex-config"] || !values.output)
-  throw new Error(
-    "Required: --codex-config PRIVATE_JSON --output NEW_DIRECTORY",
-  );
+  throw new Error("Required: --codex-config PRIVATE_JSON --output NEW_DIRECTORY");
 const harnesses = await readCodexConfiguration(values["codex-config"]);
 const output = resolve(values.output);
 await mkdir(output, { mode: 0o700 });
@@ -39,13 +37,8 @@ const report = {
 let runner;
 try {
   runner = await LocalRunner.open(profile);
-  const call = (op, params = {}, id = crypto.randomUUID()) =>
-    request(profile, { op, params, id });
-  await call(
-    "say",
-    { text: "你好。这是一条连接烟测，请只回复你好，不要创建任务。" },
-    "native-codex-smoke",
-  );
+  const call = (op, params = {}, id = crypto.randomUUID()) => request(profile, { op, params, id });
+  await call("say", { text: "你好。这是一条连接烟测，请只回复你好，不要创建任务。" }, "native-codex-smoke");
   const deadline = Date.now() + 50000;
   for (;;) {
     const turn = await call("turn", { inputId: "native-codex-smoke" });
@@ -54,14 +47,12 @@ try {
       report.reply = turn.reply_text;
       break;
     }
-    if (Date.now() > deadline)
-      throw new Error("Native reception smoke timed out");
+    if (Date.now() > deadline) throw new Error("Native reception smoke timed out");
     await delay(50);
   }
   report.usage = await call("usage");
   report.workCount = (await call("status")).works.length;
-  if (report.workCount !== 0 || !report.reply)
-    throw new Error("Smoke did not remain an ordinary chat");
+  if (report.workCount !== 0 || !report.reply) throw new Error("Smoke did not remain an ordinary chat");
   report.passed = true;
 } catch (error) {
   report.passed = false;
@@ -71,11 +62,7 @@ try {
   await runner?.close();
   await rm(profileDirectory, { recursive: true, force: true });
   report.finishedAt = new Date().toISOString();
-  await writeFile(
-    join(output, "report.json"),
-    JSON.stringify(report, null, 2) + "\n",
-    { flag: "wx", mode: 0o600 },
-  );
+  await writeFile(join(output, "report.json"), JSON.stringify(report, null, 2) + "\n", { flag: "wx", mode: 0o600 });
 }
 console.log(
   JSON.stringify({
