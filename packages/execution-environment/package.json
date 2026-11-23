@@ -10,6 +10,7 @@
     "./execution-request-policy": "./src/execution-request-policy.ts",
     "./personal-git": "./src/personal-git.ts",
     "./personal-git-protocol": "./src/personal-git-protocol.ts",
+    "./personal-git-seal": "./src/personal-git-seal.ts",
     "./employee-git-vault-store": "./src/employee-git-vault-store.ts",
     "./git-identity-ipc": "./src/git-identity-ipc.ts",
     "./git-execution": "./src/git-execution.ts",

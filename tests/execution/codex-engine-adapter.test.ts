@@ -2157,7 +2157,7 @@ for (const configured of [false, true]) test(`session refresh refuses unsupporte
   const root = await mkdtemp(join(tmpdir(), "codex-tools-unsupported-environment-"));
   const adapter = createRoutingAdapter(root, [], 0, undefined, undefined, undefined, false, undefined, async () => null);
   const internals = adapter as any, calls: string[] = [];
-  internals.options.executionEnvironment = { execution: () => ({}), snapshot: () => ({ toJSON: () => ({ configured }) }), redact: (value: unknown) => value };
+  internals.options.executionEnvironment = { execution: () => ({}), prepare: async () => ({ toJSON: () => ({ configured }) }), redact: (value: unknown) => value };
   internals.canInjectEnvironment = async () => false;
   internals.requestPhysical = async (method: string) => { calls.push(method); return {}; };
   try {
