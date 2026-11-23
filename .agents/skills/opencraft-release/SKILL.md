@@ -37,8 +37,9 @@ public npm; `.github/workflows/app-release.yml` is the only release publisher.
    release. Every release uploads the same commit to TestFlight without waiting
    for beta review.
 5. Follow the run through every platform job, staging and publication. Report
-   the tag/SHA, run URL, release URL, the manifest's artifacts and the TestFlight
-   build number. A Git push, successful build or created tag is not a successful
+   the tag/SHA, run URL, release URL, the manifest's artifacts (including the
+   headless server archive), the pinned `ghcr.io/opencraft-app/opencraft-server`
+   image digest and the TestFlight build number. A Git push, successful build or created tag is not a successful
    release; a TestFlight upload is not availability until Apple approves it.
 
 If publication may already have happened, inspect the release and its

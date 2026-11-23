@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Each App release also ships the server: the headless Linux x64 archive is attached to the release, and its tested container image is published as `ghcr.io/opencraft-app/opencraft-server:<version>` (stable releases also move `latest`). The image now declares the repository's MIT-0 license.
+
 ## v0.2.0
 
 - Desktop packages ship the pinned native Codex (0.162.1) and no longer ship the DeepSeek Harness (DSH) runtime; the app starts without DSH and keeps connected agents, model settings and the Codex host.
