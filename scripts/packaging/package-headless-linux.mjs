@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { SOURCE_FALLBACK_SIBLINGS, verifySiblingFiles } from './verify-sibling-files.mjs';
 import { buildAssetsRuntime } from './package-assets-runtime.mjs';
 import { buildServerSpacesRuntime } from './package-server-spaces-runtime.mjs';
 import { buildOwnerWorkers } from './owner-workers.mjs';
@@ -198,6 +199,10 @@ export async function packageHeadlessLinux(composition = {}) {
     await buildConversationCli(join(stage, 'runtime/opencraft-cli.mjs'));
     await writeFile(join(stage, 'bin/opencraft'), '#!/bin/sh\nexec "$(dirname "$0")/node" "$(dirname "$0")/../runtime/opencraft-cli.mjs" "$@"\n', { mode: 0o755 });
     await buildHumanAccountBundle(join(stage, 'runtime/human-account.mjs'));
+    // Engine sandboxes run commands through this runner, started from beside the server bundle.
+    await build({ entryPoints: [join(repositoryRoot, 'scripts/server-deployment/sandbox-command.mjs')], outfile: join(stage, 'runtime/sandbox-command.mjs'),
+      bundle: true, platform: 'node', format: 'esm', target: 'node26', logLevel: 'warning',
+      banner: { js: "import { createRequire } from 'node:module'; const require=createRequire(import.meta.url);" } });
     await build({ entryPoints: [join(repositoryRoot, 'scripts/packaging/codex-account-reference.ts')], outfile: join(stage, 'runtime/codex-account-reference.mjs'),
       bundle: true, platform: 'node', format: 'esm', target: 'node26' });
     // Optional native installation assets; startup never installs services.
@@ -210,6 +215,8 @@ export async function packageHeadlessLinux(composition = {}) {
     if (productPlugins) await chmod(join(stage, 'runtime/product-plugins/inventory.json'), 0o444);
     await copyRuntimeModules(stage);
     if (composition.includeBrowser !== false) await packageBrowserRuntime(join(stage, 'runtime/browser'));
+    // Every file a runtime bundle starts from beside itself must have been built beside it.
+    await verifySiblingFiles(join(stage, 'runtime'), { nested: ['codex-bridge'], optional: SOURCE_FALLBACK_SIBLINGS });
     const versionInfo = JSON.parse(await readFile(join(stage, "web/version.json"), "utf8"));
     const files = await inventory(stage);
     await writeFile(join(stage, "manifest.json"), `${JSON.stringify({

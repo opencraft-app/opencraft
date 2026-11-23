@@ -1,6 +1,8 @@
 #!/usr/bin/env node
+import { SOURCE_FALLBACK_SIBLINGS, verifySiblingFiles } from './verify-sibling-files.mjs';
 import { buildOwnerWorkers } from './owner-workers.mjs';
 import { buildTerminalOwnerRuntime } from './package-terminal-runtime.mjs';
+import { buildConnectedAgentHistoryRuntime } from './package-connected-agent-history-runtime.mjs';
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { packageBrowserRuntime } from './package-browser-runtime.mjs';
 import { optimizeWebImages } from './optimize-web-images.mjs';
@@ -187,6 +189,8 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
     manifest.bin['opencraft-tool-memory-prepare'] = 'runtime/prepare-tool-memory-guard.mjs';
     await buildPiShellRuntime(join(packageRoot, 'execution'));
     await buildTerminalOwnerRuntime(join(packageRoot, 'execution'));
+    // The daemon and DSH Host read connected agents' native history in this Worker.
+    await buildConnectedAgentHistoryRuntime(join(packageRoot, 'execution'));
     if (executionProfile === 'headless') {
       await packageBrowserRuntime(join(packageRoot, 'runtime/browser'));
       await copySshRuntime(join(packageRoot, 'execution/native/node_modules'));
@@ -232,6 +236,9 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
     await cp(join(repositoryRoot, 'deploy/web-server/opencraft-engine-host.service'), join(packageRoot, 'opencraft-engine-host.service'));
     await cp(join(repositoryRoot, 'deploy/web-server/opencraft-dsh-host.service'), join(packageRoot, 'opencraft-dsh-host.service'));
     await cp(join(repositoryRoot, 'deploy/web-server/opencraft-acp-host.service'), join(packageRoot, 'opencraft-acp-host.service'));
+    // Every file an execution bundle starts from beside itself must have been built beside it.
+    await verifySiblingFiles(join(packageRoot, 'execution'), { nested: ['codex-bridge'], optional: { ...SOURCE_FALLBACK_SIBLINGS,
+      'personal-git-worker.mjs': 'built into runtime/; the headless gateway is given that path (headless-gateway-application.mjs)' } });
   }
   await chmod(join(packageRoot, 'runtime/cli.mjs'), 0o755);
   const complete = completeRuntime || (fullRelease && !fullRelease.template.updater.bridge);

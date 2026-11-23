@@ -91,7 +91,10 @@ export async function runHeadlessGateway({ parseArguments = parseHeadlessArgumen
   const engineHostDescriptor = process.env.OPENCRAFT_ENGINE_HOST_DESCRIPTOR;
   if (engineHostDescriptor && manifest.opencraftExecution.independentEngineHost !== 1) throw new Error('Release cannot attach an independent execution Host');
   const bridgePrograms = await codexBridgePrograms(releaseRoot, options);
-  const app = await startServer({ ...options, ...(engineHostDescriptor ? {engineHostDescriptor} : {}), root: releaseRoot, webRoot: join(releaseRoot, 'web'),
+  // The release builds the personal Git Worker into runtime/, as the engine and DSH Hosts expect;
+  // the gateway bundle lives in execution/ and would otherwise look beside itself.
+  const app = await startServer({ gitWorkerFile: join(releaseRoot, 'runtime/personal-git-worker.mjs'),
+    ...options, ...(engineHostDescriptor ? {engineHostDescriptor} : {}), root: releaseRoot, webRoot: join(releaseRoot, 'web'),
     ...(dshDescriptor ? {
       startAgentHost: async agentOptions => {
         return attachDshHost(dshDescriptor, agentOptions.dataDirectory, agentOptions.machineIdentity.machineId);

@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { join, resolve, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { packageHeadlessLinux, buildHeadlessBundle } from './package-headless-linux.mjs';
+import { SOURCE_FALLBACK_SIBLINGS, verifySiblingFiles } from './verify-sibling-files.mjs';
 import { buildCodexBridgeRuntime } from './package-web-server.mjs';
 
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -63,6 +64,8 @@ async function inventory(directory) {
     }
   }
 }
+// Every file a container bundle starts from beside itself must have been built beside it.
+await verifySiblingFiles(join(root, 'runtime'), { nested: ['codex-bridge'], optional: SOURCE_FALLBACK_SIBLINGS });
 await inventory(root);
 await writeFile(join(root, 'manifest.json'), JSON.stringify({ ...manifest, delivery: 'docker-compose-owners',
   files: [...files, ...manifest.files.filter(file => file.link)].sort((a, b) => a.path.localeCompare(b.path)) }, null, 2) + '\n');

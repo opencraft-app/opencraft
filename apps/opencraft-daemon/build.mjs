@@ -8,6 +8,7 @@ import { daemonMainBundle } from './main-bundle.mjs';
 import { buildTerminalOwnerRuntime } from '../../scripts/packaging/package-terminal-runtime.mjs';
 import { buildOwnerWorkers } from '../../scripts/packaging/owner-workers.mjs';
 import { buildAssetsRuntime } from '../../scripts/packaging/package-assets-runtime.mjs';
+import { DESKTOP_ABSENT_SIBLINGS, verifySiblingFiles } from '../../scripts/packaging/verify-sibling-files.mjs';
 await buildTranscriptCacheRuntime(fileURLToPath(new URL('./dist/', import.meta.url)));
 await buildDshRoutingRuntime(fileURLToPath(new URL('./dist/', import.meta.url)));
 await buildServerSpacesRuntime(fileURLToPath(new URL('./dist/', import.meta.url)));
@@ -39,3 +40,6 @@ for (const [source, target, format] of [
 ]) await build({ entryPoints: [source], outfile: `dist/codex-bridge/${target}`, bundle: true, platform: 'node', format, target: 'node24',
   external: ['node-pty'], ...(format === 'esm' ? { banner: requireBanner } : {}) });
 await (await import('node:fs/promises')).copyFile('src/codex-bridge-exit-with-parent.cjs', 'dist/codex-bridge/exit-with-parent.cjs');
+
+// Every file a bundle here starts from beside itself must have been built beside it.
+await verifySiblingFiles(fileURLToPath(new URL('./dist/', import.meta.url)), { nested: ['codex-bridge'], optional: DESKTOP_ABSENT_SIBLINGS });
