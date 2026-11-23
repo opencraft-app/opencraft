@@ -16,6 +16,8 @@ import type {
   EnvironmentMetadataPort,
   EnvironmentScopeRequest,
 } from "@opencraft/execution-environment/environment-metadata";
+import type { PersonalGitSealPort } from "@opencraft/execution-environment/personal-git-seal";
+import type { GitGrantScope } from "@opencraft/execution-environment/personal-git-protocol";
 import { WorkerOwner, ownerEntry } from "@opencraft/worker-owner";
 import type { DatabaseOutcome } from "@opencraft/sqlite-node";
 import type { SandboxConfigurationsSnapshot } from "../contract.js";
@@ -49,6 +51,7 @@ export interface AssetStoragePort extends AssetConfigurationPort, WorkspaceBudge
   executionGitReservation(locator: GitExecutionLocator): Promise<GitExecutionReservation | null>;
   executionGitGrant(locator: GitExecutionLocator): Promise<GitExecutionHandoff | null>;
   executionEnvironmentLaunch(target: EnvironmentLaunchTarget, context: EnvironmentLaunchContext): Promise<string>;
+  personalGitSeal(scope: GitGrantScope): Promise<string>;
   environmentMetadataAdmit(request: EnvironmentScopeRequest): Promise<EnvironmentExecutionScope>;
   environmentMetadataProject(hostId: string, threadId: string): Promise<string | null>;
   environmentMetadataBind(hostId: string, threadId: string, projectId: string | null): Promise<void>;
@@ -100,7 +103,10 @@ export async function openAssetConfigurations(
   ) {
     try {
       // A requested issuer that the Worker did not start is a startup failure.
-      if (options.environmentLaunch && typeof ready.environmentIssuer !== "string")
+      if (
+        options.environmentLaunch &&
+        (typeof ready.environmentIssuer !== "string" || typeof ready.gitAuthority !== "string")
+      )
         throw new SandboxConfigurationError("unavailable", 503);
       if (
         (options.workspaceMachineId !== undefined || options.terminalOwner !== undefined) &&
@@ -132,6 +138,15 @@ export async function openAssetConfigurations(
             issuer: ready.environmentIssuer,
             seal: (target: EnvironmentLaunchTarget, context: EnvironmentLaunchContext) =>
               owner.call.executionEnvironmentLaunch(target, context),
+          })
+        : undefined,
+    /** The same owner signs personal Git grants: only a grant scope goes in and
+     * only the opaque grant comes back. Present exactly when ENV delivery is. */
+    personalGitSeal:
+      typeof ready.environmentIssuer === "string" && typeof ready.gitAuthority === "string"
+        ? Object.freeze<PersonalGitSealPort>({
+            authority: ready.gitAuthority,
+            seal: (scope) => owner.call.personalGitSeal(scope),
           })
         : undefined,
     /** The same owner's FIFO port for non-secret ENV metadata. Main awaits it;

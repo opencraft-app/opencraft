@@ -4902,7 +4902,8 @@ export class CodexEngineAdapter implements DuplexTransport {
       stage = "resolve-environment";
       let environment = this.executionGit && inputId
         ? await this.executionGit.reserve({hostId: 'local-codex', threadId, inputId})
-        : this.options.executionEnvironment?.snapshot(this.options.executionEnvironment.execution('local-codex', threadId, inputId));
+        // A separate vault owner signs the Git grant asynchronously here.
+        : await this.options.executionEnvironment?.prepare(this.options.executionEnvironment.execution('local-codex', threadId, inputId));
       if (environment && !await this.canInjectEnvironment(threadId)) {
         // An empty requested environment does not prove that an independent
         // Native owner has cleared credentials installed by a previous owner.

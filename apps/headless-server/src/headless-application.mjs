@@ -626,6 +626,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     if (coreEnvironmentLaunch && !assetsStorage?.environmentLaunch) throw new Error('Environment delivery requires the sole vault owner');
     environmentMetadata = coreEnvironmentLaunch ? assetsStorage.environmentMetadata : undefined;
     if (coreEnvironmentLaunch && !environmentMetadata) throw new Error('Environment delivery requires the sole vault owner');
+    // The same owner signs personal Git grants; Main never holds the vault key.
+    if (coreEnvironmentLaunch && !assetsStorage.personalGitSeal) throw new Error('Environment delivery requires the sole vault owner');
     const authenticateHuman = request => {
       if (instanceAccess) return instanceAccess.authenticate(request);
       const identities = providers.map(provider => provider.authenticate(request)).filter(Boolean);
