@@ -6,9 +6,13 @@ import { WorkspaceBudgetStore, type WorkspaceBudgetRole, type WorkspaceBudgetOut
 import type { SandboxIdentity, SandboxResources } from "@opencraft/sandbox";
 import { parseGitExecutionLocator, type GitExecutionResolver } from "@opencraft/execution-environment/git-execution";
 import { EmployeeGitVaultStore, GitVaultError } from "@opencraft/execution-environment/employee-git-vault-store";
-import { EnvironmentLaunchOwner } from "@opencraft/execution-environment/environment-launch-owner";
+import {
+  EnvironmentLaunchOwner,
+  type EnvironmentLaunchRecordReaders,
+} from "@opencraft/execution-environment/environment-launch-owner";
 import {
   EnvironmentMetadata,
+  environmentThreadProject,
   type EnvironmentExecutionScope,
   type EnvironmentScopeRequest,
 } from "@opencraft/execution-environment/environment-metadata";
@@ -28,8 +32,16 @@ export async function createAssetsStorage(
   execution?: GitExecutionResolver,
   createWorkspaces?: CreateAssetWorkspaceExecutionOwner,
   /** Issue opaque execution ENV capsules from this sole vault owner, which
-   * then also owns the non-secret ENV metadata (bindings, creators, catalog). */
-  options: { environmentLaunch?: boolean } = {},
+   * then also owns the non-secret ENV metadata (bindings, creators, catalog).
+   * `environmentRecords` are core's durable records for launches without an
+   * active native Turn (pending Codex inputs, creation reservations) and the
+   * current Actor epoch they are admitted under. */
+  options: {
+    environmentLaunch?: boolean;
+    environmentRecords?: EnvironmentLaunchRecordReaders & {
+      actorEpoch(actorId: string): { actorGeneration: number; membershipRevision: number } | null;
+    };
+  } = {},
 ) {
   // ENV for a launch needs the durable admission this owner reads itself.
   if (options.environmentLaunch && !execution) throw new Error("Environment delivery requires execution admission");
@@ -52,8 +64,12 @@ export async function createAssetsStorage(
   try {
     environment =
       options.environmentLaunch && execution
-        ? new EnvironmentLaunchOwner(vault, (input) => execution.resolve(input))
+        ? new EnvironmentLaunchOwner(vault, (input) => execution.resolve(input), {
+            ...(options.environmentRecords?.codexTurn ? { codexTurn: options.environmentRecords.codexTurn } : {}),
+            ...(options.environmentRecords?.creation ? { creation: options.environmentRecords.creation } : {}),
+          })
         : undefined;
+    const records = environment ? options.environmentRecords : undefined;
     const metadata = environment ? new EnvironmentMetadata(vault) : undefined;
     // Metadata runs FIFO with every other vault write; nothing it returns is a value.
     const metadataCall = <T>(operation: (owner: EnvironmentMetadata) => T): T => {
@@ -145,7 +161,12 @@ export async function createAssetsStorage(
             // Metadata reads see committed bindings; a Gateway forwards a Thread
             // only after its binding committed, so later reads observe it.
             ...(environment
-              ? ["executionEnvironmentLaunch", "environmentMetadataAdmit", "environmentMetadataProject"]
+              ? [
+                  "executionEnvironmentLaunch",
+                  "environmentLaunchRecord",
+                  "environmentMetadataAdmit",
+                  "environmentMetadataProject",
+                ]
               : []),
           ]
         : [],
@@ -275,6 +296,29 @@ export async function createAssetsStorage(
                   throw new SandboxConfigurationError("execution_unavailable", 503);
                 }
               },
+              // Seals for the durable record the locator names, read by this owner.
+              environmentLaunchRecord: (target: EnvironmentLaunchTarget, locator: unknown) => {
+                try {
+                  return environment!.launch(target, locator);
+                } catch {
+                  throw new SandboxConfigurationError("execution_unavailable", 503);
+                }
+              },
+              // The non-secret record a creation reservation is written from: the
+              // Actor's current epoch and the Project (fork: the source binding).
+              ...(records
+                ? {
+                    environmentCreationAdmission: (request: EnvironmentCreationRequest) => {
+                      try {
+                        return creationRecord(request, records.actorEpoch, (hostId, threadId) =>
+                          environmentThreadProject(vault, hostId, threadId),
+                        );
+                      } catch {
+                        throw new SandboxConfigurationError("execution_unavailable", 503);
+                      }
+                    },
+                  }
+                : {}),
               environmentMetadataAdmit: (request: EnvironmentScopeRequest) => metadataCall((m) => m.admit(request)),
               environmentMetadataProject: (hostId: string, threadId: string) =>
                 metadataCall((m) => m.project(hostId, threadId)),
@@ -304,4 +348,47 @@ export async function createAssetsStorage(
     await release();
     throw error;
   }
+}
+
+/** What an execution owner asks before a native creation. The Actor comes from
+ * the authenticated submission; the Project is requested only for a new Thread. */
+export interface EnvironmentCreationRequest {
+  readonly hostId: "local-codex" | "opencraft-server";
+  readonly operationId: string;
+  readonly actorId: string;
+  readonly actorGeneration: number;
+  readonly source: string | null;
+  readonly incarnation: string;
+  readonly projectId: string | null;
+}
+const creationText = (v: unknown): v is string =>
+  typeof v === "string" && v.length > 0 && v.length <= 512 && !/[\x00-\x1f\x7f]/u.test(v);
+function creationRecord(
+  request: EnvironmentCreationRequest,
+  epoch: (actorId: string) => { actorGeneration: number; membershipRevision: number } | null,
+  project: (hostId: string, threadId: string) => string | null,
+) {
+  if (
+    !request ||
+    typeof request !== "object" ||
+    Object.keys(request).length !== 7 ||
+    !(request.hostId === "local-codex" || request.hostId === "opencraft-server") ||
+    ![request.operationId, request.actorId, request.incarnation].every(creationText) ||
+    !(request.source === null || creationText(request.source)) ||
+    !(request.projectId === null || creationText(request.projectId)) ||
+    (request.source !== null && request.projectId !== null)
+  )
+    throw new Error("invalid");
+  const current = epoch(request.actorId);
+  if (!current || current.actorGeneration !== request.actorGeneration) throw new Error("unavailable");
+  return {
+    hostId: request.hostId,
+    operationId: request.operationId,
+    actorId: request.actorId,
+    actorGeneration: current.actorGeneration,
+    membershipRevision: current.membershipRevision,
+    source: request.source,
+    incarnation: request.incarnation,
+    project: request.source === null ? request.projectId : project(request.hostId, request.source),
+  };
 }

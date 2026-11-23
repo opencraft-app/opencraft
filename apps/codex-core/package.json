@@ -14,7 +14,8 @@
     "ws": "^8.23.0",
     "@opencraft/sqlite-node": "0.1.0",
     "@opencraft/appserver-protocol": "0.1.0",
-    "@opencraft/sandbox-node": "0.1.0"
+    "@opencraft/sandbox-node": "0.1.0",
+    "@opencraft/execution-environment": "0.1.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

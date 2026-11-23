@@ -21,6 +21,8 @@
     "src/capability-execution-context.ts",
     "src/git-status-capability.ts",
     "src/execution-admission.worker.ts",
-    "src/account-model-defaults-http.ts"
+    "src/account-model-defaults-http.ts",
+    "src/environment-launch-admission.ts",
+    "src/codex-environment-launch.ts"
   ]
 }

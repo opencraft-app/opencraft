@@ -138,6 +138,12 @@
       "name": "0022_account_model_defaults",
       "checksum": "b8fbb390148befa70dd79952679caee55f7cc6ceca45b5264015b625582d60e6",
       "snapshotChecksum": "d645b4e24d9e0480810d224ef34f0acc47b7309cfb8c6055d085fffc1e0f7cdd"
+    },
+    {
+      "version": 24,
+      "name": "0023_environment_creation_reservations",
+      "checksum": "946453b7d89222b527166ed15c14f9eef116623353b614049e6f04af0f22de66",
+      "snapshotChecksum": "614b13fe7f59738dafa61b61f4f27e4e97bb88140e3162c0fdddcb6072fa8a1f"
     }
   ],
   "alternates": [
@@ -325,6 +331,11 @@
           "version": 23,
           "name": "converge_0022_account_model_defaults",
           "checksum": "b8fbb390148befa70dd79952679caee55f7cc6ceca45b5264015b625582d60e6"
+        },
+        {
+          "version": 24,
+          "name": "converge_0023_environment_creation_reservations",
+          "checksum": "946453b7d89222b527166ed15c14f9eef116623353b614049e6f04af0f22de66"
         }
       ]
     }

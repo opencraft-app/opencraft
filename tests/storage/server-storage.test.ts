@@ -26,6 +26,7 @@ import { LocalAccountServerPlugin } from "../../plugins/local-account/src/server
 import { openManagedDatabase, sqliteTransaction, createSchemaValidator } from "@opencraft/sqlite-node";
 import { accountModelDefaultsMethods } from "../../packages/storage-node/src/server/account-model-defaults.js";
 import { conversationCreationReceiptMethods } from "../../packages/storage-node/src/server/conversation-creation-receipts.js";
+import { environmentCreationReservationMethods, readEnvironmentCreationReservation } from "../../packages/storage-node/src/server/environment-creation-reservations.js";
 
 function fixture(t: test.TestContext) {
   const root = mkdtempSync(join(tmpdir(), "opencraft-server-storage-"));
@@ -443,7 +444,7 @@ test("account model defaults upgrade the preceding Server contract, keep its dat
   const owner = await openServerDatabase(root);
   try {
     assert.equal(owner.outcome.status, "migrated");
-    assert.equal(owner.outcome.appliedVersion, priorVersion + 1);
+    assert.equal(owner.outcome.appliedVersion, SERVER_MIGRATIONS.length);
     assert.deepEqual(owner.database.prepare("SELECT * FROM schema_migrations WHERE version<=? ORDER BY version").all(priorVersion), ledger);
     const restored = new ActorStore(owner);
     assert.equal(restored.findHuman({ provider: "local", subject: "retained-person" })?.id, person.actorId);
@@ -452,6 +453,50 @@ test("account model defaults upgrade the preceding Server contract, keep its dat
     const defaults = accountModelDefaultsMethods(owner.database);
     assert.deepEqual(defaults.readAccountModelDefaults(person.actorId, "host"), { revision: 0, selection: null });
     assert.equal(defaults.compareAndSetAccountModelDefaults(person.actorId, "host", 0, { model: "upgraded", effort: null }).updated, true);
+  } finally { await owner.close(); }
+
+  const changed = new DatabaseSync(path);
+  changed.prepare("UPDATE schema_migrations SET checksum=? WHERE version=?").run("0".repeat(64), priorVersion + 1);
+  changed.close();
+  await assert.rejects(openServerDatabase(root), { kind: "history-mismatch" });
+});
+
+test("environment creation reservations upgrade the preceding Server contract, keep its data and reject a tampered checksum", async t => {
+  const root = fixture(t), path = join(root, "opencraft-server.sqlite");
+  const priorVersion = 23;
+  assert.equal(SERVER_MIGRATIONS[priorVersion]?.name, "0023_environment_creation_reservations");
+  const prior = openManagedDatabase({ path, migrations: SERVER_MIGRATIONS.slice(0, priorVersion) });
+  importServerData(prior.database, root, { productVersion: "0.1.0", hash: "previous-model-defaults-contract" });
+  const actors = new ActorStore(prior);
+  const person = actors.resolveHuman({ provider: "local", subject: "retained-person", displayName: "Retained", expiresAt: Date.now() + 60_000 });
+  actors.close();
+  assert.ok(person);
+  accountModelDefaultsMethods(prior.database).compareAndSetAccountModelDefaults(person.actorId, "host", 0, { model: "kept", effort: null });
+  const ledger = prior.database.prepare("SELECT * FROM schema_migrations ORDER BY version").all();
+  prior.database.close();
+
+  const owner = await openServerDatabase(root);
+  try {
+    assert.equal(owner.outcome.status, "migrated");
+    assert.equal(owner.outcome.appliedVersion, priorVersion + 1);
+    assert.deepEqual(owner.database.prepare("SELECT * FROM schema_migrations WHERE version<=? ORDER BY version").all(priorVersion), ledger);
+    assert.deepEqual(accountModelDefaultsMethods(owner.database).readAccountModelDefaults(person.actorId, "host").selection, { model: "kept", effort: null });
+    const reservations = environmentCreationReservationMethods(owner.database);
+    const reservation = { hostId: "local-codex" as const, operationId: "operation", actorId: "human://fixture/one", actorGeneration: 1,
+      membershipRevision: 0, source: null, incarnation: "native", project: "project" };
+    reservations.reserveEnvironmentCreation(reservation);
+    assert.deepEqual(readEnvironmentCreationReservation(owner.database, "local-codex", "operation"), reservation);
+    // One operation is never replaced; a settled one admits nothing, and settles once.
+    assert.throws(() => reservations.reserveEnvironmentCreation({ ...reservation, actorId: "human://fixture/two" }));
+    assert.equal(reservations.settleEnvironmentCreation("local-codex", "operation", "launched"), true);
+    assert.equal(reservations.settleEnvironmentCreation("local-codex", "operation", "abandoned"), false);
+    assert.equal(readEnvironmentCreationReservation(owner.database, "local-codex", "operation"), null);
+    // An expired pending reservation admits nothing either.
+    reservations.reserveEnvironmentCreation({ ...reservation, operationId: "brief" }, 1);
+    assert.equal(readEnvironmentCreationReservation(owner.database, "local-codex", "brief", Date.now() + 10), null);
+    for (const invalid of [{ ...reservation, actorId: "session://x/y" }, { ...reservation, actorGeneration: 0 },
+      { ...reservation, extra: 1 }, { ...reservation, hostId: "other" }])
+      assert.throws(() => reservations.reserveEnvironmentCreation({ ...invalid, operationId: "invalid" } as never));
   } finally { await owner.close(); }
 
   const changed = new DatabaseSync(path);

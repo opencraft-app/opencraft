@@ -31,14 +31,17 @@ interface EnvironmentLaunchActor {
   readonly membershipRevision: number;
   readonly hostId: "local-codex" | "opencraft-server";
 }
-/** An admitted native Turn: the execution lease and the live native incarnation. */
+/** An admitted native Turn: the execution lease and the live native incarnation.
+ * Codex stages a Thread's configuration before it submits the input, so on the
+ * local Codex Host the admission is the pending lease and `turnId` is `null`
+ * (no native Turn exists yet). Every other Host names the active native Turn. */
 export interface EnvironmentTurnAdmission extends EnvironmentLaunchActor {
   readonly kind: "turn";
   readonly threadId: string;
   readonly inputId: string;
   readonly executionId: string;
   readonly leaseGeneration: number;
-  readonly turnId: string;
+  readonly turnId: string | null;
   readonly incarnation: string;
 }
 /** A durable creation reservation (new or forked Thread) recorded before the
@@ -187,7 +190,8 @@ export function environmentLaunchAdmission(value: unknown): EnvironmentLaunchAdm
     case "turn":
       if (
         !keys(a, [...common, "threadId", "inputId", "executionId", "leaseGeneration", "turnId", "incarnation"]) ||
-        ![a.threadId, a.inputId, a.executionId, a.turnId, a.incarnation].every(text) ||
+        ![a.threadId, a.inputId, a.executionId, a.incarnation].every(text) ||
+        !(text(a.turnId) || (a.turnId === null && a.hostId === "local-codex")) ||
         !Number.isSafeInteger(a.leaseGeneration) ||
         (a.leaseGeneration as number) <= 0
       )
@@ -199,7 +203,7 @@ export function environmentLaunchAdmission(value: unknown): EnvironmentLaunchAdm
         inputId: a.inputId as string,
         executionId: a.executionId as string,
         leaseGeneration: a.leaseGeneration as number,
-        turnId: a.turnId as string,
+        turnId: a.turnId as string | null,
         incarnation: a.incarnation as string,
       });
     case "creation":

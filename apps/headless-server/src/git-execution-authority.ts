@@ -2,6 +2,7 @@ import { membershipRevocationRevision } from "@opencraft/access-control/membersh
 import { ownedDatabasePath } from "@opencraft/opencraft-daemon/owned-database-path";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { readEnvironmentCreationReservation } from "@opencraft/storage-node/server-environment-reservations";
 import {
   parseGitExecutionLocator,
   type GitExecutionHandoff,
@@ -91,10 +92,7 @@ export class GitExecutionAuthority {
       )
         return null;
       const principal = JSON.parse(String(row.principal_json));
-      if (!this.actors) {
-        this.actors = new DatabaseSync(join(this.directory, "opencraft-server.sqlite"), { readOnly: true });
-        this.actors.exec("PRAGMA query_only=ON; PRAGMA busy_timeout=1000");
-      }
+      this.actorStore();
       if (
         this.accountMode === "actor" &&
         (!/^human:\/\/[^/]+\/[^/]+$/u.test(principal?.actorId ?? "") ||
@@ -147,6 +145,57 @@ export class GitExecutionAuthority {
     }
   }
 
+  private actorStore(): DatabaseSync {
+    if (!this.actors) {
+      this.actors = new DatabaseSync(join(this.directory, "opencraft-server.sqlite"), { readOnly: true });
+      this.actors.exec("PRAGMA query_only=ON; PRAGMA busy_timeout=1000");
+    }
+    return this.actors;
+  }
+  /** The current epoch of an enabled Human Actor (generation and membership
+   * revocation revision), or `null` when it is disabled, removed or not Human. */
+  actorEpoch(actorId: string): { actorGeneration: number; membershipRevision: number } | null {
+    if (this.closed) throw Error("git_authority_store_unavailable");
+    if (typeof actorId !== "string" || !/^human:\/\/[^/]+\/[^/]+$/u.test(actorId)) return null;
+    try {
+      const actors = this.actorStore();
+      const actor = actors
+        .prepare(
+          `SELECT a.id,a.kind,a.enabled,a.generation,m.enabled AS member_enabled FROM actors a
+      LEFT JOIN actor_members m ON m.actor_id=a.id WHERE a.id=?`,
+        )
+        .get(actorId);
+      if (!actor || actor.kind !== "human" || actor.enabled !== 1 || actor.member_enabled === 0) return null;
+      const bindings = actors
+        .prepare("SELECT binding FROM actor_bindings WHERE actor_id=?")
+        .all(actorId)
+        .map((row) => String(row.binding));
+      if (
+        actors
+          .prepare(
+            `SELECT 1 FROM actor_bindings b JOIN members m ON m.binding=b.binding WHERE b.actor_id=? AND m.enabled=0 LIMIT 1`,
+          )
+          .get(actorId)
+      )
+        return null;
+      return {
+        actorGeneration: Number(actor.generation),
+        membershipRevision: membershipRevocationRevision(actors, actorId, bindings),
+      };
+    } catch {
+      throw Error("git_authority_store_unavailable");
+    }
+  }
+  /** The pending, unexpired creation reservation recorded by the Server owner, or
+   * `null`. The Actor epoch is the one recorded at admission. */
+  creationReservation(hostId: string, operationId: string, now = Date.now()) {
+    if (this.closed) throw Error("git_authority_store_unavailable");
+    try {
+      return readEnvironmentCreationReservation(this.actorStore(), hostId, operationId, now);
+    } catch {
+      throw Error("git_authority_store_unavailable");
+    }
+  }
   unowned(scope: GitExecutionQuery, phase: "active" | "pending" = "active"): boolean {
     if (this.closed) throw Error("git_authority_store_unavailable");
     if (

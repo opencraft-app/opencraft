@@ -37,6 +37,7 @@ import { startAvailabilityNotification } from './availability-notification.mjs';
 import { ExecutionEnvironmentTransport } from './execution-environment-transport.ts';
 import { EnvironmentMetadataTransport } from './environment-metadata-transport.ts';
 import { createHostEnvironmentLaunch } from './host-environment-launch.ts';
+import { coreCodexEnvironmentLaunch } from './codex-environment-launch.ts';
 import { composeHostTerminalSelector, createHandsTerminalService, HostTerminalSession, HostTerminalTransport, terminalResourceOwnerId } from './host-terminal-transport.js';
 import { createHostFileSystem } from './host-filesystem.js';
 import { composeHostFileSelector, HostFileSystemSession, HostFileSystemTransport } from './host-filesystem-transport.js';
@@ -1100,6 +1101,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           return new MachineIdentityTransport(null, "Codex", () => createRemoteCodexTransport(binding, hostId));
         }
         if (hostId !== "local-codex") throw new Error(`Unknown server Host ${hostId}`);
+        const codexEnvironmentLaunch = coreCodexEnvironmentLaunch(environmentLaunch, serverStorage,
+          options.codexCoreEndpoint, `server:${machineIdentity.machineId}:codex`);
         // Host-wide duties (tasks first) are answered by the services front before Thread routing.
         let codexAdapterStorage = [], codexFront, codexRouting;
         const codexReader = options.codexCoreEndpoint ? new CodexNativeReader(options.codexCoreEndpoint, options.codexCoreAuthToken) : undefined;
@@ -1139,6 +1142,9 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           createThreadMetadata,
           nativeTool: codexNativeTool,
           executionEnvironment: identity?.executionEnvironment,
+          // Core vault owner: Codex Core opens the capsules; this process relays
+          // them and writes creation reservations through the Server owner.
+          ...(codexEnvironmentLaunch && assetsService ? {environmentLaunch: codexEnvironmentLaunch} : {}),
           ...(assetsService ? {createExecutionGit: native => createHumanGitExecution({
             directory: dataDirectory, runtimeDirectory: humanGitRuntimeDirectory(join(dataDirectory, 'codex-git-runtime'), 'codex'),
             workerFile: options.gitWorkerFile ?? fileURLToPath(new URL('./personal-git-worker.mjs', import.meta.url)),

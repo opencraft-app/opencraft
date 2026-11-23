@@ -4,6 +4,7 @@ import { createAssetsStorage } from "@opencraft/plugin-assets/server/storage";
 import type { GitConnectionProvider } from "@opencraft/plugin-assets/server/git-connections";
 import { GitExecutionAuthority, executionScope, resolveExecutionAdmission } from "./git-execution-authority.js";
 import { parseGitExecutionLocator } from "@opencraft/execution-environment/git-execution";
+import { codexTurnAdmission, creationAdmission } from "./environment-launch-admission.js";
 /** Only this compiled native host adds execution admission to the shared vault owner. */
 export function createHeadlessAssetsStorage(
   directory: string,
@@ -49,6 +50,17 @@ export function createHeadlessAssetsStorage(
         },
       };
     },
-    options,
+    options.environmentLaunch
+      ? {
+          ...options,
+          // Core's own durable records: the pending Codex input lease and the
+          // Server owner's creation reservation, with the current Actor epoch.
+          environmentRecords: {
+            codexTurn: (locator) => codexTurnAdmission(authority, locator),
+            creation: (locator) => creationAdmission(authority, locator),
+            actorEpoch: (actorId) => authority.actorEpoch(actorId),
+          },
+        }
+      : options,
   );
 }
