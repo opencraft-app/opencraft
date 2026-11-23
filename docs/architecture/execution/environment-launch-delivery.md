@@ -1,12 +1,14 @@
 # Execution ENV launch delivery
 
-Status: slices 1 and 3 implemented, with the receiver taking its expected
+Status: slices 1, 2 and 3 implemented, with the receiver taking its expected
 context from the execution owner's own durable admission (Decision 1). DSH in
 `assets` mode receives Turn ENV through `EnvironmentLaunchReceiver` when either
 the identity composition supplies a vault-owner port or the installation sets
 `environmentDelivery: 'vault-owner'`, which makes the core vault Worker the
-issuer. Every other consumer still reads a decrypted snapshot from
-`ExecutionEnvironmentRuntime` synchronously in its own process.
+issuer. Pi receives it the same way in the independent engine host when that
+host's configuration pins `environmentIssuer`. Every other consumer still reads
+a decrypted snapshot from `ExecutionEnvironmentRuntime` synchronously in its
+own process.
 
 Related: [account environment variables](../identity/account-environment.md),
 [execution control](execution-control-authority.md),
@@ -175,6 +177,9 @@ metadata owner (slice 8) moves `bind` to an asynchronous owner port.
   without the assets vault Worker or without execution admission.
 - `environmentLaunch` without the Actor/lease handoff (`humanGitExecution`) is
   rejected at startup instead of failing every command.
+- Delivery together with Pi running inside Main (no `engineHostDescriptor`) is
+  rejected at startup instead of launching Pi without ENV. An engine host given
+  `environmentIssuer` outside the Assets execution context is rejected too.
 - Owners that have not migrated keep the synchronous snapshot. A configured
   receiver against a Gateway without the route fails closed.
 - Independently installed execution owners must be updated before their
@@ -194,11 +199,24 @@ synchronous runtime.
    and issuer, audience separation, compatibility. Evidence: package and app
    typechecks, existing DSH/Git/session-capability tests, a pinned-DSH run with
    `OPENCRAFT_DSH_RUNTIME` showing a command reading a vault-only value.
-2. **Pi engine host.** Enable purpose `pi` in the relay; Pi receives ENV beside
-   its Git port and combines both into one snapshot (values plus Git grant).
-   In-process Pi inside Main cannot host a receiver; `environmentLaunch`
-   requires the independent engine host. Tests: Pi shell worker per snapshot,
-   worker reuse keyed by snapshot, revocation. Evidence: engine-host smoke.
+2. **Pi engine host (implemented).** The relay serves purpose `pi`; the
+   independent engine host constructs the receiver (`instance`
+   `server:<machine>:pi`) with its issuer pinned by its own configuration
+   (`environmentIssuer`, Assets execution context only) and reads its durable
+   admission by input in the same admission Worker as DSH, additionally
+   requiring a Pi Thread of this live process. For each shell launch Pi
+   prepares the opaque ENV and its Git grant for the same input and joins them
+   with `ExecutionEnvironmentSnapshot.combine` (same owner, no name shadowing a
+   Git variable), then rechecks that the input still owns the live run. Shell
+   workers are keyed by the combined snapshot. Headless refuses delivery
+   together with in-process Pi at startup, and `PiEngine` refuses a receiver
+   without its Git port or beside a synchronous runtime. Tests
+   (`pi-environment-launch.test.ts`, `environment-launch-owner.test.ts`,
+   `independent-engine-host.test.mjs`, `headless-composition.test.mjs`): one
+   worker per snapshot, reuse by key, revocation retires the worker and
+   interrupts its command, unowned input, no value in any relayed reply,
+   combine refusals, in-process refusal, unconfigured compatibility, a durable
+   admission read by input, and an engine host booting with a pinned issuer.
 3. **Core vault-owner Worker issuer (implemented).** `EnvironmentLaunchOwner`
    runs `AccountEnvironment.launchEnvironment` in the Headless assets Worker that
    owns the vault, so core installations can use slices 1-2 without a downstream
@@ -250,6 +268,25 @@ Recorded after the first slice; later slices follow them.
 - **A configured vault owner refuses execution owners that do not request a
   capsule** (for example an old DSH runtime), with an explicit upgrade error,
   instead of launching with an empty ENV. Missing delivery must fail closed.
+- **A refused delivery retires Pi's delivered-value workers.** Values live
+  only in the environment of the shell worker process, so stopping it is the
+  only revocation. When a configured delivery is refused for a Pi Thread (lease
+  replaced, Actor revoked, process replaced, or the Gateway unreachable), every
+  worker holding delivered values for that Thread is stopped and its running
+  commands are marked interrupted and are not replayed; a cancelled call does
+  not retire anything. Idle workers of an older snapshot are still pruned when
+  a new snapshot starts its worker, as before.
+- **The independent engine host pins its issuer through its own
+  configuration.** It is never learnt from the Gateway or its capability
+  descriptor. A composition port with a stable issuer key suits this directly.
+  The core vault-owner issuer's key lives for one Worker lifetime, so with it
+  the engine host must be relaunched with the new key after the vault owner
+  restarts; until then its deliveries fail closed. Supervisor wiring that
+  writes the key into the engine host configuration is not part of slice 2.
+- **Pi's native file-tool environment receives no delivered values.** Only the
+  shell worker launches commands with personal ENV; the native
+  `NodeExecutionEnv` keeps the base environment, as it already does with the
+  Git port alone.
 - **The downstream port shape `{issuer, seal(target, context): Promise<string>}` is
   accepted for now**; slice 3 adds a core vault-owner issuer so installations no
   longer need to supply it. Implemented as `environmentDelivery: 'vault-owner'`.

@@ -1,8 +1,9 @@
 import { piModel } from './contract.js';
 import { assertModelPolicy, ModelPolicyError } from '@opencraft/model-usage-policy/native';
 
-import type {ExecutionGitPort} from "@opencraft/execution-environment/execution-snapshot";
-import type { ExecutionEnvironmentRuntime, ExecutionEnvironmentSnapshot } from "@opencraft/execution-environment";
+import { ExecutionEnvironmentSnapshot, type ExecutionGitPort } from "@opencraft/execution-environment/execution-snapshot";
+import type { ExecutionEnvironmentRuntime } from "@opencraft/execution-environment";
+import type { GitExecutionLocator } from "@opencraft/execution-environment/git-execution";
 import { createHash, randomUUID } from "node:crypto";
 import { PiPrivateCallsDoc, type PiPrivateCalls } from "./private-calls.js";
 import { join } from "node:path";
@@ -23,6 +24,11 @@ import { decodeImage } from "./input.js";
 import { expiredPiSteers } from "./steering.js";
 
 type Value = Record<string, any>;
+/** Receiver side of opaque ENV delivery, constructed inside the process that
+ * spawns Pi shell workers (the independent engine host), never inside Main. */
+export interface PiExecutionLaunchPort {
+  prepare(input: GitExecutionLocator, current?: () => void): Promise<ExecutionEnvironmentSnapshot>;
+}
 export interface PiSnapshot {
   entries: readonly EntryRecord[];
   submissions: readonly SubmissionRecord[];
@@ -81,6 +87,8 @@ export class PiDurableSession {
     policyCatalog?():Promise<Value[]>;
     onPolicyDenied?(error:ModelPolicyError):void;
     ephemeral?: boolean; inherited?: PiForkContext; executionEnvironment?: ExecutionEnvironmentRuntime; executionGit?:ExecutionGitPort; projectId?: string | null;
+    /** Opaque ENV delivery for this execution owner, beside its Git port. */
+    executionLaunch?: PiExecutionLaunchPort;
     /** Bridge-owned sessions use the ordinary coding bash tool, not the PTY worker. */
     shell?: boolean;
     /** Lock acquisition attempts against another writer; the native default is 12. */
@@ -235,6 +243,44 @@ export class PiDurableSession {
     const runtime = this.options.executionEnvironment;
     return runtime?.snapshot(runtime.execution('opencraft-server', this.options.threadId, inputId, this.options.projectId));
   }
+  /** Without delivery this is the Git port alone, unchanged. With delivery the
+   * opaque ENV launch and the Git grant of the same admission become one
+   * snapshot; a refused delivery retires every worker holding delivered values. */
+  private async executionSnapshot(inputId: string, ctx: Context): Promise<ExecutionEnvironmentSnapshot> {
+    const git = this.options.executionGit!, launch = this.options.executionLaunch;
+    if (!launch) return git.prepare({hostId:'opencraft-server',threadId:this.options.threadId,inputId,projectId:this.options.projectId??null});
+    // The vault owner resolves the Project from the Thread; a locator never names it.
+    const locator: GitExecutionLocator = { hostId: 'opencraft-server', threadId: this.options.threadId, inputId, projectId: null };
+    const cancelled = () => this.closed || !!ctx.abortSignal?.aborted;
+    const current = () => { if (cancelled()) throw Error('Pi shell call cancelled'); };
+    try {
+      const [values, grant] = await Promise.all([launch.prepare(locator, current), git.prepare(locator)]);
+      current();
+      // The original input must still own the live run after both deliveries.
+      if (await this.liveInputId(ctx) !== inputId) throw Error('environment_launch_unavailable');
+      return ExecutionEnvironmentSnapshot.combine(values, grant);
+    } catch (error) {
+      if (cancelled()) throw Error('Pi shell call cancelled');
+      await this.retireEnvironmentWorkers("Execution environment was revoked; the command was stopped and was not replayed.");
+      throw error;
+    }
+  }
+  private liveInputId(ctx: Context) {
+    return this.root.commit(async tx => {
+      const live = await tx.doc(LiveDoc, this.root.id);
+      const requestId=live.run?.inputs[0]===undefined?null:(await this.storage.submission(live.run.inputs[0],ctx))?.requestId??null;
+      const prefix=`${this.options.threadId}:turn:client:`;
+      return requestId?.startsWith(prefix)?requestId.slice(prefix.length):requestId;
+    }, ctx);
+  }
+  /** Delivered values live only in their worker process; retiring it is the only revocation. */
+  private async retireEnvironmentWorkers(reason: string) {
+    const retired = [...this.environmentWorkers.values()];
+    this.environmentWorkers.clear();
+    await Promise.all(retired.map(worker => worker.stop()));
+    for (const worker of retired) await this.interruptShells(reason, false, worker.generation);
+    if (retired.length) this.shellEvents = this.shellEvents.then(() => this.deliverShellNotifications()).catch(() => { if (!this.closed) this.options.onExit(new Error("Pi shell owner failed")); });
+  }
   private async environmentWorker(snapshot?: ExecutionEnvironmentSnapshot): Promise<PiShellWorker> {
     if (this.options.shell === false) throw new Error("Pi shell worker is disabled for this bridge session");
     if (!snapshot) return this.shell;
@@ -258,14 +304,9 @@ export class PiDurableSession {
   private async executeShell(args: Value, api: Value, ctx: Context, waitMs: number | undefined = undefined) {
     if (this.options.shell === false) throw new Error("Pi shell worker is disabled for this bridge session");
     if (this.closed || ctx.abortSignal?.aborted) throw new Error("Pi shell call cancelled");
-    const inputId = (this.options.executionEnvironment||this.options.executionGit) ? await this.root.commit(async tx => {
-      const live = await tx.doc(LiveDoc, this.root.id);
-      const requestId=live.run?.inputs[0]===undefined?null:(await this.storage.submission(live.run.inputs[0],ctx))?.requestId??null;
-      const prefix=`${this.options.threadId}:turn:client:`;
-      return requestId?.startsWith(prefix)?requestId.slice(prefix.length):requestId;
-    }, ctx) : null;
+    const inputId = (this.options.executionEnvironment||this.options.executionGit) ? await this.liveInputId(ctx) : null;
     const environment = this.options.executionGit
-      ? inputId ? await this.options.executionGit.prepare({hostId:'opencraft-server',threadId:this.options.threadId,inputId,projectId:this.options.projectId??null}) : (()=>{throw Error('Git execution admission unavailable');})()
+      ? inputId ? await this.executionSnapshot(inputId, ctx) : (()=>{throw Error('Git execution admission unavailable');})()
       : this.environmentSnapshot(inputId ?? undefined);
     if(this.closed||ctx.abortSignal?.aborted)throw Error('Pi shell call cancelled');
     let shell = await this.environmentWorker(environment);

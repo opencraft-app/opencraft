@@ -12,7 +12,7 @@ export class ExecutionEnvironmentSnapshot {
   readonly key: string;
   private readonly values: Readonly<Record<string, string>>;
   constructor(
-    scope: EnvironmentExecutionScope,
+    private readonly scope: EnvironmentExecutionScope,
     values: Record<string, string>,
     private readonly git?: PersonalGitGrant,
     readonly needsGitAdmission = false,
@@ -21,8 +21,25 @@ export class ExecutionEnvironmentSnapshot {
     this.account = scope.account;
     this.key = digest([this.owner, values, git?.environment]);
     this.values = Object.freeze({ ...values });
-    for (const property of ["values", "key", "account", "git"])
+    for (const property of ["values", "key", "account", "git", "scope"])
       Object.defineProperty(this, property, { enumerable: false });
+  }
+  /** One launch snapshot from delivered values and the Git grant of the same
+   * admission. Both must name the same owner; neither may already carry the
+   * other's part, and no delivered name may shadow a Git variable. */
+  static combine(values: ExecutionEnvironmentSnapshot, git: ExecutionEnvironmentSnapshot): ExecutionEnvironmentSnapshot {
+    if (
+      values.owner !== git.owner ||
+      values.account !== git.account ||
+      values.git ||
+      values.needsGitAdmission ||
+      git.needsGitAdmission ||
+      Object.keys(git.values).length
+    )
+      throw Error("environment_launch_unavailable");
+    for (const name of Object.keys(git.git?.environment ?? {}))
+      if (Object.hasOwn(values.values, name)) throw Error("environment_launch_unavailable");
+    return new ExecutionEnvironmentSnapshot(values.scope, values.values, git.git);
   }
   apply(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
     const result = { ...base };

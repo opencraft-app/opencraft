@@ -162,6 +162,49 @@ test("DSH reads its own durable admission in a Worker and refuses a relay that d
   await assert.rejects(launch.prepare(locator));
 });
 
+test("Pi reads its own durable admission by input in a Worker; a capsule for the DSH attachment never opens", async (t) => {
+  const f = await durable(t);
+  const threadId = "pi_durable",
+    inputId = "pi-input",
+    turnId = "pi-native-turn";
+  const executionId = f.admit(threadId, inputId, turnId);
+  const reader = openExecutionAdmission({ workerFile: admissionWorker, directory: f.directory });
+  t.after(() => reader.close());
+  // Pi locates its execution by the admitted input, not by a native Turn id.
+  const locator = { hostId: "opencraft-server" as const, threadId, inputId, projectId: null };
+  const owned = (await reader.resolve(locator))!;
+  assert.equal(owned.scope.executionId, executionId);
+  assert.equal(owned.native.turnId, turnId);
+  const issuer = new EnvironmentLaunchIssuer();
+  t.after(() => issuer.close());
+  let purpose: "pi" | "dsh" = "pi";
+  const piAttachment = "server:fixture:pi";
+  const launch = createRemoteEnvironmentLaunch({
+    purpose: "pi",
+    instance: piAttachment,
+    issuer: issuer.key,
+    capabilities: {
+      async hostEnvironment(_threadId: string, _source: unknown, recipient: string) {
+        const capsule = issuer.seal(
+          { purpose, instance: purpose === "pi" ? piAttachment : attachment, key: recipient },
+          owned,
+          () => ({ SERVICE_KEY: SECRET }),
+          () => {},
+        );
+        return { context: owned, capsule };
+      },
+    },
+    admission: (input) => reader.resolve(input),
+  });
+  t.after(() => launch.close());
+  assert.equal((await launch.prepare(locator)).apply({}).SERVICE_KEY, SECRET);
+  purpose = "dsh";
+  await assert.rejects(launch.prepare(locator), { message: "environment_launch_unavailable" });
+  purpose = "pi";
+  f.leases.finished(threadId, turnId);
+  await assert.rejects(launch.prepare(locator));
+});
+
 test("an unowned Turn reads as no admission; a closed reader refuses instead of reading on this thread", async (t) => {
   const f = await durable(t);
   const threadId = "dsh-unowned",

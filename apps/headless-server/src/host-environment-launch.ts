@@ -15,8 +15,9 @@ export interface EnvironmentLaunchIssuerPort {
 export type HostEnvironmentReply =
   { readonly context: null } | { readonly context: EnvironmentLaunchContext; readonly capsule: string };
 
-// Only attachments whose execution owner constructs a receiver are listed.
-const purposes = new Set(["dsh"]);
+// Only attachments whose execution owner constructs a receiver are listed: the
+// DSH capability plugin and the independent Pi engine host.
+const purposes = new Set(["dsh", "pi"]);
 const same = (a: Pick<GitExecutionHandoff, "scope" | "native">, b: Pick<GitExecutionHandoff, "scope" | "native">) =>
   JSON.stringify([a.scope, a.native]) === JSON.stringify([b.scope, b.native]);
 
@@ -44,7 +45,7 @@ export function createHostEnvironmentLaunch(options: {
     if (!admitted) return { context: null };
     const context: EnvironmentLaunchContext = { scope: admitted.scope, native: admitted.native };
     const capsule = await options.port.seal(
-      { purpose: purpose as "dsh", instance: session.serverId, key: recipient },
+      { purpose: purpose as "dsh" | "pi", instance: session.serverId, key: recipient },
       context,
     );
     const latest = await options.handoff(locator);

@@ -637,6 +637,10 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     const engines = options.engines ?? ["dsh"];
     if (engines.some(engine => !['dsh','pi'].includes(engine)) && !options.engineHostDescriptor)
       throw new Error('ACP and Claude execution require an independent Engine Host descriptor');
+    // Pi inside Main cannot host a receiver: delivered ENV must not reach this
+    // process. With delivery, Pi runs only in the independent Engine Host.
+    if (environmentLaunch && engines.includes('pi') && !options.engineHostDescriptor)
+      throw new Error('Environment delivery requires the independent Pi engine host');
     let piEngine;
     let independentEngine;
     const conversationExecution = createRoutedConversationExecution(() => appHostServer, {machineId:machineIdentity.machineId,engines,modelCatalog:true,
