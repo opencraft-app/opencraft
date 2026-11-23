@@ -23,6 +23,7 @@ import { MembershipStore } from "@opencraft/access-control";
 import { Collaboration } from "../../packages/access-control/src/collaboration.js";
 import { CapabilityBindings } from "@opencraft/session-capabilities/bindings";
 import { LocalAccountServerPlugin } from "../../plugins/local-account/src/server.js";
+import { createNodePasswordHasher } from "../../plugins/local-account/src/password-hash-node.js";
 import { nodeSqlDatabase, openManagedDatabase, createSchemaValidator } from "@opencraft/sqlite-node";
 const serverSource = (managed: { database: import('node:sqlite').DatabaseSync; outcome: import('@opencraft/sqlite-node').DatabaseOutcome }) => ({ database: nodeSqlDatabase(managed.database), outcome: managed.outcome });
 
@@ -36,7 +37,7 @@ async function seed(root: string) {
   const actors = new ActorStore(join(root, "actors.sqlite"));
   const members = new MembershipStore(join(root, "memberships.sqlite"));
   const accounts = new HumanAccounts(join(root, "human-logins.sqlite"), actors);
-  const provider = new LocalAccountServerPlugin(accounts.localAccountRepository); accounts.registerLocalAccounts(provider);
+  const provider = new LocalAccountServerPlugin(accounts.localAccountRepository, createNodePasswordHasher()); accounts.registerLocalAccounts(provider);
   const management = new HumanAccountManagement(join(root, "account-onboarding.sqlite"), accounts, actors, members);
   const principal = await management.initialize({ mode: "web", username: "owner", password });
   const context = actors.resolveHuman(principal)!;
@@ -98,7 +99,7 @@ test("registered populated stores consolidate without changing authority, sessio
   try {
     assert.equal(storage.outcome.status, "migrated");
     const actors = new ActorStore(storage), accounts = new HumanAccounts(storage, actors), members = new MembershipStore(storage);
-    const provider = new LocalAccountServerPlugin(accounts.localAccountRepository); accounts.registerLocalAccounts(provider);
+    const provider = new LocalAccountServerPlugin(accounts.localAccountRepository, createNodePasswordHasher()); accounts.registerLocalAccounts(provider);
     const management = new HumanAccountManagement(storage, accounts, actors, members);
     const collaboration = new Collaboration(storage, actors, execution), bindings = new CapabilityBindings(storage);
     assert.equal(actors.authority, before.authority);
@@ -242,7 +243,7 @@ test("official account and access commands use the consolidated authority", asyn
   const storage = await openServerDatabase(root);
   try {
     const actors = new ActorStore(storage), members = new MembershipStore(storage), accounts = new HumanAccounts(storage, actors);
-    const provider = new LocalAccountServerPlugin(accounts.localAccountRepository); accounts.registerLocalAccounts(provider);
+    const provider = new LocalAccountServerPlugin(accounts.localAccountRepository, createNodePasswordHasher()); accounts.registerLocalAccounts(provider);
     assert.equal(members.actorMembership(before.context.actorId)?.enabled, false);
     assert.equal(await provider.verify("owner", password), null);
     assert.equal((await provider.verify("owner", nextPassword))?.subject, before.subject);

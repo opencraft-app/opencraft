@@ -8,6 +8,7 @@ import { ModelGatewayStore } from "@opencraft/account-pool-host";
 import { projectModelCatalog } from "@opencraft/model-usage-policy/transport";
 import { CapabilityBindings } from "@opencraft/session-capabilities/bindings";
 import { IdentityWriteOwner, identityWriteMethods } from "@opencraft/access-control/identity-writes";
+import { localAccountPasswordUpgrade } from "@opencraft/access-control/local-account-upgrade-owner";
 import { orchestrationRuntimeOwnerMethods } from "@opencraft/access-control/orchestration-runtime-domain";
 import { serverSpacesOwnerMethods } from "@opencraft/access-control/server-spaces-domain";
 import { installCommunicationExtension } from "@opencraft/access-control/communication-extension";
@@ -22,7 +23,9 @@ serveServerCoreOwner((owner, data) => {
   const notes = new ThreadNoteStore(owner);
   const capabilityBindings = new CapabilityBindings(owner);
   // The commit fence lets the network thread recheck Actor administration under this writer lock.
-  const identity = new IdentityWriteOwner(owner, data.identityFence);
+  const identity = new IdentityWriteOwner(owner, data.identityFence, {
+    upgradeLocalPassword: localAccountPasswordUpgrade(owner.database),
+  });
   // Orchestration runtime, communication and automation ledgers, and the Server
   // space ledger: one writer on this connection, in FIFO with every domain here.
   const orchestration = orchestrationRuntimeOwnerMethods(owner);

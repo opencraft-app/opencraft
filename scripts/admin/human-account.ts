@@ -5,6 +5,7 @@ import { openServerDatabase } from "../../packages/storage-node/src/server/index
 import { ActorStore } from '../../packages/access-control/src/actors.js';
 import { HumanAccounts } from '../../packages/access-control/src/human-accounts.js';
 import { LocalAccountServerPlugin } from '../../plugins/local-account/src/server.js';
+import { createNodePasswordHasher } from '../../plugins/local-account/src/password-hash-node.js';
 import { MembershipStore, type MemberRole } from '../../packages/access-control/src/index.js';
 import { readPrivateJson } from '../../packages/identity-core/src/node.js';
 
@@ -17,7 +18,7 @@ if (!info.isDirectory() || (info.mode & 0o077) !== 0 || info.uid !== process.get
 const storage = await openServerDatabase(directory);
 const actors = new ActorStore(storage);
 const accounts = new HumanAccounts(storage, actors);
-const localAccounts = new LocalAccountServerPlugin(accounts.localAccountRepository);
+const localAccounts = new LocalAccountServerPlugin(accounts.localAccountRepository, createNodePasswordHasher());
 accounts.registerLocalAccounts(localAccounts);
 let members: MembershipStore | undefined;
 try {

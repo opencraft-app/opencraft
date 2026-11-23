@@ -3,8 +3,8 @@
 //
 // One SQLite-backed Durable Object migrates the Server core with the slim
 // lifecycle and runs the unchanged identity stack over it: ActorStore,
-// HumanAccounts (browser logins), the bundled local-account plugin (scrypt
-// via nodejs_compat node:crypto), MembershipStore, HumanAuth (login routes)
+// HumanAccounts (browser logins), the bundled local-account plugin (Argon2id
+// through the portable pure-JS hasher), MembershipStore, HumanAuth (login routes)
 // and InstanceAccess (the authenticate/admission path). HumanAuth.handle is
 // still written against node:http, so a fetch Request/Response is adapted to
 // the narrow IncomingMessage/ServerResponse surface it actually touches; that
@@ -21,6 +21,7 @@ import { HumanAuth } from "@opencraft/access-control/human-auth";
 import { InstanceAccess, MembershipStore, type MemberRole } from "@opencraft/access-control";
 import type { LocalAccountRecord } from "@opencraft/identity-core/local-account";
 import { LocalAccountServerPlugin } from "@opencraft/plugin-local-account/server";
+import { createPortablePasswordHasher } from "@opencraft/plugin-local-account/password-hash-portable";
 import { handleNodeStyle, identityRequest } from "./node-http-exchange.js";
 
 interface Env {
@@ -58,7 +59,7 @@ export class LoginCore extends DurableObject<Env> {
         const now = () => Date.now() + this.#skew;
         const actors = new ActorStore(handle, now);
         const accounts = new HumanAccounts(handle, actors, now);
-        const local = new LocalAccountServerPlugin(accounts.localAccountRepository, now);
+        const local = new LocalAccountServerPlugin(accounts.localAccountRepository, createPortablePasswordHasher(), now);
         accounts.registerLocalAccounts(local);
         const members = new MembershipStore(handle);
         const auth = new HumanAuth(accounts, actors, { origin: env.ORIGIN, local: true, oidc: [] }, () => "<!doctype html>", () => null, now);
@@ -109,6 +110,11 @@ export class LoginCore extends DurableObject<Env> {
     const started = performance.now();
     const principal = await this.#open().local.verify(username, password);
     return { subject: principal?.subject ?? null, ms: performance.now() - started };
+  }
+  async hashOnly(password: string): Promise<{ record: string; ms: number }> {
+    const started = performance.now();
+    const record = await this.#open().local.hasher.hash(password);
+    return { record, ms: performance.now() - started };
   }
   setEnabled(username: string, enabled: boolean): void {
     this.#open().local.setEnabled(username, enabled);

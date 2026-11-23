@@ -6,6 +6,12 @@ import { ActorStore } from "./actors.js";
 import { HumanAccounts, type HumanLogin } from "./human-accounts.js";
 import { MembershipStore, type MemberRole } from "./index.js";
 import { commitFence, serveCommitFence } from "./commit-fence.js";
+import type { LocalAccountPasswordExpectation, LocalAccountPasswordUpgrades } from "@opencraft/identity-core/local-account";
+
+/** Owner-connection writes the Worker entry supplies, so their SQL stays off network-thread imports. */
+export interface IdentityWriteOwnerOptions {
+  readonly upgradeLocalPassword?: (id: string, expected: LocalAccountPasswordExpectation, salt: string, passwordDigest: string) => boolean;
+}
 
 /**
  * Identity writes a Server owner Worker performs on its own connection: login
@@ -25,10 +31,13 @@ export class IdentityWriteOwner {
   readonly #accounts: HumanAccounts;
   readonly #members: MembershipStore;
   readonly #fence: ((token: number) => void) | null;
+  readonly #options: IdentityWriteOwnerOptions;
   constructor(
     private readonly owner: ServerDatabase,
     fence?: SharedArrayBuffer,
+    options: IdentityWriteOwnerOptions = {},
   ) {
+    this.#options = options;
     this.#actors = new ActorStore(owner, Date.now, { permissionProjection: false });
     this.#accounts = new HumanAccounts(owner, this.#actors);
     this.#members = new MembershipStore(owner, { permissionProjection: false });
@@ -51,6 +60,12 @@ export class IdentityWriteOwner {
   }
   rememberLabel(principal: Principal, label: string): void {
     this.#accounts.rememberLabel(principal, label);
+  }
+  /** Compare-and-set login upgrade of a local password record; not an authority change. */
+  upgradeLocalPassword(id: string, expected: LocalAccountPasswordExpectation, salt: string, passwordDigest: string): boolean {
+    const upgrade = this.#options.upgradeLocalPassword;
+    if (!upgrade) throw new Error("Local password upgrade unavailable in this owner");
+    return upgrade(id, expected, salt, passwordDigest);
   }
   bindHuman(owner: ActorContext, principal: Principal): boolean {
     return this.#actors.bindHuman(owner, principal);
@@ -116,6 +131,7 @@ export const IDENTITY_WRITE_METHODS = [
   "issueLogin",
   "revokeLogin",
   "rememberLabel",
+  "upgradeLocalPassword",
   "bindHuman",
   "unbindHuman",
   "createSession",
@@ -140,7 +156,7 @@ export function identityWriteMethods(owner: IdentityWriteOwner): Record<string, 
  * observers, so a read after the await sees the write. When this thread
  * registered registration hooks the owner cannot run, the write stays local.
  */
-export class IdentityWrites {
+export class IdentityWrites implements LocalAccountPasswordUpgrades {
   readonly #checks = new Map<number, () => boolean>();
   #sequence = 0;
   readonly #stopFence: () => void;
@@ -188,6 +204,10 @@ export class IdentityWrites {
   }
   async rememberLabel(principal: Principal, label: string): Promise<void> {
     await this.owner.rememberLabel(principal, label);
+  }
+  /** Resolves after the owner committed (or refused) it; no projection or observer changes. */
+  async upgradeLocalPassword(id: string, expected: LocalAccountPasswordExpectation, salt: string, passwordDigest: string): Promise<boolean> {
+    return this.owner.upgradeLocalPassword(id, expected, salt, passwordDigest);
   }
   async bindHuman(owner: ActorContext, principal: Principal): Promise<void> {
     const changed = await this.owner.bindHuman(owner, principal);

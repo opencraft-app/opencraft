@@ -15,6 +15,7 @@ import { HumanAuth } from "@opencraft/access-control/human-auth";
 import { MembershipStore, InstanceAccess } from "@opencraft/access-control";
 import { HumanAccountManagement } from "@opencraft/access-control/account-management";
 import { LocalAccountServerPlugin } from "../../plugins/local-account/src/server.js";
+import { createNodePasswordHasher } from "../../plugins/local-account/src/password-hash-node.js";
 import { openHumanAssets } from "../../plugins/local-account/src/assets-server.js";
 import { openAssetConfigurations } from "../../plugins/assets/src/server/worker.js";
 import { humanGitRuntimeDirectory, createHumanGitExecution } from "../../apps/headless-server/src/human-git-execution.js";
@@ -42,7 +43,7 @@ async function fixture(t: test.TestContext) {
     actors = new ActorStore(storage),
     accounts = new HumanAccounts(storage, actors),
     members = new MembershipStore(storage);
-  const provider = new LocalAccountServerPlugin(accounts.localAccountRepository);
+  const provider = new LocalAccountServerPlugin(accounts.localAccountRepository, createNodePasswordHasher());
   accounts.registerLocalAccounts(provider);
   const management = new HumanAccountManagement(storage, accounts, actors, members);
   const principal = await management.initialize({

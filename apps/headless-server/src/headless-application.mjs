@@ -118,6 +118,7 @@ import { ImChannelsAppServer } from './im-channels-appserver.mjs';
 import { CHANNELS_HOST_ID } from '@opencraft/appserver-protocol/channels';
 import { HumanAccounts } from '@opencraft/access-control/human-accounts';
 import { LocalAccountServerPlugin } from '@opencraft/plugin-local-account/server';
+import { createNodePasswordHasher } from '@opencraft/plugin-local-account/password-hash-node';
 import { LocalAccountApplication } from '@opencraft/plugin-local-account/application';
 import { readPrivateJson } from '@opencraft/identity-core/node';
 import { HumanAccountManagement } from '@opencraft/access-control/account-management';
@@ -393,6 +394,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let threadNotes;
   let identityWrites;
   let humanAccounts;
+  let localAccountPlugin;
   let imPlugins, availabilityNotification;
   let connectorService;
   const capabilities = new SessionCapabilities();
@@ -519,8 +521,9 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     if (humanConfiguration) {
       humanAccounts = new HumanAccounts(serverStorage, actorStore);
       if (humanConfiguration.local) {
-        const localAccounts = new LocalAccountServerPlugin(humanAccounts.localAccountRepository);
+        const localAccounts = new LocalAccountServerPlugin(humanAccounts.localAccountRepository, createNodePasswordHasher());
         humanAccounts.registerLocalAccounts(localAccounts);
+        localAccountPlugin = localAccounts;
       } else humanAccounts.disableLocalAccounts();
       humanAuth = new HumanAuth(humanAccounts, actorStore, humanConfiguration, humanLoginPage, externalHuman);
       if (humanConfiguration.local && membership) {
@@ -607,6 +610,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     // Server owner Worker; reads stay on this thread's permission projection.
     identityWrites = new IdentityWrites(serverStorage.call, actorStore, humanAccounts, identityFence, membership);
     actorAccess.useOwnerWrites(identityWrites);
+    // Login-time password record upgrades commit in the owner Worker too.
+    localAccountPlugin?.useOwnerWrites(identityWrites);
     humanAuth?.useOwnerWrites(identityWrites);
     instanceAccess?.useOwnerWrites(identityWrites);
     accountManagement?.useOwnerWrites(identityWrites);

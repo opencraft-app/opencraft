@@ -19,6 +19,7 @@ import { openHumanAssets } from './assets-server.js';
 import { InstanceAccess, MembershipStore } from '@opencraft/access-control';
 import { HumanAccountManagement } from '@opencraft/access-control/account-management';
 import { LocalAccountServerPlugin } from './server.js';
+import { createNodePasswordHasher } from './password-hash-node.js';
 import { LocalAccountApplication } from './application.js';
 
 /** Native Main owns these stores and the private browser proof. No renderer supplies identity. */
@@ -37,7 +38,7 @@ export async function createDesktopAccountHost(directory: string, renderLogin: (
     disposers.push(() => actors.close());
     const accounts = new HumanAccounts(storage, actors);
     disposers.push(() => accounts.close());
-    accounts.registerLocalAccounts(new LocalAccountServerPlugin(accounts.localAccountRepository));
+    accounts.registerLocalAccounts(new LocalAccountServerPlugin(accounts.localAccountRepository, createNodePasswordHasher()));
     const members = new MembershipStore(storage,{permissionProjection:false});
     disposers.push(() => members.close());
     const management = new HumanAccountManagement(storage, accounts, actors, members);

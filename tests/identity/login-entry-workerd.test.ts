@@ -1,8 +1,8 @@
 // Login entry prototype for the Cloudflare InstallationCore, in workerd
 // (Miniflare, nodejs_compat, no Cloudflare account). Proves that
-//  - local-account scrypt hashes made by Node verify in workerd and the other
-//    way round, with the unchanged parameters (no algorithm change), and
-//    reports the per-verify time;
+//  - local-account Argon2id PHC records made by Node (native node:crypto)
+//    verify in workerd (portable pure-JS @noble/hashes) and the other way
+//    round, and reports the per-verify time and the hasher's bundle size;
 //  - a fetch-based login entry over a Durable Object SQL Server core runs the
 //    real HumanAuth routes, LocalAccountServerPlugin verification,
 //    HumanAccounts token issue and InstanceAccess authenticate path, and
@@ -13,7 +13,6 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { once } from "node:events";
-import { scryptSync } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -26,12 +25,15 @@ import { HumanAuth } from "@opencraft/access-control/human-auth";
 import { InstanceAccess, MembershipStore, type MemberRole } from "@opencraft/access-control";
 import type { LocalAccountRecord } from "@opencraft/identity-core/local-account";
 import { LocalAccountServerPlugin } from "@opencraft/plugin-local-account/server";
+import { createNodePasswordHasher } from "@opencraft/plugin-local-account/password-hash-node";
+import { parseArgon2id } from "@opencraft/plugin-local-account/password-hash";
 
 const COMPATIBILITY_DATE = "2026-07-30";
 const WORKER_ORIGIN = "http://login.test";
 const PASSWORD = "fixture-passphrase-only";
 let directory: string;
 let script: string;
+let hasherBytes = 0;
 let sequence = 0;
 const closers: (() => Promise<void> | void)[] = [];
 
@@ -47,10 +49,14 @@ before(async () => {
     target: "es2023",
     mainFields: ["module", "main"],
     conditions: ["workerd", "worker", "import"],
-    // node:crypto (scrypt, randomBytes, createHash) and the node:fs imports of
-    // identity-core/node come from nodejs_compat.
+    // node:crypto (randomUUID, randomBytes, createHash) and the node:fs imports of
+    // identity-core/node come from nodejs_compat; Argon2id is bundled pure JS.
     external: ["cloudflare:*", "node:*"],
     logLevel: "silent",
+    metafile: true,
+  }).then((result) => {
+    for (const [path, output] of Object.entries(result.metafile.outputs[Object.keys(result.metafile.outputs)[0]!]!.inputs))
+      if (/@noble[/\\]hashes|password-hash/u.test(path)) hasherBytes += output.bytesInOutput;
   });
   script = await readFile(outfile, "utf8");
 });
@@ -69,6 +75,7 @@ interface Controls {
   insertAccount(record: LocalAccountRecord): Promise<void>;
   account(username: string): Promise<LocalAccountRecord | null>;
   verify(username: string, password: string): Promise<{ subject: string | null; ms: number }>;
+  hashOnly?(password: string): Promise<{ record: string; ms: number }>;
   setEnabled(username: string, enabled: boolean): Promise<void>;
   grant(subject: string, role: MemberRole): Promise<void>;
   advance(milliseconds: number): Promise<void>;
@@ -130,6 +137,7 @@ function workerdEntry(): Entry {
       insertAccount: (record) => call("insertAccount", record),
       account: (username) => call("account", username),
       verify: (username, password) => call("verify", username, password),
+      hashOnly: (password) => call("hashOnly", password),
       setEnabled: (username, enabled) => call("setEnabled", username, enabled),
       grant: (subject, role) => call("grant", subject, role),
       advance: (milliseconds) => call("advance", milliseconds),
@@ -144,7 +152,7 @@ async function nodeEntry(): Promise<Entry> {
   const now = () => Date.now() + skew;
   const actors = new ActorStore(handle, now);
   const accounts = new HumanAccounts(handle, actors, now);
-  const local = new LocalAccountServerPlugin(accounts.localAccountRepository, now);
+  const local = new LocalAccountServerPlugin(accounts.localAccountRepository, createNodePasswordHasher(), now);
   accounts.registerLocalAccounts(local);
   const members = new MembershipStore(handle);
   const configuration = { origin: "http://127.0.0.1", local: true, oidc: [] };
@@ -216,7 +224,7 @@ async function nodeEntry(): Promise<Entry> {
 
 const median = (values: number[]) => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)]!;
 
-test("scrypt hashes made by Node verify in workerd and the other way round", async (t) => {
+test("Argon2id records made by Node verify in workerd and the other way round", async (t) => {
   const worker = workerdEntry();
   const node = await nodeEntry();
 
@@ -228,31 +236,36 @@ test("scrypt hashes made by Node verify in workerd and the other way round", asy
 
   const fromWorker = await worker.controls.createAccount("workerd-made", PASSWORD);
   const workerRecord = (await worker.controls.account("workerd-made"))!;
-  // Unchanged format: 32-byte random salt as 64 hex chars (used as UTF-8 text), 32-byte digest as hex.
-  assert.match(workerRecord.salt, /^[0-9a-f]{64}$/u);
-  assert.equal(
-    workerRecord.passwordDigest,
-    scryptSync(PASSWORD, workerRecord.salt, 32, { N: 131072, r: 8, p: 1, maxmem: 192 * 1024 * 1024 }).toString("hex"),
-    "workerd derives with the published N=2^17, r=8, p=1, 32-byte parameters",
-  );
+  // PHC string in password_digest, empty salt column; parameters travel with the record.
+  assert.equal(workerRecord.salt, "");
+  assert.match(workerRecord.passwordDigest, /^\$argon2id\$v=19\$m=19456,t=2,p=1\$[A-Za-z0-9+/]{22}\$[A-Za-z0-9+/]{43}$/u);
+  assert.equal(parseArgon2id(workerRecord.passwordDigest)?.salt.length, 16);
   await node.controls.insertAccount(workerRecord);
   assert.equal((await node.controls.verify("workerd-made", PASSWORD)).subject, fromWorker.subject);
   assert.equal((await node.controls.verify("workerd-made", "wrong-passphrase-value")).subject, null);
+  assert.equal((await worker.controls.account("workerd-made"))!.passwordDigest, workerRecord.passwordDigest, "current parameters are never rehashed");
 
-  const timings = { workerd: [] as number[], workerdUnknown: [] as number[], workerdOuter: [] as number[], node: [] as number[] };
+  // Cloudflare installations are fresh: the portable hasher refuses a pre-Argon2id scrypt record.
+  await worker.controls.insertAccount({ ...nodeRecord, id: "00000000-0000-4000-8000-000000000001", username: "scrypt-made",
+    salt: "a".repeat(64), passwordDigest: "b".repeat(64) });
+  await assert.rejects(worker.controls.verify("scrypt-made", PASSWORD), /Legacy password record unsupported/u);
+
+  const timings = { workerd: [] as number[], workerdUnknown: [] as number[], workerdOuter: [] as number[], workerdHash: [] as number[], node: [] as number[] };
   for (let i = 0; i < 5; i++) {
     const started = performance.now();
     timings.workerd.push((await worker.controls.verify("node-made", PASSWORD)).ms);
     timings.workerdOuter.push(performance.now() - started);
     timings.workerdUnknown.push((await worker.controls.verify("nobody-here", PASSWORD)).ms);
+    timings.workerdHash.push((await worker.controls.hashOnly!(PASSWORD)).ms);
     timings.node.push((await node.controls.verify("node-made", PASSWORD)).ms);
   }
   t.diagnostic(
-    `per-verify median ms: workerd ${median(timings.workerd).toFixed(0)} (outer ${median(timings.workerdOuter).toFixed(0)}, ` +
-      `unknown user ${median(timings.workerdUnknown).toFixed(0)}), node ${median(timings.node).toFixed(0)}`,
+    `Argon2id m=19456,t=2,p=1 per-verify median ms: workerd ${median(timings.workerd).toFixed(0)} (outer ${median(timings.workerdOuter).toFixed(0)}, ` +
+      `unknown user ${median(timings.workerdUnknown).toFixed(0)}, hash ${median(timings.workerdHash).toFixed(0)}), node ${median(timings.node).toFixed(0)}; ` +
+      `portable hasher bundle ${hasherBytes} bytes`,
   );
-  // Far below the 30 s Durable Object / Workers Paid CPU default; a coarse guard, not a benchmark.
-  assert.ok(median(timings.workerd) < 5_000);
+  // Selection rule: the pure-JS hasher must stay within 1 s per verify (coarse local guard, not a benchmark).
+  assert.ok(median(timings.workerd) < 1_000);
 });
 
 /** One browser's request sequence; returns every response for comparison. */

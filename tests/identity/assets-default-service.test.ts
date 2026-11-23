@@ -12,6 +12,7 @@ import { HumanAuth } from "@opencraft/access-control/human-auth";
 import { MembershipStore, InstanceAccess } from "@opencraft/access-control";
 import { HumanAccountManagement } from "@opencraft/access-control/account-management";
 import { LocalAccountServerPlugin } from "../../plugins/local-account/src/server.js";
+import { createNodePasswordHasher } from "../../plugins/local-account/src/password-hash-node.js";
 import { LocalAccountApplication } from "../../plugins/local-account/src/application.js";
 import { openAssetConfigurations } from "../../plugins/assets/src/server/worker.js";
 import { githubApiFixture } from "../support/github-api-fixture.js";
@@ -36,7 +37,7 @@ async function fixture(t: test.TestContext, router = true, openStorage?: typeof 
   const storage = await openServerDatabase(directory),
     actors = new ActorStore(storage),
     accounts = new HumanAccounts(storage, actors);
-  const provider = new LocalAccountServerPlugin(accounts.localAccountRepository);
+  const provider = new LocalAccountServerPlugin(accounts.localAccountRepository, createNodePasswordHasher());
   accounts.registerLocalAccounts(provider);
   const members = new MembershipStore(storage),
     management = new HumanAccountManagement(storage, accounts, actors, members);

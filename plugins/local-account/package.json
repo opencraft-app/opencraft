@@ -10,7 +10,10 @@
     "./client": "./src/client.tsx",
     "./client-scope": "./src/client-scope.ts",
     "./connections": "./src/connections.ts",
-    "./assets-server": "./src/assets-server.ts"
+    "./assets-server": "./src/assets-server.ts",
+    "./password-hash": "./src/password-hash.ts",
+    "./password-hash-node": "./src/password-hash-node.ts",
+    "./password-hash-portable": "./src/password-hash-portable.ts"
   },
   "dependencies": {
     "@opencraft/design-system": "*",
@@ -23,7 +26,8 @@
     "@opencraft/workbench-runtime": "*",
     "react": "19.3.1",
     "@opencraft/storage-node": "*",
-    "@opencraft/plugin-assets": "0.1.0"
+    "@opencraft/plugin-assets": "0.1.0",
+    "@noble/hashes": "2.4.0"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

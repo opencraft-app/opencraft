@@ -29,6 +29,7 @@
     "./thread-orchestration-broker": "./src/thread-orchestration-broker.ts",
     "./automation-runtime": "./src/automation-runtime.ts",
     "./identity-writes": "./src/identity-writes.ts",
+    "./local-account-upgrade-owner": "./src/local-account-upgrade-owner.ts",
     "./commit-fence": "./src/commit-fence.ts"
   },
   "dependencies": {
