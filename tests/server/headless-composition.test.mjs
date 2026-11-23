@@ -18,24 +18,16 @@ import { generateKeyPairSync } from 'node:crypto';
 import { publishEnvironmentIssuer } from '@opencraft/execution-environment/environment-launch-owner';
 import { deploymentPaths } from '../../scripts/container-deployment/paths.mjs';
 import { executionHostIssuer } from '../../scripts/container-deployment/execution-hosts.mjs';
+import { ownedCleanup } from '../support/owned-cleanup.mjs';
 
 async function fixture(t) {
   const runtime = fileURLToPath(new URL('../../.runtime/', import.meta.url));
   await mkdir(runtime, { recursive: true });
   const root = await mkdtemp(join(runtime, 'headless-composition-'));
-  // node:test runs t.after hooks in registration order and skips the rest once one
-  // throws. Resources a test starts must therefore be closed (newest first, each
-  // awaited even if another fails) before the shared root is removed; otherwise rm
-  // races the still-running server's lazily opened remote-browser store and a
-  // failing rm leaves the server alive so the file never exits.
-  const cleanups = [];
-  t.after(async () => {
-    const errors = [];
-    for (const cleanup of cleanups.reverse()) { try { await cleanup(); } catch (error) { errors.push(error); } }
-    try { await rm(root, { recursive: true, force: true }); } catch (error) { errors.push(error); }
-    if (errors.length) throw errors.length === 1 ? errors[0] : new AggregateError(errors, 'fixture cleanup failed');
-  });
-  const own = cleanup => { cleanups.push(cleanup); };
+  // Servers a test starts close before the shared root is removed (tests/support/owned-cleanup.mjs).
+  const cleanup = ownedCleanup(t);
+  cleanup.last(() => rm(root, { recursive: true, force: true }));
+  const own = cleanup.own;
   const webRoot = join(root, 'web'); await mkdir(webRoot);
   await writeFile(join(webRoot, 'index.html'), '<!doctype html><title>Public workbench</title>');
   await writeFile(join(webRoot, 'version.json'), JSON.stringify({ schemaVersion: 1, buildId: 'composition-test', headlessServer: true, headlessHostId: 'opencraft-server' }));
