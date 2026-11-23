@@ -1,18 +1,29 @@
 # Execution ENV launch delivery
 
-Status: slices 1, 2 (with supervisor wiring), 3 and 4 implemented, slice 8
-partially implemented. The
-receiver takes its expected context from the execution owner's own durable
+Status: slices 1, 2, 3, 4, 6 and 7 implemented, slice 8 partially implemented,
+with supervisor wiring of the stable issuer key into DSH, Pi and Codex Core.
+The receiver takes its expected context from the execution owner's own durable
 admission (Decision 1). Slice 4 adds the v2 launch context (Turn, creation and
-terminal admissions) to the protocol, the issuer and the receiver only; no
-consumer uses it yet. DSH in `assets` mode receives Turn ENV through
+terminal admissions) to the protocol, the issuer and the receiver; slice 6
+makes the Hands terminal owner its first consumer (terminal admissions), and
+slice 7 makes Codex receive creation and Turn ENV in the split Codex Core
+process that owns `codex app-server`, with the core vault owner as issuer. DSH
+in `assets` mode receives Turn ENV through
 `EnvironmentLaunchReceiver` when either the identity composition supplies a
 vault-owner port or the installation sets `environmentDelivery: 'vault-owner'`,
-which makes the core vault Worker the issuer and the owner of ENV metadata. Pi
+which makes the core vault Worker the issuer and the owner of ENV metadata. An
+identity composition that owns the vault itself can supply its durable
+execution admission and its metadata port with that port, and is then relayed
+on the same path (see [Compatibility](#compatibility)). Pi
 receives it the same way in the independent engine host when that host's
 configuration pins `environmentIssuer`; the independent DSH host takes the same
-key. The deployment supervisors pin the key the vault owner publishes (see
-[Supervisor wiring](#supervisor-wiring)). Every other consumer still reads a
+key. The Hands terminal owner receives it
+for every terminal it launches when the core vault owner is configured (see
+[Hands terminal](#hands-terminal)). Codex receives creation and Turn ENV in
+Codex Core when the core vault owner and a Codex Core endpoint are configured
+(slice 7). The deployment supervisors pin the key the vault owner publishes
+into DSH, Pi and Codex Core (see [Supervisor wiring](#supervisor-wiring)).
+Every other consumer still reads a
 decrypted snapshot from `ExecutionEnvironmentRuntime` synchronously in its own
 process.
 
@@ -46,7 +57,7 @@ still synchronously on the vault.
 | 2   | Headless Pi (in-process) | `headless-application.mjs:847`                                                                                                        | passes the runtime to `PiEngine` running inside Main                                                                                                       |
 | 3   | Hands terminal           | `headless-application.mjs:931`, `apps/headless-server/src/host-terminal-transport.ts:26`                                              | `snapshot(scope).overlay()` in Main, sent as clear `identity.env` to the terminal owner                                                                    |
 | 4   | Terminal scope           | `headless-application.mjs:966`                                                                                                        | `scope(context, …)` derives account/Project (metadata)                                                                                                     |
-| 5   | Codex adapter wiring     | `headless-application.mjs:1042`                                                                                                       | passes the runtime to the Codex adapter                                                                                                                    |
+| 5   | Codex adapter wiring     | `headless-application.mjs:1042`                                                                                                       | passes the runtime to the Codex adapter; with the core vault owner and a Codex Core it passes the delivery port instead (slice 7)                          |
 | 6   | Execution transport      | `headless-application.mjs:1127-1128`, `apps/headless-server/src/execution-environment-transport.ts:20-21,49,57-59,87,106-107,121-123` | `scope`, `bind`, `bindCreator`, `rememberProjects`, `seal` (vault-key scope envelope for ACP creation), and a private `DurableHostProcessService(runtime)` |
 | 7   | Local process identity   | `apps/local-agent-host/src/process-identity.ts:28-41` via `process-service.ts:53`, `durable-process-service.ts:126`                   | `snapshot(scope)`, `apply`, `overlay` for PTY spawn                                                                                                        |
 | 8   | DSH legacy mode          | `apps/local-agent-host/src/dsh-capability-plugin.mjs:80`, `dsh-execution-environment.mjs:7`                                           | opens a second vault runtime in the DSH process; sync `environment(nativeId)` patched into `dsh-bash-local` and `dsh-terminal-bash`                        |
@@ -54,7 +65,7 @@ still synchronously on the vault.
 | 10  | Pi engine host           | `scripts/server-deployment/engine-host.mjs:84`                                                                                        | opens its own vault runtime in legacy mode                                                                                                                 |
 | 11  | ACP engine               | `plugins/acp-engine/src/index.ts:185-186,475-476,494,889-892,954`                                                                     | `open` (scope envelope), `snapshot`, `creation`, `execution`, `rememberCreation`, local `redact`                                                           |
 | 12  | ACP host                 | `scripts/server-deployment/acp-host.mjs:50`                                                                                           | opens its own vault runtime                                                                                                                                |
-| 13  | Codex adapter            | `apps/opencraft-daemon/src/codex-engine-adapter.ts:761,1405,2012-2015,2544,2580-2582,3578-3580,4790,4848-4854,4943,4989`              | `scope`, `snapshot`, `execution`, `bind`, `bindCreator`, `redact`; values sent to the native Core as `shell_environment_policy.set`                        |
+| 13  | Codex adapter            | `apps/opencraft-daemon/src/codex-engine-adapter.ts:761,1405,2012-2015,2544,2580-2582,3578-3580,4790,4848-4854,4943,4989`              | `scope`, `snapshot`, `execution`, `bind`, `bindCreator`, `redact`; values sent to the native Core as `shell_environment_policy.set`. Unchanged without delivery; with it (slice 7) the adapter relays capsules only and loads no synchronous runtime |
 
 Thirteen entries across fourteen source files. Consumers 4, 6 (except the private
 terminal service) and the metadata calls in 11 and 13 do not need values but
@@ -152,7 +163,10 @@ admission instead:
   accounts (`actor:human://…`) with their generation and membership revision are
   admitted.
 - **Purpose and kind.** `dsh` and `pi`: `turn`. `acp` and `codex`: `creation`,
-  `turn`. `terminal`: `terminal`. Codex targets `local-codex`; DSH, Pi and ACP
+  `turn`. `terminal`: `terminal`. A Codex Turn is staged before its input is
+  submitted, so on `local-codex` (and only there) a `turn` admission is the
+  pending lease and its `turnId` is `null`; every other Host names the active
+  native Turn. Codex targets `local-codex`; DSH, Pi and ACP
   target `opencraft-server`; a terminal may target either. A v1 context is never
   sealed for `acp` or `terminal`. The issuer checks this before reading values;
   the receiver refuses an expectation its purpose cannot carry.
@@ -171,18 +185,27 @@ claim with it field by field and reread it around the value read and the
 decryption. A request, a relayed context or a Main-signed scope envelope is
 never the authority.
 
-| Kind       | Durable record                                                                                                                                                                                                                                                        | Admissible while                                                      | Project source (vault owner)                                     |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| `turn`     | Execution lease and submission plus the Actor store, as for v1 (`GitExecutionAuthority`).                                                                                                                                                                             | the lease is active for that Turn and native incarnation              | the Thread binding                                               |
-| `creation` | A creation reservation keyed by Host and creation `operationId`, written by core when it accepts the authenticated creation request and before the native creation: Actor and epoch at admission, source Thread (fork), Project and the owner incarnation holding it. | the reservation is pending; it stops being admissible once it commits | the reservation (fork: the source Thread binding at admission)   |
-| `terminal` | The terminal owner's reservation (Host, `resource`, `operation`), written before spawn, together with the Actor epoch it was admitted under and the owner incarnation.                                                                                                | the reservation is held and nothing has been launched for it          | the Thread binding, or the reservation for a threadless terminal |
+| Kind       | Durable record                                                                                                                                                                                                                                                                                                                                         | Admissible while                                                                                                                                 | Project source (vault owner)                                   |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
+| `turn`     | Execution lease and submission plus the Actor store, as for v1 (`GitExecutionAuthority`). Codex: the pending lease of the input (`turnId: null`).                                                                                                                                                                                                      | the lease is active for that Turn and native incarnation (Codex: pending for that input and native incarnation)                                  | the Thread binding                                             |
+| `creation` | A creation reservation keyed by Host and creation `operationId`, written by core when it accepts the authenticated creation request and before the native creation: Actor and epoch at admission, source Thread (fork), Project and the owner incarnation holding it. Implemented as `environment_creation_reservations` in `opencraft-server.sqlite` (v24). | the reservation is pending, unexpired and its Actor still holds the recorded epoch; it stops being admissible once it is launched or abandoned | the reservation (fork: the source Thread binding at admission) |
+| `terminal` | The terminal owner's reservation (Host, `resource`, `operation`), written before spawn, together with the Actor epoch it was admitted under and the owner incarnation (terminal journal v2).                                                                                                                                                           | the reservation is held and nothing has been launched for it                                                                                     | the Thread binding; none for a threadless terminal             |
 
 Ports in this slice:
 
-- Issuer: `new EnvironmentLaunchOwner(vault, turnAdmission, { creation?, terminal? })`.
-  A reader returns `{ admission, project }` from the durable record, or `null`.
-  A kind without a reader is refused before any value is read; the Headless
-  composition passes none, so it issues only Turns.
+- Issuer: `new EnvironmentLaunchOwner(vault, turnAdmission, { creation?, terminal?, codexTurn? }, { accounts? })`.
+  A reader returns `{ admission, project }` from the durable record, or `null`
+  (`codexTurn` returns the admission; its Project is the Thread binding). A kind
+  without a reader is refused before any value is read. The Headless
+  composition passes `terminal` (slice 6), and `creation` and `codexTurn`
+  (slice 7). The terminal reader receives the claim, because the reservation
+  lives in the terminal owner's journal (see [Hands terminal](#hands-terminal)).
+  `launch(target, locator)` reads the record the locator names and seals for
+  exactly that admission, or returns `{context: null}` for a Turn without a
+  Human owner; it serves Turns and creations, and refuses a terminal locator
+  (terminals relay their claim to `seal`). `accounts` is the installation's
+  [account partition mapping](#account-partition-mapping); it applies to every
+  kind, `launch` included.
 - Receiver: `createEnvironmentLaunchAdmissionReceiver({ purpose, instance,
 issuer, admission: { turn?, creation?, terminal? } })` (subpath
   `environment-launch-receiver`). `kinds` lists what it can admit (allowed for
@@ -245,6 +268,66 @@ or creates it once. A configured rotation generation
 replaces the key; no generation keeps the stored key. A stored document that is
 not a valid key fails startup instead of being replaced silently.
 
+The same Worker also serves the personal Git seal port
+(`PersonalGitSealPort` from `@opencraft/execution-environment/personal-git-seal`,
+`{ authority, seal(scope): Promise<string> }`), exposed to Main as
+`assetsStorage.personalGitSeal`. Only the grant fields of an admitted scope go
+in and only the opaque grant comes back. `PersonalGitSealOwner` seals a scope
+only while it equals the Worker's own durable admission (the active Turn, or a
+Codex pending reservation), read before and after signing; it serves no key or
+credential getter. Grants keep the existing `v2.`/`v3.` envelope and authority,
+so the Git runtime verifies them exactly as before. The Worker's
+`executionGitGrant` and `executionGitReservation` handoffs already sealed in this
+Worker and are unchanged. Close retires the seal owner with the ENV issuer;
+seals accepted before close are drained.
+
+In this mode the same Worker also owns the non-secret ENV metadata (slice 8):
+Main composes `EnvironmentMetadataTransport` instead of the synchronous
+`ExecutionEnvironmentTransport`, and Thread->Project bindings, creator
+provenance and the Project catalog are written through the Worker's
+asynchronous `EnvironmentMetadataPort`, so new Threads receive their Project
+values.
+
+### Account partition mapping
+
+By default the issuer reads the canonical Actor partition (`actor:<id>`). An
+installation whose existing vault data is partitioned by a login account can
+compile a mapping into its vault-owner Worker entry instead of rewriting data:
+`createHeadlessAssetsStorage(directory, providers, workspaces,
+{ environmentLaunch: true, environmentAccount })`, where
+`environmentAccount: EnvironmentAccountMapping` is
+`(owner: { actorId, actorGeneration, bindings }) => string | null`
+(`environment-account.ts`). Worker data, requests and configuration cannot
+supply or select it.
+
+- `EnvironmentAccountPartitions` reads the owner from the Actor store in the
+  Worker (`GitExecutionAuthority.environmentAccountOwner`: an enabled, admitted
+  Human Actor and its verified login bindings) and calls the mapping with a
+  frozen copy.
+- The result must be the owner's canonical partition or the login partition
+  (`<provider>:<subject>`, the form core already uses for login accounts) of
+  exactly one verified binding, whose provider the Actor holds no other binding
+  of. Another Actor's canonical partition, `platform:` documents, `null`, a
+  thenable or a throw are refused. Two bindings that spell the same partition,
+  or a provider with two logins, are ambiguous and refused.
+- The mapping runs synchronously in the vault owner's turn. After it returns
+  the owner is reread; the issuer rereads owner and mapping with the admission
+  before reading values, after reading them and after encryption, so a binding
+  revoked meanwhile, or a changed generation, refuses the capsule.
+- `EnvironmentMetadata.admit` applies the same resolver to the submission's
+  login account (`forLogin`): the admitted scope, and the creator recorded for a
+  new Thread, name the partition its values are read from. Thread->Project
+  bindings and the Project catalog are installation documents and are not
+  partitioned by account.
+- The issuer applies the mapping to every kind it seals: active Turns,
+  terminal claims (slice 6), and the Codex pending Turns and creation
+  reservations of slice 7, including `launch(target, locator)`, which seals
+  through the same check. The durable records keep naming the canonical
+  `actor:<id>` account; only the partition the values are read from is mapped,
+  and it is rechecked with the record.
+- Without a mapping both are unchanged. Personal Git grants still carry the
+  canonical Actor account; mapping their partition is not part of this change.
+
 ## Supervisor wiring
 
 Independent execution owners pin the issuer from their own configuration. The
@@ -280,13 +363,6 @@ configuration gets the key from the vault owner's publication only:
 - **Unchanged path.** Without delivery there is no publication, no watcher and
   no `environmentIssuer` in any host configuration.
 
-In this mode the same Worker also owns the non-secret ENV metadata (slice 8):
-Main composes `EnvironmentMetadataTransport` instead of the synchronous
-`ExecutionEnvironmentTransport`, and Thread->Project bindings, creator
-provenance and the Project catalog are written through the Worker's
-asynchronous `EnvironmentMetadataPort`, so new Threads receive their Project
-values.
-
 ## Compatibility
 
 - No `identity.environmentLaunch` and no `environmentDelivery`: every path is
@@ -296,8 +372,25 @@ values.
   (`environmentDelivery: 'vault-owner'`) together with either of them is
   rejected at startup (`validateEnvironmentDelivery`), as is a core issuer
   without the assets vault Worker or without execution admission.
-- `environmentLaunch` without the Actor/lease handoff (`humanGitExecution`) is
-  rejected at startup instead of failing every command.
+- `environmentLaunch` without an Actor/lease handoff is rejected at startup
+  instead of failing every command. The handoff is core's own
+  (`humanGitExecution`) or, for an identity composition that owns the vault,
+  `identity.environmentLaunch.admission(locator): Promise<{scope, native} | null>`:
+  only the durable read of the exact Turn, with no Git authority or capability,
+  because the relay seals against nothing else. Core wraps it
+  (`createEnvironmentAdmissionHandoff`) with the same live checks as its Git
+  handoff: the record must belong to the locator, be a Human Actor account and
+  name no Project; the Actor must be current and admitted by Human instance
+  authority and the lease active for the live native process, before and after
+  every await. A failing read is an error, never an empty launch. Supplying an
+  admission where core already owns the handoff is rejected (one admission
+  owner), as is one without Human instance authority.
+- Such a port may carry `metadata: EnvironmentMetadataPort`; core then composes
+  `EnvironmentMetadataTransport` for it exactly as in `vault-owner` mode, so new
+  Threads record their Project binding and creator. A port with an admission but
+  no metadata, or with malformed parts, is rejected by
+  `validateHeadlessIdentity` before anything starts. A port without either
+  keeps its previous behaviour (core handoff, owner records its own bindings).
 - Delivery together with Pi running inside Main (no `engineHostDescriptor`) is
   rejected at startup instead of launching Pi without ENV. An engine host given
   `environmentIssuer` outside the Assets execution context is rejected too.
@@ -308,6 +401,20 @@ values.
 - Without `OPENCRAFT_ENVIRONMENT_DELIVERY` no issuer is published or pinned and
   the host configurations are unchanged. A key sealed by an earlier delivery
   stays in the vault unused.
+- A Hands terminal owner opts in (`environmentLaunch`); an owner that did not
+  opt in, or an old one, ignores the declared issuer and a delivery Host
+  refuses to spawn on it. An old Host attaching to a new owner declares no
+  issuer and spawns as before.
+- Personal Git grants. Without a seal port `ExecutionEnvironmentRuntime` signs
+  in-process with the vault key, as before (`snapshot` and `prepare` are the
+  same). Given `{ gitSeal }` it never uses the vault key for grants: `prepare`
+  admits the scope, awaits the port, then rechecks admission and its own close;
+  a synchronous `snapshot` of a grant-bearing scope fails with
+  `personal_git_async_issuer_required` instead of signing locally. Grant format,
+  authority and verification are unchanged, so grants issued before an upgrade
+  and the Git runtime keep working. The Codex adapter issues through `prepare`.
+  Synchronous-only consumers (in-process Pi's `env` callback, the Hands terminal,
+  DSH `legacy`, the ACP host) cannot use a seal port and fail closed with it.
 
 ## Slices
 
@@ -381,14 +488,68 @@ synchronous runtime.
    with a creation capsule; keep per-session environment and local
    `redactError`. Tests: session reopen, account/Project switch requires a new
    session, revocation.
-6. **Hands terminal.** The terminal owner becomes the receiver; the Host's
-   prepare step becomes asynchronous and forwards the capsule instead of clear
-   `identity.env`. Tests: attach/list/control keep original scope, capacity,
-   managed-name override refusal.
-7. **Codex native Core.** Receiver inside the native Core (purpose `codex`),
-   advertised through `opencraft/environment/capability`; the adapter forwards
-   capsules instead of `shell_environment_policy.set` values and stops
-   redacting in Main. Requires a native Core release.
+6. **Hands terminal (implemented).** The terminal owner becomes the receiver;
+   the Host's prepare step becomes asynchronous and forwards the capsule instead
+   of clear `identity.env`. See [Hands terminal](#hands-terminal). Tests
+   (`terminal-environment-launch.test.ts`, `terminal-admission-journal.test.ts`):
+   an opaque capsule and no value in any Main-to-owner or Worker-to-Main
+   message, the owner opening under its own reservation, the Thread's Project
+   and none for a threadless terminal, replay, unheld, abandoned, already
+   launched, foreign quota owner, wrong kind, stale epoch, other recipient and
+   v1/wrong-purpose capsules refused, held reservations expiring and released
+   with their attachment, attach/list/control keeping their scope, capacity,
+   managed-name override refusal, the unconfigured path unchanged, a delivery
+   Host refusing an owner that cannot receive, the v1 journal upgrade, and the
+   released v1 owner refusing a v2 journal.
+7. **Codex Core receiver (implemented).** The receiver (purpose `codex`) runs in
+   OpenCraft's own Codex Core process that owns `codex app-server` (the split
+   AppServer, `startCodexAppServer({ environmentLaunch })`, configured by
+   `--environment-launch-config` with the pinned issuer key, its attachment
+   `server:<machine>:codex` and the server data directory). No native Codex
+   release is needed: the native server keeps receiving
+   `shell_environment_policy.set`, now from Codex Core.
+   - The Codex adapter (Main) relays only opaque capsules and record locators.
+     It asks the relay `opencraft/environment/launch` for the receiver key,
+     has the vault owner seal for the record (`EnvironmentLaunchOwner.launch`),
+     and sends `opencraft/environment/stage {locator, reply}`. Codex Core opens
+     the capsule against its own durable admission, read by
+     `execution-admission-worker.mjs` in a Worker of that process, and requires
+     the admission's incarnation to be its live native child. It keeps the
+     values and returns an opaque, per-process HMAC digest of the account and
+     values, which the adapter uses only to decide whether a Thread must be
+     reloaded.
+   - The launch request (`thread/start` or `thread/fork` for `creation`,
+     `thread/resume` of the same Thread for `turn`) carries
+     `__opencraftEnvironmentLaunch: {locator, key}`. The relay consumes the
+     staged delivery once, rereads the admission, checks that the request is
+     the launch the record admits (a fork's source, a new Thread, the Turn's own
+     Thread) and merges the values into `shell_environment_policy.set` beside
+     the adapter's Git variables; a delivered name never shadows one. Any
+     failure answers `Execution environment unavailable` (`notSubmitted`), and
+     an owner without a receiver refuses the field instead of forwarding it.
+   - Creation: before the native call the adapter writes the durable creation
+     reservation. The vault owner admits the Actor's current epoch and the
+     Project (fork: the source Thread binding; path forks are refused), then
+     the Server owner Worker records it `pending` with a five minute expiry.
+     When native answers, or the connection is lost, the adapter settles it
+     `launched` (or `abandoned` when the relay reports it never submitted); it
+     is never retried. Turns: the pending Codex lease of the input, staged in
+     the refresh that reconfigures the Thread before `turn/start`.
+   - Redaction: Codex Core replaces delivered values in every native error it
+     forwards. Main holds no values and does not redact them.
+   - Fail closed: delivery refused by the issuer, the receiver or a Core
+     without the receiver (combined or routed Core) fails the creation or the
+     input with a turn error that says it was not sent. Without delivery
+     configured every path is unchanged.
+   Tests (`codex-environment-launch.test.ts`, `server-storage.test.ts`): real
+   Server owner, Codex lease store, vault Worker and admission Worker against a
+   fake native server behind the real relay; values reach native, never a Main
+   frame; replay, a second capsule for one reservation, wrong purpose, kind,
+   recipient, attachment and native process, a launched reservation, a lease
+   that left its pending state and a revoked Actor are refused; native errors
+   are redacted; an owner without delivery refuses the field; the adapter
+   reserves, relays and settles a Human creation and leaves an unowned one
+   empty; reservation upgrade from v23 and checksum refusal.
 8. **Metadata owner (partially implemented).** Move `scope`, `bind`,
    `bindCreator`, `rememberProjects`, `creation`, `execution` reads to an
    asynchronous owner port, then retire `identity.executionEnvironment` for
@@ -420,23 +581,91 @@ synchronous runtime.
    no port without a separate owner.
 
    Remaining, and why:
-   - Hands terminal scope (consumer 4) stays synchronous: `HostTerminalTransport`
-     derives scope synchronously, so with a separate vault owner it uses the
-     requested Project only. It moves with the asynchronous terminal prepare
-     step of slice 6.
+   - Hands terminal scope (consumer 4) stays synchronous. With slice 6 it no
+     longer selects values: the vault owner takes the Project from the Thread
+     binding. The scope only filters attach, list and control, and keeps the
+     requested Project for that, so existing terminals keep their scope.
    - `creation`, `rememberCreation` and `execution` stay on the synchronous
      runtime: their only consumers hold values in their own process. ACP needs
-     creation capsules (slices 4 and 5), Codex the native Core receiver
-     (slice 7), and the Pi Harness `env` callback and the DSH `legacy`
+     creation capsules (slices 4 and 5); Codex uses them only without delivery
+     (slice 7 replaces them when delivery is configured), and the Pi Harness
+     `env` callback and the DSH `legacy`
      `environment(nativeId)` hook are synchronous APIs.
-   - A downstream `identity.environmentLaunch` port has no metadata port; that
-     owner records its own bindings.
+   - An identity `environmentLaunch` port may now carry its own metadata port
+     (see [Compatibility](#compatibility)); core composes the same
+     `EnvironmentMetadataTransport` for it. A port without one still records
+     its own bindings. With an account mapping the metadata owner and the
+     issuer share one resolver (see
+     [Account partition mapping](#account-partition-mapping)).
    - The `check-main-thread-sync-io` count is unchanged (257 calls, 1017 SQL
      statements), not decreased: the count is per file, and the lease read in
      `ExecutionEnvironmentRuntime.execution` and the vault store's SQL are still
      loaded on the main thread of the processes that run the synchronous
      consumers above. The vault-owner composition adds no call. The count
      drops when the last synchronous consumer of those files migrates.
+
+## Hands terminal
+
+With `environmentDelivery: 'vault-owner'` the core vault owner offers
+`terminalActor(account)` next to `seal`. Headless then composes the Hands
+terminal service with it; otherwise `prepare` is the synchronous path as
+before. A downstream `identity.environmentLaunch` port without `terminalActor`
+leaves terminals on that path (they receive no personal ENV, as before).
+
+`process/spawn` from a delivery Host:
+
+1. Main checks the request scope synchronously (unchanged) and asks the vault
+   Worker for the Actor epoch (`terminalActor`). A revoked or unknown Actor
+   stops here.
+2. Main asks the terminal owner to reserve (`process/environmentReserve`). The
+   owner writes the reservation before anything is sealed, with the Actor epoch
+   and its own incarnation; the existing capacity limits apply here. It answers
+   with the terminal admission and its receiver target.
+3. Main has the vault owner seal for that target and admission, then forwards
+   `{context, capsule}` with the spawn, plus the requested variables. Main never
+   holds a value. A failure abandons the reservation.
+4. The owner opens the capsule against its own held reservation (same quota
+   owner, account, Host and Thread), refuses a requested name that would
+   override a delivered one, runs its adapter, removes the launch admission
+   from the journal (the one-shot fence), and only then spawns.
+
+`process/attach`, `list`, `writeStdin`, `resizePty` and `kill` are unchanged and
+keep their original scope. An attachment that pinned an issuer spawns only
+through a capsule; an attachment without one cannot send a capsule. A Host with
+delivery configured refuses to spawn on an owner that did not accept its issuer
+(an old or not opted-in owner), instead of launching without ENV. A
+reservation held but not launched is released after 90 s, when its attachment
+closes, and when the owner restarts.
+
+### Terminal journal v2
+
+`terminal-admission.json` is a JSON journal with one writer (the admission
+Worker under the writer lock), so its format changes by version, not by a SQL
+migration.
+
+- A v2 row is a v1 row plus `launch: { account, actorGeneration,
+membershipRevision, hostId, threadId, incarnation }`, only on a local
+  reservation and only while it is held. `incarnation` equals the row's
+  `resource`.
+- Launching removes `launch` in the same durable write that marks the row
+  launched, before spawn. A row carrying `launch` is therefore proof that
+  nothing was launched for it.
+- The owner writes `version: 2` only while some row carries `launch`, and
+  otherwise `version: 1` byte for byte as before. It reads both.
+- On open, every row carrying `launch` belongs to an earlier incarnation and was
+  never launched, so it is released and the journal is written back as v1.
+- An owner without v2 support refuses `version: 2` as an invalid journal and
+  does not start. It never drops a reservation it cannot read.
+
+Rollback plan, to an owner without delivery support:
+
+1. Remove `environmentDelivery: 'vault-owner'` (or roll back the Host); new
+   spawns stop writing held rows.
+2. Stop the terminal owner cleanly. Held rows are released on close; launched
+   rows are v1 rows already. The journal is v1.
+3. If the owner crashed with a held row, start the current owner once (it
+   releases the rows and rewrites v1) and stop it, then install the old one.
+   Removing only the rows that carry `launch` by hand is equivalent.
 
 ## Decisions
 
@@ -451,9 +680,10 @@ Recorded after the first slice; later slices follow them.
   not carry a Project ID; a caller cannot select another project's values.
   Implemented in `EnvironmentLaunchOwner`; receivers refuse a locator or relayed
   context that names a Project.
-- **Codex redaction moves to the native Core**, which holds the values. Until a
-  native release can redact, native diagnostics are not forwarded when delivery
-  is configured.
+- **Codex redaction moves to Codex Core**, which holds the values. It redacts
+  every native error it forwards; native stderr is not forwarded. (Originally
+  recorded as "the native Core"; slice 7 places the receiver in OpenCraft's own
+  Codex Core process instead, so no native release is needed.)
 - **A configured vault owner refuses execution owners that do not request a
   capsule** (for example an old DSH runtime), with an explicit upgrade error,
   instead of launching with an empty ENV. Missing delivery must fail closed.
@@ -508,7 +738,69 @@ Recorded after the first slice; later slices follow them.
 - **An issuer or receiver without a reader for a kind refuses that kind.** There
   is no fallback from a missing creation or terminal record to a Turn, to the
   relayed claim or to the synchronous runtime.
-- **The durable creation and terminal records are not added in this slice.**
+- **An installation may map the verified owner to its vault partition, only
+  among that Actor's own partitions.** The mapping is compiled into the vault
+  owner, chooses the canonical partition or the login partition of exactly one
+  verified binding, and is reread with every admission check; ambiguity, a
+  foreign partition or a revoked binding refuse the launch. It lets existing
+  vault data keep its partition and AAD; the default remains the canonical
+  Actor partition. Issuer and metadata owner share the resolver.
+- **Personal Git grants are signed by the vault owner through an asynchronous
+  port.** `PersonalGitSealPort` has the shape of the ENV ports (a public
+  `authority` and `seal(scope): Promise<string>`). The core vault-owner Worker
+  serves it; an identity composition that owns its own vault passes its own port
+  as `new ExecutionEnvironmentRuntime(…, { gitSeal })`. Issuance happens after
+  admission and before any launch; the owner checks its durable admission around
+  the signature and the caller rechecks after each await. A failed or closed
+  owner fails closed; there is no synchronous fallback to the vault key.
+- **The durable creation and terminal records are not added in slice 4.**
   Both can be added additively (a new table through an appended migration, or a
   new journal version written only by an upgraded owner); slices 5 and 6 own
-  them together with their readers.
+  them together with their readers. Slice 6 added the terminal record as
+  terminal journal v2; slice 7 added the creation reservation.
+- **The terminal owner pins its issuer per attachment.** It outlives Hosts and
+  keeps PTYs across their restarts, and the core issuer key changes on
+  rotation, so a key in the owner's own configuration would force a
+  PTY-killing restart. The Host declares the key from its trusted composition
+  in the token-authenticated attach frame; the owner builds one receiver for
+  that attachment, and the receiver dies with it. A browser frame or process
+  request never carries it.
+- **The vault owner checks a terminal claim against core's stores, not the
+  journal.** The journal belongs to the terminal owner (another process,
+  possibly another container). The issuer reads the Actor epoch from the Actor
+  store and the Project from the Thread binding; `resource`, `operation` and
+  owner incarnation are authenticated into the capsule and the terminal owner
+  checks them against its journal.
+- **A threadless terminal gets no Project ENV.** The request never selects a
+  Project (Decision 2), and there is no Thread binding to read.
+- **A terminal admission is keyed by the process handle.** Clients use a fresh
+  handle per spawn. One admission opens at most once per attachment, so a
+  handle refused after its capsule opened (for example a managed-name override)
+  is not reused; its reservation is released.
+- **The Codex receiver lives in Codex Core, not in the native binary.** The
+  split AppServer process already owns `codex app-server` and relays every
+  adapter request, so it opens capsules and installs values through
+  `shell_environment_policy.set` exactly as Main did. Combined and routed Cores
+  have no receiver and fail delivery closed; installations keep the synchronous
+  path by not configuring delivery.
+- **Codex Turn ENV is admitted by the pending lease** (resolves the former
+  open question 4). Codex reconfigures a Thread before it submits the input, so
+  there is no native Turn yet: the v2 `turn` admission on `local-codex` carries
+  `turnId: null` and is admissible only while that input's lease is pending for
+  the live native incarnation. The core issuer now serves `local-codex` v2 Turns
+  only in this form; v1 Codex contexts and active Codex Turns stay refused.
+- **The creation reservation is a Server owner record** (`opencraft-server.sqlite`
+  v24, additive). Main never writes it synchronously: the vault owner admits the
+  epoch and Project, the Server Worker writes it, and both the vault owner and
+  the receiver read it read-only with the current Actor epoch. It exists before
+  the native creation, is admissible only while pending, and its state changes
+  when native answers; the receiver's one-shot set covers the window before
+  that write.
+- **The Codex Core issuer key is pinned by deployment configuration: the
+  stable published key.** As for DSH and the Pi engine host, the AppServer's
+  `--environment-launch-config` carries the key the vault owner publishes (the
+  stable-key Decision above), written by its supervisor, never learnt from the
+  Gateway or a request. Because the key survives vault-owner restarts, the
+  AppServer is relaunched only on first enablement and on rotation; until a
+  changed key is pinned, delivery fails closed. A missing or refused
+  publication pins an unissuable key (see [Supervisor wiring](#supervisor-wiring)).

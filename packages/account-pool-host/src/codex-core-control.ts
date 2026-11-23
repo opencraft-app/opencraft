@@ -18,6 +18,8 @@ export interface CodexCoreHealth {
   readonly generationId?: string;
   readonly admissionEpoch?: number;
   readonly environmentVariablesVersion?: 1;
+  /** The owner opens opaque ENV launch capsules itself (no plaintext from the adapter). */
+  readonly environmentLaunchVersion?: 1;
   /** Strict private Gateway placement admission, checked for the actual target generation. */
   readonly workspaceExecutionVersion?: 1;
   readonly environmentRoutingVersion?: 1;

@@ -1,13 +1,18 @@
 import { Worker } from "node:worker_threads";
 import { isAbsolute } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { EnvironmentLaunchContext } from "./environment-delivery.js";
+import type { EnvironmentLaunchAdmission, EnvironmentLaunchContext } from "./environment-delivery.js";
+import type { EnvironmentLaunchLocator } from "./environment-launch-receiver.js";
 import type { GitExecutionLocator } from "./git-execution.js";
 
 export interface ExecutionAdmissionReader {
   /** The durable admission of the exact Turn, or `null` for an unowned Turn.
    * Rejects when the store is unreadable or the admission is not current. */
   resolve(input: GitExecutionLocator): Promise<EnvironmentLaunchContext | null>;
+  /** The v2 admission of the record `locator` names: a pending Codex input
+   * (`null` without a Human owner) or a pending creation reservation. Rejects
+   * when the record is missing, settled, expired or its Actor epoch changed. */
+  admission(locator: EnvironmentLaunchLocator): Promise<EnvironmentLaunchAdmission | null>;
   close(): Promise<void>;
 }
 const unavailable = () => Error("environment_launch_unavailable");
@@ -25,7 +30,7 @@ export function openExecutionAdmission(options: { workerFile: string; directory:
   });
   const pending = new Map<
     number,
-    { resolve(value: EnvironmentLaunchContext | null): void; reject(error: Error): void; timer: NodeJS.Timeout }
+    { resolve(value: unknown): void; reject(error: Error): void; timer: NodeJS.Timeout }
   >();
   let sequence = 0,
     failed = false,
@@ -48,7 +53,7 @@ export function openExecutionAdmission(options: { workerFile: string; directory:
     const value = reply.value;
     if (reply.error || (value !== null && (!value || typeof value !== "object" || Array.isArray(value))))
       entry.reject(unavailable());
-    else entry.resolve(value as EnvironmentLaunchContext | null);
+    else entry.resolve(value);
   });
   worker.on("error", fail);
   worker.on("messageerror", fail);
@@ -59,21 +64,23 @@ export function openExecutionAdmission(options: { workerFile: string; directory:
     }),
   );
   settle();
-  return {
-    resolve(input) {
-      if (failed || closing || pending.size >= 64) return Promise.reject(unavailable());
-      const id = ++sequence;
-      return new Promise((resolve, reject) => {
-        const timer = setTimeout(() => {
-          pending.delete(id);
-          settle();
-          reject(unavailable());
-        }, 5000);
-        pending.set(id, { resolve, reject, timer });
+  const request = <T>(message: { locator: unknown; kind?: "v2" }): Promise<T> => {
+    if (failed || closing || pending.size >= 64) return Promise.reject(unavailable());
+    const id = ++sequence;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        pending.delete(id);
         settle();
-        worker.postMessage({ id, locator: input });
-      });
-    },
+        reject(unavailable());
+      }, 5000);
+      pending.set(id, { resolve: resolve as (value: unknown) => void, reject, timer });
+      settle();
+      worker.postMessage({ id, ...message });
+    });
+  };
+  return {
+    resolve: (input) => request<EnvironmentLaunchContext | null>({ locator: input }),
+    admission: (locator) => request<EnvironmentLaunchAdmission | null>({ locator, kind: "v2" }),
     close() {
       return (closing ??= (async () => {
         fail();

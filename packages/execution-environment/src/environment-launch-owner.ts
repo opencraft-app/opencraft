@@ -14,10 +14,14 @@ import {
   type EnvironmentLaunchAdmission,
   type EnvironmentLaunchContext,
   type EnvironmentLaunchTarget,
+  type EnvironmentLaunchContextV2,
   type EnvironmentTerminalAdmission,
+  type EnvironmentTurnAdmission,
 } from "./environment-delivery.js";
+import { environmentLaunchLocator } from "./environment-launch-receiver.js";
+import type { EnvironmentAccountResolver, EnvironmentAccountSelection } from "./environment-account.js";
 import { environmentProjectId, environmentThreadProject } from "./environment-metadata.js";
-import type { GitExecutionHandoff, GitExecutionLocator } from "./git-execution.js";
+import type { EnvironmentActorEpoch, GitExecutionHandoff, GitExecutionLocator } from "./git-execution.js";
 
 const unavailable = (): never => {
   throw Error("environment_launch_unavailable");
@@ -51,13 +55,41 @@ export interface EnvironmentLaunchRecordReaders {
     hostId: EnvironmentCreationAdmission["hostId"];
     operationId: string;
   }): EnvironmentRecordAdmission<EnvironmentCreationAdmission> | null;
-  /** Unlaunched terminal reservation by Host, resource and operation. */
-  terminal?(locator: {
-    hostId: EnvironmentTerminalAdmission["hostId"];
-    resource: string;
-    operation: string;
-  }): EnvironmentRecordAdmission<EnvironmentTerminalAdmission> | null;
+  /** A terminal claim checked against core's own stores. The reservation lives
+   * in the terminal owner's journal, which this owner cannot read (another
+   * process, possibly another container); the reader returns the admission as
+   * core's stores hold it (Actor epoch) with the Project of the Thread binding.
+   * The reservation fields are authenticated into the capsule and checked by
+   * the terminal owner against its journal. */
+  terminal?(claim: EnvironmentTerminalAdmission): EnvironmentRecordAdmission<EnvironmentTerminalAdmission> | null;
+  /** The pending lease of a Codex input, staged before native submission
+   * (`turnId: null`); `null` when that pending input has no Human owner. The
+   * Project comes from the Thread's binding, as for every Turn. */
+  codexTurn?(locator: { hostId: "local-codex"; threadId: string; inputId: string }): EnvironmentTurnAdmission | null;
 }
+/** Terminal records from the current Actor epoch and the Thread's Project
+ * binding. A threadless terminal gets no Project: the request never selects one. */
+export function environmentTerminalRecords(
+  vault: Pick<EmployeeGitVaultStore, "readDocument">,
+  actor: (account: string) => EnvironmentActorEpoch | null,
+): NonNullable<EnvironmentLaunchRecordReaders["terminal"]> {
+  return (claim) => {
+    const epoch = actor(claim.account);
+    if (!epoch || epoch.account !== claim.account) return null;
+    return {
+      admission: environmentLaunchAdmission({
+        ...claim,
+        actorGeneration: epoch.actorGeneration,
+        membershipRevision: epoch.membershipRevision,
+      }) as EnvironmentTerminalAdmission,
+      project: claim.threadId === null ? null : environmentThreadProject(vault, claim.hostId, claim.threadId),
+    };
+  };
+}
+/** What `launch` returns: no Human admission, or the admission it sealed for. */
+export type EnvironmentLaunchReply =
+  | { readonly context: null }
+  | { readonly context: EnvironmentLaunchContextV2; readonly capsule: string };
 /** v2 Turn admission from a handoff-shaped durable admission. */
 const turnAdmission = (a: Omit<GitExecutionHandoff, "authority" | "capability">) =>
   environmentLaunchAdmission({
@@ -92,11 +124,14 @@ export class EnvironmentLaunchOwner {
     ) => Omit<GitExecutionHandoff, "authority" | "capability"> | null,
     /** Durable creation and terminal records. A kind without a reader is refused. */
     private readonly records: EnvironmentLaunchRecordReaders = {},
-    /** The issuer key sealed in this vault (`sealedEnvironmentIssuerKey`).
-     * Without it the key lives for this owner only. */
-    privateKey?: KeyObject,
+    /** Trusted composition only. `accounts`: without it values come from the
+     * canonical `actor:<id>` partition; with it, from the partition the
+     * installation maps the verified owner to, rechecked with the admission.
+     * `issuerKey`: the issuer key sealed in this vault
+     * (`sealedEnvironmentIssuerKey`); without it the key lives for this owner only. */
+    private readonly options: { accounts?: EnvironmentAccountResolver; issuerKey?: KeyObject } = {},
   ) {
-    this.#issuer = new EnvironmentLaunchIssuer(Date.now, privateKey);
+    this.#issuer = new EnvironmentLaunchIssuer(Date.now, options.issuerKey);
     this.issuer = this.#issuer.key;
     this.#environment = new AccountEnvironment(vault);
   }
@@ -123,20 +158,37 @@ export class EnvironmentLaunchOwner {
           unavailable();
       };
       current();
+      const account = this.#account(context.scope.account, context.scope.actorGeneration);
+      const checked = () => {
+        current();
+        if (account.selection && !account.selection.current()) unavailable();
+      };
       return this.#issuer.seal(
         target,
         context,
         () =>
           this.#environment.launchEnvironment(
-            context.scope.account,
+            account.partition,
             { projectId: project === null ? null : environmentProjectId(hostId, project) },
             {},
           ),
-        current,
+        checked,
       );
     } catch {
       return unavailable();
     }
+  }
+
+  /** The vault partition of the admitted owner: canonical unless the
+   * installation maps it, and then only as long as the mapping still holds. */
+  #account(
+    account: string,
+    actorGeneration: number | undefined,
+  ): { partition: string; selection?: EnvironmentAccountSelection } {
+    const accounts = this.options.accounts;
+    if (!accounts) return { partition: account };
+    const selection = accounts.forActor(account, actorGeneration ?? Number.NaN);
+    return { partition: selection.partition, selection };
   }
 
   /** One admission check per kind; each compares the claim with the durable
@@ -147,9 +199,20 @@ export class EnvironmentLaunchOwner {
     const claim = environmentLaunchContextV2(raw).admission,
       expected = canonicalEnvironmentLaunchAdmission(claim);
     let read: () => { admission: EnvironmentLaunchAdmission; project: string | null } | null;
-    if (claim.kind === "turn") {
+    if (claim.kind === "turn" && claim.hostId === "local-codex") {
+      // A Codex input is staged while its lease is still pending: no native
+      // Turn exists yet. Only that pending lease admits it.
+      const reader = this.records.codexTurn;
+      if (!reader || claim.turnId !== null) return unavailable();
+      const { threadId, inputId } = claim;
+      read = () => {
+        const admitted = reader({ hostId: "local-codex", threadId, inputId });
+        return admitted
+          ? { admission: admitted, project: environmentThreadProject(this.vault, "local-codex", threadId) }
+          : null;
+      };
+    } else if (claim.kind === "turn") {
       // Turns come from the execution lease, Project from the Thread binding.
-      // Codex Turns are not served by this issuer yet.
       if (claim.hostId !== "opencraft-server") return unavailable();
       const { hostId, threadId, inputId } = claim;
       read = () => {
@@ -165,8 +228,7 @@ export class EnvironmentLaunchOwner {
     } else {
       const reader = this.records.terminal;
       if (!reader) return unavailable();
-      const locator = { hostId: claim.hostId, resource: claim.resource, operation: claim.operation };
-      read = () => reader(locator);
+      read = () => reader(claim);
     }
     const first = read();
     if (!first || (first.project !== null && (typeof first.project !== "string" || !first.project)))
@@ -183,17 +245,61 @@ export class EnvironmentLaunchOwner {
         unavailable();
     };
     current();
+    const account = this.#account(claim.account, claim.actorGeneration);
+    const checked = () => {
+      current();
+      if (account.selection && !account.selection.current()) unavailable();
+    };
     return this.#issuer.seal(
       target,
       { version: 2, admission: claim },
       () =>
         this.#environment.launchEnvironment(
-          claim.account,
+          account.partition,
           { projectId: project === null ? null : environmentProjectId(claim.hostId, project) },
           {},
         ),
-      current,
+      checked,
     );
+  }
+
+  /** Reads this owner's own durable record for `locator` and seals for exactly
+   * that admission. The caller names a record, never an account or a Project;
+   * `{context: null}` means the record exists without a Human owner (a Turn
+   * only). A creation record that is not admissible is refused. A terminal
+   * locator is refused: its reservation is in the terminal owner's journal, so
+   * the terminal owner relays its claim to `seal`. The installation's account
+   * mapping applies to every kind through the same seal. */
+  launch(target: EnvironmentLaunchTarget, raw: unknown): EnvironmentLaunchReply {
+    try {
+      if (this.#closed) return unavailable();
+      const locator = environmentLaunchLocator(raw);
+      let admission: EnvironmentLaunchAdmission | null;
+      if (locator.kind === "turn" && locator.hostId === "local-codex") {
+        if (!this.records.codexTurn) return unavailable();
+        admission = this.records.codexTurn({
+          hostId: "local-codex",
+          threadId: locator.threadId,
+          inputId: locator.inputId,
+        });
+      } else if (locator.kind === "turn") {
+        const admitted = this.admission({ hostId: locator.hostId, threadId: locator.threadId, inputId: locator.inputId });
+        admission = admitted ? turnAdmission(admitted) : null;
+      } else if (locator.kind === "creation") {
+        const reader = this.records.creation;
+        if (!reader) return unavailable();
+        admission = reader({ hostId: locator.hostId, operationId: locator.operationId })?.admission ?? unavailable();
+      } else {
+        // The terminal reservation lives in the terminal owner's journal, which
+        // this owner cannot read by locator: terminals relay their claim to `seal`.
+        return unavailable();
+      }
+      if (admission === null) return { context: null };
+      const context: EnvironmentLaunchContextV2 = { version: 2, admission: environmentLaunchAdmission(admission) };
+      return { context, capsule: this.#sealV2(target, context) };
+    } catch {
+      return unavailable();
+    }
   }
 
   close() {

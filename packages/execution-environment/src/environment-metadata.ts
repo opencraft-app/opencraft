@@ -3,6 +3,7 @@ import type { TransportSubmissionContext } from "@opencraft/appserver-client/tra
 import type { EmployeeGitVaultStore } from "./employee-git-vault-store.js";
 import { EnvironmentError } from "./account-environment.js";
 import { GitVaultError } from "./git-vault-error.js";
+import type { EnvironmentAccountResolver } from "./environment-account.js";
 
 export interface EnvironmentExecutionScope {
   readonly account: string | null;
@@ -84,7 +85,14 @@ export function environmentScopeRequest(
  * synchronous runtime in its own process, or the vault-owner Worker behind
  * `EnvironmentMetadataPort`. */
 export class EnvironmentMetadata {
-  constructor(private readonly vault: MetadataVault) {}
+  constructor(
+    private readonly vault: MetadataVault,
+    /** Trusted composition only, the same resolver as the vault owner's issuer:
+     * an admitted scope, and so the creator recorded for a new Thread, names
+     * the partition its values are read from. Without it the account is the
+     * submission's login account, unchanged. */
+    private readonly accounts?: Pick<EnvironmentAccountResolver, "forLogin">,
+  ) {}
   project(hostId: string, threadId: string): string | null {
     return environmentThreadProject(this.vault, hostId, threadId);
   }
@@ -170,10 +178,17 @@ export class EnvironmentMetadata {
       (request.projectId !== null && typeof request.projectId !== "string")
     )
       throw new EnvironmentError("invalid");
-    const { account, hostId, threadId, projectId } = request;
+    const { hostId, threadId, projectId } = request;
+    let selection;
+    try {
+      selection = this.accounts && request.account !== null ? this.accounts.forLogin(request.account) : undefined;
+    } catch {
+      throw new EnvironmentError("unavailable", 403);
+    }
+    const account = selection ? selection.partition : request.account;
     const bound = threadId ? this.project(hostId, threadId) : null;
     if (threadId && projectId !== null && bound !== null && projectId !== bound) throw new EnvironmentError("invalid");
-    return this.admitted(
+    const scope = this.admitted(
       Object.freeze({
         account,
         hostId,
@@ -181,6 +196,8 @@ export class EnvironmentMetadata {
         projectId: threadId ? bound : text(projectId) ? projectId : null,
       }),
     );
+    if (selection && !selection.current()) throw new EnvironmentError("unavailable", 403);
+    return scope;
   }
   rememberProjects(hostId: string, projects: readonly { id: string; name: string }[]) {
     if (

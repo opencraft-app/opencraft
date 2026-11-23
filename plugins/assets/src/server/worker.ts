@@ -8,14 +8,20 @@ import type {
 } from "@opencraft/execution-environment/git-execution";
 import type { GitConnectionsSnapshot } from "../git/contract.js";
 import type {
-  EnvironmentLaunchContext,
+  AnyEnvironmentLaunchContext,
   EnvironmentLaunchTarget,
 } from "@opencraft/execution-environment/environment-delivery";
+import type { EnvironmentLaunchReply } from "@opencraft/execution-environment/environment-launch-owner";
+import type { EnvironmentLaunchLocator } from "@opencraft/execution-environment/environment-launch-receiver";
+import type { EnvironmentCreationRequest } from "./storage.js";
+import type { EnvironmentActorEpoch } from "@opencraft/execution-environment/git-execution";
 import type {
   EnvironmentExecutionScope,
   EnvironmentMetadataPort,
   EnvironmentScopeRequest,
 } from "@opencraft/execution-environment/environment-metadata";
+import type { PersonalGitSealPort } from "@opencraft/execution-environment/personal-git-seal";
+import type { GitGrantScope } from "@opencraft/execution-environment/personal-git-protocol";
 import { WorkerOwner, ownerEntry } from "@opencraft/worker-owner";
 import type { DatabaseOutcome } from "@opencraft/sqlite-node";
 import type { SandboxConfigurationsSnapshot } from "../contract.js";
@@ -35,6 +41,17 @@ export interface AssetConfigurationPort {
   snapshot(access: AssetAdmission): Promise<SandboxConfigurationsSnapshot>;
   update(access: AssetAdmission, input: unknown): Promise<SandboxConfigurationsSnapshot>;
 }
+/** The non-secret record a creation reservation is written from. */
+export interface EnvironmentCreationRecord {
+  readonly hostId: "local-codex" | "opencraft-server";
+  readonly operationId: string;
+  readonly actorId: string;
+  readonly actorGeneration: number;
+  readonly membershipRevision: number;
+  readonly source: string | null;
+  readonly incarnation: string;
+  readonly project: string | null;
+}
 export interface AssetStoragePort extends AssetConfigurationPort, WorkspaceBudgetPort {
   adoptWorkspaceInstallation(path: string): Promise<boolean>;
   workspaceCatalog(access: AssetAdmission): Promise<WorkspaceCatalog>;
@@ -48,7 +65,11 @@ export interface AssetStoragePort extends AssetConfigurationPort, WorkspaceBudge
   ): Promise<boolean>;
   executionGitReservation(locator: GitExecutionLocator): Promise<GitExecutionReservation | null>;
   executionGitGrant(locator: GitExecutionLocator): Promise<GitExecutionHandoff | null>;
-  executionEnvironmentLaunch(target: EnvironmentLaunchTarget, context: EnvironmentLaunchContext): Promise<string>;
+  executionEnvironmentLaunch(target: EnvironmentLaunchTarget, context: AnyEnvironmentLaunchContext): Promise<string>;
+  executionEnvironmentActor(account: string): Promise<EnvironmentActorEpoch | null>;
+  environmentLaunchRecord(target: EnvironmentLaunchTarget, locator: EnvironmentLaunchLocator): Promise<EnvironmentLaunchReply>;
+  environmentCreationAdmission(request: EnvironmentCreationRequest): Promise<EnvironmentCreationRecord>;
+  personalGitSeal(scope: GitGrantScope): Promise<string>;
   environmentMetadataAdmit(request: EnvironmentScopeRequest): Promise<EnvironmentExecutionScope>;
   environmentMetadataProject(hostId: string, threadId: string): Promise<string | null>;
   environmentMetadataBind(hostId: string, threadId: string, projectId: string | null): Promise<void>;
@@ -62,6 +83,8 @@ interface Ready {
   gitHosts: readonly string[];
   gitAuthority: string | null;
   environmentIssuer?: string | null;
+  /** The issuer also admits Hands terminal launches (Actor epoch reader). */
+  environmentTerminal?: boolean;
   workspaceExecution: boolean;
   botExecution?: boolean;
 }
@@ -105,7 +128,10 @@ export async function openAssetConfigurations(
   ) {
     try {
       // A requested issuer that the Worker did not start is a startup failure.
-      if (options.environmentLaunch && typeof ready.environmentIssuer !== "string")
+      if (
+        options.environmentLaunch &&
+        (typeof ready.environmentIssuer !== "string" || typeof ready.gitAuthority !== "string")
+      )
         throw new SandboxConfigurationError("unavailable", 503);
       if (
         (options.workspaceMachineId !== undefined || options.terminalOwner !== undefined) &&
@@ -135,8 +161,26 @@ export async function openAssetConfigurations(
       typeof ready.environmentIssuer === "string"
         ? Object.freeze({
             issuer: ready.environmentIssuer,
-            seal: (target: EnvironmentLaunchTarget, context: EnvironmentLaunchContext) =>
+            seal: (target: EnvironmentLaunchTarget, context: AnyEnvironmentLaunchContext) =>
               owner.call.executionEnvironmentLaunch(target, context),
+            /** Seals for the durable record `locator` names (read by the owner). */
+            launch: (target: EnvironmentLaunchTarget, locator: EnvironmentLaunchLocator) =>
+              owner.call.environmentLaunchRecord(target, locator),
+            /** Admits a creation: the Actor's current epoch and its Project. */
+            admitCreation: (request: EnvironmentCreationRequest) => owner.call.environmentCreationAdmission(request),
+            // Terminal admission: the Actor epoch a reservation is written under.
+            ...(ready.environmentTerminal === true
+              ? { terminalActor: (account: string) => owner.call.executionEnvironmentActor(account) }
+              : {}),
+          })
+        : undefined,
+    /** The same owner signs personal Git grants: only a grant scope goes in and
+     * only the opaque grant comes back. Present exactly when ENV delivery is. */
+    personalGitSeal:
+      typeof ready.environmentIssuer === "string" && typeof ready.gitAuthority === "string"
+        ? Object.freeze<PersonalGitSealPort>({
+            authority: ready.gitAuthority,
+            seal: (scope) => owner.call.personalGitSeal(scope),
           })
         : undefined,
     /** The same owner's FIFO port for non-secret ENV metadata. Main awaits it;

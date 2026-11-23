@@ -26,8 +26,9 @@ const same = (a: Pick<GitExecutionHandoff, "scope" | "native">, b: Pick<GitExecu
  * and instance. Any change during sealing discards the capsule. */
 export function createHostEnvironmentLaunch(options: {
   port: EnvironmentLaunchIssuerPort;
-  /** Current admitted execution handoff (Actor, lease and native incarnation checked). */
-  handoff(input: GitExecutionLocator): Promise<GitExecutionHandoff | null>;
+  /** Current admitted execution handoff (Actor, lease and native incarnation
+   * checked). Only its scope and native identity are used. */
+  handoff(input: GitExecutionLocator): Promise<Pick<GitExecutionHandoff, "scope" | "native"> | null>;
   /** The authenticated attachment still routes this Thread to this Host. */
   routes(session: CapabilitySession): boolean;
 }): (session: CapabilitySession, recipient: string) => Promise<HostEnvironmentReply> {

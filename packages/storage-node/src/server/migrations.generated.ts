@@ -114,6 +114,11 @@ export const SERVER_MIGRATIONS = [
     "version": 23,
     "name": "0022_account_model_defaults",
     "sql": "CREATE TABLE `account_model_defaults` (\n\t`actor_id` text NOT NULL,\n\t`host_id` text NOT NULL,\n\t`revision` integer NOT NULL,\n\t`format` integer NOT NULL,\n\t`selection` text NOT NULL,\n\t`updated_at` integer NOT NULL,\n\tPRIMARY KEY(`actor_id`, `host_id`),\n\tCONSTRAINT \"account_model_defaults_revision\" CHECK(revision > 0)\n) STRICT;\n"
+  },
+  {
+    "version": 24,
+    "name": "0023_environment_creation_reservations",
+    "sql": "CREATE TABLE `environment_creation_reservations` (\n\t`host_id` text NOT NULL,\n\t`operation_id` text NOT NULL,\n\t`actor_id` text NOT NULL,\n\t`actor_generation` integer NOT NULL,\n\t`membership_revision` integer NOT NULL,\n\t`source` text,\n\t`incarnation` text NOT NULL,\n\t`project` text,\n\t`state` text NOT NULL,\n\t`created_at` integer NOT NULL,\n\t`expires_at` integer NOT NULL,\n\tPRIMARY KEY(`host_id`, `operation_id`),\n\tCONSTRAINT \"environment_creation_reservation_state\" CHECK(state IN ('pending', 'launched', 'abandoned')),\n\tCONSTRAINT \"environment_creation_reservation_epoch\" CHECK(actor_generation > 0 AND membership_revision >= 0)\n) STRICT;\n"
   }
 ] as const;
 export const SERVER_ALTERNATE_MIGRATIONS = [
@@ -234,9 +239,14 @@ export const SERVER_ALTERNATE_MIGRATIONS = [
         "version": 23,
         "name": "converge_0022_account_model_defaults",
         "sql": SERVER_MIGRATIONS[22].sql
+      },
+      {
+        "version": 24,
+        "name": "converge_0023_environment_creation_reservations",
+        "sql": SERVER_MIGRATIONS[23].sql
       }
     ]
   }
 ] as const;
-export const SERVER_MIGRATION_CONTRACT_HASH = "6bea99b7c805898103dde5456cf354d36191d147085535f12fef28727e199692" as const;
+export const SERVER_MIGRATION_CONTRACT_HASH = "113ed5843376171328dd9da12f0787b980700c2d39c112cda295d07d62ed04f6" as const;
 export const OPENCRAFT_VERSION = "0.2.0" as const;

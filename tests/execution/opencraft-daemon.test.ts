@@ -313,6 +313,39 @@ test("lazy Host can retry after engine startup failure with reopened storage", a
   } finally { appHost?.close(); await daemon?.close(); process.chdir(cwd); await rm(directory, { recursive: true, force: true }); }
 });
 
+test("a Codex bridge stack that cannot start leaves the daemon serving and only Codex unavailable", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oc-daemon-bridge-down-"));
+  const cwd = process.cwd();
+  let daemon: Awaited<ReturnType<typeof startOpenCraftDaemon>> | undefined;
+  let appHost: MessagePortAppHostClient | undefined;
+  try {
+    const endpoint = join(directory, "daemon.sock"), token = "x".repeat(48);
+    // A program directory without the bridge programs: the stack fails to start.
+    daemon = await startOpenCraftDaemon({ endpoint, runtimeDirectory: cwd, authToken: token, dshExecutable: "unused",
+      dataDirectory: join(directory, "data"), codexExecutable: "unused", codexDataDirectory: join(directory, "codex"),
+      nativeCodexHomeDirectory: join(directory, "native"), codexBridgeStack: { programs: join(directory, "no-programs") } });
+    // The daemon answers Main without waiting on Codex.
+    const channel = await openDaemonChannel(endpoint, token, "bridge-down-renderer");
+    const listeners = new Set<(event: MessageEvent<unknown>) => void>();
+    const stop = channel.subscribeMessage(value => {
+      const message = value as DaemonServerMessage;
+      if (message.type === "app-host/message") for (const listener of listeners) listener({ data: message.payload } as MessageEvent<unknown>);
+    });
+    appHost = new MessagePortAppHostClient({ postMessage: message => channel.send({ type: "app-host/message", payload: message }),
+      addEventListener: (_type, listener) => { listeners.add(listener); }, removeEventListener: (_type, listener) => { listeners.delete(listener); },
+      start() {}, close() { stop(); channel.close(); } }, "bridge-down-renderer");
+    await appHost.waitUntilReady();
+    // Each Codex connection retries the stack and reports why Codex is unavailable.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const transport = appHost.createTransport("local-codex");
+      const client = new JsonRpcAppServerClient({ hostId: "local-codex", transport });
+      try {
+        await assert.rejects((async () => { await transport.connect(); await client.request("thread/list", {}); })(), /Codex is unavailable/);
+      } finally { await client.close(); }
+    }
+  } finally { appHost?.close(); await daemon?.close(); process.chdir(cwd); await rm(directory, { recursive: true, force: true }); }
+});
+
 test("explicit core mode fails closed without creating embedded Host stores or spawning an engine", async () => {
   const directory = await mkdtemp(join(tmpdir(), "oc-daemon-core-unavailable-"));
   const dataDirectory = join(directory, "must-not-be-created");

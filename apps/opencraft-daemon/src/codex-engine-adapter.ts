@@ -21,7 +21,32 @@ import type { HumanGitExecutionPort } from '@opencraft/execution-environment/hum
 import type { GitExecutionHandoff, GitExecutionReservation } from '@opencraft/execution-environment/git-execution';
 import { observeNativeExecutionProcess, observeStandaloneCodexExecution } from './native-execution-origin.js';
 import { ExecutionLeaseStore, type ExecutionSubmission, originalExecutionInputIds, snapshotExecutionSubmission } from "./execution-lease-store.js";
-import { EXECUTION_ENVIRONMENT_FIELD, requiresEnvironmentAuthority, requiresCurrentEnvironmentAuthority, executionEnvironmentOwner, type ExecutionEnvironmentRuntime, type ExecutionEnvironmentSnapshot, type EnvironmentExecutionScope } from '@opencraft/execution-environment';
+// Only the request policy and snapshot helpers load here; the synchronous
+// runtime is a type: the composition that owns the vault passes it in.
+import { requiresEnvironmentAuthority, requiresCurrentEnvironmentAuthority } from '@opencraft/execution-environment/execution-request-policy';
+import { executionEnvironmentOwner } from '@opencraft/execution-environment/execution-snapshot';
+import type { ExecutionEnvironmentRuntime, ExecutionEnvironmentSnapshot, EnvironmentExecutionScope } from '@opencraft/execution-environment';
+import type { EnvironmentLaunchTarget } from '@opencraft/execution-environment/environment-delivery';
+import type { EnvironmentLaunchLocator } from '@opencraft/execution-environment/environment-launch-receiver';
+/** Browser frames never carry an ENV envelope. */
+const EXECUTION_ENVIRONMENT_FIELD = '__opencraftEnvironment';
+const ENVIRONMENT_LAUNCH_FIELD = '__opencraftEnvironmentLaunch';
+const ENVIRONMENT_DELIVERY_REFUSED = 'Environment delivery was refused for this input';
+/** Opaque execution ENV delivery to the Codex Core process that owns the native
+ * server. This adapter relays capsules and record locators only: it never reads
+ * the vault, never holds values and never installs them itself. */
+export interface CodexEnvironmentLaunchPort {
+  /** The attachment the Codex Core receiver is configured with. */
+  readonly instance: string;
+  /** Seals for the durable record `locator` names; `{context: null}` without a Human owner. */
+  launch(target: EnvironmentLaunchTarget, locator: EnvironmentLaunchLocator): Promise<unknown>;
+  /** Records the durable creation reservation before the native creation. */
+  reserveCreation(request: { operationId: string; actorId: string; actorGeneration: number; source: string | null;
+    incarnation: string; projectId: string | null }): Promise<void>;
+  /** Moves the reservation out of its admissible state. */
+  settleCreation(operationId: string, outcome: 'launched' | 'abandoned'): Promise<void>;
+}
+interface StagedEnvironmentLaunch { readonly locator: EnvironmentLaunchLocator; readonly key: string; readonly operationId?: string }
 import { CodexOrchestrationControl, OrchestrationControlError } from "./codex-orchestration-control.js";
 import { ExecutionFaultWriter } from "./execution-fault-writer.js";
 import { TokenUsageAttemptWriter } from "./token-usage-attempt-writer.js";
@@ -136,6 +161,7 @@ interface PendingRequest {
   readonly modelCreator?: () => string | null;
   readonly gatewayViewer?: () => string | null;
   environmentCreationScope?: EnvironmentExecutionScope;
+  environmentLaunch?: StagedEnvironmentLaunch;
   readonly executionAuthorityAdmitted?: boolean;
   readonly historyTiming?: { readonly pairId: string; readonly started: number; nativeStarted?: number };
   usageAttemptId?: string;
@@ -209,6 +235,7 @@ function sessionMcpReason(cause: unknown): string {
     case "Session tool preparation belongs to an expired connection": return "connection-expired";
     case "Environment belongs to another account or project; start a new session": return "environment-owner-mismatch";
     case "Environment variables require a Codex owner handoff": return "environment-handoff-required";
+    case ENVIRONMENT_DELIVERY_REFUSED: return "environment-delivery-refused";
     case "Session tools require an attested execution": return "execution-unattested";
     case "Cannot preserve this Codex sandbox while refreshing tools": return "sandbox-unsupported";
     default:
@@ -247,6 +274,8 @@ interface SharedCodexRoutingOptions {
   readonly nativeTool?: (context: { threadId: string; turnId: string; callId: string },
     tool: { namespace?: string | null; name: string }, args: unknown, signal: AbortSignal) => Promise<unknown> | null;
   readonly executionEnvironment?: ExecutionEnvironmentRuntime;
+  /** Opaque ENV delivery; exclusive with `executionEnvironment`. */
+  readonly environmentLaunch?: CodexEnvironmentLaunchPort;
   /** Compiled composition owns the sole vault; the adapter attests its actual native owner. */
   readonly createExecutionGit?: (native: {
     inspect(value: GitExecutionHandoff): Promise<boolean>;
@@ -687,6 +716,10 @@ export class CodexEngineAdapter implements DuplexTransport {
       ? new CodexCoreBridge(options.coreEndpoint, options.coreAuthToken ?? "", () => this.maintenanceSnapshot(),
         (method, params, clientId) => this.admissionRejected(method, params, clientId, "maintenance")) : null;
     if (this.coreBridge && options.createExecutionGit) throw new Error('Git execution requires native Host overlays');
+    // Delivered values are opened by the split Codex Core receiver only. The
+    // pending Codex lease names the native incarnation the Git owner attests.
+    if (options.environmentLaunch && (options.executionEnvironment || !this.nativeCore || !options.createExecutionGit))
+      throw new Error('Execution ENV delivery requires one ENV owner, a Codex Core and the Git execution owner');
     if (options.createExecutionGit) {
       if (options.executionEnvironment) throw new Error('Git execution cannot have two environment owners');
       this.executionGit = options.createExecutionGit({
@@ -2023,6 +2056,10 @@ export class CodexEngineAdapter implements DuplexTransport {
           pending.environmentCreationScope = scope;
           this.environmentCreations.set(physicalId, environment);
         }
+        if ((message.method === "thread/start" || message.method === "thread/fork") && this.options.environmentLaunch) {
+          const delivered = await this.stageEnvironmentCreation(message.method, params, context);
+          if (delivered) { pending.environmentLaunch = delivered; this.environmentLaunchCreations.set(physicalId, delivered); }
+        }
         this.pending.set(physicalId, pending);
         if (message.method === "thread/resume") {
           const threadId = string(params.threadId);
@@ -2574,6 +2611,12 @@ export class CodexEngineAdapter implements DuplexTransport {
           });
           return;
         }
+      }
+      const delivered = this.environmentLaunchCreations.get(String(id));
+      if (delivered && typeof message.method !== "string") {
+        this.environmentLaunchCreations.delete(String(id));
+        // Answered either way: the reservation must never admit another launch.
+        this.settleEnvironmentCreation(delivered, record(record(message.error).data).notSubmitted === true ? 'abandoned' : 'launched');
       }
       const environment = this.environmentCreations.get(String(id));
       if (environment && typeof message.method !== "string") {
@@ -4682,6 +4725,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       : reason === "execution-start-unavailable" ? "Session tools could not start; input was not sent. Check execution installation and workspace mounts."
       : reason === "sandbox-unsupported" ? "Session permissions cannot be verified; input was not sent. Start a new session or contact the host administrator."
       : reason === "environment-handoff-required" ? "This execution owner cannot safely install the current environment; input was not sent. Contact the host administrator."
+      : reason === "environment-delivery-refused" ? "Personal environment variables could not be delivered for this input; it was not sent. Retry, or contact the host administrator."
       : "Session tools are unavailable; input was not sent. Reconnect and retry.";
     return { code: unavailable === "archived" ? -32071 : unavailable ? -32600 : -32000,
       message: `${message} [${stage}/${reason}; ref ${diagnosticId}]`,
@@ -4714,6 +4758,67 @@ export class CodexEngineAdapter implements DuplexTransport {
   // It may be empty while an independent native execution is still active.
   private readonly executionEnvironments = new Map<string, { readonly owner: string; readonly key?: string; readonly account?: string | null; readonly needsGitAdmission?: boolean; bindGitExecution?(inputId: string, executionId: string): void }>();
   private readonly environmentCreations = new Map<string, ExecutionEnvironmentSnapshot>();
+  private readonly environmentLaunchCreations = new Map<string, StagedEnvironmentLaunch>();
+  /** Digest of the delivered values Codex Core last installed per Thread. */
+  private readonly deliveredEnvironmentKeys = new Map<string, string>();
+  /** The receiver of the split Codex Core that owns this native server. */
+  private async environmentLaunchTarget(): Promise<EnvironmentLaunchTarget> {
+    const port = this.options.environmentLaunch!;
+    const health = await this.nativeCore!.control.health();
+    // Routed generations and combined Cores have no receiver for this delivery.
+    if (health.routingEpoch || health.environmentLaunchVersion !== 1) throw new Error(ENVIRONMENT_DELIVERY_REFUSED);
+    const value = record(await this.requestPhysical("opencraft/environment/launch", {}, 5_000));
+    if (value.version !== 1 || value.purpose !== "codex" || value.instance !== port.instance || typeof value.key !== "string" || !value.key)
+      throw new Error(ENVIRONMENT_DELIVERY_REFUSED);
+    return { purpose: "codex", instance: port.instance, key: value.key };
+  }
+  /** Relays one capsule for the record `locator` names to Codex Core, which opens
+   * it and holds the values. Only an opaque digest comes back. */
+  private async stageEnvironmentLaunch(locator: EnvironmentLaunchLocator, current: () => void): Promise<StagedEnvironmentLaunch> {
+    try {
+      const target = await this.environmentLaunchTarget(); current();
+      const reply = await this.options.environmentLaunch!.launch(target, locator); current();
+      const staged = record(await this.requestPhysical("opencraft/environment/stage", { locator, reply }, 15_000)); current();
+      if (typeof staged.key !== "string" || !staged.key) throw new Error(ENVIRONMENT_DELIVERY_REFUSED);
+      return { locator, key: staged.key };
+    } catch (cause) {
+      if (cause instanceof Error && /expired connection|not initialized|closed/u.test(cause.message)) throw cause;
+      throw new Error(ENVIRONMENT_DELIVERY_REFUSED, { cause });
+    }
+  }
+  /** A Human creation reserves its durable admission before the native call,
+   * then stages its values in Codex Core. Anything else creates without values. */
+  private async stageEnvironmentCreation(method: string, params: RpcRecord, context: TransportSubmissionContext): Promise<StagedEnvironmentLaunch | undefined> {
+    const actor = context.actorContext, port = this.options.environmentLaunch!;
+    if (!actor || actor.credentialId !== null || !actor.actorId.startsWith("human://")) return undefined;
+    const source = method === "thread/fork" ? string(params.threadId) : null;
+    // A path fork names no source Thread whose Project binding could be read.
+    if (method === "thread/fork" && (!source || string(params.path))) throw new Error(ENVIRONMENT_DELIVERY_REFUSED);
+    const generation = this.sessionMcpGeneration;
+    const current = () => {
+      if (generation !== this.sessionMcpGeneration) throw new Error("Thread creation belongs to an expired connection");
+      this.validateSubmissionContext(context);
+    };
+    const incarnation = await this.gitNativeIncarnation(source ?? ""); current();
+    if (!incarnation) throw new Error(ENVIRONMENT_DELIVERY_REFUSED);
+    const operationId = randomUUID();
+    try {
+      await port.reserveCreation({ operationId, actorId: actor.actorId, actorGeneration: actor.generation, source, incarnation,
+        projectId: source === null && typeof params.projectId === "string" && params.projectId ? params.projectId : null });
+    } catch (cause) { throw new Error(ENVIRONMENT_DELIVERY_REFUSED, { cause }); }
+    try {
+      current();
+      return { ...await this.stageEnvironmentLaunch({ kind: "creation", hostId: "local-codex", operationId }, current), operationId };
+    } catch (cause) {
+      this.settleEnvironmentCreation({ locator: { kind: "creation", hostId: "local-codex", operationId }, key: "", operationId }, "abandoned");
+      throw cause;
+    }
+  }
+  private settleEnvironmentCreation(delivered: StagedEnvironmentLaunch, outcome: "launched" | "abandoned"): void {
+    if (!delivered.operationId) return;
+    void this.options.environmentLaunch?.settleCreation(delivered.operationId, outcome)
+      .catch(() => this.diagnostic({ event: "environment-creation-settle-pending" }));
+  }
   private readonly initialEnvironmentThreads = new Set<string>();
   private async canInjectEnvironment(threadId?: string): Promise<boolean> {
     if (!this.nativeCore) return true;
@@ -4902,7 +5007,8 @@ export class CodexEngineAdapter implements DuplexTransport {
       stage = "resolve-environment";
       let environment = this.executionGit && inputId
         ? await this.executionGit.reserve({hostId: 'local-codex', threadId, inputId})
-        : this.options.executionEnvironment?.snapshot(this.options.executionEnvironment.execution('local-codex', threadId, inputId));
+        // A separate vault owner signs the Git grant asynchronously here.
+        : await this.options.executionEnvironment?.prepare(this.options.executionEnvironment.execution('local-codex', threadId, inputId));
       if (environment && !await this.canInjectEnvironment(threadId)) {
         // An empty requested environment does not prove that an independent
         // Native owner has cleared credentials installed by a previous owner.
@@ -4910,10 +5016,15 @@ export class CodexEngineAdapter implements DuplexTransport {
       }
       if (environment) { await environment.ready(); environment.apply(process.env); }
       current();
+      // Delivered values are staged in Codex Core against this pending input's
+      // own lease; only their opaque digest decides whether a reload is needed.
+      const delivered = this.options.environmentLaunch && inputId
+        ? await this.stageEnvironmentLaunch({ kind: "turn", hostId: "local-codex", threadId, inputId }, current) : undefined;
       const previous = this.sessionMcpConfigurations.get(threadId);
       if (!this.sessionMcpRetirements.has(threadId)
         && (isDeepStrictEqual(previous, configuration) || (configuration === null && previous === undefined))
-        && (!environment || environment.key === this.executionEnvironments.get(threadId)?.key)) return;
+        && (!environment || environment.key === this.executionEnvironments.get(threadId)?.key)
+        && (!delivered || delivered.key === this.deliveredEnvironmentKeys.get(threadId))) return;
       const request = async (method: string, params: RpcRecord): Promise<unknown> => {
         current();
         const started = performance.now();
@@ -4933,6 +5044,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       if (thread.ephemeral === true) {
         this.ephemeralThreads.add(threadId);
         if (environment && Object.keys(environment.overlay()).length) throw new Error('Git environment refresh requires a persistent native Thread');
+        if (delivered) throw new Error(ENVIRONMENT_DELIVERY_REFUSED);
         return;
       }
       stage = "check-idle";
@@ -4963,9 +5075,10 @@ export class CodexEngineAdapter implements DuplexTransport {
         this.nativeUnloadDiagnostic(threadId, "confirmed");
       };
       if (retirement?.phase === "retiring" && status !== "notLoaded") await waitForUnload();
+      // A staged delivery is installed only by a reload that carries it.
       const alreadyApplied = retirement?.phase === "restoring" && status !== "notLoaded"
         && isDeepStrictEqual(retirement.configuration, configuration)
-        && retirement.environmentKey === environment?.key;
+        && retirement.environmentKey === environment?.key && !delivered;
       stage = "capture-settings";
       const live = retirement?.settings ?? (status === "notLoaded" ? {} : record(await request("thread/resume", { threadId, excludeTurns: true })));
       const resume: RpcRecord = {};
@@ -4986,6 +5099,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       // valid either. A partial failure must not make a later rollback look applied.
       this.sessionMcpConfigurations.delete(threadId);
       this.executionEnvironments.delete(threadId);
+      this.deliveredEnvironmentKeys.delete(threadId);
       if (!alreadyApplied && status !== "notLoaded") {
         this.sessionMcpRetirements.set(threadId, { settings: live, phase: "retiring" });
         stage = "unsubscribe";
@@ -4998,7 +5112,7 @@ export class CodexEngineAdapter implements DuplexTransport {
         await request("thread/resume", { ...resume, threadId, excludeTurns: true, config: {
           "mcp_servers.opencraft_session": configuration ?? { enabled: false, url: "http://127.0.0.1:1/mcp" },
           ...(environment ? { 'shell_environment_policy.set': environment.overlay() } : {}),
-        } });
+        }, ...(delivered ? { [ENVIRONMENT_LAUNCH_FIELD]: { locator: delivered.locator, key: delivered.key } } : {}) });
         this.sessionMcpRetirements.set(threadId, { settings: live, phase: "restoring", configuration, environmentKey: environment?.key });
       }
       if (Object.keys(live).length) {
@@ -5013,6 +5127,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       }
       this.sessionMcpConfigurations.set(threadId, configuration);
       if (environment) this.executionEnvironments.set(threadId, environment);
+      if (delivered) this.deliveredEnvironmentKeys.set(threadId, delivered.key);
       this.sessionMcpRetirements.delete(threadId);
       stage = "release-initial";
       this.sessionMcpInitial.get(threadId)?.reservation.cancel();
@@ -5039,6 +5154,12 @@ export class CodexEngineAdapter implements DuplexTransport {
         }
         message = { ...message, params: { ...params, ...inherited } };
       }
+    }
+    const deliveredCreation = this.environmentLaunchCreations.get(String(message.id));
+    if ((message.method === "thread/start" || message.method === "thread/fork") && deliveredCreation) {
+      // Only the staged delivery's locator and digest cross; Codex Core installs the values.
+      message = { ...message, params: { ...record(message.params),
+        [ENVIRONMENT_LAUNCH_FIELD]: { locator: deliveredCreation.locator, key: deliveredCreation.key } } };
     }
     const initialEnvironment = this.environmentCreations.get(String(message.id));
     if ((message.method === "thread/start" || message.method === "thread/fork") && initialEnvironment) {
@@ -5159,6 +5280,9 @@ export class CodexEngineAdapter implements DuplexTransport {
       this.sessionMcpConfigurations.clear();
       this.sessionMcpRefreshes.clear();
       this.environmentCreations.clear(); this.executionEnvironments.clear(); this.initialEnvironmentThreads.clear();
+      // Outcome unknown: the reservations leave their admissible state, nothing is replayed.
+      for (const delivered of this.environmentLaunchCreations.values()) this.settleEnvironmentCreation(delivered, 'launched');
+      this.environmentLaunchCreations.clear(); this.deliveredEnvironmentKeys.clear();
 
       for (const creation of this.sessionMcpCreations.values()) creation.cancel();
       for (const [threadId, initial] of this.sessionMcpInitial)

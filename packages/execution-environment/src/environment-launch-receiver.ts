@@ -54,7 +54,8 @@ const text = (v: unknown): v is string =>
 const exact = (v: Record<string, unknown>, keys: readonly string[]) =>
   Object.keys(v).length === keys.length && keys.every((k) => Object.hasOwn(v, k));
 
-function parseLocator(value: unknown): EnvironmentLaunchLocator {
+/** Validates a locator: exactly the keys of its kind, never an account or Project. */
+export function environmentLaunchLocator(value: unknown): EnvironmentLaunchLocator {
   if (!record(value) || !(value.hostId === "local-codex" || value.hostId === "opencraft-server")) return unavailable();
   const hostId = value.hostId;
   if (
@@ -133,7 +134,7 @@ export function createEnvironmentLaunchAdmissionReceiver(options: {
     kinds,
     async open(raw, reply) {
       try {
-        const locator = parseLocator(raw);
+        const locator = environmentLaunchLocator(raw);
         const owned = await read(locator);
         if (!record(reply) || Object.keys(reply).some((k) => !["context", "capsule"].includes(k))) return unavailable();
         if (reply.context === null) {

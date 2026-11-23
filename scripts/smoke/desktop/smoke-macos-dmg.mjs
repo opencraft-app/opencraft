@@ -45,9 +45,6 @@ try {
   const profile = join(directory, "profile");
   const resources = join(app, "Contents", "Resources");
   await run(process.execPath, [fileURLToPath(new URL("./smoke-packaged-runtime.mjs", import.meta.url)), resources]);
-  const fixture = new URL("../../../tests/fixtures/fake-codex-stdio-appserver.mjs", import.meta.url).href;
-  const executable = join(directory, "codex-fixture");
-  await writeFile(executable, `#!/usr/bin/env node\nimport(${JSON.stringify(fixture)});\n`, { mode: 0o700 });
   await mkdir(join(directory, "home"));
   const environment = {
     ...process.env,
@@ -58,9 +55,11 @@ try {
     OPENCRAFT_SKILLS_DIRECTORY: join(directory, "skills"),
     DSH_AGENTS_HOME: join(directory, "agents"),
     OPENCRAFT_PROJECTLESS_WORKSPACE_DIRECTORY: directory,
-    OPENCRAFT_CODEX_EXECUTABLE: executable,
-    OPENCRAFT_TEST_PACKAGED_TURN: "1",
   };
+  // The installed app runs its bundled native Codex through the daemon's bridge
+  // stack, the shipped default; nothing here replaces either.
+  delete environment.OPENCRAFT_CODEX_EXECUTABLE;
+  delete environment.OPENCRAFT_CODEX_BRIDGE;
   delete environment.ELECTRON_RUN_AS_NODE;
   child = spawn(join(app, "Contents", "MacOS", basename(app, ".app")), [
     `--user-data-dir=${profile}`, "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0",
@@ -137,33 +136,27 @@ try {
         if (reply.error) throw new Error(`${method}: ${reply.error.message}`);
         return reply.result;
       }
-      await rpc("initialize", { clientInfo: { name: "desktop-package-smoke", version: "1" }, capabilities: { experimentalApi: true } });
+      // Without an account no turn can run, so the check is that the bundled native
+      // Codex came up behind the bridge: it answers initialize and its own config.
+      const initialized = await rpc("initialize", { clientInfo: { name: "desktop-package-smoke", version: "1" }, capabilities: { experimentalApi: true } });
       send({ method: "initialized" });
-      const { thread } = await rpc("thread/start", { cwd, model: "gpt-test", approvalPolicy: "never", sandbox: "read-only", testNoServerRequest: true });
-      const { turn } = await rpc("turn/start", { threadId: thread.id, input: [{ type: "text", text: "Packaged Host smoke", text_elements: [] }] });
-      const message = await receive(frame => {
-        const notification = readFrame(frame);
-        return notification?.method === "item/completed" && notification.params.turnId === turn.id
-          && notification.params.item.type === "agentMessage";
-      }, "assistant reply");
-      await receive(frame => {
-        const notification = readFrame(frame);
-        return notification?.method === "turn/completed" && notification.params.turn.id === turn.id
-          && notification.params.turn.status === "completed";
-      }, "turn completion");
-      return readFrame(message).params.item.text;
+      const threads = await rpc("thread/list", { limit: 5 });
+      const config = await rpc("config/read", {});
+      return { userAgent: initialized.userAgent, threadList: Array.isArray(threads.data), nativeConfig: typeof config.config === "object" && config.config !== null };
     } finally {
       port1.close();
     }
   }, { connectType: CONNECT_APP_HOST_MESSAGE, protocolVersion: APP_HOST_PROTOCOL_VERSION, cwd: directory });
-  assert.equal(reply, "Fixture received: Packaged Host smoke");
+  assert.match(reply.userAgent ?? "", /\/\d+\.\d+\.\d+ /u, "the bundled native Codex answered through the bridge");
+  assert.ok(reply.threadList && reply.nativeConfig, "the Codex Host serves reads through the bridge");
+  receipt.codexUserAgent = reply.userAgent;
   receipt.hostRoundTrip = true;
   const digest = createHash("sha256");
   for await (const chunk of createReadStream(dmg)) digest.update(chunk);
   receipt.sha256 = digest.digest("hex");
   receipt.title = await page.title();
   receipt.passed = true;
-  console.log("Final DMG verified; the installed renderer completed a Host turn with the isolated fixture");
+  console.log("Final DMG verified; the installed renderer reached the bundled native Codex through the bridge");
 } catch (error) {
   receipt.error = String(error.stack || error);
   throw error;

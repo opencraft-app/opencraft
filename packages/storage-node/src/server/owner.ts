@@ -6,10 +6,16 @@ import { installedServerMigrationComposition, type ServerDataContract } from "./
 
 import type { CreationReceiptMethods } from "./conversation-creation-receipts.js";
 import type { AccountModelDefaultsMethods } from "./account-model-defaults.js";
+import type { EnvironmentCreationReservationMethods } from "./environment-creation-reservations.js";
 export type { CreationReceipt, CreationReceiptMethods } from "./conversation-creation-receipts.js";
 export type { AccountModelDefaultsMethods, StoredAccountModelDefaults } from "./account-model-defaults.js";
+export type {
+  EnvironmentCreationReservation,
+  EnvironmentCreationReservationMethods,
+  EnvironmentCreationOutcome,
+} from "./environment-creation-reservations.js";
 
-type CoreMethods = CreationReceiptMethods & AccountModelDefaultsMethods;
+type CoreMethods = CreationReceiptMethods & AccountModelDefaultsMethods & EnvironmentCreationReservationMethods;
 
 /** The Server installation as a network process holds it. */
 export interface ServerCoreStorage<T = object> extends ServerDatabase {

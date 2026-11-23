@@ -140,3 +140,13 @@ and instance admission, validates the Host and selection, then calls
 `readAccountModelDefaults` or `compareAndSetAccountModelDefaults`. The Worker
 commits only at the expected revision and refuses an unknown stored format.
 Failures never fall back to main-thread SQLite.
+
+Execution ENV creation reservations (`environment_creation_reservations`,
+migration v24) are written only by the Server Worker
+(`reserveEnvironmentCreation`, `settleEnvironmentCreation`) before a native
+Codex creation, after the vault owner admitted the Actor epoch and the Project.
+A reservation is admissible only while `pending` and unexpired; launching or
+abandoning it is a state change, never a delete. The vault owner and the Codex
+Core receiver read it read-only from their own Workers, together with the
+current Actor epoch. It holds no variable value. Failures never fall back to
+main-thread SQLite.
