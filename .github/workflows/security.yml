@@ -43,6 +43,8 @@ jobs:
         env:
           GITLEAKS_TEST_BIN: ${{ runner.temp }}/gitleaks
         run: python3 -B -m unittest discover -s scripts/tests -p test_contribute_upstream.py
+      - name: Test downstream boundary audit
+        run: python3 -B -m unittest discover -s scripts/tests -p test_downstream_boundary.py
       - name: Scan source
         run: '"${{ runner.temp }}/gitleaks" dir . --redact --no-banner --config .gitleaks.toml'
       - name: Scan reachable commit history

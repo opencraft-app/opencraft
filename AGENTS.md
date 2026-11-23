@@ -56,6 +56,7 @@ GitHub `opencraft-app/opencraft` 是目标核心上游，产品身份来源、�
 | Web、Expo、Electron 构建与交付 | [build-matrix](docs/develop/build-matrix.md) |
 | App 发版（桌面、Android、iOS）、Web 更新部署 | App 发版按 [opencraft-release](.agents/skills/opencraft-release/SKILL.md)：同一产品版本（`scripts/release/product-version.mjs`），beta `vX.Y.Z-beta.N` 与正式 `vX.Y.Z`；Web 更新见 [Web 发布与部署](docs/operations/web-deployment.md)，公共 npm 已停止发布 |
 | 从源码打包替换服务器本地 Web | [本地替换指引](docs/operations/web-local-deployment.md)；先核对 `.local/README.md` 中的实际部署信息 |
+| 基于核心的下游产品 fork、产品工作区与上下游边界审计 | [下游产品](docs/develop/downstream-products.md) |
 | 开源提交、公开发布 | [安全与发布说明](SECURITY.md)；按 [opencraft-release](.agents/skills/opencraft-release/SKILL.md) 核对实际来源、隐私、依赖、固定tag和归档；贡献PR遵循仓库当前检查 |
 | 手机容器的数据读取、会话连续性、导航容器与打包 | [Expo 局部 Agent 入口](apps/mobile/AGENTS.md#手机端细则) |
 | 引擎命令、子进程、PTY、后台 worker 与取消路径 | [Sandbox 局部入口](packages/sandbox/AGENTS.md) 与 [CreateSandbox 契约](docs/architecture/execution/execution-sandbox.md) |
