@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
+import { DatabaseSync } from 'node:sqlite';
 import { OrdinaryWorkspaceStore } from '../../apps/local-agent-host/src/ordinary-workspace-store';
 const scope={principalId:'alice',hostId:'host-a'}, selection='a'.repeat(64);
 function fixture(t:test.TestContext) {
@@ -115,4 +116,169 @@ test('separate process restart retains unresolved Native dispatch after compute 
  const code=`import {OrdinaryWorkspaceStore} from ${JSON.stringify(module)};const s=new OrdinaryWorkspaceStore(${JSON.stringify(f.root)},'deployment-a');let blocked=false;try{s.beginCreate(${JSON.stringify(scope)},${JSON.stringify(row.workspaceId)})}catch{blocked=true}console.log(JSON.stringify({blocked,pending:s.pendingThreadStarts('host-a').length}));s.close();`;
  const out=execFileSync(process.execPath,['--import',createRequire(import.meta.url).resolve('tsx'),'--input-type=module','-e',code],{encoding:'utf8',env:{...process.env,NODE_NO_WARNINGS:'1'}});
  assert.deepEqual(JSON.parse(out),{blocked:true,pending:1});
+});
+
+test('fork membership and ambiguous dispatch survive restart without changing primary or compute', t => {
+ const f = fixture(t), s = f.open(), row = s.admit(scope, 'main', selection);
+ s.attachThread(scope, row.workspaceId, 'parent'); const lease = s.beginCreate(scope, row.workspaceId); s.confirmCreated(scope, lease, 'instance');
+ const fork = s.beginThreadFork(scope, 'parent', 'side');
+ assert.throws(() => s.beginThreadFork(scope, 'parent', 'side'), /reconciliation/);
+ assert.throws(() => s.beginThreadFork({ ...scope, principalId: 'bob' }, 'parent', 'side'), /not found/);
+ s.confirmThreadForked(scope, fork.lease, 'side', 'child');
+ assert.equal(s.forThread(scope, 'child')?.workspaceId, row.workspaceId);
+ assert.equal(s.read(scope, row.workspaceId).threadId, 'parent');
+ assert.equal(s.beginThreadFork(scope, 'parent', 'side').threadId, 'child');
+ assert.throws(() => s.beginThreadFork(scope, 'child', 'side'), /conflict/);
+ s.beginThreadFork(scope, 'child', 'unknown'); f.close(s);
+ const next = f.open(); assert.equal(next.hasThread(scope.hostId, 'child'), true);
+ assert.equal(next.forThread({ ...scope, principalId: 'bob' }, 'child'), null);
+ assert.throws(() => next.beginThreadFork(scope, 'child', 'unknown'), /reconciliation/);
+ assert.equal(next.read(scope, row.workspaceId).instanceId, 'instance');
+});
+
+test('late fork evidence survives compute replacement but cannot alias parent or foreign member', t => {
+ const f = fixture(t), s = f.open(), row = s.admit(scope, 'main', selection);
+ s.attachThread(scope, row.workspaceId, 'parent'); const lease = s.beginCreate(scope, row.workspaceId); s.confirmCreated(scope, lease, 'instance');
+ s.beginThreadFork(scope, 'parent', 'side');
+ s.beginRelease(scope, lease); s.confirmComputeAbsent(scope, lease); const next = s.beginCreate(scope, row.workspaceId); s.confirmCreated(scope, next, 'next');
+ assert.throws(() => s.confirmThreadForked(scope, lease, 'side', 'parent'), /conflict/);
+ const other = s.admit(scope, 'other', selection); s.attachThread(scope, other.workspaceId, 'foreign');
+ assert.throws(() => s.confirmThreadForked(scope, lease, 'side', 'foreign'), /conflict/);
+ s.confirmThreadForked(scope, lease, 'side', 'late');
+ assert.equal(s.forThread(scope, 'late')?.generation, next.generation);
+ assert.equal(s.read(scope, row.workspaceId).instanceId, 'next');
+});
+
+test('fork inventory exposes pending evidence and rejects same-workspace child receipt aliasing', t => {
+ const f = fixture(t), s = f.open(), row = s.admit(scope, 'main', selection);
+ s.attachThread(scope, row.workspaceId, 'parent'); const lease = s.beginCreate(scope, row.workspaceId); s.confirmCreated(scope, lease, 'instance');
+ s.beginThreadFork(scope, 'parent', 'first'); s.beginThreadFork(scope, 'parent', 'second');
+ assert.equal(s.pendingForks(scope.hostId).length, 2);
+ const page = s.pendingForks(scope.hostId, undefined, 1);
+ assert.equal(s.pendingForks(scope.hostId, page[0], 1)[0].intentId, 'second');
+ assert.equal(s.pendingForks('foreign-host').length, 0);
+ s.confirmThreadForked(scope, lease, 'first', 'child');
+ s.confirmThreadForked(scope, lease, 'first', 'child');
+ assert.throws(() => s.confirmThreadForked(scope, lease, 'second', 'child'), /membership conflict/);
+ assert.deepEqual(s.pendingForks(scope.hostId).map(fork => fork.intentId), ['second']);
+ assert.deepEqual(s.pendingForks(scope.hostId)[0].lease, lease);
+ assert.equal(s.read(scope, row.workspaceId).phase, 'live');
+});
+
+
+test('schema4 migration backfills primary membership while preserving lease and selection', t => {
+ const f=fixture(t),s=f.open(),row=s.admit(scope,'legacy-main',selection);
+ s.attachThread(scope,row.workspaceId,'legacy-parent');
+ const lease=s.beginCreate(scope,row.workspaceId);s.confirmCreated(scope,lease,'legacy-instance');f.close(s);
+ const db=new DatabaseSync(join(f.root,'ordinary-workspaces.sqlite'));
+ db.exec("DROP TABLE ordinary_workspace_members; DROP TABLE ordinary_workspace_forks; UPDATE workspace_journal_meta SET value='4' WHERE key='schema'");db.close();
+ const migrated=f.open();
+ assert.equal(migrated.forThread(scope,'legacy-parent')?.workspaceId,row.workspaceId);
+ assert.equal(migrated.forThread(scope,'legacy-parent')?.leaseOwner,lease.owner);
+ assert.equal(migrated.forThread(scope,'legacy-parent')?.instanceId,'legacy-instance');
+ assert.equal(migrated.forThread({...scope,principalId:'bob'},'legacy-parent'),null);
+ const intent=migrated.beginThreadFork(scope,'legacy-parent','migrated-side');
+ migrated.confirmThreadForked(scope,intent.lease,'migrated-side','child');
+ f.close(migrated);const reopened=f.open();
+ assert.equal(reopened.forThread(scope,'child')?.workspaceId,row.workspaceId);
+ assert.equal(reopened.read(scope,row.workspaceId).selectionDigest,selection);
+});
+
+test('pending-fork classification fence survives actual process restart and clears only on receipt',t=>{
+ const f=fixture(t),s=f.open(),row=s.admit(scope,'fence',selection);
+ s.attachThread(scope,row.workspaceId,'parent'); const lease=s.beginCreate(scope,row.workspaceId);
+ s.confirmCreated(scope,lease,'instance');
+ assert.equal(s.hasPendingForks(scope.hostId),false);
+ s.beginThreadFork(scope,'parent','uncertain-side');
+ assert.equal(s.hasPendingForks(scope.hostId),true);
+ assert.equal(s.hasPendingForks('other-host'),false); f.close(s);
+ const module=new URL('../../apps/local-agent-host/src/ordinary-workspace-store.ts',import.meta.url).href;
+ const code=`import {OrdinaryWorkspaceStore} from ${JSON.stringify(module)};const s=new OrdinaryWorkspaceStore(${JSON.stringify(f.root)},'deployment-a');console.log(JSON.stringify({pending:s.hasPendingForks('host-a'),foreign:s.hasPendingForks('other-host')}));s.close();`;
+ const out=execFileSync(process.execPath,['--import',createRequire(import.meta.url).resolve('tsx'),'--input-type=module','-e',code],{encoding:'utf8',env:{...process.env,NODE_NO_WARNINGS:'1'}});
+ assert.deepEqual(JSON.parse(out),{pending:true,foreign:false});
+ const next=f.open();next.confirmThreadForked(scope,lease,'uncertain-side','confirmed-child');
+ assert.equal(next.hasPendingForks(scope.hostId),false);
+ assert.equal(next.forThread(scope,'confirmed-child')?.workspaceId,row.workspaceId);
+});
+
+test('member archive state survives reopen; unknown forks and late child receipts prevent premature compute retirement',t=>{
+ const f=fixture(t);let s=f.open();const row=s.admit(scope,'lifecycle',selection),lease=s.beginCreate(scope,row.workspaceId);
+ s.confirmCreated(scope,lease,'instance');s.attachThread(scope,row.workspaceId,'parent');
+ const fork=s.beginThreadFork(scope,'parent','child');
+ s.recordMemberLifecycle(scope.hostId,'parent','archived',1);
+ assert.equal(s.canRetireArchivedWorkspace(scope,row.workspaceId),false);
+ f.close(s);s=f.open();assert.equal(s.memberArchived(scope.hostId,'parent'),true);
+ s.confirmThreadForked(scope,fork.lease,'child','child');
+ assert.equal(s.hasActiveMembers(scope,row.workspaceId),true);
+ assert.equal(s.canRetireArchivedWorkspace(scope,row.workspaceId),false);
+ s.recordMemberLifecycle(scope.hostId,'child','archived',1);
+ assert.equal(s.canRetireArchivedWorkspace(scope,row.workspaceId),true);
+ f.close(s);s=f.open();assert.equal(s.canRetireArchivedWorkspace(scope,row.workspaceId),true);
+ s.recordMemberLifecycle(scope.hostId,'parent','active',2);
+ s.recordMemberLifecycle(scope.hostId,'parent','archived',1);
+ assert.equal(s.memberArchived(scope.hostId,'parent'),false);
+ assert.equal(s.canRetireArchivedWorkspace(scope,row.workspaceId),false);
+});
+
+test('private volume deletion requires all archived members permanently deleted and survives restart',t=>{
+ const f=fixture(t);let s=f.open();const row=s.admit(scope,'purge',selection),lease=s.beginCreate(scope,row.workspaceId);
+ s.recordProviderReceipt(scope,lease,{instanceId:'instance',privateVolumeId:'11111111-1111-1111-1111-111111111111'});
+ s.confirmCreated(scope,lease,'instance');s.attachThread(scope,row.workspaceId,'parent');
+ const fork=s.beginThreadFork(scope,'parent','side');s.confirmThreadForked(scope,fork.lease,'side','child');
+ for(const id of ['parent','child'])s.recordMemberLifecycle(scope.hostId,id,'archived',1);
+ s.beginRelease(scope,lease);s.confirmComputeAbsent(scope,lease);
+ s.recordMemberLifecycle(scope.hostId,'parent','deleted',2);
+ assert.throws(()=>s.beginPrivateVolumeDeletion(scope,row.workspaceId),/not admitted/);
+ s.recordMemberLifecycle(scope.hostId,'child','deleted',2);
+ const intent=s.beginPrivateVolumeDeletion(scope,row.workspaceId);assert.equal(intent.state,'pending');
+ f.close(s);s=f.open();assert.deepEqual(s.beginPrivateVolumeDeletion(scope,row.workspaceId),intent);
+ s.confirmPrivateVolumeDeleted(scope,row.workspaceId,intent.volumeId);
+ assert.equal(s.beginPrivateVolumeDeletion(scope,row.workspaceId).state,'deleted');
+ s.recordMemberLifecycle(scope.hostId,'child','active',3);
+ assert.equal(s.allMembersDeleted(scope,row.workspaceId),true);
+});
+test('deleting an unarchived member cannot authorize private volume deletion',t=>{
+ const f=fixture(t),s=f.open(),row=s.admit(scope,'unarchived-delete',selection),lease=s.beginCreate(scope,row.workspaceId);
+ s.recordProviderReceipt(scope,lease,{instanceId:'instance',privateVolumeId:'11111111-1111-1111-1111-111111111111'});
+ s.confirmCreated(scope,lease,'instance');s.attachThread(scope,row.workspaceId,'thread');
+ s.recordMemberLifecycle(scope.hostId,'thread','deleted',1);s.beginRelease(scope,lease);s.confirmComputeAbsent(scope,lease);
+ assert.throws(()=>s.beginPrivateVolumeDeletion(scope,row.workspaceId),/confirmed archived/);
+});
+
+
+test('unknown future schema and incomplete published v6 fail closed without repair',t=>{
+ const f=fixture(t),s=f.open();s.admit(scope,'integrity',selection);f.close(s);
+ const file=join(f.root,'ordinary-workspaces.sqlite'),db=new DatabaseSync(file);
+ db.exec("UPDATE workspace_journal_meta SET value='99' WHERE key='schema'");
+ assert.throws(()=>f.open(),/Unsupported/);
+ assert.equal(db.prepare("SELECT value FROM workspace_journal_meta WHERE key='schema'").get()!.value,'99');
+ db.exec("UPDATE workspace_journal_meta SET value='6' WHERE key='schema';DROP TABLE ordinary_workspace_members");
+ assert.throws(()=>f.open(),/Incomplete/);
+ assert.equal(db.prepare("SELECT count(*) n FROM sqlite_master WHERE name='ordinary_workspace_members'").get()!.n,0);
+ assert.equal(db.prepare("SELECT value FROM workspace_journal_meta WHERE key='schema'").get()!.value,'6');db.close();
+});
+test('fork custody inventory includes children, and deletion intent fences allocation after restart',t=>{
+ const f=fixture(t);let s=f.open();const row=s.admit(scope,'custody',selection),lease=s.beginCreate(scope,row.workspaceId);
+ s.recordProviderReceipt(scope,lease,{instanceId:'instance',privateVolumeId:'volume'});s.confirmCreated(scope,lease,'instance');s.attachThread(scope,row.workspaceId,'parent');
+ const fork=s.beginThreadFork(scope,'parent','fork');s.confirmThreadForked(scope,fork.lease,'fork','child');
+ assert.equal(s.lifecycleForThread(scope.hostId,'child')[0]!.workspaceId,row.workspaceId);
+ assert.deepEqual(s.lifecycleForThread('other-host','child'),[]);
+ for(const id of ['parent','child']){s.recordMemberLifecycle(scope.hostId,id,'archived',1);s.recordMemberLifecycle(scope.hostId,id,'deleted',2);}
+ s.beginRelease(scope,lease);s.confirmComputeAbsent(scope,lease);s.beginPrivateVolumeDeletion(scope,row.workspaceId);f.close(s);s=f.open();
+ assert.throws(()=>s.beginCreate(scope,row.workspaceId),/reconciliation/);
+ s.confirmPrivateVolumeDeleted(scope,row.workspaceId,'volume');assert.throws(()=>s.beginCreate(scope,row.workspaceId),/reconciliation/);
+});
+
+
+test('placement paging includes every shared member even across a page boundary', t => {
+ const f=fixture(t),s=f.open(),row=s.admit(scope,'placement',selection),lease=s.beginCreate(scope,row.workspaceId);
+ s.confirmCreated(scope,lease,'instance');s.attachThread(scope,row.workspaceId,'parent');
+ const fork=s.beginThreadFork(scope,'parent','side');s.confirmThreadForked(scope,fork.lease,'side','child');
+ const first=s.placementPage(scope.hostId,'',1);assert.equal(first.length,1);
+ const cursor=first[0]!.workspaceId+'.'+Buffer.from(first[0]!.threadId,'utf8').toString('hex');
+ const second=s.placementPage(scope.hostId,cursor,1);assert.equal(second.length,1);
+ assert.deepEqual([first[0]!.threadId,second[0]!.threadId].sort(),['child','parent']);
+ const last=second[0]!.workspaceId+'.'+Buffer.from(second[0]!.threadId,'utf8').toString('hex');
+ assert.equal(s.placementPage(scope.hostId,last,1).length,0);
+ assert.throws(()=>s.placementPage(scope.hostId,row.workspaceId),/cursor/);
 });

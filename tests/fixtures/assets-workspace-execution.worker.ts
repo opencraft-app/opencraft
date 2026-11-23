@@ -17,6 +17,7 @@ import {
   PublishedOrdinaryGitSources,
 } from "../../apps/headless-server/src/workspaces/ordinary-git-sources.js";
 import { DatabaseSync } from "node:sqlite";
+import type { OrdinaryWorkspaceStore, WorkspaceLease } from "@opencraft/local-agent-host/ordinary-workspace-store";
 import { join } from "node:path";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { spawn } from "node:child_process";
@@ -27,8 +28,8 @@ import { workspaceArtifactSender } from "../../apps/headless-server/src/workspac
 import { workspaceArtifactReceiver } from "../../apps/headless-server/src/workspaces/workspace-artifact-transfer.js";
 
 const resources = { cpuMillis: 4000, memoryBytes: 8 * 1024 ** 3 };
-type FixtureData = { directory: string; terminalOwner?: { directory: string; endpoint: string; tokenFile: string } };
-serveWorkerOwner<FixtureData>(async ({ directory, terminalOwner }) => {
+type FixtureData = { directory: string; sharedViews?: boolean; terminalOwner?: { directory: string; endpoint: string; tokenFile: string } };
+serveWorkerOwner<FixtureData>(async ({ directory, terminalOwner, sharedViews }) => {
   // Bootstrap the synthetic Actor and installation serially, then close both
   // writers before the sole runtime vault owner/read-only Actor reader opens.
   const server = await openServerDatabase(directory),
@@ -178,13 +179,15 @@ serveWorkerOwner<FixtureData>(async ({ directory, terminalOwner }) => {
         },
       })
     : undefined;
+  let fixtureStore: OrdinaryWorkspaceStore | undefined;
+  let fixtureForkLease: WorkspaceLease | undefined;
   const storage = await createAssetsStorage(directory, [], undefined, (context) =>
     createWorkspaceExecutionOwner(context, {
       machineId: "synthetic-machine",
       // The synthetic runtime below supplies its own allocator.
       providers: createSandboxProviderRegistry({}),
       runtime: (store, owner) =>
-        new InstalledOrdinaryConversationRuntime(
+        ((fixtureStore = store), new InstalledOrdinaryConversationRuntime(
           store,
           owner.catalog,
           new InstalledOrdinaryWorkspaceSources(owner.catalog, new PublishedOrdinaryGitSources(owner.vault)),
@@ -330,7 +333,7 @@ serveWorkerOwner<FixtureData>(async ({ directory, terminalOwner }) => {
                   return peer;
                 },
               };
-              return {
+              const root = {
                 browser,
                 get processes() {
                   return processes;
@@ -379,9 +382,22 @@ serveWorkerOwner<FixtureData>(async ({ directory, terminalOwner }) => {
                   },
                 },
               };
+              if (!sharedViews) return root;
+              const views = new Map<string, typeof root>();
+              return Object.assign(root, {
+                async forThread(threadId: string) {
+                  const prior = views.get(threadId);
+                  if (prior) return prior;
+                  let live = true;
+                  const view = { ...root, isCurrent: () => current && live, async close() { live = false; views.delete(threadId); } };
+                  views.set(threadId, view);
+                  return view;
+                },
+                async closeThread(threadId: string) { await views.get(threadId)?.close(); },
+              });
             },
           },
-        ),
+        )),
     }),
   );
   return {
@@ -396,6 +412,14 @@ serveWorkerOwner<FixtureData>(async ({ directory, terminalOwner }) => {
     ready: { ...storage.ready, actorId: actor.id, generation: actor.generation },
     methods: {
       ...storage.methods,
+      fixtureBeginFork: (threadId: string) => {
+        if (!fixtureStore) throw Error("Fixture workspace unavailable");
+        fixtureForkLease = fixtureStore.beginThreadFork({ principalId: actor.id, hostId: "local-codex" }, threadId, "fixture-fork").lease;
+      },
+      fixtureConfirmFork: (threadId: string) => {
+        if (!fixtureStore || !fixtureForkLease) throw Error("Fixture fork unavailable");
+        fixtureStore.confirmThreadForked({ principalId: actor.id, hostId: "local-codex" }, fixtureForkLease, "fixture-fork", threadId);
+      },
       fixtureCounters: () => ({ allocated, deleted, retained: Object.keys(retained).length }),
       fixtureArtifactStats: () => ({ processes: artifactProcesses.size }),
       fixtureTerminalStats: () => ({ active: terminals.size }),

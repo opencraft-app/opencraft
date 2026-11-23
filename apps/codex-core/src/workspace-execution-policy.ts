@@ -105,11 +105,14 @@ export function privateWorkspaceExecutionPolicy(options: {
     } catch {
       throw new ExecutionPreparationError("workspace-binding-unavailable");
     }
+    if (Object.hasOwn(params, "workspaceFork") && method !== "thread/fork")
+      throw new ExecutionPreparationError("workspace-binding-unavailable");
     if (Object.hasOwn(params, "workspacePlacement") && (method !== "thread/start" || selection.kind !== "bound"))
       throw new ExecutionPreparationError("workspace-binding-unavailable");
     if (selection.kind === "local" && method !== "thread/start") await assertNativeLocal(String(method), params);
     const nativeParams = { ...params };
     delete nativeParams.workspacePlacement;
+    delete nativeParams.workspaceFork;
     return codexSandboxRequestPolicy(
       options.readThread,
       options.projectlessRoot,
