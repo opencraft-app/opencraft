@@ -26,6 +26,14 @@ import { WorkerOwner, ownerEntry } from "@opencraft/worker-owner";
 import type { DatabaseOutcome } from "@opencraft/sqlite-node";
 import type { SandboxConfigurationsSnapshot } from "../contract.js";
 import { SandboxConfigurationError } from "./errors.js";
+import type { AssetActorSettingsMethods, AssetEnvironmentSettingsMethods } from "./actor-settings.js";
+export type {
+  AssetActorAuthority,
+  AssetActorProof,
+  AssetActorSettingsMethods,
+  AssetEnvironmentProject,
+  AssetEnvironmentSettingsMethods,
+} from "./actor-settings.js";
 
 /** A request-local revocable admission, not an identity supplied by HTTP input.
  * The authenticated owner invalidates permit[0] on account/role/session changes.
@@ -52,7 +60,11 @@ export interface EnvironmentCreationRecord {
   readonly incarnation: string;
   readonly project: string | null;
 }
-export interface AssetStoragePort extends AssetConfigurationPort, WorkspaceBudgetPort {
+export interface AssetStoragePort
+  extends AssetConfigurationPort,
+    WorkspaceBudgetPort,
+    AssetActorSettingsMethods,
+    AssetEnvironmentSettingsMethods {
   adoptWorkspaceInstallation(path: string): Promise<boolean>;
   workspaceCatalog(access: AssetAdmission): Promise<WorkspaceCatalog>;
   workspaceResolveEnvironment(
@@ -87,6 +99,8 @@ interface Ready {
   environmentIssuer?: string | null;
   /** The issuer also admits Hands terminal launches (Actor epoch reader). */
   environmentTerminal?: boolean;
+  /** Personal ENV settings (`environmentList/Replace/Projects`) are served. */
+  environmentSettings?: boolean;
   workspaceExecution: boolean;
   botExecution?: boolean;
 }
@@ -158,6 +172,8 @@ export async function openAssetConfigurations(
     gitAuthority: ready.gitAuthority,
     workspaceExecution: ready.workspaceExecution === true,
     botExecution: ready.botExecution === true,
+    /** This owner serves personal ENV settings for an original Human proof. */
+    environmentSettings: ready.environmentSettings === true,
     /** Vault-owner port for `/host-environment`: only routing metadata goes in
      * and only an opaque capsule comes back to this thread. */
     environmentLaunch:
