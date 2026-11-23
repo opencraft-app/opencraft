@@ -31,6 +31,7 @@ export const HEADLESS_CORE_ROUTE_PATHS = Object.freeze([
     "health",
     "hub",
     "im",
+    "model_defaults",
     "model_gateway",
     "model_policy",
     "notifications",

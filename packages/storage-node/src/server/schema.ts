@@ -760,3 +760,21 @@ export const conversationCreationReceipts = sqliteTable("conversation_creation_r
     (state <> 'rejected' AND rejection_status IS NULL AND rejection_code IS NULL)
   )`)),
 ]);
+
+/**
+ * Personal new-conversation model defaults of one human Actor for one Host. Keyed by the
+ * Actor, never by a login binding, so every verified login of the same person shares a
+ * record. `revision` is the compare-and-set counter; `format` 1 stores the validated
+ * selection as JSON. Written only by the account model defaults methods of the owner Worker.
+ */
+export const accountModelDefaults = sqliteTable("account_model_defaults", {
+  actorId: text("actor_id").notNull(),
+  hostId: text("host_id").notNull(),
+  revision: integer("revision").notNull(),
+  format: integer("format").notNull(),
+  selection: text("selection").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+}, table => [
+  primaryKey({ columns: [table.actorId, table.hostId] }),
+  check("account_model_defaults_revision", sql.raw("revision > 0")),
+]);

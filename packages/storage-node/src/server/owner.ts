@@ -5,12 +5,16 @@ import type { ServerDatabase } from "./index.js";
 import { installedServerMigrationComposition, type ServerDataContract } from "./migration-composition.js";
 
 import type { CreationReceiptMethods } from "./conversation-creation-receipts.js";
+import type { AccountModelDefaultsMethods } from "./account-model-defaults.js";
 export type { CreationReceipt, CreationReceiptMethods } from "./conversation-creation-receipts.js";
+export type { AccountModelDefaultsMethods, StoredAccountModelDefaults } from "./account-model-defaults.js";
+
+type CoreMethods = CreationReceiptMethods & AccountModelDefaultsMethods;
 
 /** The Server installation as a network process holds it. */
 export interface ServerCoreStorage<T = object> extends ServerDatabase {
   /** Async ports of the domain services that run in the owner Worker. */
-  readonly call: OwnerCalls<T & CreationReceiptMethods>;
+  readonly call: OwnerCalls<T & CoreMethods>;
 }
 
 /**
@@ -33,7 +37,7 @@ export async function openServerCoreOwner<T = object>(
   } = {},
 ): Promise<ServerCoreStorage<T>> {
   const { owner, ready } = await WorkerOwner.open<
-    T & CreationReceiptMethods,
+    T & CoreMethods,
     { outcome: DatabaseOutcome; contract: ServerDataContract }
   >(entry, {
     name: "Server storage",

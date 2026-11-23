@@ -109,6 +109,11 @@ export const SERVER_MIGRATIONS = [
     "version": 22,
     "name": "0021_known_ken_ellis",
     "sql": "CREATE TABLE `conversation_creation_receipts` (\n\t`actor_id` text NOT NULL,\n\t`operation_key` text NOT NULL,\n\t`server_id` text NOT NULL,\n\t`fingerprint` text NOT NULL,\n\t`state` text NOT NULL,\n\t`thread_id` text,\n\t`rejection_status` integer,\n\t`rejection_code` text,\n\tPRIMARY KEY(`actor_id`, `operation_key`),\n\tCONSTRAINT \"creation_receipt_state\" CHECK((\n    (state = 'claimed' AND thread_id IS NULL) OR\n    (state IN ('created', 'submitted', 'first_rejected') AND thread_id IS NOT NULL) OR\n    (state = 'rejected' AND thread_id IS NULL)\n  ) AND (\n    (state = 'rejected' AND rejection_status IS NOT NULL AND rejection_code IS NOT NULL) OR\n    (state <> 'rejected' AND rejection_status IS NULL AND rejection_code IS NULL)\n  ))\n) STRICT;\n"
+  },
+  {
+    "version": 23,
+    "name": "0022_account_model_defaults",
+    "sql": "CREATE TABLE `account_model_defaults` (\n\t`actor_id` text NOT NULL,\n\t`host_id` text NOT NULL,\n\t`revision` integer NOT NULL,\n\t`format` integer NOT NULL,\n\t`selection` text NOT NULL,\n\t`updated_at` integer NOT NULL,\n\tPRIMARY KEY(`actor_id`, `host_id`),\n\tCONSTRAINT \"account_model_defaults_revision\" CHECK(revision > 0)\n) STRICT;\n"
   }
 ] as const;
 export const SERVER_ALTERNATE_MIGRATIONS = [
@@ -224,9 +229,14 @@ export const SERVER_ALTERNATE_MIGRATIONS = [
         "version": 22,
         "name": "converge_0021_known_ken_ellis",
         "sql": SERVER_MIGRATIONS[21].sql
+      },
+      {
+        "version": 23,
+        "name": "converge_0022_account_model_defaults",
+        "sql": SERVER_MIGRATIONS[22].sql
       }
     ]
   }
 ] as const;
-export const SERVER_MIGRATION_CONTRACT_HASH = "11f47f72b4ad4adbbc1f83cce2b581d46526bbdf75cb937cbc3aceb4a9b57b15" as const;
+export const SERVER_MIGRATION_CONTRACT_HASH = "6bea99b7c805898103dde5456cf354d36191d147085535f12fef28727e199692" as const;
 export const OPENCRAFT_VERSION = "0.2.0" as const;

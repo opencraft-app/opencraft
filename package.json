@@ -271,7 +271,7 @@
     "test:file-preview": "tsx --test tests/resources/file-preview-core.test.ts tests/resources/structured-preview.test.ts tests/resources/office-legacy-word.test.ts tests/resources/host-file-downloads.test.ts tests/resources/html-file-previews.test.ts",
     "smoke:office-preview": "tsx scripts/smoke/resources/smoke-office-preview.ts",
     "smoke:office-resources": "tsx scripts/smoke/resources/smoke-office-resources.ts",
-    "test:identity-storage": "tsx --test tests/identity/account-model-defaults.test.ts tests/identity/unified-thread-identity.test.ts tests/chat/opencraft-message-senders.test.ts && npm run test:git-identity && npm run test:account-environment",
+    "test:identity-storage": "tsx --test tests/identity/account-model-defaults.test.ts tests/composer/account-model-defaults-hook.test.tsx tests/identity/unified-thread-identity.test.ts tests/chat/opencraft-message-senders.test.ts && npm run test:git-identity && npm run test:account-environment",
     "test:mcp-apps": "tsx --test tests/extensions/mcp-app-host.test.ts tests/extensions/mcp-app-builder.test.ts",
     "smoke:mcp-apps": "tsx scripts/smoke/extensions/smoke-mcp-app-host.ts",
     "smoke:host-composer-commands": "tsx scripts/smoke/execution/smoke-host-composer-commands.ts",

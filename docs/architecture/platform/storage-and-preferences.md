@@ -97,6 +97,8 @@ authorization or persistence boundary.
 
 ### UI preference authority
 
+Personal model defaults are account data, not UI preferences: with a verified account they are served by the [account model defaults authority](identity-and-access.md#account-model-defaults-authority). Installation preferences keep model memory only for clients without that authority.
+
 `chat.agentAvailability` is an installation-scoped map keyed by display/account/Host,
 with explicit Agent boolean choices. Missing choices default to enabled; an explicit
 all-disabled set stays empty. It filters only new-conversation model catalogs and

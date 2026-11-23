@@ -133,3 +133,10 @@ Only the native input acknowledgement can advance that receipt to submitted.
 Retrying a key or reading its receipt never resumes an interrupted operation.
 The ledger stores the requested coordinates as a fingerprint, without message
 text. Claim and transition failures never fall back to main-thread SQLite.
+
+Personal model defaults (`account_model_defaults`, migration v23) also use the
+Server Worker connection. The network thread verifies the signed-in human Actor
+and instance admission, validates the Host and selection, then calls
+`readAccountModelDefaults` or `compareAndSetAccountModelDefaults`. The Worker
+commits only at the expected revision and refuses an unknown stored format.
+Failures never fall back to main-thread SQLite.

@@ -475,7 +475,18 @@ Sidebar pending/running/Goal/review/error/unread activities share the single tra
 
 ### Account model defaults authority
 
-Personal Composer model/effort defaults are account data, separate from installation UI preferences. `PlatformAccountContribution.modelDefaults` exposes `AccountModelDefaultsPort`; enterprise OA implements authenticated same-origin HTTP backed by `account-model-defaults.sqlite`. Records are isolated by verified staff identity and Host, with revision CAS and no browser persistence. Renderer query memory is a disposable projection. Account/activation changes fence writes and late responses; HTTP validates the current identity and scope for every operation. Failures surface through Composer model errors and never fall back to legacy browser account records or write shared Host config. Without an account port standalone installation memory remains supported. See [model configuration](../../../design/model-configuration.md#personal-defaults-on-shared-servers).
+Personal Composer model/effort/service-tier defaults are account data, separate from installation UI preferences. The client contract is `AccountModelDefaultsPort` (`@opencraft/workbench-runtime`): `read`/`write` per verified account scope and Host, with revision CAS and record format 1 (`{revision, selection}`). A registered `PlatformAccountContribution.modelDefaults` is the authority for its product account. Without an account contribution, the Web uses the core authority of the server's own logins (`AccountModelDefaultsSource`), so local accounts, OIDC and other verified identity sources work without a product plugin.
+
+Headless serves that core authority at `/__opencraft_model_defaults`:
+
+- `GET` returns `{actorId}` of the signed-in human. `GET ?hostId&expectedActorId` returns `{actorId, revision, selection}`. A same-origin JSON `POST {hostId, revision, selection, expectedActorId}` replaces the record only at the current revision; a stale revision returns 409 `revision_conflict` with the current record.
+- The record key is the verified human Actor and a validated Host ID. Every login bound to the same person shares one record; login methods, usernames and e-mail addresses are never keys. `expectedActorId` only fences an account change (409 `account_changed`) and never selects another person's record.
+- No login returns 401. Session credentials, non-human Actors and people without current instance admission return 403. Admission and the signed-in Actor are rechecked after each storage await. Malformed Host IDs or selections return 400.
+- Records live in the `account_model_defaults` table of `opencraft-server.sqlite` (Server migration v23). They are read and written only in the Server owner Worker through `@opencraft/worker-owner`. The network thread never opens SQLite for them, and a failed or closed owner returns 503 without another read or write path.
+
+The Web discovers the route at startup on Headless builds (`ServerAccountModelDefaults`). Servers without the route, signed-out visitors and desktop Electron keep installation memory. Renderer query memory is a disposable projection; nothing is persisted in browser storage. Account/activation changes fence writes and late responses. Failures surface through Composer model errors and never fall back to browser account records or write shared Host config. See [model configuration](../../../design/model-configuration.md#personal-defaults-on-shared-servers).
+
+A product that already stored records under its own login account keeps its own `modelDefaults` port, or imports those records into the Actor-keyed table after resolving each login account to its Actor. Core performs no such import. The former standalone `scripts/account-model-defaults-store.ts` document store was removed; nothing in core imported it.
 
 
 ### 单 Hub 主体协作

@@ -128,6 +128,8 @@ export interface AppServerHostCatalog {
   readonly extensionManager: ExtensionManager;
   readonly platformViewRenderers: PlatformViewRendererRegistry;
   readonly platformAccounts: PlatformAccountContributionRegistry;
+  /** Core login authority for personal model defaults; used only without an account contribution. */
+  readonly accountModelDefaults: import("@opencraft/workbench-runtime").AccountModelDefaultsSource | null;
   readonly threadAttention: BrowserThreadAttention;
   readonly applicationBranding: ApplicationBrandingRegistry;
   readonly channelSearch: ChannelSearchRegistry;
@@ -449,6 +451,8 @@ export interface WebWorkbenchApplicationBase {
   readonly extensionSettings: ExtensionSettingsStore;
   readonly platformViewRenderers: PlatformViewRendererRegistry;
   readonly platformAccounts: PlatformAccountContributionRegistry;
+  /** Core login authority for personal model defaults; used only without an account contribution. */
+  readonly accountModelDefaults: import("@opencraft/workbench-runtime").AccountModelDefaultsSource | null;
   readonly applicationBranding: ApplicationBrandingRegistry;
   readonly channelSearch: ChannelSearchRegistry;
   readonly threadBadges: ThreadBadgeContributionRegistry;
@@ -525,6 +529,8 @@ export interface WebWorkbenchSupervisorOptions {
   readonly readSelectableModels?: import("@opencraft/workbench-runtime").AppServerWorkbenchRuntimeConfig["readSelectableModels"];
   /** Trusted product owns account/engine assembly and its credential cache scope. */
   readonly clientProduct?: import("@opencraft/client-product").ClientWorkbenchProduct;
+  /** Server-backed personal model defaults of core's own logins; an account contribution takes precedence. */
+  readonly accountModelDefaults?: import("@opencraft/workbench-runtime").AccountModelDefaultsSource;
 }
 
 export function readLocalPreference(key: string): string | null {

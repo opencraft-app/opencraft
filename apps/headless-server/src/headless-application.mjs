@@ -8,6 +8,7 @@ import { restoreWorkspaceQueuedContext } from '@opencraft/opencraft-daemon/works
 import { HostWorkspaceCatalogTransport } from './host-workspace-catalog-transport.ts';
 import { createCodexWorkspaceHooks, validateCodexWorkspaceHooks, hasCodexWorkspaceHooks, configuredWorkspaceExecution } from './codex-workspace-hooks.mjs';
 import { ServerInformationStore, serverInformationHttp } from './server-information.mjs';
+import { accountModelDefaultsHttp, humanActorAccess } from './account-model-defaults-http.ts';
 import { configuredModelGatewayPath, modelGatewayHttp, CodexCoreControlClient } from "@opencraft/account-pool-host";
 import { gatewayContributions } from "@opencraft/local-agent-host/model-config";
 import { createAssistantModelSource } from '@opencraft/local-agent-host/model-config/assistant';
@@ -1264,6 +1265,13 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       return { actorId: context.actorId, administrator: !!principal && actorStore.findHuman(principal)?.id === context.actorId && instanceAccess.role(principal) === 'admin',
         origin: actorAccess.options.trustedOrigin?.(request) ?? null };
     });
+    const accountModelDefaultsService = accountModelDefaultsHttp(serverStorage.call, humanActorAccess({
+      authenticate: request => actorAccess.authenticate(request),
+      refused: request => actorAccess.legacyAdmissionStatus(request) === 403,
+      isCurrentHuman: context => actorStore.isCurrent(context) && actorStore.get(context.actorId)?.kind === 'human',
+      admits: instanceAccess ? actorId => instanceAccess.admitsActor(actorId) : null,
+      trustedOrigin: request => actorAccess.options.trustedOrigin?.(request) ?? null,
+    }));
     turnPush = new TurnPushService(await openPushStore(join(dataDirectory, 'web-push.sqlite')), {
       hosts: ['local-codex', 'opencraft-server'],
       publicBaseUrl: async () => (await serverInformation.read()).publicUrl,
@@ -1414,6 +1422,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       actorCollaborationService: actorCollaborationApi,
       turnPushService: turnPush,
       serverInformationService,
+      accountModelDefaultsService,
       authService: humanAuth ?? null,
       accountService: accountApplication ?? null,
       hubService: hubController,

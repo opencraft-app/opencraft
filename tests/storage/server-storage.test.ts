@@ -24,6 +24,8 @@ import { Collaboration } from "../../packages/access-control/src/collaboration.j
 import { CapabilityBindings } from "@opencraft/session-capabilities/bindings";
 import { LocalAccountServerPlugin } from "../../plugins/local-account/src/server.js";
 import { openManagedDatabase, sqliteTransaction, createSchemaValidator } from "@opencraft/sqlite-node";
+import { accountModelDefaultsMethods } from "../../packages/storage-node/src/server/account-model-defaults.js";
+import { conversationCreationReceiptMethods } from "../../packages/storage-node/src/server/conversation-creation-receipts.js";
 
 function fixture(t: test.TestContext) {
   const root = mkdtempSync(join(tmpdir(), "opencraft-server-storage-"));
@@ -409,12 +411,47 @@ test("creation receipts upgrade the preceding Server contract and reject a tampe
   const owner = await openServerDatabase(root);
   try {
     assert.equal(owner.outcome.status, "migrated");
-    assert.equal(owner.outcome.appliedVersion, priorVersion + 1);
+    assert.equal(owner.outcome.appliedVersion, SERVER_MIGRATIONS.length);
     assert.deepEqual(owner.database.prepare("SELECT * FROM schema_migrations WHERE version<=? ORDER BY version").all(priorVersion), ledger);
     const restored = new ActorStore(owner);
     assert.deepEqual(restored.get(retained.id), retained);
     restored.close();
     assert.equal(owner.database.prepare("SELECT count(*) n FROM conversation_creation_receipts").get()?.n, 0);
+  } finally { await owner.close(); }
+
+  const changed = new DatabaseSync(path);
+  changed.prepare("UPDATE schema_migrations SET checksum=? WHERE version=?").run("0".repeat(64), priorVersion + 1);
+  changed.close();
+  await assert.rejects(openServerDatabase(root), { kind: "history-mismatch" });
+});
+
+test("account model defaults upgrade the preceding Server contract, keep its data and reject a tampered checksum", async t => {
+  const root = fixture(t), path = join(root, "opencraft-server.sqlite");
+  const priorVersion = 22;
+  assert.equal(SERVER_MIGRATIONS[priorVersion]?.name, "0022_account_model_defaults");
+  const prior = openManagedDatabase({ path, migrations: SERVER_MIGRATIONS.slice(0, priorVersion) });
+  importServerData(prior.database, root, { productVersion: "0.1.0", hash: "previous-creation-receipts-contract" });
+  const actors = new ActorStore(prior);
+  const person = actors.resolveHuman({ provider: "local", subject: "retained-person", displayName: "Retained", expiresAt: Date.now() + 60_000 });
+  actors.close();
+  assert.ok(person);
+  const receipt = { actorId: person.actorId, operationKey: "retained", serverId: "server", fingerprint: "hash" };
+  conversationCreationReceiptMethods(prior.database).claimConversationCreation(receipt);
+  const ledger = prior.database.prepare("SELECT * FROM schema_migrations ORDER BY version").all();
+  prior.database.close();
+
+  const owner = await openServerDatabase(root);
+  try {
+    assert.equal(owner.outcome.status, "migrated");
+    assert.equal(owner.outcome.appliedVersion, priorVersion + 1);
+    assert.deepEqual(owner.database.prepare("SELECT * FROM schema_migrations WHERE version<=? ORDER BY version").all(priorVersion), ledger);
+    const restored = new ActorStore(owner);
+    assert.equal(restored.findHuman({ provider: "local", subject: "retained-person" })?.id, person.actorId);
+    restored.close();
+    assert.deepEqual(conversationCreationReceiptMethods(owner.database).readConversationCreation(receipt), { state: "claimed" });
+    const defaults = accountModelDefaultsMethods(owner.database);
+    assert.deepEqual(defaults.readAccountModelDefaults(person.actorId, "host"), { revision: 0, selection: null });
+    assert.equal(defaults.compareAndSetAccountModelDefaults(person.actorId, "host", 0, { model: "upgraded", effort: null }).updated, true);
   } finally { await owner.close(); }
 
   const changed = new DatabaseSync(path);

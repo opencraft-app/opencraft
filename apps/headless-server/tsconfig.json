@@ -18,6 +18,7 @@
     "src/workspaces/bot-client.ts",
     "src/host-environment-launch.ts",
     "src/capability-execution-context.ts",
-    "src/execution-admission.worker.ts"
+    "src/execution-admission.worker.ts",
+    "src/account-model-defaults-http.ts"
   ]
 }

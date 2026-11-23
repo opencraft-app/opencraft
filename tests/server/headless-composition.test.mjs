@@ -290,3 +290,44 @@ test('an explicitly anonymous native installation declares no personal Git autho
  const remote=new RemoteSessionCapabilities(f.options.dataDirectory,`server:${machineId}:pi`);
  assert.deepEqual(await remote.hostGit('pi_synthetic',{inputId:'unowned-input'}),{mode:'anonymous'});
 });
+
+test('personal model defaults follow the signed-in Actor and instance admission on a real Headless server', { timeout: 60_000 }, async t => {
+  const f = await fixture(t);
+  const probe = await startHeadlessServer(f.options); await probe.close();
+  const proof = randomBytes(32).toString('base64url');
+  const proofPath = join(f.root, 'setup-token'), configPath = join(f.root, 'human-auth.json');
+  await writeFile(proofPath, JSON.stringify({ token: proof }), { mode: 0o600 });
+  await writeFile(configPath, JSON.stringify({ origin: probe.url, local: true, oidc: [], setupTokenFile: proofPath }), { mode: 0o600 });
+  const app = await startHeadlessServer({ ...f.options, port: Number(new URL(probe.url).port), humanAuthConfig: configPath }); t.after(() => app.close());
+  const path = app.url + '/__opencraft_model_defaults';
+  const json = { origin: app.url, 'content-type': 'application/json' };
+  assert.equal((await fetch(path)).status, 401);
+  const setup = await fetch(app.url + '/__opencraft_account/setup', { method: 'POST', headers: json,
+    body: JSON.stringify({ proof, mode: 'web', username: 'owner', password: 'Fixture-account-password-42' }) });
+  assert.equal(setup.status, 200, await setup.text());
+  const owner = setup.headers.get('set-cookie')?.split(';')[0];
+  const ownerId = (await fetch(app.url + '/__opencraft_account/status', { headers: { cookie: owner } }).then(r => r.json())).actor.id;
+  assert.deepEqual(await fetch(path, { headers: { cookie: owner } }).then(r => r.json()), { actorId: ownerId });
+  const selection = { model: 'provider/model', effort: 'high' };
+  const saved = await fetch(path, { method: 'POST', headers: { ...json, cookie: owner },
+    body: JSON.stringify({ hostId: 'opencraft-server', revision: 0, selection, expectedActorId: ownerId }) });
+  assert.equal(saved.status, 200, await saved.clone().text());
+  const query = new URLSearchParams({ hostId: 'opencraft-server', expectedActorId: ownerId });
+  assert.deepEqual(await fetch(path + '?' + query, { headers: { cookie: owner } }).then(r => r.json()), { actorId: ownerId, revision: 1, selection });
+
+  // An invited member reads only their own empty record; revoking membership refuses them.
+  const invitation = await fetch(app.url + '/__opencraft_account/invitations', { method: 'POST', headers: { ...json, cookie: owner }, body: '{}' }).then(r => r.json());
+  const accepted = await fetch(app.url + '/__opencraft_account/accept', { method: 'POST', headers: json,
+    body: JSON.stringify({ code: invitation.code, username: 'member', password: 'Fixture-member-password-42' }) });
+  assert.equal(accepted.status, 201, await accepted.clone().text());
+  const member = accepted.headers.get('set-cookie')?.split(';')[0];
+  const memberId = (await fetch(path, { headers: { cookie: member } }).then(r => r.json())).actorId;
+  assert.notEqual(memberId, ownerId);
+  assert.equal((await fetch(path + '?' + query, { headers: { cookie: member } })).status, 409);
+  assert.deepEqual(await fetch(path + '?' + new URLSearchParams({ hostId: 'opencraft-server', expectedActorId: memberId }), { headers: { cookie: member } }).then(r => r.json()),
+    { actorId: memberId, revision: 0, selection: null });
+  const revoked = await fetch(app.url + '/__opencraft_account/members', { method: 'POST', headers: { ...json, cookie: owner },
+    body: JSON.stringify({ actorId: memberId, role: 'member', enabled: false }) });
+  assert.equal(revoked.status, 200, await revoked.clone().text());
+  assert.equal((await fetch(path, { headers: { cookie: member } })).status, 403);
+});

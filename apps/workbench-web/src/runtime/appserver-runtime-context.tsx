@@ -171,6 +171,7 @@ export function AppServerRuntimeProvider({
     extensions,
     platformViewRenderers,
     platformAccounts,
+    accountModelDefaults,
     applicationBranding,
     threadBadges,
     channelSearch,
@@ -300,6 +301,7 @@ export function AppServerRuntimeProvider({
     announcements: extensions.announcements,
     platformViewRenderers,
     platformAccounts,
+    accountModelDefaults,
     applicationBranding,
     threadBadges,
     channelSearch,
@@ -1046,7 +1048,7 @@ export function useComposerCatalog(
   const readAccountScope = useCallback(() => application.threadAttention.getScope() ?? "anonymous", [application.threadAttention]);
   const accountScope = useSyncExternalStore(application.threadAttention.subscribe, readAccountScope);
   const displayScope = useSyncExternalStore(application.displayContinuity.subscribe, application.displayContinuity.getScope);
-  const personalDefaults = useAccountModelDefaults(application.platformAccounts, snapshot.hostId, runtimeHostConfiguration && threadId === null);
+  const personalDefaults = useAccountModelDefaults(application.platformAccounts, snapshot.hostId, runtimeHostConfiguration && threadId === null, application.accountModelDefaults);
   const rememberedSelection = !runtimeHostConfiguration ? undefined : personalDefaults.authoritative ? personalDefaults.selection : readModelSelection(preferenceSnapshot.values["chat.modelSelections"],
     runtimeHostConfiguration ? { displayScope, accountScope, hostId: snapshot.hostId } : null);
   const enabled = snapshot.phase === "ready";

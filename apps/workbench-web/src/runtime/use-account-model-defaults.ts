@@ -1,28 +1,35 @@
 import { beginObservedOperation } from "./observability";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { AccountModelDefaultsRecord, AccountModelSelection } from "@opencraft/workbench-runtime";
+import type { AccountModelDefaultsRecord, AccountModelDefaultsSource, AccountModelSelection } from "@opencraft/workbench-runtime";
 import type { PlatformAccountContributionRegistry } from "./platform-account-contributions";
 
 const noSubscribe = () => () => {};
 
-/** Account data stays in memory and on its authenticated server, never browser persistence. */
-export function useAccountModelDefaults(accounts: PlatformAccountContributionRegistry, hostId: string, enabled: boolean) {
+/**
+ * Account data stays in memory and on its authenticated server, never browser persistence.
+ * A registered account contribution is the authority; `core` (the server's own logins)
+ * applies only while no account contribution is registered.
+ */
+export function useAccountModelDefaults(accounts: PlatformAccountContributionRegistry, hostId: string, enabled: boolean,
+  core: AccountModelDefaultsSource | null = null) {
   const contribution = useSyncExternalStore(accounts.subscribe, accounts.getSnapshot).contribution;
-  const getScope = useCallback(() => contribution?.getSnapshot().readStateScope ?? null, [contribution]);
-  const scope = useSyncExternalStore(contribution?.subscribe ?? noSubscribe, getScope);
-  const getPhase = useCallback(() => contribution?.getSnapshot().phase ?? "anonymous", [contribution]);
-  const phase = useSyncExternalStore(contribution?.subscribe ?? noSubscribe, getPhase);
-  const port = contribution?.modelDefaults;
+  const source = contribution ? null : core;
+  const subscribe = contribution?.subscribe ?? source?.subscribe ?? noSubscribe;
+  const getScope = useCallback(() => contribution ? contribution.getSnapshot().readStateScope ?? null : source?.getScope() ?? null, [contribution, source]);
+  const scope = useSyncExternalStore(subscribe, getScope);
+  const getPhase = useCallback(() => contribution ? contribution.getSnapshot().phase : source ? "authenticated" : "anonymous", [contribution, source]);
+  const phase = useSyncExternalStore(subscribe, getPhase);
+  const port = contribution ? contribution.modelDefaults : source?.port;
   const client = useQueryClient();
-  const owner = useMemo(() => ({ controller: new AbortController() }), [contribution, scope, port]);
+  const owner = useMemo(() => ({ controller: new AbortController() }), [contribution, source, scope, port]);
   const queue = useRef<Promise<void>>(Promise.resolve());
   const [failure, setFailure] = useState<{ owner: object; error: Error } | null>(null);
   useEffect(() => {
     if (owner.controller.signal.aborted) owner.controller = new AbortController();
     return () => { owner.controller.abort(); };
   }, [owner]);
-  const keyFor = useCallback((host: string) => ["account-model-defaults", contribution?.id, scope, host] as const, [contribution, scope]);
+  const keyFor = useCallback((host: string) => ["account-model-defaults", contribution?.id ?? source?.id, scope, host] as const, [contribution, source, scope]);
   const current = useCallback(() => !owner.controller.signal.aborted && accounts.getSnapshot().contribution === contribution
     && scope !== null && getScope() === scope, [accounts, contribution, owner, getScope, scope]);
   const query = useQuery({

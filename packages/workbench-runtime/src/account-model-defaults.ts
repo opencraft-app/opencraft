@@ -5,6 +5,17 @@ export interface AccountModelDefaultsPort {
   read(scope: string, hostId: string, signal: AbortSignal): Promise<AccountModelDefaultsRecord>;
   write(scope: string, hostId: string, revision: number, selection: AccountModelSelection, signal: AbortSignal): Promise<AccountModelDefaultsRecord>;
 }
+/**
+ * The server's own login authority for personal defaults, used where no product account
+ * contribution supplies `modelDefaults`. `getScope` is the verified, opaque account scope
+ * (null while signed out); the server derives the account and only uses it as a fence.
+ */
+export interface AccountModelDefaultsSource {
+  readonly id: string;
+  readonly port: AccountModelDefaultsPort;
+  getScope(): string | null;
+  subscribe(listener: () => void): () => void;
+}
 export function parseAccountModelSelection(value: unknown): AccountModelSelection {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid model selection");
   const item = value as Record<string, unknown>;
