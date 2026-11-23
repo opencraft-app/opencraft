@@ -10,7 +10,16 @@ async function fixture(t) {
   const runtime = fileURLToPath(new URL("../../.runtime/", import.meta.url));
   await mkdir(runtime, { recursive: true });
   const root = await mkdtemp(join(runtime, "headless-runtime-plugins-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
+  // node:test runs after-hooks in registration order, so servers register through own() and close before the
+  // directory they write into is removed; otherwise a failed rm skips the remaining hooks and a server stays alive.
+  const owned = [];
+  t.after(async () => {
+    try {
+      for (const close of owned.reverse()) await close();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
   const webRoot = join(root, "web");
   await mkdir(webRoot);
   await writeFile(join(webRoot, "index.html"), "<!doctype html><title>Public workbench</title>");
@@ -53,7 +62,7 @@ async function fixture(t) {
     );
     return installRuntimePlugin(directory, store, { enable: true });
   };
-  return { root, store, options, install };
+  return { root, store, options, install, own: (close) => owned.push(close) };
 }
 
 /** Plugin replies carry a marker; a route that never reached plugin code cannot contain it. */
@@ -101,7 +110,7 @@ test("runtime plugin routes mount behind the instance admission owner", async (t
     { ...f.options, ...id.options },
     { createIdentity: id.createIdentity, runtimePlugins: { directory: f.store } },
   );
-  t.after(() => app.close());
+  f.own(() => app.close());
   const member = { "x-fixture-proof": "member" };
   const served = await fetch(app.url + "/__fixture_gateway", { headers: member });
   assert.equal(served.status, 200);
@@ -141,7 +150,7 @@ test("core, product-protected and duplicate routes are rejected without stopping
       runtimePlugins: { directory: f.store, protectedPaths: ["/__product_session"] },
     },
   );
-  t.after(() => app.close());
+  f.own(() => app.close());
   const headers = { "x-fixture-proof": "member" };
   assert.deepEqual((await (await fetch(app.url + "/__fixture_shared", { headers })).json()).plugin, "first");
   const core = await fetch(app.url + "/__opencraft_ssh_servers", { headers });
@@ -175,7 +184,7 @@ test("a failing plugin, missing admission or unreadable selection never prevents
     { ...f.options, ...id.options },
     { createIdentity: id.createIdentity, runtimePlugins: { directory: f.store } },
   );
-  t.after(() => app.close());
+  f.own(() => app.close());
   const headers = { "x-fixture-proof": "member" };
   assert.equal((await (await fetch(app.url + "/__fixture_healthy", { headers })).json()).plugin, "healthy");
   await notServedByPlugin(
@@ -231,7 +240,7 @@ test("absent configuration keeps the existing pipeline without plugin health", a
     id = identity();
   await f.install("fixture.unused", replying("unused"), ["/__fixture_unused"]);
   const app = await startHeadlessServer({ ...f.options, ...id.options }, { createIdentity: id.createIdentity });
-  t.after(() => app.close());
+  f.own(() => app.close());
   await notServedByPlugin(
     await fetch(app.url + "/__fixture_unused", { headers: { "x-fixture-proof": "member" } }),
     "an enabled selection stays inert without the option",
@@ -272,7 +281,7 @@ test("shutdown drains accepted plugin requests and closes plugins before identit
       runtimePlugins: { directory: f.store },
     },
   );
-  t.after(() => {
+  f.own(() => {
     release();
     return app.close();
   });
