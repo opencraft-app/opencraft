@@ -155,31 +155,45 @@ export async function startOpenCraftDaemon(options: {
     throw error;
   }
   // Started only while this daemon owns storage, so it never stops another daemon's children.
+  // The bridge stack is the Codex Host's runtime, not a daemon prerequisite: it starts in the
+  // background so Main, the account service and the other Hosts never wait on native Codex, and
+  // a failed start leaves only Codex unavailable. The next Codex connection retries.
   let codexStack: CodexBridgeStack | undefined;
-  if (options.codexBridgeStack) {
-    try {
-      if (options.codexCoreEndpoint || options.codexAgentBridge) throw new Error("The Codex bridge stack owns its Core and bridge");
-      codexStack = await startCodexBridgeStack({
-        programs: options.codexBridgeStack.programs,
-        node: process.execPath,
-        codexExecutable: options.codexExecutable,
-        codexDataDirectory: options.codexDataDirectory,
-        nativeCodexHomeDirectory: options.nativeCodexHomeDirectory,
-        runtimeDirectory: options.runtimeDirectory,
-        stateDirectory: join(options.dataDirectory, "codex-bridge"),
-        authToken: options.authToken,
-        ...(options.modelStorageDirectory ? { modelStorageDirectory: options.modelStorageDirectory } : {}),
-      });
-    } catch (error) {
-      await accountServer?.close();
-      try { await humanAccounts?.close(); } catch { /* keep the original failure */ }
-      try { await storage.close(); } finally { await releaseStorageOwner(); }
-      throw error;
-    }
-    options = { ...options, codexCoreEndpoint: codexStack.coreEndpoint, codexCoreHostOverlays: true, codexAgentBridge: codexStack.bridge,
-      // Existing local Threads move to the bridge on their next turn, keeping their IDs.
-      codexAgentBridgeAdoptExisting: true };
+  let codexStackStarting: Promise<CodexBridgeStack> | null = null;
+  let codexStackClosed = false;
+  const bridgeStack = options.codexBridgeStack;
+  if (bridgeStack && (options.codexCoreEndpoint || options.codexAgentBridge)) {
+    await accountServer?.close();
+    try { await humanAccounts?.close(); } catch { /* keep the original failure */ }
+    try { await storage.close(); } finally { await releaseStorageOwner(); }
+    throw new Error("The Codex bridge stack owns its Core and bridge");
   }
+  const startBridgeStack = (stack: { readonly programs: string }) => codexStackStarting ??= startCodexBridgeStack({
+    programs: stack.programs,
+    node: process.execPath,
+    codexExecutable: options.codexExecutable,
+    codexDataDirectory: options.codexDataDirectory,
+    nativeCodexHomeDirectory: options.nativeCodexHomeDirectory,
+    runtimeDirectory: options.runtimeDirectory,
+    stateDirectory: join(options.dataDirectory, "codex-bridge"),
+    authToken: options.authToken,
+    ...(options.modelStorageDirectory ? { modelStorageDirectory: options.modelStorageDirectory } : {}),
+  }).then(async started => {
+    if (codexStackClosed) { await started.close(); throw new Error("OpenCraft Daemon is shutting down"); }
+    codexStack = started;
+    return started;
+  }, (error: unknown) => {
+    codexStackStarting = null;
+    const reason = error instanceof Error ? error.message : String(error);
+    console.error(`[opencraft-daemon] Codex is unavailable: the bridge stack did not start: ${reason}`);
+    throw new Error(`Codex is unavailable: ${reason}`, { cause: error });
+  });
+  const closeBridgeStack = async () => {
+    codexStackClosed = true;
+    await codexStackStarting?.catch(() => undefined);
+    await codexStack?.close();
+  };
+  if (bridgeStack) void startBridgeStack(bridgeStack).catch(() => undefined);
   let codexEngineHost: { close(): Promise<void> } | undefined;
   if (options.codexEngineHost) {
     try {
@@ -247,9 +261,13 @@ export async function startOpenCraftDaemon(options: {
         });
       }
       if (hostId === "local-codex") {
+        // With the daemon's own bridge stack, Codex is reachable once the stack is.
+        const stack = bridgeStack ? await startBridgeStack(bridgeStack) : undefined;
+        const codex = stack ? { ...options, codexCoreEndpoint: stack.coreEndpoint, codexCoreHostOverlays: true,
+          codexAgentBridge: stack.bridge, codexAgentBridgeAdoptExisting: true } : options;
         // The Host services front owns Host-wide stores exactly where the local Codex Host
         // would have (no Core, or Core with overlays); a pass-through to Core owns none.
-        const ownsHostState = !options.codexCoreEndpoint || options.codexCoreHostOverlays === true;
+        const ownsHostState = !codex.codexCoreEndpoint || codex.codexCoreHostOverlays === true;
         let hostServices: CodexHostServices | undefined;
         let adapterOutcomes: readonly { name: string; outcome: DatabaseOutcome }[] = [];
         const reportCodexStorage = () => {
@@ -260,9 +278,9 @@ export async function startOpenCraftDaemon(options: {
           })));
         };
         // With the daemon's own bridge stack every Thread runs on the bridge and no legacy Host is composed.
-        if (options.codexBridgeStack && options.codexAgentBridge && options.codexCoreEndpoint && !options.createCodexTransport) {
+        if (options.codexBridgeStack && codex.codexAgentBridge && codex.codexCoreEndpoint && !options.createCodexTransport) {
           hostServices = createCodexBridgeHost({
-            coreEndpoint: options.codexCoreEndpoint, coreAuthToken: options.authToken, bridge: options.codexAgentBridge,
+            coreEndpoint: codex.codexCoreEndpoint, coreAuthToken: options.authToken, bridge: codex.codexAgentBridge,
             codexDataDirectory: options.codexDataDirectory, artifactDirectory: join(options.dataDirectory, "artifacts"),
             storageOpened: reportCodexStorage,
           });
@@ -279,16 +297,16 @@ export async function startOpenCraftDaemon(options: {
           dataDirectory: options.codexDataDirectory,
           artifactDirectory: join(options.dataDirectory,"artifacts"),
           nativeCodexHomeDirectory: options.nativeCodexHomeDirectory,
-          ...codexCoreOptions(options),
+          ...codexCoreOptions(codex),
           writerOwnership: options.codexWriterOwnership,
         });
         codexAgents.add(codexAgent);
-        if (options.codexAgentBridge && !options.codexCoreEndpoint) throw Error("Bridge requires existing Core endpoint");
+        if (codex.codexAgentBridge && !codex.codexCoreEndpoint) throw Error("Bridge requires existing Core endpoint");
         // The local Host holds the records bridge Threads share with its own (attachments, senders, titles, usage).
-        const owners = options.codexAgentBridge ? bridgeOwnersOf(codexAgent) : undefined;
-        const routing: DuplexTransport = options.codexAgentBridge ? new CodexProviderBridge(codexAgent, options.codexAgentBridge, {
+        const owners = codex.codexAgentBridge ? bridgeOwnersOf(codexAgent) : undefined;
+        const routing: DuplexTransport = codex.codexAgentBridge ? new CodexProviderBridge(codexAgent, codex.codexAgentBridge, {
           admissionPaused: () => codexAdmissionPaused(options.codexDataDirectory),
-          adoptExisting: options.codexAgentBridgeAdoptExisting === true,
+          adoptExisting: codex.codexAgentBridgeAdoptExisting === true,
           // With the daemon's own bridge stack, Codex runs only through the bridge.
           newThreads: options.codexBridgeStack !== undefined || options.codexEngineHost !== undefined,
           ...(owners ? bridgeOwnerPolicy(owners) : {}),
@@ -296,10 +314,10 @@ export async function startOpenCraftDaemon(options: {
         if (owners && routing instanceof CodexProviderBridge) owners.bindThreadIdentities(routing.threadIdentities());
         if (!ownsHostState) return routing;
         // With Core, Host services read native Codex over their own connection to Core's AppServer.
-        const reader = options.codexCoreEndpoint ? new CodexNativeReader(options.codexCoreEndpoint, options.authToken) : undefined;
+        const reader = codex.codexCoreEndpoint ? new CodexNativeReader(codex.codexCoreEndpoint, options.authToken) : undefined;
         hostServices = new CodexHostServices(routing, clients => [
           codexTasksService(join(options.codexDataDirectory, "tasks.sqlite"), clients, reportCodexStorage),
-          ...(options.codexCoreEndpoint ? [codexAccountsService(new CodexCoreControlClient(options.codexCoreEndpoint, options.authToken))] : []),
+          ...(codex.codexCoreEndpoint ? [codexAccountsService(new CodexCoreControlClient(codex.codexCoreEndpoint, options.authToken))] : []),
           ...(reader ? [codexModelsService(reader), codexPinsService(reader, clients, routing instanceof CodexProviderBridge ? routing.threadIdentities() : undefined),
             { handles: () => false, request: () => null, close: () => reader.close() }] : []),
         ]);
@@ -334,7 +352,7 @@ export async function startOpenCraftDaemon(options: {
       await Promise.allSettled([...codexAgents].map(adapter => adapter.close()));
       codexAgents.clear();
       await codexEngineHost?.close();
-      await codexStack?.close();
+      await closeBridgeStack();
       await collaboration?.close();
       threadAccess?.close();
       await accountServer?.close();
@@ -375,7 +393,7 @@ export async function startOpenCraftDaemon(options: {
     await humanAccounts?.close();
     await appHost.close();
     await codexEngineHost?.close();
-    await codexStack?.close();
+    await closeBridgeStack();
     try { await storage.close(); } finally { await releaseStorageOwner(); }
     throw error;
   }
