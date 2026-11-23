@@ -137,7 +137,7 @@ function normalize(value: unknown): unknown {
 export const INSTALLATION_CORE_SCENARIOS: readonly WorkerScenario[] = [
   {
     name: "fresh InstallationCore applies every Server migration on Durable Object SQL",
-    async run({ runtime, scratch, diagnostic }) {
+    async run({ runtime }) {
       const call = client(await start(runtime));
       assert.deepEqual(await call("outcome"), { status: "fresh", appliedVersion: SERVER_MIGRATIONS.length });
       const ledger = (await call("ledger")) as { version: number; name: string }[];
@@ -158,7 +158,7 @@ export const INSTALLATION_CORE_SCENARIOS: readonly WorkerScenario[] = [
   },
   {
     name: "Durable Object and node:sqlite produce the same Server schema",
-    async run({ runtime, scratch, diagnostic }) {
+    async run({ runtime, scratch }) {
       const call = client(await start(runtime));
       const node = await openServerDatabase(await mkdtemp(join(scratch, "node-schema-")));
       try {
@@ -172,7 +172,7 @@ export const INSTALLATION_CORE_SCENARIOS: readonly WorkerScenario[] = [
   },
   {
     name: "reopening persisted storage validates the ledger and applies nothing",
-    async run({ runtime, scratch, diagnostic }) {
+    async run({ runtime }) {
       const persist = `persist-${++sequence}`;
       const first = await start(runtime, persist);
       const object = "reopen";
@@ -198,7 +198,7 @@ export const INSTALLATION_CORE_SCENARIOS: readonly WorkerScenario[] = [
   },
   {
     name: "a tampered ledger checksum is refused and the object stays closed",
-    async run({ runtime, scratch, diagnostic }) {
+    async run({ runtime }) {
       const persist = `tamper-${++sequence}`;
       const first = await start(runtime, persist);
       assert.equal(await client(first, "tamper")("tamperLedger", 3), 1);
@@ -215,7 +215,7 @@ export const INSTALLATION_CORE_SCENARIOS: readonly WorkerScenario[] = [
   },
   {
     name: "an object migrated by an older build applies only the newer migrations after restart",
-    async run({ runtime, scratch, diagnostic }) {
+    async run({ runtime, scratch }) {
       const persist = `upgrade-${++sequence}`;
       // Stop before 0005_native_channels so the restart runs its ALTER TABLE, data copy and triggers.
       const older = 5;
@@ -248,7 +248,7 @@ export const INSTALLATION_CORE_SCENARIOS: readonly WorkerScenario[] = [
   },
   {
     name: "an object migrated by a newer build is refused by an older one",
-    async run({ runtime, scratch, diagnostic }) {
+    async run({ runtime }) {
       const persist = `newer-${++sequence}`;
       const current = await start(runtime, persist);
       await client(current, "newer")("outcome");
@@ -264,7 +264,7 @@ export const INSTALLATION_CORE_SCENARIOS: readonly WorkerScenario[] = [
   },
   {
     name: "domain RPC round trips match the Node owner for the same inputs",
-    async run({ runtime, scratch, diagnostic }) {
+    async run({ runtime, scratch }) {
       const call = client(await start(runtime));
       const workerd = await scenario((method, ...args) => call(method, ...args));
 

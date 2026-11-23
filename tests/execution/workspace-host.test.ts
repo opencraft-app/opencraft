@@ -152,7 +152,7 @@ test("two workspaces with different roots are independent owners", async t => {
 
 test("the workspace owner gives schedules its wake-up port, and drain cancels it", async t => {
   const directory = await root(t);
-  let now = 1800000000000;
+  const now = 1800000000000;
   const events: string[] = [];
   const host = await openCodexWorkspaceHost(defaultWorkspace(directory), options({
     now: () => now,

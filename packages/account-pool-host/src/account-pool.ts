@@ -1,6 +1,6 @@
 import { logAccountRecovery } from "./account-diagnostics.js";
 import type { CodexAccountMaintenanceView } from "@opencraft/appserver-protocol";
-import type { SqlDatabase, SqlRow } from "@opencraft/sql";
+import type { SqlDatabase } from "@opencraft/sql";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { EXTERNAL_CODEX_REAUTH_MESSAGE, parseCodexAuthFile, parseCodexAuthFileReference, type CodexAuthFileReference } from "./codex-auth-file.js";
 import { createCodexAccountPoolLaunch } from "./codex-launch.js";

@@ -132,9 +132,9 @@ test("proxy-mode credential writes reach the account Core through the proxy, whi
   t.after(() => store.close());
   const proxy = new CodexAccountPoolProxy({ store, upstreamBaseUrl: "https://chatgpt.invalid/backend-api/codex",
     fetch: (async () => { throw new Error("no upstream"); }) as typeof fetch, modelCredentials: fileModelCredentials(f.models) });
-  const through = (token: string) => (async (url: any, init: any) => proxy.handle(new Request(url, init))) as typeof fetch;
+  const through = () => (async (url: any, init: any) => proxy.handle(new Request(url, init))) as typeof fetch;
   const pi = { ...caller, token: store.issueHostToken("caller:pi") };
-  const port = new ProxyModelCredentials(pi, through(pi.token));
+  const port = new ProxyModelCredentials(pi, through());
   assert.equal(await port.configured("KEY_ds"), false);
   await port.set("KEY_ds", "sk-provider-secret");
   assert.equal(await port.configured("KEY_ds"), true);

@@ -19,7 +19,6 @@ const until = async (read, accept = Boolean, ms = 15000) => {
   }
 };
 const alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
-const silent = () => {};
 
 async function supervisorFixture(t) {
   const directory = await mkdtemp(join(tmpdir(), 'oc-agent-'));
