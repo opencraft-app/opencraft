@@ -12,7 +12,8 @@
     "./server-owner": "./src/server/owner.ts",
     "./server-owner-serve": "./src/server/owner-serve.ts",
     "./server-composition": "./src/server/migration-composition.ts",
-    "./server/schema": "./src/server/schema.ts"
+    "./server/schema": "./src/server/schema.ts",
+    "./server/migrations": "./src/server/migration-chain.ts"
   },
   "dependencies": {
     "@opencraft/sqlite-node": "0.1.0",

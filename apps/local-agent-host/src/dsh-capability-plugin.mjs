@@ -3,6 +3,7 @@ import { createDshPolicyBoundary } from '@opencraft/model-usage-policy/native';
 import { ExecutionEnvironmentRuntime } from "@opencraft/execution-environment";
 import {createRemoteHumanGitExecution} from '@opencraft/execution-environment/remote-human-git-execution';
 import {createRemoteEnvironmentLaunch} from '@opencraft/execution-environment/remote-environment-launch';
+import {openExecutionAdmission} from '@opencraft/execution-environment/execution-admission';
 import {RemoteSessionCapabilities} from '@opencraft/session-capabilities/remote';
 import {observeNativeExecutionProcess} from '@opencraft/execution-environment/native-execution-origin';
 import { createDshNativeOwner } from "./dsh-native-owner.mjs";
@@ -73,7 +74,8 @@ export async function apply(ctx, config) {
   const mode=config.executionContext??'legacy';
   if(!['assets','legacy'].includes(mode))throw Error('Invalid execution context');
   if(mode==='assets'&&(!config.gitExecution||![config.gitExecution.directory,config.gitExecution.workerFile].every(p=>typeof p==='string'&&isAbsolute(p))||typeof config.gitExecution.machineId!=='string'||!config.gitExecution.machineId))throw Error('Native Git attachment unavailable');
-  if(config.gitExecution?.environmentIssuer!==undefined&&(mode!=='assets'||typeof config.gitExecution.environmentIssuer!=='string'))throw Error('Environment delivery requires the native execution attachment');
+  if(config.gitExecution?.environmentIssuer!==undefined&&(mode!=='assets'||typeof config.gitExecution.environmentIssuer!=='string'
+    ||typeof config.gitExecution.admissionWorkerFile!=='string'||!isAbsolute(config.gitExecution.admissionWorkerFile)))throw Error('Environment delivery requires the native execution attachment');
   const executionAttachment=mode==='assets'?`server:${config.gitExecution.machineId}:dsh`:undefined;
   const ownIncarnation=async native=>(await observeNativeExecutionProcess(process.pid)).incarnation===native.incarnation;
   const git=mode==='assets'?createRemoteHumanGitExecution({directory:config.gitExecution.directory,
@@ -82,13 +84,21 @@ export async function apply(ctx, config) {
     inspect:grant=>ownIncarnation(grant.native),
   }):undefined;
   // Opaque ENV: this process owns the receiver key; the Gateway relays a capsule.
-  const environmentLaunch=mode==='assets'&&config.gitExecution.environmentIssuer!==undefined?createRemoteEnvironmentLaunch({
+  // The expected context is this owner's durable admission, read in a Worker;
+  // it must name this live process, never a predecessor or successor.
+  const admission=mode==='assets'&&config.gitExecution.environmentIssuer!==undefined
+    ?openExecutionAdmission({workerFile:config.gitExecution.admissionWorkerFile,directory:config.gitExecution.directory}):undefined;
+  const environmentLaunch=admission?createRemoteEnvironmentLaunch({
     purpose:'dsh',instance:executionAttachment,issuer:config.gitExecution.environmentIssuer,
     capabilities:new RemoteSessionCapabilities(config.gitExecution.directory,executionAttachment),
-    inspect:context=>ownIncarnation(context.native),
+    admission:async input=>{
+      const owned=await admission.resolve(input);
+      if(owned&&!await ownIncarnation(owned.native))throw Error('environment_launch_unavailable');
+      return owned;
+    },
   }):undefined;
   const environmentRuntime = mode==='legacy'&&config.environmentDataDirectory ? ExecutionEnvironmentRuntime.open(config.environmentDataDirectory, { create: true }) : undefined;
-  ctx.on("dispose", async () => {await git?.close();environmentLaunch?.close();environmentRuntime?.close();});
+  ctx.on("dispose", async () => {await git?.close();environmentLaunch?.close();await admission?.close();environmentRuntime?.close();});
   registerDshExecutionEnvironment(ctx, nativeId => generations.get(nativeId)?.logicalSessionId ?? nativeId, environmentRuntime,git,environmentLaunch);
   ctx.on("session/event", (session, event) => {
     if (nativeOwner && event.type === "turn/end") void ctx.sessions.flush(session)

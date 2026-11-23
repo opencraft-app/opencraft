@@ -6,7 +6,7 @@ import { build } from 'esbuild';
 const root = fileURLToPath(new URL('../..', import.meta.url));
 export async function buildGitIdentityRuntime(directory, additionalEntries = []) {
   await mkdir(directory, { recursive: true });
-  const entries = [{ entry: join(root, 'apps/headless-server/src/git-identity-wrapper.ts'), name: 'git-identity-wrapper.mjs' }, { entry: join(root, 'apps/headless-server/src/personal-git-worker.ts'), name: 'personal-git-worker.mjs' }, ...additionalEntries];
+  const entries = [{ entry: join(root, 'apps/headless-server/src/git-identity-wrapper.ts'), name: 'git-identity-wrapper.mjs' }, { entry: join(root, 'apps/headless-server/src/personal-git-worker.ts'), name: 'personal-git-worker.mjs' }, { entry: join(root, 'apps/headless-server/src/execution-admission.worker.ts'), name: 'execution-admission-worker.mjs' }, ...additionalEntries];
   const seen = new Set();
   for (const { entry, name } of entries) {
     if (!/^[a-z0-9][a-z0-9-]*\.mjs$/u.test(name) || seen.has(name)) throw new Error('Invalid Git runtime entry name');

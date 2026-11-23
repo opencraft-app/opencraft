@@ -162,7 +162,9 @@ export async function startLocalAgentHost(options: {
   readonly executionContext?: 'assets'|'legacy';
   readonly gitExecution?: {readonly directory:string;readonly workerFile:string;readonly machineId:string;
     /** Pinned issuer key of the sole ENV vault owner; enables opaque ENV delivery. */
-    readonly environmentIssuer?:string};
+    readonly environmentIssuer?:string;
+    /** Worker that reads this owner's durable admission; required with `environmentIssuer`. */
+    readonly admissionWorkerFile?:string};
   readonly storage?: LocalAgentStorage;
   readonly machineIdentity?: RuntimeMachineIdentity;
   readonly modelStorageDirectory?: string;

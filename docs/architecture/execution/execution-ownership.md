@@ -893,7 +893,10 @@ Gateway initialization reads only native facts needed by unsettled execution lea
 
 Trusted Headless identity adapters may return `capabilityProviders` backed by
 `SessionCapabilities`. Capability execution context is supplied by native Host
-adapters, never tool arguments. `AuthenticatedMcpProvider` obtains an opaque
+adapters, never tool arguments. Host, verified human Actor and active lease are
+resolved by core into `CapabilitySession.context`
+([session capabilities](session-capabilities.md#core-resolved-execution-context));
+providers do not read execution stores themselves. `AuthenticatedMcpProvider` obtains an opaque
 account/revision and the current immutable execution identity from the product
 resolver; it sends the service token only in the upstream HTTP Authorization
 header. Native configuration contains only a loopback endpoint and a signed

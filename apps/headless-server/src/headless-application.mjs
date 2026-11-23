@@ -46,6 +46,7 @@ import { ConversationResourceLifecycle } from './conversation-resource-lifecycle
 import { ConversationResourceTransport } from './conversation-resource-transport.js';
 import { RemoteBrowserService } from './remote-browser-service.mjs';
 import { RemoteBrowserCapabilities } from './remote-browser/capabilities.ts';
+import { createCapabilityContextResolver } from './capability-execution-context.ts';
 import { createBrowserGrantResolver } from './remote-browser/execution-grant.ts';
 import { connectBrowserOwner } from './remote-browser-owner.mjs';
 
@@ -115,7 +116,7 @@ import { THREAD_ORCHESTRATION_TOOLS } from '@opencraft/appserver-protocol/collab
 import { createRoutedConversationExecution, conversationAccessServer, callConversationHost, readConversationCurrentTurn } from './conversation-execution.mjs';
 import { openPushStore, TurnPushService, PushObservationTransport } from '@opencraft/web-push-node';
 import { NativeExecutionAuthority } from './native-execution-authority.ts';
-import { readImConfiguration, startImPlugins, createChannelSyncDependencies } from './im-plugins.mjs';
+import { readImConfiguration, startImPlugins, createChannelSyncDependencies, channelSyncContext } from './im-plugins.mjs';
 import { ImChannelsAppServer } from './im-channels-appserver.mjs';
 import { CHANNELS_HOST_ID } from '@opencraft/appserver-protocol/channels';
 import { HumanAccounts } from '@opencraft/access-control/human-accounts';
@@ -128,7 +129,8 @@ import { IdentityWrites } from '@opencraft/access-control/identity-writes';
 import { createCommitFenceBuffer } from '@opencraft/access-control/commit-fence';
 import { humanLoginPage } from './human-login-page.ts';
 import { connectRelay, loadRelayConnection } from '@opencraft/plugin-relay-connect/server';
-import { validateHeadlessIdentity } from "./headless-identity.mjs";
+import { validateHeadlessIdentity, validateEnvironmentDelivery } from "./headless-identity.mjs";
+import { startHeadlessRuntimePlugins, validateRuntimePluginOptions } from "./runtime-plugins.mjs";
 import { createHubController } from '@opencraft/hub-network/controller';
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -327,6 +329,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   const workspaceExecution = configuredWorkspaceExecution(options);
   if (composition.close !== undefined && typeof composition.close !== "function") throw new Error("Invalid Headless disposer");
   if (composition.isHuman !== undefined && typeof composition.isHuman !== "function") throw new Error("Invalid Headless human qualification");
+  const runtimePluginConfiguration = validateRuntimePluginOptions(composition.runtimePlugins);
   const root = resolve(options.root ?? packageRoot);
   const dataDirectory = resolve(options.dataDirectory ?? join(homedir(), ".opencraft-server"));
   const webRoot = resolve(options.webRoot ?? join(root, "web"));
@@ -389,6 +392,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let workspaceRouting;
   let ownedWorkspaceRouting;
   let humanGitExecution;
+  // The one opaque ENV vault-owner port: a downstream port or the core vault Worker.
+  let environmentLaunch;
   let actorStore;
   const terminalServices = new Map();
   const fileSystem = options.fileSystemOwner ? createHostFileSystem(options.fileSystemOwner) : null;
@@ -426,6 +431,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let observability;
   let turnPush;
   let connectedExecutionCli;
+  let runtimePlugins;
   let closing = null;
   const close = (update = null) => {
     if (closing !== null) return closing;
@@ -449,6 +455,9 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       await settle([() => web?.close(update, closeEntry)]);
       // Custom Web adapters need not implement the optional carrier phase.
       await closeEntry();
+      // Plugins stop after the listener stopped accepting and before any owner
+      // their authority or handlers may still call (admission, identity, stores).
+      await settle([() => runtimePlugins?.close()]);
       await settle([() => observability?.close()]);
       await settle([() => projectAutomations?.close()]);
       await settle([() => threadOrchestration?.close()]);
@@ -504,6 +513,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         validateCodexWorkspaceHooks(identity.codexWorkspaceRouting);
       for (const provider of identity?.capabilityProviders ?? []) capabilities.register(provider);
     }
+    // One installation has one ENV owner; configuring two fails here.
+    const coreEnvironmentLaunch = validateEnvironmentDelivery(options.environmentDelivery, identity);
     workspaceRouting = identity?.codexWorkspaceRouting;
     if (workspaceExecution && workspaceRouting && (typeof workspaceRouting.createCodexWorkspaceHooks !== 'function'
       || typeof workspaceRouting.readCatalog !== 'function'))
@@ -553,10 +564,10 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     if (!identity?.assistantEnvironmentConfigurationManaged) {
       if (workspaceExecution && !workspaceRouting && !instanceAccess)
         throw Error('Workspace execution requires Human instance authority');
-      assetsStorage = await openHeadlessAssetsStorage(dataDirectory, workspaceExecution && !workspaceRouting ? {
+      assetsStorage = await openHeadlessAssetsStorage(dataDirectory, {...(workspaceExecution && !workspaceRouting ? {
         workspaceMachineId: machineIdentity.machineId,
         ...(options.terminalOwner ? {terminalOwner: options.terminalOwner} : {}),
-      } : {});
+      } : {}), ...(coreEnvironmentLaunch ? {environmentLaunch: true} : {})});
       if (!assetsStorage.botExecution) throw Error('Assets Bot execution owner unavailable');
       if (process.env.OPENCRAFT_ASSISTANT_SANDBOX_CONFIG) {
         try { await assetsStorage.store.adoptWorkspaceInstallation(process.env.OPENCRAFT_ASSISTANT_SANDBOX_CONFIG); }
@@ -594,6 +605,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         },
       });
     }
+    environmentLaunch = identity?.environmentLaunch ?? assetsStorage?.environmentLaunch;
+    if (coreEnvironmentLaunch && !assetsStorage?.environmentLaunch) throw new Error('Environment delivery requires the sole vault owner');
     const authenticateHuman = request => {
       if (instanceAccess) return instanceAccess.authenticate(request);
       const identities = providers.map(provider => provider.authenticate(request)).filter(Boolean);
@@ -768,13 +781,30 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         return readConversationCurrentTurn(appHostServer, { hostId, threadId }, { sender: null, actorContext: context });
       },
     }));
+    // Providers read the run's Host, verified human Actor and active lease from
+    // these owners instead of parsing serverId or opening execution stores.
+    capabilities.resolveContext(createCapabilityContextResolver({
+      route: (serverId, threadId) => {
+        const remote = remoteExecutionAuthorities.get(serverId);
+        if (remote) return { hostId: remote.hostId, engine: 'codex' };
+        const server = conversationExecution.servers.find(row => row.serverId === serverId);
+        try { if (!server || conversationExecution.serverForHost(server.hostId, threadId) !== serverId) return undefined; } catch { return undefined; }
+        return { hostId: server.hostId, engine: server.engine ?? 'codex' };
+      },
+      source: async (serverId, threadId, execution) => remoteExecutionAuthorities.has(serverId)
+        ? remoteExecutionAuthorities.get(serverId).authority.source(threadId, execution)
+        : actorCollaboration.executionContext(threadId, execution),
+      current: (context, serverId, threadId) => { try { authorizeBrowserExecution(context, serverId, threadId); return true; } catch { return false; } },
+      bindings: actorId => actorStore.bindings(actorId),
+      lease: async locator => humanGitExecution ? humanGitExecution.handoff(locator) : null,
+    }));
     // Bindings are read from memory; the Server owner Worker commits each write in order.
     capabilityBindings = new CapabilityBindingProjection(await serverStorage.call.capabilityBindings(),
       write => serverStorage.call.applyCapabilityBinding(write),
       error => console.error('[capability-bindings] unavailable', error.message));
     // Opaque ENV delivery needs the same live Actor/lease handoff as Git; a
     // configured vault owner without it fails here, not at every command.
-    if (identity?.environmentLaunch && !humanGitExecution) throw new Error('Environment delivery requires execution admission');
+    if (environmentLaunch && !humanGitExecution) throw new Error('Environment delivery requires execution admission');
     const capabilityKey=await capabilitySigningKey(join(dataDirectory,"session-capabilities.key"));
     capabilityMcp = new SessionCapabilityMcp(capabilities, capabilityKey, capabilityBindings, {
       descriptorPath:join(dataDirectory,'session-capabilities.json'), retainEndpoint: true,
@@ -789,7 +819,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         const grant=await humanGitExecution.handoff({hostId:'opencraft-server',threadId:session.threadId,...(session.execution.inputId?{inputId:session.execution.inputId}:{turnId:session.execution.turnId})});
         return {authority:assetsService.gitAuthority,hosts:assetsService.gitHosts,grant};
       },
-      ...(identity?.environmentLaunch ? {hostEnvironment:createHostEnvironmentLaunch({port:identity.environmentLaunch,
+      ...(environmentLaunch ? {hostEnvironment:createHostEnvironmentLaunch({port:environmentLaunch,
         handoff:locator=>humanGitExecution.handoff(locator),
         routes:session=>!closing&&session.serverId===conversationExecution.serverForHost('opencraft-server',session.threadId)
           &&conversationExecution.hostForServer(session.serverId)==='opencraft-server'})} : {}),
@@ -850,7 +880,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       executionContext:identity?.executionEnvironment?'legacy':'assets',
       gitExecution:identity?.executionEnvironment?undefined:{directory:dataDirectory,machineId:machineIdentity.machineId,
         workerFile:options.gitWorkerFile??fileURLToPath(new URL('./personal-git-worker.mjs',import.meta.url)),
-        ...(identity?.environmentLaunch?{environmentIssuer:identity.environmentLaunch.issuer}:{})},
+        ...(environmentLaunch?{environmentIssuer:environmentLaunch.issuer,
+          admissionWorkerFile:join(dirname(options.gitWorkerFile??fileURLToPath(new URL('./personal-git-worker.mjs',import.meta.url))),'execution-admission-worker.mjs')}:{})},
       projectlessWorkspaceDirectory: join(dataDirectory, "workspaces"),
       skillsDirectory: join(dataDirectory, "skills"),
       taskSkillDirectories: [join(dataDirectory, "codex/runtime/skills")],
@@ -1277,6 +1308,10 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       if (!binding) throw new Error("Unknown file Host");
       return binding.connection;
     });
+    // Explicit opt-in only: loaded once instance authentication and admission exist,
+    // before the listener opens so declared routes are mounted from the first request.
+    if (runtimePluginConfiguration) runtimePlugins = await startHeadlessRuntimePlugins(runtimePluginConfiguration,
+      { dataDirectory, instanceAccess, authService: humanAuth });
     const createWeb = options.createWebServer ?? createWorkbenchWebServer;
     web = await createWeb({
       root: webRoot,
@@ -1321,7 +1356,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       sshServerDescriptors: sshServers.map(binding => binding.descriptor),
       sshManagement,
       fileDownloads,
-      getPluginHealth: () => ({...(imPlugins ? {'opencraft.im':imPlugins.states()} : {}),...(turnPush ? {'opencraft.push':turnPush.health} : {})}),
+      getPluginHealth: () => ({...(imPlugins ? {'opencraft.im':imPlugins.states()} : {}),...(turnPush ? {'opencraft.push':turnPush.health} : {}),
+        ...(runtimePlugins ? {'opencraft.runtime-plugins':runtimePlugins.health()} : {})}),
       getStorageOutcomes: () => [
         { name: 'server-core', status: serverStorage.outcome.status, appliedVersion: serverStorage.outcome.appliedVersion,
           movedAside: false, productVersion: serverStorage.contract.productVersion, contractHash: serverStorage.contract.hash },
@@ -1371,6 +1407,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       })(),
       assetsService,
       identityService: identity?.service ?? null,
+      ...(runtimePlugins ? { runtimePluginService: runtimePlugins } : {}),
       accessService: instanceAccess ?? null,
       actorService: actorAccess,
       allowSessionChannels: true,
@@ -1440,7 +1477,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       codexBinary:options.codexExecutable ?? join(root,'runtime/codex/bin/codex'),
       // Explicit local preview composition only (scripts/dev/preview-crew.ts); the CLI never sets it.
       ...(composition.personalAssistantHost ?? {})});
-    imPlugins = await startImPlugins(imConfiguration,{dataDirectory,capabilities,prepareCapabilities: tools => capabilityMcp.prepare(tools),actors:actorStore,collaboration:actorCollaboration,actorAccess,getAppHost:() => appHostServer,admittedActor:actorId => !instanceAccess || instanceAccess.admitsActor(actorId),...await createChannelSyncDependencies(composition,{collaboration:actorCollaboration})});
+    imPlugins = await startImPlugins(imConfiguration,{dataDirectory,capabilities,prepareCapabilities: tools => capabilityMcp.prepare(tools),actors:actorStore,collaboration:actorCollaboration,actorAccess,getAppHost:() => appHostServer,admittedActor:actorId => !instanceAccess || instanceAccess.admitsActor(actorId),...await createChannelSyncDependencies(composition,channelSyncContext({collaboration:actorCollaboration,relayConnectFile:relayConfiguration ? options.relayConnectFile : undefined}))});
     try { availabilityNotification = await startAvailabilityNotification(process.env.OPENCRAFT_AVAILABILITY_NOTIFICATION_CONFIG, () => imPlugins); }
     catch { console.warn('[availability-notification] startup-unavailable'); }
     capabilitiesReadyResolve();

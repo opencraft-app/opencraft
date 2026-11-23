@@ -22,6 +22,12 @@ import {executionEnvironmentOwner,ExecutionEnvironmentSnapshot} from "./executio
 export const environmentProjectId = (hostId: string, projectId: string) => 'project-' + digest([hostId, projectId]);
 const namespace = (kind: string, hostId: string, id = '') => `document-env-${kind}-${digest([hostId, id])}`;
 const text = (value: unknown): value is string => typeof value === 'string' && value.length > 0 && value.length <= 512 && !/[\0\r\n]/u.test(value);
+/** The Thread's durable Project binding, as the Gateway recorded it from the
+ * Host's own thread metadata. This, not a request or handoff, selects Project ENV. */
+export function environmentThreadProject(vault: Pick<EmployeeGitVaultStore, 'readDocument'>, hostId: string, threadId: string): string | null {
+  const value = vault.readDocument(PLATFORM, namespace('thread', hostId, threadId)).document as { projectId?: unknown } | null;
+  return value && text(value.projectId) ? value.projectId : null;
+}
 
 /** Trusted Node owner port. Storage and signed scope reuse the credential vault;
  * no browser frame can select another person's account or supply clear values. */
@@ -45,10 +51,7 @@ export class ExecutionEnvironmentRuntime {
   }
   onClose(dispose: () => void) { this.disposers.add(dispose); }
   close() { void this.git?.close().catch(() => {}); for (const dispose of this.disposers) dispose(); this.disposers.clear(); if (this.ownsVault) this.vault.close(); }
-  project(hostId: string, threadId: string): string | null {
-    const value = this.vault.readDocument(PLATFORM, namespace('thread', hostId, threadId)).document as { projectId?: unknown } | null;
-    return value && text(value.projectId) ? value.projectId : null;
-  }
+  project(hostId: string, threadId: string): string | null { return environmentThreadProject(this.vault, hostId, threadId); }
   bind(hostId: string, threadId: string, projectId: string | null) {
     if (!text(hostId) || !text(threadId) || projectId !== null && !text(projectId)) throw new EnvironmentError('invalid');
     const key = namespace('thread', hostId, threadId), current = this.vault.readDocument(PLATFORM, key);
