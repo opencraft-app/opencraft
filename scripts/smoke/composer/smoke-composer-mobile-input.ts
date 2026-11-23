@@ -7,17 +7,22 @@ import {createIntlTestRoot} from '/tests/fixtures/intl-root.tsx';
 import {createComposerController} from '@opencraft/composer-core';
 import {OpenCraftComposer} from '@opencraft/composer-editor';
 import '/apps/workbench-web/src/styles/app.scss';
+import {openWorkbenchUiPreferences} from '/apps/workbench-web/src/runtime/ui-preferences-runtime.tsx';
+import {bindInteractionDensity} from '/apps/workbench-web/src/runtime/interaction-density.ts';
+import {bindTouchInteractionMode} from '/apps/workbench-web/src/runtime/pointer-modality.ts';
+// The host projects touch presentation and input modality; the Composer consumes them.
+const preferences=await openWorkbenchUiPreferences();bindInteractionDensity(document,preferences);bindTouchInteractionMode(document);
 const params=new URLSearchParams(location.search);
 const target=params.has('existing')?{type:'existing-thread',key:{hostId:'fixture',threadId:'one'}}:
  {type:'new-thread',draftId:'new',execution:{hostId:'fixture',workspace:{cwd:null,runtimeWorkspaceRoots:[]}}};
 const controller=createComposerController(target,{now:Date.now,createId:()=>crypto.randomUUID()});
 if(params.has('explicit'))controller.dispatch({type:'set-selections',patch:{permissionProfile:params.get('explicit')==='inherit'?null:'readonly'}});
-window.fixture={controller};
+window.fixture={controller,preferences};
 const profiles=[{id:'readonly',value:'readonly',label:'Read only',mode:'read-only',description:null,disabled:false},
 {id:'full',value:'opencraft:permission-mode:full',label:'Full access',mode:'full',description:null,disabled:params.has('unavailable')}];
 function App(){const[ready,setReady]=React.useState(!params.has('late'));window.fixture.load=()=>setReady(true);
  return <div data-selection='chrome' className={params.has('existing')?'thread-composer':'new-thread-draft-composer-zone'} style={{padding:16}}><OpenCraftComposer controller={controller}
- selectionCatalog={{models:[],permissionProfiles:ready?profiles:[]}} effectiveSelections={{permissionProfile:'readonly'}}
+ modelSelectionPolicy='host-default' selectionCatalog={{models:[],permissionProfiles:ready?profiles:[]}} effectiveSelections={{permissionProfile:'readonly'}}
  placeholder='Write a message' onSubmit={intent=>{window.fixture.intent=intent;return false;}} onCancel={()=>{}}/></div>}
 createIntlTestRoot(document.getElementById('root')).render(<App/>);`;
 const vite=await createServer({configFile:false,root:process.cwd(),logLevel:'error',optimizeDeps:{noDiscovery:true,include:['react','react-dom','react-dom/client','react/jsx-runtime','react/jsx-dev-runtime','react-intl'],force:true},resolve:{dedupe:['react','react-dom']},
@@ -37,9 +42,10 @@ try{
  assert.equal(await page.evaluate(()=>(window as any).fixture.controller.getSnapshot().draft.selections.permissionProfile),'opencraft:permission-mode:full');
  assert.equal(await editor.locator('[contenteditable="false"]').count(),0,'empty input must not contain a noneditable placeholder widget');
  assert.equal(await editor.locator('.ProseMirror-separator').count(),0);
- const geometry=await editor.evaluate(el=>({height:el.getBoundingClientRect().height,select:getComputedStyle(el).userSelect,width:innerWidth,coarse:matchMedia('(any-pointer:coarse)').matches,
+ const geometry=await editor.evaluate(el=>({height:el.getBoundingClientRect().height,select:getComputedStyle(el).userSelect,width:innerWidth,coarse:matchMedia('(any-pointer:coarse)').matches,density:document.documentElement.dataset.uiDensity,shell:el.closest('.opencraft-composer-shell')!.getBoundingClientRect().height,lineHeight:parseFloat(getComputedStyle(el).lineHeight),
  placeholder:getComputedStyle(el.querySelector('p')!,'::before').content}));
- assert.ok(geometry.height>=48,JSON.stringify(geometry));assert.equal(geometry.select,'text');assert.equal(geometry.placeholder,'"Write a message"');
+ // Touch presentation collapses an empty idle draft to one line; the shell owns the 44px touch target.
+ assert.equal(geometry.density,'touch');assert.ok(geometry.height>=geometry.lineHeight&&geometry.shell>=44,JSON.stringify(geometry));assert.equal(geometry.select,'text');assert.equal(geometry.placeholder,'"Write a message"');
  assert.equal(await editor.evaluate(el=>{const e=new MouseEvent('contextmenu',{bubbles:true,cancelable:true});el.dispatchEvent(e);return e.defaultPrevented;}),false);
  await page.evaluate(()=>navigator.clipboard.writeText('已复制的内容 pasted text'));await editor.tap();await page.keyboard.press('Control+v');
  await page.waitForFunction(()=>document.querySelector('.opencraft-composer-editor')?.textContent?.includes('已复制的内容 pasted text'));
@@ -55,8 +61,17 @@ try{
  await page.goto(origin+'?late');await editor.waitFor();assert.equal(await page.evaluate(()=>(window as any).fixture.controller.getSnapshot().draft.selections.permissionProfile),undefined);
  await page.evaluate(()=>(window as any).fixture.load());await page.waitForFunction(()=>(window as any).fixture.controller.getSnapshot().draft.selections.permissionProfile==='opencraft:permission-mode:full');
  const desktop=await browser.newPage({viewport:{width:1200,height:844}});await desktop.goto(origin);await desktop.locator('.opencraft-composer-editor').click();await desktop.keyboard.insertText('desktop submit');await desktop.keyboard.press('Enter');await desktop.waitForFunction(()=>(window as any).fixture.intent!==undefined);await desktop.close();
+ // A touch-capable device driven by mouse/trackpad, or with the touch preference off, keeps hardware Return semantics.
+ const hybrid=await context.newPage();const hybridEditor=hybrid.locator('.opencraft-composer-editor');await hybrid.goto(origin);await hybridEditor.waitFor();
+ await hybridEditor.click();await hybrid.keyboard.insertText('trackpad submit');await hybrid.keyboard.press('Enter');
+ await hybrid.waitForFunction(()=>(window as any).fixture.intent!==undefined);
+ await hybrid.goto(origin);await hybridEditor.waitFor();await hybrid.evaluate(()=>(window as any).fixture.preferences.set('interface.touchFriendly','off'));
+ await hybrid.waitForFunction(()=>document.documentElement.dataset.uiDensity==='compact');
+ await hybridEditor.tap();await hybrid.keyboard.insertText('preference off submit');await hybrid.keyboard.press('Enter');
+ await hybrid.waitForFunction(()=>(window as any).fixture.intent!==undefined);
+ await hybrid.evaluate(()=>(window as any).fixture.preferences.set('interface.touchFriendly','auto'));await hybrid.close();
  const iosContext=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true,userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'});
  await iosContext.addInitScript(()=>Object.defineProperty(navigator,'vendor',{get:()=> 'Apple Computer, Inc.'}));
  const ios=await iosContext.newPage();await ios.goto(origin);const iosEditor=ios.locator('.opencraft-composer-editor');await iosEditor.tap();await ios.keyboard.insertText('iPhone Return');await ios.keyboard.press('Enter');await ios.waitForFunction(()=>document.querySelectorAll('.opencraft-composer-editor p').length===2);assert.equal(await ios.evaluate(()=>(window as any).fixture.intent),undefined,'iOS deferred Enter must not submit');await iosContext.close();
- assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,geometry,nativeClipboardPaste:true,newThreadFullAccess:true,existingAndExplicitChoicesPreserved:true,mobileReturnNewline:true,iosDeferredReturnNewline:true,desktopEnterSubmit:true,sendButtonSubmit:true}));
+ assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,geometry,nativeClipboardPaste:true,newThreadFullAccess:true,existingAndExplicitChoicesPreserved:true,mobileReturnNewline:true,iosDeferredReturnNewline:true,desktopEnterSubmit:true,touchDeviceMouseEnterSubmit:true,touchPreferenceOffEnterSubmit:true,sendButtonSubmit:true}));
 }finally{await browser?.close();await vite.close();}
