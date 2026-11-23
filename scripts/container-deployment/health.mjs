@@ -1,4 +1,5 @@
 import { createConnection } from 'node:net';
+import { join } from 'node:path';
 import { deploymentPaths, readPrivateToken } from './paths.mjs';
 import { coreHealth } from '../server-deployment/execution.mjs';
 import { proxyHealth } from './proxy-core.mjs';
@@ -47,12 +48,13 @@ export async function checkHands(environment = process.env) {
   await checkAgent(environment, ['hands']);
   const files = createHostFileSystem({ endpoint: paths.fileSystemEndpoint, tokenFile: paths.fileSystemToken });
   const terminalToken = await readPrivateToken(paths.terminalToken);
-  const browserDirectory = environment.OPENCRAFT_BROWSER_DATA_DIR;
   const executionSocket = environment.OPENCRAFT_HANDS_EXECUTION_SOCKET;
-  if (!browserDirectory?.startsWith('/') || !executionSocket?.startsWith('/')) throw new Error('Hands health paths are invalid');
+  if (!executionSocket?.startsWith('/')) throw new Error('Hands health paths are invalid');
   try { await Promise.all([
     files.probe(AbortSignal.timeout(timeoutMs)),
-    probeSocket(`${browserDirectory}/owner.sock`, { type: 'probe', protocol: 1 }, value => value.type === 'healthy' && value.protocol === 1),
+    // The browser is probed where its clients reach it: the agent's `browser` endpoint
+    // (with root Hands it lives in the client-owned profile, not beside root state).
+    probeSocket(join(paths.agentEndpointDirectory, 'browser'), { type: 'probe', protocol: 1 }, value => value.type === 'healthy' && value.protocol === 1),
     probeSocket(executionSocket, { type: 'probe', protocol: 1 }, value => value.type === 'healthy' && value.protocol === 1),
     probeSocket(paths.terminalEndpoint, { type: 'probe', protocol: 1, token: terminalToken }, value => value.type === 'healthy' && value.protocol === 1),
   ]); } finally { files.close(); }

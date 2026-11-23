@@ -13,7 +13,12 @@ import { readCgroupLimits } from "@opencraft/sandbox-node/cgroup";
 /** How the Host reaches this agent when its provider is `static-docker`: a link
  * directory mounted only into this container and the Gateway. Other providers bring
  * their own process channel (E2B commands, docker exec, container.exec) and set none. */
-export async function serveAgentLink(agent, paths, env = process.env, { limits = () => readCgroupLimits() } = {}) {
+export async function serveAgentLink(
+  agent,
+  paths,
+  env = process.env,
+  { limits = () => readCgroupLimits(), owner } = {},
+) {
   if (!paths.agentLinkDirectory) return;
   const policy = env.OPENCRAFT_AGENT_LINK_POLICY || "relay-only";
   const python = env.OPENCRAFT_AGENT_PYTHON || "/usr/bin/python3";
@@ -24,6 +29,7 @@ export async function serveAgentLink(agent, paths, env = process.env, { limits =
     policy,
     endpointDirectory: paths.agentEndpointDirectory,
     limits,
+    ...(owner ? { owner } : {}),
     log: (value) => console.log(JSON.stringify({ ...value, incarnation: agent.incarnation.id })),
   });
   agent.defer(() => link.close());
@@ -36,7 +42,9 @@ export async function serveAgentLink(agent, paths, env = process.env, { limits =
  * container restarts with a new incarnation and upstream interrupted-turn recovery applies. */
 /** `ownerPrivileges` is a policy already validated by the composition (see
  * hands-owner-privileges.mjs); `spawnOwner(command, args, options, { role })` replaces
- * `child_process.spawn` for every child and receives each Hands owner's stable role. */
+ * `child_process.spawn` for every child and receives each Hands owner's stable role.
+ * `linkOwner` ({ uid, gid }) is the nonroot Host identity a root agent serves its
+ * static-docker link to (root Hands, root-hands.mjs); the root composition validates it. */
 export async function startWorkspaceAgent({
   roles,
   startServices,
@@ -45,6 +53,7 @@ export async function startWorkspaceAgent({
   root = resolve(dirname(fileURLToPath(import.meta.url)), ".."),
   ownerPrivileges,
   spawnOwner,
+  linkOwner,
 } = {}) {
   if (process.platform !== "linux" || !["x64", "arm64"].includes(process.arch))
     throw new Error("The native execution bundle requires matching Linux arm64 or amd64");
@@ -75,13 +84,28 @@ export async function startWorkspaceAgent({
       );
     agent.markReady();
     // The link opens only after every role is ready, so an attached Host sees a complete agent.
-    await serveAgentLink(agent, paths, env);
+    await serveAgentLink(agent, paths, env, linkOwner ? { owner: linkOwner } : {});
     for (const role of started) void role.afterReady?.();
   } catch (error) {
     if (agent.state !== "stopping") console.error(error.message);
     void agent.stop(1, "startup failed");
   }
   return agent;
+}
+
+/** Roles whose owners a root agent may run only under the explicit root Hands contract. */
+export const HANDS_AGENT_ROLES = Object.freeze(["hands", "browser"]);
+
+/** The generic agent entry never runs Hands as an implicit root identity: as UID 0 the
+ * Hands and browser roles start only through the Hands entry (hands.mjs), which
+ * requires the `OPENCRAFT_ROOT_HANDS_*` contract (root-hands.mjs). */
+export function assertGenericAgentIdentity(roles, uid = process.getuid?.()) {
+  if (uid === 0 && roles.some((role) => HANDS_AGENT_ROLES.includes(role)))
+    throw new Error(
+      "The Hands and browser roles do not run as UID 0 from the generic agent entry; " +
+        "use the Hands entry with the OPENCRAFT_ROOT_HANDS_* contract",
+    );
+  return roles;
 }
 
 export function parseAgentRoles(argv) {

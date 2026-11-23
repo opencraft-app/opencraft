@@ -177,7 +177,12 @@ export async function packageHeadlessLinux(composition = {}) {
   const require = createRequire(import.meta.url);
   if (typeof require("node-pty").spawn !== "function") throw new Error("Linux node-pty is unavailable");
   await run("npm", ["ci", "--prefix", join(repositoryRoot, "runtime/codex"), "--workspaces=false", "--omit=dev", "--no-audit", "--no-fund"]);
-  await buildHeadlessWeb({ script: process.env.OPENCRAFT_CONTAINER_WEB_SCRIPT || "build:web:release" });
+  // A distribution's product prefix (see headless-web-build.mjs) supplies its own
+  // Web script; without one this is the core root script, as before.
+  await buildHeadlessWeb({
+    script: process.env.OPENCRAFT_CONTAINER_WEB_SCRIPT || "build:web:release",
+    ...(process.env.OPENCRAFT_PRODUCT_PREFIX ? { prefix: process.env.OPENCRAFT_PRODUCT_PREFIX } : {}),
+  });
 
   const version = productVersion(repositoryRoot);
   const output = outputOverride ?? headlessArchivePath(architecture);

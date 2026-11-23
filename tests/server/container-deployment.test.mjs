@@ -360,9 +360,14 @@ test('every image stage that runs a workspace agent installs the static-docker l
   // without it attaches the Gateway and then refuses every endpoint process.
   const stages = text => {
     const result = new Map();
+    // A stage chosen by a global build argument (`FROM brain-dsh-${OPENCRAFT_BRAIN_DSH}`)
+    // is checked with the argument's default.
+    const globals = new Map();
     let current;
     for (const line of text.replace(/\\\n/gu, ' ').split('\n')) {
-      const from = /^FROM\s+(\S+)(?:\s+AS\s+(\S+))?/iu.exec(line);
+      const argument = /^ARG\s+([A-Z_]+)=(\S*)$/u.exec(line);
+      if (argument && !current) globals.set(argument[1], argument[2]);
+      const from = /^FROM\s+(\S+)(?:\s+AS\s+(\S+))?/iu.exec(line.replace(/\$\{([A-Z_]+)\}/gu, (whole, name) => globals.get(name) ?? whole));
       if (from) { current = { base: from[1], body: '' }; if (from[2]) result.set(from[2], current); continue; }
       if (current) current.body += line + '\n';
     }
@@ -384,6 +389,36 @@ test('every image stage that runs a workspace agent installs the static-docker l
       assert.ok(installsPython(all, name), `${file} stage ${name} must install python3 for the link broker`);
     }
   }
+});
+
+test('product prefix and Brain DSH are opt-in build arguments whose defaults keep the core images', async () => {
+  const dockerfile = await readFile(new URL('../../deploy/docker/Dockerfile.owned-electron', import.meta.url), 'utf8');
+  const stages = dockerfile.split(/^(?=FROM )/mu);
+  const stage = name => stages.find(text => new RegExp(`^FROM \\S+ AS ${name}\\n`, 'u').test(text));
+  // The stage name is chosen by a global argument whose default adds nothing to Brain.
+  assert.match(stages[0], /^ARG OPENCRAFT_BRAIN_DSH=none$/mu);
+  assert.equal(stage('brain'), 'FROM brain-dsh-${OPENCRAFT_BRAIN_DSH} AS brain\n\n');
+  // The default Brain stage adds only the link broker interpreter (checked above), never DSH.
+  const brain = stage('brain-dsh-none');
+  assert.match(brain, /^FROM control-runtime AS brain-dsh-none\nLABEL org\.opencraft\.role=brain\n/u);
+  assert.match(brain, /\nENTRYPOINT \[[^\n]+"brain"\]\n\n$/u);
+  assert.doesNotMatch(brain, /dsh-runtime|OPENCRAFT_DSH_EXECUTABLE/u);
+  const packaged = stage('brain-dsh-packaged');
+  assert.match(packaged, /^FROM brain-dsh-none AS/u);
+  assert.match(packaged, /COPY --from=dsh-runtime \/src\/runtime\/dsh\/node_modules \/opt\/opencraft\/runtime\/dsh\/node_modules/u);
+  assert.match(packaged, /ENV OPENCRAFT_DSH_EXECUTABLE=\/opt\/opencraft\/runtime\/dsh\/node_modules\/@deepseek-ai\/dsh\/lib\/bin\.js/u);
+  assert.match(stage('dsh-runtime'), /^FROM build-dependencies AS dsh-runtime\nRUN [^\n]*node scripts\/packaging\/prepare-dsh-runtime\.mjs\n/u);
+  // Only the opt-in Brain stage consumes the DSH install.
+  assert.deepEqual(stages.filter(text => text.includes('--from=dsh-runtime')), [packaged]);
+  // An empty prefix installs nothing beyond the core lock.
+  const dependencies = stage('build-dependencies');
+  assert.match(dependencies, /^ARG OPENCRAFT_PRODUCT_PREFIX=$/mu);
+  assert.match(dependencies, /if \[ -n "\$OPENCRAFT_PRODUCT_PREFIX" \]; then[^]*resolveProductPrefix[^]*npm ci --prefix "\$product" --no-audit --no-fund; \\\n {4}fi\n/u);
+  assert.ok(dependencies.indexOf('npm ci --no-audit --no-fund') < dependencies.indexOf('npm ci --prefix'));
+  // The final stage (the default target) is still the full image.
+  assert.match(stages.at(-1), /^FROM runtime AS full\n/u);
+  const packager = await readFile(new URL('../../scripts/packaging/package-headless-linux.mjs', import.meta.url), 'utf8');
+  assert.match(packager, /process\.env\.OPENCRAFT_PRODUCT_PREFIX \? \{ prefix: process\.env\.OPENCRAFT_PRODUCT_PREFIX \} : \{\}/u);
 });
 
 test('the local GitHub builder is portable, locked, revision-pinned and advances its moving tag only after success', async () => {

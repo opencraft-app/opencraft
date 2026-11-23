@@ -99,13 +99,24 @@ New bundles use the explicit root/client Hands contract: `OPENCRAFT_HANDS_ROOT=1
 explicit nonroot sites are not silently rewritten; `OPENCRAFT_HANDS_ROOT=0`
 remains supported with a compatible image.
 Gateway/Brain/Proxy and Chromium retain `OPENCRAFT_UID:GID`. Never set the global
-UID to zero. Use a verified new Hands image containing the product root/client
-bridge, not the old single-UID image plus a root override. No host JS injection is
+UID to zero. Use a verified Hands image whose core entry contains the root/client
+composition (`scripts/container-deployment/root-hands.mjs`), not an older single-UID
+image plus a root override. The core Hands entry selects root mode only when it
+runs as UID 0 and then requires the `OPENCRAFT_ROOT_HANDS_*` contract this profile
+sets; UID 0 without it fails at startup, and the generic `workspace-agent.mjs`
+entry refuses the Hands and browser roles as UID 0. Root mode is the same Hands
+workspace agent: it runs as root with a root-owned private run directory (the
+profile replaces the `/run/opencraft-agent` tmpfs, the fixed path the Gateway's
+endpoint relays name, with a root-owned one), supervises every owner as a critical
+child, and serves its named endpoints to the nonroot Gateway over its link, whose
+socket and ticket it hands to the client identity. No host JS injection is
 required. The generic core owner remains independent from plugin lifecycles.
 
 Set `OPENCRAFT_HOST_HANDS_ROOT_DIR=/srv/opencraft/hands-ipc` and
 `OPENCRAFT_HOST_EXECUTION_DIR=/srv/opencraft/hands-ipc/client`. The root profile
-mounts their common parent once for atomic socket hardlinks; server and client
+mounts their common parent once for atomic socket hardlinks (Brain still dials
+`exec-owner.sock` and `files.sock` in its execution directory; terminal and browser
+are agent endpoints only); server and client
 remain private separate subdirectories. Optional `OPENCRAFT_HANDS_SERVER_NAME`
 and `OPENCRAFT_HANDS_CLIENT_NAME` select retained child names without moving data.
 `OPENCRAFT_HANDS_PUBLIC_CLIENT_DIRECTORY` can retain an older Hands-side client
@@ -117,14 +128,15 @@ When the retained profile itself is a filesystem root (for example, Hands data i
 on a separate mounted disk), keep it in place with an explicit existing
 `OPENCRAFT_HANDS_BROWSER_DIRECTORY` in the common mount. Put new server/client IPC
 directories at sibling paths on that same filesystem. Startup validates profile
-ownership and tests both execution and browser hardlinks before starting owners;
+ownership and tests the execution hardlink before starting owners;
 it never creates or re-owns the declared retained profile. Separate bind aliases
 are not a substitute for one common mount, even on the same disk.
 `init` creates only missing private directories with their declared owner: server
 and Hands logs root; shared state/workspace/client IPC and other logs nonroot.
 Existing directories are not recursively chowned/chmodded. Credentials are separate
 0600 files per UID, initialized from the existing matching copy; mismatches fail
-instead of rotating credentials. Only sockets are published between 0700 roots.
+instead of rotating credentials. Only sockets are published between 0700 roots, and
+the agent publishes an endpoint only for a socket owned by the identity its owner runs as.
 Browser runs with the nonroot UID; newly created default projectless directories
 also retain client ownership. Legacy external cwds are not moved or rewritten.
 
@@ -162,3 +174,12 @@ turn. The worker advertises only execution-owned brokers; a Gateway restart must
 not revoke a live command. Disabling the profile is explicit legacy deployment
 configuration, never permission to fall back to server credentials. Managed Git
 operations with missing authority intentionally fail closed.
+
+Optional opaque account ENV delivery (`OPENCRAFT_ENVIRONMENT_DELIVERY=opaque`,
+alias `vault-owner`; see the [container README](../README.md#optional-account-env-delivery))
+is one decision for the Gateway and Brain: the compose file passes the
+`site.env` value to both, and preflight rejects a pair that disagrees, an issuer
+setting without delivery, a non-Assets execution context, an issuer file other
+than `$OPENCRAFT_DATA_DIR/run/environment-issuer.json`, or Gateway and Brain
+state directories that are not the same host directory. Hands and Proxy do not
+receive it. `OPENCRAFT_ENVIRONMENT_ISSUER_GENERATION` goes to the Gateway only.

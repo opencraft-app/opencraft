@@ -43,9 +43,11 @@ function absoluteDirectoryPath(role, name, value) {
 /**
  * The directory must exist, be a real directory owned by the dropped identity,
  * grant nothing to group or others, and be reachable only through directories
- * that another unprivileged user cannot replace.
+ * that another unprivileged user cannot replace. Ancestors may belong to root or to
+ * `ancestorUid` (default: the owner); root Hands also accepts its client identity's
+ * ancestors for its root-owned server directory.
  */
-export async function assertPrivateOwnedDirectory(path, { uid, gid }, label, stat = lstat) {
+export async function assertPrivateOwnedDirectory(path, { uid, gid, ancestorUid = uid }, label, stat = lstat) {
   let info;
   try {
     info = await stat(path);
@@ -62,7 +64,7 @@ export async function assertPrivateOwnedDirectory(path, { uid, gid }, label, sta
     // A group/other-writable ancestor lets someone swap the path, unless it is a
     // root-owned sticky directory such as /tmp.
     const replaceable = (parent.mode & 0o022) !== 0 && !(parent.uid === 0 && (parent.mode & 0o1000) !== 0);
-    if (replaceable || (parent.uid !== 0 && parent.uid !== uid))
+    if (replaceable || (parent.uid !== 0 && parent.uid !== ancestorUid))
       throw new Error(`${label} ancestor ${current} must not be replaceable by another user`);
     if (current === dirname(current)) break;
   }

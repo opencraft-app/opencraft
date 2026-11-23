@@ -1,7 +1,7 @@
 import { createServer } from "node:net";
 import { once } from "node:events";
 import { randomBytes } from "node:crypto";
-import { mkdir, rm, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import lockfile from "proper-lockfile";
 import { readPrivateToken } from "./paths.mjs";
@@ -32,6 +32,16 @@ const privateDirectory = async (path, message) => {
   if (info.uid !== process.getuid() || (info.mode & 0o077) !== 0) throw new Error(message);
 };
 const isSocket = async (path) => (await stat(path)).isSocket() || Promise.reject(new Error(`${path} is not a socket`));
+/** A Hands owner endpoint is published only when its socket belongs to the identity the
+ * owner runs as (its dropped identity, or the agent's own): with root Hands, a browser
+ * socket that is not the client's, or a root owner socket that is not root's, is never
+ * offered to the Gateway. */
+const ownedSocket = async (path, uid) => {
+  const info = await lstat(path);
+  if (!info.isSocket()) throw new Error(`${path} is not a socket`);
+  if (info.uid !== uid) throw new Error(`Hands endpoint ${path} must be a socket owned by UID ${uid}`);
+};
+const ownerUid = ({ ownerPrivileges = {} }, role) => ownerPrivileges[role]?.uid ?? process.getuid();
 const node = (root) => join(root, "bin/node");
 const runtime = (root, entry) => join(root, "runtime", entry);
 
@@ -336,6 +346,7 @@ export const handsRole = {
       attempts: 120,
       description: "Hands owners",
     });
+    for (const [owner, socket] of owners) await ownedSocket(socket, ownerUid(context, owner.role));
     const tokens = { terminal: paths.terminalToken, files: paths.fileSystemToken };
     for (const [{ name }, socket] of owners)
       await agent.publishEndpoint(
@@ -361,6 +372,7 @@ export const browserRole = {
     startHandsOwner(agent, context, handsOwner("browser"));
     const socket = join(data, "owner.sock");
     await agent.waitUntil(() => isSocket(socket), { attempts: 120, description: "Browser owner" });
+    await ownedSocket(socket, ownerUid(context, "browser"));
     await agent.publishEndpoint("browser", socket);
     return {};
   },

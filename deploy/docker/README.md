@@ -53,7 +53,8 @@ The default image follows upstream and packages the pinned stock Electron runtim
 Node and Codex are pinned by this checkout and lockfile; no account or model
 credential is included. The image does not ship DeepSeek Harness (DSH): Brain
 starts without it, and a DSH installed in the image can be bridged by setting
-`OPENCRAFT_DSH_EXECUTABLE` to its `lib/bin.js`. Model settings do not depend on
+`OPENCRAFT_DSH_EXECUTABLE` to its `lib/bin.js` (the owned-browser Dockerfile
+can package it into the Brain image, see below). Model settings do not depend on
 DSH: adding providers, choosing models and saving keys work without it, because
 Pi and Codex configured providers read the same `models/models.json`. Native
 Linux amd64 and arm64 build hosts are supported.
@@ -64,6 +65,23 @@ Internal builds can opt into a verified custom browser by setting
 `docker compose -f compose.yaml -f compose.owned-electron.yaml build`.
 That path uses `Dockerfile.owned-electron` and requires Docker Compose 2.17+.
 Custom artifacts retain their provenance and native probe checks.
+
+`Dockerfile.owned-electron` has two more opt-in build arguments; their defaults
+leave every image as before:
+
+- `OPENCRAFT_BRAIN_DSH=packaged` gives the `brain` target the separately locked
+  `runtime/dsh` installation, prepared and patched by
+  `scripts/packaging/prepare-dsh-runtime.mjs`, and sets
+  `OPENCRAFT_DSH_EXECUTABLE` to it. The default `none` builds the same Brain
+  image as before, without DSH.
+- `OPENCRAFT_PRODUCT_PREFIX=<relative directory>` names a distribution's own npm
+  project inside the build context, with its own `package.json` and
+  `package-lock.json`. The dependency stage runs `npm ci --prefix` for it after
+  the core install, and the container Web build runs
+  `OPENCRAFT_CONTAINER_WEB_SCRIPT` in that project instead of at the root. The
+  core lock and root manifest stay as committed. Combine it with
+  `OPENCRAFT_CONTAINER_GATEWAY_ENTRY`, `OPENCRAFT_CONTAINER_GATEWAY_BUILD_SCRIPT`
+  and `OPENCRAFT_CONTAINER_HANDS_ENTRY` to compose a downstream product.
 
 ```sh
 cd docker
@@ -332,6 +350,33 @@ browser creates `owner.sock` in its own directory; the agent publishes it as the
 `browser` endpoint, and the Gateway's relay must be able to connect to it.
 Owners left as root create root-owned sockets; giving non-root clients access to
 them is a deployment decision outside this option.
+
+The standard core composition of this option is root Hands
+(`scripts/container-deployment/root-hands.mjs`), which the Hands entry
+(`native-hands.mjs`) selects when it runs as UID 0; the generic
+`workspace-agent.mjs` entry refuses the Hands and browser roles as UID 0, and the
+Hands entry fails without the explicit `OPENCRAFT_ROOT_HANDS_*` contract. Root
+Hands is the same workspace agent with one more identity and directory
+composition: the agent and its execution, terminal and files owners run as root
+in a private server directory, the browser owner runs as
+`OPENCRAFT_HANDS_CLIENT_UID:GID` in its client-owned profile, and every owner is
+still a critical agent child reached only through the agent's named endpoints.
+The agent checks that each endpoint socket belongs to the identity its owner runs
+as before publishing it, and serves its static-docker link with the socket and
+ticket owned by the client identity so the nonroot Gateway can attach. Because the
+agent runs as root, its run directory must be a root-owned private tmpfs (the
+profile replaces the `/run/opencraft-agent` tmpfs with a root-owned one).
+
+Only Brain still reaches Hands outside the agent, through the shared execution
+directory (`exec-owner.sock` for Codex execution and `files.sock` for Pi and DSH,
+until Brain and Hands merge). For it the root composition publishes those two root
+sockets by hardlink into a private client directory in the same mount; terminal
+and browser are endpoints only. Each of these owner credentials has one 0600 copy
+per identity with the same value; startup creates only missing copies and empty
+default directories through no-follow descriptors, and fails instead of rotating
+credentials or re-owning existing data. The deployment profile is
+`deploy/compose.root-hands.yaml`; see the [deployment README](deploy/README.md)
+for the host layout.
 
 ## Optional account ENV delivery
 

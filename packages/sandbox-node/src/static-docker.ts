@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { constants } from "node:fs";
-import { access, chmod, lstat, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { access, chmod, lchown, lstat, open, readFile, rename, rm } from "node:fs/promises";
 import { createConnection, createServer, type Server, type Socket } from "node:net";
 import { isAbsolute, join } from "node:path";
 import {
@@ -96,11 +96,15 @@ function firstLine(
 }
 const frame = (value: Record<string, unknown>) => JSON.stringify({ ...value, protocol: SANDBOX_LINK_PROTOCOL }) + "\n";
 
-async function privateDirectory(path: string) {
+async function privateDirectory(path: string, uid: number | undefined) {
   const info = await lstat(path);
-  if (!info.isDirectory() || info.isSymbolicLink() || info.uid !== process.getuid?.() || (info.mode & 0o077) !== 0)
-    throw Error("The sandbox link directory must be a private directory owned by this user");
+  if (!info.isDirectory() || info.isSymbolicLink() || info.uid !== uid || (info.mode & 0o077) !== 0)
+    throw Error("The sandbox link directory must be a private directory owned by the link's Host identity");
 }
+
+/** A numeric identity other than root. */
+const isClientIdentity = (owner: { uid: number; gid: number }) =>
+  [owner.uid, owner.gid].every((id) => Number.isSafeInteger(id) && id > 0 && id <= 2 ** 31 - 1);
 
 export interface SandboxLinkServerOptions {
   /** The link directory: mounted into the Host and this container only. */
@@ -114,6 +118,10 @@ export interface SandboxLinkServerOptions {
   /** Effective limits of this environment; `null` dimensions are unlimited. */
   limits(): Promise<{ cpuMillis: number | null; memoryBytes: number | null; tasks: number | null }>;
   readonly log?: (event: Record<string, unknown>) => void;
+  /** The Host's nonroot identity when the agent runs as root (root Hands): the link
+   * directory must belong to it, and the agent gives it the socket and the ticket.
+   * Without it, the Host runs as the agent's own identity. */
+  readonly owner?: { readonly uid: number; readonly gid: number };
 }
 
 /** Agent side of the link: serves the broker to the one attached Host session. */
@@ -125,7 +133,10 @@ export async function serveSandboxLink(options: SandboxLinkServerOptions) {
     !["relay-only", "any"].includes(options.policy)
   )
     throw Error("Invalid sandbox link configuration");
-  await privateDirectory(options.directory);
+  const owner = options.owner;
+  if (owner && (process.getuid?.() !== 0 || !isClientIdentity(owner)))
+    throw Error("A sandbox link owner is a nonroot Host identity served by a root agent");
+  await privateDirectory(options.directory, owner?.uid ?? process.getuid?.());
   // Every open runs the broker under this interpreter: an image without it must fail the
   // agent's start (unhealthy, logged), not accept attaches and then refuse every process.
   try {
@@ -145,7 +156,14 @@ export async function serveSandboxLink(options: SandboxLinkServerOptions) {
   const rotate = async () => {
     ticket = randomBytes(32).toString("hex");
     const temporary = `${ticketPath}.${randomBytes(6).toString("hex")}`;
-    await writeFile(temporary, ticket + "\n", { mode: 0o600, flag: "wx" });
+    // Exclusive creation never follows a planted link; the owner is set on the open file.
+    const file = await open(temporary, "wx", 0o600);
+    try {
+      if (owner) await file.chown(owner.uid, owner.gid);
+      await file.writeFile(ticket + "\n");
+    } finally {
+      await file.close();
+    }
     await rename(temporary, ticketPath);
   };
   const revoke = (reason: string) => {
@@ -295,7 +313,14 @@ export async function serveSandboxLink(options: SandboxLinkServerOptions) {
       resolve();
     });
   });
-  await chmod(socketPath, 0o600);
+  if (owner) {
+    // The directory is the Host's private 0700 directory, so the socket keeps its creation
+    // mode and only changes owner; lchown never follows a link swapped in after listen.
+    const socket = await lstat(socketPath);
+    if (!socket.isSocket() || socket.uid !== process.getuid?.())
+      throw Error("The sandbox link socket changed before it was handed to the Host");
+    await lchown(socketPath, owner.uid, owner.gid);
+  } else await chmod(socketPath, 0o600);
   // The ticket appears last: its presence means the link is accepting.
   await rotate();
   let closing: Promise<void> | undefined;

@@ -16,7 +16,7 @@
     "demo:personal": "node scripts/demo-personal-assistant.mjs",
     "accept:real": "node scripts/accept-personal-assistant.mjs",
     "eval:memory": "node evaluation/longmemeval.mjs",
-    "test:eval-memory": "node --test --test-concurrency=1 evaluation/*.test.mjs",
+    "test:eval-memory": "node --test --test-concurrency=1 evaluation/*.test.mjs evaluation/pibench/*.test.mjs",
     "test:memory-mechanisms": "node --test --test-concurrency=1 test/memory-learning.test.mjs test/memory-parity.test.mjs test/memory-files.test.mjs test/conversation-context.test.mjs",
     "eval:lifecycle": "node evaluation/lifecycle-probe.mjs",
     "eval:memory-system": "node evaluation/memory-system.mjs"
