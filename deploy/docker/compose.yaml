@@ -62,6 +62,15 @@ x-log-volume: &log-volume
 x-agent-run: &agent-run
   - /run/opencraft-agent:uid=${OPENCRAFT_UID},gid=${OPENCRAFT_GID},mode=0700,size=16m
 
+# The static-docker link of each workspace container: a tmpfs volume mounted only into
+# that container (/run/opencraft-link) and the Gateway (/run/opencraft-links/<service>).
+# The agent serves the sandbox broker there behind a one-time ticket; the Gateway never
+# holds a Docker socket and reads no Brain/Hands state from the shared data directory.
+x-link-options: &link-options
+  type: tmpfs
+  device: tmpfs
+  o: "uid=${OPENCRAFT_UID},gid=${OPENCRAFT_GID},mode=0700,size=1m"
+
 x-environment: &environment
   OPENCRAFT_GIT_RUNTIME_DIRECTORY: /var/lib/opencraft/git-credentials
   OPENCRAFT_DATA_DIR: ${OPENCRAFT_DATA_DIR}
@@ -116,6 +125,9 @@ services:
     build: *build
     pid: host
     tmpfs: *agent-run
+    # The workspace budget the Gateway requests through static-docker; Compose enforces it.
+    cpus: ${OPENCRAFT_BRAIN_CPUS:-4.0}
+    mem_limit: ${OPENCRAFT_BRAIN_MEMORY_BYTES:-8589934592}
     entrypoint: ["/opt/opencraft/bin/node", "/opt/opencraft/runtime/container-service.mjs", "brain"]
     environment:
       <<: *environment
@@ -127,7 +139,11 @@ services:
       # Brain opens Hands execution leases with this budget; Hands rejects any other.
       OPENCRAFT_HANDS_CPUS: ${OPENCRAFT_HANDS_CPUS:-4.0}
       OPENCRAFT_HANDS_MEMORY_BYTES: ${OPENCRAFT_HANDS_MEMORY_BYTES:-8589934592}
+      OPENCRAFT_AGENT_LINK_DIR: /run/opencraft-link
     volumes:
+      - type: volume
+        source: brain-link
+        target: /run/opencraft-link
       - *git-volume
       - *data-volume
       - *workspace-volume
@@ -168,12 +184,16 @@ services:
       OPENCRAFT_HANDS_CPUS: ${OPENCRAFT_HANDS_CPUS:-4.0}
       OPENCRAFT_HANDS_MEMORY_BYTES: ${OPENCRAFT_HANDS_MEMORY_BYTES:-8589934592}
       HOME: ${OPENCRAFT_EXECUTION_DIR:-${OPENCRAFT_DATA_DIR}/execution}
+      OPENCRAFT_AGENT_LINK_DIR: /run/opencraft-link
     # Chromium creates its own PID/network sandbox namespaces. Docker's
     # default capability set cannot do that; keep only the capabilities the
     # sandbox helper needs instead of disabling Chromium's sandbox.
     cap_drop: [ALL]
     cap_add: [SYS_ADMIN, SETUID, SETGID, SYS_CHROOT]
     volumes:
+      - type: volume
+        source: hands-link
+        target: /run/opencraft-link
       - *git-volume
       - *hands-volume
       - *workspace-volume
@@ -196,15 +216,33 @@ services:
     <<: *runtime
     build: *build
     pid: host
+    # Private local sockets for workspace endpoints (codex-control, pi, terminal, ...)
+    # and copies of their credentials; never shared with another container.
+    tmpfs:
+      - /run/opencraft-gateway:uid=${OPENCRAFT_UID},gid=${OPENCRAFT_GID},mode=0700,size=1m
     entrypoint: ["/opt/opencraft/bin/node", "/opt/opencraft/runtime/container-service.mjs", "gateway"]
     environment:
       <<: *environment
-      OPENCRAFT_BROWSER_OWNER_SOCKET: ${OPENCRAFT_BROWSER_DATA_DIR:-${OPENCRAFT_EXECUTION_DIR:-${OPENCRAFT_DATA_DIR}/execution}/browser}/owner.sock
+      # Where the default workspace runs (one URI per environment; Brain and Hands are
+      # separate containers until they merge). Each budget must match the service's limits.
+      OPENCRAFT_WORKSPACE_ENVIRONMENTS: static-docker://brain static-docker://hands
+      OPENCRAFT_WORKSPACE_LINK_ROOT: /run/opencraft-links
+      OPENCRAFT_GATEWAY_RUN_DIR: /run/opencraft-gateway
+      OPENCRAFT_BRAIN_CPUS: ${OPENCRAFT_BRAIN_CPUS:-4.0}
+      OPENCRAFT_BRAIN_MEMORY_BYTES: ${OPENCRAFT_BRAIN_MEMORY_BYTES:-8589934592}
+      OPENCRAFT_HANDS_CPUS: ${OPENCRAFT_HANDS_CPUS:-4.0}
+      OPENCRAFT_HANDS_MEMORY_BYTES: ${OPENCRAFT_HANDS_MEMORY_BYTES:-8589934592}
       OPENCRAFT_USER_PLUGIN_DIRECTORY: ${OPENCRAFT_USER_PLUGIN_DIRECTORY:-${OPENCRAFT_DATA_DIR}/user-plugins}
       # The personal assistant gateway reaches configured providers through the proxy too.
       OPENCRAFT_ASSISTANT_PROXY_CALLER_FILE: ${OPENCRAFT_DATA_DIR}/run/proxy-callers/assistant.json
     command: ["--host", "127.0.0.1", "--port", "${OPENCRAFT_PORT:-10000}", "--data-dir", "${OPENCRAFT_DATA_DIR}", "--engines", "dsh,pi", "--default-engine", "pi"]
     volumes:
+      - type: volume
+        source: brain-link
+        target: /run/opencraft-links/brain
+      - type: volume
+        source: hands-link
+        target: /run/opencraft-links/hands
       - *git-volume
       - *data-volume
       - *workspace-volume
@@ -227,3 +265,11 @@ services:
       start_interval: 2s
       retries: 3
     stop_grace_period: 30s
+
+volumes:
+  brain-link:
+    driver: local
+    driver_opts: *link-options
+  hands-link:
+    driver: local
+    driver_opts: *link-options

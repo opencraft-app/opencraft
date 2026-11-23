@@ -10,9 +10,22 @@ containers:
 | `brain` | Codex AppServer, DSH/Pi execution and task/session lifetime | public ingress, browser tabs, model credentials or Codex native filesystem/shell execution |
 | `hands` | remote-browser resources and the pinned Codex `exec-server` | account admission, AppServer state or conversation orchestration |
 
-Recreating `gateway` leaves Brain tasks and Hands tabs alive. The Gateway
-reattaches to both through private descriptors/sockets and never receives a
-Docker socket.
+Recreating `gateway` leaves Brain tasks and Hands tabs alive. The Gateway never
+receives a Docker socket and reads no Brain/Hands descriptor or socket from the
+shared data directory: it reaches them as workspace endpoints
+(`workspace://default/endpoints/<name>`) through the `static-docker` provider.
+Each workspace container's agent serves the sandbox process broker on a **link**:
+a tmpfs volume mounted only into that container (`/run/opencraft-link`) and the
+Gateway (`/run/opencraft-links/brain`, `/run/opencraft-links/hands`), behind a
+one-time ticket. Where the default workspace runs is one setting on the Gateway,
+`OPENCRAFT_WORKSPACE_ENVIRONMENTS=static-docker://brain static-docker://hands`.
+The Gateway keeps its local endpoint sockets in its own private tmpfs
+(`/run/opencraft-gateway`) and its placement record (each environment's receipt and
+agent incarnation) in `$OPENCRAFT_DATA_DIR/workspaces/default/host/placement.json`;
+after a Gateway restart it re-attaches to the same incarnations without restarting
+either container, and a changed incarnation is logged as a `workspace-placement`
+event. The link only admits the fixed relay to the agent's allow-listed endpoints
+(`OPENCRAFT_AGENT_LINK_POLICY=relay-only`, the default).
 
 Brain and Hands each run one **workspace agent** as their main process
 (`workspace-agent.mjs --role brain`; Hands uses the same agent with the `hands`
@@ -153,6 +166,15 @@ Container paths have one convention, independent of the deployment user's home:
 | Conversations without a project | `/workspace/sessions/codex/<id>`, `/workspace/sessions/dsh/<id>` | Under `/srv/opencraft/workspaces/sessions` |
 | Service logs | `/var/log/opencraft/<service>/service.log` | `/srv/opencraft/logs/<service>/service.log` |
 | Workspace agent run directory (Brain, Hands) | `/run/opencraft-agent` | None: a private tmpfs per container, fresh on each start |
+| static-docker link (Brain, Hands; also mounted into Gateway) | `/run/opencraft-link` (Gateway: `/run/opencraft-links/<service>`) | None: Compose tmpfs volumes `<project>_brain-link`, `<project>_hands-link` |
+| Gateway endpoint sockets and credential copies | `/run/opencraft-gateway` | None: a private tmpfs in the Gateway container |
+| Default workspace placement record | `/var/lib/opencraft/workspaces/default/host` | `/srv/opencraft/state/workspaces/default/host` |
+
+Brain now has a declared budget like Hands (`OPENCRAFT_BRAIN_CPUS`, default `4.0`;
+`OPENCRAFT_BRAIN_MEMORY_BYTES`, default 8 GiB): the Gateway requests exactly the
+declared budgets and refuses an environment whose enforced cgroup limits differ.
+Raise both values in `.env` (they are read by `brain` and `gateway`) if Brain needs
+more memory.
 
 Keep an OpenCraft source checkout at `/workspace/projects/opencraft` when the
 agent needs to maintain it. A checkout under `/tmp` is temporary, not a deployment
@@ -346,7 +368,8 @@ and that the deployment UID can write `deploy/docker/` (for `.env`) and
 `$OPENCRAFT_HOST_DATA_DIR/deployment/` (for `compose-state.json`), so a release
 never fails after replacing every owner; that the rendered `brain` and `hands`
 services keep `/run/opencraft-agent` on a private tmpfs (Compose files older than
-the workspace agent lack it; update `deploy/docker/` first);
+the workspace agent lack it; update `deploy/docker/` first) and that each has its
+static-docker link volume shared with the Gateway only;
 uses a deployment lock; applies and waits for each owner in strict dependency
 order (`hands`, `proxy`, `brain`, `gateway`); and writes `.env` only after all four are
 healthy. A Brain that still embeds the account Core is stopped before `proxy`
@@ -370,8 +393,12 @@ the switch. Until then do not run a plain `docker compose up`, which would start
 not deployment settings; `doctor` refuses them in `.env`.
 Rolling back from a workspace-agent image to an older one needs no extra step:
 the older image ignores the tmpfs and `OPENCRAFT_AGENT_RUN_DIR` and writes its
-launch configuration to `$OPENCRAFT_DATA_DIR/run` again, which the newer Brain
-removes on its next start.
+launch configuration, engine descriptors and AppServer sockets to
+`$OPENCRAFT_DATA_DIR/run` again, which the newer Brain removes on its next start.
+During an upgrade the old Gateway loses Brain between the `brain` and `gateway`
+steps (the new Brain no longer publishes those descriptors); the transaction replaces
+the Gateway next. The link volumes hold no data; `docker compose down --volumes`
+removes them.
 After a successful change, this explicit command reuses the recorded previous
 image:
 
@@ -461,7 +488,7 @@ opencraft-github-build.timer` shows the next run; build logs are available throu
 ## Validation
 
 ```sh
-node --import tsx --test ../tests/server/container-deployment.test.mjs ../tests/server/container-service.test.mjs ../tests/server/workspace-agent.test.mjs
+node --import tsx --test ../tests/server/container-deployment.test.mjs ../tests/server/container-service.test.mjs ../tests/server/workspace-agent.test.mjs ../tests/server/gateway-workspace.test.mjs
 OPENCRAFT_IMAGE=opencraft:local node ../scripts/smoke/server/smoke-container.mjs
 ```
 

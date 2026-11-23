@@ -16,10 +16,10 @@ import { TURN_RECOVERY_EXTENSION } from "@opencraft/appserver-protocol";
 import { readHostMachineIdentity } from "./machine-identity.js";
 import { parseRuntimeMachineIdentity, type RuntimeMachineIdentity } from "@opencraft/appserver-protocol";
 import { randomBytes, randomUUID } from "node:crypto";
-import { readFile, readdir, stat, lstat, writeFile, mkdtemp, rm, access } from "node:fs/promises";
+import { readFile, readdir, stat, lstat, writeFile, mkdtemp, rm, access, chmod } from "node:fs/promises";
 import { createServer } from "node:http";
 import { homedir, tmpdir } from "node:os";
-import { resolve, dirname, join } from "node:path";
+import { resolve, dirname, join, isAbsolute } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { WebSocket, WebSocketServer } from "ws";
@@ -145,6 +145,8 @@ export async function startLocalAgentHost(options: {
   };
   readonly host?: string;
   readonly port?: number;
+  /** Listen on this private Unix socket instead of TCP (workspace endpoint mode). */
+  readonly socketPath?: string;
   readonly token?: string;
   readonly dshUrl?: string;
   readonly executionCli?: import("@opencraft/session-capabilities/execution-cli").ScopedExecutionCliPort;
@@ -1096,15 +1098,21 @@ export async function startLocalAgentHost(options: {
       unsubscribe(); unsubscribeAgents(); unsubscribeProcesses(); connectorListeners.delete(connectorChanged); unsubscribeDocuments();
     });
   });
+  if (options.socketPath !== undefined && (!isAbsolute(options.socketPath) || Buffer.byteLength(options.socketPath) > 107 || options.port !== undefined || options.host !== undefined))
+    throw new Error("Local Agent Host socket must be a short absolute path without a TCP address");
+  if (options.socketPath !== undefined) await rm(options.socketPath, { force: true });
   await new Promise<void>((resolvePromise, reject) => {
     server.once("error", reject);
-    server.listen(options.port ?? 0, options.host ?? "127.0.0.1", () => {
+    const listening = () => {
       server.off("error", reject);
       resolvePromise();
-    });
+    };
+    if (options.socketPath !== undefined) server.listen(options.socketPath, listening);
+    else server.listen(options.port ?? 0, options.host ?? "127.0.0.1", listening);
   });
+  if (options.socketPath !== undefined) await chmod(options.socketPath, 0o600);
   const address = server.address();
-  if (address === null || typeof address === "string") throw new Error("Local Agent Host did not bind a TCP port");
+  if (address === null || typeof address === "string" && options.socketPath === undefined) throw new Error("Local Agent Host did not bind a TCP port");
   if (options.dataDirectory) {
     const taskAgent = await startTasksAgent({
       admission: options.ownerHandoff,
@@ -1130,7 +1138,8 @@ export async function startLocalAgentHost(options: {
   if (options.ownerHandoff?.open() && dshInstalled) await capabilityLink!.nativeOwner("resume");
   schedules.start();
   interrupted.recovery.wake();
-  const websocketUrl = `ws://127.0.0.1:${address.port}/rpc?token=${encodeURIComponent(token)}`;
+  const websocketUrl = typeof address === "string" ? `ws+unix://${options.socketPath}:/rpc?token=${encodeURIComponent(token)}`
+    : `ws://127.0.0.1:${address.port}/rpc?token=${encodeURIComponent(token)}`;
   return {
     websocketUrl,
     inputs,

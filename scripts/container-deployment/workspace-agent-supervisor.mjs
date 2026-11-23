@@ -45,7 +45,7 @@ export function createWorkspaceAgentSupervisor({
   stopTimeoutMs = 10_000,
 }) {
   if (!incarnation?.id) throw new Error('Workspace agent incarnation is required');
-  const children = [], endpoints = new Map(), cleanups = [], lifecycle = new AbortController();
+  const children = [], endpoints = new Map(), descriptors = new Map(), cleanups = [], lifecycle = new AbortController();
   let state = 'starting', stopping, control, settle;
   const exited = new Promise(resolve => { settle = resolve; });
 
@@ -126,12 +126,17 @@ export function createWorkspaceAgentSupervisor({
   }
 
   /** Publishes `name` in the fixed endpoint directory. Only allow-listed names; the
-   * target is chosen by the role, never by a caller. */
-  async function publishEndpoint(name, target) {
+   * target is chosen by the role, never by a caller. `describe` returns what the
+   * endpoint's client needs besides bytes (bearer tokens, engine descriptor); it is
+   * answered only on the control endpoint, which the Host reaches through its
+   * authenticated provider channel. */
+  async function publishEndpoint(name, target, describe) {
     if (!isSandboxEndpointName(name) || name === 'control') throw new Error(`Endpoint ${name} is not allowed`);
     if (!isAbsolute(target) || target.includes('\0')) throw new Error('Endpoint target must be an absolute socket path');
+    if (describe !== undefined && typeof describe !== 'function') throw new Error('Endpoint description must be a function');
     await symlink(target, join(runDirectory, 'endpoints', name));
     endpoints.set(name, target);
+    if (describe) descriptors.set(name, describe);
   }
 
   async function serveControl() {
@@ -150,6 +155,14 @@ export function createWorkspaceAgentSupervisor({
         try { request = JSON.parse(buffered.slice(0, end)); } catch { socket.destroy(); return; }
         if (request?.protocol !== CONTROL_PROTOCOL) { socket.end(JSON.stringify({ type: 'error', error: 'unsupported protocol' }) + '\n'); return; }
         if (request.type === 'probe') { socket.end(JSON.stringify({ type: state === 'ready' ? 'healthy' : state, ...describe() }) + '\n'); return; }
+        if (request.type === 'describe') {
+          const describe = descriptors.get(request.name);
+          if (state !== 'ready' || !describe) { socket.end(JSON.stringify({ type: 'error', protocol: CONTROL_PROTOCOL, error: 'endpoint not described' }) + '\n'); return; }
+          void Promise.resolve().then(describe).then(
+            descriptor => socket.end(JSON.stringify({ type: 'endpoint', protocol: CONTROL_PROTOCOL, name: request.name, descriptor }) + '\n'),
+            () => socket.end(JSON.stringify({ type: 'error', protocol: CONTROL_PROTOCOL, error: 'endpoint unavailable' }) + '\n'));
+          return;
+        }
         if (request.type === 'drain') {
           socket.end(JSON.stringify({ type: 'draining', protocol: CONTROL_PROTOCOL, incarnation }) + '\n');
           void stop(0, 'drain');

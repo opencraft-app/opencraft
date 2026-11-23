@@ -67,7 +67,8 @@ export async function checkBrain(environment = process.env) {
   const paths = deploymentPaths(environment);
   await Promise.all([
     checkAgent(environment, ['brain']),
-    coreHealth(paths.coreEndpoint, paths.tokenPath),
+    // The AppServer owner in this container (the account Core is the proxy service's health).
+    coreHealth(paths.appServerEndpoint, paths.proxyMode === 'external' ? paths.appServerTokenFile : paths.tokenPath),
     readEngineHostIdentity(paths.engineDescriptor),
     readDshHostIdentity(paths.dshDescriptor),
   ]);

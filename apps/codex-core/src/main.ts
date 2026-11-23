@@ -20,6 +20,8 @@ export interface CodexCoreOptions extends CodexAccountServiceOptions {
   readonly runtimeDirectory: string;
   /** Explicit opt-in; omitted deployments retain the combined process. */
   readonly appServerEndpoint?: string;
+  /** Split account Core without a runtime owner to forward health to. */
+  readonly accountsOnly?: boolean;
   readonly spawnAppServer?: (input: { args: readonly string[]; cwd: string; env: NodeJS.ProcessEnv }) => ChildProcessWithoutNullStreams;
   readonly onFailure?: (error: Error) => void;
 }
@@ -31,7 +33,7 @@ export async function startCodexCore(options: CodexCoreOptions) {
     throw new Error("Codex core paths must be absolute");
   }
   if (options.authToken.length < 32) throw new Error("Codex core requires a private daemon token (at least 32 characters)");
-  if (options.appServerEndpoint) return startSplitCodexCore(options);
+  if (options.appServerEndpoint || options.accountsOnly) return startSplitCodexCore(options);
   const nativeSocket = join(dirname(options.endpoint), "native.sock");
   if (nativeSocket === options.endpoint) throw new Error("Codex core control endpoint must differ from native.sock");
   const releaseWriter = await acquireCodexWriter(options.dataDirectory);

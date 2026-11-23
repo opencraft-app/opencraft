@@ -5,7 +5,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { Socket } from "node:net";
-import { createSandbox, createSandboxPool, openSandboxEndpoint, SandboxFault, type Sandbox, type SandboxPool } from "@opencraft/sandbox";
+import { createSandbox, createSandboxPool, createWorkspaceRuntime, openSandboxEndpoint, parseSandboxEnvironmentUri, parseWorkspaceEndpointUri,
+  SandboxFault, type Sandbox, type SandboxPool, type WorkspacePlacementRecord } from "@opencraft/sandbox";
 import { harnesses, type EndpointHarness } from "./fixtures/sandbox-endpoint-backends";
 
 const until = async (condition: () => boolean, ms = 10000) => {
@@ -154,6 +155,72 @@ for (const make of await harnesses()) {
         (e: unknown) => e instanceof SandboxFault && e.code === "SANDBOX_POLICY");
       assert.equal(h.commands.length, count, "rejected names never spawn a relay");
       await sandbox.close();
+    });
+
+    await t.test("receipt re-attach binds only the same instance; otherwise SANDBOX_UNAVAILABLE", async () => {
+      const unavailable = (e: unknown) => e instanceof SandboxFault && e.code === "SANDBOX_UNAVAILABLE";
+      if (!h.backend.attach) {
+        await assert.rejects(pool.attachSandbox({ owner: "conformance", receipt: { backend: h.backend.id, instanceId: "x" } }), unavailable);
+        return;
+      }
+      const first = await createSandbox(pool, { owner: "conformance" });
+      const receipt = first.receipt!;
+      assert.equal(receipt.backend, h.backend.id);
+      // A restarted Host: a new backend and pool over the same provider instances.
+      const restarted = await createSandboxPool({ id: "endpoint-restarted", capacity: h.resources, defaults: h.resources }, h.reconnect!());
+      try {
+        const again = await restarted.attachSandbox({ owner: "conformance", receipt });
+        assert.deepEqual(again.receipt, receipt);
+        const chunks: Buffer[] = [], connection = await open(again, await h.listen(echo), chunks);
+        await connection.write(Buffer.from("re-attached"));
+        await until(() => Buffer.concat(chunks).toString() === "re-attached");
+        await connection.close();
+        await again.close();
+        await assert.rejects(restarted.attachSandbox({ owner: "conformance", receipt: { backend: "another-provider", instanceId: receipt.instanceId } }), unavailable);
+        await assert.rejects(restarted.attachSandbox({ owner: "conformance", receipt: { ...receipt, instanceId: receipt.instanceId.replace(/.$/u, c => c === "0" ? "1" : "0") } }), unavailable);
+        await h.replaceInstance!();
+        await assert.rejects(restarted.attachSandbox({ owner: "conformance", receipt }), unavailable, "a replaced instance is never re-attached");
+      } finally { await restarted.close().catch(() => {}); await first.close().catch(() => {}); }
+    });
+
+    await t.test("workspace:// endpoints resolve through the agent control endpoint of the provider's environment", async () => {
+      const incarnation = { id: "a".repeat(32), evidence: "e", startedAt: new Date(0).toISOString() };
+      const control = await h.listen(socket => {
+        let text = "";
+        socket.on("data", data => {
+          text += data;
+          if (!text.includes("\n")) return;
+          const request = JSON.parse(text.slice(0, text.indexOf("\n")));
+          socket.end(JSON.stringify(request.type === "describe"
+            ? { protocol: 1, type: "endpoint", name: request.name, descriptor: { token: "from-control" } }
+            : { protocol: 1, type: "healthy", state: "ready", roles: ["hands"], incarnation, endpoints: ["terminal"] }) + "\n");
+        });
+        socket.on("error", () => {});
+      }, "control");
+      const endpointDirectory = control.slice(0, control.lastIndexOf("/"));
+      await h.listen(echo, "terminal");
+      const records = new Map<string, WorkspacePlacementRecord>(), events: string[] = [];
+      const runtime = createWorkspaceRuntime({
+        workspaceId: "default", owner: "conformance", onEvent: event => events.push(event.type),
+        environments: [{ address: parseSandboxEnvironmentUri(`${h.backend.id}://conformance`), pool, python: h.python, endpointDirectory }],
+        store: { read: async address => records.get(address.target), write: async (address, record) => { records.set(address.target, record); } },
+      });
+      try {
+        const chunks: Buffer[] = [];
+        const connection = await runtime.connect(parseWorkspaceEndpointUri("workspace://default/endpoints/terminal"), data => chunks.push(Buffer.from(data)));
+        await connection.write(Buffer.from("by uri"));
+        await until(() => Buffer.concat(chunks).toString() === "by uri");
+        await connection.close();
+        assert.deepEqual(await runtime.describe(parseWorkspaceEndpointUri("workspace://default/endpoints/terminal")), { token: "from-control" });
+        assert.deepEqual((await runtime.observe()).map(value => value.incarnation), [incarnation.id]);
+        assert.equal(records.get("conformance")?.agentIncarnation, incarnation.id);
+        assert.equal(records.get("conformance")?.receipt?.backend, h.backend.attach ? h.backend.id : undefined);
+        assert.deepEqual(events, ["created"]);
+        await assert.rejects(runtime.connect(parseWorkspaceEndpointUri("workspace://default/endpoints/pi"), () => {}),
+          (e: unknown) => e instanceof SandboxFault && e.code === "SANDBOX_UNAVAILABLE");
+        await assert.rejects(runtime.connect(parseWorkspaceEndpointUri("workspace://other/endpoints/terminal"), () => {}),
+          (e: unknown) => e instanceof SandboxFault && e.code === "SANDBOX_POLICY");
+      } finally { await runtime.close(); }
     });
 
     await t.test("contract validation: attached is pipe-only and invalid targets never spawn", async () => {

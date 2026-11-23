@@ -5,6 +5,7 @@ import { mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import lockfile from 'proper-lockfile';
 import { readPrivateToken } from './paths.mjs';
+import { readPrivateJson } from '../../apps/headless-server/src/server-deployment/dsh-host-client.mjs';
 import { handsResources } from './resources.mjs';
 import { coreHealth } from '../server-deployment/execution.mjs';
 import { readDshHostIdentity } from '../../apps/headless-server/src/server-deployment/dsh-host-client.mjs';
@@ -35,17 +36,24 @@ export const brainRole = {
     await mkdir(paths.runDirectory, { recursive: true, mode: 0o700 });
     const release = await lockfile.lock(join(paths.dataDirectory, 'native-host'), { realpath: false, retries: 0 });
     agent.defer(() => release());
-    // Releases before the workspace agent kept launch configuration and the native
-    // listener in the shared run directory; under the lock no other Brain uses them.
-    for (const name of ['engine-host-config.json', 'dsh-host-config.json', 'codex-hands-sandbox.json', 'native-internal.sock'])
+    // Earlier releases kept launch configuration, engine descriptors and the AppServer
+    // sockets in the shared run directory; under the lock no other Brain uses them.
+    for (const name of ['engine-host-config.json', 'dsh-host-config.json', 'codex-hands-sandbox.json', 'native-internal.sock',
+      'engine-host.json', 'dsh-host.json', 'codex-app-server.sock', 'native.sock'])
       await rm(join(paths.runDirectory, name), { force: true });
     const executionResources = handsResources(env);
     try { await writeFile(paths.tokenPath, randomBytes(32).toString('hex') + '\n', { mode: 0o600, flag: 'wx' }); }
     catch (error) { if (error.code !== 'EEXIST') throw error; }
     await readPrivateToken(paths.tokenPath);
+    // The AppServer owner's own control credential, fresh per incarnation and handed to
+    // the Host only through the control endpoint. The embedded account Core (restore
+    // path) forwards health with the account token, so that mode keeps one token.
+    const appServerTokenFile = paths.proxyMode === 'external' ? paths.appServerTokenFile : paths.tokenPath;
+    if (paths.proxyMode === 'external') await writeFile(paths.appServerTokenFile, randomBytes(32).toString('hex') + '\n', { mode: 0o600, flag: 'wx' });
+    await privateDirectory(paths.codexPrivateDirectory, 'The Codex private directory must be private');
     // Launch configuration is agent-private: only this container's children read it.
     await writeFile(paths.engineConfig, JSON.stringify({
-      descriptorPath: paths.engineDescriptor, dataDirectory: paths.dataDirectory,
+      descriptorPath: paths.engineDescriptor, socketPath: paths.engineSocket, dataDirectory: paths.dataDirectory,
       runtimeDirectory: paths.runtimeDirectory, engines: ['dsh', 'pi'], defaultEngine: 'pi',
       executionContext: paths.executionContext, gitWorkerFile: runtime(root, 'personal-git-worker.mjs'),
       dshDescriptorPath: paths.dshDescriptor,
@@ -55,7 +63,8 @@ export const brainRole = {
       executionContext: paths.executionContext,
       fileSystemOwner: { endpoint: paths.fileSystemEndpoint, tokenFile: paths.fileSystemToken },
       artifactDirectory: join(paths.dataDirectory, 'artifacts'),
-      descriptorPath: paths.dshDescriptor, dataDirectory: join(paths.dataDirectory, 'agent'),
+      descriptorPath: paths.dshDescriptor, socketPath: paths.dshSocket, controlSocketPath: paths.dshControlSocket,
+      dataDirectory: join(paths.dataDirectory, 'agent'),
       machineIdentityDirectory: paths.dataDirectory, runtimeDirectory: paths.runtimeDirectory,
       dshExecutable: env.OPENCRAFT_DSH_EXECUTABLE?.trim() || runtime(root, 'dsh/node_modules/@deepseek-ai/dsh/lib/bin.js'),
       dshCapabilityPlugin: runtime(root, 'dsh/opencraft-capability-plugin.mjs'),
@@ -63,7 +72,8 @@ export const brainRole = {
       projectStorageDirectory: join(paths.dataDirectory, 'projects'),
       projectlessWorkspaceDirectory: paths.dshProjectlessDirectory,
       skillsDirectory: join(paths.dataDirectory, 'skills'),
-      taskCodexCoreEndpoint: paths.coreEndpoint, taskCodexCoreTokenFile: paths.tokenPath,
+      // Task catalog reads Codex threads from this container's AppServer, not through the account Core.
+      taskCodexCoreEndpoint: paths.appServerEndpoint, taskCodexCoreTokenFile: appServerTokenFile,
     }) + '\n', { mode: 0o600 });
     await writeFile(paths.sandboxConfig, JSON.stringify({
       schemaVersion: 1,
@@ -85,14 +95,14 @@ export const brainRole = {
         proxyPort = listener.address().port;
         await new Promise(accept => listener.close(accept));
       }
-      start('codex-core', 'codex-core.cjs', codexCoreArguments(paths, root, proxyPort));
+      start('codex-core', 'codex-core.cjs', codexCoreArguments(paths, root, proxyPort, { runtimeEndpoint: paths.appServerEndpoint }));
     }
     // Capture the Hands identity before Native can attach an execution lease.
     const handsIncarnation = await agent.waitUntil(signal => readHandsIncarnation(paths.handsExecutionEndpoint, { signal }),
       { description: 'Hands execution owner' });
     const appServerArgs = [
       '--endpoint', paths.appServerEndpoint, '--core-endpoint', paths.coreEndpoint,
-      '--token-file', paths.tokenPath, '--codex-executable', runtime(root, 'codex/bin/codex'),
+      '--token-file', paths.tokenPath, '--control-token-file', appServerTokenFile, '--codex-executable', runtime(root, 'codex/bin/codex'),
       '--runtime-directory', paths.runtimeDirectory, '--data-directory', join(paths.dataDirectory, 'codex'),
       '--private-directory', paths.codexPrivateDirectory,
     ];
@@ -104,11 +114,17 @@ export const brainRole = {
     const callerFile = name => paths.proxyMode === 'external' ? { OPENCRAFT_PROXY_CALLER_FILE: join(paths.runDirectory, 'proxy-callers', name + '.json') } : {};
     start('dsh-host', 'dsh-host.mjs', [], { OPENCRAFT_DSH_HOST_CONFIG: paths.dshConfig, ...callerFile('dsh') });
     start('engine-host', 'engine-host.mjs', [], { OPENCRAFT_ENGINE_HOST_CONFIG: paths.engineConfig, ...callerFile('pi') });
-    await agent.waitUntil(() => Promise.all([coreHealth(paths.coreEndpoint, paths.tokenPath),
+    await agent.waitUntil(() => Promise.all([coreHealth(paths.appServerEndpoint, appServerTokenFile),
       readEngineHostIdentity(paths.engineDescriptor), readDshHostIdentity(paths.dshDescriptor)]), { description: 'Native execution Host' });
-    // Gateway/proxy still reach these two through the shared run directory until step 4c.
-    await agent.publishEndpoint('codex-control', paths.appServerEndpoint);
-    await agent.publishEndpoint('codex-native', join(paths.runDirectory, 'native.sock'));
+    // The Host reaches every Brain owner only as a named endpoint; credentials and
+    // engine descriptors come from `describe` on the control endpoint.
+    await agent.publishEndpoint('codex-control', paths.appServerEndpoint, async () => ({ token: await readPrivateToken(appServerTokenFile) }));
+    await agent.publishEndpoint('codex-native', paths.appServerNativeSocket);
+    await agent.publishEndpoint('pi', paths.engineSocket, () => readPrivateJson(paths.engineDescriptor));
+    await agent.publishEndpoint('dsh', paths.dshSocket, async () => {
+      const { ownerHandoff: _ownerHandoff, ...descriptor } = await readPrivateJson(paths.dshDescriptor);
+      return descriptor;
+    });
     return {
       // Runs after the agent is ready. A different Hands owner invalidates every cached
       // stdio execution connection, so the AppServer is replaced, never patched.
@@ -120,7 +136,7 @@ export const brainRole = {
           const next = await agent.replace(appServer, startAppServer);
           if (!next) return;
           appServer = next;
-          await agent.waitUntil(() => coreHealth(paths.coreEndpoint, paths.tokenPath), { description: 'Codex execution owner' });
+          await agent.waitUntil(() => coreHealth(paths.appServerEndpoint, appServerTokenFile), { description: 'Codex execution owner' });
           console.log(JSON.stringify({ type: 'codex-hands-owner-rebound' }));
         },
       }).catch(() => agent.stop(1, 'Hands owner rebinding failed')),
@@ -144,7 +160,9 @@ export const handsRole = {
     for (const [name, entry, argv] of owners)
       agent.start(name, node(root), [runtime(root, entry), ...argv], { cwd: paths.runtimeDirectory, env });
     await agent.waitUntil(() => Promise.all(owners.map(([, , , socket]) => isSocket(socket))), { attempts: 120, description: 'Hands owners' });
-    for (const [name, , , socket] of owners) await agent.publishEndpoint(name, socket);
+    const tokens = { terminal: paths.terminalToken, files: paths.fileSystemToken };
+    for (const [name, , , socket] of owners)
+      await agent.publishEndpoint(name, socket, tokens[name] ? async () => ({ token: await readPrivateToken(tokens[name]) }) : undefined);
     return {};
   },
 };

@@ -1,6 +1,8 @@
-import { DEFAULT_SANDBOX_RESOURCES, SandboxCreationFault, SandboxFault, type Sandbox, type SandboxBackend, type SandboxCommand, type SandboxEnvironment, type SandboxPoolPolicy, type SandboxResources } from "./contract.js";
+import { DEFAULT_SANDBOX_RESOURCES, SandboxCreationFault, SandboxFault, type Sandbox, type SandboxBackend, type SandboxCommand, type SandboxEnvironment, type SandboxPoolPolicy, type SandboxReceipt, type SandboxResources } from "./contract.js";
 export * from "./contract.js";
 export * from "./endpoint.js";
+export * from "./uri.js";
+export * from "./workspace.js";
 const dimensions = ["cpuMillis", "memoryBytes"] as const;
 const fault = (code: ConstructorParameters<typeof SandboxFault>[0], message: string) => new SandboxFault(code, message);
 const positive = (n: number) => Number.isSafeInteger(n) && n > 0;
@@ -26,12 +28,18 @@ function command(input: SandboxCommand) {
   return { command: [...input.command], cwd: input.cwd, env: { ...input.env }, ...(input.terminal ? { terminal: { ...input.terminal } } : {}),
     ...(input.attached ? { attached: true as const } : {}) };
 }
+const validReceipt = (value: SandboxReceipt | undefined, backend: string) => !!value && value.backend === backend
+  && typeof value.instanceId === "string" && value.instanceId.length > 0 && value.instanceId.length <= 256 && !value.instanceId.includes("\0");
 interface Request {
-  owner: string; resources: SandboxResources; signal?: AbortSignal; controller: AbortController;
+  owner: string; resources: SandboxResources; receipt?: SandboxReceipt; signal?: AbortSignal; controller: AbortController;
   resolve(sandbox: Sandbox): void; reject(error: unknown): void; cancel(): void;
 }
 export interface SandboxPool {
   createSandbox(options: { owner: string; resources?: Partial<SandboxResources>; signal?: AbortSignal }): Promise<Sandbox>;
+  /** Re-attach to the instance named by a receipt the Host persisted (same admission
+   * and budget as create). Rejects SANDBOX_UNAVAILABLE when the backend has no attach,
+   * the receipt is another backend's, or the instance cannot be proven the same. */
+  attachSandbox(options: { owner: string; receipt: SandboxReceipt; resources?: Partial<SandboxResources>; signal?: AbortSignal }): Promise<Sandbox>;
   close(): Promise<void>;
 }
 
@@ -59,7 +67,17 @@ export async function createSandboxPool(input: SandboxPoolPolicy, backend: Sandb
       release(request.resources); request.reject(fault("SANDBOX_UNAVAILABLE", "Execution environment provider could not initialize")); return;
     }
     if (closed || request.controller.signal.aborted) { release(request.resources); request.reject(fault("SANDBOX_CLOSED", "Sandbox creation was cancelled")); return; }
-    try { environment = await backend.create(identity, request.resources, request.controller.signal); }
+    if (request.receipt) {
+      // Attach allocates nothing: any failure releases the budget and reports the fault.
+      try {
+        if (!backend.attach || !validReceipt(request.receipt, backend.id)) throw fault("SANDBOX_UNAVAILABLE", "Sandbox backend cannot re-attach this receipt");
+        environment = await backend.attach(identity, request.receipt, request.resources, request.controller.signal);
+      } catch (error) {
+        release(request.resources);
+        request.reject(error instanceof SandboxFault ? error : fault("SANDBOX_UNAVAILABLE", "Sandbox instance could not be re-attached"));
+        return;
+      }
+    } else try { environment = await backend.create(identity, request.resources, request.controller.signal); }
     catch (error) {
       if (error instanceof SandboxCreationFault && error.outcome === "not-created") { release(request.resources); request.reject(error); }
       else { uncertain = true; request.reject(new SandboxCreationFault("unknown", identity)); }
@@ -68,6 +86,8 @@ export async function createSandboxPool(input: SandboxPoolPolicy, backend: Sandb
     let effective: Readonly<SandboxResources>;
     try {
       effective = budget(environment.resources);
+      if (environment.receipt !== undefined && !validReceipt(environment.receipt, backend.id)
+        || request.receipt && environment.receipt?.instanceId !== request.receipt.instanceId) throw Error();
       if (typeof environment.capabilities?.terminal !== "boolean" || environment.processLimits && (!positive(environment.processLimits.tasks) || !positive(environment.processLimits.fileDescriptorsPerProcess))) throw Error();
     } catch {
       try { await environment.close(); release(request.resources); request.reject(fault("SANDBOX_POLICY", "Sandbox backend returned invalid effective constraints")); }
@@ -78,6 +98,7 @@ export async function createSandboxPool(input: SandboxPoolPolicy, backend: Sandb
     const executions = new Set<Promise<unknown>>();
     const sandbox: Sandbox = {
       identity, resources: effective, capabilities: Object.freeze({ terminal: environment.capabilities.terminal }),
+      ...(environment.receipt ? { receipt: Object.freeze({ backend: environment.receipt.backend, instanceId: environment.receipt.instanceId }) } : {}),
       ...(environment.processLimits ? { processLimits: Object.freeze({ tasks: environment.processLimits.tasks, fileDescriptorsPerProcess: environment.processLimits.fileDescriptorsPerProcess }) } : {}),
       async spawn(raw, onOutput) {
         if (closed || ended) throw fault("SANDBOX_CLOSED", "Sandbox is closed");
@@ -116,26 +137,29 @@ export async function createSandboxPool(input: SandboxPoolPolicy, backend: Sandb
       void operation.finally(() => { starting.delete(request); request.signal?.removeEventListener("abort", request.cancel); }).catch(() => {});
     }
   };
+  const admit = (options: { owner: string; resources?: Partial<SandboxResources>; signal?: AbortSignal }, receipt?: SandboxReceipt): Promise<Sandbox> => {
+    if (closed) return Promise.reject(fault("SANDBOX_CLOSED", "Sandbox pool is closed"));
+    if (typeof options.owner !== "string" || !options.owner.trim() || options.owner.length > 256 || options.owner.includes("\0")) return Promise.reject(fault("SANDBOX_POLICY", "Sandbox requires an execution owner"));
+    let selected: SandboxResources;
+    try { selected = budget({ ...defaults, ...options.resources }); } catch (e) { return Promise.reject(e); }
+    if (dimensions.some(k => selected[k] > capacity[k])) return Promise.reject(fault("SANDBOX_CAPACITY", "Sandbox request exceeds the provider pool budget"));
+    if (options.signal?.aborted) return Promise.reject(fault("SANDBOX_CLOSED", "Sandbox creation was cancelled"));
+    if ((!fits(selected) || queued.length) && queued.length >= (policy.queueLimit ?? 128)) return Promise.reject(fault("SANDBOX_CAPACITY", "Sandbox admission queue is full"));
+    return new Promise<Sandbox>((resolve, reject) => {
+      const request: Request = { owner: options.owner, resources: selected, ...(receipt ? { receipt } : {}), signal: options.signal, controller: new AbortController(), resolve, reject, cancel() {
+        request.controller.abort();
+        const i = queued.indexOf(request);
+        if (i < 0) return;
+        queued.splice(i, 1); options.signal?.removeEventListener("abort", request.cancel);
+        reject(fault("SANDBOX_CLOSED", "Sandbox creation was cancelled")); drain();
+      } };
+      queued.push(request); options.signal?.addEventListener("abort", request.cancel, { once: true }); drain();
+    });
+  };
   return {
-    createSandbox(options) {
-      if (closed) return Promise.reject(fault("SANDBOX_CLOSED", "Sandbox pool is closed"));
-      if (typeof options.owner !== "string" || !options.owner.trim() || options.owner.length > 256 || options.owner.includes("\0")) return Promise.reject(fault("SANDBOX_POLICY", "Sandbox requires an execution owner"));
-      let selected: SandboxResources;
-      try { selected = budget({ ...defaults, ...options.resources }); } catch (e) { return Promise.reject(e); }
-      if (dimensions.some(k => selected[k] > capacity[k])) return Promise.reject(fault("SANDBOX_CAPACITY", "Sandbox request exceeds the provider pool budget"));
-      if (options.signal?.aborted) return Promise.reject(fault("SANDBOX_CLOSED", "Sandbox creation was cancelled"));
-      if ((!fits(selected) || queued.length) && queued.length >= (policy.queueLimit ?? 128)) return Promise.reject(fault("SANDBOX_CAPACITY", "Sandbox admission queue is full"));
-      return new Promise<Sandbox>((resolve, reject) => {
-        const request: Request = { owner: options.owner, resources: selected, signal: options.signal, controller: new AbortController(), resolve, reject, cancel() {
-          request.controller.abort();
-          const i = queued.indexOf(request);
-          if (i < 0) return;
-          queued.splice(i, 1); options.signal?.removeEventListener("abort", request.cancel);
-          reject(fault("SANDBOX_CLOSED", "Sandbox creation was cancelled")); drain();
-        } };
-        queued.push(request); options.signal?.addEventListener("abort", request.cancel, { once: true }); drain();
-      });
-    },
+    createSandbox: options => admit(options),
+    attachSandbox: options => validReceipt(options.receipt, backend.id) ? admit(options, options.receipt)
+      : Promise.reject(fault("SANDBOX_UNAVAILABLE", "Sandbox backend cannot re-attach this receipt")),
     close() {
       if (closing) return closing;
       closed = true;

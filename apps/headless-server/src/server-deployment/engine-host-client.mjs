@@ -1,14 +1,27 @@
 import { isAbsolute, resolve } from 'node:path';
-import { readPrivateJson } from './dsh-host-client.mjs';
+import { descriptorReader, hostRequest, privateHostWebsocket } from './dsh-host-client.mjs';
+
+/** The Host's control routes: a separate loopback URL, or (Unix socket mode) the same
+ * private socket as its websocket. */
+function controlBase(d) {
+  if (d.controlUrl === undefined) return d.websocketUrl;
+  const control = new URL(d.controlUrl);
+  if (control.protocol !== 'http:' || control.hostname !== '127.0.0.1' || control.pathname !== '/' || control.search
+    || control.hash || control.username || control.password) throw new Error('Invalid Engine Host control URL');
+  return d.controlUrl;
+}
 
 /** A gateway attachment has no execution or storage ownership. Re-read the
- * private descriptor on reconnect; never fall back to an in-process engine. */
-export async function attachEngineHost(path, dataDirectory, machineId, engines, defaultEngine) {
+ * private descriptor (file or resolved endpoint) on reconnect; never fall back to an
+ * in-process engine. */
+export async function attachEngineHost(source, dataDirectory, machineId, engines, defaultEngine) {
+  const descriptor = descriptorReader(source);
   const read = async () => {
-    const d = await readPrivateJson(path);
-    const ws = new URL(d.websocketUrl),
-      control = new URL(d.controlUrl);
+    const d = await descriptor();
+    let base;
+    try { privateHostWebsocket(d.websocketUrl); base = controlBase(d); } catch { base = undefined; }
     if (
+      !base ||
       d.schemaVersion !== 1 ||
       !isAbsolute(d.dataDirectory ?? '') ||
       resolve(d.dataDirectory) !== resolve(dataDirectory) ||
@@ -17,28 +30,12 @@ export async function attachEngineHost(path, dataDirectory, machineId, engines, 
       d.pid < 1 ||
       typeof d.token !== 'string' ||
       !d.token ||
-      ws.protocol !== 'ws:' ||
-      ws.hostname !== '127.0.0.1' ||
-      ws.pathname !== '/rpc' ||
-      !ws.searchParams.get('token') ||
-      ws.username ||
-      ws.password ||
-      control.protocol !== 'http:' ||
-      control.hostname !== '127.0.0.1' ||
-      control.pathname !== '/' ||
-      control.search ||
-      control.hash ||
-      control.username ||
-      control.password ||
       !Array.isArray(d.engines) ||
       [...d.engines].sort().join() !== [...engines].sort().join() ||
       d.defaultEngine !== defaultEngine
     )
       throw new Error('Engine Host descriptor is incompatible with this deployment');
-    const response = await fetch(new URL('/health', control), {
-      headers: { authorization: `Bearer ${d.token}` },
-      signal: AbortSignal.timeout(5000),
-    });
+    const response = await hostRequest(base, '/health', { headers: { authorization: `Bearer ${d.token}` } });
     const health = await response.json();
     if (
       !response.ok ||
@@ -51,15 +48,15 @@ export async function attachEngineHost(path, dataDirectory, machineId, engines, 
       [...health.engines].sort().join() !== [...engines].sort().join()
     )
       throw new Error('Independent execution Host is unavailable');
-    return { descriptor: d, health };
+    return { descriptor: d, health, base };
   };
   const input = async (action, threadId, inputId, text) => {
-    const { descriptor: d } = await read();
-    const response = await fetch(new URL('/host-inputs', d.controlUrl), {
+    const { descriptor: d, base } = await read();
+    const response = await hostRequest(base, '/host-inputs', {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${d.token}` },
       body: JSON.stringify({ action, threadId, inputId, ...(text === undefined ? {} : { text }) }),
-      signal: AbortSignal.timeout(35000),
+      timeoutMs: 35000,
     });
     if (!response.ok) throw new Error('Execution Host input outcome unknown');
     const { receipt } = await response.json();
@@ -84,9 +81,8 @@ export async function attachEngineHost(path, dataDirectory, machineId, engines, 
     resolveWebsocketUrl: async () => (await read()).descriptor.websocketUrl,
     getExecutionIdentity: async threadId => {
       if (typeof threadId !== 'string' || !threadId || threadId.length > 512) throw new Error('Execution Thread required');
-      const { descriptor: d } = await read();
-      const url = new URL('/execution-origin', d.controlUrl); url.searchParams.set('threadId', threadId);
-      const response = await fetch(url, { headers: {authorization: `Bearer ${d.token}`}, signal: AbortSignal.timeout(5000) });
+      const { descriptor: d, base } = await read();
+      const response = await hostRequest(base, `/execution-origin?threadId=${encodeURIComponent(threadId)}`, { headers: {authorization: `Bearer ${d.token}`} });
       const result = await response.json();
       if (!response.ok || result.threadId !== threadId || result.pid !== null && (!Number.isSafeInteger(result.pid) || result.pid < 1))
         throw new Error('Execution process unavailable');
@@ -102,10 +98,10 @@ export async function attachEngineHost(path, dataDirectory, machineId, engines, 
   };
 }
 
-export async function readEngineHostIdentity(path) {
-  const descriptor = await readPrivateJson(path);
+export async function readEngineHostIdentity(source) {
+  const descriptor = await descriptorReader(source)();
   const attachment = await attachEngineHost(
-    path,
+    source,
     descriptor.dataDirectory,
     descriptor.machineId,
     descriptor.engines,
@@ -116,8 +112,8 @@ export async function readEngineHostIdentity(path) {
 
 /** Authenticated owner resolves the physical native generation; never use a
  * wrapper environment incarnation or the routing Host PID for remote ACP. */
-export async function readEngineExecutionIdentity(path, threadId) {
-  const d = await readPrivateJson(path);
-  const attachment = await attachEngineHost(path, d.dataDirectory, d.machineId, d.engines, d.defaultEngine);
+export async function readEngineExecutionIdentity(source, threadId) {
+  const d = await descriptorReader(source)();
+  const attachment = await attachEngineHost(source, d.dataDirectory, d.machineId, d.engines, d.defaultEngine);
   return attachment.getExecutionIdentity(threadId);
 }

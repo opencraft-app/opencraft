@@ -9,7 +9,8 @@ import { AccountCoreOwner, type AccountOwnerExpectation } from "./account-owner.
 
 /** Account/control owner. It has no child execution process and never stops one. */
 export async function startSplitCodexCore(options: CodexCoreOptions) {
-  if (!isAbsolute(options.appServerEndpoint!) || options.appServerEndpoint === options.endpoint) throw new Error("Invalid AppServer endpoint");
+  if (options.accountsOnly ? options.appServerEndpoint !== undefined
+    : !isAbsolute(options.appServerEndpoint!) || options.appServerEndpoint === options.endpoint) throw new Error("Invalid AppServer endpoint");
   if (!Number.isSafeInteger(options.proxyPort) || options.proxyPort! < 1 || options.proxyPort! > 65535) {
     throw new Error("Split Codex core requires a fixed proxy port");
   }
@@ -38,7 +39,8 @@ export async function startSplitCodexCore(options: CodexCoreOptions) {
     } });
     // Establish the stable Host token before a possible frozen cold successor.
     accounts.launch();
-    const runtime = new CodexCoreControlClient(options.appServerEndpoint!, options.authToken);
+    // Accounts-only: the runtime owner's health belongs to its WorkspaceHost, not to this Core.
+    const runtime = options.appServerEndpoint ? new CodexCoreControlClient(options.appServerEndpoint, options.authToken) : null;
     control = await startControlServer(options.endpoint, options.authToken, async request => {
       if (request.method === "GET" && request.url === "/owner-handoff") {
         return { status: 200, value: { pid: process.pid, handoff: owner.snapshot(),
@@ -99,6 +101,7 @@ export async function startSplitCodexCore(options: CodexCoreOptions) {
         return { status: 200, value: { dataDirectory, launch: accounts!.launch() } };
       }
       if (request.method === "GET" && (request.url === "/health" || request.url === "/native-health")) {
+        if (!runtime) return { status: 404, value: { error: "This account Core has no runtime owner" } };
         const native = await runtime.appServerHealth(request.url === "/native-health" ? "native" : "execution");
         if (native.dataDirectory !== dataDirectory || native.proxyBaseUrl !== `http://127.0.0.1:${options.proxyPort}`) {
           throw new Error("AppServer identity mismatch");
@@ -142,6 +145,6 @@ export async function startSplitCodexCore(options: CodexCoreOptions) {
     });
     // A listening account plane can bootstrap the runtime before health becomes ready.
     return { endpoint: options.endpoint, health: { protocolVersion: CODEX_CORE_PROTOCOL_VERSION, pid: process.pid,
-      codexPid: 0, nativeSocket: join(dirname(options.appServerEndpoint!), "native.sock") }, close };
+      codexPid: 0, nativeSocket: options.appServerEndpoint ? join(dirname(options.appServerEndpoint), "native.sock") : "" }, close };
   } catch (error) { await close(); throw error; }
 }

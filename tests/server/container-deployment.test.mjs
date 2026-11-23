@@ -50,7 +50,8 @@ test('external execution uses one absolute data identity and a separate runtime 
   assert.equal(paths.dataDirectory, '/srv/state');
   assert.equal(paths.runtimeDirectory, '/srv/projects');
   assert.equal(paths.coreEndpoint, '/srv/state/run/codex-core.sock');
-  assert.equal(paths.engineDescriptor, '/srv/state/run/engine-host.json');
+  // Engine descriptors are agent-private; the Gateway reads them through workspace endpoints.
+  assert.equal(paths.engineDescriptor, '/run/opencraft-agent/engine-host.json');
   assert.equal(paths.executionContext,'assets');
   assert.equal(deploymentPaths({OPENCRAFT_DATA_DIR:'/state',OPENCRAFT_WORKSPACE_DIR:'/work',OPENCRAFT_EXECUTION_CONTEXT:'legacy'}).executionContext,'legacy');
   assert.throws(()=>deploymentPaths({OPENCRAFT_DATA_DIR:'/state',OPENCRAFT_WORKSPACE_DIR:'/work',OPENCRAFT_EXECUTION_CONTEXT:'fallback'}),/EXECUTION_CONTEXT/);
@@ -191,7 +192,7 @@ test('rendered Compose separates gateway, brain and hands while preserving path 
   assert.deepEqual(hands.cap_drop, ['ALL']);
   assert.deepEqual([...hands.cap_add].sort(), ['SETGID', 'SETUID', 'SYS_ADMIN', 'SYS_CHROOT']);
   assert.equal(hands.environment.HOME, '/var/lib/opencraft/execution');
-  assert.deepEqual(hands.volumes.map(v => [v.source, v.target]), [
+  assert.deepEqual(hands.volumes.filter(v => v.type === 'bind').map(v => [v.source, v.target]), [
     ['/srv/opencraft/state/execution/git-credentials', '/var/lib/opencraft/git-credentials'],
     ['/srv/opencraft/state/execution', '/var/lib/opencraft/execution'],
     ['/srv/opencraft/workspaces', '/workspace'],
@@ -216,8 +217,21 @@ test('rendered Compose separates gateway, brain and hands while preserving path 
   assert.equal(hands.environment.OPENCRAFT_HANDS_MEMORY_BYTES, '8589934592');
   assert.equal(hands.cpus, 4);
   assert.equal(hands.mem_limit, '8589934592');
+  // The Gateway reaches Brain and Hands only through their static-docker links.
+  assert.equal(service.environment.OPENCRAFT_WORKSPACE_ENVIRONMENTS, 'static-docker://brain static-docker://hands');
+  assert.equal(service.environment.OPENCRAFT_BROWSER_OWNER_SOCKET, undefined);
+  assert.equal(brain.cpus, 4);
+  assert.equal(brain.mem_limit, '8589934592');
+  assert.deepEqual(service.volumes.filter(v => v.type === 'volume').map(v => [v.source, v.target]),
+    [['brain-link', '/run/opencraft-links/brain'], ['hands-link', '/run/opencraft-links/hands']]);
+  for (const [name, value] of [['brain', brain], ['hands', hands]]) {
+    assert.deepEqual(value.volumes.filter(v => v.type === 'volume').map(v => [v.source, v.target]), [[`${name}-link`, '/run/opencraft-link']]);
+    assert.equal(value.environment.OPENCRAFT_AGENT_LINK_DIR, '/run/opencraft-link');
+  }
+  assert.equal(proxy.volumes.some(v => v.type === 'volume'), false, 'the proxy never sees a workspace link');
+  assert.equal(config.volumes['brain-link'].driver_opts.type, 'tmpfs');
   // Some Compose versions omit false-valued bind options from JSON output.
-  assert.deepEqual(service.volumes.map(v => [v.type, v.source, v.target, v.bind?.create_host_path ?? false]), [
+  assert.deepEqual(service.volumes.filter(v => v.type === 'bind').map(v => [v.type, v.source, v.target, v.bind?.create_host_path ?? false]), [
     ['bind', '/srv/opencraft/state/execution/git-credentials', '/var/lib/opencraft/git-credentials', false],
     ['bind', '/srv/opencraft/state', '/var/lib/opencraft', false], ['bind', '/srv/opencraft/workspaces', '/workspace', false],
     ['bind', '/srv/opencraft/logs', '/var/log/opencraft', false], ['bind', '/srv/opencraft/logs/gateway', '/var/log/opencraft/gateway', false],
@@ -225,19 +239,24 @@ test('rendered Compose separates gateway, brain and hands while preserving path 
   const paths = deploymentPaths(service.environment);
   assert.equal(service.command[service.command.indexOf('--data-dir') + 1], paths.dataDirectory);
   assert.equal(service.command[service.command.indexOf('--engines') + 1], 'dsh,pi');
-  assert.equal(service.environment.OPENCRAFT_BROWSER_OWNER_SOCKET, '/var/lib/opencraft/execution/browser/owner.sock');
   // Brain and Hands workspace agents keep their run directory private to each container.
   for (const value of [brain, hands]) {
     assert.deepEqual(value.tmpfs, [`${AGENT_RUN_DIRECTORY}:uid=1234,gid=2345,mode=0700,size=16m`]);
     assert.equal(value.environment.OPENCRAFT_AGENT_RUN_DIR, AGENT_RUN_DIRECTORY);
     assert.equal(deploymentPaths(value.environment).engineConfig.startsWith(AGENT_RUN_DIRECTORY + '/'), true);
   }
-  assert.equal(service.tmpfs, undefined, 'Gateway never sees an agent run directory');
+  assert.deepEqual(service.tmpfs, ['/run/opencraft-gateway:uid=1234,gid=2345,mode=0700,size=1m'], 'Gateway never sees an agent run directory');
   inspectWorkspaceAgentServices(config);
   const { tmpfs, ...withoutTmpfs } = brain;
   assert.throws(() => inspectWorkspaceAgentServices({ services: { ...config.services, brain: withoutTmpfs } }), /brain has no private/);
   assert.throws(() => inspectWorkspaceAgentServices({ services: { ...config.services, hands: { ...hands,
     volumes: [...hands.volumes, { type: 'bind', source: '/srv/x', target: AGENT_RUN_DIRECTORY }] } } }), /must not share/);
+  assert.throws(() => inspectWorkspaceAgentServices({ services: { ...config.services, brain: { ...brain,
+    volumes: brain.volumes.filter(v => v.type !== 'volume') } } }), /no private static-docker link/);
+  assert.throws(() => inspectWorkspaceAgentServices({ services: { ...config.services, proxy: { ...proxy,
+    volumes: [...proxy.volumes, { type: 'volume', source: 'hands-link', target: '/x' }] } } }), /proxy must not mount the hands link/);
+  assert.throws(() => inspectWorkspaceAgentServices({ services: { ...config.services, gateway: { ...service,
+    volumes: service.volumes.filter(v => v.source !== 'brain-link') } } }), /gateway does not mount the brain link/);
 });
 
 test('the agent run directory is container-private and launch configuration leaves the shared data mount', () => {
@@ -245,8 +264,14 @@ test('the agent run directory is container-private and launch configuration leav
   assert.equal(paths.agentRunDirectory, '/run/opencraft-agent');
   assert.equal(paths.agentControlEndpoint, '/run/opencraft-agent/control.sock');
   for (const key of ['engineConfig', 'dshConfig', 'sandboxConfig', 'codexPrivateDirectory']) assert.ok(paths[key].startsWith('/run/opencraft-agent/'), key);
-  // Still shared until step 4c (Gateway and proxy reach them through the data mount).
-  for (const key of ['appServerEndpoint', 'engineDescriptor', 'dshDescriptor', 'coreEndpoint']) assert.ok(paths[key].startsWith('/var/lib/opencraft/run/'), key);
+  // Brain owners publish nothing in the shared run directory (step 4c); only AccountCore remains there.
+  for (const key of ['appServerEndpoint', 'appServerNativeSocket', 'appServerTokenFile', 'engineSocket', 'engineDescriptor', 'dshSocket', 'dshDescriptor'])
+    assert.ok(paths[key].startsWith('/run/opencraft-agent/'), key);
+  assert.ok(paths.coreEndpoint.startsWith('/var/lib/opencraft/run/'));
+  assert.equal(paths.agentLinkDirectory, null);
+  assert.equal(deploymentPaths({ OPENCRAFT_DATA_DIR: '/var/lib/opencraft', OPENCRAFT_WORKSPACE_DIR: '/workspace', OPENCRAFT_AGENT_LINK_DIR: '/run/opencraft-link' }).agentLinkDirectory, '/run/opencraft-link');
+  for (const shared of ['/var/lib/opencraft/run/link', '/run/opencraft-agent/link', '/workspace/link', 'relative'])
+    assert.throws(() => deploymentPaths({ OPENCRAFT_DATA_DIR: '/var/lib/opencraft', OPENCRAFT_WORKSPACE_DIR: '/workspace', OPENCRAFT_AGENT_LINK_DIR: shared }));
   for (const shared of ['/var/lib/opencraft/run', '/workspace/agent', '/var/lib/opencraft/execution/agent'])
     assert.throws(() => deploymentPaths({ OPENCRAFT_DATA_DIR: '/var/lib/opencraft', OPENCRAFT_WORKSPACE_DIR: '/workspace', OPENCRAFT_AGENT_RUN_DIR: shared }), /container-private/);
 });
@@ -294,7 +319,6 @@ test('adopted legacy deployments render the existing browser, execution and thre
   }));
   const hands = config.services.hands, brain = config.services.brain;
   assert.equal(hands.environment.OPENCRAFT_BROWSER_DATA_DIR, '/data/.opencraft/hands');
-  assert.equal(config.services.gateway.environment.OPENCRAFT_BROWSER_OWNER_SOCKET, '/data/.opencraft/hands/owner.sock');
   assert.equal(config.services.gateway.environment.OPENCRAFT_GATEWAY_HOME, '/data/.opencraft/container-home');
   assert.equal(brain.environment.OPENCRAFT_CODEX_PROJECTLESS_DIR, '/data/.opencraft/hands/projectless-workspaces');
   assert.equal(hands.environment.OPENCRAFT_CODEX_PROJECTLESS_DIR, brain.environment.OPENCRAFT_CODEX_PROJECTLESS_DIR);

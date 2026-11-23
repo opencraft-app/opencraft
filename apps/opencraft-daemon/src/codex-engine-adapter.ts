@@ -61,7 +61,7 @@ import { OpenCraftMessageAttachments } from "./opencraft-message-attachments.js"
 import { CodexThreadPins } from "./codex-thread-pins.js";
 import { CodexCoreBridge } from "./codex-core-bridge.js";
 import { CODEX_MAINTENANCE_READ, CODEX_MAINTENANCE_EXTENSION, CODEX_MAINTENANCE_CAPABILITY, codexAdmissionKey, codexAdmissionPaused, codexMaintenanceError, isCodexAdmission, type CodexMaintenanceSnapshot } from "./codex-maintenance.js";
-import { CodexNativeCoreTransport } from "./codex-native-core-transport.js";
+import { CodexNativeCoreTransport, type CodexRuntimeEndpoints } from "./codex-native-core-transport.js";
 import { TasksService, TasksFault } from "@opencraft/plugin-tasks/server";
 import { CODEX_NATIVE_SHARED_METHODS, discoverNativeCodexGoalCapability, projectSharedNativeCodexInitialize } from "./codex-native-surface.js";
 import { projectThreadAttachmentNotification, projectThreadAttachmentResult } from "./thread-message-attachment-projection.js";
@@ -328,6 +328,8 @@ interface LocalCodexEngineOptions extends SharedCodexRoutingOptions {
   /** Explicit opt-in to the independently owned native core; never falls back to stdio. */
   readonly coreEndpoint?: string;
   readonly coreAuthToken?: string;
+  /** The runtime owner when it is not behind `coreEndpoint` (a workspace endpoint). */
+  readonly coreRuntime?: CodexRuntimeEndpoints;
   /** Headless owns downstream overlays while the independent core owns only native/accounts. */
   readonly coreHostOverlays?: boolean;
   /** Trusted in-process native transport decoration; never supplied by an RPC. */
@@ -558,7 +560,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   private async gitNativeIncarnation(threadId: string): Promise<string | undefined> {
     if (this.closeOperation || !this.physicalAvailable || !this.physicalInitialized) return undefined;
     if (this.nativeCore) {
-      const health = await this.nativeCore.control.health(AbortSignal.timeout(1500), 'native');
+      const health = await this.nativeCore.health(AbortSignal.timeout(1500), 'native');
       return (await observeStandaloneCodexExecution(health)).incarnation;
     }
     const child = this.child;
@@ -650,7 +652,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     });
     if (options.kind !== "remote" && options.coreHostOverlays && !options.coreEndpoint) throw new Error("Host overlays require an explicit core endpoint");
     this.nativeCore = options.kind !== "remote" && options.coreEndpoint && options.coreHostOverlays
-      ? new CodexNativeCoreTransport(options.coreEndpoint, options.coreAuthToken ?? "", createHash("sha256").update(options.dataDirectory).digest("hex")) : null;
+      ? new CodexNativeCoreTransport(options.coreEndpoint, options.coreAuthToken ?? "", createHash("sha256").update(options.dataDirectory).digest("hex"), options.coreRuntime) : null;
     this.nativeTransport = this.nativeCore
       ? options.kind !== "remote" && options.decorateNativeTransport ? options.decorateNativeTransport(this.nativeCore, id => this.pending.get(String(id))?.nativeAdmission ?? this.internalRequests.get(String(id))?.nativeAdmission ?? null) : this.nativeCore : null;
     this.coreBridge = options.kind !== "remote" && options.coreEndpoint !== undefined && !options.coreHostOverlays
@@ -4440,7 +4442,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   private async canInjectEnvironment(): Promise<boolean> {
     if (!this.nativeCore) return true;
     try {
-      const health = await this.nativeCore.control.health();
+      const health = await this.nativeCore.health();
       return health.environmentVariablesVersion === 1;
     } catch { return false; }
   }

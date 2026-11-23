@@ -1,13 +1,15 @@
-// Run inside the isolated smoke Gateway, using only its private owner socket.
+// Run inside the isolated smoke Gateway, through the same path the Gateway uses: its
+// private local listener for workspace://default/endpoints/terminal (static-docker link
+// to the Hands agent), never the shared execution directory.
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { createConnection } from 'node:net';
 import { join } from 'node:path';
 
-const execution = process.env.OPENCRAFT_EXECUTION_DIR;
-const token = (await readFile(join(execution, 'terminal.token'), 'utf8')).trim();
-const socket = createConnection(join(execution, 'terminal.sock'));
+const run = process.env.OPENCRAFT_GATEWAY_RUN_DIR;
+const token = (await readFile(join(run, 'credentials', 'terminal.token'), 'utf8')).trim();
+const socket = createConnection(join(run, 'endpoints', 'terminal'));
 const pending = new Map(); let sequence = 0, buffer = '';
 let admit;
 const admitted = new Promise(resolve => { admit = resolve; });

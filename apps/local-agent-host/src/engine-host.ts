@@ -3,7 +3,9 @@ import { THREAD_CATALOG_CHANGED } from "@opencraft/appserver-protocol";
 import { nodeObserver } from "@opencraft/observability-contract/node";
 import { LocalHostResources } from "./host-resources.js";
 import { randomUUID } from "node:crypto";
-import { createServer } from "node:http";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { chmod, rm } from "node:fs/promises";
+import { isAbsolute } from "node:path";
 import type { AddressInfo } from "node:net";
 import { WebSocket, WebSocketServer } from "ws";
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
@@ -24,6 +26,10 @@ export async function startEngineHost(options: {
   admitRequest?: <T>(method: string, operation: () => Promise<T>) => Promise<T>;
   strictClose?: boolean;
   resources?: { projectDirectory?: string; attachmentDirectory?: string; artifactDirectory?: string };
+  /** Listen on this private Unix socket instead of loopback TCP (workspace endpoint mode). */
+  socketPath?: string;
+  /** Plain HTTP routes (Host control) served beside the websocket on the same listener. */
+  handleRequest?: (request: IncomingMessage, response: ServerResponse) => void;
 }) {
   const resources = options.resources || !options.legacy ? new LocalHostResources(options.resources) : undefined;
   const registry = new Map(options.providers.map(provider => [provider.id, provider]));
@@ -59,7 +65,7 @@ export async function startEngineHost(options: {
     }
   };
   const token = randomUUID();
-  const server = createServer((_request, response) => { response.writeHead(404); response.end(); });
+  const server = createServer(options.handleRequest ?? ((_request, response) => { response.writeHead(404); response.end(); }));
   const sockets = new WebSocketServer({ noServer: true, maxPayload: 32 * 1024 * 1024 });
   server.on("upgrade", (request, socket, head) => {
     const url = new URL(request.url ?? "/", "http://localhost");
@@ -405,9 +411,15 @@ export async function startEngineHost(options: {
     socket.on("close", stop);
     socket.on("error", () => { stop(); socket.terminate(); });
   });
-  await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
+  if (options.socketPath !== undefined) {
+    if (!isAbsolute(options.socketPath) || Buffer.byteLength(options.socketPath) > 107) throw new Error("Engine Host socket must be a short absolute path");
+    await rm(options.socketPath, { force: true });
+    await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(options.socketPath, resolve); });
+    await chmod(options.socketPath, 0o600);
+  } else await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
   return {
-    websocketUrl: `ws://127.0.0.1:${(server.address() as AddressInfo).port}/rpc?token=${token}`,
+    websocketUrl: options.socketPath !== undefined ? `ws+unix://${options.socketPath}:/rpc?token=${token}`
+      : `ws://127.0.0.1:${(server.address() as AddressInfo).port}/rpc?token=${token}`,
     async coldReadResources() { await resources?.request("project/list", {}); },
     consumerObservation() { return { coverage: unknownConsumer ? "unknown" : "complete", activeCount: callbacks + consumerTurns.size + [...connectionObservations].reduce((n, read) => n + read(), 0) }; },
     get ready() { return [...readiness.values()].every(state => state === "ready"); },

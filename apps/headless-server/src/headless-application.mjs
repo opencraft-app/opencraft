@@ -300,9 +300,13 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     throw new Error('Terminal owner requires absolute private paths');
   if (options.threadCliDirectory !== undefined && (!isAbsolute(options.threadCliDirectory) || resolve(options.threadCliDirectory) === '/'))
     throw new Error('Thread CLI directory must be an absolute non-root execution path');
-  const browserOwnerSocket = process.env.OPENCRAFT_BROWSER_OWNER_SOCKET;
+  // A composition (e.g. a workspace endpoint listener) or the environment names the remote browser owner.
+  const browserOwnerSocket = options.browserOwnerSocket ?? process.env.OPENCRAFT_BROWSER_OWNER_SOCKET;
   if (browserOwnerSocket && !isAbsolute(browserOwnerSocket))
     throw new Error('OPENCRAFT_BROWSER_OWNER_SOCKET must be an absolute private socket path');
+  if (options.codexRuntime !== undefined && (!options.codexCoreEndpoint || !isAbsolute(options.codexRuntime.endpoint ?? '')
+    || !['string', 'function'].includes(typeof options.codexRuntime.token) || options.codexRuntime.nativeSocket !== undefined && !isAbsolute(options.codexRuntime.nativeSocket)))
+    throw new Error('Codex runtime endpoints require absolute private sockets beside the account Core');
   const codexAgentBridge=options.codexAgentBridge??await readCodexBridgeConfiguration(options.codexAgentBridgeFile);
   const agentBridge=options.agentBridge??(options.agentBridgeFile?await readPrivateJson(options.agentBridgeFile):undefined);
   if(agentBridge!==undefined&&(!agentBridge||typeof agentBridge!=='object'||Array.isArray(agentBridge)))throw new Error('Invalid private agent bridge configuration');
@@ -1114,6 +1118,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           filterGatewayModelCatalog: serverStorage.call.filterGatewayModelCatalog,
           coreEndpoint: options.codexCoreEndpoint,
           coreAuthToken: options.codexCoreAuthToken,
+          ...(options.codexRuntime ? { coreRuntime: options.codexRuntime } : {}),
           coreHostOverlays: options.codexCoreEndpoint !== undefined,
           observationComponent: 'gateway',
           ...createCodexWorkspaceHooks(workspaceRouting ?? composition, hostId),

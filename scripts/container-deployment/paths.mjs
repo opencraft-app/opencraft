@@ -35,6 +35,10 @@ export function deploymentPaths(env = process.env) {
   const agentRunDirectory = absolute('OPENCRAFT_AGENT_RUN_DIR', '/run/opencraft-agent');
   if ([dataDirectory, runtimeDirectory, executionDirectory].some(root => agentRunDirectory === root || agentRunDirectory.startsWith(root + '/')))
     throw new Error('OPENCRAFT_AGENT_RUN_DIR must be container-private, outside the shared mounts');
+  const agentLinkDirectory = env.OPENCRAFT_AGENT_LINK_DIR ? absolute('OPENCRAFT_AGENT_LINK_DIR', '') : null;
+  if (agentLinkDirectory && [dataDirectory, runtimeDirectory, executionDirectory, agentRunDirectory].some(root => agentLinkDirectory === root
+    || agentLinkDirectory.startsWith(root + '/') || root.startsWith(agentLinkDirectory + '/')))
+    throw new Error('OPENCRAFT_AGENT_LINK_DIR must be a dedicated link mount, outside the shared and private directories');
   return {
     dataDirectory, runtimeDirectory, executionDirectory, executionContext, ...proxyConfiguration(env),
     threadCliDirectory: join(executionDirectory, 'cli'),
@@ -45,18 +49,27 @@ export function deploymentPaths(env = process.env) {
     fileSystemToken: join(executionDirectory, 'files.token'),
     logDirectory: absolute('OPENCRAFT_LOG_DIR', '/var/log/opencraft'),
     browserDirectory: absolute('OPENCRAFT_BROWSER_DATA_DIR', join(executionDirectory, 'browser')),
-    // Shared with Gateway/proxy until step 4c: daemon.token, codex-core.sock (proxy),
-    // codex-app-server.sock, native.sock and the engine-host/dsh-host descriptors.
+    // AccountCore only (§5): daemon.token, codex-core.sock and proxy-callers/. Brain
+    // owners publish nothing here; the Gateway reaches them as workspace endpoints.
     runDirectory: join(dataDirectory, 'run'),
     agentRunDirectory,
     agentControlEndpoint: join(agentRunDirectory, 'control.sock'),
+    agentEndpointDirectory: join(agentRunDirectory, 'endpoints'),
+    // Mounted only into this container and the Gateway (static-docker link).
+    agentLinkDirectory,
     codexPrivateDirectory: join(agentRunDirectory, 'codex'),
     tokenPath: join(dataDirectory, 'daemon.token'),
     coreEndpoint: join(dataDirectory, 'run', 'codex-core.sock'),
-    appServerEndpoint: join(dataDirectory, 'run', 'codex-app-server.sock'),
-    engineDescriptor: join(dataDirectory, 'run', 'engine-host.json'),
+    // AppServer owner control (codex-control) and its native facade (codex-native, same directory).
+    appServerEndpoint: join(agentRunDirectory, 'codex', 'control.sock'),
+    appServerNativeSocket: join(agentRunDirectory, 'codex', 'native.sock'),
+    appServerTokenFile: join(agentRunDirectory, 'codex-control.token'),
+    engineSocket: join(agentRunDirectory, 'pi.sock'),
+    engineDescriptor: join(agentRunDirectory, 'engine-host.json'),
     engineConfig: join(agentRunDirectory, 'engine-host-config.json'),
-    dshDescriptor: join(dataDirectory, 'run', 'dsh-host.json'),
+    dshSocket: join(agentRunDirectory, 'dsh.sock'),
+    dshControlSocket: join(agentRunDirectory, 'dsh-control.sock'),
+    dshDescriptor: join(agentRunDirectory, 'dsh-host.json'),
     dshConfig: join(agentRunDirectory, 'dsh-host-config.json'),
     sandboxConfig: join(agentRunDirectory, 'codex-hands-sandbox.json'),
     handsExecutionEndpoint: join(executionDirectory, 'exec-owner.sock'),

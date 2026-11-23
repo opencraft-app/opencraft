@@ -92,8 +92,12 @@ try {
   assert.deepEqual(agents.brain.components.map(c => c.name), ['codex-app-server', 'dsh-host', 'engine-host']);
   assert.deepEqual(agents.hands.components.map(c => c.name), ['exec', 'terminal', 'files', 'browser']);
   const sharedRun = await readdir(join(data, 'run'));
-  for (const privateName of ['engine-host-config.json', 'dsh-host-config.json', 'codex-hands-sandbox.json', 'native-internal.sock', 'control.sock'])
+  for (const privateName of ['engine-host-config.json', 'dsh-host-config.json', 'codex-hands-sandbox.json', 'native-internal.sock', 'control.sock',
+    // Step 4c: the Gateway reaches Brain owners as workspace endpoints, not through the shared run directory.
+    'engine-host.json', 'dsh-host.json', 'codex-app-server.sock', 'native.sock'])
     assert.ok(!sharedRun.includes(privateName), `${privateName} must stay container-private`);
+  const gatewayLinks = docker(['exec', compose(['ps', '-q', 'gateway']), 'ls', '/run/opencraft-links/brain', '/run/opencraft-links/hands']);
+  assert.match(gatewayLinks, /link\.sock[\s\S]*link\.sock/, 'the Gateway reaches Brain and Hands through their static-docker links');
   assert.notEqual(spawnSync('docker', ['exec', compose(['ps', '-q', 'gateway']), 'test', '-e', '/run/opencraft-agent/control.sock']).status, 0,
     'Gateway cannot see an agent run directory');
   const terminalProbe = await readFile(join(root, 'scripts/smoke/server/hands-terminal-probe.mjs'), 'utf8');
@@ -179,7 +183,8 @@ try {
   throw error;
 } finally {
   if (!(passed && process.env.OPENCRAFT_CONTAINER_SMOKE_KEEP === '1')) {
-    try { compose(['down', '--remove-orphans']); } catch {}
+    // --volumes: the static-docker link volumes are per project and hold no data.
+    try { compose(['down', '--remove-orphans', '--volumes']); } catch {}
     await rm(directory, { recursive: true, force: true });
   }
 }

@@ -53,6 +53,11 @@ export interface E2BConnection {
     template: string,
     options: Parameters<typeof E2BSandbox.create>[1],
   ) => Promise<Remote>;
+  /** Reconnects to an existing sandbox by id (`Sandbox.connect`); never creates one. */
+  connect?: (
+    sandboxId: string,
+    options: Parameters<typeof E2BSandbox.connect>[1],
+  ) => Promise<Remote>;
 }
 const fault = (
   code: ConstructorParameters<typeof SandboxFault>[0],
@@ -87,6 +92,7 @@ export function e2bSandboxBackend(
   options: E2BSandboxOptions,
   driver: E2BConnection = {
     create: (template, opts) => E2BSandbox.create(template, opts),
+    connect: (sandboxId, opts) => E2BSandbox.connect(sandboxId, opts),
   },
 ): SandboxBackend {
   const templateId = options.templateId,
@@ -141,6 +147,85 @@ export function e2bSandboxBackend(
       if (i < 2) await delay(100);
     }
     throw fault("SANDBOX_CLEANUP", "E2B destruction is unconfirmed");
+  }
+  /** One live instance (created or re-attached): broker processes, lease, close. */
+  function environmentFor(remote: Remote, identity: SandboxIdentity, info: Awaited<ReturnType<Remote["getInfo"]>>): SandboxEnvironment {
+    const pending = new Set<Promise<SandboxProcess>>();
+    let closing: Promise<void> | undefined,
+      renewal: Promise<void> | undefined,
+      timer: ReturnType<typeof setTimeout> | undefined,
+      ended = false;
+    const deadline = Date.now() + (lease?.maxLifetimeMs ?? timeoutMs);
+    const environment: SandboxEnvironment = {
+      receipt: Object.freeze({ backend: "e2b", instanceId: remote.sandboxId }),
+      resources: {
+        cpuMillis: info.cpuCount * 1000,
+        memoryBytes: info.memoryMB * 1024 ** 2,
+      },
+      capabilities: { terminal: true },
+      spawn(command, onOutput) {
+        if (ended)
+          return Promise.reject(
+            fault("SANDBOX_START", "E2B execution is unavailable"),
+          );
+        const operation = startProcess(
+          remote,
+          identity,
+          command,
+          onOutput,
+          python,
+          requestTimeoutMs,
+          () => environment.close(),
+        );
+        pending.add(operation);
+        void operation
+          .finally(() => pending.delete(operation))
+          .catch(() => {});
+        return operation;
+      },
+      close() {
+        if (closing) return closing;
+        ended = true;
+        clearTimeout(timer);
+        return (closing = (async () => {
+          await renewal?.catch(() => {});
+          await Promise.allSettled([...pending]);
+          await destroy(remote);
+        })());
+      },
+    };
+    if (lease) {
+      const schedule = () => {
+        if (ended) return;
+        timer = setTimeout(
+          () => {
+            renewal = (async () => {
+              try {
+                if (Date.now() >= deadline) throw Error();
+                await lease.authorize(identity);
+                if (ended) return;
+                await remote.setTimeout(
+                  Math.min(timeoutMs, Math.max(1000, deadline - Date.now())),
+                  requestOptions,
+                );
+                if (!ended) schedule();
+              } catch {
+                if (!ended) {
+                  try {
+                    lease.onLost(identity);
+                  } catch {}
+                  void environment.close().catch(() => {});
+                }
+              }
+            })();
+          },
+          Math.max(1, Math.min(lease.renewEveryMs, deadline - Date.now())),
+        );
+        timer.unref();
+      };
+      schedule();
+    }
+    return environment;
   }
   return {
     id: "e2b",
@@ -220,81 +305,25 @@ export function e2bSandboxBackend(
         }
         throw new SandboxCreationFault("not-created");
       }
-      const pending = new Set<Promise<SandboxProcess>>();
-      let closing: Promise<void> | undefined,
-        renewal: Promise<void> | undefined,
-        timer: ReturnType<typeof setTimeout> | undefined,
-        ended = false;
-      const deadline = Date.now() + (lease?.maxLifetimeMs ?? timeoutMs);
-      const environment: SandboxEnvironment = {
-        resources: {
-          cpuMillis: info.cpuCount * 1000,
-          memoryBytes: info.memoryMB * 1024 ** 2,
-        },
-        capabilities: { terminal: true },
-        spawn(command, onOutput) {
-          if (ended)
-            return Promise.reject(
-              fault("SANDBOX_START", "E2B execution is unavailable"),
-            );
-          const operation = startProcess(
-            remote,
-            identity,
-            command,
-            onOutput,
-            python,
-            requestTimeoutMs,
-            () => environment.close(),
-          );
-          pending.add(operation);
-          void operation
-            .finally(() => pending.delete(operation))
-            .catch(() => {});
-          return operation;
-        },
-        close() {
-          if (closing) return closing;
-          ended = true;
-          clearTimeout(timer);
-          return (closing = (async () => {
-            await renewal?.catch(() => {});
-            await Promise.allSettled([...pending]);
-            await destroy(remote);
-          })());
-        },
-      };
-      if (lease) {
-        const schedule = () => {
-          if (ended) return;
-          timer = setTimeout(
-            () => {
-              renewal = (async () => {
-                try {
-                  if (Date.now() >= deadline) throw Error();
-                  await lease.authorize(identity);
-                  if (ended) return;
-                  await remote.setTimeout(
-                    Math.min(timeoutMs, Math.max(1000, deadline - Date.now())),
-                    requestOptions,
-                  );
-                  if (!ended) schedule();
-                } catch {
-                  if (!ended) {
-                    try {
-                      lease.onLost(identity);
-                    } catch {}
-                    void environment.close().catch(() => {});
-                  }
-                }
-              })();
-            },
-            Math.max(1, Math.min(lease.renewEveryMs, deadline - Date.now())),
-          );
-          timer.unref();
-        };
-        schedule();
+      return environmentFor(remote, identity, info);
+    },
+    /** Re-attach by receipt via `Sandbox.connect`. A missing or unverifiable instance
+     * is lost (SANDBOX_UNAVAILABLE), never replaced. Connecting may resume a paused
+     * sandbox; it never creates one. */
+    async attach(identity, receipt, _resources, signal) {
+      if (!initialized || closed || signal.aborted || !driver.connect)
+        throw fault("SANDBOX_UNAVAILABLE", "E2B re-attach is unavailable");
+      if (receipt?.backend !== "e2b" || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/u.test(receipt.instanceId))
+        throw fault("SANDBOX_UNAVAILABLE", "Receipt belongs to another provider");
+      let remote: Remote, info: Awaited<ReturnType<Remote["getInfo"]>>;
+      try {
+        remote = await driver.connect(receipt.instanceId, { apiUrl, sandboxUrl, apiKey, requestTimeoutMs });
+        info = await remote.getInfo(requestOptions);
+        if (remote.sandboxId !== receipt.instanceId) throw Error("Different instance");
+      } catch {
+        throw fault("SANDBOX_UNAVAILABLE", "E2B instance is gone or cannot be verified");
       }
-      return environment;
+      return environmentFor(remote, identity, info);
     },
     async close() {
       closed = true;

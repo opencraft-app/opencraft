@@ -184,9 +184,79 @@ fails only its in-flight requests (never resent); the next request starts a new 
 Every backend that advertises endpoints must pass
 `tests/execution/sandbox-endpoint-conformance.test.ts` (binary round trip,
 half-close, close from either side, back-pressure, attached failure isolation and
-validation); the suite currently runs in-process, local child-process and E2B
-adapter fixtures, plus an opt-in real `docker exec` harness. Placement use and
-measurements are in [workspace-host-split](../platform/workspace-host-split.md).
+validation, receipt re-attach, `workspace://` resolution); the suite runs
+in-process, local child-process, E2B adapter (vendor SDK replaced by local
+processes) and static-docker link (agent link server in-process) harnesses, plus
+opt-in real-container harnesses: `docker exec` + broker
+(`OPENCRAFT_SANDBOX_CONFORMANCE_DOCKER=<image with python3>`) and static-docker
+(`OPENCRAFT_SANDBOX_CONFORMANCE_STATIC_DOCKER=<opencraft runtime image>`, the image's
+`workspace-agent --bare` as container main process). Placement use and measurements
+are in [workspace-host-split](../platform/workspace-host-split.md).
+
+### Workspace addresses, receipts and re-attach
+
+Addresses are URIs only at configuration and client boundaries
+(`@opencraft/sandbox/uri`); they are parsed into typed values and never carry
+credentials, ports, queries or fragments:
+
+- `workspace://<workspaceId>/endpoints/<name>` — an endpoint a workspace's agent
+  publishes (`name` ∈ `SANDBOX_ENDPOINT_NAMES`). Clients hold only this.
+- `<provider>://<target>` — where an environment runs; the scheme is a registered
+  provider id and the target is that provider's selector: `static-docker://<service>`,
+  `e2b://<template>`, later `docker-provisioner://<image>` and
+  `cloudflare://<container-class>`. `SandboxProviderRegistry.environment(installation,
+  address)` refuses a URI whose provider is not the installation's or whose target the
+  provider's `acceptsTarget` rejects. Schemes already used elsewhere (`unix`, `stdio`,
+  `ws`, `http(s)`, `workspace`, `human`, `session`, `opencraft`, …) are reserved.
+
+A backend may set `SandboxEnvironment.receipt` (`{backend, instanceId}`, secret-free)
+and implement `attach(identity, receipt, resources, signal)`; `SandboxPool.attachSandbox`
+admits it like `create`. Attach never creates or replaces: when the provider cannot
+prove the receipt names the same live instance it rejects `SANDBOX_UNAVAILABLE`, and the
+owner decides whether to create a new environment and recover.
+
+`createWorkspaceRuntime` (`@opencraft/sandbox/workspace`, no Node types) owns one
+workspace's environment bindings: per environment it re-attaches the persisted receipt
+or creates, reads the agent's identity over the `control` endpoint (`probe`:
+incarnation, roles, published names; `describe`: an endpoint's credentials and engine
+descriptor), persists `{receipt, agentIncarnation}` through a WorkspaceHost store
+before use, resolves an endpoint name to the first environment whose agent publishes
+it, and rebinds once when a relay cannot start (stale binding). `observe()` re-probes
+and reports a changed incarnation. It never replays bytes.
+
+| Provider | Process channel | `receipt.instanceId` | `attach` |
+| --- | --- | --- | --- |
+| `static-docker` (`@opencraft/sandbox-node/static-docker`) | the agent's link: a Unix socket in a directory mounted only into the Host and that container; per process one connection carrying the shared broker | agent incarnation | same incarnation only (link `attach` with expected incarnation) |
+| `e2b` | `commands.run` + shared broker | sandbox id | `Sandbox.connect` (pinned SDK 2.x); missing/unverifiable → lost |
+| in-process / local process (tests, Hands-style owners) | direct | none | not offered |
+
+static-docker link protocol (one JSON line per connection): `attach {ticket,
+incarnation?}` — the ticket is written by the agent to `<link>/ticket` (0600) after it
+listens and rotated after every successful attach (one-time); a newer attach revokes the
+previous session and kills its processes. `open {session}` then carries one broker
+process; the agent checks the broker `start` frame against its policy: `relay-only`
+(default) admits only the fixed endpoint relay to an allow-listed name under its
+endpoint directory, `any` is for bare/dev images and conformance. `release {session}`
+closes. The effective budget is the container's cgroup limit as the agent reads it; the
+backend refuses a binding whose enforced limits differ from the requested budget.
+A newer attach revokes the previous session by ending each broker's control input:
+the broker then kills its process's own session (processes run in a new session, so
+killing only the broker would orphan them); SIGKILL of the broker is a fallback.
+
+### Provider lifecycle obligations (from the Cloudflare Containers probe)
+
+A future backend whose provider can host several incarnations under one name, stop
+an environment on its own, or lose a process handle must still fit this contract. The
+status of each obligation after step 4c:
+
+| Obligation | Status |
+| --- | --- |
+| `receipt.instanceId` is the agent incarnation (or a provider id that changes whenever the instance restarts), never a reusable name such as a Durable Object or container name | static-docker: incarnation (implemented); E2B: sandbox id plus incarnation comparison in `WorkspaceRuntime` (implemented); Cloudflare: required, not implemented |
+| Process transport has real backpressure and half-close (`exec` stdin/stdout or raw TCP); WebSocket without backpressure is not an endpoint transport | contract and conformance suite (implemented); a Cloudflare `container.exec` adapter is not implemented |
+| A lost process handle must not leave orphans: every broker process runs in its own session and the broker kills that session on control-input EOF; `workspace-agent` stops every child when it stops | implemented (broker `setsid`/`killpg` on EOF, link revocation by EOF; the AppServer child is a `detached` group signalled as a group, other children are signalled directly and are expected to own their descendants). A provider whose handle loss does **not** EOF the process stdin (Cloudflare DO reset) needs the agent itself to reap sessions whose link connection ended — follow-up |
+| The container main process handles SIGTERM | implemented: `container-service.mjs` forwards SIGTERM/SIGINT to `workspace-agent`, which drains and stops its children |
+| Environment loss reported by the provider (idle stop, crash without restart) | not in the contract: today a loss is seen as a failed relay start (`WorkspaceRuntime` rebinds once: attach fails, a new environment is created and reported) or by `observe()`. A minimal optional `lost` signal on `SandboxEnvironment` is a follow-up for providers that can report it |
+| Native endpoint connection (`connectEndpoint(target)`, for example a container TCP port) preferred over the relay | evaluated only; not part of the contract |
 
 The independent durable terminal owner keeps its existing process RPC and lifetime.
 This integration does not route that separate Workbench terminal owner through

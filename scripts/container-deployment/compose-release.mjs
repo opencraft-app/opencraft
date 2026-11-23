@@ -123,6 +123,8 @@ export async function inspectDeploymentWritable(environment, deployDirectory = d
 /** Brain and Hands run the workspace agent, whose run directory must be container-private
  * (a tmpfs per container, never a shared bind mount). Older Compose files lack it. */
 export const AGENT_RUN_DIRECTORY = '/run/opencraft-agent';
+export const AGENT_LINK_DIRECTORY = '/run/opencraft-link';
+export const GATEWAY_LINK_ROOT = '/run/opencraft-links';
 export function inspectWorkspaceAgentServices(config) {
   for (const name of ['brain', 'hands']) {
     const service = config?.services?.[name];
@@ -134,6 +136,16 @@ export function inspectWorkspaceAgentServices(config) {
       throw new Error(`${name} must not share ${AGENT_RUN_DIRECTORY} through a volume`);
     if (service.environment?.OPENCRAFT_AGENT_RUN_DIR !== undefined && service.environment.OPENCRAFT_AGENT_RUN_DIR !== AGENT_RUN_DIRECTORY)
       throw new Error(`${name} must use ${AGENT_RUN_DIRECTORY} as its agent run directory`);
+    // static-docker: the agent's link is a named volume shared with the Gateway only.
+    const link = (service.volumes ?? []).find(volume => volume.target === AGENT_LINK_DIRECTORY);
+    if (service.environment?.OPENCRAFT_AGENT_LINK_DIR !== AGENT_LINK_DIRECTORY || link?.type !== 'volume' || !link.source)
+      throw new Error(`${name} has no private static-docker link volume at ${AGENT_LINK_DIRECTORY}`);
+    const gatewayLink = (config.services.gateway?.volumes ?? []).find(volume => volume.target === `${GATEWAY_LINK_ROOT}/${name}`);
+    if (gatewayLink?.type !== 'volume' || gatewayLink.source !== link.source)
+      throw new Error(`gateway does not mount the ${name} link at ${GATEWAY_LINK_ROOT}/${name}`);
+    for (const [other, value] of Object.entries(config.services))
+      if (!['gateway', name].includes(other) && (value.volumes ?? []).some(volume => volume.type === 'volume' && volume.source === link.source))
+        throw new Error(`${other} must not mount the ${name} link`);
   }
 }
 

@@ -66,7 +66,8 @@ function normalizeTarget(target) {
   const url = new URL(target);
   if (url.protocol === "http:") url.protocol = "ws:";
   if (url.protocol === "https:") url.protocol = "wss:";
-  if (url.protocol !== "ws:" && url.protocol !== "wss:") {
+  // ws+unix: a private local socket (e.g. a workspace endpoint listener for an engine Host).
+  if (url.protocol !== "ws:" && url.protocol !== "wss:" && url.protocol !== "ws+unix:") {
     throw new Error(`Unsupported AppServer WebSocket protocol: ${url.protocol}`);
   }
   return url.href;

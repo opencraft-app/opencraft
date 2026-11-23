@@ -4,10 +4,24 @@ import { observeStandaloneCodexExecution } from "./native-execution-origin";
 import { CodexCoreControlClient } from "@opencraft/account-pool-host";
 import type { DuplexTransport, TransportStatus } from "@opencraft/appserver-client/transport";
 
+/** Where the runtime owner (Codex AppServer) is reached when it is not behind the
+ * account Core: its control endpoint and token, and the native socket to dial. A
+ * WorkspaceHost passes local endpoint listeners here; the in-environment paths in
+ * the owner's health are never dialled. */
+export interface CodexRuntimeEndpoints {
+  readonly endpoint: string;
+  /** A function when the credential belongs to the runtime owner's incarnation. */
+  readonly token: string | (() => Promise<string>);
+  readonly nativeSocket?: string;
+}
+
 /** A raw native connection: Host routing and overlays stay in CodexEngineAdapter.
  * Closing this connection never owns/stops the core or its CLI. No request retry. */
 export class CodexNativeCoreTransport implements DuplexTransport {
+  /** Account plane (accounts, subscriptions); also the runtime plane when no runtime is given. */
   readonly control: CodexCoreControlClient;
+  private readonly runtimeEndpoints: CodexRuntimeEndpoints | undefined;
+  private runtimeClient: { token: string; client: CodexCoreControlClient } | undefined;
   private readonly lifetime = new AbortController();
   private readEpoch = 0;
   private readonly connection: CodexCoreSocket;
@@ -22,13 +36,14 @@ export class CodexNativeCoreTransport implements DuplexTransport {
   get callbackIncarnation(): string|null {return this.ownerIncarnation;}
   get supportsOrchestration(): boolean { return this.callbackReady; }
   get supportsThreadTitle(): boolean { return this.callbackReady && this.titleToolReady; }
-  constructor(endpoint: string, token: string, callbackLaneId?: string) {
+  constructor(endpoint: string, token: string, callbackLaneId?: string, runtime?: CodexRuntimeEndpoints) {
     this.control = new CodexCoreControlClient(endpoint, token);
-    this.reads = new CodexCoreReadIsolation(signal => this.control.health(signal, "native"));
+    this.runtimeEndpoints = runtime;
+    this.reads = new CodexCoreReadIsolation(signal => this.health(signal, "native"));
     this.connection = new CodexCoreSocket({
       callbackLaneId,
       health: async signal => {
-        const health = await this.control.health(signal, "native");
+        const health = await this.health(signal, "native");
         this.standaloneExecution = undefined;
         if (process.platform === "linux") {
           this.standaloneExecution = (await observeStandaloneCodexExecution(health)).incarnation;
@@ -41,6 +56,15 @@ export class CodexNativeCoreTransport implements DuplexTransport {
       message: frame => { for (const listener of this.messages) listener(frame); },
       status: value => { for (const listener of this.statuses) listener(value); },
     });
+  }
+  /** Runtime owner health; `nativeSocket` is the socket this Host can dial. */
+  async health(signal?: AbortSignal, observation: "execution" | "native" = "execution") {
+    const runtime = this.runtimeEndpoints;
+    if (!runtime) return this.control.health(signal, observation);
+    const token = typeof runtime.token === "function" ? await runtime.token() : runtime.token;
+    if (this.runtimeClient?.token !== token) this.runtimeClient = { token, client: new CodexCoreControlClient(runtime.endpoint, token) };
+    const health = await this.runtimeClient.client.health(signal, observation);
+    return runtime.nativeSocket ? { ...health, nativeSocket: runtime.nativeSocket } : health;
   }
   get status(): TransportStatus { return this.connection.status; }
   subscribeMessage(listener: (frame: string) => void): () => void { this.messages.add(listener); return () => this.messages.delete(listener); }

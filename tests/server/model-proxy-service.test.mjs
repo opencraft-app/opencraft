@@ -22,14 +22,18 @@ test('model proxy mode defaults to embedded and an external proxy requires a fix
 
 test('embedded Brain and the proxy service start the same account Core command', () => {
   const paths = deploymentPaths(base);
-  assert.deepEqual(codexCoreArguments(paths, '/opt/opencraft', 45071), [
-    '--app-server-endpoint', '/var/lib/opencraft/run/codex-app-server.sock', '--proxy-port', '45071',
+  const common = [
     '--endpoint', '/var/lib/opencraft/run/codex-core.sock', '--token-file', '/var/lib/opencraft/daemon.token',
     '--codex-executable', '/opt/opencraft/runtime/codex/bin/codex',
     '--runtime-directory', '/workspace',
     '--data-directory', '/var/lib/opencraft/codex',
     '--native-codex-home-directory', '/var/lib/opencraft/native-codex',
-  ]);
+  ];
+  // The proxy service is account-only: the AppServer is a workspace owner it never reaches.
+  assert.deepEqual(codexCoreArguments(paths, '/opt/opencraft', 45071), ['--accounts-only', '--proxy-port', '45071', ...common]);
+  // Only the embedded Core (inside the Brain container) forwards health to its own AppServer.
+  assert.deepEqual(codexCoreArguments(paths, '/opt/opencraft', 45071, { runtimeEndpoint: paths.appServerEndpoint }),
+    ['--app-server-endpoint', '/run/opencraft-agent/codex/control.sock', '--proxy-port', '45071', ...common]);
   assert.throws(() => codexCoreArguments(paths, '/opt/opencraft', 0), /port/);
 });
 

@@ -16,6 +16,9 @@ export interface CodexAppServerOptions {
   readonly endpoint: string;
   readonly coreEndpoint: string;
   readonly authToken: string;
+  /** Bearer for this owner's own control endpoint when it differs from the account
+   * Core token (a workspace-private credential handed out only through the agent). */
+  readonly controlToken?: string;
   readonly dataDirectory: string;
   /** Generation-local owner root. Account identity still uses dataDirectory. */
   readonly runtimeDataDirectory?: string;
@@ -44,7 +47,8 @@ export async function startCodexAppServer(options: CodexAppServerOptions) {
     throw new Error("Invalid private workspace authority configuration");
   if (options.resolveWorkspace && !options.executionSandbox) throw new Error("Workspace routing requires execution sandbox policy");
   if (process.platform === "win32" || ![options.endpoint, options.coreEndpoint, options.dataDirectory, options.runtimeDirectory].every(isAbsolute)
-    || options.endpoint === options.coreEndpoint || options.authToken.length < 32) throw new Error("Invalid Codex AppServer configuration");
+    || options.endpoint === options.coreEndpoint || options.authToken.length < 32
+    || options.controlToken !== undefined && options.controlToken.length < 32) throw new Error("Invalid Codex AppServer configuration");
   const runtimeDataDirectory = options.runtimeDataDirectory ?? options.dataDirectory;
   if (!isAbsolute(runtimeDataDirectory)) throw new Error("Codex runtime directory must be absolute");
   const release = await acquireCodexWriter(runtimeDataDirectory, "runtime");
@@ -113,7 +117,7 @@ export async function startCodexAppServer(options: CodexAppServerOptions) {
     if (!baseSetting) throw new Error("Codex proxy URL is missing");
     const proxyBaseUrl: string = JSON.parse(baseSetting.slice(baseSetting.indexOf("=") + 1));
     // startControlServer validates the private parent before spawning the native listener.
-    control = await startControlServer(options.endpoint, options.authToken, async request => {
+    control = await startControlServer(options.endpoint, options.controlToken ?? options.authToken, async request => {
       const nativeOnly = request.url === "/native-health";
       const healthy = request.method === "GET" && (request.url === "/health" || nativeOnly) && !failed && ready && (nativeOnly || await executable());
       return { status: healthy ? 200 : 503,

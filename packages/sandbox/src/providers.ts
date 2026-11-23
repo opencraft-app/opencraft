@@ -1,4 +1,5 @@
 import { SandboxFault, type SandboxBackend, type SandboxEnvironment, type SandboxIdentity } from "./contract.js";
+import type { SandboxEnvironmentAddress } from "./uri.js";
 
 /** Trusted, secret-free installation record for one provider. `backend` is the
  * registered provider ID; the remaining fields belong to that provider. */
@@ -10,6 +11,8 @@ export interface SandboxProviderRequest<I extends SandboxProviderInstallation> {
   readonly installation: I;
   /** Installation-owned secret reader; the secret is never persisted in Bot settings. */
   readSecret(): Promise<string>;
+  /** The provider target of the environment URI (`<provider>://<target>`): image,
+   * template, Compose service or container class, as the provider defines it. */
   readonly templateId: string;
   /** Absolute interpreter path in the template for providers using the shared broker. */
   readonly python?: string;
@@ -64,6 +67,8 @@ export interface PersistentWorkspaceProvider<I extends SandboxProviderInstallati
 export interface SandboxProviderDefinition<I extends SandboxProviderInstallation> {
   readonly id: I["backend"];
   createBackend(request: SandboxProviderRequest<I>): SandboxBackend;
+  /** The provider's own target grammar, checked after the shared URI grammar. */
+  acceptsTarget?(target: string): boolean;
   readonly persistentWorkspaces?: PersistentWorkspaceProvider<I>;
 }
 /** One definition per installation variant, keyed by its discriminant. */
@@ -79,6 +84,9 @@ export interface SandboxProviderRegistry<I extends SandboxProviderInstallation> 
   resolve<V extends I>(installation: V): SandboxProviderDefinition<V>;
   /** As resolve(), but also requires the persistent-workspace capability. */
   persistent<V extends I>(installation: V): PersistentWorkspaceProvider<V>;
+  /** Selects the provider for an environment URI: the installation must be that
+   * provider's and the provider must accept the target. Never falls back. */
+  environment<V extends I>(installation: V, address: SandboxEnvironmentAddress): { definition: SandboxProviderDefinition<V>; templateId: string };
 }
 
 const unavailable = () => new SandboxFault("SANDBOX_UNAVAILABLE", "Selected execution provider is not registered");
@@ -109,6 +117,13 @@ export function createSandboxProviderRegistry<I extends SandboxProviderInstallat
       return !!definition && (capability === undefined || !!definition[capability]);
     },
     resolve: <V extends I>(installation: V) => resolve(installation) as unknown as SandboxProviderDefinition<V>,
+    environment: <V extends I>(installation: V, address: SandboxEnvironmentAddress) => {
+      const definition = resolve(installation);
+      if (address?.provider !== installation.backend || typeof address.target !== "string"
+        || definition.acceptsTarget && !definition.acceptsTarget(address.target))
+        throw new SandboxFault("SANDBOX_POLICY", "Sandbox environment URI does not match its provider installation");
+      return { definition: definition as unknown as SandboxProviderDefinition<V>, templateId: address.target };
+    },
     persistent: <V extends I>(installation: V) => {
       const capability = resolve(installation).persistentWorkspaces;
       if (!capability) throw unavailable();

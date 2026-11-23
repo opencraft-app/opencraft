@@ -5,7 +5,7 @@
  * and must pass tests/execution/sandbox-endpoint-conformance.test.ts unchanged. */
 import { spawn, execFile, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createConnection, createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
@@ -23,22 +23,26 @@ import {
 import { brokerSource, startBrokerProcess } from "@opencraft/sandbox/broker";
 import { SandboxNotFoundError } from "e2b";
 import { e2bSandboxBackend, type E2BConnection } from "../../../packages/sandbox-e2b/src/index";
+import { serveSandboxLink, staticDockerSandboxBackend } from "@opencraft/sandbox-node/static-docker";
+import { mkdir } from "node:fs/promises";
 
 /** Observe the commands a backend receives without changing its behaviour. */
 function recording(backend: SandboxBackend, commands: SandboxCommand[]): SandboxBackend {
+  const wrap = (environment: SandboxEnvironment): SandboxEnvironment => ({
+    ...(environment.receipt ? { receipt: environment.receipt } : {}),
+    resources: environment.resources, capabilities: environment.capabilities,
+    ...(environment.processLimits ? { processLimits: environment.processLimits } : {}),
+    spawn(command, onOutput) { commands.push(command); return environment.spawn(command, onOutput); },
+    close: () => environment.close(),
+  });
   return {
     id: backend.id,
     initialize: (policy, signal) => backend.initialize(policy, signal),
     close: () => backend.close(),
-    async create(identity, resources, signal) {
-      const environment = await backend.create(identity, resources, signal);
-      return {
-        resources: environment.resources, capabilities: environment.capabilities,
-        ...(environment.processLimits ? { processLimits: environment.processLimits } : {}),
-        spawn(command, onOutput) { commands.push(command); return environment.spawn(command, onOutput); },
-        close: () => environment.close(),
-      };
-    },
+    async create(identity, resources, signal) { return wrap(await backend.create(identity, resources, signal)); },
+    ...(backend.attach ? { async attach(identity: any, receipt: any, resources: any, signal: AbortSignal) {
+      return wrap(await backend.attach!(identity, receipt, resources, signal));
+    } } : {}),
   };
 }
 
@@ -62,6 +66,10 @@ export interface EndpointHarness {
   readonly closes: { count: number };
   /** Commands as the guest received them, for broker-based harnesses. */
   readonly wire?: SandboxCommand[];
+  /** Attach-capable providers: a fresh backend over the same instances (a restarted Host). */
+  reconnect?(): SandboxBackend;
+  /** Attach-capable providers: replace or lose the current instance (new incarnation). */
+  replaceInstance?(): Promise<void>;
   dispose(): Promise<void>;
 }
 
@@ -191,11 +199,13 @@ export async function e2bFixtureHarness(): Promise<EndpointHarness> {
   const host = await socketHost(), commands: SandboxCommand[] = [], closes = { count: 0 };
   const wire: SandboxCommand[] = [];
   const directory = await mkdtemp(join(tmpdir(), "oc-e2b-")), children = new Set<ChildProcessWithoutNullStreams>();
+  const instances = new Map<string, ReturnType<typeof instance>>();
   const instance = () => {
   let gone = false;
   const owned = new Set<ChildProcessWithoutNullStreams>();
   return {
     sandboxId: "endpoint-conformance-" + randomUUID(),
+    get gone() { return gone; },
     async getInfo() { if (gone) throw new SandboxNotFoundError("gone"); return { cpuCount: 4, memoryMB: 8192 }; },
     async kill() { if (!gone) { gone = true; closes.count++; } for (const child of owned) child.kill("SIGKILL"); },
     async setTimeout() {},
@@ -220,17 +230,58 @@ export async function e2bFixtureHarness(): Promise<EndpointHarness> {
     },
   };
   };
-  const driver = { async create() { return instance(); } } as unknown as E2BConnection;
+  let latest: ReturnType<typeof instance> | undefined;
+  const driver = {
+    async create() { const value = instance(); instances.set(value.sandboxId, value); latest = value; return value; },
+    async connect(sandboxId: string) {
+      const value = instances.get(sandboxId);
+      if (!value || value.gone) throw new SandboxNotFoundError("gone");
+      return value;
+    },
+  } as unknown as E2BConnection;
+  const options = { apiUrl: "https://api.example.test", sandboxUrl: "https://proxy.example.test", templateId: "endpoint-conformance", readApiKey: async () => "synthetic" };
   return {
     name: "e2b-fixture", python: "/usr/bin/python3", resources: defaults, catCommand: ["/bin/cat"], commands, closes,
-    backend: recording(e2bSandboxBackend({ apiUrl: "https://api.example.test", sandboxUrl: "https://proxy.example.test", templateId: "endpoint-conformance", readApiKey: async () => "synthetic" }, driver), commands),
+    backend: recording(e2bSandboxBackend(options, driver), commands),
     wire,
+    reconnect: () => recording(e2bSandboxBackend(options, driver), commands),
+    // E2B: the instance is gone (killed outside this Host); its receipt must not re-attach.
+    async replaceInstance() { await latest?.kill(); },
     listen: host.listen, missing: host.missing,
     async dispose() {
       for (const child of children) child.kill("SIGKILL");
       await host.dispose();
       await rm(directory, { recursive: true, force: true });
     },
+  };
+}
+
+/** static-docker with the agent's link server in this process (the channel without
+ * a container): real link protocol, ticket, sessions and the shared broker. */
+export async function staticDockerLinkHarness(): Promise<EndpointHarness> {
+  const host = await socketHost(), commands: SandboxCommand[] = [], closes = { count: 0 };
+  const directory = await mkdtemp(join(tmpdir(), "oc-link-"));
+  const link = join(directory, "brain");
+  await mkdir(link, { mode: 0o700 });
+  const start = () => serveSandboxLink({
+    directory: link, python: "/usr/bin/python3", policy: "any", endpointDirectory: host.directory,
+    incarnation: { id: randomUUID().replaceAll("-", ""), evidence: "test", startedAt: new Date().toISOString() },
+    limits: async () => ({ cpuMillis: defaults.cpuMillis, memoryBytes: defaults.memoryBytes, tasks: 4096 }),
+  });
+  let server = await start();
+  const counted = (backend: SandboxBackend): SandboxBackend => {
+    const count = (environment: SandboxEnvironment): SandboxEnvironment => ({ ...environment, spawn: environment.spawn,
+      close: async () => { await environment.close(); closes.count++; } });
+    return { ...backend, create: async (...args) => count(await backend.create(...args)),
+      attach: async (...args) => count(await backend.attach!(...args)) };
+  };
+  const make = () => recording(counted(staticDockerSandboxBackend({ directory: link })), commands);
+  return {
+    name: "static-docker-link", python: "/usr/bin/python3", resources: defaults, catCommand: ["/bin/cat"], commands, closes,
+    backend: make(), reconnect: make,
+    async replaceInstance() { await server.close(); server = await start(); },
+    listen: host.listen, missing: host.missing,
+    async dispose() { await server.close(); await host.dispose(); await rm(directory, { recursive: true, force: true }); },
   };
 }
 
@@ -290,9 +341,54 @@ export async function dockerHarness(image: string): Promise<EndpointHarness> {
   };
 }
 
+/** static-docker against a real container: the opencraft runtime image runs its
+ * `workspace-agent --bare` as the container's main process (Docker applies the
+ * budget), serving the link in a host directory mounted only into that container.
+ * This process holds no Docker socket for the link: `docker` is used only to start
+ * and replace the container. Opt-in: OPENCRAFT_SANDBOX_CONFORMANCE_STATIC_DOCKER=<image>. */
+export async function staticDockerContainerHarness(image: string): Promise<EndpointHarness> {
+  const directory = await mkdtemp(join(tmpdir(), "oc-sd-"));
+  const link = join(directory, "link"), endpoints = join(directory, "endpoints");
+  await mkdir(link, { mode: 0o700 }); await mkdir(endpoints, { mode: 0o700 });
+  const host = await socketHost({ host: endpoints, guest: "/endpoint" });
+  const commands: SandboxCommand[] = [], closes = { count: 0 };
+  let container = "";
+  const start = async () => {
+    container = (await run("docker", ["run", "-d", "--rm", "--init", "--user", "0:0", "--network", "none", "--cpus", "4", "--memory", "8g",
+      "--tmpfs", "/run/opencraft-agent:mode=0700", "-v", `${link}:/run/opencraft-link`, "-v", `${endpoints}:/endpoint`,
+      "-e", "OPENCRAFT_DATA_DIR=/var/tmp/oc-data", "-e", "OPENCRAFT_WORKSPACE_DIR=/var/tmp/oc-workspace",
+      "-e", "OPENCRAFT_AGENT_LINK_DIR=/run/opencraft-link", "-e", "OPENCRAFT_AGENT_LINK_POLICY=any",
+      "--entrypoint", "/opt/opencraft/bin/node", image, "/opt/opencraft/runtime/workspace-agent.mjs", "--bare"])).stdout.trim();
+    const deadline = Date.now() + 60_000;
+    for (;;) {
+      try { await readFile(join(link, "ticket")); await readFile(join(link, "link.sock")).catch(error => { if (error.code !== "ENXIO" && error.code !== "EOPNOTSUPP") throw error; }); return; }
+      catch { if (Date.now() > deadline) throw Error("static-docker agent did not start"); await new Promise(resolve => setTimeout(resolve, 200)); }
+    }
+  };
+  await start();
+  const counted = (backend: SandboxBackend): SandboxBackend => {
+    const count = (environment: SandboxEnvironment): SandboxEnvironment => ({ ...environment, spawn: environment.spawn,
+      close: async () => { await environment.close(); closes.count++; } });
+    return { ...backend, create: async (...args) => count(await backend.create(...args)), attach: async (...args) => count(await backend.attach!(...args)) };
+  };
+  const make = () => recording(counted(staticDockerSandboxBackend({ directory: link })), commands);
+  return {
+    name: "static-docker-container", python: "/usr/bin/python3", resources: defaults, catCommand: ["/bin/cat"], commands, closes,
+    backend: make(), reconnect: make,
+    // A container restart: same declared service, new agent incarnation.
+    async replaceInstance() { await run("docker", ["rm", "-f", container]); await rm(join(link, "ticket"), { force: true }); await start(); },
+    listen: host.listen, missing: host.missing,
+    async dispose() {
+      await run("docker", ["rm", "-f", container]).catch(() => {});
+      await host.dispose();
+      await rm(directory, { recursive: true, force: true });
+    },
+  };
+}
+
 export async function harnesses(): Promise<(() => Promise<EndpointHarness>)[]> {
   const only = process.env.OPENCRAFT_SANDBOX_CONFORMANCE_ONLY;
-  const list = [inProcessHarness, localProcessHarness, e2bFixtureHarness].filter(make => !only || make.name.toLowerCase().startsWith(only));
-  const image = process.env.OPENCRAFT_SANDBOX_CONFORMANCE_DOCKER;
-  return image ? [...list, () => dockerHarness(image)] : list;
+  const list = [inProcessHarness, localProcessHarness, e2bFixtureHarness, staticDockerLinkHarness].filter(make => !only || make.name.toLowerCase().startsWith(only));
+  const image = process.env.OPENCRAFT_SANDBOX_CONFORMANCE_DOCKER, workspaceImage = process.env.OPENCRAFT_SANDBOX_CONFORMANCE_STATIC_DOCKER;
+  return [...list, ...(image ? [() => dockerHarness(image)] : []), ...(workspaceImage ? [() => staticDockerContainerHarness(workspaceImage)] : [])];
 }

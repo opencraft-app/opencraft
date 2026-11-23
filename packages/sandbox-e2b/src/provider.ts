@@ -75,6 +75,8 @@ export function e2bSandboxProvider(options: E2BProviderOptions = {}): SandboxPro
   const request: typeof fetch = (...args) => (options.request ?? fetch)(...args);
   return {
     id: "e2b",
+    // `e2b://<template>`: the same template grammar the backend enforces.
+    acceptsTarget: (target) => /^[a-zA-Z0-9][a-zA-Z0-9_:/.-]{0,199}$/u.test(target),
     createBackend: (input) =>
       e2bSandboxBackend(
         {

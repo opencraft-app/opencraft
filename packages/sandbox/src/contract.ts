@@ -43,7 +43,17 @@ export type SandboxProcess = (Process & { readonly kind: "process"; closeStdin()
   readonly kind: "terminal";
   resize(size: { cols: number; rows: number }): Promise<void>;
 });
+/** Secret-free identity of one provider instance, persisted by its WorkspaceHost so a
+ * restarted Host can re-attach (`SandboxBackend.attach`) instead of re-creating. */
+export interface SandboxReceipt {
+  /** The backend id that issued it; another backend never accepts it. */
+  readonly backend: string;
+  /** Provider instance identity (E2B sandbox id; a static provider's agent incarnation). */
+  readonly instanceId: string;
+}
 export interface SandboxEnvironment {
+  /** Present when the backend can re-attach to this exact instance after a Host restart. */
+  readonly receipt?: SandboxReceipt;
   /** Effective constraints reported by the backend; absent fields are unclaimed. */
   readonly resources: Readonly<SandboxResources>;
   readonly capabilities: { readonly terminal: boolean };
@@ -59,6 +69,11 @@ export interface SandboxBackend {
   initialize(policy: SandboxPoolPolicy, signal: AbortSignal): Promise<void>;
   /** Resources must be applied before user code runs. Do not retry unknown creation. */
   create(identity: SandboxIdentity, resources: SandboxResources, signal: AbortSignal): Promise<SandboxEnvironment>;
+  /** Optional: reconnect to the instance a receipt names, with the same effective
+   * resources. Never creates or replaces an instance: when the provider cannot prove
+   * it is the same instance (gone, restarted, different incarnation) it rejects with
+   * SANDBOX_UNAVAILABLE and the owner decides whether to create a new one and recover. */
+  attach?(identity: SandboxIdentity, receipt: SandboxReceipt, resources: SandboxResources, signal: AbortSignal): Promise<SandboxEnvironment>;
   close(): Promise<void>;
 }
 export class SandboxFault extends Error {

@@ -94,7 +94,7 @@ Brain 与 Hands 放在哪里**是部署配置**：WorkspaceHost 只依赖[沙盒
 
 #### 3.3.1 现状：每个组件如何启动、如何被找到（2026-11-23 源码）
 
-第 4b 步之后，`host.mjs` 与 hands-application 的监督已由 `workspace-agent` 取代，启动配置与原生 listener 移入容器私有目录（§7"第 4b 步现状"）；下表保留调研时的文件与行号，Gateway 到达方式在第 4c 步前不变。
+第 4b 步之后，`host.mjs` 与 hands-application 的监督已由 `workspace-agent` 取代，启动配置与原生 listener 移入容器私有目录（§7"第 4b 步现状"）；第 4c 步之后 Gateway 只经 `static-docker` provider 与命名端点到达 Brain、Hands（§7"第 4c 步现状"）。下表保留调研时的文件与行号与当时的到达方式。
 
 | 组件 | 谁启动 | Gateway 如何到达 | 证据 |
 | --- | --- | --- | --- |
@@ -163,6 +163,12 @@ Brain 与 Hands 放在哪里**是部署配置**：WorkspaceHost 只依赖[沙盒
  └──────────────────────────────────────────────────────────────┘
 ```
 
+**地址（第 4c 步）。** 地址只在配置与客户端边界以 URI 出现，进入系统即解析为类型化值（`@opencraft/sandbox/uri`），URI 中不得出现凭据、端口、query、fragment：
+
+- 端点：`workspace://<workspaceId>/endpoints/<name>`，`name` 取自端点白名单（`control`、`codex-control`、`codex-native`、`pi`、`dsh`、`exec`、`terminal`、`files`、`browser`）。Gateway 与客户端只持有它；解析到哪个环境、经哪种传输由 WorkspaceRuntime 与 provider 决定。
+- 环境：`<provider>://<target>`，scheme 即已注册 provider id：`static-docker://<Compose 服务>`、`e2b://<模板>`、后续 `docker-provisioner://<镜像>`、`cloudflare://<容器类>`。改变部署形态＝改这一个 URI（Docker 单机在 Brain／Hands 合并前是两个：`static-docker://brain static-docker://hands`）。
+- 与现有约定对齐：Codex 的 `--listen unix://…`／`stdio://` 是进程监听地址，不是放置地址；`human://`、`session://` 是主体 id；`ws+unix://` 是客户端拨号地址。这些 scheme 被保留，不能注册为 provider。解析测试（往返、拒绝）对所有 provider 共用（tests/execution/sandbox-uri.test.ts）。
+
 **最小新抽象（三个）：**
 
 1. **`openSandboxEndpoint(environment, {target})`**（`@opencraft/sandbox/endpoint`，无 Node 类型）：spawn 固定中继程序（`attached: true`），返回字节双工 `{write, end, close, closed}`。Node 侧 `createSandboxEndpointListener`（`@opencraft/sandbox-node/endpoint-listener`）把每条本地连接变成一条端点连接，监听在私有 0700 目录中的 UDS，使 `CodexCoreSocket`、`CodexCoreControlClient`、engine/dsh client 不改代码。**每条连接＝一个沙盒进程**：多路复用、断开都由 provider 的进程流承担。第 4a 步的 target 是调用方校验过的容器内 UDS 路径；第 4b 步起改为名称，名称→容器内 socket 的映射由镜像内 `workspace-agent` 固定，不接受任意路径。浏览器中继已迁移（§7 第 4a 步）。
@@ -191,7 +197,7 @@ close/idle: drain → env.close()（删除实例；卷保留由 PersistentWorksp
 
 | provider | create | 每进程流 | attach | 持久卷 | Gateway 需要 Docker socket |
 | --- | --- | --- | --- | --- | --- |
-| `static-docker`（默认单工作区） | 不创建：Compose 声明的 `workspace` 容器，`workspace-agent` 在私有 UDS 上提供 broker（`hands-unix` 握手＋broker 帧，去掉固定向量，改为镜像内命令白名单） | UDS 连接 | 天然 | bind mount | 否 |
+| `static-docker`（默认单工作区，第 4c 步已实现） | 不创建：绑定 Compose 声明的容器（今天 `brain`、`hands` 两个），`workspace-agent` 在只挂载到该容器与 Gateway 的 link 卷（tmpfs）中提供共享 broker：一次性 ticket 换会话，`relay-only` 策略只放行到白名单端点的固定中继 | 每进程一条 link UDS 连接（broker 帧） | receipt＝agent 化身；只在同一化身时成功 | bind mount | 否 |
 | `docker-provisioner`（多工作区，首选，§8.3 决定 5） | 独立 provisioner 服务持 socket，只接受 WH 签名请求；`docker run` 带 `--cpus/--memory/--pids-limit`、工作区卷、私有 bridge 网络 | `docker exec -i` 的 hijacked stream | 按容器 ID | named volume | 否（socket 只在 provisioner；其授权边界单独设计） |
 | `e2b`（其次） | 现有 backend，template＝工作区镜像 | `commands.run(stdin)` | `Sandbox.connect`（新增） | 现有 privateVolume | 否 |
 | `cloudflare`（后续） | Container 由 WH DO 持有 | `container.exec` stdin（PoC 项，cloudflare-deployment.md §4） | DO 内天然 | R2/快照（PoC） | 不适用 |
@@ -243,12 +249,23 @@ Generation Router 只在 systemd 完整发布装配中运行，用于 Codex 引�
 | InstallationCore | 不拆分：daemon 内本机 owner（`opencraft-server.sqlite`） | `gateway` 内服务器核心 owner（已实现） | 同左 | 同 Docker（E2B 只承载工作区） | 每部署一个 DO（原型，见 cloudflare-deployment.md §5；未接入部署） |
 | AccountCore | daemon 内账号 owner（本机，凭据在本机） | split core，`proxy` 服务（第 1 步，部分实现：模式存在，未成为默认） | 同左，容器经私有网络到达 | 同左，经公网／隧道到达（未实现） | 每部署一个 DO＋边缘出口（设计） |
 | WorkspaceHost | `apps/opencraft-daemon/src/workspace-host.ts` 装配 `default`（已实现） | Gateway 内装配 `default`（已实现，第 2–3 步） | Gateway 内每工作区一个（未实现，第 7 步） | 同左（未实现） | 每工作区一个 DO（设计） |
-| 工作区容器／provider | 无：本机 Host 直接执行（可选 `linux-systemd` 资源域）；不经过放置设计 | `static-docker`（未实现，第 4c 步；今天是 Compose `brain`＋`hands`，各运行一个 `workspace-agent`，第 4b 步） | `docker-provisioner`（未实现，第 7 步） | `e2b` backend（已实现，承载 Hands；承载 Brain＋`attach` 未实现） | `cloudflare` Container backend（设计，PoC 项） |
+| 工作区容器／provider | 无：本机 Host 直接执行（可选 `linux-systemd` 资源域）；不经过放置设计 | `static-docker`（已实现，第 4c 步）：Compose `brain`＋`hands` 各运行一个 `workspace-agent`，Gateway 经 link 卷到达 | `docker-provisioner`（未实现，第 7 步） | `e2b` backend（已实现，承载 Hands；承载 Brain 未实现） | `cloudflare` Container backend（设计，PoC 项） |
+| 环境 URI `<provider>://<target>` | 无（不经过放置） | `static-docker://brain static-docker://hands`（已实现，Gateway `OPENCRAFT_WORKSPACE_ENVIRONMENTS`） | `docker-provisioner://<镜像>`（只有 URI 语法；provider 未实现） | `e2b://<模板>`（已实现：provider `acceptsTarget`；生产装配仍按 Bot 配置的 templateId 选择，未改为读 URI） | `cloudflare://<容器类>`（只有 URI 语法） |
+| 端点 URI `workspace://<id>/endpoints/<name>`＋`createWorkspaceRuntime` | 不使用 | Gateway `default` 工作区的全部 Brain／Hands 端点（已实现） | 同左（未实现） | 一致性测试中经 E2B 适配器夹具解析（已实现）；生产 E2B 浏览器 owner 仍用 `{unix}` 目标，未接入 WorkspaceRuntime | WH DO 直接持有 runtime（设计） |
+| receipt／`attach` | 不使用 | receipt＝agent 化身；Gateway 重启按 receipt 续接，化身不同即视为新环境（已实现，真实 Docker 验证） | receipt＝容器 ID＋agent 化身（设计；`docker exec` 通道见一致性夹具） | receipt＝sandbox id，`attach`＝固定 SDK 2.64 的 `Sandbox.connect`（已实现，夹具验证；真实 E2B 未运行；SDK 的 connect 可能恢复已暂停实例，这不是新建） | DO 持有的实例 id（设计） |
+| 化身观察 | 本机 owner 直接监督 | `control` 端点 `probe`（化身、角色、端点名）＋`describe`（凭据、引擎描述符），WorkspaceRuntime 持久化并在变化时报告（已实现）；执行租约身份仍读 `/proc`（第 5a 步） | 同左（未实现） | 同左（未实现：E2B 模板尚无 agent） | 同左（设计） |
 | 存储端口（SQL／State／Blob／Secret） | Node 适配器（`nodeSqlDatabase`、`fileStateDocumentStore` 等，已实现） | 同左（已实现） | 同左（已实现） | WH 侧同 Docker；容器内只有工作区卷 | `@opencraft/storage-cloudflare`（workerd 一致性测试通过，未接入部署） |
 | 唤醒端口 `OwnerWakeTimer`（定时任务、中断恢复、provider 重试） | `boundedWakeTimer`（已实现） | 同左（已实现） | 同左（已实现） | 同左（WH 侧） | DO alarm（workerd 测试原型驱动中断恢复与 provider 重试；未接入部署） |
-| 端点 `openSandboxEndpoint`＋`attached` | 不使用（本机 owner 直接连接本机 socket） | 浏览器中继已使用（经 Hands／E2B 环境的 `spawn`，第 4a 步）；Brain 端点第 4c 步 | 同 `static-docker`，经 `docker exec -i` 流（未实现） | 浏览器中继已使用（broker `attached`，已实现；真实 E2B 冒烟未运行） | `container.exec` stdin 适配（设计） |
-| 本地端点监听 `createSandboxEndpointListener` | 不使用 | Gateway 内（已实现组件，第 4c 步接入） | 同左 | 同左 | 不适用：DO 直接持有端点连接，不需要本地 socket |
-| 容器入口 `workspace-agent`＋命名端点 | 不使用（本机 owner 直接监督） | `brain`、`hands` 容器入口（已实现，第 4b 步；角色是装配） | 同一入口作为 provisioned 容器主进程（未实现） | 同一入口作为模板主进程（未实现；浏览器 owner 暂用 `{unix}` 目标） | Container 主进程（设计） |
+| 端点 `openSandboxEndpoint`＋`attached` | 不使用（本机 owner 直接连接本机 socket） | Gateway 到 codex-control／codex-native／pi／dsh／terminal／files／browser 全部经它（已实现，第 4c 步） | 同 `static-docker`，经 `docker exec -i` 流（一致性夹具通过；provider 未实现） | 浏览器中继已使用（broker `attached`，已实现；真实 E2B 冒烟未运行） | `container.exec` stdin 适配（设计） |
+| 本地端点监听 `createSandboxEndpointListener` | 不使用 | Gateway 内，每个端点一个私有 UDS，连接经 WorkspaceRuntime 解析（已实现，第 4c 步） | 同左 | 同左 | 不适用：DO 直接持有端点连接，不需要本地 socket |
+| 容器入口 `workspace-agent`＋命名端点 | 不使用（本机 owner 直接监督） | `brain`、`hands` 容器入口，并在 link 卷上服务 broker（已实现，第 4b／4c 步；角色是装配） | 同一入口作为 provisioned 容器主进程（未实现；`--bare` 已可作为无角色环境运行） | 同一入口作为模板主进程（未实现；浏览器 owner 暂用 `{unix}` 目标） | Container 主进程（设计） |
+
+**各形态如何映射到同一模型（第 4c 步核对）。**
+
+- **Electron 桌面**：没有放置、没有 Gateway／Brain 分离；本机 owner 直接连接本机 socket。若将来需要同一模型，适配器是一个 `local` provider（本地子进程 backend，一致性夹具"local-process"已证明契约可满足）加本机 `workspace-agent`；缺：provider 定义、receipt（本机进程 id＋出生证据）与装配。不做。
+- **docker-provisioner**：backend＝`docker exec -i` 流＋共享 broker（一致性夹具"docker-exec"已通过），receipt＝容器 ID＋agent 化身，`attach`＝确认同一容器仍在运行且 `control` 报告同一化身；容器主进程即 `workspace-agent`（可 `--bare`）。缺：持有 Docker socket 的 provisioner 服务及其签名请求边界、provider 定义、`create` 的卷与网络。
+- **E2B**：本步已接入同一模型：`e2b://<模板>` 经 registry 选择，`receipt`＋`attach`（`Sandbox.connect`）进入契约，端点 URI 解析在夹具中通过。缺：模板内的 `workspace-agent`（今天浏览器 owner 仍是 `{unix}` 目标）、真实 E2B 冒烟与延迟测量。
+- **Cloudflare Containers**：未来 backend 必须实现且通过同一一致性套件的契约要点——provider 定义（`id: "cloudflare"`、`acceptsTarget` 校验容器类）；`create(identity, resources)` 启动由 WH DO 持有的容器并报告实际 CPU／内存；`spawn` 承载共享 broker 帧（或等价语义）并满足二进制往返、半关闭、两端关闭、写入背压、`attached` 失败只结束该进程、非 attached 失败回收环境；`SandboxEnvironment.receipt`＋`attach`（DO 内实例 id，不能证明同一实例即 `SANDBOX_UNAVAILABLE`）；幂等 `close` 在实例消失后才完成；容器主进程是 `workspace-agent`，提供 `control`（`probe`／`describe`）与命名端点；WH DO 直接调用 `WorkspaceRuntime.connect`，不需要本地监听。据真实探测（协调记录，2026-11-23）：`ctx.container.exec(argv,{stdin:'pipe'})` 有流式 stdin 背压与退出码，现有固定中继经它连接容器内 UDS 已字节一致，因此端点不需要新原语；WebSocket 无背压、无半关闭，不作为端点传输。同一 DO／容器名会先后承载多个化身，所以 Cloudflare 的 `receipt.instanceId` 必须是化身 id（启动时写入并由 agent `control` 报告），不得用 DO 名——与 `static-docker` 相同（E2B 的 receipt 是 sandbox id，化身另由 WorkspaceRuntime 比对 `agentIncarnation`）。4c 之后待定：环境级"丢失"通知（provider 主动停止时今天只能经 spawn 失败或 `observe()` 发现）；backend 可选的原生 `connectEndpoint(target)`（优先于中继，如 CF `getTcpPort().connect()`），只评估、未加入契约。
 
 ## 4. Codex Host 状态拆分
 
@@ -360,7 +377,7 @@ $DATA/workspaces/<id>/brain/ 容器私有：codex/runtime（CODEX_HOME）、agen
 | 4a | 抽出 `openSandboxEndpoint`＋`attached` 进程语义；浏览器中继改用它。无部署变化 | 通用"经 stdio 到达容器内 socket"原语；中继断开不再回收整个环境 | 契约一致性测试（任一 backend 必须通过）：二进制往返、EOF、背压、两端关闭、attached 失败只关该连接、非 attached 仍回收环境；浏览器测试不变通过。**已实现（2026-11-23）**，见下文"第 4a 步现状"；E2B 真实冒烟未运行 |
 | 门禁 | **测量**：每连接／每文件操作 spawn 沙盒进程的延迟与并发，按 provider 分别测量 | 决定第 4b 步的端点粒度 | 第 4b 步开始前必须有目标 provider 的数据；若代价过高，文件操作改为容器内常驻进程（一条 attached 进程承载多个请求）。本地数据见下文；E2B、Cloudflare 未测量 |
 | 4b | `workspace-agent`：host.mjs 改为在容器私有 run 目录发布 UDS（不写 `$DATA/run`），引擎 host 改听 UDS；提供 `control` 与命名端点（名称白名单）；持有终端 PTY；关键子进程失败即整体退出；仍跑在现 `brain` 容器 | 端点到达方式与部署无关 | 现有容器冒烟（scripts/smoke/server/smoke-container.mjs）不变通过；端点名白名单拒绝任意路径；WH 断开后 PTY 仍在。**已实现（2026-11-23）**，见下文"第 4b 步现状"；"引擎 host 改听 UDS"移入第 4c 步 |
-| 4c | `static-docker` provider：`workspace-agent` 在私有挂载 UDS 上服务 broker；Pi/DSH 改听容器私有 UDS 并登记端点 `pi`/`dsh`；Gateway 的 `default` WH 改经该 provider＋命名端点访问 codex-control/native、Pi、DSH、terminal、files、browser，删除描述符读取（gateway-application.mjs:14-17、34-43） | 去掉私有描述符与 loopback 依赖 | 真实 Docker：Gateway 重建后续接同一化身；断开时未确认变更不重发（held-promise＋丢 ack）；callback lane 15 s 窗口语义不变 |
+| 4c | `static-docker` provider：`workspace-agent` 在私有挂载 UDS 上服务 broker；Pi/DSH 改听容器私有 UDS 并登记端点 `pi`/`dsh`；Gateway 的 `default` WH 改经该 provider＋命名端点访问 codex-control/native、Pi、DSH、terminal、files、browser，删除描述符读取（gateway-application.mjs:14-17、34-43） | 去掉私有描述符与 loopback 依赖 | 真实 Docker：Gateway 重建后续接同一化身；断开时未确认变更不重发（held-promise＋丢 ack）；callback lane 15 s 窗口语义不变。**已实现（2026-11-23）**，见下文"第 4c 步现状"；held-promise＋丢 ack 的定向测试与 15 s 窗口的真实测量未做 |
 | 4d | 反向 RPC 进程：授权 socket、session-capability MCP、任务目录改经它；签名密钥留 WH，容器只拿短期 token | 容器不再连 Gateway loopback | 撤销授权后容器内请求被拒；WH 断开期间请求失败而非排队 |
 | 5a | 化身与 Git peer 校验移入 `workspace-agent`，经 `control` 签名上报；删除 Gateway 的 `/proc` 读取；Git 凭据改为单次／短期、按仓库限定 | 删除 `pid: host` 依赖 | PID 重用测试；Git 来源租约在新格式下通过、旧格式失效走恢复；容器内无长期 Git 凭据 |
 | 5b | 合并 `hands` 进 `brain` 为单个 `workspace` 容器；AppServer 容器内直接 spawn exec-server；删除 `hands-unix` 固定向量路径与 `pid: host`、`network_mode: host`（先 Brain＋Hands，浏览器可选、不在本里程碑） | 一个工作区一个容器 | 真实 Docker：去掉两项后执行租约、Git、恢复、终端冒烟；`/proc` 不可见检查；模型请求经私有网络到 AC 代理 |
@@ -394,7 +411,25 @@ $DATA/workspaces/<id>/brain/ 容器私有：codex/runtime（CODEX_HOME）、agen
 - **文件常驻进程。** Docker 默认路径本来就是 Hands 中的常驻 files owner（`files.sock`）。经沙盒端口的 `SandboxWorkspaceFiles`（E2B 及后续 provider）改为每个绑定一个 **attached 常驻 helper**：一条 stdio 长连接承载多个请求（按 id 的 JSON 行，helper 8 线程并发，最多 64 个在途），整行按序写入、不交错；进程丢失只使在途请求失败、不重发，下一请求启动新进程；单请求 30 s 超时即退役该进程；绑定关闭时回收。
 - **发布与回退。** 服务入口仍是 `container-service.mjs brain|hands`；`compose-release doctor` 额外检查渲染后的 brain、hands 带私有 `/run/opencraft-agent` tmpfs 且未经卷共享。回退到旧镜像不需额外步骤：旧镜像忽略 tmpfs 与变量，并重新在 `$DATA/run` 写配置。`bin/opencraft-host` 改为 `workspace-agent.mjs --role brain`。
 
-**第 4c 步剩余（这些面在 4b 仍经共享目录到达；4b 不另建并行通道）。** Gateway 读 `run/engine-host.json`、`run/dsh-host.json`（Pi/DSH 仍监听 loopback TCP；改听私有 UDS 并登记 `pi`/`dsh` 端点放在 4c，因为在 provider 端点存在前 Gateway 无法到达私有 UDS）、连 `run/native.sock`（端点 `codex-control`、`codex-native` 已登记，目标仍是共享路径）、读 `daemon.token`；`proxy` 经 `run/codex-app-server.sock` 转发 `/native-health`；Gateway 直连 Hands 的 `execution/terminal.sock`、`files.sock`、浏览器 `owner.sock`（端点已登记）；Brain 经 `execution/exec-owner.sock` 到 Hands（第 5b 步合并后消失）。`run/codex-core.sock` 与 `proxy-callers/` 属于 AccountCore，按 §5 改为网络＋短期令牌，不属于 4c。
+**第 4c 步现状（2026-11-23）。** Gateway 只经沙盒端口到达 Brain、Hands：`default` 工作区的放置是配置 `OPENCRAFT_WORKSPACE_ENVIRONMENTS=static-docker://brain static-docker://hands`，Gateway 只持有 `workspace://default/endpoints/<name>`。
+
+- **契约（provider 中立，`@opencraft/sandbox`）。** `uri`：两种 URI 的解析／格式化（§3.3.3"地址"）。`SandboxReceipt`、`SandboxEnvironment.receipt`、可选 `SandboxBackend.attach(identity, receipt, resources, signal)`、`SandboxPool.attachSandbox`：attach 不创建、不替换，不能证明同一实例即 `SANDBOX_UNAVAILABLE`。`SandboxProviderRegistry.environment(installation, address)`＋定义级 `acceptsTarget`。`workspace`：`probeWorkspaceAgent`／`describeWorkspaceEndpoint`（经 `control` 端点）与 `createWorkspaceRuntime`（按环境 attach 持久化 receipt，否则 create；探测化身并先持久化 `{receipt, agentIncarnation}` 再使用；端点名解析到发布它的环境；中继无法启动时只重绑一次；`observe()` 报告化身变化；不重放字节；`describe` 结果按绑定缓存）。
+- **`static-docker` provider（`@opencraft/sandbox-node/static-docker`）。** 传输选型：（a）`docker exec` 需要 Docker socket，否决；（b）容器网络／loopback TCP 在 `network_mode: host` 下任何容器与宿主进程都可连，且需要另行分发密钥，否决；（c）**每容器一个 link 卷**（Compose 具名 tmpfs 卷，只挂进该容器 `/run/opencraft-link` 与 Gateway `/run/opencraft-links/<服务>`），agent 在其中监听 `link.sock`（0600）并写一次性 ticket：可达性由挂载决定（proxy 等其他服务看不到，`compose-release doctor` 检查），ticket 每次 attach 轮换，新 attach 撤销旧会话并杀掉其进程（隔离旧 Gateway），会话只活到 agent 化身结束；不经共享 `$DATA`。每个沙盒进程＝一条 link 连接，承载与 E2B 相同的共享 broker 帧；agent 默认 `relay-only`：只放行到白名单端点的固定中继，任意命令、终端与 `{unix}` 路径都被拒绝。有效预算＝agent 读到的 cgroup 限额，backend 要求与请求相等（因此 `brain` 也声明 `cpus`／`mem_limit`，默认 4 CPU／8 GiB，`OPENCRAFT_BRAIN_*`）。receipt＝agent 化身，`attach` 只绑定同一化身。
+- **`workspace-agent`。** 设置 `OPENCRAFT_AGENT_LINK_DIR` 时在全部角色就绪后服务 link；`control` 新增 `describe`（端点客户端需要的凭据或引擎描述符，只经已认证的通道给出）；`--bare` 为无角色环境（一致性测试的真实容器 harness）。Brain：AppServer 控制面 `codex/control.sock`＋`codex/native.sock`、Pi `pi.sock`、DSH `dsh.sock`（及私有 owner-handoff `dsh-control.sock`）、引擎描述符全部在 `/run/opencraft-agent`；AppServer 控制令牌每化身新生成（`--control-token-file`）；Pi／DSH 新增 Unix socket 监听（`socketPath`；Pi 控制路由与 websocket 同一 socket，客户端支持 `ws+unix://`，TCP 模式保留给其他装配）；DSH 任务目录直接读本容器 AppServer。Hands：`terminal`／`files` 的 `describe` 给出令牌。启动时删除旧版本留在 `$DATA/run` 的 `engine-host.json`、`dsh-host.json`、`codex-app-server.sock`、`native.sock`。
+- **Gateway 装配（scripts/container-deployment/gateway-workspace.mjs）。** registry 只登记 `static-docker`；每个被消费端点一个本地监听（`/run/opencraft-gateway/endpoints/<名>`，Gateway 私有 tmpfs），连接经 WorkspaceRuntime；引擎描述符经 `describe` 读取，websocket 地址改写到本地监听；Codex 运行面（`CodexNativeCoreTransport` 的新可选 `runtime`：控制端点、按化身取的令牌、原生 socket）与账号面（`codex-core.sock`）分开；终端、文件令牌复制到私有目录；placement 记录在 `$DATA/workspaces/default/host/placement.json`（StateDocumentStore）。`/health` 每次调用 `observe()`。删除了全部描述符读取与 `coreHealth($DATA/run/…)`。
+- **proxy 的 `/native-health`。** 归属判定：AppServer 健康属于其 WorkspaceHost，不属于 AccountCore。`proxy` 服务改为 `--accounts-only`（无运行面，`/health`、`/native-health` 返回 404），不再转发到 Brain；只有恢复路径的内嵌 Core（在 Brain 容器内）仍转发到本容器 AppServer。
+- **验证。** 一致性套件对 in-process、本地子进程、E2B 夹具、static-docker link（进程内）各 11 项通过（含 receipt 续接、`workspace://` 解析）；真实容器：static-docker（`opencraft` 镜像的 `workspace-agent --bare`，`--cpus 4 --memory 8g`）与 `docker exec`＋broker 各 11 项通过。URI 解析测试 5 项。Gateway 装配测试：真实 agent＋link（进程内），经端点完成 terminal、codex-native、browser 往返与 Pi 描述符；Gateway 重启后 `attached`；Hands 换化身后 `attach-failed`→`created`；`$DATA/run` 不存在仍工作；源码守卫禁止描述符与 Hands socket 路径。真实 Docker（cgroup v1，假上游、假密钥）：容器冒烟通过（终端探针改经 Gateway 的端点）；Codex Turn 含 Hands exec 经 Gateway；文件操作经 Gateway 的 `files` 端点（32 并发读，顺序元数据 p50 1.6 ms）；Pi Turn 经 Gateway；Gateway 重建后同一 PTY、Brain／Hands 容器与化身不变并按 receipt `attached`；kill Brain 的 engine-host 后容器以新化身重启，Gateway 记录 `attach-failed`→`created prev=<旧化身>`，进行中的 Turn 标记 interrupted 并由一次续接 Turn 完成，长命令未重跑、用户输入未重复；`$DATA/run` 只剩 `codex-core.sock` 与 `proxy-callers/`。
+- **复验（2026-11-23，接手后以当前源码重建镜像）。** `npm run smoke:container` 通过；真实 Docker 验收（假 Responses 上游、假密钥、隔离数据目录与独立 Compose 项目）：Codex Turn 的 exec 在 Hands cgroup 中执行；Gateway 内经 `files` 端点 32 并发读通过（顺序元数据 p50 1.4 ms）；Gateway 只见 `/run/opencraft-links/{brain,hands}` 与自身端点目录，`$DATA/run` 只有 `codex-core.sock`、`proxy-callers`；`--force-recreate gateway` 后两个容器 ID、启动时间与化身不变，日志为 `released`→`attached`，无 `created`；kill Brain 的 engine-host 后 Brain 以新化身重启，Gateway 记录 `attach-failed`（重启期间每次 `observe()` 一次）→`created previous=<旧化身>`，placement 更新，进行中 Turn 标记 interrupted 并由一次续接完成，长命令只启动一次、用户输入未重复。真实容器一致性（`opencraft` 镜像 `--bare` 的 static-docker 与 `docker exec`＋broker）连同进程内夹具共 66 项通过。修复：新 attach 撤销旧会话时原先只 SIGKILL broker，broker 的子进程在独立 session 中会成为孤儿；改为结束 broker 控制输入（broker 随即 killpg），SIGKILL 只作兜底（tests/server/workspace-agent.test.mjs 回归测试）。
+
+**第 4c 步之后剩余。**
+
+- **AccountCore（§5，不属于 4c）**：`run/codex-core.sock`、`daemon.token`（Gateway、Brain 仍以它访问账号 Core）与 `proxy-callers/`。
+- **第 4d 步**：Brain 到 Gateway 的反向请求（工作区授权 socket、session-capability MCP `http://127.0.0.1/mcp` 与 `$DATA/session-capabilities.json`、Git broker）仍经 loopback／共享目录；`/__opencraft_health` 仍回显 appServer 目标（既有行为）。
+- **第 5a 步**：执行租约与 Git 来源仍读 `/proc`（`pid: host` 仍需要）；化身已经可经 `control` 读到，尚未进入租约身份。
+- **第 5b 步**：Brain 经 `execution/exec-owner.sock`（`hands-unix`）到 Hands；`network_mode: host`；两个环境 URI 合并为一个。
+- **第 5c 步／第 6 步**：`CODEX_HOME`、Pi、DSH 数据仍在共享 `$DATA`；Gateway 仍挂载整个 `$DATA`（服务器核心需要），只是不再读 Brain／Hands 的描述符与 socket。
+- **未做**：held-promise＋丢 ack 的定向测试；callback lane 15 s 窗口的真实测量；真实 E2B（含 `Sandbox.connect`）冒烟；Electron／docker-provisioner／Cloudflare 只在 §3.6 给出映射。
+- **Cloudflare 探测得出的契约项**（状态表见 [execution-sandbox](../execution/execution-sandbox.md#provider-lifecycle-obligations-from-the-cloudflare-containers-probe)）：receipt＝化身 id、端点传输需背压与半关闭、PID 1 处理 SIGTERM、broker 在 stdin EOF 时 killpg 已满足；未做：契约中的环境级"丢失"信号（今天经中继启动失败或 `observe()` 发现）、句柄丢失但 stdin 不 EOF 时由 agent 按 link 连接结束回收进程 session、backend 原生 `connectEndpoint(target)`（只评估）。
 
 补充步骤（Generation Router 的后继，排在第 7 步之后）：WorkspaceHost 固定工作区容器镜像版本，升级时新 Thread 使用新镜像、旧容器排空后退役；验收覆盖进行中 Turn 不被中断、未确认输入不重放、故障停止（见 3.5 节）。
 

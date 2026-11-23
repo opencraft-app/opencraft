@@ -177,6 +177,77 @@ test('the Hands agent starts its owners, publishes named endpoints and keeps PTY
 test('role selection is explicit composition', async () => {
   assert.deepEqual(parseAgentRoles(['--role', 'hands', '--role', 'browser']), ['hands', 'browser']);
   assert.throws(() => parseAgentRoles(['brain']), /Usage/);
-  for (const roles of [[], ['provider-e2b'], ['hands', 'hands']])
+  assert.throws(() => parseAgentRoles([]), /Usage/);
+  assert.deepEqual(parseAgentRoles(['--bare']), [], 'a bare environment runs only control and its provider link');
+  for (const roles of [['provider-e2b'], ['hands', 'hands']])
     await assert.rejects(startWorkspaceAgent({ roles, env: {} }), /roles/);
+});
+
+test('the static-docker link serves only allow-listed endpoint relays behind a one-time ticket', { timeout: 60_000 }, async t => {
+  const { serveAgentLink } = await import('../../scripts/container-deployment/workspace-agent-application.mjs');
+  const { staticDockerSandboxBackend, readSandboxLinkTicket } = await import('@opencraft/sandbox-node/static-docker');
+  const { createSandboxPool, describeWorkspaceEndpoint, openSandboxEndpoint, probeWorkspaceAgent, SandboxFault } = await import('@opencraft/sandbox');
+  const root = await mkdtemp(join(tmpdir(), 'oc-link-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const run = await prepareAgentRunDirectory(join(root, 'run')), link = join(root, 'link');
+  await mkdir(link, { mode: 0o700 });
+  const agent = createWorkspaceAgentSupervisor({ runDirectory: run, incarnation: await createAgentIncarnation(), roles: ['hands'], log: () => {} });
+  t.after(() => agent.stop(0));
+  await agent.serveControl();
+  await agent.publishEndpoint('terminal', join(run, 'unused.sock'), async () => ({ token: 'x'.repeat(32) }));
+  agent.markReady();
+  const budget = { cpuMillis: 2000, memoryBytes: 1024 ** 3 };
+  await serveAgentLink(agent, { agentLinkDirectory: link, agentEndpointDirectory: join(run, 'endpoints') }, {}, { limits: async () => ({ ...budget, tasks: null }) });
+  const firstTicket = await readSandboxLinkTicket(link);
+  const pool = await createSandboxPool({ id: 'link', capacity: budget, defaults: budget }, staticDockerSandboxBackend({ directory: link }));
+  t.after(() => pool.close().catch(() => {}));
+  const sandbox = await pool.createSandbox({ owner: 'test' });
+  assert.deepEqual(sandbox.receipt, { backend: 'static-docker', instanceId: agent.incarnation.id });
+  assert.notEqual(await readSandboxLinkTicket(link), firstTicket, 'the ticket is one-time');
+  assert.equal(sandbox.capabilities.terminal, false, 'relay-only links offer no terminals');
+  const location = { endpointDirectory: join(run, 'endpoints') };
+  assert.equal((await probeWorkspaceAgent(sandbox, location)).incarnation.id, agent.incarnation.id);
+  assert.deepEqual(await describeWorkspaceEndpoint(sandbox, 'terminal', location), { token: 'x'.repeat(32) });
+  // relay-only: arbitrary commands and relays outside the endpoint directory never start.
+  await assert.rejects(sandbox.spawn({ command: ['/bin/echo', 'escape'], cwd: '/', env: {}, attached: true }), e => e instanceof SandboxFault);
+  const outside = await openSandboxEndpoint(sandbox, { target: { unix: join(run, 'control.sock') }, onData() {} }).catch(error => error);
+  assert.ok(outside instanceof SandboxFault, 'a relay to a raw path is refused');
+  // A copied (consumed) ticket no longer attaches.
+  await assert.rejects(staticDockerSandboxBackend({ directory: link, readTicket: async () => firstTicket })
+    .create({ id: 'x', owner: 'x', backend: 'static-docker' }, budget, new AbortController().signal), e => e?.outcome === 'not-created');
+  await sandbox.close();
+  await pool.close();
+});
+
+test('a superseding link attach ends the previous session\'s processes, not only their brokers', { timeout: 60_000 }, async t => {
+  const { serveAgentLink } = await import('../../scripts/container-deployment/workspace-agent-application.mjs');
+  const { staticDockerSandboxBackend } = await import('@opencraft/sandbox-node/static-docker');
+  const { createSandboxPool } = await import('@opencraft/sandbox');
+  const root = await mkdtemp(join(tmpdir(), 'oc-link-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const run = await prepareAgentRunDirectory(join(root, 'run')), link = join(root, 'link');
+  await mkdir(link, { mode: 0o700 });
+  const agent = createWorkspaceAgentSupervisor({ runDirectory: run, incarnation: await createAgentIncarnation(), roles: [], log: () => {} });
+  t.after(() => agent.stop(0));
+  await agent.serveControl();
+  agent.markReady();
+  const budget = { cpuMillis: 1000, memoryBytes: 1024 ** 3 };
+  // `any` is the bare/dev policy: it lets this test start an ordinary long-lived process.
+  await serveAgentLink(agent, { agentLinkDirectory: link, agentEndpointDirectory: join(run, 'endpoints') },
+    { OPENCRAFT_AGENT_LINK_POLICY: 'any' }, { limits: async () => ({ ...budget, tasks: null }) });
+  const first = await createSandboxPool({ id: 'old-host', capacity: budget, defaults: budget }, staticDockerSandboxBackend({ directory: link }));
+  t.after(() => first.close().catch(() => {}));
+  const stale = await first.createSandbox({ owner: 'old' });
+  let output = '';
+  const process_ = await stale.spawn({ command: ['/bin/sh', '-c', 'echo $$; exec sleep 600'], cwd: '/', env: {} },
+    chunk => { output += Buffer.from(chunk.data).toString('utf8'); });
+  const pid = Number(await until(() => output.trim(), value => /^\d+$/u.test(value)));
+  assert.ok(alive(pid));
+  // A restarted Host attaches: the stale Host's process group must end (the broker kills it on EOF).
+  const second = await createSandboxPool({ id: 'new-host', capacity: budget, defaults: budget }, staticDockerSandboxBackend({ directory: link }));
+  t.after(() => second.close().catch(() => {}));
+  const current = await second.createSandbox({ owner: 'new' });
+  await until(() => !alive(pid), Boolean, 4_000);
+  await process_.exited.catch(() => {});
+  await current.close();
 });
