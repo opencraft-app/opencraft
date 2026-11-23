@@ -58,3 +58,33 @@ test("turn and steer dispatch validate selected paths before sending native sess
   assert.equal(calls.length,count);
   adapter.close();
 });
+
+test("DSH promptContent forwards Host-staged file mentions and userContent restores attachment projection", async () => {
+  const { userContent } = await import("../../apps/local-agent-host/src/dsh-content.js");
+  const stagedRoot = "/tmp/opencraft-staged-root";
+  const stagedPath = "/tmp/opencraft-staged-root/att-1/content-slides.pptx";
+  const lowered = await promptContent(
+    [
+      { type: "text", text: "看看这份PPT" },
+      { type: "mention", name: "slides.pptx", path: stagedPath },
+    ],
+    undefined,
+    {
+      cwd: "/tmp",
+      resolveStagedAttachment: async (name, path) => (path === stagedPath ? { name, path } : null),
+    },
+  );
+  assert.equal(lowered.length, 2);
+  assert.match(String(lowered[1]!.text), /The user attached a file named "slides\.pptx"/u);
+
+  const projected = userContent(lowered, { stagedRoot });
+  assert.equal(projected.length, 3);
+  assert.equal((projected[1]!.text_elements as any[])[0].placeholder, "opencraft:staged-file:v1");
+  assert.deepEqual(projected[2], { type: "mention", name: "slides.pptx", path: stagedPath });
+
+  const queued = userContent(lowered, { stagedRoot, includeStagedLocatorText: false });
+  assert.deepEqual(queued, [
+    { type: "text", text: "看看这份PPT", text_elements: [] },
+    { type: "mention", name: "slides.pptx", path: stagedPath },
+  ]);
+});

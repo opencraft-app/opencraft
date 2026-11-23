@@ -54,6 +54,14 @@ try {
     await page.screenshot({ path: `${output}/feedback-${touch ? "touch" : "desktop"}.png` });
     const resume = page.getByRole("button", { name: touch ? "继续" : "Continue", exact: true }); if (touch) await resume.tap(); else await resume.click();
     await page.getByText("CONTINUED_OK", { exact: true }).waitFor(); assert.equal(await draft.inputValue(), "preserved while continuing"); assert.equal(await draft.evaluate(el => el === (window as any).originalFeedbackDraft), true);
+    await page.evaluate(() => (window as any).feedbackFixture.fail("acpAccountMismatch"));
+    await page.getByRole("alert").waitFor();
+    assert.ok(!(await page.getByRole("alert").innerText()).includes("acpAccountMismatch"), "account mismatch failure code is localized");
+    assert.equal(await page.getByRole("button", { name: touch ? "继续" : "Continue", exact: true }).count(), 0, "account mismatch does not offer futile Continue retry");
+    const handoffBtn = page.getByRole("button", { name: touch ? "保留上下文，在新会话继续" : "Continue in a new conversation", exact: true });
+    if (touch) await handoffBtn.tap(); else await handoffBtn.click();
+    await page.getByText("HANDOFF_STARTED", { exact: true }).waitFor();
+    assert.equal(await draft.inputValue(), "preserved while continuing");
     assert.deepEqual(errors, []); await context.close();
   }
   console.log(`PASS usage and feedback: quotas/context, keyboard/touch, cached refresh/error, provider browsing, unknown values, editor identity/draft, three themes, native-plan presentation and localized explicit Continue. ${output}`);

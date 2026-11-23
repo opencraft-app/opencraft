@@ -313,6 +313,7 @@ test("an older bundled Host gains its Linux root without overwriting user profil
     await refreshBundledHostProfiles(reopened, [definition!]);
     const updated = reopened.getSnapshot().profiles[0]!;
     assert.deepEqual(updated.workspaceBrowseRoots, ["/"]);
+    assert.equal(updated.autoConnect, true);
     assert.equal(updated.displayName, "My Linux node");
     assert.equal(updated.revision, 3);
     await refreshBundledHostProfiles(reopened, [definition!]);

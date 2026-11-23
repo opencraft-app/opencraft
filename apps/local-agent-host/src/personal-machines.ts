@@ -30,6 +30,7 @@ export class PersonalMachines {
   readonly store:PersonalMachineStore;
   private sockets=new WebSocketServer({noServer:true,maxPayload:65536,perMessageDeflate:false});
   private connections=new Map<string,Connection>();
+  private updating=new Map<string,{targetDigest:string;startedAt:number;error:string|null}>();
   private pending=new Map<string,{token:string;connection:Connection;accept(ws:WebSocket):void;reject():void}>();
   private closed=false;private closeOperation?:Promise<void>;private downloads=new Set<ServerResponse>();
   constructor(private options:{directory:string;ownerActorId:string;ownerToken:string;archive:string;digest:string;installer:string;enrollmentOrigin?:string;enrollmentCa?:string}){
@@ -42,7 +43,102 @@ export class PersonalMachines {
     if(!this.options.enrollmentCa)return `bash -o pipefail -c ${quote('curl -fsS '+origin+prefix+'/install.sh | bash -s -- --update '+id)}`;
     return `OPENCRAFT_MACHINE_ORIGIN=${quote(origin)} bash -c ${quote('set -euo pipefail; curl --fail --silent --show-error --location --max-redirs 0 --cacert <(printf %s '+quote(Buffer.from(this.options.enrollmentCa).toString('base64'))+' | base64 -d) '+quote(origin+prefix+'/install.sh')+' | bash -s -- --update '+id)}`;
   }
-  directory():PersonalMachinesDirectory{return {hubId:this.store.state.hubId,ownerActorId:this.store.state.ownerActorId,enrollmentOrigin:this.options.enrollmentOrigin??null,digest:this.options.digest,machines:this.store.state.machines.filter(r=>r.credentialHash||r.expiresAt>Date.now()).map(r=>{const live=this.connections.get(r.id);const enrolled=Boolean(r.credentialHash);return {id:r.id,name:r.machine?.name??'',machine:r.machine,connected:Boolean(live),phase:enrolled?'enrolled':'pending',expiresAt:enrolled?null:r.expiresAt,version:live?.version??null,updateAvailable:live?live.version!==this.options.digest:null,updateCommand:enrolled?this.buildUpdateCommand(r.id):null};})};}
+  directory():PersonalMachinesDirectory{
+    const now=Date.now();
+    return {hubId:this.store.state.hubId,ownerActorId:this.store.state.ownerActorId,enrollmentOrigin:this.options.enrollmentOrigin??null,digest:this.options.digest,machines:this.store.state.machines.filter(r=>r.credentialHash||r.expiresAt>now).map(r=>{
+      const live=this.connections.get(r.id);
+      const enrolled=Boolean(r.credentialHash);
+      const upd=this.updating.get(r.id);
+      if(upd&&live?.version===upd.targetDigest){this.updating.delete(r.id);}
+      else if(upd&&!upd.error&&now-upd.startedAt>180_000){upd.error='Remote update timed out';}
+      const activeUpd=this.updating.get(r.id);
+      const isUpdating=Boolean(activeUpd&&!activeUpd.error&&now-activeUpd.startedAt<=180_000);
+      return {
+        id:r.id,
+        name:r.machine?.name??'',
+        machine:r.machine,
+        connected:Boolean(live),
+        phase:enrolled?'enrolled':'pending',
+        expiresAt:enrolled?null:r.expiresAt,
+        version:live?.version??null,
+        updateAvailable:live?live.version!==this.options.digest:null,
+        updateCommand:enrolled?this.buildUpdateCommand(r.id):null,
+        ...(isUpdating?{updating:true}:{}),
+        ...(activeUpd?.error?{updateError:activeUpd.error}:{}),
+      };
+    })};
+  }
+  private openInternalRpc(id:string):Promise<WebSocket>{
+    const c=this.connections.get(id);
+    if(!c||c.streams.size>=128||this.pending.size>=128)return Promise.reject(new Error('Remote machine is offline or busy'));
+    return new Promise<WebSocket>((resolve,reject)=>{
+      const streamId=randomUUID(),token=randomBytes(32).toString('base64url');
+      let settled=false;
+      const timer=setTimeout(()=>{this.pending.delete(streamId);if(!settled){settled=true;reject(new Error('Timed out opening remote machine stream'));}},10_000);
+      timer.unref();
+      this.pending.set(streamId,{
+        connection:c,
+        token,
+        reject:()=>{clearTimeout(timer);this.pending.delete(streamId);if(!settled){settled=true;reject(new Error('Remote machine stream rejected'));}},
+        accept:ws=>{
+          clearTimeout(timer);
+          if(this.connections.get(id)!==c){ws.terminate();if(!settled){settled=true;reject(new Error('Remote machine reconnected during stream setup'));}return;}
+          const stream=relayDuplex(ws);
+          c.streams.add(stream);
+          stream.once('close',()=>{c.streams.delete(stream);ws.terminate();});
+          const rpcWs=new WebSocket('ws://personal-machine/rpc',{createConnection:()=>stream as any,handshakeTimeout:10_000});
+          rpcWs.once('open',()=>{if(!settled){settled=true;resolve(rpcWs);}});
+          rpcWs.once('error',err=>{stream.destroy();if(!settled){settled=true;reject(err);}});
+          rpcWs.once('close',()=>stream.destroy());
+        },
+      });
+      c.socket.send(JSON.stringify({type:'open',id:streamId,token}));
+    });
+  }
+  private async triggerRemoteUpdate(id:string):Promise<void>{
+    const updateCmd=this.buildUpdateCommand(id);
+    if(!updateCmd)throw new Error('Remote enrollment address is not configured');
+    const rpcWs=await this.openInternalRpc(id);
+    let seq=0;
+    const call=(method:string,params:unknown)=>new Promise<any>((resolve,reject)=>{
+      const reqId=`pm-update-${++seq}`;
+      const timer=setTimeout(()=>{rpcWs.off('message',onMessage);reject(new Error(`${method} timed out`));},15_000);
+      timer.unref();
+      const onMessage=(raw:WebSocket.RawData)=>{
+        try{
+          const frame=JSON.parse(String(raw));
+          if(frame.id!==reqId)return;
+          clearTimeout(timer);
+          rpcWs.off('message',onMessage);
+          if(frame.error)reject(Object.assign(new Error(frame.error.message??'RPC failed'),{code:frame.error.code}));
+          else resolve(frame.result);
+        }catch{}
+      };
+      rpcWs.on('message',onMessage);
+      rpcWs.send(JSON.stringify({jsonrpc:'2.0',id:reqId,method,params,__opencraftLogicalClientId:`pm-updater-${randomUUID()}`}));
+    });
+    try{
+      await call('initialize',{clientInfo:{name:'opencraft-personal-machine-updater',version:'1'},capabilities:{experimentalApi:true}});
+      try{
+        await call('opencraft/machine-runtime/update',{});
+        return;
+      }catch(err){
+        const code=(err as {code?:unknown})?.code;
+        const msg=err instanceof Error?err.message:'';
+        if(code!==-32601&&code!==-32603&&!/not supported|unavailable/iu.test(msg))throw err;
+      }
+      // Fallback for older installed companions via the independent durable PTY owner process.
+      await call('process/spawn',{
+        processHandle:`pm-self-update-${randomUUID()}`,
+        command:'/bin/bash',
+        args:['-c',`nohup ${updateCmd} >"$HOME/.opencraft/machines/${id}/remote-update.log" 2>&1 </dev/null & sleep 0.3`],
+        cols:80,
+        rows:24,
+      });
+    }finally{
+      rpcWs.close();
+    }
+  }
   async command(input:PersonalMachineCommand){
     if(!input||typeof input!=='object'||(this.closed||!this.store.available))throw new Error('Machine service unavailable');
     if(input.action==='list')return this.directory();
@@ -59,7 +155,23 @@ export class PersonalMachines {
     }
     if(input.action==='revoke'){
       if(typeof input.id!=='string')throw new Error('Invalid machine');
+      this.updating.delete(input.id);
       await this.store.command('revoke',{id:input.id});const connection=this.connections.get(input.id);if(connection)this.retire(input.id,connection);return this.directory();
+    }
+    if(input.action==='update'){
+      if(typeof input.id!=='string'||!/^[-a-f0-9]{36}$/.test(input.id))throw new Error('Invalid machine');
+      const row=this.store.state.machines.find(r=>r.id===input.id&&Boolean(r.credentialHash));
+      if(!row||!this.connections.get(input.id))throw new Error('Remote machine is offline');
+      const current=this.updating.get(input.id);
+      if(current&&!current.error&&Date.now()-current.startedAt<180_000)return this.directory();
+      this.updating.set(input.id,{targetDigest:this.options.digest,startedAt:Date.now(),error:null});
+      try{
+        await this.triggerRemoteUpdate(input.id);
+      }catch(error){
+        this.updating.set(input.id,{targetDigest:this.options.digest,startedAt:Date.now(),error:error instanceof Error?error.message:'Remote update failed'});
+        throw error;
+      }
+      return this.directory();
     }
     throw new Error('Unknown machine action');
   }
@@ -113,6 +225,7 @@ export class PersonalMachines {
         const previous=this.connections.get(row.id);if(previous)this.retire(row.id,previous);
         const rawVersion=req.headers['x-opencraft-machine-version'];
         const version=typeof rawVersion==='string'&&/^(?:[a-f0-9]{64}|legacy)$/.test(rawVersion)?rawVersion:null;
+        if(version===this.options.digest)this.updating.delete(row.id);
         const c:Connection={socket:ws,streams:new Set<Duplex>(),version};this.connections.set(row.id,c);
         const heartbeat=setInterval(()=>{if(ws.readyState===WebSocket.OPEN)ws.ping();},15000);heartbeat.unref();let pong=Date.now();ws.on('pong',()=>{pong=Date.now();});
         const expire=setInterval(()=>{if(Date.now()-pong>45000)ws.terminate();},15000);expire.unref();

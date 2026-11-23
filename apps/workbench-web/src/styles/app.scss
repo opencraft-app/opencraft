@@ -1911,6 +1911,9 @@ svg[data-sidebar-toggle-icon-state] {
     background: transparent;
     animation: sidebar-activity-spin 800ms linear infinite;
   }
+  &.is-running {
+    color: var(--color-icon-accent);
+  }
 }
 
 @keyframes sidebar-activity-spin {
@@ -4452,6 +4455,31 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
     }
   }
 
+  &__command-content {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px;
+
+    > .thread-user-message__collapsible {
+      flex: 1 1 auto;
+      width: auto;
+    }
+  }
+
+  &__command-pill {
+    @include typography.role(inline-code);
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 7px;
+    border: 1px solid color-mix(in srgb, var(--color-text-accent) 22%, var(--color-border-subtle));
+    border-radius: 6px;
+    background: var(--color-background-accent);
+    color: var(--color-text-accent);
+    white-space: nowrap;
+  }
+
   &__collapsible {
     display: flex;
     width: 100%;
@@ -4702,6 +4730,11 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
     [data-status-kind="failed"],
     [data-status-kind="hook-blocked"] {
       color: var(--color-text-warning, #a15c00);
+    }
+
+    [data-status-kind="goal"],
+    [data-status-kind="command"] {
+      color: var(--color-text-secondary);
     }
 
     letter-spacing: var(--typography-metadata-tracking)
@@ -9554,6 +9587,12 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   }
 }
 
+.opencraft-composer-command-hint-line::after {
+  content: attr(data-command-hint);
+  color: var(--color-text-tertiary);
+  pointer-events: none;
+}
+
 .opencraft-composer-token {
   padding: 1px 3px;
   border-radius: 4px;
@@ -9564,6 +9603,14 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
 
   &--skill {
     color: var(--color-accent-purple);
+  }
+
+  &--command {
+    @include typography.role(inline-code);
+    padding: 1px 6px;
+    border-radius: 6px;
+    border: 1px solid color-mix(in srgb, var(--color-text-accent) 20%, transparent);
+    color: var(--color-text-accent);
   }
 }
 
@@ -10422,6 +10469,46 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   color: var(--color-text-tertiary);
   font: var(--typography-label-font);
   letter-spacing: var(--typography-label-tracking);
+}
+
+.opencraft-composer-suggestions[data-kind="command"] {
+  max-height: 288px;
+  .opencraft-composer-suggestions__label { @include typography.role(caption, tertiary); }
+  .opencraft-composer-suggestions__status { @include typography.role(caption, secondary); }
+  button {
+    align-items: flex-start;
+    padding-block: 6px;
+  }
+  button > span:first-child {
+    margin-top: 1px;
+  }
+  button strong { @include typography.role(settings-label); }
+  button small {
+    @include typography.role(caption, secondary);
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+}
+
+.opencraft-composer-suggestions__heading {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.opencraft-composer-suggestions__hint {
+  @include typography.role(code, tertiary);
+  padding: 0 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--color-text) 5%, transparent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
 }
 
 .opencraft-composer-suggestions[data-kind="skill"] {
@@ -12338,6 +12425,17 @@ html[data-window-host="browser"] body {
 .sidebar-display-mode-label { @include typography.role(metadata, tertiary); padding: 5px 10px; }
 .workbench-context-menu :is([role="menuitemradio"], [role="menuitemcheckbox"]) { position: relative; padding-inline-start: 28px; }
 .workbench-context-menu :is([role="menuitemradio"], [role="menuitemcheckbox"]) > span[data-state] { position: absolute; inset-inline-start: 8px; }
+.workbench-menu-item__hint {
+  margin-inline-start: auto;
+  padding-inline-start: 12px;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+.thread-message-actions button[data-turn-fork][data-unsupported] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
 .sidebar-thread-group-heading { padding: 0; }
 .sidebar-thread-group-toggle {
   @include controls.quiet-control;

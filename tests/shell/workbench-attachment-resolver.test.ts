@@ -519,3 +519,28 @@ test("replacement image preparation preserves old media on decode failure and re
     else Reflect.deleteProperty(globalThis, "Image");
   }
 });
+
+test("stale unreadable browser File handles surface FILE_UNREADABLE instead of raw DOMException text", async () => {
+  const brokenFile = new File(["markdown"], "口播文案_15分钟.md", { type: "text/markdown" });
+  Object.defineProperty(brokenFile, "slice", {
+    value: () => ({
+      arrayBuffer: async () => {
+        throw new DOMException(
+          "The requested file could not be read, typically due to permission problems that have occurred after a reference to a file was acquired.",
+          "NotReadableError",
+        );
+      },
+    }),
+  });
+  await assert.rejects(
+    resolveBrowserAttachment(brokenFile, pending(brokenFile), {
+      chunkBytes: 1024,
+      uploadChunk: async () => ({ offset: 8 }),
+      uploadCancel: async () => ({ removed: true }),
+      stage: async () => { throw new Error("unreachable"); },
+    }),
+    (error: unknown) => error instanceof BrowserAttachmentError
+      && error.code === "FILE_UNREADABLE"
+      && error.message === "File changed on disk. Remove and add it again.",
+  );
+});

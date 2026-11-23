@@ -27,11 +27,16 @@ export class ThreadLifecycle {
     const reply = await delegate("thread/read", { threadId: id, includeTurns: false });
     return this.catalog.upsert(reply.thread);
   }
+  private projectedStatus(liveStatus: unknown, threadId: string): unknown {
+    const status = liveStatus && typeof liveStatus === "object" && !Array.isArray(liveStatus) ? liveStatus as { type?: unknown } : null;
+    if (status?.type === "active" || status?.type === "systemError") return liveStatus;
+    return this.attachments.isLoaded(threadId) ? liveStatus ?? { type: "idle" } : { type: "notLoaded" };
+  }
   private decorate(reply: any): any {
     if (!reply?.thread?.id) return reply;
     const thread = this.catalog.upsert(reply.thread);
     return { ...reply, thread: { ...thread, turns: reply.thread.turns ?? [],
-      status: this.attachments.isLoaded(thread.id) ? reply.thread.status ?? { type: "idle" } : { type: "notLoaded" } },
+      status: this.projectedStatus(reply.thread.status, thread.id) },
       ...(reply.runtimeWorkspaceRoots ? { runtimeWorkspaceRoots: this.catalog.configuration(thread.id).runtimeWorkspaceRoots ?? reply.runtimeWorkspaceRoots } : {}) };
   }
   assertOpen(threadId: string): void {
@@ -60,12 +65,16 @@ export class ThreadLifecycle {
         const page = await this.catalog.directory.list(query);
         this.assertClient(clientId);
         return { ...page, data: page.data.map(thread => ({ ...thread,
-          status: this.attachments.isLoaded(thread.id) ? this.catalog.get(thread.id)?.status ?? thread.status : { type: "notLoaded" } })) };
+          status: this.projectedStatus(thread.status ?? this.catalog.get(thread.id)?.status, thread.id) })) };
       }
+      const liveStatuses = new Map<string, unknown>();
       let cursor: string | null = null;
       do {
         const page = await delegate("thread/list", { cursor, limit: 1000 });
-        for (const thread of page.data) this.catalog.upsert(thread);
+        for (const thread of page.data) {
+          liveStatuses.set(thread.id, thread.status);
+          this.catalog.upsert(thread);
+        }
         cursor = page.nextCursor ?? null;
       } while (cursor !== null);
       const offset = params.cursor == null ? 0 : Number(String(params.cursor).replace(/^oc:/, ""));
@@ -77,7 +86,7 @@ export class ThreadLifecycle {
       if (typeof params.parentThreadId === "string") all = all.filter(thread => thread.parentThreadId === params.parentThreadId);
       all.sort((a, b) => Number(b.updatedAt ?? 0) - Number(a.updatedAt ?? 0) || a.id.localeCompare(b.id));
       if (params.sortDirection === "asc") all.reverse();
-      const data = all.slice(offset, offset + limit).map(thread => ({ ...thread, status: this.attachments.isLoaded(thread.id) ? thread.status ?? { type: "idle" } : { type: "notLoaded" } }));
+      const data = all.slice(offset, offset + limit).map(thread => ({ ...thread, status: this.projectedStatus(liveStatuses.get(thread.id), thread.id) }));
       return { data, nextCursor: offset + data.length < all.length ? `oc:${offset + data.length}` : null };
     }
     if (method === "thread/unsubscribe") {

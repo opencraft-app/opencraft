@@ -38,6 +38,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 
 import {
@@ -494,6 +495,13 @@ export function NewThreadDraftPage({
     );
   }
 
+  const draftSelectedModel = useSyncExternalStore(
+    controller.subscribe,
+    () => controller.getSnapshot().draft.selections.model,
+    () => controller.getSnapshot().draft.selections.model,
+  );
+  const goalCapabilityTarget = draftSelectedModel ?? effectiveSelections?.model ?? selectionCatalog.models.find(model => model.isDefault)?.value ?? selectionCatalog.models[0]?.value ?? undefined;
+
   useEffect(() => {
     const animationFrame = requestAnimationFrame(() => composerRef.current?.focus());
     return () => cancelAnimationFrame(animationFrame);
@@ -564,7 +572,7 @@ export function NewThreadDraftPage({
             <div className="thread-layout-width new-thread-draft-composer-width">
               <ThreadComposerPresentation controller={controller} scopeId={draft.scopeId} activeTabId={activeTabId} enabled={composerPresentationEnabled} timeline={null}>
               <div className="thread-composer-region" data-thread-find-composer="true">
-                {goals ? <ThreadGoalSurface threadId={null} goals={goals} draftScope={draft.target}
+                {goals ? <ThreadGoalSurface threadId={null} capabilityTarget={goalCapabilityTarget} goals={goals} draftScope={draft.target}
                   onCreateGoal={onCreateGoal} disabled={connectionPhase !== "ready" || personalDefaultsPending || setupBlocksSubmission || draftSubmissionOwnsNavigation(draft.phase)}
                   portalContainer={portalContainer}>{composer}</ThreadGoalSurface> : composer(null)}
               </div>

@@ -1,4 +1,4 @@
-import { MODEL_CATALOG_REFRESH_METHOD } from "@opencraft/appserver-protocol";
+import { MODEL_CATALOG_REFRESH_METHOD, SCOPED_SLASH_COMMAND_CATALOG_METHOD, SLASH_COMMAND_LIST_METHOD } from "@opencraft/appserver-protocol";
 import {CodeBuddyIdeBridge} from "./codebuddy-ide-bridge.js";
 import {fileURLToPath} from "node:url";
 import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
@@ -179,6 +179,10 @@ export class ConnectedAgentHost {
     private readonly bridge?: ConnectedAgentBridge,
     private readonly assets?: {readonly proxy:string;readonly extension:string},
     private readonly requestUserInput?: AcpEngineOptions["requestUserInput"],
+    private readonly attachments?: {
+      readonly directory: string;
+      readonly resolveStagedAttachment: NonNullable<AcpEngineOptions["resolveStagedAttachment"]>;
+    },
   ) { this.providerUsage = new AgentProviderUsageService(deps);
     this.ideBridge=new CodeBuddyIdeBridge(join(root,"codebuddy-ide"),deps,assets?.extension);
     onboarding.registerNative?.("codebuddy-ide",{probe:()=>this.ideBridge.snapshot(),historyProbe:()=>this.ideBridge.snapshot(true),act:action=>this.ideBridge.act(action)});
@@ -209,10 +213,17 @@ export class ConnectedAgentHost {
   private engineFor(method: string, params: Params): { engineId: EngineId | null; bridge: boolean } {
     const threadId = typeof params.threadId === "string" ? params.threadId : "";
     if (this.bridge?.provider.ownsThread(threadId)) return { engineId: null, bridge: true };
-    const engineId = method === "thread/start" || (method === "permissionProfile/list" || method === MODEL_CATALOG_REFRESH_METHOD) && !threadId
+    const scopedCatalogMethod = method === "permissionProfile/list"
+      || method === MODEL_CATALOG_REFRESH_METHOD
+      || method === SLASH_COMMAND_LIST_METHOD
+      || method === SCOPED_SLASH_COMMAND_CATALOG_METHOD;
+    const engineId = method === "thread/start" || scopedCatalogMethod && !threadId
       ? connectedAgentEngineId(typeof params.model === "string" ? params.model : "")
       : connectedAgentEngineId(threadId);
-    return { engineId, bridge: method === "thread/start" && engineId !== null && this.bridge?.engines.includes(engineId) === true };
+    const bridgeTarget = (method === "thread/start" || scopedCatalogMethod && !threadId)
+      && engineId !== null
+      && this.bridge?.engines.includes(engineId) === true;
+    return { engineId, bridge: bridgeTarget };
   }
 
   private savedModels: Promise<void> | null = null;
@@ -356,7 +367,7 @@ export class ConnectedAgentHost {
     }
     const engineId = owner.engineId;
     if (!engineId) throw new Error("This conversation is not owned by a connected agent");
-    if (method === "thread/goal/get") return { goal: null };
+    if (method === "thread/goal/get" && engineId !== "codex") return { goal: null };
     if (method === MODEL_CATALOG_REFRESH_METHOD) {
       const engine = await this.threadEngine(engineId, params.threadId);
       const client: ExecutionEngineClient = { notify() {}, async request() { throw new Error("Discovery has no browser tool owner"); } };
@@ -479,13 +490,14 @@ export class ConnectedAgentHost {
       ...(engineId === "codebuddy-ide" ? {env:{...process.env,OPENCRAFT_CODEBUDDY_IDE_DESCRIPTOR:this.ideBridge.descriptor}} : {}),
       permission: "allow-once",
       ...(engineId === "codex" && this.requestUserInput ? { requestUserInput: this.requestUserInput } : {}),
+      ...(this.attachments ? { resolveStagedAttachment: this.attachments.resolveStagedAttachment } : {}),
       timeoutMs: engineId === "codebuddy-ide" ? 330_000 : 120_000,
-      ...(engineId === "pi-cli" ? { history: new ConnectedAgentHistory("pi-cli", join(directory, "native-sessions"), join(this.root, "continuations"), [join(process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent"), "sessions")]) } : {}),
-      ...(engineId === "codebuddy-ide" ? { history: new ConnectedAgentHistory("codebuddy-ide", join(homedir(), process.platform === "darwin" ? "Library/Application Support" : process.platform === "win32" ? "AppData/Local" : ".local/share", "CodeBuddyExtension", "Data"), join(this.root, "continuations"), [], () => this.ideBridge.historyScope()) } : {}),
+      ...(engineId === "pi-cli" ? { history: new ConnectedAgentHistory("pi-cli", join(directory, "native-sessions"), join(this.root, "continuations"), [join(process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent"), "sessions")], undefined, this.attachments?.directory) } : {}),
+      ...(engineId === "codebuddy-ide" ? { history: new ConnectedAgentHistory("codebuddy-ide", join(homedir(), process.platform === "darwin" ? "Library/Application Support" : process.platform === "win32" ? "AppData/Local" : ".local/share", "CodeBuddyExtension", "Data"), join(this.root, "continuations"), [], () => this.ideBridge.historyScope(), this.attachments?.directory) } : {}),
       ...(engineId === "claude-code" || engineId === "codebuddy" ? { history: new ConnectedAgentHistory(engineId,
-        engineId === "claude-code" ? process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude") : join(process.env.CODEBUDDY_CONFIG_DIR || join(homedir(), ".codebuddy"), "projects"), join(this.root, "continuations")) } : {}),
+        engineId === "claude-code" ? process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude") : join(process.env.CODEBUDDY_CONFIG_DIR || join(homedir(), ".codebuddy"), "projects"), join(this.root, "continuations"), [], undefined, this.attachments?.directory) } : {}),
       ...(engineId === "codex" || engineId === "cursor" ? { history: new ConnectedAgentHistory(engineId,
-        engineId === "codex" ? source?.home || process.env.CODEX_HOME || join(homedir(), ".codex") : process.env.CURSOR_CONFIG_DIR || join(homedir(), ".cursor"), join(this.root, "continuations")) } : {}),
+        engineId === "codex" ? source?.home || process.env.CODEX_HOME || join(homedir(), ".codex") : process.env.CURSOR_CONFIG_DIR || join(homedir(), ".cursor"), join(this.root, "continuations"), [], undefined, this.attachments?.directory) } : {}),
     });
     engine.subscribe((method, params) => {
       for (const listener of this.listeners) listener(method, params);

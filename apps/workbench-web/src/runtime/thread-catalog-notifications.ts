@@ -69,6 +69,9 @@ export function bindThreadCatalogNotifications(client: Pick<AppServerClient, "su
       } else if (notification.method === "turn/started") {
         const { threadId } = notification.params as TurnStartedNotification;
         queryClient.setQueriesData<unknown>(filter, (data: unknown) => updateStatus(data, threadId, { type: "active", activeFlags: [] }));
+      } else if (notification.method === "turn/completed") {
+        const { threadId } = notification.params as { threadId: string };
+        queryClient.setQueriesData<unknown>(filter, (data: unknown) => updateStatus(data, threadId, { type: "idle" }));
       }
       // Do not serialize on network latency; the next event must be able to
       // cancel this read too. Query errors remain owned by the catalog UI.

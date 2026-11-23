@@ -216,5 +216,47 @@ export async function createThreadEngine(ctx, toolsModuleUrl, capabilities, inst
       volatileSessions.forget(input.sessionId);
       return { released: true };
     },
+    async commands(input = {}) {
+      const commandRuntime = typeof ctx.get === "function" ? ctx.get("commands") : ctx.commands;
+      const defaultCommands = [
+        { name: "goal", description: "Set or view the goal for a long-running task.", inputHint: "[<objective>|clear|edit <objective>|pause|resume]", source: "builtin" },
+        { name: "permission", description: "Switch the permission preset (sandbox mode + approval policy).", inputHint: "<preset>", source: "builtin" },
+        { name: "feedback", description: "Record feedback about this session.", inputHint: "<text>", source: "builtin" },
+      ];
+      if (input.operation === "execute") {
+        const agent = input.sessionId ? ctx.agents.get(input.sessionId) : undefined;
+        if (!agent || !commandRuntime || typeof commandRuntime.execute !== "function") return { handled: false };
+        const line = typeof input.line === "string" ? input.line : "";
+        if (!line.trim().startsWith("/")) return { handled: false };
+        const parsedName = /^\/([a-z0-9_-]+)(?=$|\s)/iu.exec(line.trim())?.[1]?.toLowerCase();
+        if (!parsedName || parsedName === "export") return { handled: false };
+        const images = Array.isArray(input.images) ? input.images : [];
+        const execution = await commandRuntime.execute(agent, line.trim(), images, AbortSignal.timeout(30_000));
+        if (!execution) return { handled: false };
+        await ctx.sessions.flush(agent.session);
+        const goal = ctx.goals?.get(agent) ?? null;
+        return {
+          handled: true,
+          commandId: String(execution.commandId),
+          result: execution.result,
+          goal,
+        };
+      }
+      const agent = input.sessionId ? ctx.agents.get(input.sessionId) : [...handles.values()][0]?.agent;
+      if (commandRuntime && agent && typeof commandRuntime.list === "function") {
+        const listed = commandRuntime.list(agent)
+          .filter(descriptor => descriptor.name !== "export")
+          .map(descriptor => ({
+            name: descriptor.name,
+            description: descriptor.description,
+            ...(typeof descriptor.input?.hint === "string" && descriptor.input.hint.trim()
+              ? { inputHint: descriptor.input.hint.trim() }
+              : {}),
+            source: "builtin",
+          }));
+        if (listed.length > 0) return { data: listed };
+      }
+      return { data: defaultCommands };
+    },
   };
 }

@@ -1,19 +1,35 @@
 import { assertModelPolicy, ModelPolicyError } from '@opencraft/model-usage-policy/native';
 import { EXECUTION_ENVIRONMENT_FIELD, type ExecutionEnvironmentRuntime, type ExecutionEnvironmentSnapshot, type EnvironmentExecutionScope } from "../../../scripts/execution-environment.js";
-import { randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
+import { homedir } from "node:os";
 import { isAbsolute, join, resolve, sep } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import type { AgentOrchestrationPort, ExecutionEngineClient, ExecutionEngineProvider } from "@opencraft/appserver-client";
 import { AppServerRpcError } from "@opencraft/appserver-client";
-import { MODEL_CATALOG_REFRESH_EXTENSION, MODEL_CATALOG_REFRESH_METHOD, OPENCRAFT_PERMISSION_MODES_EXTENSION, OPENCRAFT_PERMISSION_MODES_CAPABILITY, parsePermissionModeProfileId, permissionModeProfileId, type NativeConversationProject } from "@opencraft/appserver-protocol";
+import {
+  MODEL_CATALOG_REFRESH_EXTENSION,
+  MODEL_CATALOG_REFRESH_METHOD,
+  OPENCRAFT_PERMISSION_MODES_EXTENSION,
+  OPENCRAFT_PERMISSION_MODES_CAPABILITY,
+  OPENCRAFT_THREAD_GOAL_EXTENSION,
+  SCOPED_SLASH_COMMAND_CATALOG_METHOD,
+  SLASH_COMMAND_LIST_METHOD,
+  SLASH_COMMANDS_CHANGED_NOTIFICATION,
+  normalizeSlashCommands,
+  parsePermissionModeProfileId,
+  permissionModeProfileId,
+  type NativeConversationProject,
+  type OpenCraftSlashCommand,
+  type OpenCraftThreadGoal,
+} from "@opencraft/appserver-protocol";
 import type { HostInputPort, HostInputReceipt } from "@opencraft/appserver-protocol/host-inputs";
 import type { ToolRequestUserInputParams } from "@opencraft/appserver-protocol/generated/v2";
 import { AcpStdioTransport, AcpProtocolError, type AcpObject as Value } from "./transport.js";
 import { codexBaseModelId, splitModelVariant } from "./model-variant.js";
-import { acpPromptContent } from "./prompt-content.js";
+import { prepareAcpPromptContent, type AcpPromptContentOptions } from "./prompt-content.js";
 import { emptyAcpQueue, validateAcpQueue, acpQueueFingerprint, acpQueueProjection, type AcpQueue } from "./queue.js";
 
 import { readCodexPermissionConfig, acpPermissionProfiles, codexAcpPermissionSettings, type AcpPermissionConfig } from "./permissions.js";
@@ -35,6 +51,7 @@ export interface AcpEngineOptions {
   dataDirectory: string;
   requestUserInput?(params: ToolRequestUserInputParams, signal: AbortSignal,
     project: (result: Record<string, unknown>) => unknown): Promise<unknown>;
+  resolveStagedAttachment?: AcpPromptContentOptions["resolveStagedAttachment"];
   /** An engine-native reader; opening history must never issue session/resume. */
   history?: {
     read(nativeSessionId: string, params: Value): Promise<{ data: any[]; nextCursor: string | null }>;
@@ -43,6 +60,7 @@ export interface AcpEngineOptions {
     validateResume?(nativeSessionId: string, cwd: string): Promise<void>;
     sessionPath?(nativeSessionId: string, nativeHistoryEmpty?: boolean): Promise<string | null>;
     usage?(nativeSessionId: string): Promise<Value | null>;
+    goal?(nativeSessionId: string): Promise<Value | null | undefined>;
     directory?(cursor?: string, archived?: boolean): Promise<{available:boolean;sessions:{sessionId:string;cwd:string;title:string|null;updatedAt:string|null;createdAt?:string}[];nextCursor:string|null}>;
     projects?(threads: readonly { id: string; cwd: string }[]): Promise<{ available: boolean; groups: Record<string, NativeConversationProject | null> }>;
     export?(nativeSessionId: string, params: Value): Promise<import("@opencraft/appserver-protocol").AgentConversationContinuation>;
@@ -78,11 +96,132 @@ interface Session {
   receipts: Record<string, HostInputReceipt>;
   lastTurn?: { id: string; status: string; clientUserMessageId?: string };
   queue?: AcpQueue;
+  availableCommands?: OpenCraftSlashCommand[];
+  goal?: OpenCraftThreadGoal | null;
+}
+
+const BUILTIN_ACP_SLASH_COMMANDS: Readonly<Record<NonNullable<AcpEngineOptions["id"]>, readonly OpenCraftSlashCommand[]>> = {
+  codex: [
+    { name: "goal", description: "Set a goal to keep pursuing.", inputHint: "[<objective>|clear|pause|resume]", source: "builtin" },
+    { name: "plan", description: "Turn plan mode on or off.", source: "builtin" },
+    { name: "review", description: "Review uncommitted changes, or review with custom instructions.", inputHint: "[optional review instructions]", source: "builtin" },
+    { name: "review-branch", description: "Review changes relative to a base branch.", inputHint: "<branch name>", source: "builtin" },
+    { name: "review-commit", description: "Review a specific commit.", inputHint: "<commit sha>", source: "builtin" },
+    { name: "compact", description: "Summarize conversation to avoid hitting the context limit.", source: "builtin" },
+    { name: "status", description: "Display session configuration and token usage.", source: "builtin" },
+    { name: "mcp", description: "Show the status of the MCP servers, or reconnect them.", inputHint: "[reconnect]", source: "builtin" },
+    { name: "skills", description: "List available skills.", source: "builtin" },
+    { name: "rename", description: "Rename the current session.", inputHint: "<new name>", source: "builtin" },
+    { name: "logout", description: "Sign out of Codex.", source: "builtin" },
+  ],
+  cursor: [
+    { name: "goal", description: "Set a goal that Cursor will pursue to completion.", inputHint: "<objective>", source: "builtin" },
+    { name: "simplify", description: "Review changed code for reuse, quality, and efficiency, then fix any issues found.", source: "builtin" },
+    { name: "multi-model-review", description: "Run parallel code reviews and synthesize high-signal findings.", source: "builtin" },
+    { name: "autopilot", description: "Keep a PR merge-ready by triaging comments, resolving conflicts, and fixing CI.", source: "builtin" },
+    { name: "loop", description: "Run a prompt or skill on a recurring interval.", inputHint: "<interval> <prompt>", source: "builtin" },
+    { name: "rename-chat", description: "Generate a concise chat title from conversation history.", source: "builtin" },
+    { name: "shell", description: "Run a shell command in the workspace.", inputHint: "<command>", source: "builtin" },
+    { name: "split-to-prs", description: "Split current work into small reviewable PRs.", source: "builtin" },
+    { name: "share", description: "Save, back up, or share the current project.", source: "builtin" },
+    { name: "copy-request-id", description: "Copy the most recent request ID.", source: "builtin" },
+  ],
+  "claude-code": [
+    { name: "compact", description: "Compact conversation history with optional focus instructions.", inputHint: "[instructions]", source: "builtin" },
+    { name: "review", description: "Review a pull request or current changes.", inputHint: "[PR or instructions]", source: "builtin" },
+    { name: "init", description: "Initialize project CLAUDE.md documentation.", source: "builtin" },
+    { name: "pr_comments", description: "View and address pull request comments.", source: "builtin" },
+    { name: "security-review", description: "Run a security review of pending changes.", source: "builtin" },
+    { name: "release-notes", description: "Generate release notes for recent commits.", source: "builtin" },
+    { name: "cost", description: "Show session token usage and cost summary.", source: "builtin" },
+    { name: "doctor", description: "Check Claude Code installation and configuration.", source: "builtin" },
+    { name: "clear", description: "Clear conversation context.", source: "builtin" },
+  ],
+  codebuddy: [
+    { name: "compact", description: "Summarize conversation context to free up token space.", source: "builtin" },
+    { name: "review", description: "Review workspace changes and report issues.", inputHint: "[instructions]", source: "builtin" },
+    { name: "init", description: "Initialize project instructions.", source: "builtin" },
+    { name: "clear", description: "Clear current conversation context.", source: "builtin" },
+  ],
+  "codebuddy-ide": [
+    { name: "compact", description: "Summarize conversation context to free up token space.", source: "builtin" },
+    { name: "review", description: "Review workspace changes and report issues.", inputHint: "[instructions]", source: "builtin" },
+    { name: "clear", description: "Clear current conversation context.", source: "builtin" },
+  ],
+  gemini: [
+    { name: "compress", description: "Compress conversation context into a concise summary.", source: "builtin" },
+    { name: "memory", description: "Inspect or refresh loaded GEMINI.md memory.", inputHint: "[show|refresh|add <text>]", source: "builtin" },
+    { name: "stats", description: "Display session token and tool statistics.", source: "builtin" },
+    { name: "clear", description: "Clear conversation history.", source: "builtin" },
+  ],
+  "pi-cli": [
+    { name: "mcp", description: "Manage MCP servers and inspect connected tools.", inputHint: "[status|reconnect]", source: "builtin" },
+  ],
+  "dsh-acp": [
+    { name: "goal", description: "Set or view the goal for a long-running task.", inputHint: "[<objective>|clear|edit <objective>|pause|resume]", source: "builtin" },
+    { name: "permission", description: "Switch the permission preset (sandbox mode + approval policy).", inputHint: "<preset>", source: "builtin" },
+    { name: "feedback", description: "Record feedback about this session.", inputHint: "<text>", source: "builtin" },
+  ],
+  acp: [],
+};
+
+function mergeSlashCommandCatalog(
+  discovered: readonly OpenCraftSlashCommand[] | undefined,
+  builtins: readonly OpenCraftSlashCommand[],
+): OpenCraftSlashCommand[] {
+  if (!discovered?.length) return [...builtins];
+  const seen = new Set(discovered.map(command => command.name.toLowerCase()));
+  const combined = [
+    ...discovered,
+    ...builtins.filter(command => !seen.has(command.name.toLowerCase())),
+  ];
+  const goalIndex = combined.findIndex(command => command.name.toLowerCase() === "goal");
+  if (goalIndex > 0) {
+    const [goalCommand] = combined.splice(goalIndex, 1);
+    combined.unshift(goalCommand!);
+  }
+  return combined;
+}
+
+function parseCodexSlashCommand(prompt: readonly Value[]): { readonly name: string; readonly rest: string } | null {
+  const first = prompt[0];
+  if (!first || first.type !== "text" || typeof first.text !== "string") return null;
+  const trimmed = first.text.trim();
+  if (!trimmed.startsWith("/")) return null;
+  const body = trimmed.slice(1).trim();
+  if (!body) return null;
+  const [name] = body.split(/\s+/u);
+  if (!name || name.startsWith("$")) return null;
+  return { name: name.toLowerCase(), rest: body.slice(name.length).trim() };
+}
+
+function isCodexLocalOnlySlashCommand(prompt: readonly Value[]): boolean {
+  if (prompt.length !== 1) return false;
+  const command = parseCodexSlashCommand(prompt);
+  if (!command) return false;
+  switch (command.name) {
+    case "plan":
+    case "status":
+    case "rename":
+    case "logout":
+    case "skills":
+    case "mcp":
+      return true;
+    case "review-branch":
+    case "review-commit":
+      return command.rest.length === 0;
+    case "goal": {
+      const arg = command.rest.toLowerCase();
+      return arg.length === 0 || arg === "pause" || arg === "clear" || command.rest.length > 4000;
+    }
+    default:
+      return false;
+  }
 }
 export type AcpOrchestrationPort = AgentOrchestrationPort;
 interface Runtime {
   questionLifetime?: AbortController;
-  owner?: ExecutionEngineClient; loaded: boolean; permissionConfirmed?: boolean; active?: { id: string; delegationId: string | null; inputId?: string; items: Value[]; status: string; startedAtMs?: number; planSignature?: string; error?: Value };
+  owner?: ExecutionEngineClient; loaded: boolean; permissionConfirmed?: boolean; active?: { id: string; delegationId: string | null; inputId?: string; items: Value[]; status: string; startedAtMs?: number; planSignature?: string; error?: Value; autonomousGoalTurn?: boolean };
 }
 interface Creation {
   fingerprint: string; state: "pending" | "created"; threadId?: string;
@@ -91,6 +230,48 @@ interface Creation {
 const value = (input: unknown): Value => input && typeof input === "object" && !Array.isArray(input) ? input as Value : {};
 const fault = (message: string, code = -32602): never => { throw new AppServerRpcError({ code, message }); };
 const safeId = (id: unknown): id is string => typeof id === "string" && /^[a-zA-Z0-9_-]{1,128}$/u.test(id);
+
+function extractGoalPayloadFromToolUpdate(update: Value): Value | null {
+  const texts: string[] = [];
+  if (Array.isArray(update.content)) {
+    for (const entry of update.content) {
+      if (entry?.type === "content" && typeof entry?.content?.text === "string") texts.push(entry.content.text);
+      else if (typeof entry?.text === "string") texts.push(entry.text);
+    }
+  }
+  if (typeof update.rawOutput === "string") texts.push(update.rawOutput);
+  else if (update.rawOutput && typeof update.rawOutput === "object") texts.push(JSON.stringify(update.rawOutput));
+  let matched: Value | null = null;
+  for (const rawText of texts) {
+    if (!rawText.includes('"goal"')) continue;
+    for (const line of [rawText, ...rawText.split("\n")]) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("{") || !trimmed.includes('"goal"')) continue;
+      try {
+        const g = JSON.parse(trimmed)?.goal;
+        if (!g || typeof g !== "object" || Array.isArray(g)) continue;
+        if (typeof g.objective !== "string" || !g.objective.trim() || g.objective.length > 4000) continue;
+        if (!["active", "paused", "blocked", "complete", "usageLimited", "budgetLimited"].includes(String(g.status))) continue;
+        const createdAt = typeof g.createdAt === "number" && Number.isFinite(g.createdAt) ? Math.floor(g.createdAt) : 0;
+        const updatedAt = typeof g.updatedAt === "number" && Number.isFinite(g.updatedAt) ? Math.floor(g.updatedAt) : createdAt;
+        if (createdAt > 0 && updatedAt > 0) {
+          matched = {
+            objective: g.objective.trim(),
+            status: g.status,
+            tokenBudget: typeof g.tokenBudget === "number" && Number.isFinite(g.tokenBudget) && g.tokenBudget > 0 ? Math.floor(g.tokenBudget) : null,
+            tokensUsed: typeof g.tokensUsed === "number" && Number.isFinite(g.tokensUsed) && g.tokensUsed >= 0 ? Math.floor(g.tokensUsed) : 0,
+            timeUsedSeconds: typeof g.timeUsedSeconds === "number" && Number.isFinite(g.timeUsedSeconds) && g.timeUsedSeconds >= 0 ? Math.floor(g.timeUsedSeconds) : 0,
+            createdAt,
+            updatedAt,
+          };
+        }
+      } catch {
+        // Ignore non-JSON lines.
+      }
+    }
+  }
+  return matched;
+}
 
 /** A long-lived ACP owner shared by standard ACP peers, DSH ACP and Claude ACP.
  * A provider is enabled only with an explicit installed command; no CLI is
@@ -103,9 +284,25 @@ export class AcpEngine implements ExecutionEngineProvider {
   readonly modelPrefix: string;
   readonly incarnation = randomUUID();
   private readonly baseExtensions: Readonly<Record<string, unknown>>;
-  get extensions(): Readonly<Record<string, unknown>> { return { ...this.baseExtensions, ...(this.orchestration ? {
-    "opencraft/thread-orchestration": { version: 1, driver: this.id === "dsh-acp" ? "dsh" : this.id, callbackReplay: true },
-  } : {}) }; }
+  get extensions(): Readonly<Record<string, unknown>> {
+    const nativeFork = !this.options.executionEnvironment
+      && (this.capabilities.sessionCapabilities === undefined
+        ? this.id === "codex"
+        : !!value(this.capabilities.sessionCapabilities).fork);
+    return {
+      ...this.baseExtensions,
+      "opencraft/thread-lifecycle": {
+        version: 1,
+        rename: true,
+        archive: true,
+        unsubscribe: true,
+        ...(nativeFork ? { fork: true } : {}),
+      },
+      ...(this.orchestration ? {
+        "opencraft/thread-orchestration": { version: 1, driver: this.id === "dsh-acp" ? "dsh" : this.id, callbackReplay: true },
+      } : {}),
+    };
+  }
   readonly inputs: HostInputPort;
   private transport: AcpStdioTransport;
   private readonly sessionTransports = new Map<string, AcpStdioTransport>();
@@ -128,9 +325,14 @@ export class AcpEngine implements ExecutionEngineProvider {
   private persistenceFailed = false;
   private nativeOutcomeUnknown = false;
   private started: Promise<void> | null = null;
+  private codexAccount: string | null = null;
+  private codexAccountRecycle: Promise<void> | null = null;
   private capabilities: Value = {};
   private catalogSessionId: string | null = null;
   private catalogRefresh: Promise<Value> | null = null;
+  private commandCatalog: OpenCraftSlashCommand[] | null = null;
+  private readonly pendingCommands = new Map<string, OpenCraftSlashCommand[]>();
+  private readonly goalWatchTimers = new Map<string, NodeJS.Timeout>();
   private inputModalities: ("text" | "image")[] | null = null;
   private toolServer?: Server;
   private toolUrl = "";
@@ -159,10 +361,13 @@ export class AcpEngine implements ExecutionEngineProvider {
     this.modelPrefix = this.id + ":";
     this.baseExtensions = Object.freeze({
       ...(["codex", "cursor", "gemini"].includes(this.id) ? { [MODEL_CATALOG_REFRESH_EXTENSION]: { version: 1 } } : {}),
-      ...(this.id === "codex" ? { [OPENCRAFT_PERMISSION_MODES_EXTENSION]: OPENCRAFT_PERMISSION_MODES_CAPABILITY } : {}),
+      ...(this.id === "codex" ? {
+        [OPENCRAFT_PERMISSION_MODES_EXTENSION]: OPENCRAFT_PERMISSION_MODES_CAPABILITY,
+        [OPENCRAFT_THREAD_GOAL_EXTENSION]: { version: 1, read: true, write: true, usageAccounting: false },
+      } : {}),
       "opencraft/thread-lifecycle": { version: 1, rename: true, archive: true, unsubscribe: true },
-      "opencraft/thread-follow-up": { version: 1, queue: true, steer: false },
-      "opencraft/thread-queue": { version: 2, reorder: true, atomicSteer: false, perItemPause: false },
+      "opencraft/thread-follow-up": { version: 1, queue: true, steer: this.id === "codex" },
+      "opencraft/thread-queue": { version: 2, reorder: true, atomicSteer: this.id === "codex", perItemPause: false },
       ...(options.history ? { "opencraft/read-history": { version: 1, initialTurnsPage: true } } : {}),
       "opencraft/agent-driver": { version: 1, kind: this.id === "claude-code" ? "claude-code" : "acp", incarnation: this.incarnation, callbackReplay: true },
     });
@@ -246,7 +451,16 @@ export class AcpEngine implements ExecutionEngineProvider {
         void this.persistJson(join(this.options.dataDirectory, "native-uncertainty.json"), { unknown: true }).catch(() => {});
       },
       onExit: () => {
-        for (const [id, state] of this.runtime) if (!threadId || threadId === id) { state.permissionConfirmed = false; state.loaded = false; }
+        for (const [id, state] of this.runtime) if (!threadId || threadId === id) {
+          state.permissionConfirmed = false;
+          state.loaded = false;
+          const session = this.sessions.get(id);
+          if (session?.goal?.status === "active" && session.goal.execution?.activation === "armed") {
+            session.goal = { ...session.goal, execution: { activation: "disarmed" } };
+            void this.save(session).catch(() => { this.persistenceFailed = true; });
+            this.notify("thread/goal/updated", { threadId: session.id, goal: session.goal });
+          }
+        }
         for (const [id, state] of this.runtime) if ((!threadId || threadId === id) && state.active?.status === "inProgress") {
           void this.failPrompt(this.session(id), state, "acpPromptUnconfirmed").catch(() => { this.persistenceFailed = true; });
           state.loaded = false;
@@ -294,7 +508,8 @@ export class AcpEngine implements ExecutionEngineProvider {
         if (!file.startsWith(this.threadPrefix) || !/^[a-zA-Z0-9_-]+\.json$/u.test(file)) continue;
         const record = JSON.parse(await readFile(join(this.options.dataDirectory, file), "utf8")) as Session;
         if (record.schemaVersion !== 1 || !safeId(record.id) || file !== `${record.id}.json` || !isAbsolute(record.cwd) || typeof record.nativeId !== "string" || !Array.isArray(record.tools)) throw new Error("Invalid ACP routing metadata");
-        if (this.id === "codebuddy-ide" && !record.nativeImport && !record.lastTurn) record.nativeHistoryEmpty = true;
+        if (["codex", "cursor", "pi-cli", "claude-code", "codebuddy", "codebuddy-ide"].includes(this.id)
+          && !record.nativeImport && !record.lastTurn && !Object.keys(record.receipts ?? {}).length) record.nativeHistoryEmpty = true;
         if (record.queue) {
           validateAcpQueue(record.queue);
           for (const item of [...record.queue.items]) if (item.state === "dispatching") {
@@ -311,12 +526,22 @@ export class AcpEngine implements ExecutionEngineProvider {
           // explicit Resume queue; an attempted input remains non-replayable.
           if (record.queue.items.length) record.queue.pausedReason ??= "user-stopped";
         }
+        // Cold restore never arms autonomous continuation; require explicit Resume.
+        if (record.goal?.status === "active" && record.goal.execution?.activation !== "disarmed") {
+          record.goal = { ...record.goal, execution: { activation: "disarmed" } };
+        }
         this.sessions.set(record.id, record);
       }
       try {
         const catalog = value(JSON.parse(await readFile(join(this.options.dataDirectory, "model-catalog.json"), "utf8")));
         if (catalog.version !== 1 || !safeId(catalog.sessionId) || !this.sessions.has(catalog.sessionId)) throw new Error("Invalid ACP model catalog owner");
         this.catalogSessionId = catalog.sessionId;
+      } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+      try {
+        const rawCommands = value(JSON.parse(await readFile(join(this.options.dataDirectory, "command-catalog.json"), "utf8")));
+        if (rawCommands.version === 1 && Array.isArray(rawCommands.commands)) {
+          this.commandCatalog = normalizeSlashCommands(rawCommands.commands, "agent");
+        }
       } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
       try { this.nativeOutcomeUnknown = JSON.parse(await readFile(join(this.options.dataDirectory, "native-uncertainty.json"), "utf8")).unknown === true; }
       catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
@@ -328,15 +553,57 @@ export class AcpEngine implements ExecutionEngineProvider {
       } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
     })();
   }
-  start(): Promise<void> {
+  private async codexAccountFingerprint(): Promise<string | null> {
+    if (this.id !== "codex" || this.options.executionEnvironment) return null;
+    const home = this.options.env?.CODEX_HOME || process.env.CODEX_HOME || join(homedir(), ".codex");
+    try {
+      const raw = JSON.parse(await readFile(join(home, "auth.json"), "utf8")) as Value;
+      const tokens = typeof raw?.tokens === "object" && raw.tokens !== null ? raw.tokens : null;
+      const apiKeyDigest = typeof raw?.OPENAI_API_KEY === "string" && raw.OPENAI_API_KEY
+        ? createHash("sha256").update(raw.OPENAI_API_KEY).digest("hex")
+        : null;
+      return JSON.stringify({
+        authMode: typeof raw?.auth_mode === "string" ? raw.auth_mode : null,
+        accountId: typeof tokens?.account_id === "string" ? tokens.account_id : null,
+        loginOwnerId: typeof tokens?.login_owner_id === "string" ? tokens.login_owner_id : null,
+        apiKeyDigest,
+      });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return "missing";
+      return null;
+    }
+  }
+  private startTransport(): Promise<void> {
     return this.started ??= (async () => {
       await this.load(); await this.startTools();
+      this.codexAccount = await this.codexAccountFingerprint();
       const initialized = await this.transport.start();
       if (initialized.protocolVersion !== 1) throw new Error("Unsupported ACP protocol version");
       this.capabilities = value(initialized.agentCapabilities);
       this.inputModalities = value(this.capabilities.promptCapabilities).image === true ? ["text", "image"] : ["text"];
       this.notify("opencraft/agents/models/changed", { agentId: this.id });
-    })().catch(async error => { await this.transport.close(); await this.closeTools(); throw error; });
+    })().catch(async error => { this.started = null; await this.transport.close(); await this.closeTools(); throw error; });
+  }
+  async start(): Promise<void> {
+    if (this.started === null) return this.startTransport();
+    await this.started;
+    if (this.id !== "codex" || this.options.executionEnvironment || this.closed) return;
+    if (this.pendingMcp.size > 0 || [...this.runtime.values()].some(state => state.active?.status === "inProgress")) return;
+    const currentAccount = await this.codexAccountFingerprint();
+    if (currentAccount === null || this.codexAccount === null || currentAccount === this.codexAccount) return;
+    return this.codexAccountRecycle ??= (async () => {
+      try {
+        if (this.closed || this.pendingMcp.size > 0 || [...this.runtime.values()].some(state => state.active?.status === "inProgress")) return;
+        const latestAccount = await this.codexAccountFingerprint();
+        if (latestAccount === null || latestAccount === this.codexAccount) return;
+        const previous = this.transport;
+        for (const state of this.runtime.values()) { state.loaded = false; state.permissionConfirmed = false; }
+        this.transport = this.createTransport();
+        this.started = null;
+        await previous.close();
+        await this.startTransport();
+      } finally { this.codexAccountRecycle = null; }
+    })();
   }
   /** A cold declaration is advisory; native initialization never resumes a conversation. */
   get hasInputCapabilities(): boolean { return this.inputModalities !== null || [...this.sessions.values()].some(session => session.inputModalities !== undefined); }
@@ -418,7 +685,7 @@ export class AcpEngine implements ExecutionEngineProvider {
     return { id: session.id, ...(session.forkedFromId ? { forkedFromId: session.forkedFromId } : {}), ...(session.nativeProject ? { nativeProject: session.nativeProject } : {}), cwd: session.cwd, name: session.name, model: session.model, modelProvider: this.id,
       reasoningEffort: session.reasoningConfig?.currentValue ?? null, createdAt: session.createdAt, updatedAt: session.updatedAt,
       ...(session.fastConfig ? { serviceTier: session.fastConfig.currentValue === session.fastConfig.onValue ? "fast" : null } : {}),
-      preview: session.preview ?? "", turns: [], status: { type: state.active?.status === "inProgress" ? "active" : "idle" },
+      preview: session.preview ?? "", turns: [], status: state.active?.status === "inProgress" ? { type: "active", activeFlags: [] } : { type: "idle" },
       source: "appServer", engineKind: this.id, path: null, ephemeral: false,
       ...(this.options.history ? { historyMode: "paginated" } : {}),
       ...(this.id === "codex" ? this.permissionSettings(session) : this.options.permission === "allow-once" ? { permissions: permissionModeProfileId("full"), approvalPolicy: "never", sandbox: "danger-full-access" } : {}) };
@@ -496,8 +763,8 @@ export class AcpEngine implements ExecutionEngineProvider {
     try { return await operation(); } finally { this.activeAdmissions--; }
   }
   request(method: string, params: Value, client: ExecutionEngineClient): Promise<any> {
-    if (method === "thread/queue/list") return this.serializeThread(String(params.threadId ?? ""), () => this.handle(method, params, client));
-    return method.startsWith("thread/queue/") && method !== "thread/queue/list" || [MODEL_CATALOG_REFRESH_METHOD, "thread/start", "thread/fork", "opencraft/agent-session/release", "thread/resume", "turn/start", "turn/interrupt", "thread/archive", "thread/unarchive", "opencraft/orchestration/prepare", "opencraft/orchestration/create"].includes(method)
+    if (method === "thread/queue/list" || method === "thread/goal/get") return this.serializeThread(String(params.threadId ?? ""), () => this.handle(method, params, client));
+    return method.startsWith("thread/queue/") && method !== "thread/queue/list" || [MODEL_CATALOG_REFRESH_METHOD, "thread/start", "thread/fork", "opencraft/agent-session/release", "thread/resume", "turn/start", "turn/steer", "turn/interrupt", "thread/archive", "thread/unarchive", "thread/goal/set", "thread/goal/clear", "opencraft/orchestration/prepare", "opencraft/orchestration/create"].includes(method)
       ? this.admit(() => typeof params.threadId === "string" && method !== MODEL_CATALOG_REFRESH_METHOD
         ? this.serializeThread(params.threadId, () => this.handle(method, params, client)) : this.handle(method, params, client))
       : this.handle(method, params, client);
@@ -605,7 +872,10 @@ export class AcpEngine implements ExecutionEngineProvider {
           throw error;
         } finally { this.pendingMcp.delete(id); }
         const now = Math.floor(Date.now() / 1000);
+        const initialCommands = this.pendingCommands.get(result.sessionId);
+        if (initialCommands) this.pendingCommands.delete(result.sessionId);
         const session: Session = { schemaVersion: 1, id, nativeId: result.sessionId, cwd, model: null, name: null, createdAt: now, updatedAt: now, tools, archived: false, receipts: {},
+          ...(initialCommands ? { availableCommands: initialCommands } : {}),
           ...(params.__opencraftCatalogProbe === true ? { catalogProbe: true as const } : {}),
           ...(["codex", "cursor", "pi-cli", "claude-code", "codebuddy", "codebuddy-ide"].includes(this.id) ? { nativeHistoryEmpty: true as const } : {}) };
         this.captureModels(session, result);
@@ -661,6 +931,17 @@ export class AcpEngine implements ExecutionEngineProvider {
       this.catalogRefresh = pending;
       try { return await pending; } finally { if (this.catalogRefresh === pending) this.catalogRefresh = null; }
     }
+    if (method === SLASH_COMMAND_LIST_METHOD || method === SCOPED_SLASH_COMMAND_CATALOG_METHOD) {
+      const targetSession = typeof params.threadId === "string" && this.sessions.has(params.threadId)
+        ? this.sessions.get(params.threadId)
+        : undefined;
+      const discovered = targetSession?.availableCommands
+        ?? this.commandCatalog
+        ?? [...this.sessions.values()].findLast(entry => entry.availableCommands?.length)?.availableCommands;
+      return {
+        data: mergeSlashCommandCatalog(discovered, BUILTIN_ACP_SLASH_COMMANDS[this.id] ?? []),
+      };
+    }
     if (method === "permissionProfile/list") {
       if (this.id !== "codex") return { data: [], nextCursor: null };
       const session = params.threadId ? this.session(params.threadId) : [...this.sessions.values()].filter(session => session.permissionConfig).at(-1);
@@ -706,18 +987,27 @@ export class AcpEngine implements ExecutionEngineProvider {
         context: live && live.observedAt >= (source?.observedAt ?? 0) ? { usedTokens: live.usedTokens, limitTokens: live.limitTokens } : source?.context ?? null,
         total: source?.total ?? null, last: source?.last ?? null };
     }
+    const runHistoryRead = async <T>(operation: () => Promise<T>): Promise<T> => {
+      try { return await operation(); }
+      catch (error) {
+        if (error instanceof Error && error.message === "Could not read the saved agent conversation") {
+          throw Object.assign(new Error(error.message), { rpcCode: -32603, domainData: { code: "NATIVE_HISTORY_UNREADABLE", retryable: false } });
+        }
+        throw error;
+      }
+    };
     if (method === "thread/read") {
-      const initialTurnsPage = params.initialTurnsPage && this.options.history ? await this.options.history.read(session.nativeId, this.historyParams(session, params.initialTurnsPage)) : undefined;
-      const turns = params.includeTurns === true && this.options.history?.snapshot ? await this.options.history.snapshot(session.nativeId, this.historyParams(session, params)) : [];
+      const initialTurnsPage = params.initialTurnsPage && this.options.history ? await runHistoryRead(() => this.options.history!.read(session.nativeId, this.historyParams(session, params.initialTurnsPage))) : undefined;
+      const turns = params.includeTurns === true && this.options.history?.snapshot ? await runHistoryRead(() => this.options.history!.snapshot!(session.nativeId, this.historyParams(session, params))) : [];
       return { thread: { ...this.metadata(session), turns }, ...(initialTurnsPage ? { initialTurnsPage } : {}) };
     }
     if (method === "thread/turns/list") {
       if (!this.options.history) return fault("This ACP peer has no native transcript reader", -32601);
-      return this.options.history.read(session.nativeId, this.historyParams(session, params));
+      return runHistoryRead(() => this.options.history!.read(session.nativeId, this.historyParams(session, params)));
     }
     if (method === "thread/items/list") {
       if (!this.options.history?.items) return fault("This ACP peer has no native item reader", -32601);
-      return this.options.history.items(session.nativeId, this.historyParams(session, params));
+      return runHistoryRead(() => this.options.history!.items!(session.nativeId, this.historyParams(session, params)));
     }
     if (method === "opencraft/agent-session/export-context") {
       if (!this.options.history?.export) return fault("Conversation context export is unavailable", -32601);
@@ -727,7 +1017,7 @@ export class AcpEngine implements ExecutionEngineProvider {
     if (method === "opencraft/agent-session/status") {
       await this.start();
       const capabilities = value(this.capabilities.sessionCapabilities);
-      return { fork: !!capabilities.fork && !this.options.executionEnvironment && this.id === "codex",
+      return { fork: !!capabilities.fork && !this.options.executionEnvironment,
         release: !!capabilities.close && this.id === "codex", loaded: runtime.loaded };
     }
     if (method === "opencraft/agent-session/release") {
@@ -736,11 +1026,16 @@ export class AcpEngine implements ExecutionEngineProvider {
       if (this.nativeOutcomeUnknown || session.queue?.items.length || runtime.active?.status === "inProgress" || runtime.active?.status === "unconfirmed") return fault("The session must finish its current work before release", -32000);
       if (runtime.loaded) await this.native(session).request("session/close", { sessionId: session.nativeId });
       runtime.loaded = false; runtime.permissionConfirmed = false; runtime.owner = undefined;
+      if (session.goal?.status === "active" && session.goal.execution?.activation === "armed") {
+        session.goal = { ...session.goal, execution: { activation: "disarmed" } };
+        await this.save(session);
+        this.notify("thread/goal/updated", { threadId: session.id, goal: session.goal });
+      }
       return { released: true };
     }
     if (method === "thread/fork") {
       await this.start();
-      if (this.id !== "codex" || !value(this.capabilities.sessionCapabilities).fork || this.options.executionEnvironment) return fault("Native session branching is unavailable", -32601);
+      if (!value(this.capabilities.sessionCapabilities).fork || this.options.executionEnvironment) return fault("Native session branching is unavailable", -32601);
       if (this.nativeOutcomeUnknown) return fault("The previous native operation has an unknown outcome", -32000);
       if (params.lastTurnId != null || params.ephemeral === true || params.cwd != null && params.cwd !== session.cwd
         || params.dynamicTools != null || params.model != null && (typeof params.model !== "string" || !this.ownsModel(params.model))) return fault("This Agent supports branching the full conversation with its existing settings only");
@@ -770,12 +1065,93 @@ export class AcpEngine implements ExecutionEngineProvider {
     }
     if (method === "thread/resume") {
       await this.resume(session); runtime.owner = client;
-      const initialTurnsPage = params.initialTurnsPage && this.options.history ? await this.options.history.read(session.nativeId, this.historyParams(session, params.initialTurnsPage)) : undefined;
+      const initialTurnsPage = params.initialTurnsPage && this.options.history ? await runHistoryRead(() => this.options.history!.read(session.nativeId, this.historyParams(session, params.initialTurnsPage))) : undefined;
       const reply = this.sessionResponse(session);
-      if (params.excludeTurns === false && !initialTurnsPage && this.options.history?.snapshot) reply.thread.turns = await this.options.history.snapshot(session.nativeId, this.historyParams(session, params));
+      if (params.excludeTurns === false && !initialTurnsPage && this.options.history?.snapshot) reply.thread.turns = await runHistoryRead(() => this.options.history!.snapshot!(session.nativeId, this.historyParams(session, params)));
       return { ...reply, ...(initialTurnsPage ? { initialTurnsPage } : {}) };
     }
     if (method === "thread/name/set") { if (typeof params.name !== "string" || params.name.length > 256) return fault("Invalid ACP thread name"); await this.setTitle(session, params.name, "manual"); return {}; }
+    if (method === "thread/goal/get") {
+      if (this.id !== "codex") return { goal: null };
+      await this.syncGoalFromHistory(session, false);
+      return { goal: session.goal ?? null };
+    }
+    if (method === "thread/goal/clear") {
+      if (this.id !== "codex") return fault("This Agent does not support persistent conversation goals", -32601);
+      if (runtime.active?.status === "inProgress") return fault("Finish or stop the current response before clearing the goal", -32000);
+      await this.resume(session);
+      await this.native(session).request("_session/goal", { sessionId: session.nativeId, action: "clear" });
+      const cleared = session.goal != null;
+      session.goal = null;
+      await this.save(session);
+      if (cleared) this.notify("thread/goal/cleared", { threadId: session.id });
+      return { cleared };
+    }
+    if (method === "thread/goal/set") {
+      if (this.id !== "codex") return fault("This Agent does not support persistent conversation goals", -32601);
+      if (params.tokenBudget != null) return fault("Codex ACP does not support goal token budgets");
+      if (runtime.active?.status === "inProgress") return fault("Finish or stop the current response before updating the goal", -32000);
+      const status = params.status == null ? "active" : params.status;
+      if (!["active", "paused", "blocked", "complete"].includes(status)) return fault("Unsupported goal status");
+      const rawObjective = params.objective === undefined ? undefined : typeof params.objective === "string" ? params.objective.trim() : "";
+      if (rawObjective !== undefined && (!rawObjective || rawObjective.length > 4000)) return fault("Goal objective must be between 1 and 4000 characters");
+      const current = session.goal ?? null;
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      if (status === "paused") {
+        if (!current) return fault("No active goal to pause");
+        await this.resume(session);
+        if (rawObjective && rawObjective !== current.objective) {
+          // Codex ACP updates objective via set; update stored objective and pause immediately.
+          session.goal = { ...current, objective: rawObjective, status: "paused", updatedAt: nowSeconds, execution: { activation: "disarmed" } };
+        } else {
+          session.goal = { ...current, status: "paused", updatedAt: nowSeconds, execution: { activation: "disarmed" } };
+        }
+        await this.native(session).request("_session/goal", { sessionId: session.nativeId, action: "pause" }).catch(() => undefined);
+        await this.save(session);
+        this.notify("thread/goal/updated", { threadId: session.id, goal: session.goal });
+        return { goal: session.goal };
+      }
+      if (status === "complete" || status === "blocked") {
+        if (!current) return fault("No goal is currently set");
+        session.goal = {
+          ...current,
+          ...(rawObjective ? { objective: rawObjective } : {}),
+          status,
+          updatedAt: nowSeconds,
+          execution: { activation: "disarmed" },
+        };
+        if (status === "complete") {
+          await this.resume(session);
+          await this.native(session).request("_session/goal", { sessionId: session.nativeId, action: "pause" }).catch(() => undefined);
+        }
+        await this.save(session);
+        this.notify("thread/goal/updated", { threadId: session.id, goal: session.goal });
+        return { goal: session.goal };
+      }
+      // status === "active": either create/edit objective or resume existing paused/disarmed goal
+      const objective = rawObjective ?? current?.objective;
+      if (!objective) return fault("A new goal requires an objective");
+      await this.resume(session);
+      runtime.owner = client;
+      const isResumeOnly = rawObjective === undefined && current !== null && current.objective === objective;
+      const goalCommandText = isResumeOnly ? "/goal resume" : `/goal ${objective}`;
+      const nextGoal: OpenCraftThreadGoal = {
+        threadId: session.id,
+        objective,
+        status: "active",
+        tokenBudget: null,
+        tokensUsed: current?.tokensUsed ?? 0,
+        timeUsedSeconds: current?.timeUsedSeconds ?? 0,
+        createdAt: current && current.status !== "complete" ? current.createdAt : nowSeconds,
+        updatedAt: nowSeconds,
+        execution: { activation: "armed" },
+      };
+      session.goal = nextGoal;
+      await this.save(session);
+      this.notify("thread/goal/updated", { threadId: session.id, goal: nextGoal });
+      await this.prompt(session, [{ type: "text", text: goalCommandText }], null, undefined, [{ type: "text", text: goalCommandText }]);
+      return { goal: session.goal };
+    }
     if (method === "thread/archive" || method === "thread/unarchive") { session.archived = method === "thread/archive"; if (session.archived && session.queue?.items.length) session.queue.pausedReason = "user-stopped"; await this.save(session); return {}; }
     if (method === "thread/unsubscribe") { if (runtime.owner === client) runtime.owner = undefined; return {}; }
     if (method === "turn/start") {
@@ -791,19 +1167,102 @@ export class AcpEngine implements ExecutionEngineProvider {
       if (Object.hasOwn(params, "serviceTier")) await this.setServiceTier(session, params.serviceTier);
       runtime.owner = client;
       const initialized = await this.native(session).start();
-      const userPrompt = continuing ? [{ type: "text", text: "Continue." }] : await acpPromptContent(params.input,
-        value(initialized.agentCapabilities?.promptCapabilities).image === true);
-      if (this.id === "pi-cli" && userPrompt.some(part => part.type === "image")
+      const prepared = continuing
+        ? {
+            prompt: [{ type: "text" as const, text: "Continue." }],
+            userContent: [{ type: "text", text: "Continue.", text_elements: [] }],
+            visibleText: "Continue.",
+          }
+        : await prepareAcpPromptContent(params.input, {
+            imagesAllowed: value(initialized.agentCapabilities?.promptCapabilities).image === true,
+            cwd: session.cwd || this.options.cwd,
+            resolveStagedAttachment: this.options.resolveStagedAttachment,
+          });
+      if (this.id === "pi-cli" && prepared.prompt.some(part => part.type === "image")
         && !session.modelCatalog?.find(model => model.id === session.model)?.inputModalities?.includes("image")) return fault("This Pi model does not support image input");
-      const result = await this.prompt(session, this.promptWithContext(userPrompt, params.additionalContext), typeof params.__opencraftDelegationId === "string" ? params.__opencraftDelegationId : null, params.clientUserMessageId, userPrompt);
+      const result = await this.prompt(
+        session,
+        this.promptWithContext(prepared.prompt, params.additionalContext),
+        typeof params.__opencraftDelegationId === "string" ? params.__opencraftDelegationId : null,
+        params.clientUserMessageId,
+        prepared.userContent,
+        prepared.visibleText,
+      );
       if (session.queue?.pausedReason) { session.queue.pausedReason = null; await this.save(session); this.notify("thread/queue/changed", { threadId: session.id }); }
       return result;
+    }
+    if (method === "turn/steer") {
+      if (this.id !== "codex") return fault("This ACP agent does not support steering active turns", -32601);
+      const active = runtime.active;
+      if (!active || active.status !== "inProgress") {
+        throw new AppServerRpcError({ code: -32009, message: "ACP thread has no active turn", data: { code: "TURN_INACTIVE", retryable: false } });
+      }
+      const expectedTurnId = typeof params.expectedTurnId === "string" ? params.expectedTurnId : "";
+      if (expectedTurnId && expectedTurnId !== active.id) {
+        throw new AppServerRpcError({
+          code: -32009,
+          message: `Active ACP turn changed; expected ${expectedTurnId}, got ${active.id}`,
+          data: { code: "EXPECTED_TURN_MISMATCH", retryable: true, actualTurnId: active.id },
+        });
+      }
+      const clientId = params.clientUserMessageId;
+      if (clientId !== undefined && (typeof clientId !== "string" || !clientId || clientId.length > 512)) return fault("Invalid ACP input identity");
+      if (typeof clientId === "string" && session.receipts[clientId]?.state === "delivered") {
+        return { turnId: session.receipts[clientId].turnId ?? active.id };
+      }
+      const initialized = await this.native(session).start();
+      const prepared = await prepareAcpPromptContent(params.input, {
+        imagesAllowed: value(initialized.agentCapabilities?.promptCapabilities).image === true,
+        cwd: session.cwd || this.options.cwd,
+        resolveStagedAttachment: this.options.resolveStagedAttachment,
+      });
+      const steerPrompt = this.promptWithContext(prepared.prompt, params.additionalContext);
+      if (typeof clientId === "string") {
+        session.receipts[clientId] = { state: "unknown", turnId: active.id };
+        await this.save(session);
+      }
+      await this.native(session).request("_session/steering", { sessionId: session.nativeId, prompt: steerPrompt });
+      const steerItem = {
+        id: `${active.id}:steer:${randomUUID()}`,
+        type: "userMessage",
+        clientId: typeof clientId === "string" ? clientId : null,
+        content: prepared.userContent,
+      };
+      active.items.push(steerItem);
+      if (typeof clientId === "string") {
+        session.receipts[clientId] = { state: "delivered", turnId: active.id };
+      }
+      session.updatedAt = Math.floor(Date.now() / 1000);
+      await this.save(session);
+      this.notify("item/started", { threadId: session.id, turnId: active.id, item: steerItem });
+      this.notify("item/completed", { threadId: session.id, turnId: active.id, item: steerItem });
+      return { turnId: active.id };
     }
     if (method === "turn/interrupt") {
       if(this.id === "codebuddy-ide")return fault("Stop this task in CodeBuddy IDE; interruption was not sent",-32601);
       if (runtime.active && params.turnId && params.turnId !== runtime.active.id) return fault("ACP turn changed", -32000);
       if (session.queue) { session.queue.pausedReason = "user-stopped"; await this.save(session); this.notify("thread/queue/changed", { threadId: session.id }); }
-      if (runtime.active?.status === "inProgress") this.native(session).notify("session/cancel", { sessionId: session.nativeId });
+      if (this.id === "codex" && session.goal?.status === "active" && session.goal.execution?.activation === "armed") {
+        this.clearGoalTimer(`disarm:${session.id}`);
+        session.goal = { ...session.goal, execution: { activation: "disarmed" } };
+        await this.native(session).request("_session/goal", { sessionId: session.nativeId, action: "pause" }).catch(() => undefined);
+        await this.save(session);
+        this.notify("thread/goal/updated", { threadId: session.id, goal: session.goal });
+      }
+      if (runtime.active?.status === "inProgress") {
+        this.native(session).notify("session/cancel", { sessionId: session.nativeId });
+        if (runtime.active.autonomousGoalTurn) {
+          this.clearGoalTimer(`settle:${session.id}`);
+          const active = runtime.active;
+          active.status = "interrupted";
+          runtime.questionLifetime?.abort();
+          runtime.questionLifetime = undefined;
+          session.lastTurn = { id: active.id, status: "interrupted" };
+          await this.save(session);
+          this.notify("turn/completed", { threadId: session.id, turn: this.turn(runtime) });
+          this.notify("thread/status/changed", { threadId: session.id, status: { type: "idle" } });
+        }
+      }
       return {};
     }
     if (method === "opencraft/driver/status") return this.snapshot(session.id);
@@ -825,10 +1284,14 @@ export class AcpEngine implements ExecutionEngineProvider {
       const updating = method === "thread/queue/update", clientId = updating ? item?.clientUserMessageId : params.clientUserMessageId;
       if (typeof clientId !== "string" || !clientId || clientId.length > 512 || ["__proto__", "constructor", "prototype"].includes(clientId)) return fault("Invalid queued input identity");
       if (updating && (!item || item.state !== "queued")) return fault("Queued input is no longer editable");
-      const content = await acpPromptContent(params.input, (this.inputModalities ?? session.inputModalities ?? []).includes("image"));
+      const prepared = await prepareAcpPromptContent(params.input, {
+        imagesAllowed: (this.inputModalities ?? session.inputModalities ?? []).includes("image"),
+        cwd: session.cwd || this.options.cwd,
+        resolveStagedAttachment: this.options.resolveStagedAttachment,
+      });
       const additionalContext = updating ? item!.additionalContext : params.additionalContext ?? null;
-      this.promptWithContext(content, additionalContext);
-      const input = content.map(part => part.type === "image" ? { type: "image", url: `data:${part.mimeType};base64,${part.data}` } : { type: "text", text: part.text, text_elements: [] });
+      this.promptWithContext(prepared.prompt, additionalContext);
+      const input = prepared.queueInput;
       const fingerprint = acpQueueFingerprint(input, additionalContext), known = queue.admissions[clientId];
       if (!updating && known) {
         if (known.fingerprint !== fingerprint) return fault("Queued input identity already has different content", 409);
@@ -862,6 +1325,47 @@ export class AcpEngine implements ExecutionEngineProvider {
       if (params.queuedSubmissionId != null && !item) return fault("Queued input is no longer available", 409);
       this.queueOwners.set(session.id, client);
       return this.dispatchQueue(session, client, true, params.queuedSubmissionId);
+    } else if (method === "thread/queue/steer") {
+      if (this.id !== "codex") return fault("This ACP agent does not support steering queued inputs", -32601);
+      const active = this.state(session.id).active;
+      if (!active || active.status !== "inProgress") {
+        throw new AppServerRpcError({ code: -32009, message: "ACP thread has no active turn", data: { code: "TURN_INACTIVE", retryable: false } });
+      }
+      const expectedTurnId = typeof params.expectedTurnId === "string" ? params.expectedTurnId : "";
+      if (expectedTurnId && expectedTurnId !== active.id) {
+        throw new AppServerRpcError({
+          code: -32009,
+          message: `Active ACP turn changed; expected ${expectedTurnId}, got ${active.id}`,
+          data: { code: "EXPECTED_TURN_MISMATCH", retryable: true, actualTurnId: active.id },
+        });
+      }
+      if (!item || item.state !== "queued") return fault("Queued input is no longer available", 409);
+      const prepared = await prepareAcpPromptContent(item.input, {
+        imagesAllowed: (this.inputModalities ?? session.inputModalities ?? []).includes("image"),
+        cwd: session.cwd || this.options.cwd,
+        resolveStagedAttachment: this.options.resolveStagedAttachment,
+      });
+      const steerPrompt = this.promptWithContext(prepared.prompt, item.additionalContext);
+      item.state = "dispatching";
+      session.receipts[item.clientUserMessageId] = { state: "unknown", turnId: active.id };
+      await this.save(session);
+      await this.native(session).request("_session/steering", { sessionId: session.nativeId, prompt: steerPrompt });
+      queue.items.splice(queue.items.indexOf(item), 1);
+      session.receipts[item.clientUserMessageId] = { state: "delivered", turnId: active.id };
+      const steerItem = {
+        id: `${active.id}:steer:${randomUUID()}`,
+        type: "userMessage",
+        clientId: item.clientUserMessageId,
+        content: prepared.userContent,
+      };
+      active.items.push(steerItem);
+      session.updatedAt = Math.floor(Date.now() / 1000);
+      await this.save(session);
+      if (!queue.items.length) this.queueOwners.delete(session.id);
+      this.notify("item/started", { threadId: session.id, turnId: active.id, item: steerItem });
+      this.notify("item/completed", { threadId: session.id, turnId: active.id, item: steerItem });
+      this.notify("thread/queue/changed", { threadId: session.id });
+      return { turnId: active.id };
     } else return fault("Unsupported queue operation", -32601);
     await this.save(session);
     if (!queue.items.length) this.queueOwners.delete(session.id);
@@ -1134,7 +1638,7 @@ export class AcpEngine implements ExecutionEngineProvider {
     let result: Value;
     try { result = await this.native(session).request(method, { sessionId: session.nativeId, cwd: session.cwd, mcpServers: session.tools.length ? [this.mcp(session.id)] : [],
       ...(this.id === "codebuddy-ide" ? { _meta: { ...(session.nativeImport ? { "opencraft/nativeHistoryVerified": true } : {}),
-        ...(session.nativeHistoryEmpty && !session.lastTurn ? { "opencraft/nativeHistoryEmpty": true } : {}) } } : {}) }); }
+        ...(session.nativeHistoryEmpty ? { "opencraft/nativeHistoryEmpty": true } : {}) } } : {}) }); }
     catch (error) {
       if (this.id === "codex" && error instanceof AcpProtocolError && /This Codex session is in use by another Codex client/u.test(error.message))
         throw Object.assign(new Error(error.message), { rpcCode: 409, domainData: { code: "CODEX_SESSION_BUSY", inputNotSent: true } });
@@ -1175,7 +1679,14 @@ export class AcpEngine implements ExecutionEngineProvider {
       if (cursor) cursors.add(cursor);
     } while (cursor && !this.closed);
   }
-  private async prompt(session: Session, prompt: Value[], delegationId: string | null, inputId?: string, userPrompt: Value[] = prompt): Promise<any> {
+  private async prompt(
+    session: Session,
+    prompt: Value[],
+    delegationId: string | null,
+    inputId?: string,
+    userContent?: Value[],
+    previewSourceText?: string,
+  ): Promise<any> {
     await this.resume(session, inputId); const runtime = this.state(session.id);
     assertModelPolicy(this.options.modelPolicyPath, this.id, session.model, ["cursor", "pi-cli"].includes(this.id) ? session.reasoningConfig?.currentValue ?? null : null,
       (session.modelCatalog ?? []).map(m=>({model:m.id})));
@@ -1191,18 +1702,61 @@ export class AcpEngine implements ExecutionEngineProvider {
     runtime.active = { id: `acp-turn-${randomUUID()}`, delegationId, ...(inputId ? { inputId } : {}), items: [], status: "inProgress", startedAtMs: Date.now() };
     const active = runtime.active;
     active.items.push({ id: `${active.id}:user`, type: "userMessage", clientId: inputId ?? null,
-      content: userPrompt.map(item => item.type === "image"
+      content: userContent ?? prompt.map(item => item.type === "image"
         ? { type: "image", url: `data:${item.mimeType};base64,${item.data}` }
         : { type: "text", text: item.text, text_elements: [] }) });
     session.lastTurn = { id: active.id, status: active.status, ...(inputId ? { clientUserMessageId: inputId } : {}) };
-    delete session.nativeHistoryEmpty;
-    const firstText = userPrompt.map(item => item.text).join(" ").replace(/\s+/gu, " ").trim();
+    const localOnlyCodexCommand = this.id === "codex" && isCodexLocalOnlySlashCommand(prompt);
+    if (!localOnlyCodexCommand) delete session.nativeHistoryEmpty;
+    let goalEvent: { readonly kind: "updated"; readonly goal: OpenCraftThreadGoal } | { readonly kind: "cleared" } | null = null;
+    if (this.id === "codex") {
+      const parsedCommand = parseCodexSlashCommand(prompt);
+      if (parsedCommand?.name === "goal") {
+        const arg = parsedCommand.rest.trim();
+        const lower = arg.toLowerCase();
+        const nowSeconds = Math.floor(Date.now() / 1000);
+        if (lower === "clear") {
+          if (session.goal != null) {
+            session.goal = null;
+            goalEvent = { kind: "cleared" };
+          }
+        } else if (lower === "pause") {
+          if (session.goal) {
+            session.goal = { ...session.goal, status: "paused", updatedAt: nowSeconds, execution: { activation: "disarmed" } };
+            goalEvent = { kind: "updated", goal: session.goal };
+          }
+        } else if (lower === "resume") {
+          if (session.goal) {
+            session.goal = { ...session.goal, status: "active", updatedAt: nowSeconds, execution: { activation: "armed" } };
+            goalEvent = { kind: "updated", goal: session.goal };
+          }
+        } else if (arg.length > 0 && arg.length <= 4000) {
+          session.goal = {
+            threadId: session.id,
+            objective: arg,
+            status: "active",
+            tokenBudget: null,
+            tokensUsed: session.goal?.tokensUsed ?? 0,
+            timeUsedSeconds: session.goal?.timeUsedSeconds ?? 0,
+            createdAt: session.goal && session.goal.status !== "complete" ? session.goal.createdAt : nowSeconds,
+            updatedAt: nowSeconds,
+            execution: { activation: "armed" },
+          };
+          goalEvent = { kind: "updated", goal: session.goal };
+        }
+      }
+    }
+    const firstText = (previewSourceText ?? prompt.filter(item => item.type === "text").map(item => item.text).join(" ")).replace(/\s+/gu, " ").trim();
     if (!session.preview && firstText) session.preview = Array.from(firstText).slice(0, 160).join("");
     const initialTitle = !session.name && session.nameOrigin !== "manual" && firstText
       ? Array.from(firstText).slice(0, 80).join("") : null;
     if (initialTitle) { session.name = initialTitle; session.nameOrigin = "input"; }
     session.updatedAt = Math.floor(Date.now() / 1000); await this.save(session);
+    if (goalEvent?.kind === "updated") this.notify("thread/goal/updated", { threadId: session.id, goal: goalEvent.goal });
+    else if (goalEvent?.kind === "cleared") this.notify("thread/goal/cleared", { threadId: session.id });
     if (initialTitle && session.name === initialTitle && session.nameOrigin === "input") this.notify("thread/name/updated", { threadId: session.id, threadName: initialTitle });
+    this.clearGoalTimer(`disarm:${session.id}`);
+    this.notify("thread/status/changed", { threadId: session.id, status: { type: "active", activeFlags: [] } });
     this.notify("turn/started", { threadId: session.id, turn: this.turn(runtime), ...(inputId ? { clientMessageId: inputId } : {}) });
     void this.native(session).request("session/prompt", { sessionId: session.nativeId, prompt }, 0).then(result => this.serializeThread(session.id, async () => {
       if (runtime.active !== active || active.status !== "inProgress") return;
@@ -1211,24 +1765,37 @@ export class AcpEngine implements ExecutionEngineProvider {
       runtime.questionLifetime = undefined;
       session.lastTurn = { id: active.id, status: active.status, ...(active.inputId ? { clientUserMessageId: active.inputId } : {}) };
       if (active.status === "interrupted" && session.queue) session.queue.pausedReason = "user-stopped";
+      if (active.status === "interrupted" && session.goal?.status === "active" && session.goal.execution?.activation === "armed") {
+        session.goal = { ...session.goal, execution: { activation: "disarmed" } };
+        this.notify("thread/goal/updated", { threadId: session.id, goal: session.goal });
+      }
+      await this.syncGoalFromHistory(session, true);
       await this.save(session);
       for (const item of active.items) if (item.type === "agentMessage" || item.type === "reasoning") this.notify("item/completed", { threadId: session.id, turnId: active.id, item });
       this.notify("turn/completed", { threadId: session.id, turn: this.turn(runtime) });
+      this.notify("thread/status/changed", { threadId: session.id, status: { type: "idle" } });
       for (const key of this.callbacks.keys()) if (key.startsWith(`${this.incarnation}:${session.id}:${active.id}:`)) this.callbacks.delete(key);
+      if (active.status === "completed") this.scheduleGoalDisarmCheck(session);
       this.scheduleQueue(session);
-    }), () => {
+    }), (error: unknown) => {
       if (runtime.active !== active || active.status !== "inProgress") return;
-      const code = this.nativeOutcomeUnknown ? "acpPromptUnconfirmed" : "acpPromptFailed";
+      const accountMismatch = !this.nativeOutcomeUnknown && this.id === "codex" && error instanceof Error
+        && /earlier reasoning, which another provider or account encrypted|invalid_encrypted_content/iu.test(error.message);
+      const code = this.nativeOutcomeUnknown ? "acpPromptUnconfirmed" : accountMismatch ? "acpAccountMismatch" : "acpPromptFailed";
       void this.failPrompt(session, runtime, code).catch(() => { this.persistenceFailed = true; });
     }).catch(() => { this.persistenceFailed = true; });
     return { turn: this.turn(runtime) };
   }
-  private async failPrompt(session: Session, runtime: Runtime, code: "acpPromptFailed" | "acpPromptUnconfirmed"): Promise<void> {
+  private async failPrompt(session: Session, runtime: Runtime, code: "acpPromptFailed" | "acpPromptUnconfirmed" | "acpAccountMismatch"): Promise<void> {
     const active = runtime.active; if (!active || active.status !== "inProgress") return;
     active.status = "failed";
     runtime.questionLifetime?.abort();
     runtime.questionLifetime = undefined;
     if (session.queue) session.queue.pausedReason = "delivery-failed";
+    if (session.goal?.status === "active" && session.goal.execution?.activation === "armed") {
+      session.goal = { ...session.goal, execution: { activation: "disarmed" } };
+      this.notify("thread/goal/updated", { threadId: session.id, goal: session.goal });
+    }
     active.error = { message: code, codexErrorInfo: "other", additionalDetails: null };
     const item = { id: `${active.id}:error`, type: "error", code, message: code };
     active.items.push(item);
@@ -1237,23 +1804,158 @@ export class AcpEngine implements ExecutionEngineProvider {
     await this.save(session);
     this.notify("item/completed", { threadId: session.id, turnId: active.id, item });
     this.notify("turn/completed", { threadId: session.id, turn });
+    this.notify("thread/status/changed", { threadId: session.id, status: { type: "idle" } });
     if (session.queue?.items.length) this.notify("thread/queue/changed", { threadId: session.id });
+  }
+  private clearGoalTimer(key: string): void {
+    const timer = this.goalWatchTimers.get(key);
+    if (timer) {
+      clearTimeout(timer);
+      this.goalWatchTimers.delete(key);
+    }
+  }
+  private applyNativeGoalSnapshot(session: Session, raw: Value | null | undefined, notify: boolean): boolean {
+    if (raw === undefined) return false;
+    if (raw === null) {
+      if (session.goal == null) return false;
+      session.goal = null;
+      if (notify) this.notify("thread/goal/cleared", { threadId: session.id });
+      return true;
+    }
+    if (session.goal) {
+      if (raw.updatedAt < session.goal.updatedAt) return false;
+      if (raw.updatedAt === session.goal.updatedAt && session.goal.status !== "active" && raw.status === "active") return false;
+    }
+    const runtime = this.state(session.id);
+    const activation = raw.status === "active"
+      && (runtime.active?.status === "inProgress" || (runtime.loaded && session.goal?.execution?.activation === "armed"))
+      ? "armed"
+      : "disarmed";
+    const nextGoal: OpenCraftThreadGoal = {
+      threadId: session.id,
+      objective: raw.objective,
+      status: raw.status,
+      tokenBudget: raw.tokenBudget ?? null,
+      tokensUsed: raw.tokensUsed,
+      timeUsedSeconds: raw.timeUsedSeconds,
+      createdAt: raw.createdAt,
+      updatedAt: raw.updatedAt,
+      execution: { activation },
+    };
+    if (isDeepStrictEqual(session.goal, nextGoal)) return false;
+    session.goal = nextGoal;
+    if (notify) this.notify("thread/goal/updated", { threadId: session.id, goal: nextGoal });
+    return true;
+  }
+  private async syncGoalFromHistory(session: Session, notify: boolean): Promise<void> {
+    if (this.id !== "codex" || session.nativeHistoryEmpty || !this.options.history?.goal) return;
+    const nativeGoal = await this.options.history.goal(session.nativeId).catch(() => undefined);
+    if (this.applyNativeGoalSnapshot(session, nativeGoal, notify)) {
+      await this.save(session);
+    }
+  }
+  private scheduleGoalDisarmCheck(session: Session): void {
+    if (this.id !== "codex" || this.closed || session.goal?.status !== "active" || session.goal.execution?.activation !== "armed") return;
+    const key = `disarm:${session.id}`;
+    this.clearGoalTimer(key);
+    const timer = setTimeout(() => {
+      this.goalWatchTimers.delete(key);
+      if (this.closed) return;
+      void this.serializeThread(session.id, async () => {
+        if (this.closed || this.state(session.id).active?.status === "inProgress") return;
+        await this.syncGoalFromHistory(session, true);
+        if (session.goal?.status === "active" && session.goal.execution?.activation === "armed" && this.state(session.id).active?.status !== "inProgress") {
+          session.goal = { ...session.goal, execution: { activation: "disarmed" } };
+          await this.save(session);
+          this.notify("thread/goal/updated", { threadId: session.id, goal: session.goal });
+        }
+      }).catch(() => { this.persistenceFailed = true; });
+    }, 2500);
+    timer.unref?.();
+    this.goalWatchTimers.set(key, timer);
+  }
+  private scheduleAutonomousGoalSettleCheck(session: Session, runtime: Runtime, active: NonNullable<Runtime["active"]>, delayMs: number): void {
+    if (this.closed || !this.options.history) return;
+    const key = `settle:${session.id}`;
+    this.clearGoalTimer(key);
+    const timer = setTimeout(() => {
+      this.goalWatchTimers.delete(key);
+      if (this.closed || runtime.active !== active || active.status !== "inProgress") return;
+      void this.serializeThread(session.id, async () => {
+        if (this.closed || runtime.active !== active || active.status !== "inProgress") return;
+        const page = await this.options.history?.read(session.nativeId, { limit: 1, sortDirection: "desc", itemsView: "notLoaded" }).catch(() => null);
+        const latest = page?.data?.[0];
+        const startedAtMs = active.startedAtMs ?? 0;
+        const completed = latest && ["completed", "interrupted"].includes(String(latest.status))
+          && typeof latest.completedAtMs === "number" && latest.completedAtMs >= startedAtMs - 1000;
+        if (!completed) {
+          if (Date.now() - startedAtMs < 60 * 60 * 1000) {
+            this.scheduleAutonomousGoalSettleCheck(session, runtime, active, 1500);
+          }
+          return;
+        }
+        active.status = latest.status === "interrupted" ? "interrupted" : "completed";
+        runtime.questionLifetime?.abort();
+        runtime.questionLifetime = undefined;
+        session.lastTurn = { id: active.id, status: active.status };
+        session.updatedAt = Math.floor(Date.now() / 1000);
+        await this.syncGoalFromHistory(session, true);
+        await this.save(session);
+        for (const item of active.items) if (item.type === "agentMessage" || item.type === "reasoning") this.notify("item/completed", { threadId: session.id, turnId: active.id, item });
+        this.notify("turn/completed", { threadId: session.id, turn: this.turn(runtime) });
+        this.notify("thread/status/changed", { threadId: session.id, status: { type: "idle" } });
+        if (active.status === "completed") this.scheduleGoalDisarmCheck(session);
+        this.scheduleQueue(session);
+      }).catch(() => { this.persistenceFailed = true; });
+    }, delayMs);
+    timer.unref?.();
+    this.goalWatchTimers.set(key, timer);
   }
   private historyParams(session: Session, params: Value): Value {
     const active = this.state(session.id).active;
     const { nativeHistoryEmpty: _callerEmptyHistory, ...readParams } = params;
-    return { ...readParams, threadId: session.id, ...(session.nativeHistoryEmpty === true && !session.lastTurn ? { nativeHistoryEmpty: true } : {}),
+    return { ...readParams, threadId: session.id, ...(session.nativeHistoryEmpty === true ? { nativeHistoryEmpty: true } : {}),
       activeTurn: active?.status === "inProgress" ? { ...active, items: active.items.map(item => ({ ...item })) } : undefined };
   }
   private update(method: string, params: Value, threadId?: string): void {
     if (method !== "session/update") return;
-    const session = [...this.sessions.values()].find(entry => entry.nativeId === params.sessionId && (!threadId || entry.id === threadId)); if (!session) return;
     const update = value(params.update);
+    const session = [...this.sessions.values()].find(entry => entry.nativeId === params.sessionId && (!threadId || entry.id === threadId));
+    if (update.sessionUpdate === "available_commands_update" && Array.isArray(update.availableCommands)) {
+      const commands = normalizeSlashCommands(update.availableCommands, "agent");
+      const catalogChanged = !isDeepStrictEqual(this.commandCatalog, commands);
+      this.commandCatalog = commands;
+      if (catalogChanged) {
+        void this.persistJson(join(this.options.dataDirectory, "command-catalog.json"), { version: 1, commands }).catch(() => { this.persistenceFailed = true; });
+      }
+      if (session) {
+        if (!isDeepStrictEqual(session.availableCommands, commands)) {
+          session.availableCommands = commands;
+          void this.save(session).catch(() => { this.persistenceFailed = true; });
+        }
+      } else if (typeof params.sessionId === "string" && params.sessionId) {
+        this.pendingCommands.set(params.sessionId, commands);
+        while (this.pendingCommands.size > 64) this.pendingCommands.delete(this.pendingCommands.keys().next().value!);
+      }
+      this.notify(SLASH_COMMANDS_CHANGED_NOTIFICATION, { agentId: this.id, ...(session ? { threadId: session.id } : {}) });
+      return;
+    }
+    if (!session) return;
+    if (this.id === "codex" && ["tool_call", "tool_call_update"].includes(update.sessionUpdate)) {
+      const parsedGoal = extractGoalPayloadFromToolUpdate(update);
+      if (parsedGoal && this.applyNativeGoalSnapshot(session, parsedGoal, true)) {
+        void this.save(session).catch(() => { this.persistenceFailed = true; });
+      }
+    }
+    const runtime = this.state(session.id);
     if (update.sessionUpdate === "usage_update") {
       if (Number.isSafeInteger(update.used) && update.used >= 0 && Number.isSafeInteger(update.size) && update.size > 0
         && (session.contextUsage?.usedTokens !== update.used || session.contextUsage?.limitTokens !== update.size)) {
         session.contextUsage = { usedTokens: update.used, limitTokens: update.size, observedAt: Date.now() };
         void this.save(session).then(() => this.notify("opencraft/usage/changed", { threadId: session.id })).catch(() => { this.persistenceFailed = true; });
+      }
+      if (runtime.active?.autonomousGoalTurn && runtime.active.status === "inProgress") {
+        this.scheduleAutonomousGoalSettleCheck(session, runtime, runtime.active, 150);
       }
       return;
     }
@@ -1268,7 +1970,33 @@ export class AcpEngine implements ExecutionEngineProvider {
       void this.save(session).catch(()=>{this.persistenceFailed=true;});
       return;
     }
-    const runtime = this.state(session.id), active = runtime.active; if (!active || active.status !== "inProgress") return;
+    let active = runtime.active;
+    if ((!active || active.status !== "inProgress")
+      && this.id === "codex"
+      && session.goal?.status === "active"
+      && ["agent_message_chunk", "agent_thought_chunk", "tool_call"].includes(update.sessionUpdate)) {
+      this.clearGoalTimer(`disarm:${session.id}`);
+      active = runtime.active = {
+        id: `acp-goal-turn-${randomUUID()}`,
+        delegationId: null,
+        items: [],
+        status: "inProgress",
+        startedAtMs: Date.now(),
+        autonomousGoalTurn: true,
+      };
+      session.lastTurn = { id: active.id, status: "inProgress" };
+      if (session.goal.execution?.activation !== "armed") {
+        session.goal = { ...session.goal, execution: { activation: "armed" } };
+        this.notify("thread/goal/updated", { threadId: session.id, goal: session.goal });
+      }
+      void this.save(session).catch(() => { this.persistenceFailed = true; });
+      this.notify("thread/status/changed", { threadId: session.id, status: { type: "active", activeFlags: [] } });
+      this.notify("turn/started", { threadId: session.id, turn: this.turn(runtime) });
+    }
+    if (!active || active.status !== "inProgress") return;
+    if (active.autonomousGoalTurn) {
+      this.scheduleAutonomousGoalSettleCheck(session, runtime, active, 1200);
+    }
     if (update.sessionUpdate === "plan" && Array.isArray(update.entries)) {
       const plan = update.entries.flatMap((raw: unknown) => {
         const entry = value(raw);
@@ -1402,7 +2130,7 @@ export class AcpEngine implements ExecutionEngineProvider {
     if (!this.toolServer) return;
     this.toolServer.closeAllConnections(); await new Promise<void>(resolve => this.toolServer!.close(() => resolve())); this.toolServer = undefined;
   }
-  async close(): Promise<void> { if (this.closed) return; this.closed = true; this.callbackAbort.abort(); await Promise.all([this.transport.close(), ...[...this.sessionTransports.values()].map(transport => transport.close())]); await Promise.allSettled([...this.queueDrains.values()]); this.queueOwners.clear(); await this.closeTools(); await this.persistence; await this.options.history?.close?.(); }
+  async close(): Promise<void> { if (this.closed) return; this.closed = true; for (const timer of this.goalWatchTimers.values()) clearTimeout(timer); this.goalWatchTimers.clear(); this.callbackAbort.abort(); await Promise.all([this.transport.close(), ...[...this.sessionTransports.values()].map(transport => transport.close())]); await Promise.allSettled([...this.queueDrains.values()]); this.queueOwners.clear(); await this.closeTools(); await this.persistence; await this.options.history?.close?.(); }
 }
 
 /** Explicit DSH ACP launch. The previous web generation remains a separate owner. */

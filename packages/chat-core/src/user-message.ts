@@ -33,6 +33,25 @@ export function extractLastUserRequest(promptContext: string): string {
   return boundary === null ? promptContext : promptContext.slice(boundary.end).trim();
 }
 
+export interface ParsedSlashCommand {
+  readonly name: string;
+  readonly args: string;
+}
+
+const LEADING_SLASH_COMMAND_PATTERN = /^\s*\/([a-z][a-z0-9:_-]{0,63})(?:$|[^\S\r\n]+([\s\S]*)|(\r?\n[\s\S]*))$/iu;
+
+export function parseLeadingSlashCommand(message: string): ParsedSlashCommand | null {
+  const match = LEADING_SLASH_COMMAND_PATTERN.exec(message);
+  if (match === null) return null;
+  const name = match[1]!;
+  // Multi-segment POSIX paths (/Users/foo, /etc/hosts, /tmp/a/b) have a slash
+  // immediately after the first segment rather than whitespace or end-of-input,
+  // so LEADING_SLASH_COMMAND_PATTERN already rejects them. Also reject single
+  // root filesystem directories if followed by nothing only when uppercase path-like? No, commands are lowercase/kebab/colon identifiers.
+  const args = (match[2] ?? match[3] ?? "").trim();
+  return { name, args };
+}
+
 export function stripGoalDirective(message: string): string | null {
   const candidate = message.trimStart();
   if (candidate === "/goal") return "";

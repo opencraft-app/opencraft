@@ -186,10 +186,13 @@ test("Pi native readiness and terminal setup are identical for local and Bash-en
   } finally { service.close(); }
 });
 
-test("package install uses the fixed package name", async () => {
+test("package install uses the fixed package name and upgrade pins @latest", async () => {
   const deps = fakeDeps(new Set(["/bin/npm"]), new Map());
   const service = new AgentOnboardingService(deps);
   await service.act({ id: "codebuddy", action: "install" });
   assert.deepEqual(deps.spawned, [["/bin/npm", "install", "-g", "@tencent-ai/codebuddy-code"]]);
+  deps.spawned.length = 0;
+  await service.act({ id: "codex", action: "upgrade" });
+  assert.deepEqual(deps.spawned, [["/bin/npm", "install", "-g", "@openai/codex@latest"]]);
   service.close();
 });

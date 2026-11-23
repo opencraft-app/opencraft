@@ -67,6 +67,7 @@ export class BridgeEngineProvider implements ExecutionEngineProvider {
   private readonly gateway: BridgeGateway;
   private readonly listeners = new Set<(method: string, params: Value) => void>();
   private readonly known = new Map<string, { cwd: string; model: string | null }>();
+  private readonly activeThreads = new Set<string>();
   private capabilityExtensions: Readonly<Record<string, unknown>> = {};
   private declaration: any = null;
   private started?: Promise<void>;
@@ -81,7 +82,15 @@ export class BridgeEngineProvider implements ExecutionEngineProvider {
     this.gateway = new BridgeGateway(options.gateway, (threadId, frame) => {
       const value = object(frame);
       if (typeof value.method !== "string" || !this.ownsThread(threadId)) return;
-      for (const listener of this.listeners) listener(value.method, object(value.params));
+      const frameParams = object(value.params);
+      if (value.method === "turn/started") {
+        this.activeThreads.add(threadId);
+        for (const listener of this.listeners) listener("thread/status/changed", { threadId, status: { type: "active", activeFlags: [] } });
+      } else if (value.method === "turn/completed") {
+        this.activeThreads.delete(threadId);
+        for (const listener of this.listeners) listener("thread/status/changed", { threadId, status: { type: "idle" } });
+      }
+      for (const listener of this.listeners) listener(value.method, frameParams);
     });
   }
 
@@ -137,6 +146,32 @@ export class BridgeEngineProvider implements ExecutionEngineProvider {
       case "thread/read": return this.read(params);
       case "thread/list": return this.list(params);
       case "model/list": return this.models();
+      case "permissionProfile/list": return { data: [], nextCursor: null };
+      case "slashCommand/list":
+      case "opencraft/slash-commands/list":
+        return {
+          data: this.options.engine === "claude-code"
+            ? [
+                { name: "compact", description: "Compact conversation history with optional focus instructions.", inputHint: "[instructions]", source: "builtin" },
+                { name: "review", description: "Review a pull request or current changes.", inputHint: "[PR or instructions]", source: "builtin" },
+                { name: "init", description: "Initialize project CLAUDE.md documentation.", source: "builtin" },
+                { name: "pr_comments", description: "View and address pull request comments.", source: "builtin" },
+                { name: "security-review", description: "Run a security review of pending changes.", source: "builtin" },
+                { name: "release-notes", description: "Generate release notes for recent commits.", source: "builtin" },
+                { name: "cost", description: "Show session token usage and cost summary.", source: "builtin" },
+                { name: "doctor", description: "Check Claude Code installation and configuration.", source: "builtin" },
+                { name: "clear", description: "Clear conversation context.", source: "builtin" },
+              ]
+            : this.options.engine === "dsh-acp"
+              ? [
+                  { name: "goal", description: "Set or view the goal for a long-running task.", inputHint: "[<objective>|clear|edit <objective>|pause|resume]", source: "builtin" },
+                  { name: "permission", description: "Switch the permission preset (sandbox mode + approval policy).", inputHint: "<preset>", source: "builtin" },
+                  { name: "feedback", description: "Record feedback about this session.", inputHint: "<text>", source: "builtin" },
+                ]
+              : [
+                  { name: "mcp", description: "Manage MCP servers and inspect connected tools.", inputHint: "[status|reconnect]", source: "builtin" },
+                ],
+        };
       case "turn/start": return this.startTurn(params);
       case "turn/steer": return this.steer(params);
       case "turn/interrupt": return this.interrupt(params);
@@ -186,7 +221,7 @@ export class BridgeEngineProvider implements ExecutionEngineProvider {
     const threadId = String(params.threadId ?? "");
     if (!this.ownsThread(threadId)) throw new Error("Bridge provider does not own this Thread");
     const known = this.known.get(threadId);
-    return { thread: this.thread(threadId, known?.cwd ?? this.options.defaultCwd, known?.model ?? null, "idle", []) };
+    return { thread: this.thread(threadId, known?.cwd ?? this.options.defaultCwd, known?.model ?? null, this.activeThreads.has(threadId) ? "active" : "idle", []) };
   }
 
   private async list(params: Value): Promise<Value> {
@@ -195,7 +230,7 @@ export class BridgeEngineProvider implements ExecutionEngineProvider {
     const rows = routes.filter(row => this.ownsThread(row.threadId) && (this.options.generation === undefined || row.generation === this.options.generation));
     const search = typeof params.searchTerm === "string" ? params.searchTerm.trim().toLowerCase() : "";
     const data = rows.map(row => this.thread(row.threadId, this.known.get(row.threadId)?.cwd ?? this.options.defaultCwd,
-      this.known.get(row.threadId)?.model ?? null, "idle", [])).filter(row => !search || row.id.toLowerCase().includes(search));
+      this.known.get(row.threadId)?.model ?? null, this.activeThreads.has(row.threadId) ? "active" : "idle", [])).filter(row => !search || row.id.toLowerCase().includes(search));
     return { data, nextCursor: null };
   }
 
@@ -233,6 +268,8 @@ export class BridgeEngineProvider implements ExecutionEngineProvider {
     if (canonical === undefined && typeof result.turnId === "string") canonical = this.gateway.canonicalTurn(threadId, result.turnId);
     canonical ??= await this.gateway.latestTurn(threadId) ?? undefined;
     if (canonical === undefined) throw Object.assign(new Error("Bridge turn started without an assembled turn identity"), { code: -32005 });
+    this.activeThreads.add(threadId);
+    for (const listener of this.listeners) listener("thread/status/changed", { threadId, status: { type: "active", activeFlags: [] } });
     return { turn: { id: canonical, items: [], itemsView: "summary", status: "inProgress", error: null,
       startedAt: Math.floor(Date.now() / 1000), completedAt: null, durationMs: null } };
   }

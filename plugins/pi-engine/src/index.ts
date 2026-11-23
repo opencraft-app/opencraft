@@ -69,7 +69,7 @@ export class PiEngine {
   readonly modelPrefix = "pi:";
   private readonly capabilities = Object.freeze({
     "opencraft/read-history": { version: 1, initialTurnsPage: true },
-    "opencraft/thread-lifecycle": { version: 1, fork: false, ephemeralFork: true, ephemeral: true, injectItems: true, rename: true, archive: true, unsubscribe: true, pin: true },
+    "opencraft/thread-lifecycle": { version: 1, fork: true, ephemeralFork: true, ephemeral: true, injectItems: true, rename: true, archive: true, unsubscribe: true, pin: true },
     "opencraft/host-capabilities": { version: 1 },
     "opencraft/pi-shell": { version: 1, extension: "pi-interactive-shell", extensionVersion: "0.17.1", dispatch: true, monitor: true, input: true, yieldingBash: true, foregroundTui: false },
     "opencraft/scoped-model-catalog": { version: 1 },
@@ -764,6 +764,13 @@ export class PiEngine {
       await writeFile(temporary, JSON.stringify(saved), { mode: 0o600 }); await rename(temporary, join(this.options.directory, "defaults.json")); return { status: "ok" };
     }
     if (method === "permissionProfile/list") return { data: this.permissionProfiles(), nextCursor: null };
+    if (method === "slashCommand/list" || method === "opencraft/slash-commands/list") {
+      return {
+        data: [
+          { name: "mcp", description: "Manage MCP servers and inspect connected tools.", inputHint: "[status|reconnect]", source: "builtin" as const },
+        ],
+      };
+    }
     if (method === "model/list") return { data: await this.models(), nextCursor: null };
     if (method === "skills/list") {
       const cwd = params.threadId ? (await this.session(params.threadId)).cwd : this.options.cwd;
@@ -797,17 +804,19 @@ export class PiEngine {
     }
     if (method === "thread/fork") {
       assertPiFields(params);
-      if (params.ephemeral !== true || params.excludeTurns !== true || params.path != null || params.lastTurnId != null)
-        throw new Error("Pi supports temporary forks from the latest context with excludeTurns only");
+      const ephemeral = params.ephemeral === true;
+      if (params.path != null || params.lastTurnId != null || (ephemeral && params.excludeTurns !== true))
+        throw new Error("Pi supports branching the full conversation from the latest context only");
       await this.refresh(session);
       const inherited = await (await this.native(session)).forkContext();
       const child: Session = { format: "pi-durable-1", id: `pi_${randomUUID()}`, cwd: session.cwd, model: session.model,
         effort: session.effort, projectId: session.projectId, threadSource: session.threadSource, sessionStartSource: session.sessionStartSource,
-        ephemeral: true, forkedFromId: session.id, inherited, tools: session.tools.map(tool => ({ ...tool })),
-        name: null, preview: "", createdAt: seconds(), updatedAt: seconds(), archived: false };
+        ...(ephemeral ? { ephemeral: true } : {}), forkedFromId: session.id, inherited, tools: session.tools.map(tool => ({ ...tool })),
+        name: ephemeral ? null : session.name, preview: ephemeral ? "" : session.preview, createdAt: seconds(), updatedAt: seconds(), archived: false };
       this.attach(child, client); this.sessions.set(child.id, child);
       try {
         await this.configure(child, { ...params, developerInstructions: [inherited.developer, params.developerInstructions].filter(Boolean).join("\n\n") || undefined }, true);
+        if (!ephemeral) await this.save(child);
         return this.response(child);
       } catch (error) { this.sessions.delete(child.id); this.detach(child); await child.native?.close(); throw error; }
     }

@@ -199,16 +199,19 @@ export function createConversationOutbox(config: ConversationOutboxDispatch & {
     wake,
     get error() { return storageError; },
     project(): readonly QueuedSubmission[] {
-      return entries.map(entry => ({
+      const canRetry = Boolean(dispatch?.ready() && !(dispatch?.blocked() ?? true));
+      return entries.map((entry, index) => ({
         local: true,
         commandId: entry.intent.commandId,
         clientMessageId: entry.intent.clientMessageId,
         serverSubmissionId: null,
         sender: entry.sender,
+        document: entry.intent.document,
         input: [],
         preview: composerDocumentToPlainText(entry.intent.document),
         state: entry.state === "waiting" ? "queued" : entry.state === "sending" ? "submitting" : entry.state,
         operation: "idle",
+        steerable: index === 0 && canRetry && (entry.state === "unknown" || entry.state === "failed"),
         createdAt: entry.intent.createdAt,
         pausedReason: entry.state === "unknown" ? "outbox-unconfirmed"
           : entry.state === "failed" ? "outbox-failed" : "outbox-waiting",
@@ -274,6 +277,55 @@ export function createConversationOutbox(config: ConversationOutboxDispatch & {
         wake();
       }
       return receipt;
+    },
+    async update(id: string, intent: SubmitIntent): Promise<boolean> {
+      assertLocalIntent(intent);
+      const owner = generation;
+      await hydration;
+      if (disposed || owner !== generation) throw new Error("Conversation outbox scope changed");
+      if (storageError) throw storageError;
+      const entry = entries.find(item => item.intent.commandId === id);
+      if (!entry) return false;
+      if (entry.state === "sending") throw new Error("Wait for this message's delivery result before editing it");
+      await commit(() => {
+        const current = entries.find(item => item.intent.commandId === id);
+        if (!current) throw new Error("Queued message is no longer available");
+        if (current.state === "sending") throw new Error("Wait for this message's delivery result before editing it");
+        const nextIntent: SubmitIntent = {
+          ...current.intent,
+          clientMessageId: current.state === "waiting" ? current.intent.clientMessageId : intent.clientMessageId,
+          document: intent.document,
+          selections: intent.selections,
+          options: intent.options,
+        };
+        const updated: ConversationOutboxEntry = { intent: nextIntent, state: "waiting", sender: current.sender };
+        return entries.map(item => item.intent.commandId === id ? updated : item);
+      });
+      notify(); wake();
+      return true;
+    },
+    async retry(id: string, createClientMessageId: () => string = () => crypto.randomUUID()): Promise<boolean> {
+      const owner = generation;
+      await hydration;
+      if (disposed || owner !== generation) throw new Error("Conversation outbox scope changed");
+      if (storageError) throw storageError;
+      const entry = entries.find(item => item.intent.commandId === id);
+      if (!entry) return false;
+      if (entry.state === "sending") throw new Error("Wait for this message's delivery result before retrying it");
+      if (entries[0]?.intent.commandId !== id || (entry.state !== "unknown" && entry.state !== "failed")) return false;
+      if (!dispatch?.ready() || (dispatch?.blocked() ?? true)) throw new Error("This action requires a connection");
+      await commit(() => {
+        const current = entries.find(item => item.intent.commandId === id);
+        if (!current) throw new Error("Queued message is no longer available");
+        if (current.state === "sending") throw new Error("Wait for this message's delivery result before retrying it");
+        const nextIntent: SubmitIntent = current.state === "failed"
+          ? { ...current.intent, clientMessageId: createClientMessageId() }
+          : current.intent;
+        const retried: ConversationOutboxEntry = { intent: nextIntent, state: "waiting", sender: current.sender };
+        return entries.map(item => item.intent.commandId === id ? retried : item);
+      });
+      notify(); wake();
+      return true;
     },
     async remove(id: string): Promise<boolean> {
       const owner = generation;

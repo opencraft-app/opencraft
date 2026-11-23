@@ -94,12 +94,13 @@ try{
   await page.evaluate(()=>(window as unknown as {fixture:{locale:(value:string)=>void}}).fixture.locale('zh-CN'));
   await page.setViewportSize({width:375,height:700});
   await fill('/');
-  await commandList.getByRole('option').first().waitFor();
-  const commandBounds=await commandList.boundingBox();
+  const zhCommandList=page.getByRole('listbox',{name:'命令建议'});
+  await zhCommandList.getByRole('option').first().waitFor();
+  const commandBounds=await zhCommandList.boundingBox();
   assert.ok(commandBounds && commandBounds.x>=0 && commandBounds.x+commandBounds.width<=375);
   assert.equal(await page.getByRole('button',{name:'指令库',exact:true}).count(),0);
   await page.screenshot({path:join(output,'commands-narrow.png')});
-  await page.keyboard.press('Escape');await commandList.waitFor({state:'hidden'});
+  await page.keyboard.press('Escape');await zhCommandList.waitFor({state:'hidden'});
   assert.equal(await editor.innerText(),'/');
   await page.setViewportSize({width:1100,height:850});
   await page.evaluate(()=>(window as unknown as {fixture:{locale:(value:string)=>void}}).fixture.locale('en-US'));
@@ -146,7 +147,8 @@ try{
   await page.waitForFunction(count=>(window as any).fixture.requests().length>count+1,beforeRefresh);
   await page.evaluate(()=>(window as any).fixture.resolve());await options.nth(4).waitFor();assert.equal(await options.count(),5);
   await page.evaluate(()=>{(window as any).fixture.mode('ready');(window as any).fixture.refresh(0)});await page.waitForFunction(()=>document.querySelectorAll('[role="option"]').length===3);evidence.push('catalog invalidation fences pre-change in-flight results');
-  await page.evaluate(()=>(window as any).fixture.locale('zh-CN'));await list.getByText('技能',{exact:true}).waitFor();assert.match(await options.first().innerText(),/项目/u);assert.equal(await editor.innerText(),'$');
+  const zhSkillList=page.getByRole('listbox',{name:'技能建议'});
+  await page.evaluate(()=>(window as any).fixture.locale('zh-CN'));await zhSkillList.getByText('技能',{exact:true}).waitFor();assert.match(await zhSkillList.getByRole('option').first().innerText(),/项目/u);assert.equal(await editor.innerText(),'$');
   await page.evaluate(()=>(window as any).fixture.locale('en-US'));evidence.push('localized Skill title/scope without losing draft');
   await editor.dispatchEvent('compositionstart');await editor.dispatchEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,isComposing:true});assert.equal(await editor.locator('[data-kind="skill"]').count(),0);await editor.dispatchEvent('compositionend');evidence.push('IME Enter does not select or send');
   await page.evaluate(()=>(window as any).fixture.unavailable());await page.getByText('Skills unavailable',{exact:true}).waitFor();evidence.push('missing Host catalog is visible, not silent');

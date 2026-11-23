@@ -1,9 +1,9 @@
 import { CheckIcon as Check, ChevronLeftIcon as ChevronLeft, ChevronDownIcon as ChevronDown, ChevronRightIcon as ChevronRight, CopyIcon as Copy, LoadingRingIcon as LoaderCircle } from "@opencraft/design-system-web/action-icons";
 import { AvatarImage, IdentityAvatarContext } from "@opencraft/extension-react";
 import { FormattedMessage, useIntl } from "@opencraft/i18n/react";
-import type { UserMessageTimelineBlock } from "@opencraft/chat-core";
+import { parseLeadingSlashCommand, type UserMessageTimelineBlock } from "@opencraft/chat-core";
 import { ZoomableImage, WebUserMessageDocument, resolveStandardChatResource, writeTextToClipboard } from "@opencraft/chat-render-web";
-import { AlertIcon as AlertCircle, CircleIcon as Circle, TextFileIcon as FileText, ImageIcon, MessageIcon as MessageSquare, ToolIcon as Wrench, PersonIcon as UserRound } from "@opencraft/design-system-web/action-icons";
+import { AlertIcon as AlertCircle, CircleIcon as Circle, TextFileIcon as FileText, ImageIcon, LightningIcon, MessageIcon as MessageSquare, TargetIcon, ToolIcon as Wrench, PersonIcon as UserRound } from "@opencraft/design-system-web/action-icons";
 import {
   type ReactNode,
   useContext,
@@ -19,6 +19,7 @@ import { ModalSurface } from "../modal/modal-surface";
 import { deriveUserMessageWebLayout } from "./user-message-layout";
 import { useWebUserMessageCollapse } from "./use-web-user-message-collapse";
 
+const GOAL_SLASH_TOKEN = "/goal";
 const USER_MESSAGE_COLLAPSED_LINE_COUNT = 20;
 const USER_MESSAGE_INTERACTIVE_SELECTOR = "a[href], area[href], button, input, select, textarea, summary, audio[controls], video[controls], iframe, [contenteditable]:not([contenteditable='false']), [tabindex]:not([tabindex='-1'])";
 
@@ -313,6 +314,7 @@ function UserMessageStatusRow({ block, hookStatsAccessory }: {
 }) {
   const chips: ReactNode[] = [];
   const input = block.steerEvidence;
+  const slashCommand = block.goal ? null : parseLeadingSlashCommand(block.message);
   if (input) {
     const confirmed = input.evidence.value === 'context-confirmed';
     chips.push(<span data-status-kind={confirmed ? 'context-confirmed' : input.admission.value} key="input-evidence">
@@ -326,7 +328,8 @@ function UserMessageStatusRow({ block, hookStatsAccessory }: {
   if (!input && block.deliveryStatus === "not-sent") chips.push(<span data-status-kind="hook-blocked" key="hook-blocked"><AlertCircle aria-hidden="true" size={11} /><FormattedMessage id="chat.message.hookBlocked" defaultMessage="Hook blocked this message" /></span>);
   else if (!input && block.deliveryStatus === "failed") chips.push(<span data-status-kind="failed" key="failed"><AlertCircle aria-hidden="true" size={11} /><FormattedMessage id="chat.message.notSent" defaultMessage="Not sent" /></span>);
   else if (!input && block.deliveryStatus === "unknown") chips.push(<span data-status-kind="unknown" key="unknown"><AlertCircle aria-hidden="true" size={11} /><FormattedMessage id="chat.message.unconfirmed" defaultMessage="Delivery unconfirmed" /></span>);
-  else if (block.goal) chips.push(<span data-status-kind="goal" key="goal"><Circle aria-hidden="true" size={8} /><FormattedMessage id="chat.message.goal" defaultMessage="Sent as goal" /></span>);
+  else if (block.goal) chips.push(<span data-status-kind="goal" key="goal"><TargetIcon aria-hidden="true" size={11} /><FormattedMessage id="chat.message.goal" defaultMessage="Sent as goal" /></span>);
+  else if (slashCommand !== null && (block.deliveryStatus === null || block.deliveryStatus === "sent") && block.messageKind !== "steering") chips.push(<span data-status-kind="command" key="command"><LightningIcon aria-hidden="true" size={11} /><FormattedMessage id="chat.message.slashCommand" defaultMessage="Command /{name}" values={{ name: slashCommand.name }} /></span>);
   else if (block.hookFeedback) chips.push(<span data-status-kind="hook-feedback" key="hook-feedback"><Wrench aria-hidden="true" size={11} /><FormattedMessage id="chat.message.hookFeedback" defaultMessage="Hook feedback" /></span>);
   if (block.reviewMode) chips.push(<span key="review"><FormattedMessage id="chat.message.reviewMode" defaultMessage="Review mode" /></span>);
   if (block.pullRequestFixMode) chips.push(<span key="pr-fix"><FormattedMessage id="chat.message.prFix" defaultMessage="PR fix" /></span>);
@@ -355,6 +358,7 @@ export function UserMessageBlock({ block, hookStatsAccessory }: {
       copiedTimerRef.current = window.setTimeout(() => setCopied(false), 1_500);
     }).catch(() => setCopied(false));
   };
+  const slashCommand = block.goal ? null : parseLeadingSlashCommand(block.message);
   return (
     <div
       className="thread-user-message"
@@ -381,8 +385,21 @@ export function UserMessageBlock({ block, hookStatsAccessory }: {
       {layout.showBody ? (
         <div className="thread-user-message__body" data-user-message-body="">
           {layout.showBubble ? (
-            <div className={layout.hasText ? "thread-user-message__bubble" : "thread-user-message__bubble is-empty"} data-user-message-bubble="">
-              {layout.hasText ? <CollapsibleUserMessageText block={block} /> : <span className="thread-user-message__no-content"><FormattedMessage id="chat.message.noContent" defaultMessage="(No content)" /></span>}
+            <div className={layout.hasText || block.goal ? "thread-user-message__bubble" : "thread-user-message__bubble is-empty"} data-user-message-bubble="">
+              {slashCommand !== null ? (
+                <div className="thread-user-message__command-content">
+                  <span className="thread-user-message__command-pill" data-command={slashCommand.name.toLowerCase()}>
+                    /{slashCommand.name}
+                  </span>
+                  {slashCommand.args ? <CollapsibleUserMessageText block={{ ...block, message: slashCommand.args }} /> : null}
+                </div>
+              ) : layout.hasText ? (
+                <CollapsibleUserMessageText block={block} />
+              ) : block.goal ? (
+                <span className="thread-user-message__command-pill" data-command="goal">{GOAL_SLASH_TOKEN}</span>
+              ) : (
+                <span className="thread-user-message__no-content"><FormattedMessage id="chat.message.noContent" defaultMessage="(No content)" /></span>
+              )}
             </div>
           ) : null}
           <div className="thread-user-message__accessories">

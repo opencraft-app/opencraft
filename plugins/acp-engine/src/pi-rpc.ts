@@ -27,6 +27,25 @@ export class PiRpcAdapter {
     if (typeof this.state.sessionId !== "string" || !this.state.sessionId) throw new Error("Pi did not provide a session identity");
     const levels = record(await this.call("get_available_thinking_levels")).levels;
     if (!Array.isArray(levels) || levels.some(level => typeof level !== "string")) throw new Error("Invalid Pi thinking options");
+    const discoveredCommands = await this.call("get_commands").then(raw => record(raw).commands, () => null);
+    if (Array.isArray(discoveredCommands)) {
+      this.emit("session/update", {
+        sessionId: this.state.sessionId,
+        update: {
+          sessionUpdate: "available_commands_update",
+          availableCommands: discoveredCommands.flatMap((entry: unknown) => {
+            const command = record(entry);
+            return typeof command.name === "string" && command.name.trim()
+              ? [{
+                  name: command.name.trim(),
+                  description: typeof command.description === "string" ? command.description : "",
+                  ...(typeof command.source === "string" ? { source: command.source === "extension" ? "extension" : command.source === "skill" ? "skill" : "agent" } : {}),
+                }]
+              : [];
+          }),
+        },
+      });
+    }
     const current = record(this.state.model);
     return { sessionId: this.state.sessionId,
       models: { currentModelId: current.id ? modelId(current) : null, availableModels: this.models.map(model => ({
@@ -82,7 +101,9 @@ export class PiRpcAdapter {
     const event = record(raw), active = this.active;
     if (!active) return;
     const update = (update: Value) => this.emit("session/update", { sessionId: this.state.sessionId, update });
-    if (event.type === "message_update") {
+    if (event.type === "extension_ui_request" && event.method === "notify" && typeof event.message === "string" && event.message.trim()) {
+      update({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: `${event.message.trim()}\n` } });
+    } else if (event.type === "message_update") {
       const delta = record(event.assistantMessageEvent);
       if (["text_delta", "thinking_delta"].includes(delta.type) && typeof delta.delta === "string") update({ sessionUpdate: delta.type === "text_delta" ? "agent_message_chunk" : "agent_thought_chunk", content: { type: "text", text: delta.delta } });
     } else if (["tool_execution_start", "tool_execution_update", "tool_execution_end"].includes(event.type)) {

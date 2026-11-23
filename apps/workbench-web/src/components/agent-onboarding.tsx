@@ -97,13 +97,22 @@ function AgentOnboardingContent({ hostId, identityScope = "local", request, requ
     if (actionRecovered) setActionFailed(current => current === actionFailed ? null : current);
   }, [actionRecovered, actionFailed]);
   const nameOf = (id: string) => intl.formatMessage(AGENT_NAMES[id] ?? { id: "onboard.agent.unknownName", defaultMessage: "Agent" });
-  const run = async (id: string, action: "sign-in" | "install" | "cancel" | "submit-code", code?: string) => {
+  const run = async (id: string, action: "sign-in" | "install" | "upgrade" | "cancel" | "submit-code", code?: string) => {
     const agent = status.data?.agents.find(agent => agent.id === id);
-    const goal = action === "install" ? "install" : action === "cancel" ? "cancel"
+    const goal = action === "install" || action === "upgrade" ? "install" : action === "cancel" ? "cancel"
       : agent?.workspaceTrusted === false ? "trust" : agent?.connectionRequired ? "connect" : "authenticate";
     setPendingId(id); setActionFailed(null);
     try {
-      const result = await request("opencraft/agents/onboarding/act", { id, action, ...(code === undefined ? {} : { code }) });
+      let result: OnboardingSnapshot;
+      if (action === "upgrade") {
+        try {
+          result = await request("opencraft/agents/onboarding/act", { id, action: "upgrade" });
+        } catch {
+          result = await request("opencraft/agents/onboarding/act", { id, action: "install" });
+        }
+      } else {
+        result = await request("opencraft/agents/onboarding/act", { id, action, ...(code === undefined ? {} : { code }) });
+      }
       if (action === "submit-code") setAuthCodes(previous => ({ ...previous, [id]: "" }));
       if (isSnapshot(result)) queryClient.setQueryData(queryKey, result);
     } catch { setActionFailed({ id, goal }); } finally { setPendingId(null); }
@@ -189,11 +198,15 @@ function AgentOnboardingContent({ hostId, identityScope = "local", request, requ
         const activity = agent?.activity;
         const ready = entry.ready && (historyOnly || agentPreferences?.enabled(entry.id) !== false);
         const subline = activity?.phase === "running"
-          ? intl.formatMessage(agent?.id === "codebuddy-ide" ? {id:"onboard.ide.connecting",defaultMessage:"Finish connecting in CodeBuddy IDE"} : activity.kind === "install"
+          ? intl.formatMessage(agent?.id === "codebuddy-ide" ? {id:"onboard.ide.connecting",defaultMessage:"Finish connecting in CodeBuddy IDE"} : activity.kind === "upgrade"
+            ? { id: "onboard.agent.upgrading", defaultMessage: "Updating…" }
+            : activity.kind === "install"
             ? { id: "onboard.agent.installing", defaultMessage: "Installing…" }
             : { id: "onboard.agent.signingIn", defaultMessage: "Finish signing in below" })
           : activity?.phase === "failed"
-            ? intl.formatMessage(activity.kind === "install"
+            ? intl.formatMessage(activity.kind === "upgrade"
+              ? { id: "onboard.agent.upgradeFailed", defaultMessage: "Update didn't finish" }
+              : activity.kind === "install"
               ? { id: "onboard.agent.installFailed", defaultMessage: "Install didn't finish" }
               : { id: "onboard.agent.signInFailed", defaultMessage: "Sign-in didn't finish" })
             : agent && !agent.installed
@@ -222,6 +235,9 @@ function AgentOnboardingContent({ hostId, identityScope = "local", request, requ
               </Button> : null}
               {agent && activity?.phase === "failed" ? <Button size="sm" variant="outline" disabled={pendingId === agent.id} onClick={() => { void run(agent!.id, activity.kind); }}>
                 {intl.formatMessage({ id: "onboard.agent.retry", defaultMessage: "Retry" })}
+              </Button> : null}
+              {management && !historyOnly && agent && !activity && agent.installed && agent.canInstallPackage ? <Button size="sm" variant="ghost" disabled={pendingId === agent.id} title={agent.version ?? undefined} onClick={() => { void run(agent.id, "upgrade"); }}>
+                {intl.formatMessage({ id: "onboard.agent.upgrade", defaultMessage: "Update" })}
               </Button> : null}
               {agent && !activity && !agent.installed ? <Button size="sm" variant="outline" disabled={pendingId === agent.id} onClick={() => {
                 if (agent.canInstallPackage) void run(agent!.id, "install");

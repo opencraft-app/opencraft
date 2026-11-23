@@ -4,7 +4,7 @@ export type OnboardingAgentId = "codex" | "cursor" | "claude" | "gemini" | "code
 export type HistoryImportAgentId = OnboardingAgentId;
 
 export interface OnboardingActivity {
-  readonly kind: "sign-in" | "install";
+  readonly kind: "sign-in" | "install" | "upgrade";
   readonly phase: "running" | "failed";
   readonly message: string | null;
   readonly url: string | null;
@@ -98,8 +98,12 @@ export interface AgentOnboardingMethodMap {
     result: { imported: readonly { id: string; threadId: string }[]; failed: readonly string[] };
   };
   "opencraft/agents/onboarding/status": { params: Record<string, never>; result: OnboardingSnapshot };
+  "opencraft/agents/onboarding/package-versions": {
+    params: { force?: boolean };
+    result: { versions: Readonly<Record<string, string | null>>; checkedAt: number };
+  };
   "opencraft/agents/onboarding/act": {
-    params: { id: string; action: "sign-in" | "install" | "cancel" | "submit-code"; code?: string };
+    params: { id: string; action: "sign-in" | "install" | "upgrade" | "cancel" | "submit-code"; code?: string };
     result: OnboardingSnapshot;
   };
   "opencraft/agents/onboarding/models": {

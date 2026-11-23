@@ -112,6 +112,10 @@ export class LocalAttachmentStagingService {
     this.uploads = new AttachmentUploadStore(join(this.root, ".uploads"), (request, path, hash) => this.commitFile(request, hash, path));
   }
 
+  get directory(): string {
+    return this.root;
+  }
+
   /** Resolve only a file this staging owner actually committed. Other mentions are not ours. */
   async referenceForHostPath(name: string, candidatePath: string): Promise<AttachmentRef | null> {
     if (!isAbsolute(candidatePath)) return null;

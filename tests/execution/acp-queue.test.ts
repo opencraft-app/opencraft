@@ -33,7 +33,12 @@ async function fixture(t: test.TestContext) {
 
 test("connected ACP agents expose a real queue and automatically dispatch exactly once in FIFO order", async t => {
   const f = await fixture(t);
-  assert.deepEqual(f.engine.extensions["opencraft/thread-follow-up"], { version: 1, queue: true, steer: false });
+  assert.deepEqual(f.engine.extensions["opencraft/thread-follow-up"], { version: 1, queue: true, steer: true });
+  assert.deepEqual(f.engine.extensions["opencraft/thread-queue"], { version: 2, reorder: true, atomicSteer: true, perItemPause: false });
+  const cursorEngine = new AcpEngine({ id: "cursor", command: process.execPath, args: [resolve("tests/fixtures/acp-engine-peer.mjs")], cwd: f.root, dataDirectory: join(f.root, "cursor-data") });
+  t.after(() => cursorEngine.close());
+  assert.deepEqual(cursorEngine.extensions["opencraft/thread-follow-up"], { version: 1, queue: true, steer: false });
+  assert.deepEqual(cursorEngine.extensions["opencraft/thread-queue"], { version: 2, reorder: true, atomicSteer: false, perItemPause: false });
   await f.request("turn/start", { input: text("wait:first") });
   const [second, third] = await Promise.all([f.queue("second"), f.queue("third")]);
   assert.deepEqual((await f.list()).map(item => item.clientUserMessageId), ["second", "third"]);
@@ -160,4 +165,37 @@ test("restart before prompt commit retains editable custody and requires explici
   await f.request("thread/queue/start", {}, restored);
   await until(async () => (await f.list(restored)).length === 0);
   assert.equal((await f.calls()).filter(call => call.method === "session/prompt").length, 2);
+});
+
+test("Codex ACP supports direct turn/steer and atomic thread/queue/steer via _session/steering", async t => {
+  const f = await fixture(t);
+  const started = await f.request("turn/start", { input: text("wait:long-task") });
+  const activeTurnId = started.turn.id as string;
+
+  // 1. Direct turn/steer
+  const direct = await f.request("turn/steer", {
+    expectedTurnId: activeTurnId,
+    clientUserMessageId: "direct-steer-1",
+    input: text("先看第二个文件"),
+  });
+  assert.equal(direct.turnId, activeTurnId);
+
+  // 2. Queued message steered into the active turn via thread/queue/steer
+  const queued = await f.queue("queued-steer-1", "顺便加上单测");
+  await assert.rejects(
+    f.request("thread/queue/steer", { queuedSubmissionId: queued.queuedSubmission.id, expectedTurnId: "stale-turn-id" }),
+    (err: any) => err?.data?.code === "EXPECTED_TURN_MISMATCH" && err?.data?.actualTurnId === activeTurnId,
+  );
+  const steered = await f.request("thread/queue/steer", {
+    queuedSubmissionId: queued.queuedSubmission.id,
+    expectedTurnId: activeTurnId,
+  });
+  assert.equal(steered.turnId, activeTurnId);
+  assert.deepEqual(await f.list(), []);
+
+  const steerCalls = (await f.calls()).filter(call => call.method === "_session/steering");
+  assert.deepEqual(steerCalls.map(call => call.prompt[0].text), ["先看第二个文件", "顺便加上单测"]);
+
+  await f.request("turn/interrupt", { turnId: activeTurnId });
+  await until(() => f.notices.some(n => n.method === "turn/completed"));
 });

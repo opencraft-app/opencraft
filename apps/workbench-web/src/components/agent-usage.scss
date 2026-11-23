@@ -8,8 +8,38 @@
   @include typography.role(metadata, secondary);
   &__disclosure { width: 100%; }
   &__summary { margin-inline-start: auto; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  &__content { max-height: min(42dvh, 24rem); overflow-y: auto; padding: calc(var(--spacing) * 2); }
-  &__header { display: flex; align-items: center; gap: var(--spacing); margin-block-end: calc(var(--spacing) * 2); > div { display: flex; } > span { flex: 1; } }
+  &__content { max-height: min(48dvh, 26rem); overflow-y: auto; padding: calc(var(--spacing) * 2); }
+  &__machines {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing);
+    margin-block-end: calc(var(--spacing) * 2);
+    padding-block-end: calc(var(--spacing) * 1.5);
+    border-bottom: .5px solid var(--color-border-subtle);
+  }
+  &__header { display: flex; align-items: center; gap: var(--spacing); margin-block-end: var(--spacing); > div { display: flex; } > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } }
+  &__identity {
+    @include typography.role(metadata, tertiary);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing);
+    margin-block-end: calc(var(--spacing) * 1.5);
+  }
+  &__account {
+    @include typography.role(metadata, secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  &__version-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing);
+    > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  }
   &__provider p, &__conversation p { margin: var(--spacing) 0; }
   &__window { display: grid; grid-template-columns: max-content minmax(0, 1fr) max-content; align-items: center; column-gap: calc(var(--spacing) * 2); row-gap: var(--spacing); margin-block: calc(var(--spacing) * 2);
     small { grid-column: 1 / -1; color: var(--color-text-tertiary); }

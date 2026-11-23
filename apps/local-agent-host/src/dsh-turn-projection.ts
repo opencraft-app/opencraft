@@ -4,8 +4,8 @@ import { DshExecutionRecord } from "./dsh-execution-record.js";
 /** One imported HyperNode execution record owns both live and history Items. */
 export class DshTurnProjection {
   readonly execution: DshExecutionRecord;
-  constructor(readonly sessionId: string, readonly turnId: string, cwd: string) {
-    this.execution = new DshExecutionRecord(sessionId, turnId, cwd);
+  constructor(readonly sessionId: string, readonly turnId: string, cwd: string, stagedRoot?: string) {
+    this.execution = new DshExecutionRecord(sessionId, turnId, cwd, stagedRoot);
   }
   get terminalOutcome() {
     if (!this.execution.ended) return null;

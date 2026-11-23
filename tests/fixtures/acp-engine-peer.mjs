@@ -58,6 +58,9 @@ const trace = frame => { if (process.env.ACP_TEST_TRACE) appendFileSync(process.
   ...(parameterizedSettings&&frame.method==='session/prompt'?{settings:settings.get(frame.params.sessionId)}:{}),
   ...(process.env.ACP_TEST_PERMISSIONS==='1'&&frame.method==='session/prompt'?{permissionMode:permissionSettings.get(frame.params.sessionId) ?? 'agent'}:{}),
   ...(process.env.ACP_TEST_IMAGES==='1'&&frame.method==='session/prompt'?{prompt:frame.params.prompt}:{}),
+  ...(frame.method==='_session/goal'?{action:frame.params?.action,objective:frame.params?.objective}:{}),
+  ...(frame.method==='_session/steering'?{prompt:frame.params?.prompt}:{}),
+  ...(process.env.ACP_TEST_GOAL==='1'&&frame.method==='session/prompt'?{promptText:frame.params?.prompt?.map(item=>item.text).join('')}:{}),
 }) + '\n'); };
 const mcp = async (server, id, method, params = {}) => {
   const response = await fetch(server.url, { method: 'POST', headers: { 'content-type': 'application/json', ...Object.fromEntries(server.headers.map(header => [header.name, header.value])) }, body: JSON.stringify({ jsonrpc: '2.0', id, method, params }) });
@@ -84,10 +87,19 @@ createInterface({ input: process.stdin }).on('line', line => {
       if(process.env.ACP_TEST_NO_MODEL_EXTENSION==='1')return send({id:frame.id,error:{code:-32601,message:'Method not found'}});
       return result(frame.id,{models:['one','two'].map(model=>({value:model,name:model,configOptions:configOptions(null,{model,effort:'high',fast:false,context:'1m'}).filter(option=>option.id!=='model')}))});
     }
+    if (frame.method === '_session/goal') {
+      return result(frame.id, { status: 'ok' });
+    }
+    if (frame.method === '_session/steering') {
+      return result(frame.id, { outcome: 'steered' });
+    }
     if (frame.method === 'session/new') {
       const sessionId = process.env.ACP_TEST_NATIVE_ID ?? `native-${sessions.size + 1}`; requestSessions.set(frame.id,sessionId); permissionSettings.set(sessionId,'agent');
       for (const server of params.mcpServers) { await mcp(server, 'init', 'initialize'); await mcp(server, 'list', 'tools/list'); }
       if(parameterizedSettings&&!parameterizedPicker)return send({id:frame.id,error:{code:-32602,message:'Parameterized picker not enabled'}});
+      if (process.env.ACP_TEST_AVAILABLE_COMMANDS) {
+        send({ method: 'session/update', params: { sessionId, update: { sessionUpdate: 'available_commands_update', availableCommands: JSON.parse(process.env.ACP_TEST_AVAILABLE_COMMANDS) } } });
+      }
       sessions.set(sessionId, params); if(splitSettings||parameterizedSettings)return result(frame.id,setup(sessionId));return result(frame.id, { sessionId, ...(process.env.ACP_TEST_MODELS ? {...(process.env.ACP_TEST_MODEL_CONFIG_ID ? {configOptions:[{id:process.env.ACP_TEST_MODEL_CONFIG_ID,category:'model',currentValue:'default-native',options:[{value:'default-native',name:'Default'},{value:'allowed-native',name:'Allowed'}]}]} : {}),models:{currentModelId:"default-native",availableModels:[{modelId:"default-native",name:"Default"},{modelId:"allowed-native",name:"Allowed"}]}} : {}) });
     }
     if (frame.method === 'session/fork') {
@@ -149,6 +161,7 @@ createInterface({ input: process.stdin }).on('line', line => {
       }
       const finish = async () => {
         if(text==='fail:response') {prompts.delete(params.sessionId);return send({id:frame.id,error:{code:-32000,message:'Provider rejected the prompt'}})}
+        if(text==='fail:account-mismatch') {prompts.delete(params.sessionId);return send({id:frame.id,error:{code:-32603,message:"The current provider can't read this thread's earlier reasoning, which another provider or account encrypted. This happens after the provider changes in a thread. Switch back to the previous provider or start a new thread."}})}
         if (text.startsWith('call:')) {
           const session = sessions.get(params.sessionId);
           send({ method: 'session/update', params: { sessionId: params.sessionId, update: { sessionUpdate: 'tool_call', toolCallId: 'native-call-1', title: text.slice(5), status: 'in_progress', rawInput: { prompt: 'child task' } } } });

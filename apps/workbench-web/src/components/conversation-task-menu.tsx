@@ -200,8 +200,16 @@ export function ConversationTaskMenu(props: Props) {
   if (props.onSetPinned) add("pin", intl.formatMessage(props.pinned ? { id: "chat.unpin", defaultMessage: "Unpin" } : { id: "chat.pin", defaultMessage: "Pin" }),
     props.pinned ? <PinOff size={16} aria-hidden="true" /> : <Pin size={16} aria-hidden="true" />, () => pin.mutate(props.pinned !== true));
   if (props.onReleaseNativeSession) add("release-native", intl.formatMessage({ id: "chat.nativeSession.release", defaultMessage: "Release Codex conversation…" }), <MessageSquare size={16} aria-hidden="true" />, () => setReleaseOpen(true), true);
-  if (props.onFork) add("fork", intl.formatMessage({ id: "sidebar.thread.fork", defaultMessage: "Create branch" }),
+  const forkLabel = intl.formatMessage({ id: "sidebar.thread.fork", defaultMessage: "Create branch" });
+  if (props.onFork) add("fork", forkLabel,
     fork.isPending ? <LoaderCircle size={16} aria-hidden="true" /> : <GitFork size={16} aria-hidden="true" />, () => fork.mutate(), false, fork.isPending);
+  else if (props.threadId) actions.push({
+    id: "fork",
+    label: intl.formatMessage({ id: "agent.capability.unsupportedAction", defaultMessage: "{action} (Not supported by this agent)" }, { action: forkLabel }),
+    icon: <GitFork size={16} aria-hidden="true" />,
+    invoke: () => {},
+    disabled: true,
+  });
   if (props.onArchive) add("archive", intl.formatMessage({ id: "sidebar.thread.archive", defaultMessage: "Archive" }), <Archive size={16} aria-hidden="true" />,
     () => archive.mutate({ key: `archive:${props.scope}:${props.serverId}:${props.threadId}`, title: props.title ?? "", execute: props.onArchive! }));
   if (props.im) add("im-sources", "聊天来源", <MessageSquare size={16} aria-hidden="true" />, () => setImOpen(true), true);

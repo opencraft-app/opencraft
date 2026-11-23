@@ -83,6 +83,7 @@ export interface ConversationRuntime {
   updateQueuedSubmission(
     queuedSubmissionId: string,
     input: readonly UserInput[],
+    intent?: SubmitIntent,
   ): Promise<void>;
   deleteQueuedSubmission(queuedSubmissionId: string): Promise<void>;
   discardUnconfirmedSteer(queuedSubmissionId: string, expectedTurnId: TurnId): Promise<void>;
@@ -2045,7 +2046,8 @@ export function createReplicaConversationRuntime(
       localRevision += 1;
       publish();
     },
-    async updateQueuedSubmission(queuedSubmissionId, input) {
+    async updateQueuedSubmission(queuedSubmissionId, input, intent) {
+      if (intent && await outbox?.update(queuedSubmissionId, intent)) return;
       const previous = authoritativeQueue.get(queuedSubmissionId);
       if (previous === undefined)
         throw new Error(

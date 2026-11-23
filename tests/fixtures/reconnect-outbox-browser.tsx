@@ -1,6 +1,7 @@
 import React, { useSyncExternalStore } from "react";
 import { createIntlTestRoot } from "./intl-root";
 import { OpenCraftComposer } from "@opencraft/composer-editor";
+import { compileSubmitIntent } from "@opencraft/composer-appserver";
 import { createComposerController } from "@opencraft/composer-core";
 import { createConversationKey } from "@opencraft/chat-core";
 import { WebSocketTransport } from "@opencraft/appserver-transport-websocket";
@@ -37,6 +38,7 @@ function App() {
         ? ["queue"] : (["steer", "queue"] as const).filter(action => runtime.resources.host.canRequest?.(action === "queue" ? "thread/queue/add" : "turn/steer") !== false)}
       queuedSubmissions={snapshot.queuedSubmissions.map(row => queuedSubmissionPresentation(row, false))}
       onSubmit={intent => { submittedIntents.push(intent); return completeConversationComposerSubmission(intent, lease.submit(intent), lease.getSnapshot(), () => {}); }} onCancel={() => {}}
+      onUpdateQueuedSubmission={(id, intent) => lease.updateQueuedSubmission(id, compileSubmitIntent(intent).input, intent)}
       onDeleteQueuedSubmission={id => lease.deleteQueuedSubmission(id)} />
   </main>;
 }

@@ -161,15 +161,33 @@ function ThreadRowMenuBase({ activityLabelId, target, capabilities, disabled = f
   const { busy, forking } = owner.activity(target);
   const modalHandoff = useRef(false);
   const run = (operation: () => Promise<void>, action: "fork" | "archive" | "pin" | "delete" | "copy" | "other" = "other") => { void owner.run(target, operation, action); };
+  const unsupportedHint = intl.formatMessage({ id: "agent.capability.unsupported", defaultMessage: "Not supported by this agent" });
+  const hasAnyCapability = capabilities.rename || capabilities.archive || capabilities.fork || capabilities.pin === true || capabilities.delete;
+  type RowMenuItem = {
+    readonly key: string;
+    readonly icon: typeof Pencil;
+    readonly label: string;
+    readonly unsupported?: boolean;
+    readonly onSelect: () => void;
+  };
+  const noop = () => {};
   // Shared item model for both the right-click context menu and the row
   // "..." dropdown, mirroring the actions(entry).map pattern in bot-management.
-  const menuItems = [
-    access ? {key:"access",icon:PermissionShieldIcon,label:access.label,onSelect:access.invoke} : null,
-    capabilities.reference && owner.callbacks.onCopyReference ? {key:"reference",icon:Link2,label:intl.formatMessage({id:"conversation.reference.copy",defaultMessage:"Copy conversation reference"}),onSelect:()=>{run(()=>owner.callbacks.onCopyReference!(target), "copy");}} : null,
-    capabilities.pin && onSetPinned ? { key: "pin", icon: target.pinned ? PinOff : Pin, label: intl.formatMessage(target.pinned ? { id: "sidebar.thread.unpin", defaultMessage: "Unpin" } : { id: "sidebar.thread.pin", defaultMessage: "Pin" }), onSelect: () => { run(() => onSetPinned(target, target.pinned !== true), "pin"); } } : null,
-    capabilities.rename ? { key: "rename", icon: Pencil, label: intl.formatMessage({ id: "sidebar.thread.rename", defaultMessage: "Rename" }), onSelect: () => { modalHandoff.current = true; owner.beginRename(target); } } : null,
-    capabilities.fork ? { key: "fork", icon: GitFork, label: intl.formatMessage({ id: "sidebar.thread.fork", defaultMessage: "Create branch" }), onSelect: () => { run(() => onFork(target), "fork"); } } : null,
-    capabilities.archive ? { key: "archive", icon: Archive, label: intl.formatMessage({ id: "sidebar.thread.archive", defaultMessage: "Archive" }), onSelect: () => { run(() => onArchive(target), "archive"); } } : null,
+  const menuItems: RowMenuItem[] = [
+    access ? { key: "access", icon: PermissionShieldIcon, label: access.label, onSelect: access.invoke } : null,
+    capabilities.reference && owner.callbacks.onCopyReference ? { key: "reference", icon: Link2, label: intl.formatMessage({ id: "conversation.reference.copy", defaultMessage: "Copy conversation reference" }), onSelect: () => { run(() => owner.callbacks.onCopyReference!(target), "copy"); } } : null,
+    onSetPinned && (capabilities.pin || hasAnyCapability)
+      ? { key: "pin", icon: target.pinned ? PinOff : Pin, label: intl.formatMessage(target.pinned ? { id: "sidebar.thread.unpin", defaultMessage: "Unpin" } : { id: "sidebar.thread.pin", defaultMessage: "Pin" }), unsupported: !capabilities.pin, onSelect: capabilities.pin ? () => { run(() => onSetPinned(target, target.pinned !== true), "pin"); } : noop }
+      : null,
+    capabilities.rename || hasAnyCapability
+      ? { key: "rename", icon: Pencil, label: intl.formatMessage({ id: "sidebar.thread.rename", defaultMessage: "Rename" }), unsupported: !capabilities.rename, onSelect: capabilities.rename ? () => { modalHandoff.current = true; owner.beginRename(target); } : noop }
+      : null,
+    capabilities.fork || hasAnyCapability
+      ? { key: "fork", icon: GitFork, label: intl.formatMessage({ id: "sidebar.thread.fork", defaultMessage: "Create branch" }), unsupported: !capabilities.fork, onSelect: capabilities.fork ? () => { run(() => onFork(target), "fork"); } : noop }
+      : null,
+    capabilities.archive || hasAnyCapability
+      ? { key: "archive", icon: Archive, label: intl.formatMessage({ id: "sidebar.thread.archive", defaultMessage: "Archive" }), unsupported: !capabilities.archive, onSelect: capabilities.archive ? () => { run(() => onArchive(target), "archive"); } : noop }
+      : null,
     capabilities.delete ? { key: "delete", icon: Trash2, label: intl.formatMessage({ id: "sidebar.thread.delete", defaultMessage: "Delete" }), onSelect: () => { modalHandoff.current = true; owner.beginDelete(target); } } : null,
   ].filter((item): item is NonNullable<typeof item> => item !== null);
   // Keep the navigation subtree mounted when a runtime loses capabilities.
@@ -193,7 +211,18 @@ function ThreadRowMenuBase({ activityLabelId, target, capabilities, disabled = f
           {tagMenuContent ? <>{tagMenuContent}{(additionalActions.length > 0 || menuItems.length > 0) ? <ContextMenu.Separator /> : null}</> : null}
           {additionalActions.map(action => <ContextMenu.Item key={action.id} disabled={action.disabled} onSelect={action.onSelect}>{action.label}</ContextMenu.Item>)}
           {additionalActions.length && menuItems.length ? <ContextMenu.Separator /> : null}
-          {menuItems.map(({ key, icon: Icon, label, onSelect }) => <ContextMenu.Item key={key} disabled={busy || disabled || access?.pending} onSelect={onSelect}><Icon size={16} aria-hidden="true" />{label}</ContextMenu.Item>)}
+          {menuItems.map(({ key, icon: Icon, label, unsupported, onSelect }) => (
+            <ContextMenu.Item
+              key={key}
+              disabled={unsupported || busy || disabled || access?.pending}
+              title={unsupported ? unsupportedHint : undefined}
+              onSelect={onSelect}
+            >
+              <Icon size={16} aria-hidden="true" />
+              <span>{label}</span>
+              {unsupported ? <span className="workbench-menu-item__hint">{unsupportedHint}</span> : null}
+            </ContextMenu.Item>
+          ))}
           {contextMenuExtra ? <><ContextMenu.Separator />{contextMenuExtra}</> : null}
         </ContextMenu.Content></ContextMenu.Portal>
       </ContextMenu.Root>
@@ -208,7 +237,18 @@ function ThreadRowMenuBase({ activityLabelId, target, capabilities, disabled = f
             {tagMenuContent ? <>{tagMenuContent}{(additionalActions.length > 0 || menuItems.length > 0) ? <DropdownMenu.Separator /> : null}</> : null}
             {additionalActions.map(action => <DropdownMenu.Item key={action.id} disabled={action.disabled} onSelect={action.onSelect}>{action.label}</DropdownMenu.Item>)}
             {additionalActions.length && menuItems.length ? <DropdownMenu.Separator /> : null}
-            {menuItems.map(({ key, icon: Icon, label, onSelect }) => <DropdownMenu.Item key={key} disabled={busy || disabled || access?.pending} onSelect={onSelect}><Icon size={16} aria-hidden="true" />{label}</DropdownMenu.Item>)}
+            {menuItems.map(({ key, icon: Icon, label, unsupported, onSelect }) => (
+              <DropdownMenu.Item
+                key={key}
+                disabled={unsupported || busy || disabled || access?.pending}
+                title={unsupported ? unsupportedHint : undefined}
+                onSelect={onSelect}
+              >
+                <Icon size={16} aria-hidden="true" />
+                <span>{label}</span>
+                {unsupported ? <span className="workbench-menu-item__hint">{unsupportedHint}</span> : null}
+              </DropdownMenu.Item>
+            ))}
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
       </DropdownMenu.Root>

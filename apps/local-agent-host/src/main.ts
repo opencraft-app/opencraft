@@ -1,5 +1,6 @@
 import { MODEL_CATALOG_REFRESH_METHOD, SCOPED_MODEL_REFRESH_EXTENSION } from "@opencraft/appserver-protocol";
 import { SCOPED_PERMISSION_CATALOG_EXTENSION, SCOPED_PERMISSION_CATALOG_METHOD } from "@opencraft/appserver-protocol";
+import { SCOPED_SLASH_COMMAND_CATALOG_EXTENSION, SCOPED_SLASH_COMMAND_CATALOG_METHOD, SLASH_COMMAND_LIST_METHOD } from "@opencraft/appserver-protocol";
 import { PersonalMachines } from "./personal-machines.js";
 import {
   HostedSpaceRelay,
@@ -176,6 +177,7 @@ export async function startLocalAgentHost(options: {
   readonly taskConversationCatalog?: (serverId: string, search: string, limit: number, cursor?: string | null) => Promise<unknown>;
   /** Per-engine new-Thread bridge routing. Absent keeps every legacy owner. */
   readonly bridge?: { readonly claudeCode?: BridgeEngineProviderOptions };
+  readonly selfUpdate?: () => Promise<{ started: boolean }>;
 } = {}) {
   nodeObserver("dsh");
   const storage = options.storage ?? await openLocalAgentStorageWithWorker({ dataDirectory: options.dataDirectory });
@@ -276,8 +278,12 @@ export async function startLocalAgentHost(options: {
   const socketClients = new Map<WebSocket, Map<string, LogicalClient>>();
   const guestSocketScopes = new WeakMap<WebSocket, AttachedGuestSession>();
   const catalogChanges = new ThreadCatalogPublisher((method, params) => {
-    const id = (params as { threadId?: string; thread?: { id?: string } } | undefined)?.threadId
-      ?? (params as { thread?: { id?: string } } | undefined)?.thread?.id;
+    const mutation = params.change;
+    const id = mutation.type === "upsert"
+      ? mutation.thread.id
+      : mutation.type === "patch" || mutation.type === "remove"
+        ? mutation.threadId
+        : undefined;
     for (const [socket, clients] of socketClients) {
       const gScope = guestSocketScopes.get(socket);
       if (gScope && id && spaces.spaceFor("local", id) !== gScope.spaceId) continue;
@@ -340,19 +346,36 @@ export async function startLocalAgentHost(options: {
     engine: "claude-code",
     defaultCwd: options.bridge.claudeCode.defaultCwd ?? projectlessWorkspaceRoot ?? homedir(),
   });
+  const connectedAttachments = {
+    directory: attachmentStaging.directory,
+    resolveStagedAttachment: async (name: string, path: string) => {
+      const ref = await attachmentStaging.referenceForHostPath(name, path);
+      return ref?.location.kind === "host-file" ? { id: ref.id, name: ref.name, path: ref.location.path } : null;
+    },
+  };
+  adapter.setStagedAttachmentResolver(connectedAttachments.directory, connectedAttachments.resolveStagedAttachment);
   const connectedAgents = new ConnectedAgentHost(agentOnboarding, join(productDataRoot, "connected-agents"), projectlessWorkspaceRoot ?? homedir(), createOnboardingDeps(),
     claudeBridge === undefined ? undefined : { provider: claudeBridge, engines: ["claude-code"] }, options.connectedAgentAssets,
     (params, signal, project) => adapter.interactions.shared.request({
       id: params.itemId, method: "item/tool/requestUserInput", params,
-    }, signal, project));
+    }, signal, project), connectedAttachments);
   await connectedAgents.start();
   cleanup.push(() => connectedAgents.close());
   cleanup.push(connectedAgents.subscribe((method, params) => {
-    if (method !== "thread/name/updated" || typeof params.threadId !== "string" || typeof params.threadName !== "string") return;
-    const projected = { ...params, threadName: storage.threads.manualTitle(params.threadId) ?? params.threadName };
-    catalogChanges.observeNotification(method, projected);
-    for (const [socket, clients] of socketClients) for (const state of clients.values()) {
-      if (state.initialized) sendClient(socket, state.clientId, { jsonrpc: "2.0", method, params: projected });
+    if (method === "thread/name/updated" && typeof params.threadId === "string" && typeof params.threadName === "string") {
+      const projected = { ...params, threadName: storage.threads.manualTitle(params.threadId) ?? params.threadName };
+      catalogChanges.observeNotification(method, projected);
+      for (const [socket, clients] of socketClients) {
+        const gScope = guestSocketScopes.get(socket);
+        if (gScope && spaces.spaceFor("local", params.threadId) !== gScope.spaceId) continue;
+        for (const state of clients.values()) {
+          if (state.initialized) sendClient(socket, state.clientId, { jsonrpc: "2.0", method, params: projected });
+        }
+      }
+      return;
+    }
+    if (["thread/status/changed", "turn/started", "thread/started", "thread/archived", "thread/unarchived", "thread/deleted"].includes(method)) {
+      catalogChanges.observeNotification(method, params);
     }
   }));
   cleanup.push(() => adapter.close());
@@ -409,6 +432,10 @@ export async function startLocalAgentHost(options: {
   }
   if (capabilityLink) adapter.setThreadEngine({
     goal: params => capabilityLink!.thread("goal", { ...params, sessionId: routing.native(String(params.sessionId)) }),
+    commands: params => capabilityLink!.thread("commands", {
+      ...params,
+      ...(typeof params.sessionId === "string" && params.sessionId ? { sessionId: routing.native(params.sessionId) } : {}),
+    }),
     describe: async params => {
       const generation = routing.current(String(params.sessionId));
       const description = await capabilityLink!.thread("describe", { ...params, sessionId: generation.nativeId });
@@ -778,6 +805,8 @@ export async function startLocalAgentHost(options: {
           "model/list",
           "permissionProfile/list",
           SCOPED_PERMISSION_CATALOG_METHOD,
+          SLASH_COMMAND_LIST_METHOD,
+          SCOPED_SLASH_COMMAND_CATALOG_METHOD,
           SERVER_SPACES_METHOD,
           "thread/list",
           "thread/read",
@@ -907,13 +936,13 @@ export async function startLocalAgentHost(options: {
       try {
         const maybeRemoteThreadId = (request.params as { threadId?: unknown } | null)?.threadId;
         if (!guestScope && typeof maybeRemoteThreadId === "string" && parseRemoteSpaceThreadId(maybeRemoteThreadId)) {
-          if (["model/list", "permissionProfile/list", SCOPED_PERMISSION_CATALOG_METHOD, "thread/read", "thread/resume", "thread/name/set", "turn/start", "turn/steer", "turn/interrupt", SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND].includes(request.method)) {
+          if (["model/list", "permissionProfile/list", SCOPED_PERMISSION_CATALOG_METHOD, SLASH_COMMAND_LIST_METHOD, SCOPED_SLASH_COMMAND_CATALOG_METHOD, "thread/read", "thread/resume", "thread/name/set", "turn/start", "turn/steer", "turn/interrupt", SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND].includes(request.method)) {
             const forwarded = await joinedSpaceRelay.forwardThreadRequest(maybeRemoteThreadId, request.method, request.params);
             send(socket, { jsonrpc: "2.0", id: request.id, result: forwarded }, request.method);
             return;
           }
         }
-        if (!guestScope && isRemoteJoinedSpaceId(state.selectedSpaceId) && ["model/list", "permissionProfile/list", SCOPED_PERMISSION_CATALOG_METHOD].includes(request.method)) {
+        if (!guestScope && isRemoteJoinedSpaceId(state.selectedSpaceId) && ["model/list", "permissionProfile/list", SCOPED_PERMISSION_CATALOG_METHOD, SLASH_COMMAND_LIST_METHOD, SCOPED_SLASH_COMMAND_CATALOG_METHOD].includes(request.method)) {
           const forwarded = await joinedSpaceRelay.forwardSpaceRequest(state.selectedSpaceId, request.method, request.params);
           send(socket, { jsonrpc: "2.0", id: request.id, result: forwarded }, request.method);
           return;
@@ -1000,6 +1029,14 @@ export async function startLocalAgentHost(options: {
             } catch { failed.push(id); }
           }
           send(socket, { jsonrpc: "2.0", id: request.id, result: { imported, failed } }); return;
+        }
+        if (request.method === "opencraft/agents/onboarding/package-versions") {
+          const params = request.params as { force?: unknown } | undefined;
+          send(socket, { jsonrpc: "2.0", id: request.id, result: await agentOnboarding.packageVersions(params?.force === true) }); return;
+        }
+        if (request.method === "opencraft/machine-runtime/update") {
+          if (!options.selfUpdate) throw { rpcCode: -32601, message: "Machine self-update is unavailable on this host" };
+          send(socket, { jsonrpc: "2.0", id: request.id, result: await options.selfUpdate() }); return;
         }
         if (request.method === "opencraft/agents/onboarding/status" || request.method === "opencraft/agents/onboarding/act" || request.method === "opencraft/agents/onboarding/models") {
           const result = request.method === "opencraft/agents/onboarding/status"
@@ -1124,6 +1161,14 @@ export async function startLocalAgentHost(options: {
             ? connectedAgents.dispatch("permissionProfile/list", params)
             : adapter.dispatchOwned(SCOPED_PERMISSION_CATALOG_METHOD, params, owner, request.id as string | number);
         };
+        const readSlashCommands = async () => {
+          const params = (request.params ?? {}) as Record<string, unknown>;
+          if ((params.threadId !== undefined && (typeof params.threadId !== "string" || !params.threadId))
+            || (params.model !== undefined && (typeof params.model !== "string" || !params.model))) throw new Error("Invalid slash command catalog target");
+          return connectedAgents.owns(SLASH_COMMAND_LIST_METHOD, params)
+            ? connectedAgents.dispatch(SLASH_COMMAND_LIST_METHOD, params)
+            : adapter.dispatchOwned(SCOPED_SLASH_COMMAND_CATALOG_METHOD, params, owner, request.id as string | number);
+        };
         const readSkills = async () => {
           if (!capabilityLink) throw new Error("This DSH host does not expose complete Skill metadata");
           await skillRefresh.ensureFresh();
@@ -1204,6 +1249,8 @@ export async function startLocalAgentHost(options: {
           ? await projects.create(request.params as import("@opencraft/appserver-protocol/generated/v2").ProjectCreateParams)
           : request.method === SCOPED_PERMISSION_CATALOG_METHOD
           ? await readPermissionProfiles()
+          : request.method === SLASH_COMMAND_LIST_METHOD || request.method === SCOPED_SLASH_COMMAND_CATALOG_METHOD
+          ? await readSlashCommands()
           : request.method === "skills/list"
           ? await readSkills()
           : PROFILE_SKILLS_METHODS.has(request.method as ProfileSkillsMethod)
@@ -1212,6 +1259,9 @@ export async function startLocalAgentHost(options: {
           ? await processes.dispatch(request.method, request.params)
           : request.method.startsWith("fs/")
           ? await fileRequest(request.method, request.params)
+          : (request.method === "turn/interrupt" || request.method === "turn/steer")
+            && connectedAgents.owns(request.method, (request.params ?? {}) as Record<string, unknown>)
+          ? await connectedAgents.dispatch(request.method, (request.params ?? {}) as Record<string, unknown>)
           : request.method.startsWith("thread/") || request.method === "turn/start"
           ? await lifecycle.dispatch(request.method, (request.params ?? {}) as Record<string, unknown>, state.key,
             dispatchThread)
@@ -1227,7 +1277,9 @@ export async function startLocalAgentHost(options: {
             catch {throw Object.assign(new Error('Conversation could not be confirmed'),{rpcCode:-32000,domainData:{resultUnknown:true}});}
           }
         }
-        if (request.method === "thread/delete" || request.method === "thread/list") catalogChanges.observeResult(request.method, request.params, result);
+        if (["thread/start", "thread/fork", "turn/start", "thread/archive", "thread/unarchive", "thread/delete", "thread/list"].includes(request.method)) {
+          catalogChanges.observeResult(request.method, request.params, result);
+        }
         if (request.method === "initialize") {
           state.initialized = true;
           state.sharedInteractions = !!(request.params as { capabilities?: { extensions?: Record<string, unknown> } } | undefined)?.capabilities?.extensions?.[SHARED_INTERACTIONS_EXTENSION];
@@ -1241,6 +1293,7 @@ export async function startLocalAgentHost(options: {
                 [SHARED_INTERACTIONS_EXTENSION]: { version: 1 },
                 [SCOPED_MODEL_REFRESH_EXTENSION]: { version: 1 },
                 [SCOPED_PERMISSION_CATALOG_EXTENSION]: { version: 1 },
+                [SCOPED_SLASH_COMMAND_CATALOG_EXTENSION]: { version: 1 },
                 [OPENCRAFT_TERMINAL_RESTORE_EXTENSION]: { version: 1 },
                 [OPENCRAFT_ATTACHMENT_STAGING_EXTENSION]: attachmentStaging.capability,
                 [CONVERSATION_SCHEDULES_EXTENSION]: { version: 1, target: "existing-thread", repeat: "fixed-interval", summary: true, calendar: true },

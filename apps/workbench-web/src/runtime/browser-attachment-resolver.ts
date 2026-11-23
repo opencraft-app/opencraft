@@ -31,6 +31,7 @@ export type BrowserAttachmentErrorCode =
   | "IMAGE_TOO_LARGE"
   | "UNSUPPORTED_IMAGE_TYPE"
   | "FILE_TOO_LARGE"
+  | "FILE_UNREADABLE"
   | "HOST_FILE_STAGING_UNAVAILABLE";
 
 export interface BrowserAttachmentStagingOptions {
@@ -63,6 +64,20 @@ function bytesToBase64(bytes: Uint8Array): string {
     binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
   }
   return btoa(binary);
+}
+
+async function readBlobBytes(blob: Blob): Promise<Uint8Array> {
+  try {
+    return new Uint8Array(await blob.arrayBuffer());
+  } catch (error) {
+    if ((error as { name?: unknown } | null)?.name === "NotReadableError") {
+      throw new BrowserAttachmentError(
+        "FILE_UNREADABLE",
+        "File changed on disk. Remove and add it again.",
+      );
+    }
+    throw error;
+  }
 }
 
 const hostFileUri = (path: string): string =>
@@ -204,7 +219,7 @@ export async function resolveBrowserAttachment(
     ? `${file.name.replace(/\.[^.]+$/u, "")}.${imageExtension}`
     : file.name;
   if (isImage) {
-    const bytes = new Uint8Array(await upload.arrayBuffer());
+    const bytes = await readBlobBytes(upload);
     signal?.throwIfAborted();
     const dataBase64 = bytesToBase64(bytes);
     return {
@@ -260,10 +275,10 @@ async function stageBrowserFile(file: File, id: string, staging: BrowserAttachme
   if (file.size > maxBytes) throw new BrowserAttachmentError("FILE_TOO_LARGE", `File is too large (maximum ${maxBytes / 1024 / 1024} MB)`);
   const metadata = { clientAttachmentId: id, name: file.name, mimeType: file.type || "application/octet-stream", size: file.size };
   if (chunked) return uploadAttachmentChunks(metadata,
-    async (offset, length) => new Uint8Array(await file.slice(offset, offset + length).arrayBuffer()),
+    async (offset, length) => readBlobBytes(file.slice(offset, offset + length)),
     { chunkBytes: staging.chunkBytes!, uploadChunk: staging.uploadChunk!, uploadCancel: staging.uploadCancel! }, signal);
   signal?.throwIfAborted();
-  const bytes = new Uint8Array(await file.arrayBuffer());
+  const bytes = await readBlobBytes(file);
   signal?.throwIfAborted();
   return staging.stage!({ ...metadata, source: { kind: "client-bytes", dataBase64: bytesToBase64(bytes) } }, signal);
 }

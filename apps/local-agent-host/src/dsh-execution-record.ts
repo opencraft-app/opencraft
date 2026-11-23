@@ -38,7 +38,7 @@ export class DshExecutionRecord {
   readonly record: Value;
   readonly telemetry = new DshExecutionTelemetry();
   private output: Array<{ method: string; params: Value }> = [];
-  constructor(readonly sessionId: string, readonly turnId: string, cwd: string) {
+  constructor(readonly sessionId: string, readonly turnId: string, cwd: string, private readonly stagedRoot?: string) {
     const clock = { now: () => this.now };
     const TurnManager = turnManagerImplementation(LocalService, () => `${turnId}:item:${this.seq}:${this.allocation++}`, clock);
     const Tools = toolImplementation(LocalService, undefined, clock);
@@ -132,7 +132,7 @@ export class DshExecutionRecord {
     if (data.chunk?.type === "reasoning-delta") telemetry.reasoningDeltaCount++;
     if (event.type === "user/message") {
       if (!["user", "human"].includes(data.source?.kind)) return this.output;
-      this.worker.active.pendingUserInputs.push({ input: userContent(data.content), clientId: data.source?.rpcId ?? null, projected: false });
+      this.worker.active.pendingUserInputs.push({ input: userContent(data.content, { stagedRoot: this.stagedRoot }), clientId: data.source?.rpcId ?? null, projected: false });
     }
     this.core.processSessionEvent(this.worker, this.worker.active, { event });
     return this.output;

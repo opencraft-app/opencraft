@@ -37,6 +37,8 @@ export interface ConversationDocumentContextValue {
   /** Fork through a completed native Turn, inclusive; omitted for cached/read-only views. */
   readonly onForkConversation?: () => Promise<void>;
   readonly onForkTurn?: (turnId: string) => Promise<void>;
+  /** Start a plain-text context handoff in a brand-new conversation. */
+  readonly onStartHandoff?: () => void;
   /** The main Composer is the sole live-resource presenter for this Turn. */
   readonly composerChangeSummaryTurnId?: string | null;
   /** Host maps AppServer-local image paths to a browser-readable URL. */

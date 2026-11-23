@@ -342,22 +342,25 @@ function TodoTimelineRenderer({ block }: TimelineBlockRendererProps) {
 
 function ErrorTimelineRenderer({ block, onRetry }: TimelineBlockRendererProps) {
   const intl = useIntl();
-  const forkConversation = useContext(ConversationDocumentContext).onForkConversation;
+  const { onForkConversation: forkConversation, onStartHandoff: startHandoff } = useContext(ConversationDocumentContext);
   const [forkState, setForkState] = useState<"idle" | "pending" | "failed">("idle");
   if (block.type !== "error") return null;
   const sessionBusy = /This Codex session is in use by another Codex client/u.test(block.message);
+  const accountChanged = block.code === "acpAccountMismatch";
   const message = sessionBusy
     ? intl.formatMessage({ id: "chat.nativeSession.busy", defaultMessage: "This conversation is open in another Codex client. Close it there to continue here, or keep its context in a new conversation. New conversations continue independently. Your unsent message stays here." })
-    : block.code === "acpPromptFailed"
-    ? intl.formatMessage({ id: "chat.agentRequestFailed", defaultMessage: "The Agent could not complete this response. You can continue to try again." })
-    : block.code === "acpPromptUnconfirmed"
-      ? intl.formatMessage({ id: "chat.agentRequestUnconfirmed", defaultMessage: "The Agent connection was interrupted and the response outcome is unknown. Check the conversation before trying again." }) : block.message;
+    : accountChanged
+      ? intl.formatMessage({ id: "chat.nativeSession.accountChanged", defaultMessage: "The signed-in Codex account changed, so this conversation's earlier encrypted reasoning cannot be read. Switch back to the original account, or keep the context in a new conversation." })
+      : block.code === "acpPromptFailed"
+        ? intl.formatMessage({ id: "chat.agentRequestFailed", defaultMessage: "The Agent could not complete this response. You can continue to try again." })
+        : block.code === "acpPromptUnconfirmed"
+          ? intl.formatMessage({ id: "chat.agentRequestUnconfirmed", defaultMessage: "The Agent connection was interrupted and the response outcome is unknown. Check the conversation before trying again." }) : block.message;
   if (block.recovery === "automatic") {
     return <div className="thread-stream-error" role="status"><CadencedShimmer active>{block.message}</CadencedShimmer></div>;
   }
   return (
     <aside
-      className={sessionBusy ? "thread-system-error thread-system-error--native-session" : "thread-system-error"}
+      className={sessionBusy || accountChanged ? "thread-system-error thread-system-error--native-session" : "thread-system-error"}
       data-error-code={block.code ?? undefined}
       role="alert"
     >
@@ -372,7 +375,10 @@ function ErrorTimelineRenderer({ block, onRetry }: TimelineBlockRendererProps) {
             ? { id: "chat.nativeSession.forking", defaultMessage: "Preparing conversation…" }
             : { id: "chat.nativeSession.fork", defaultMessage: "Continue in a new conversation" })}
       </Button> : null}
-      {onRetry && !sessionBusy && block.code !== "acpPromptUnconfirmed" ? (
+      {accountChanged && startHandoff ? <Button variant="secondary" size="sm" type="button" onClick={startHandoff}>
+        {intl.formatMessage({ id: "chat.nativeSession.fork", defaultMessage: "Continue in a new conversation" })}
+      </Button> : null}
+      {onRetry && !sessionBusy && !accountChanged && block.code !== "acpPromptUnconfirmed" ? (
         <Button variant="secondary" size="sm" className="thread-system-error__retry" type="button" onClick={onRetry}>
           <RotateCcw aria-hidden="true" size={14} />
           {intl.formatMessage({ id: "chat.continueResponse", defaultMessage: "Continue" })}
@@ -431,6 +437,7 @@ function Frame({
   thinkingLabel = "Thinking",
   showActions,
   onFork,
+  forkUnsupported = false,
   threadDetailLevel,
 }: {
   allowSingleSlotVirtualization: boolean;
@@ -443,6 +450,7 @@ function Frame({
   thinkingLabel?: "Thinking" | "Planning";
   showActions: boolean;
   onFork?: () => Promise<void>;
+  forkUnsupported?: boolean;
   threadDetailLevel: ConversationDetailLevel;
 }) {
   const intl = useIntl();
@@ -480,7 +488,7 @@ function Frame({
   const units = assistantPlan?.slots ?? [];
   const actions = visibleFrame.type === "assistant" ? assistantMessageActions(visibleFrame) : null;
   const assistantCopyText = actions?.completed ? actions.copyText : "";
-  const hasMessageActions = onFork !== undefined || assistantCopyText.length > 0 || onRetry !== undefined || visibleFrame.hookStats !== null;
+  const hasMessageActions = onFork !== undefined || forkUnsupported || assistantCopyText.length > 0 || onRetry !== undefined || visibleFrame.hookStats !== null;
   if (visibleFrame.type === "assistant"
     && units.length === 0
     && assistantPlan?.changeSummary == null
@@ -561,7 +569,7 @@ function Frame({
             const nodes = frameRef.current?.querySelectorAll<HTMLElement>("[data-assistant-copy-content] .opencraft-chat-document");
             return nodes?.length ? Array.from(nodes).map((node) => extractMarkdownElement(node).htmlText).join("\n") : null;
           }} /> : null}
-          {onFork === undefined ? null : <ForkTurnButton fork={onFork} />}
+          {onFork !== undefined ? <ForkTurnButton fork={onFork} /> : forkUnsupported ? <ForkTurnButton unsupported /> : null}
           {onRetry === undefined ? null : <button onClick={onRetry} type="button" title={intl.formatMessage({ id: "common.retry", defaultMessage: "Try again" })}><RotateCcw size={13} /></button>}
           {visibleFrame.hookStats == null ? null : <HookStatsButton detailLevel={threadDetailLevel} stats={visibleFrame.hookStats} />}
           <MessageTimestamp assistant sentAtMs={actions?.sentAtMs} />
@@ -634,6 +642,7 @@ function Turn({
           showActions
           onFork={forkTurn !== undefined && ["complete", "failed", "interrupted"].includes(turn.status)
             ? () => forkTurn(turn.turnId) : undefined}
+          forkUnsupported={forkTurn === undefined && ["complete", "failed", "interrupted"].includes(turn.status)}
           thinkingId={turnThinking?.placeholderId ?? null}
           thinkingLabel={turnThinking?.label}
           threadDetailLevel={threadDetailLevel}

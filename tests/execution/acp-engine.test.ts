@@ -733,6 +733,7 @@ test("Codex branches a locked source without resuming or prompting it, persists 
     return true;
   });
   assert.deepEqual(await f.engine.request("opencraft/agent-session/status", { threadId: source.id }, client), { fork: true, release: true, loaded: false });
+  assert.equal((f.engine.extensions["opencraft/thread-lifecycle"] as { fork?: boolean }).fork, true);
   const before = (await f.calls()).length;
   const reply = await f.engine.request("thread/fork", { threadId: source.id, excludeTurns: true }, client);
   assert.notEqual(reply.thread.id, source.id);
@@ -770,6 +771,7 @@ test("native branching fails closed for unsupported peers and unsupported fork b
   const f = await fixture(t, { id: "codex" });
   const { thread } = await f.engine.request("thread/start", {}, client);
   assert.equal((await f.engine.request("opencraft/agent-session/status", { threadId: thread.id }, client)).fork, false);
+  assert.equal((f.engine.extensions["opencraft/thread-lifecycle"] as { fork?: boolean }).fork ?? false, false);
   await assert.rejects(f.engine.request("thread/fork", { threadId: thread.id }, client), /unavailable/);
   const supported = await fixture(t, { id: "codex", env: { ACP_TEST_SESSION_HANDOFF: "1" } });
   const source = await supported.engine.request("thread/start", {}, client);
@@ -981,4 +983,288 @@ test("Cursor failed refresh keeps its last catalog and cleans up the failed disc
   await writeFile(path, JSON.stringify([{ modelId: "recovered", name: "Recovered" }]));
   await f.engine.request("opencraft/models/refresh", { threadId: thread.id }, client);
   assert.deepEqual((await f.engine.request("model/list", {}, client)).data.map((model: any) => model.id), ["cursor:recovered"]);
+});
+
+test("Codex recycles its idle shared transport on account switch without restarting on routine token refresh, and classifies cross-account encrypted reasoning errors", async t => {
+  const codexHome = await mkdtemp(join(tmpdir(), "codex-auth-switch-"));
+  t.after(() => rm(codexHome, { recursive: true, force: true }));
+  const authPath = join(codexHome, "auth.json");
+  await writeFile(authPath, JSON.stringify({
+    auth_mode: "chatgpt",
+    tokens: { account_id: "account-one", login_owner_id: "owner-one", access_token: "tok-1", refresh_token: "ref-1" },
+    last_refresh: "2026-11-21T00:00:00Z",
+  }));
+  const f = await fixture(t, { id: "codex", env: { CODEX_HOME: codexHome } });
+  const { thread } = await f.engine.request("thread/start", {}, client);
+  const firstPid = f.engine.processId;
+  assert.ok(firstPid);
+
+  // Routine OAuth token refresh for the same account must not recycle the transport.
+  await writeFile(authPath, JSON.stringify({
+    auth_mode: "chatgpt",
+    tokens: { account_id: "account-one", login_owner_id: "owner-one", access_token: "tok-2", refresh_token: "ref-2" },
+    last_refresh: "2026-11-21T01:00:00Z",
+  }));
+  await f.engine.request("opencraft/agent-session/status", { threadId: thread.id }, client);
+  assert.equal(f.engine.processId, firstPid);
+
+  // Switching to another Codex account recycles the idle shared transport and marks old sessions unloaded.
+  await writeFile(authPath, JSON.stringify({
+    auth_mode: "chatgpt",
+    tokens: { account_id: "account-two", login_owner_id: "owner-two", access_token: "tok-3", refresh_token: "ref-3" },
+    last_refresh: "2026-11-21T02:00:00Z",
+  }));
+  const statusAfterSwitch = await f.engine.request("opencraft/agent-session/status", { threadId: thread.id }, client);
+  assert.notEqual(f.engine.processId, firstPid);
+  assert.equal(statusAfterSwitch.loaded, false);
+
+  // Prompting a thread whose earlier reasoning was encrypted by the old account records acpAccountMismatch.
+  await f.engine.request("turn/start", { threadId: thread.id, input: [{ type: "text", text: "fail:account-mismatch" }] }, client);
+  await until(() => (f.engine as any).state(thread.id).active?.status === "failed");
+  const failed = (f.engine as any).state(thread.id).active;
+  assert.equal(failed.items.at(-1)?.code, "acpAccountMismatch");
+});
+
+test("ACP captures available_commands_update during session/new, skips $-skill mirrors, and persists slash catalog", async t => {
+  const events: Array<{ method: string; params: any }> = [];
+  const advertised = [
+    { name: "goal", description: "Set a goal for the agent to pursue", input: { hint: "[<objective>|clear|pause|resume]" } },
+    { name: "custom-audit", description: "Run repository audit", input: { hint: "<target>" } },
+    { name: "$repo-skill", description: "Skill mirror should stay in $ catalog" },
+  ];
+  const f = await fixture(t, {
+    id: "cursor",
+    env: { ACP_TEST_AVAILABLE_COMMANDS: JSON.stringify(advertised) },
+  });
+  f.engine.subscribe((method, params) => events.push({ method, params }));
+  const coldCatalog = await f.engine.request("slashCommand/list", {}, client);
+  assert.equal(coldCatalog.data.some((cmd: any) => cmd.name === "goal"), true);
+  assert.equal(coldCatalog.data.some((cmd: any) => cmd.name === "simplify"), true);
+
+  const { thread } = await f.engine.request("thread/start", {}, client);
+  assert.equal(events.some(event => event.method === "opencraft/slash-commands/changed"), true);
+  const liveCatalog = await f.engine.request("slashCommand/list", { threadId: thread.id }, client);
+  assert.equal(liveCatalog.data.some((cmd: any) => cmd.name === "custom-audit" && cmd.inputHint === "<target>"), true);
+  assert.equal(liveCatalog.data.some((cmd: any) => cmd.name.startsWith("$")), false);
+
+  await f.engine.close();
+  const cold = new AcpEngine(f.engineOptions);
+  try {
+    const persisted = await cold.request("slashCommand/list", {}, client);
+    assert.equal(persisted.data.some((cmd: any) => cmd.name === "custom-audit"), true);
+    assert.equal(cold.processId, null);
+  } finally {
+    await cold.close();
+  }
+});
+
+test("Codex ACP supports persistent thread goals via RPC and /goal slash prompts while preserving cold empty history on /status", async t => {
+  const events: Array<{ method: string; params: any }> = [];
+  const f = await fixture(t, {
+    id: "codex",
+    env: { ACP_TEST_GOAL: "1" },
+  });
+  f.engine.subscribe((method, params) => events.push({ method, params }));
+  assert.deepEqual(f.engine.extensions["opencraft/thread-goal"], {
+    version: 1,
+    read: true,
+    write: true,
+    usageAccounting: false,
+  });
+
+  const { thread } = await f.engine.request("thread/start", {}, client);
+  assert.deepEqual(await f.engine.request("thread/goal/get", { threadId: thread.id }, client), { goal: null });
+
+  // Local-only slash command (/status) runs on ACP without marking native rollout history non-empty.
+  await f.engine.request("turn/start", { threadId: thread.id, input: [{ type: "text", text: "/status" }] }, client);
+  await until(() => (f.engine as any).state(thread.id).active?.status === "completed");
+  assert.equal((f.engine as any).session(thread.id).nativeHistoryEmpty, true);
+
+  // Setting a goal via ThreadGoalSurface RPC dispatches /goal <objective> on the session and emits thread/goal/updated.
+  const created = await f.engine.request("thread/goal/set", { threadId: thread.id, objective: "Ship slash commands" }, client);
+  assert.equal(created.goal.objective, "Ship slash commands");
+  assert.equal(created.goal.status, "active");
+  assert.equal(events.some(event => event.method === "thread/goal/updated" && event.params?.goal?.objective === "Ship slash commands"), true);
+  await until(() => (f.engine as any).state(thread.id).active?.status === "completed");
+  const callsAfterSet = await f.calls();
+  assert.equal(callsAfterSet.some(call => call.method === "session/prompt" && call.promptText === "/goal Ship slash commands"), true);
+
+  // Pausing via ThreadGoalSurface RPC invokes _session/goal pause without starting a prompt turn.
+  const paused = await f.engine.request("thread/goal/set", { threadId: thread.id, status: "paused" }, client);
+  assert.equal(paused.goal.status, "paused");
+  assert.equal((await f.calls()).some(call => call.method === "_session/goal" && call.action === "pause"), true);
+
+  // Submitting /goal resume and /goal clear directly in the Composer synchronizes the Goal resource!
+  await f.engine.request("turn/start", { threadId: thread.id, input: [{ type: "text", text: "/goal resume" }] }, client);
+  await until(() => (f.engine as any).state(thread.id).active?.status === "completed");
+  assert.equal((await f.engine.request("thread/goal/get", { threadId: thread.id }, client)).goal?.status, "active");
+
+  await f.engine.request("turn/start", { threadId: thread.id, input: [{ type: "text", text: "/goal clear" }] }, client);
+  await until(() => (f.engine as any).state(thread.id).active?.status === "completed");
+  assert.deepEqual(await f.engine.request("thread/goal/get", { threadId: thread.id }, client), { goal: null });
+  assert.equal(events.some(event => event.method === "thread/goal/cleared" && event.params?.threadId === thread.id), true);
+});
+
+test("ACP turns and queued inputs support Host-staged file attachments, workspace mentions, and explicit skills", async t => {
+  const stagedFile = join(tmpdir(), `acp-staged-${Date.now()}-${Math.random().toString(16).slice(2)}.pptx`);
+  await writeFile(stagedFile, "slides-binary-payload");
+  t.after(() => rm(stagedFile, { force: true }));
+  const f = await fixture(t, {
+    id: "codex",
+    env: { ACP_TEST_IMAGES: "1", ACP_TEST_MODELS: "1" },
+    resolveStagedAttachment: async (name: string, path: string) =>
+      path === stagedFile ? { id: "att-1", name, path: stagedFile } : null,
+  });
+  const workspaceDoc = join(f.root, "口播文案_15分钟.md");
+  const skillDir = join(f.root, "demo-skill");
+  await writeFile(workspaceDoc, "# 口播文案");
+  await (await import("node:fs/promises")).mkdir(skillDir, { recursive: true });
+  await writeFile(join(skillDir, "SKILL.md"), "Follow the Remotion slide timing rules.");
+
+  const { thread } = await f.engine.request("thread/start", {}, client);
+  const input = [
+    { type: "text", text: "合成完整 PPT", text_elements: [] },
+    { type: "mention", name: "Hy4&Hy4 flash&Token Plan.pptx", path: stagedFile },
+    { type: "mention", name: "口播文案_15分钟.md", path: workspaceDoc },
+    { type: "skill", name: "demo-skill", path: skillDir },
+    { type: "image", url: `data:image/png;base64,${imageData}` },
+  ];
+  const started = await f.engine.request("turn/start", { threadId: thread.id, clientUserMessageId: "mixed-attachments", input }, client);
+  await until(() => (f.engine as any).state(thread.id).active?.status === "completed");
+
+  const userContent = started.turn.items[0].content;
+  assert.equal(userContent[0].type, "text");
+  assert.equal(userContent[0].text, "合成完整 PPT");
+  assert.equal(userContent[1].type, "text");
+  assert.equal(userContent[1].text_elements[0].placeholder, "opencraft:staged-file:v1");
+  assert.deepEqual(userContent[2], { type: "mention", name: "Hy4&Hy4 flash&Token Plan.pptx", path: stagedFile });
+  assert.deepEqual(userContent[3], { type: "mention", name: "口播文案_15分钟.md", path: workspaceDoc });
+  assert.deepEqual(userContent[4], { type: "skill", name: "demo-skill", path: join(skillDir, "SKILL.md") });
+  assert.deepEqual(userContent[5], { type: "image", url: `data:image/png;base64,${imageData}` });
+
+  const sessionState = (f.engine as any).session(thread.id);
+  assert.equal(sessionState.name, "合成完整 PPT");
+  assert.equal(sessionState.preview, "合成完整 PPT");
+
+  const promptCall = (await f.calls()).find(call => call.method === "session/prompt");
+  assert.equal(promptCall.prompt.length, 5);
+  assert.match(promptCall.prompt[1].text, /The user attached a file named "Hy4&Hy4 flash&Token Plan\.pptx"/);
+  assert.match(promptCall.prompt[2].text, /Attached workspace reference/);
+  assert.match(promptCall.prompt[3].text, /User-selected skill[\s\S]*Follow the Remotion slide timing rules\./);
+  assert.deepEqual(promptCall.prompt[4], { type: "image", mimeType: "image/png", data: imageData });
+
+  // Also verify thread/queue/add preserves portable mention/skill entries without leaking synthetic locator text.
+  (f.engine as any).state(thread.id).active = { id: "busy", delegationId: null, items: [], status: "inProgress" };
+  const queued = await f.engine.request("thread/queue/add", {
+    threadId: thread.id,
+    clientUserMessageId: "queued-mixed-attachments",
+    input: [
+      { type: "text", text: "后续补充", text_elements: [] },
+      { type: "mention", name: "Hy4&Hy4 flash&Token Plan.pptx", path: stagedFile },
+    ],
+  }, client);
+  assert.deepEqual(queued.queuedSubmission.input, [
+    { type: "text", text: "后续补充", text_elements: [] },
+    { type: "mention", name: "Hy4&Hy4 flash&Token Plan.pptx", path: stagedFile },
+  ]);
+});
+
+test("ACP publishes thread/status/changed and active thread/list status across turn execution", async t => {
+  const notices: Array<{ method: string; params: any }> = [];
+  const f = await fixture(t, {
+    id: "codex",
+    env: { ACP_TEST_WAIT_MS: "200" },
+  });
+  f.engine.subscribe((method, params) => notices.push({ method, params }));
+  const { thread } = await f.engine.request("thread/start", {}, client);
+  await f.engine.request("turn/start", { threadId: thread.id, input: [{ type: "text", text: "wait:running-check" }] }, client);
+
+  const duringRun = await f.engine.request("thread/list", {}, client);
+  assert.deepEqual(duringRun.data.find((row: any) => row.id === thread.id)?.status, { type: "active", activeFlags: [] });
+  assert.equal(
+    notices.some(n => n.method === "thread/status/changed" && n.params?.threadId === thread.id && n.params?.status?.type === "active"),
+    true,
+  );
+
+  await until(() => notices.some(n => n.method === "turn/completed" && n.params?.threadId === thread.id));
+  const afterRun = await f.engine.request("thread/list", {}, client);
+  assert.deepEqual(afterRun.data.find((row: any) => row.id === thread.id)?.status, { type: "idle" });
+  assert.equal(
+    notices.some(n => n.method === "thread/status/changed" && n.params?.threadId === thread.id && n.params?.status?.type === "idle"),
+    true,
+  );
+});
+
+test("Codex ACP streams autonomous multi-turn goal continuations, observes update_goal completion, and disarms cold restores", async t => {
+  let nativeTurns: any[] = [];
+  let nativeGoal: any = undefined;
+  const notices: Array<{ method: string; params: any }> = [];
+  const f = await fixture(t, {
+    id: "codex",
+    env: { ACP_TEST_GOAL: "1" },
+    history: {
+      async read() { return { data: nativeTurns, nextCursor: null }; },
+      async goal() { return nativeGoal; },
+    },
+  });
+  f.engine.subscribe((method, params) => notices.push({ method, params }));
+  const { thread } = await f.engine.request("thread/start", {}, client);
+  await f.engine.request("thread/goal/set", { threadId: thread.id, objective: "Check all 47,603 sessions" }, client);
+  await until(() => (f.engine as any).state(thread.id).active?.status === "completed");
+
+  // Simulate Codex autonomous Round 2 (`turn_trigger: "goal"`) streaming chunks & calling update_goal({ status: "complete" })!
+  const session = (f.engine as any).session(thread.id);
+  notices.length = 0;
+  (f.engine as any).update("session/update", {
+    sessionId: session.nativeId,
+    update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "线上 10% 抽样已检查完。" } },
+  }, thread.id);
+  assert.equal((f.engine as any).state(thread.id).active?.status, "inProgress");
+  assert.equal(notices.some(n => n.method === "turn/started" && n.params?.threadId === thread.id), true);
+
+  const completedGoal = {
+    threadId: session.nativeId,
+    objective: "Check all 47,603 sessions",
+    status: "complete",
+    tokensUsed: 263345,
+    timeUsedSeconds: 3518,
+    createdAt: session.goal.createdAt,
+    updatedAt: session.goal.updatedAt + 3518,
+  };
+  nativeGoal = completedGoal;
+  (f.engine as any).update("session/update", {
+    sessionId: session.nativeId,
+    update: {
+      sessionUpdate: "tool_call_update",
+      toolCallId: "goal-complete-1",
+      title: "exec",
+      status: "completed",
+      rawOutput: `Script completed\n${JSON.stringify({ goal: completedGoal })}`,
+    },
+  }, thread.id);
+
+  assert.equal((await f.engine.request("thread/goal/get", { threadId: thread.id }, client)).goal?.status, "complete");
+  assert.equal(notices.some(n => n.method === "thread/goal/updated" && n.params?.goal?.status === "complete"), true);
+
+  nativeTurns = [{ id: "round-2", status: "completed", completedAtMs: Date.now() + 50, items: [] }];
+  (f.engine as any).update("session/update", {
+    sessionId: session.nativeId,
+    update: { sessionUpdate: "usage_update", used: 125366, size: 475000 },
+  }, thread.id);
+  await until(() => (f.engine as any).state(thread.id).active?.status === "completed");
+  assert.equal(notices.some(n => n.method === "turn/completed" && n.params?.threadId === thread.id), true);
+
+  // Also verify cold restore disarms an active goal so UI shows Resume rather than falsely claiming live execution.
+  nativeGoal = { ...completedGoal, status: "active" };
+  session.goal = { ...session.goal, status: "active", updatedAt: completedGoal.updatedAt, execution: { activation: "armed" } };
+  await (f.engine as any).save(session);
+  await f.engine.close();
+  const cold = new AcpEngine({ ...f.engineOptions, id: "codex" });
+  try {
+    const coldGoal = (await cold.request("thread/goal/get", { threadId: thread.id }, client)).goal;
+    assert.equal(coldGoal?.status, "active");
+    assert.equal(coldGoal?.execution?.activation, "disarmed");
+  } finally {
+    await cold.close();
+  }
 });

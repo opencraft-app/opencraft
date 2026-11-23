@@ -645,7 +645,10 @@ test("temporary Pi fork inherits committed context, stays memory-only and closes
   await f.engine.request("thread/unsubscribe", { threadId }, noTools);
   await assert.rejects(f.engine.request("thread/read", { threadId }, noTools), /not found/);
   assert.deepEqual((await readdir(f.directory)).filter(file => !file.endsWith(".tmp")).sort(), files);
-  await assert.rejects(f.engine.request("thread/fork", { threadId: parent.thread.id }, noTools), /temporary forks/);
+  const durableFork = await f.engine.request("thread/fork", { threadId: parent.thread.id }, noTools);
+  assert.equal(durableFork.thread.forkedFromId, parent.thread.id);
+  assert.ok((await f.engine.request("thread/list", {}, noTools)).data.some((row: any) => row.id === durableFork.thread.id));
+  await assert.rejects(f.engine.request("thread/fork", { threadId: parent.thread.id, lastTurnId: "turn-1" }, noTools), /full conversation/);
 });
 
 test("Pi side chat opens through the shared service over the actual Engine Host", async t => {
@@ -663,7 +666,7 @@ test("Pi side chat opens through the shared service over the actual Engine Host"
   } });
   t.after(() => runtime.dispose()); await runtime.connect();
   const parent = await runtime.resources.threads.start({ model: piModel("faux", "faux-1"), cwd: f.directory });
-  assert.equal(runtime.resources.threads.capabilities(parent.id).fork, false);
+  assert.equal(runtime.resources.threads.capabilities(parent.id).fork, true);
   assert.equal(runtime.resources.threads.supportsSideChat!(parent.id), true);
   const service = new SideChatService(new Context(), { resolveHost: async () => runtime });
   t.after(() => service.close("side-one"));

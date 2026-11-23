@@ -211,3 +211,49 @@ test("catalog notifications read manual title precedence from memory and native 
     try { assert.equal(catalog.manualTitle("a"), "User title"); } finally { database.prepare = prepare; }
   } finally { catalog.close(); }
 });
+
+test("thread/list and thread/read preserve live active status for paginated and background threads without resurrecting stale saved active state", async () => {
+  const catalog = new ThreadCatalog();
+  const service = new ThreadLifecycle(catalog, async () => ({ released: true }), () => {});
+  try {
+    let codexRunning = true;
+    const delegate = async (method: string) => method === "thread/list"
+      ? {
+          data: [
+            {
+              id: "codex_running",
+              cwd: "/workspace",
+              updatedAt: 20,
+              status: codexRunning ? { type: "active", activeFlags: [] } : { type: "idle" },
+            },
+            {
+              id: "codex_idle",
+              cwd: "/workspace",
+              updatedAt: 10,
+              status: { type: "idle" },
+            },
+          ],
+          nextCursor: null,
+        }
+      : {
+          thread: {
+            id: "codex_running",
+            cwd: "/workspace",
+            turns: [],
+            status: codexRunning ? { type: "active", activeFlags: [] } : { type: "idle" },
+          },
+        };
+    const runningList = await service.dispatch("thread/list", {}, "client", delegate);
+    assert.deepEqual(runningList.data[0]?.status, { type: "active", activeFlags: [] });
+    assert.deepEqual(runningList.data[1]?.status, { type: "notLoaded" });
+
+    const runningRead = await service.dispatch("thread/read", { threadId: "codex_running", watch: true }, "client", delegate);
+    assert.deepEqual(runningRead.thread.status, { type: "active", activeFlags: [] });
+
+    codexRunning = false;
+    const settledList = await service.dispatch("thread/list", {}, "client", delegate);
+    assert.deepEqual(settledList.data[0]?.status, { type: "notLoaded" });
+  } finally {
+    await service.close();
+  }
+});

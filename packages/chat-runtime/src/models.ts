@@ -10,6 +10,7 @@ import type {
   TimelineSnapshot,
   TurnId,
 } from "@opencraft/chat-core";
+import type { ComposerDocument } from "@opencraft/composer-core";
 import type {
   CommandExecutionApprovalDecision,
   FileChangeApprovalDecision,
@@ -40,6 +41,7 @@ export interface QueuedSubmission {
   readonly commandId: string;
   readonly clientMessageId: string;
   readonly serverSubmissionId: string | null;
+  readonly document?: ComposerDocument;
   readonly input: readonly UserInput[];
   readonly preview: string;
   readonly state: "submitting" | "queued" | "failed" | "unknown";

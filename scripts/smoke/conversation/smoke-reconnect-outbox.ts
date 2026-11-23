@@ -91,14 +91,41 @@ try {
     const cancelled = page.locator(".opencraft-composer-queue-item").filter({ hasText: "cancel this" });
     await cancelled.getByRole("button", { name: "Delete queued message", exact: true }).click();
     assert.equal(await page.locator(".opencraft-composer-queue-item").count(), 2);
+
+    // Unsent local outbox messages can be edited in place (preserving any active Composer draft) across touch and desktop.
+    await editor.fill("working draft while offline");
+    const firstRow = page.locator(".opencraft-composer-queue-item").filter({ hasText: "first offline message" });
+    assert.equal(await firstRow.getByRole("button", { name: "Edit queued message", exact: true }).isDisabled(), false);
+    const editBtn = firstRow.getByRole("button", { name: "Edit queued message", exact: true });
+    if (width === 390) await editBtn.tap(); else await editBtn.click();
+    await page.waitForFunction(() => document.querySelector(".opencraft-composer-editor")?.textContent === "first offline message");
+    const editingRow = page.locator(".opencraft-composer-queue-item").first();
+    const cancelEditBtn = editingRow.getByRole("button", { name: "Cancel editing queued message", exact: true });
+    if (width === 390) await cancelEditBtn.tap(); else await cancelEditBtn.click();
+    await page.waitForFunction(() => document.querySelector(".opencraft-composer-editor")?.textContent === "working draft while offline");
+
+    if (width === 390) await editBtn.tap(); else await editBtn.click();
+    await page.waitForFunction(() => document.querySelector(".opencraft-composer-editor")?.textContent === "first offline message");
+    await editor.fill("first offline message edited");
+    if (width === 390) await send.tap(); else await send.click();
+    await page.waitForFunction(() => document.querySelector(".opencraft-composer-queue-item")?.textContent?.includes("first offline message edited"));
+    assert.equal(await editor.textContent(), "working draft while offline");
+    await editor.fill("");
+
     assert.equal(calls.filter(call => call.method === "thread/queue/add").length, before);
     assert.equal(await page.getByRole("button", { name: "Resume", exact: true }).count(), 0);
     await page.screenshot({ path: `${output}/${width}-${theme}-waiting.png` });
     // Cover both same-tab reload and an uninterrupted automatic reconnect.
-    online = true; if (theme === "light") await page.reload(); await page.waitForSelector('[data-authoritative="true"]');
+    if (theme === "light") {
+      page.once("request", req => { if (new URL(req.url()).pathname === "/") online = true; });
+      await page.reload();
+    } else {
+      online = true;
+    }
+    await page.waitForSelector('[data-authoritative="true"]');
     await page.waitForFunction(() => (window as any).fixture.snapshot().queuedSubmissions.every((row: any) => !row.local));
     const adds = calls.filter(call => call.method === "thread/queue/add").slice(before);
-    assert.deepEqual(adds.map(call => call.params.input[0].text), ["first offline message", "second offline message"]);
+    assert.deepEqual(adds.map(call => call.params.input[0].text), ["first offline message edited", "second offline message"]);
     assert.equal(rows.length, 2);
     // A rejected storage write must retain input even with a running Turn.
     online = false; for (const ws of sockets.clients) ws.close(1012, "storage test");

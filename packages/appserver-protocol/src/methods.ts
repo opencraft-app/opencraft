@@ -604,6 +604,14 @@ export interface AppServerMethodMap extends PersonalMachinesMethodMap, ThreadAcc
     params: PermissionProfileListParams;
     result: PermissionProfileListResponse;
   };
+  "opencraft/slash-commands/list": {
+    params: import("./slash-commands").ScopedSlashCommandListParams;
+    result: import("./slash-commands").SlashCommandListResponse;
+  };
+  "slashCommand/list": {
+    params: import("./slash-commands").ScopedSlashCommandListParams;
+    result: import("./slash-commands").SlashCommandListResponse;
+  };
   "skills/list": {
     params: SkillsListParams;
     result: SkillsListResponse;

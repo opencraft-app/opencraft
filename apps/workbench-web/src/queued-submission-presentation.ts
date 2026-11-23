@@ -46,7 +46,7 @@ export function queuedSubmissionPresentation(
     : submission.pausedReason === "outbox-unconfirmed"
       ? { id: "chat.outbox.unconfirmed", defaultMessage: "Delivery unconfirmed · check the conversation before sending again" }
       : submission.pausedReason === "outbox-failed"
-        ? { id: "chat.outbox.failed", defaultMessage: "Message not sent · remove it and retry after reconnect" }
+        ? { id: "chat.outbox.failed", defaultMessage: "Message not sent · edit to retry after reconnect, or remove it" }
         : submission.pausedReason === "user-stopped"
           ? { id: "chat.queue.pausedAfterStop", defaultMessage: "Paused after stopping. Resume when ready." }
           : submission.pausedReason === "delivery-failed"
@@ -59,11 +59,15 @@ export function queuedSubmissionPresentation(
     state: submission.state,
     operation: submission.operation,
     actionable: submission.serverSubmissionId !== null,
+    editable: submission.serverSubmissionId !== null
+      || (submission.local === true && submission.state !== "submitting"),
     steerable: ["execution-recovering", "execution-fault-unconfirmed", "execution-interrupted"].includes(submission.pausedReason ?? "") ? false : submission.steerable,
     resumable: !["execution-recovering", "execution-fault-unconfirmed", "execution-interrupted"].includes(submission.pausedReason ?? ""),
     dismissible: (submission.local === true && submission.state !== "submitting") || (submission.state === "failed" && submission.serverSubmissionId === null),
     reorderable: !submission.local && reorderable,
-    editableContent: restoreQueuedInput(submission.input),
+    editableContent: submission.document
+      ? { document: submission.document, attachments: [], context: [] }
+      : restoreQueuedInput(submission.input),
     pausedReason: statusMessage ? intl?.formatMessage(statusMessage) ?? statusMessage.defaultMessage : submission.pausedReason,
     error: submission.error?.message ?? null,
   };

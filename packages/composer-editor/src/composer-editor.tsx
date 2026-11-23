@@ -11,7 +11,22 @@ import type { ComposerModelMenu as ComposerModelMenuComponent } from "./composer
 import { modelChoiceFamilies } from "./model-choice-families";
 import { modelEffortLabel, modelIdentifierPresentation } from "./model-choice-labels";
 import { ModelIcon as BrainCircuit, CheckIcon as Check, ChevronDownIcon as ChevronDown, AttachmentIcon as Paperclip, AddIcon as Plus, CloseIcon as X } from "@opencraft/design-system-web/action-icons";
-import { LoadingRingIcon, ResetIcon, LightningIcon, PermissionDocumentIcon, PermissionShieldIcon, StopCircleIcon } from "@opencraft/design-system-web/action-icons";
+import {
+  ChecklistIcon,
+  EditIcon,
+  ForkIcon,
+  GaugeIcon,
+  LoadingRingIcon,
+  ResetIcon,
+  LightningIcon,
+  PermissionDocumentIcon,
+  PermissionShieldIcon,
+  PlugIcon,
+  SearchIcon,
+  StopCircleIcon,
+  TargetIcon,
+  TerminalIcon,
+} from "@opencraft/design-system-web/action-icons";
 import { SessionModelPicker } from "./session-model-picker";
 import { useInputAuxiliaryMenuFocus } from "./use-input-auxiliary-menu-focus";
 import { recoveryPlaceholderShimmerMotion } from "@opencraft/design-system/tokens";
@@ -112,6 +127,8 @@ interface Suggestion {
   kind: SuggestionKind;
   label: string;
   detail: string;
+  inputHint?: string | null;
+  source?: ComposerShortcutCommand["source"];
   uri?: string | null;
   metadata?: Readonly<Record<string, unknown>>;
   submitOnSelect?: boolean;
@@ -120,6 +137,8 @@ interface Suggestion {
 export interface ComposerShortcutCommand {
   readonly name: string;
   readonly description: string;
+  readonly inputHint?: string | null;
+  readonly source?: "builtin" | "agent" | "extension" | "skill" | "host";
   /** Selecting a standalone local action is its explicit execution gesture. */
   readonly submitOnSelect?: boolean;
 }
@@ -327,6 +346,35 @@ function displayPermissionDescription(permission: ComposerPermissionOption, intl
   // Engine-owned custom profiles retain their supplied policy description.
   return permission.mode == null || !permission.description || !intl.locale.startsWith("zh")
     ? permission.description : intl.formatMessage(permissionDescriptionMessages[permission.mode]);
+}
+
+function commandSuggestionIcon(name: string): ReactNode {
+  const normalized = name.toLowerCase();
+  if (normalized === "goal") return <TargetIcon size={15} />;
+  if (normalized === "side" || normalized === "fork" || normalized === "split-to-prs") return <ForkIcon size={15} />;
+  if (normalized.startsWith("review") || normalized.endsWith("-review")) return <SearchIcon size={15} />;
+  if (normalized === "plan" || normalized === "autopilot" || normalized === "loop") return <ChecklistIcon size={15} />;
+  if (normalized === "mcp") return <PlugIcon size={15} />;
+  if (normalized === "skills" || normalized === "simplify" || normalized === "init") return <Sparkles size={15} />;
+  if (normalized === "status" || normalized === "cost" || normalized === "doctor" || normalized === "usage") return <GaugeIcon size={15} />;
+  if (normalized === "rename" || normalized === "rename-chat") return <EditIcon size={15} />;
+  if (normalized === "permission" || normalized === "permissions") return <PermissionShieldIcon size={15} />;
+  if (normalized === "shell") return <TerminalIcon size={15} />;
+  return <LightningIcon size={15} />;
+}
+
+function rankCommandSuggestion(suggestion: Suggestion, rawQuery: string): number {
+  const query = rawQuery.trim().toLowerCase();
+  if (!query) return 0;
+  const label = suggestion.label.toLowerCase();
+  if (label === query) return 0;
+  if (label.startsWith(query)) return 1;
+  const labelIndex = label.indexOf(query);
+  if (labelIndex !== -1) return 2 + Math.min(labelIndex, 10) * 0.01;
+  if (suggestion.detail.toLowerCase().includes(query) || (suggestion.inputHint?.toLowerCase().includes(query) ?? false)) {
+    return 3;
+  }
+  return -1;
 }
 
 const localCommandSuggestions: Suggestion[] = [
@@ -579,6 +627,26 @@ function createPlaceholderPlugin(placeholder: () => string, pending: () => boole
         }
         const first = state.doc.firstChild;
         if (
+          state.doc.childCount === 1 &&
+          first?.type.name === "paragraph" &&
+          first.childCount >= 1 &&
+          first.childCount <= 2 &&
+          first.child(0).type.name === "token" &&
+          first.child(0).attrs.kind === "command" &&
+          (first.childCount === 1 || (first.child(1).isText && first.child(1).text === " "))
+        ) {
+          const rawPayload = first.child(0).attrs.payload as { metadata?: { inputHint?: unknown } } | null;
+          const hint = typeof rawPayload?.metadata?.inputHint === "string"
+            ? rawPayload.metadata.inputHint.trim()
+            : "";
+          if (hint) {
+            return DecorationSet.create(state.doc, [Decoration.node(0, first.nodeSize, {
+              class: "opencraft-composer-command-hint-line",
+              "data-command-hint": first.childCount === 1 ? ` ${hint}` : hint,
+            })]);
+          }
+        }
+        if (
           state.doc.childCount !== 1 ||
           first?.type.name !== "paragraph" ||
           first.content.size !== 0
@@ -661,7 +729,7 @@ function querySuggestion(state: EditorState): SuggestionQuery | null {
   append(/(?:^|[\s([{])\$([^$]*)$/u.exec(beforeCursor), "skill");
   append(/(?:^|[\s([{])@([^@]*)$/u.exec(beforeCursor), "mention");
   append(
-    /(?:^|\s)\/([\p{L}\p{N}\p{M}.:_/\\-]*)$/u.exec(beforeCursor),
+    /(?:^|\s)\/([\p{L}\p{N}\p{M}.:_-]*)$/u.exec(beforeCursor),
     "command",
   );
   return matches.sort((left, right) => right.from - left.from)[0] ?? null;
@@ -724,6 +792,8 @@ export interface ComposerQueuedSubmissionPresentation {
   readonly state: "submitting" | "queued" | "failed" | "unknown";
   readonly operation: "idle" | "updating" | "deleting" | "starting";
   readonly actionable: boolean;
+  /** Whether the queued content can be loaded into the Composer and updated. */
+  readonly editable?: boolean;
   /** Accept Steer intent while queue custody is still being acknowledged. */
   readonly steerable?: boolean;
   readonly dismissible?: boolean;
@@ -1227,17 +1297,20 @@ export const OpenCraftComposer = forwardRef<
     kind: "command",
     label: command.name,
     detail: command.description,
+    inputHint: command.inputHint,
+    source: command.source,
+    metadata: command.inputHint ? { inputHint: command.inputHint } : undefined,
     submitOnSelect: command.submitOnSelect,
   })) ?? localCommandSuggestions;
   const filteredSuggestions =
     suggestionQuery == null
       ? []
       : suggestionQuery.kind === "command"
-        ? commandSuggestions.filter((suggestion) =>
-            suggestion.label
-              .toLowerCase()
-              .includes(suggestionQuery.query.toLowerCase()),
-          )
+        ? commandSuggestions
+            .map((suggestion, index) => ({ suggestion, index, rank: rankCommandSuggestion(suggestion, suggestionQuery.query) }))
+            .filter((entry) => entry.rank >= 0)
+            .sort((left, right) => left.rank - right.rank || left.index - right.index)
+            .map((entry) => entry.suggestion)
         : !catalogSearchActive
           ? []
           : catalogSuggestions;
@@ -1390,7 +1463,7 @@ export const OpenCraftComposer = forwardRef<
       )
         return;
       if (
-        !item.actionable ||
+        !(item.editable ?? item.actionable) ||
         pendingSubmissionRef.current?.controller === controller
       )
         return;
@@ -1462,7 +1535,7 @@ export const OpenCraftComposer = forwardRef<
         await activeHandoff.onSubmit();
         return;
       }
-      if (isStreaming && (admittedFollowUpAction === null
+      if (editingQueuedSubmissionId === null && isStreaming && (admittedFollowUpAction === null
         || (followUpActionOverride !== undefined && availableFollowUpActions?.includes(followUpActionOverride) === false))) return;
       let intent: SubmitIntent;
       try {
@@ -1557,9 +1630,15 @@ export const OpenCraftComposer = forwardRef<
           currentDraft.context === submittedDraft.context &&
           encodeComposerTarget(currentDraft.target) ===
             encodeComposerTarget(intent.target)
-        )
-          clear();
-        else {
+        ) {
+          if (editingQueuedSubmissionId !== null && queueEditOriginRef.current !== null) {
+            const origin = queueEditOriginRef.current;
+            finishQueueEdit();
+            replaceComposerContent(origin);
+          } else {
+            clear();
+          }
+        } else {
           restoreSelectedCommand();
           controller.dispatch({ type: "set-lifecycle", phase: "editing" });
         }
@@ -2298,7 +2377,7 @@ export const OpenCraftComposer = forwardRef<
     : permissionSelectionLabel;
 
   const primaryAction = resolveComposerPrimaryAction({
-    isResponseInProgress: isStreaming,
+    isResponseInProgress: editingQueuedSubmissionId === null && isStreaming,
     canSubmit: !disabled && !submissionDisabled && switchingAgentId === null && !modelSelectionBlocked && composerSnapshot.canSubmit,
     defaultFollowUpAction,
     availableFollowUpActions,
@@ -2314,10 +2393,14 @@ export const OpenCraftComposer = forwardRef<
             ? intl.formatMessage({ id: "chat.steerActiveResponse", defaultMessage: "Steer active response" })
             : intl.formatMessage({ id: "chat.send", defaultMessage: "Send message" });
   const inverseFollowUpAction = resolveComposerFollowUpAction(invertComposerFollowUpAction(defaultFollowUpAction), availableFollowUpActions);
+  const hasFailedAttachments = composerSnapshot.draft.attachments.some(attachment => attachment.lifecycle === "failed");
   const blockedReason = switchingAgentId !== null
     ? intl.formatMessage({ id: "workIn.switchingAgent", defaultMessage: "Switching Agent…" })
     : submissionDisabled ? submissionDisabledReason ?? intl.formatMessage({ id: "chat.waitingForHost", defaultMessage: "Waiting for execution host" })
-    : modelSelectionBlocked ? intl.formatMessage({ id: "composer.model.unavailable", defaultMessage: "The selected model is unavailable. Choose another model." }) : null;
+    : modelSelectionBlocked ? intl.formatMessage({ id: "composer.model.unavailable", defaultMessage: "The selected model is unavailable. Choose another model." })
+    : hasFailedAttachments ? intl.formatMessage({ id: "composer.attachment.failedBlocksSend", defaultMessage: "Remove or re-add failed attachments before sending." })
+    : composerSnapshot.hasUnavailableAssets ? intl.formatMessage({ id: "composer.attachment.preparingBlocksSend", defaultMessage: "Preparing attachments…" })
+    : null;
   const primaryActionTitle = blockedReason !== null && primaryAction !== "stop"
     ? blockedReason
     : isStreaming && primaryAction !== "stop" && inverseFollowUpAction !== null && inverseFollowUpAction !== defaultFollowUpAction
@@ -2358,6 +2441,10 @@ export const OpenCraftComposer = forwardRef<
             ...item,
             actionable:
               item.actionable &&
+              (editingQueuedSubmissionId === null ||
+                item.id === editingQueuedSubmissionId),
+            editable:
+              (item.editable ?? item.actionable) &&
               (editingQueuedSubmissionId === null ||
                 item.id === editingQueuedSubmissionId),
             steerable:
@@ -2488,18 +2575,25 @@ export const OpenCraftComposer = forwardRef<
                 </div>
               );
               const preparing = attachment.lifecycle === "pending" || attachment.lifecycle === "processing" || attachment.lifecycle === "uploading";
+              const unreadableFile = typeof attachment.error === "string"
+                && (attachment.error === "File changed on disk. Remove and add it again."
+                  || attachment.error.includes("The requested file could not be read"));
+              const attachmentErrorMessage = workInError
+                ?? (unreadableFile
+                  ? intl.formatMessage({ id: "composer.attachment.unreadable", defaultMessage: "File changed on disk. Remove and add it again." })
+                  : attachment.error);
               return (
-                <div aria-busy={preparing} className="opencraft-composer-attachment" data-state={attachment.lifecycle} key={attachment.id}>
+                <div aria-busy={preparing} className="opencraft-composer-attachment" data-state={attachment.lifecycle} key={attachment.id} title={attachmentErrorMessage ?? attachment.name}>
                   <span className="opencraft-composer-attachment__icon"><FileText size={15} /></span>
                   <span className="opencraft-composer-attachment__copy">
                     <strong>{attachment.name}</strong>
                     <small>{Math.max(1, Math.ceil(attachment.size / 1024))} KB</small>
                     {preparing ? <small role="status">Adding file…</small> : null}
                     {workInError !== null ? <small role="alert">{workInError}</small>
-                      : attachment.lifecycle === "failed" ? <small role="alert">{attachment.error ?? "Could not add file"}</small> : null}
+                      : attachment.lifecycle === "failed" ? <small role="alert">{attachmentErrorMessage ?? "Could not add file"}</small> : null}
                   </span>
                   <span className="opencraft-composer-attachment__actions">
-                    {attachment.lifecycle === "failed" && attachmentSession.canRetry(composerSnapshot.draft.id, attachment.id) && onResolveAttachment !== undefined ? (
+                    {attachment.lifecycle === "failed" && !unreadableFile && attachmentSession.canRetry(composerSnapshot.draft.id, attachment.id) && onResolveAttachment !== undefined ? (
                       <button type="button" aria-label={`Retry ${attachment.name}`} onClick={() => attachmentSession.retry(composerSnapshot.draft.id, attachment.id, onResolveAttachment)}><ResetIcon size={13} /></button>
                     ) : null}
                     <button type="button" aria-label={`Remove ${attachment.name}`} onClick={() => removeAttachment(attachment.id)}><X size={13} /></button>
@@ -2548,14 +2642,18 @@ export const OpenCraftComposer = forwardRef<
               className="opencraft-composer-suggestions"
               data-kind={suggestionQuery.kind}
               role="listbox"
-              aria-label={`${suggestionQuery.kind} suggestions`}
+              aria-label={suggestionQuery.kind === "command"
+                ? intl.formatMessage({ id: "composer.suggestions.command", defaultMessage: "command suggestions" })
+                : suggestionQuery.kind === "skill"
+                  ? intl.formatMessage({ id: "composer.suggestions.skill", defaultMessage: "skill suggestions" })
+                  : intl.formatMessage({ id: "composer.suggestions.mention", defaultMessage: "mention suggestions" })}
             >
               <div className="opencraft-composer-suggestions__label">
                 {suggestionQuery.kind === "command"
-                  ? "Commands"
+                  ? <FormattedMessage id="composer.commands.title" defaultMessage="Commands" />
                   : suggestionQuery.kind === "skill"
                     ? <FormattedMessage id="composer.skills.title" defaultMessage="Skills" />
-                    : "Files and context"}
+                    : <FormattedMessage id="composer.mentions.title" defaultMessage="Files and context" />}
               </div>
               {suggestionQuery.kind === "mention" &&
               catalogQueryText.length === 0 ? (
@@ -2618,7 +2716,7 @@ export const OpenCraftComposer = forwardRef<
                 >
                   <span>
                     {suggestion.kind === "command" ? (
-                      <LightningIcon size={15} />
+                      commandSuggestionIcon(suggestion.label)
                     ) : suggestion.kind === "skill" ? (
                       <SkillIcon source={suggestion.metadata?.iconSmallUrl ?? suggestion.metadata?.iconSmall} />
                     ) : (
@@ -2626,20 +2724,25 @@ export const OpenCraftComposer = forwardRef<
                     )}
                   </span>
                   <span>
-                    <strong>
-                      {suggestion.kind === "command"
-                        ? "/"
-                        : suggestion.kind === "skill"
-                          ? ""
-                          : "@"}
-                      {suggestion.label}
-                    </strong>
-                    <small>{suggestion.kind === "skill" && typeof suggestion.metadata?.scope === "string"
+                    <span className="opencraft-composer-suggestions__heading">
+                      <strong>
+                        {suggestion.kind === "command"
+                          ? "/"
+                          : suggestion.kind === "skill"
+                            ? ""
+                            : "@"}
+                        {suggestion.label}
+                      </strong>
+                      {suggestion.kind === "command" && suggestion.inputHint ? (
+                        <code className="opencraft-composer-suggestions__hint">{suggestion.inputHint}</code>
+                      ) : null}
+                    </span>
+                    {suggestion.detail ? <small>{suggestion.kind === "skill" && typeof suggestion.metadata?.scope === "string"
                       ? <>{suggestion.metadata.scope === "repo" ? <FormattedMessage id="composer.skills.scope.project" defaultMessage="Project" />
                         : suggestion.metadata.scope === "user" ? <FormattedMessage id="composer.skills.scope.user" defaultMessage="User" />
                         : suggestion.metadata.scope === "system" ? <FormattedMessage id="composer.skills.scope.system" defaultMessage="Built-in" />
                         : suggestion.metadata.scope === "admin" ? <FormattedMessage id="composer.skills.scope.admin" defaultMessage="Admin" /> : suggestion.metadata.scope} · {suggestion.detail}</>
-                      : suggestion.detail}</small>
+                      : suggestion.detail}</small> : null}
                   </span>
                 </button>
               ))}

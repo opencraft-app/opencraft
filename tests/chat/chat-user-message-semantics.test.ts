@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { deriveUserMessageSemantics as derive,
-  extractLastUserRequest as extract, stripGoalDirective as goal } from "../../packages/chat-core/src/user-message";
+  extractLastUserRequest as extract,
+  parseLeadingSlashCommand as parseSlash,
+  stripGoalDirective as goal } from "../../packages/chat-core/src/user-message";
 
 test("last request supplies text while only pre-first-request context supplies flags", () => {
   const raw = "## Prior conversation with Codex: old\n## My request: first\n## Code review guidelines: ignored\n## My request for Codex:  /goal final  ";
@@ -36,4 +38,24 @@ test("Goal display syntax preserves multiline body and trailing whitespace", () 
   assert.equal(goal(" \t/goal  first\nsecond  "), "first\nsecond  ");
   for (const input of ["/goal\ttext", "/goal\ntext", "/goals text", "/GOAL text", "some /goal text"]) assert.equal(goal(input), null);
   assert.equal(derive(" /goal text  ").message, "text  ");
+});
+
+test("leading slash command parser recognizes commands and arguments without misclassifying POSIX paths", () => {
+  assert.deepEqual(parseSlash("/status"), { name: "status", args: "" });
+  assert.deepEqual(parseSlash("  /plan   refactor auth flow "), { name: "plan", args: "refactor auth flow" });
+  assert.deepEqual(parseSlash("/review-branch main"), { name: "review-branch", args: "main" });
+  assert.deepEqual(parseSlash("/goal\nship release\nwith tests"), { name: "goal", args: "ship release\nwith tests" });
+  assert.deepEqual(parseSlash("/mcp:reload now"), { name: "mcp:reload", args: "now" });
+  for (const nonCommand of [
+    "",
+    "/",
+    "/123",
+    "/Users/yuehuali/opencraft/README.md",
+    "/etc/hosts check this file",
+    "/tmp/a/b",
+    "please run /status",
+    "https://example.com/status",
+  ]) {
+    assert.equal(parseSlash(nonCommand), null, `expected ${JSON.stringify(nonCommand)} not to parse as slash command`);
+  }
 });

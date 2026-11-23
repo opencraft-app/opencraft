@@ -2849,24 +2849,6 @@
     },
     {
       "file": "packages/composer-editor/src/composer-editor.tsx",
-      "kind": "aria-label",
-      "text": "${…} suggestions",
-      "count": 1
-    },
-    {
-      "file": "packages/composer-editor/src/composer-editor.tsx",
-      "kind": "jsx-expression",
-      "text": "Commands",
-      "count": 1
-    },
-    {
-      "file": "packages/composer-editor/src/composer-editor.tsx",
-      "kind": "jsx-expression",
-      "text": "Files and context",
-      "count": 1
-    },
-    {
-      "file": "packages/composer-editor/src/composer-editor.tsx",
       "kind": "jsx-text",
       "text": "Type to search for files",
       "count": 1

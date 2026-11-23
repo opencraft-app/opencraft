@@ -10,6 +10,8 @@ export interface PersonalMachine {
   version?: string | null;
   updateAvailable?: boolean | null;
   updateCommand?: string | null;
+  updating?: boolean;
+  updateError?: string | null;
 }
 export interface PersonalMachinesDirectory {
   hubId: string;
@@ -18,7 +20,7 @@ export interface PersonalMachinesDirectory {
   digest?: string;
   machines: PersonalMachine[];
 }
-export type PersonalMachineCommand = { action: 'list' } | { action: 'create' } | { action: 'revoke'; id: string };
+export type PersonalMachineCommand = { action: 'list' } | { action: 'create' } | { action: 'revoke'; id: string } | { action: 'update'; id: string };
 export interface PersonalMachinesMethodMap {
   'opencraft/personal-machines': { params: PersonalMachineCommand; result: PersonalMachinesDirectory & { command?: string; machineId?: string } };
 }

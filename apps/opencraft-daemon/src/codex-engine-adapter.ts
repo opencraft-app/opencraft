@@ -78,6 +78,10 @@ import {
   projectPermissionProfileCatalog,
   OPENCRAFT_PERMISSION_MODES_CAPABILITY,
   OPENCRAFT_PERMISSION_MODES_EXTENSION,
+  SCOPED_SLASH_COMMAND_CATALOG_EXTENSION,
+  SCOPED_SLASH_COMMAND_CATALOG_METHOD,
+  SLASH_COMMAND_LIST_METHOD,
+  parseThreadGoalCapability,
   type OpenCraftPermissionProfile,
   type AttachmentStagingCapability,
   type AttachmentRef,
@@ -1298,6 +1302,29 @@ export class CodexEngineAdapter implements DuplexTransport {
       } finally { this.metadataRequests--; }
       return;
     }
+    if (id !== null && (message.method === SLASH_COMMAND_LIST_METHOD || message.method === SCOPED_SLASH_COMMAND_CATALOG_METHOD)) {
+      if (!this.initializedClients.has(clientId)) { this.emit({ id, error: { code: -32600, message: "Client is not initialized" } }, clientId); return; }
+      const params = record(message.params);
+      if (message.method === SCOPED_SLASH_COMMAND_CATALOG_METHOD
+        && ((params.threadId !== undefined && (typeof params.threadId !== "string" || !params.threadId))
+          || (params.model !== undefined && (typeof params.model !== "string" || !params.model)))) {
+        this.emit({ id, error: { code: -32602, message: "Invalid slash command catalog target" } }, clientId);
+        return;
+      }
+      const extensions = record(record(record(this.initializeResult).capabilities).extensions);
+      const goalCapability = parseThreadGoalCapability(extensions[OPENCRAFT_THREAD_GOAL_EXTENSION]);
+      const commands = [
+        ...(goalCapability?.write ? [{ name: "goal", description: "Set or manage the persistent thread goal", inputHint: "[<objective>|clear|pause|resume]", source: "builtin" as const }] : []),
+        { name: "plan", description: "Switch to Plan mode and optionally send a prompt", inputHint: "[<task>]", source: "builtin" as const },
+        { name: "review", description: "Review current uncommitted changes and find issues", source: "builtin" as const },
+        { name: "review-branch", description: "Review the code changes against a specific branch", inputHint: "<branch>", source: "builtin" as const },
+        { name: "review-commit", description: "Review the code changes introduced by a commit", inputHint: "<sha>", source: "builtin" as const },
+        { name: "compact", description: "Summarize conversation history to free context window space", source: "builtin" as const },
+        { name: "rename", description: "Rename the current thread", inputHint: "<name>", source: "builtin" as const },
+      ];
+      this.emit({ id, result: { data: commands } }, clientId);
+      return;
+    }
     if (this.options.kind === "remote" && typeof message.method === "string" && !SHARED_NATIVE_METHODS.has(message.method)
       && !(message.method === "thread/goal/get" && this.remoteGoalCapability?.read)
       && !((message.method === "thread/goal/set" || message.method === "thread/goal/clear") && this.remoteGoalCapability?.write)
@@ -2006,8 +2033,9 @@ export class CodexEngineAdapter implements DuplexTransport {
       const sharedExtensions = record(sharedCaps.extensions), sharedAccess = record(sharedExtensions[OPENCRAFT_METHOD_ACCESS_EXTENSION]);
       this.initializeResult = { ...sharedValue, capabilities: { ...sharedCaps, extensions: { ...sharedExtensions,
         [SHARED_INTERACTIONS_EXTENSION]: { version: 1 },
+        [SCOPED_SLASH_COMMAND_CATALOG_EXTENSION]: { version: 1 },
         ...(Array.isArray(sharedAccess.methods) ? { [OPENCRAFT_METHOD_ACCESS_EXTENSION]: { ...sharedAccess,
-          methods: [...new Set([...sharedAccess.methods, SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND])] } } : {}),
+          methods: [...new Set([...sharedAccess.methods, SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND, SLASH_COMMAND_LIST_METHOD, SCOPED_SLASH_COMMAND_CATALOG_METHOD])] } } : {}),
       } } };
       message = { ...message, result: this.initializeResult };
     }

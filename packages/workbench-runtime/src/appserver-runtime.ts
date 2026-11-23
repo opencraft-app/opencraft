@@ -8,6 +8,16 @@ import { TURN_RECOVERY_EXTENSION } from "@opencraft/appserver-protocol";
 import { ThreadRecoveryResource } from "./thread-recovery-resource";
 import { SCOPED_PERMISSION_CATALOG_EXTENSION, SCOPED_PERMISSION_CATALOG_METHOD, type ScopedPermissionProfileListParams } from "@opencraft/appserver-protocol";
 import { SCOPED_SKILL_CATALOG_EXTENSION, SCOPED_SKILL_CATALOG_METHOD, type ScopedSkillsListParams } from "@opencraft/appserver-protocol";
+import {
+  SCOPED_SLASH_COMMAND_CATALOG_EXTENSION,
+  SCOPED_SLASH_COMMAND_CATALOG_METHOD,
+  SLASH_COMMAND_LIST_METHOD,
+  SLASH_COMMANDS_CHANGED_NOTIFICATION,
+  normalizeSlashCommands,
+  type OpenCraftSlashCommand,
+  type ScopedSlashCommandListParams,
+  type SlashCommandListResponse,
+} from "@opencraft/appserver-protocol";
 import type { HostComposerCommandPort } from "./host-composer-commands";
 import { MCP_APPS_NAMESPACE } from "@opencraft/appserver-protocol/mcp-apps";
 import type { ConversationOutboxStorage } from "@opencraft/chat-runtime";
@@ -318,11 +328,15 @@ export interface AppServerComposerCatalogResourcePort {
   listPermissionProfiles(
     params?: ScopedPermissionProfileListParams,
   ): Promise<PermissionProfileListResponse>;
+  listSlashCommands?(
+    params?: ScopedSlashCommandListParams,
+  ): Promise<SlashCommandListResponse & { readonly supported?: boolean }>;
   listSkills(params?: ScopedSkillsListParams): Promise<SkillsListResponse>;
   createFuzzyFileSearchSession(
     options: FuzzyFileSearchSessionOptions,
   ): Promise<FuzzyFileSearchSession>;
   subscribeSkillsChanged(listener: () => void): () => void;
+  subscribeSlashCommandsChanged?(listener: () => void): () => void;
 }
 
 export interface AppServerProjectResourcePort {
@@ -448,6 +462,7 @@ export interface AppServerThreadRuntimeLease {
   updateQueuedSubmission(
     queuedSubmissionId: string,
     input: readonly UserInput[],
+    intent?: SubmitIntent,
   ): Promise<void>;
   deleteQueuedSubmission(queuedSubmissionId: string): Promise<void>;
   discardUnconfirmedSteer(queuedSubmissionId: string, expectedTurnId: TurnId): Promise<void>;
@@ -548,6 +563,7 @@ export function createAppServerWorkbenchRuntime(
   const schedulesChangedListeners = new Set<() => void>();
   const modelsChangedListeners = new Set<() => void>();
   const skillsChangedListeners = new Set<() => void>();
+  const slashCommandsChangedListeners = new Set<() => void>();
   const bindings = new Map<string, ConversationBinding>();
   const catalogMetadata = new Map<string, ProtocolThread>();
   const interactionLedger = new AppServerInteractionLedger();
@@ -1733,6 +1749,12 @@ export function createAppServerWorkbenchRuntime(
           recentModelPages.clear();
           for (const listener of modelsChangedListeners) { try { listener(); } catch {} }
         }
+        if (notification.method === SLASH_COMMANDS_CHANGED_NOTIFICATION) {
+          for (const listener of slashCommandsChangedListeners) {
+            try { listener(); } catch { /* One View cannot break the shared notification pump. */ }
+          }
+          return;
+        }
         if (notification.method !== "skills/changed") return;
         for (const listener of skillsChangedListeners) {
           try { listener(); } catch { /* One View cannot break the shared notification pump. */ }
@@ -1872,8 +1894,8 @@ export function createAppServerWorkbenchRuntime(
         client,
         canRequest,
         interactions,
-        get queueAtomicSteer() { return supportsAtomicQueuedSteer(
-          client?.initializeResult?.capabilities?.extensions?.[OPENCRAFT_THREAD_QUEUE_EXTENSION]); },
+        queueAtomicSteer: (threadId: string) => supportsAtomicQueuedSteer(
+          executionEngineExtension(client?.initializeResult?.capabilities?.extensions, threadId, OPENCRAFT_THREAD_QUEUE_EXTENSION)),
         get queueUnconfirmedSteerDiscard() { return supportsUnconfirmedSteerDiscard(
           client?.initializeResult?.capabilities?.extensions?.[OPENCRAFT_THREAD_QUEUE_EXTENSION]); },
         compiler: { historyMode: "paginated" },
@@ -2361,6 +2383,28 @@ export function createAppServerWorkbenchRuntime(
           const { threadId: _thread, model: _model, ...native } = params;
           return requireClient().request("permissionProfile/list", { cursor: null, limit: 100, ...native });
         },
+        async listSlashCommands(params = {}) {
+          const extensions = client?.initializeResult?.capabilities?.extensions;
+          const scoped = extensions?.[SCOPED_SLASH_COMMAND_CATALOG_EXTENSION] as { version?: unknown } | undefined;
+          if (scoped?.version === 1) {
+            assertMethodAccess(SCOPED_SLASH_COMMAND_CATALOG_METHOD);
+            const result = await requireClient().request(SCOPED_SLASH_COMMAND_CATALOG_METHOD, params);
+            return { data: normalizeSlashCommands((result as { data?: readonly unknown[] })?.data ?? []), supported: true };
+          }
+          if (!allowsAppServerMethod(extensions, SLASH_COMMAND_LIST_METHOD)) {
+            return { data: [], supported: false };
+          }
+          const { threadId: _thread, model: _model, ...native } = params;
+          try {
+            const result = await requireClient().request(SLASH_COMMAND_LIST_METHOD, native);
+            return { data: normalizeSlashCommands((result as { data?: readonly unknown[] })?.data ?? []), supported: true };
+          } catch (cause) {
+            if (cause instanceof AppServerRpcError && cause.code === -32601) {
+              return { data: [], supported: false };
+            }
+            throw cause;
+          }
+        },
         async listSkills(params = {}) {
           const scoped = client?.initializeResult?.capabilities?.extensions?.[SCOPED_SKILL_CATALOG_EXTENSION] as { version?: unknown } | undefined;
           if (scoped?.version === 1) {
@@ -2392,6 +2436,11 @@ export function createAppServerWorkbenchRuntime(
           if (disposed) throw new Error("AppServer Workbench is disposed");
           skillsChangedListeners.add(listener);
           return () => { skillsChangedListeners.delete(listener); };
+        },
+        subscribeSlashCommandsChanged(listener) {
+          if (disposed) throw new Error("AppServer Workbench is disposed");
+          slashCommandsChangedListeners.add(listener);
+          return () => { slashCommandsChangedListeners.delete(listener); };
         },
       },
       terminal: {
@@ -2551,9 +2600,9 @@ export function createAppServerWorkbenchRuntime(
           }),
         respond: (response) =>
           runBindingCommand(binding, () => binding.runtime.respond(response)),
-        updateQueuedSubmission: (queuedSubmissionId, input) =>
+        updateQueuedSubmission: (queuedSubmissionId, input, intent) =>
           runBindingCommand(binding, () =>
-            binding.runtime.updateQueuedSubmission(queuedSubmissionId, input),
+            binding.runtime.updateQueuedSubmission(queuedSubmissionId, input, intent),
           ),
         deleteQueuedSubmission: (queuedSubmissionId) =>
           runBindingCommand(binding, () =>
@@ -2673,6 +2722,7 @@ export function createAppServerWorkbenchRuntime(
         removeGoalNotificationListener?.();
         removeGoalNotificationListener = null;
         skillsChangedListeners.clear();
+        slashCommandsChangedListeners.clear();
         modelsChangedListeners.clear();
         schedulesChangedListeners.clear();
 

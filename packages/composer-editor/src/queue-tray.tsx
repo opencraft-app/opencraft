@@ -39,6 +39,7 @@ export interface ComposerQueueTrayItem {
   readonly state: "submitting" | "queued" | "failed" | "unknown";
   readonly operation: "idle" | "updating" | "deleting" | "starting";
   readonly actionable: boolean;
+  readonly editable?: boolean;
   readonly steerable?: boolean;
   readonly dismissible?: boolean;
   readonly reorderable?: boolean;
@@ -144,6 +145,7 @@ function SortableQueueItem({
   const dragDisabled = blockedByUnconfirmedDelivery || item.reorderable === false || !item.actionable || busy || item.editing;
   const dragTooltip = item.reorderable === false ? item.error ?? item.pausedReason ?? intl.formatMessage({ id: "chat.queue.message", defaultMessage: "Queued message" }) : reorderLabel;
   const steerDisabled = !canSteerQueueItem(item, isResponseInProgress, atomicSteer, blockedByUnconfirmedDelivery);
+  const editDisabled = !(item.editable ?? item.actionable) || busy;
   const deleteDisabled = (!item.actionable && !item.dismissible) || busy;
   const steerTooltip = blockedByUnconfirmedDelivery
     ? intl.formatMessage({ id: "chat.queue.blockedUnconfirmed", defaultMessage: "An earlier message has unconfirmed delivery; review it before sending another message" })
@@ -227,8 +229,8 @@ function SortableQueueItem({
                 <span>{isResponseInProgress ? intl.formatMessage({ id: "chat.queue.steerAction", defaultMessage: "Steer" }) : intl.formatMessage({ id: "chat.queue.sendAction", defaultMessage: "Send" })}</span>
               </button>
             </QueueTooltip>
-            <QueueTooltip label={editLabel} portalContainer={portalContainer} disabled={!item.actionable || busy}>
-              <button type="button" aria-label={editLabel} disabled={!item.actionable || busy} onClick={() => onEdit?.(item.id)}>
+            <QueueTooltip label={editLabel} portalContainer={portalContainer} disabled={editDisabled}>
+              <button type="button" aria-label={editLabel} disabled={editDisabled} onClick={() => onEdit?.(item.id)}>
                 <Pencil size={12} />
               </button>
             </QueueTooltip>

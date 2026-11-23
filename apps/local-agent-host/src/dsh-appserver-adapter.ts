@@ -5,8 +5,8 @@ import { randomUUID } from "node:crypto";
 import { projectedHistoryHeadCursors, projectedItemsPage, projectedTurnsPage } from "./hypernode/thread-history.js";
 import { homedir } from "node:os";
 import { historyCursor, historyBoundary, readTurnWindow } from "./dsh-history-window.js";
-import { readFile } from "node:fs/promises";
-import { basename, extname, join } from "node:path";
+import { readFile, stat } from "node:fs/promises";
+import { basename, extname, isAbsolute, join, resolve } from "node:path";
 
 import { DshClient, DshClientError, type DshEvent, type DshHistoryEntry } from "./dsh-client.js";
 import { RuntimeProviderService, type RuntimeModelInfoReader } from "./runtime-provider-service.js";
@@ -20,7 +20,17 @@ import { userContent } from "./dsh-content.js";
 import { DshExecutionAuthority, type DshExecutionOwner } from "./dsh-execution-authority.js";
 import { DshNativeAdmission } from "./dsh-native-admission.js";
 import { projectDshPermissions, type DshPermissionPort } from "./dsh-permission-projection.js";
-import { dshPermissionMode, parsePermissionModeProfileId, projectPermissionProfileCatalog, OPENCRAFT_PERMISSION_MODES_CAPABILITY, OPENCRAFT_PERMISSION_MODES_EXTENSION } from "@opencraft/appserver-protocol";
+import {
+  dshPermissionMode,
+  parsePermissionModeProfileId,
+  projectPermissionProfileCatalog,
+  OPENCRAFT_PERMISSION_MODES_CAPABILITY,
+  OPENCRAFT_PERMISSION_MODES_EXTENSION,
+  SCOPED_PERMISSION_CATALOG_METHOD,
+  SCOPED_SLASH_COMMAND_CATALOG_METHOD,
+  SLASH_COMMAND_LIST_METHOD,
+  normalizeSlashCommands,
+} from "@opencraft/appserver-protocol";
 import { DshPresentationQueue } from "./dsh-presentation-queue.js";
 import { projectDshGoal } from "./dsh-goal-projection.js";
 import type {
@@ -45,6 +55,7 @@ type RecordValue = Record<string, unknown>;
 const HISTORY_READ_TIMEOUT_MS = 30_000;
 export interface DshThreadEnginePort {
   goal?(params: RecordValue): Promise<any>;
+  commands?(params: RecordValue): Promise<any>;
   describe?(params: RecordValue): Promise<any>;
   create(params: RecordValue): Promise<any>;
   resume(params: RecordValue): Promise<any>;
@@ -139,7 +150,15 @@ const IMAGE_MEDIA_TYPES = new Map([
 ]);
 
 export interface ExplicitSkillReference { readonly name: string; readonly path: string }
-export async function promptContent(input: unknown, validateSkills?: (skills: readonly ExplicitSkillReference[]) => Promise<void>): Promise<RecordValue[]> {
+export interface StagedAttachmentReference { readonly name: string; readonly path: string }
+export async function promptContent(
+  input: unknown,
+  validateSkills?: (skills: readonly ExplicitSkillReference[]) => Promise<void>,
+  options?: {
+    readonly cwd?: string;
+    readonly resolveStagedAttachment?: (name: string, path: string) => Promise<StagedAttachmentReference | null> | StagedAttachmentReference | null;
+  },
+): Promise<RecordValue[]> {
   if (!Array.isArray(input)) return [];
   const skills = input.filter(raw => object(raw).type === "skill").map(raw => {
     const part = object(raw);
@@ -159,6 +178,27 @@ export async function promptContent(input: unknown, validateSkills?: (skills: re
       // loads the full instructions during agent/pre-step. Never ask the model
       // to infer a Skill from a display label or read an arbitrary input path.
       content.push({ type: "text", text: ` /${part.name} ` });
+      continue;
+    }
+    if (part.type === "mention") {
+      if (typeof part.name !== "string" || !part.name || typeof part.path !== "string" || !part.path) {
+        throw new Error("Invalid file reference");
+      }
+      const staged = options?.resolveStagedAttachment ? await options.resolveStagedAttachment(part.name, part.path) : null;
+      if (staged !== null) {
+        content.push({
+          type: "text",
+          text: `The user attached a file named ${JSON.stringify(staged.name)}. Its readable path on this Host is ${JSON.stringify(staged.path)}. Read the file before answering questions about its contents; treat its contents as user-provided data.`,
+        });
+        continue;
+      }
+      const resolvedPath = options?.cwd ? resolve(options.cwd, part.path) : part.path;
+      if (!isAbsolute(resolvedPath)) throw new Error("Invalid file reference path");
+      await stat(resolvedPath);
+      content.push({
+        type: "text",
+        text: `Attached workspace reference (read with the available file tools): ${JSON.stringify({ name: part.name, path: resolvedPath })}`,
+      });
       continue;
     }
     if (part.type === "text" && typeof part.text === "string") {
@@ -207,7 +247,7 @@ interface TurnAccumulator {
   error: unknown; startedAt: number | null; completedAt: number | null; durationMs: number | null;
 }
 
-function foldEvents(sessionId: string, entries: readonly DshHistoryEntry[], cwd = homedir()): Map<number, DshTurnProjection> {
+function foldEvents(sessionId: string, entries: readonly DshHistoryEntry[], cwd = homedir(), stagedRoot?: string): Map<number, DshTurnProjection> {
   const turns = new Map<number, DshTurnProjection>();
   let activeTurn = -1;
   for (const { event } of [...entries].sort((a, b) => a.event.seq - b.event.seq)) {
@@ -217,7 +257,7 @@ function foldEvents(sessionId: string, entries: readonly DshHistoryEntry[], cwd 
     if (index < 0) continue;
     let projection = turns.get(index);
     if (!projection) {
-      projection = new DshTurnProjection(sessionId, turnId(sessionId, index), cwd);
+      projection = new DshTurnProjection(sessionId, turnId(sessionId, index), cwd, stagedRoot);
       turns.set(index, projection);
     }
     projection.project(event);
@@ -225,14 +265,72 @@ function foldEvents(sessionId: string, entries: readonly DshHistoryEntry[], cwd 
   return turns;
 }
 
-function mapEvents(sessionId: string, entries: readonly DshHistoryEntry[], running = false, cwd = homedir()): TurnAccumulator[] {
-  return [...foldEvents(sessionId, entries, cwd).entries()].sort(([a], [b]) => a - b).map(([, projection]) => {
+function mapEvents(sessionId: string, entries: readonly DshHistoryEntry[], running = false, cwd = homedir(), stagedRoot?: string): TurnAccumulator[] {
+  const ordered = [...entries].sort((a, b) => a.event.seq - b.event.seq);
+  const turnStartSeq = new Map<number, number>();
+  const commandRuns = new Map<string, { seq: number; time: number; name: string; args?: string }>();
+  const commandTurns: Array<{ seq: number; turn: TurnAccumulator }> = [];
+  for (const { event } of ordered) {
+    const data = object(event.data);
+    if (event.type === "turn/start") {
+      const idx = number(data.turn, -1);
+      if (idx >= 0 && !turnStartSeq.has(idx)) turnStartSeq.set(idx, event.seq);
+    } else if (event.type === "command/run") {
+      const commandId = string(data.commandId);
+      const name = string(data.name);
+      if (commandId && name) {
+        commandRuns.set(commandId, {
+          seq: event.seq,
+          time: number(event.time, 0),
+          name,
+          ...(typeof data.args === "string" ? { args: data.args } : {}),
+        });
+      }
+    } else if (event.type === "command/done") {
+      const commandId = string(data.commandId);
+      const run = commandRuns.get(commandId);
+      if (!run) continue;
+      commandRuns.delete(commandId);
+      const turnKey = `dsh-cmd-${commandId}`;
+      const commandLine = run.args !== undefined ? `/${run.name}${run.args.startsWith(" ") ? run.args : ` ${run.args}`}`.trimEnd() : `/${run.name}`;
+      const replyText = typeof data.text === "string" && data.text.trim()
+        ? data.text.trim()
+        : data.kind === "error"
+          ? "Command failed."
+          : `Executed /${run.name}.`;
+      const startedAt = appTimestamp(run.time);
+      const completedAt = appTimestamp(number(event.time, run.time));
+      commandTurns.push({
+        seq: run.seq,
+        turn: {
+          id: turnKey,
+          items: [
+            { id: `${turnKey}:user`, type: "userMessage", clientId: null, content: [{ type: "text", text: commandLine, text_elements: [] }] },
+            { id: `${turnKey}:assistant`, type: "agentMessage", text: replyText },
+          ],
+          itemsView: "full",
+          status: "completed",
+          error: null,
+          startedAt,
+          completedAt,
+          durationMs: startedAt !== null && completedAt !== null ? Math.max(0, (completedAt - startedAt) * 1000) : 0,
+        },
+      });
+    }
+  }
+  const modelTurns = [...foldEvents(sessionId, entries, cwd, stagedRoot).entries()].sort(([a], [b]) => a - b).map(([index, projection]) => {
     if (!running && !projection.execution.ended) {
       projection.execution.fail("DSH history has no terminal record; completion is unconfirmed",
         projection.execution.record.startedAtMs);
     }
-    return projection.execution.snapshot() as TurnAccumulator;
+    return {
+      seq: turnStartSeq.get(index) ?? index,
+      turn: projection.execution.snapshot() as TurnAccumulator,
+    };
   });
+  return [...modelTurns, ...commandTurns]
+    .sort((a, b) => a.seq - b.seq)
+    .map(entry => entry.turn);
 }
 
 /** Shared native-history projection for independently hosted DSH transports.
@@ -368,8 +466,24 @@ export class DshAppServerAdapter {
   }): void { this.workspaceResolver = resolver; }
   private skillInvocationValidator?: (threadId: string, skills: readonly ExplicitSkillReference[]) => Promise<void>;
   setSkillInvocationValidator(validate: (threadId: string, skills: readonly ExplicitSkillReference[]) => Promise<void>): void { this.skillInvocationValidator = validate; }
+  private stagedAttachmentDirectory?: string;
+  private stagedAttachmentResolver?: (name: string, path: string) => Promise<StagedAttachmentReference | null> | StagedAttachmentReference | null;
+  setStagedAttachmentResolver(
+    directory: string,
+    resolve: (name: string, path: string) => Promise<StagedAttachmentReference | null> | StagedAttachmentReference | null,
+  ): void {
+    this.stagedAttachmentDirectory = directory;
+    this.stagedAttachmentResolver = resolve;
+  }
   private promptContent(threadId: string, input: unknown) {
-    return promptContent(input, this.skillInvocationValidator ? refs => this.skillInvocationValidator!(threadId, refs) : undefined);
+    return promptContent(
+      input,
+      this.skillInvocationValidator ? refs => this.skillInvocationValidator!(threadId, refs) : undefined,
+      {
+        cwd: this.summaries.get(threadId)?.cwd ?? homedir(),
+        resolveStagedAttachment: this.stagedAttachmentResolver,
+      },
+    );
   }
   setModelInfoReader(reader: RuntimeModelInfoReader): void { this.providers.setModelInfoReader(reader); }
   private threadEngine: DshThreadEnginePort | null = null;
@@ -417,7 +531,7 @@ export class DshAppServerAdapter {
           const turn = object(entry.event.data).turn;
           return typeof turn !== "number" || turnId(sessionId, turn) === id;
         }).map(entry => ({ ...entry,
-          event: this.authority?.projectInput(sessionId, entry.event) ?? entry.event })), summary.running, summary.cwd);
+          event: this.authority?.projectInput(sessionId, entry.event) ?? entry.event })), summary.running, summary.cwd, this.stagedAttachmentDirectory);
       }
       before = first;
     }
@@ -716,7 +830,7 @@ export class DshAppServerAdapter {
         this.nativeQueueIds.set(logicalId, id);
         const submission = {
           id: logicalId,
-          input: userContent(message.content),
+          input: userContent(message.content, { stagedRoot: this.stagedAttachmentDirectory, includeStagedLocatorText: false }),
           clientUserMessageId: clientMessageId,
           createdAt: previous?.createdAt
             ?? number(item.createdAt, number(message.createdAt, Date.now())),
@@ -776,7 +890,7 @@ export class DshAppServerAdapter {
     this.livePosition.set(sessionId, { ...position, turn });
     const toolScope = appTurn.id;
     let tools = this.liveTools.get(toolScope);
-    if (!tools) { tools = new DshTurnProjection(sessionId, appTurn.id, this.summaries.get(sessionId)?.cwd ?? homedir()); this.liveTools.set(toolScope, tools); }
+    if (!tools) { tools = new DshTurnProjection(sessionId, appTurn.id, this.summaries.get(sessionId)?.cwd ?? homedir(), this.stagedAttachmentDirectory); this.liveTools.set(toolScope, tools); }
     const projection = tools.project(event);
     this.latestTurns.set(sessionId, tools);
     if (event.type === "turn/start") {
@@ -1094,11 +1208,11 @@ export class DshAppServerAdapter {
     }
     const summary = await this.summary(sessionId);
     const projectedEvents = history.events.map(entry => ({ ...entry, event: this.authority?.projectInput(sessionId, entry.event) ?? entry.event }));
-    const turns = mapEvents(sessionId, projectedEvents, summary.running, summary.cwd);
+    const turns = mapEvents(sessionId, projectedEvents, summary.running, summary.cwd, this.stagedAttachmentDirectory);
     {
       let current = this.latestTurns.get(sessionId);
       if (!current && summary.running) {
-        const entries = [...foldEvents(sessionId, projectedEvents, summary.cwd).entries()];
+        const entries = [...foldEvents(sessionId, projectedEvents, summary.cwd, this.stagedAttachmentDirectory).entries()];
         const latest = entries.at(-1);
         if (latest && !latest[1].execution.ended) {
           current = latest[1];
@@ -1152,7 +1266,7 @@ export class DshAppServerAdapter {
         // User messages have no Turn field; their turn/start is in the same page.
         const projectionStart = performance.now();
         const turns = mapEvents(sessionId, page.events.map(entry => ({ ...entry,
-          event: this.authority?.projectInput(sessionId, entry.event) ?? entry.event })), summary.running, summary.cwd)
+          event: this.authority?.projectInput(sessionId, entry.event) ?? entry.event })), summary.running, summary.cwd, this.stagedAttachmentDirectory)
           .filter(turn => changed.has(Number(turn.id.slice(turn.id.lastIndexOf("-") + 1))));
         const metrics = this.historyMetrics.getStore();
         if (metrics) metrics.projectionMs += performance.now() - projectionStart;
@@ -1189,14 +1303,16 @@ export class DshAppServerAdapter {
       }, before, count);
       const summary = await this.summary(sessionId);
       if (window.projections) this.summaries.set(sessionId, { ...summary, projections: window.projections });
-      const included = new Set(window.events.filter(entry => entry.event.type === "turn/start")
-        .map(entry => turnId(sessionId, number(object(entry.event.data).turn, -1))));
+      const included = new Set(window.events.filter(entry => entry.event.type === "turn/start" || entry.event.type === "command/run")
+        .map(entry => entry.event.type === "command/run"
+          ? `dsh-cmd-${string(object(entry.event.data).commandId)}`
+          : turnId(sessionId, number(object(entry.event.data).turn, -1))));
       const projectionStart = performance.now();
       const turns = mapEvents(sessionId, window.events.filter(entry => {
         const turn = object(entry.event.data).turn;
         return typeof turn !== "number" || included.has(turnId(sessionId, turn));
       }).map(entry => ({ ...entry,
-        event: this.authority?.projectInput(sessionId, entry.event) ?? entry.event })), summary.running, summary.cwd)
+        event: this.authority?.projectInput(sessionId, entry.event) ?? entry.event })), summary.running, summary.cwd, this.stagedAttachmentDirectory)
         .filter(turn => included.has(turn.id));
       const metrics = this.historyMetrics.getStore();
       if (metrics) metrics.projectionMs += performance.now() - projectionStart;
@@ -1306,6 +1422,101 @@ export class DshAppServerAdapter {
       // the old execution lease has actually been released.
       await this.interruptSettling.get(sessionId);
       await this.ensureRuntime(sessionId);
+      if (this.threadEngine?.commands && Array.isArray(value.input)) {
+        const rawTextParts = value.input.filter(part => object(part).type === "text" && typeof object(part).text === "string");
+        const hasSkillParts = value.input.some(part => ["skill", "mention"].includes(String(object(part).type)));
+        const candidateLine = !hasSkillParts && rawTextParts.length === 1
+          ? String(object(rawTextParts[0]).text).trim()
+          : "";
+        if (/^\/[a-z0-9_-]+(?=$|\s)/iu.test(candidateLine)) {
+          return this.authority.withWriteLease(sessionId, owner, async () => {
+            const selectedPermission = permissionSelection(value.permissions);
+            if (selectedPermission !== undefined) {
+              await this.setPermissionPreset(sessionId, selectedPermission);
+            }
+            const content = await this.promptContent(sessionId, value.input);
+            const images = content
+              .filter(part => part.type === "image" && typeof part.mediaType === "string" && typeof part.data === "string")
+              .map(part => ({ mediaType: String(part.mediaType), data: String(part.data) }));
+            if (canAdmit && !await canAdmit()) throw new Error("Host input authorization changed before native admission");
+            this.authority!.assertConnected(owner);
+            const armsGoal = /^\/goal(?=\s)/iu.test(candidateLine) && !/^\/goal\s+(?:pause|clear)\s*$/iu.test(candidateLine);
+            if (armsGoal) this.admission!.authorizeGoal(sessionId, owner, requestId);
+            const executed = await this.threadEngine!.commands!({
+              sessionId,
+              operation: "execute",
+              line: candidateLine,
+              images,
+            });
+            if (executed?.handled === true) {
+              const commandTurnId = `dsh-cmd-${string(executed.commandId) || randomUUID()}`;
+              const clientId = string(value.clientUserMessageId) || null;
+              const nowSeconds = Math.floor(Date.now() / 1000);
+              const userItem = {
+                id: `${commandTurnId}:user`,
+                type: "userMessage",
+                clientId,
+                content: [{ type: "text", text: candidateLine, text_elements: [] }],
+              };
+              const replyText = typeof executed.result?.text === "string" && executed.result.text.trim()
+                ? executed.result.text.trim()
+                : executed.result?.kind === "error"
+                  ? "Command failed."
+                  : `Executed ${candidateLine.split(/\s+/u)[0]}.`;
+              const agentItem = {
+                id: `${commandTurnId}:assistant`,
+                type: "agentMessage",
+                text: replyText,
+              };
+              const completedTurn = {
+                id: commandTurnId,
+                items: [userItem, agentItem],
+                itemsView: "full",
+                status: "completed",
+                error: null,
+                startedAt: nowSeconds,
+                completedAt: nowSeconds,
+                durationMs: 0,
+              };
+              this.emit("turn/started", {
+                threadId: sessionId,
+                turn: { ...completedTurn, items: [], status: "inProgress", completedAt: null, durationMs: null },
+                ...(clientId ? { clientMessageId: clientId } : {}),
+              });
+              this.emit("item/started", { threadId: sessionId, turnId: commandTurnId, item: userItem });
+              this.emit("item/completed", { threadId: sessionId, turnId: commandTurnId, item: userItem });
+              this.emit("item/started", { threadId: sessionId, turnId: commandTurnId, item: agentItem });
+              this.emit("item/completed", { threadId: sessionId, turnId: commandTurnId, item: agentItem });
+              this.emit("turn/completed", { threadId: sessionId, turn: completedTurn });
+              if (/^\/permission(?=$|\s)/iu.test(candidateLine) && this.permissions) {
+                const updatedPermissions = await this.effectivePermissions(sessionId).catch(() => null);
+                if (updatedPermissions) {
+                  this.emit("thread/settings/updated", { threadId: sessionId, threadSettings: updatedPermissions });
+                }
+              }
+              return { turn: completedTurn };
+            }
+            // Fall through to ordinary prompt dispatch when the slash token is not a registered DSH command.
+            const pending = this.admission!.begin(sessionId, owner, requestId, string(value.clientUserMessageId) || undefined);
+            try {
+              rejectUnsupportedPolicyOverrides(value, "sandboxPolicy");
+              if (this.modelConfiguration) {
+                await this.modelConfiguration.config.synchronize();
+                if (this.modelConfiguration.config.application.state !== "applied") throw new Error("模型配置尚未应用");
+              }
+              await this.selectModel(sessionId, value.model, value.effort);
+              await this.client.call("session.prompt", {
+                sessionId, mode: "queue", content, clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+              }, undefined, pending.rpcId);
+              const turn = await pending.started;
+              return { turn: this.inProgressTurn(sessionId, turn) };
+            } catch (cause) {
+              pending.cancel(cause instanceof Error ? cause : new Error(String(cause)));
+              throw cause;
+            }
+          });
+        }
+      }
       const pending = this.admission.begin(sessionId, owner, requestId, string(value.clientUserMessageId) || undefined);
       try {
         rejectUnsupportedPolicyOverrides(value, "sandboxPolicy");
@@ -1712,7 +1923,7 @@ export class DshAppServerAdapter {
         if (previous === undefined) return Promise.reject(new Error(`Queued submission ${queuedSubmissionId} is no longer pending`));
         await this.assertInput(sessionId, value.input);
         const content = await this.promptContent(sessionId, value.input);
-        const input = userContent(content);
+        const input = userContent(content, { stagedRoot: this.stagedAttachmentDirectory, includeStagedLocatorText: false });
         await this.client.call("session.updateQueue", {
           sessionId,
           itemId: this.nativeQueueIds.get(queuedSubmissionId) ?? queuedSubmissionId,
@@ -1980,13 +2191,33 @@ export class DshAppServerAdapter {
         const [catalog, selection] = await Promise.all([this.providers.models(), this.defaultModel()]);
         return page(mapModels(catalog, selection ?? undefined), value.cursor, value.limit);
       }
-      case "permissionProfile/list": {
+      case "permissionProfile/list":
+      case SCOPED_PERMISSION_CATALOG_METHOD: {
         if (!this.permissions) return { data: [], nextCursor: null };
         const value = await this.permissions.read();
         const presets = value.presets.map((preset: any) => ({ id: preset.id,
           description: preset.description ?? "", allowed: true, openCraftLabel: preset.name }));
         const policies = new Map(value.presets.map((preset: any) => [preset.id, preset]));
         return { data: projectPermissionProfileCatalog(presets, profile => dshPermissionMode(policies.get(profile.id))), nextCursor: null };
+      }
+      case SLASH_COMMAND_LIST_METHOD:
+      case SCOPED_SLASH_COMMAND_CATALOG_METHOD: {
+        if (this.threadEngine?.commands) {
+          const response = await this.threadEngine.commands({
+            operation: "list",
+            ...(typeof value.threadId === "string" && value.threadId ? { sessionId: value.threadId } : {}),
+          }).catch(() => null);
+          if (response && Array.isArray(response.data)) {
+            return { data: normalizeSlashCommands(response.data, "builtin") };
+          }
+        }
+        return {
+          data: [
+            { name: "goal", description: "Set or view the goal for a long-running task.", inputHint: "[<objective>|clear|edit <objective>|pause|resume]", source: "builtin" },
+            { name: "permission", description: "Switch the permission preset (sandbox mode + approval policy).", inputHint: "<preset>", source: "builtin" },
+            { name: "feedback", description: "Record feedback about this session.", inputHint: "<text>", source: "builtin" },
+          ],
+        };
       }
       case "skills/list": throw new Error("Scoped skills require the connected host capability metadata service");
       case "config/read": {

@@ -167,3 +167,46 @@ test('enrolled update endpoints require the existing machine credential and hono
  assert.equal((await fetch(f.origin+'/__opencraft_machines/install.sh?module=update&id='+f.bootstrap.id,{headers})).status,200);
  await f.service.command({action:'revoke',id:f.bootstrap.id});assert.equal((await fetch(f.origin+path,{headers})).status,403);
 });
+
+test('remote update command triggers self-update RPC and falls back to durable process/spawn for older companions',async t=>{
+ const f=await fixture(t);assert.equal((await f.claim()).status,200);
+ let supportSelfUpdate=false;
+ const received:Array<{method:string;params:any}>=[];
+ const native=createServer(),sockets=new WebSocketServer({noServer:true});
+ native.on('upgrade',(r,s,h)=>{if(r.url!=='/rpc?token=private-native-token'){s.destroy();return;}sockets.handleUpgrade(r,s,h,ws=>sockets.emit('connection',ws));});
+ sockets.on('connection',ws=>ws.on('message',raw=>{
+  const p=JSON.parse(String(raw));
+  received.push({method:p.method,params:p.params});
+  if(p.method==='opencraft/machine-runtime/update'&&!supportSelfUpdate){
+   ws.send(JSON.stringify({jsonrpc:'2.0',id:p.id,error:{code:-32601,message:'Method not supported'}}));
+   return;
+  }
+  ws.send(JSON.stringify({jsonrpc:'2.0',id:p.id,result:{started:true}}));
+ }));
+ await new Promise<void>(r=>native.listen(0,'127.0.0.1',r));
+ const ingress=createLocalIngress(()=>({port:(native.address() as any).port,origin:'http://personal-machine',path:'/rpc?token=private-native-token'}),['/rpc']);
+ let relay=connectRelay({relay:f.origin,credential:f.credential,headers:{'x-opencraft-machine-version':'0'.repeat(64)},allowLoopbackInsecure:true,acceptStream:s=>ingress.accept(s)});
+ t.after(async()=>{relay.close();ingress.close();for(const ws of sockets.clients)ws.terminate();sockets.close();await new Promise<void>(r=>native.close(()=>r()));});
+ await wait(()=>f.service.directory().machines[0]?.connected===true);
+
+ // 1. Older companion falls back to durable process/spawn
+ const afterFallback=await f.service.command({action:'update',id:f.bootstrap.id});
+ assert.equal(afterFallback.machines[0]?.updating,true);
+ assert.equal(received.some(c=>c.method==='process/spawn'&&String(c.params?.args?.[1]??'').includes('--update '+f.bootstrap.id)),true);
+
+ // Reconnect with target digest -> updating clears and updateAvailable becomes false
+ relay.close();
+ relay=connectRelay({relay:f.origin,credential:f.credential,headers:{'x-opencraft-machine-version':hash('source')},allowLoopbackInsecure:true,acceptStream:s=>ingress.accept(s)});
+ await wait(()=>f.service.directory().machines[0]?.updateAvailable===false);
+ assert.equal(f.service.directory().machines[0]?.updating,undefined);
+
+ // 2. Newer companion uses opencraft/machine-runtime/update directly
+ received.length=0;
+ supportSelfUpdate=true;
+ relay.close();
+ relay=connectRelay({relay:f.origin,credential:f.credential,headers:{'x-opencraft-machine-version':'1'.repeat(64)},allowLoopbackInsecure:true,acceptStream:s=>ingress.accept(s)});
+ await wait(()=>f.service.directory().machines[0]?.version==='1'.repeat(64));
+ await f.service.command({action:'update',id:f.bootstrap.id});
+ assert.equal(received.some(c=>c.method==='opencraft/machine-runtime/update'),true);
+ assert.equal(received.some(c=>c.method==='process/spawn'),false);
+});

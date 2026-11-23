@@ -291,7 +291,7 @@ export async function apply(ctx, config) {
         res.end(JSON.stringify(await nativeOwner.inspect())); return;
       }
       if (nativeOwner && route !== "/events") releaseBridge = nativeOwner.bridgeLease();
-      if (nativeOwner && !nativeOwner.open() && !["/native-owner","/events","/respond","/thread/describe","/thread/historySource","/resolve-generation","/background-proof","/model-info"].includes(route)
+      if (nativeOwner && !nativeOwner.open() && !["/native-owner","/events","/respond","/thread/describe","/thread/historySource","/thread/commands","/resolve-generation","/background-proof","/model-info"].includes(route)
         && !(route === "/permissions" && !body.preset && !body.policy)) throw new Error("Native bridge fenced");
       if (req.method === "POST" && route === "/model-info") {
         if (typeof body.provider !== "string" || !body.provider || typeof body.model !== "string" || !body.model)

@@ -37,7 +37,7 @@ export interface AppServerConversationCommandPortConfig {
   readonly client: Pick<AppServerClient, "hostId" | "request">;
   readonly interactions: InteractionResponsePort;
   /** Only a Host with one queue-to-active-Turn operation may consume a queued steer. */
-  readonly queueAtomicSteer?: boolean;
+  readonly queueAtomicSteer?: boolean | ((threadId: string) => boolean);
   readonly queueUnconfirmedSteerDiscard?: boolean;
   readonly canRequest?: (method: AppServerMethod) => boolean;
   readonly compiler?: SubmitCompilerOptions;
@@ -511,7 +511,10 @@ export function createAppServerConversationCommandPort(
     },
     async steerQueuedSubmission(key, queuedSubmission, activeTurnId) {
       assertConversationHost(key);
-      if (config.queueAtomicSteer !== true) {
+      const atomicSupported = typeof config.queueAtomicSteer === "function"
+        ? config.queueAtomicSteer(key.threadId)
+        : config.queueAtomicSteer === true;
+      if (!atomicSupported) {
         throw new Error("This Host does not support atomic steering of queued messages");
       }
       const request = (expectedTurnId: string) => config.client.request("thread/queue/steer", {

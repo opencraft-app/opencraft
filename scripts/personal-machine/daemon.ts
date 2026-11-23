@@ -73,7 +73,15 @@ const release=await acquireLocalAgentStorageOwner(data);
 let host:Awaited<ReturnType<typeof startLocalAgentHost>>|undefined;
 try{
   const workspace=join(homedir(),'OpenCraft');await mkdir(workspace,{recursive:true,mode:0o700});
-  host=await startLocalAgentHost({dataDirectory:data,modelStorageDirectory:join(data,'models'),projectlessWorkspaceDirectory:workspace,runtimeDirectory:root,dshCapabilityPlugin:join(root,'apps/local-agent-host/src/dsh-capability-plugin.mjs'),dshExecutable:join(root,'runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js')});
+  const selfUpdate=async()=>{
+    const log=await import('node:fs/promises').then(m=>m.open(join(state,'remote-update.log'),'a',0o600));
+    try{
+      const child=spawn(process.execPath,['--import',join(state,'runtime/node_modules/tsx/dist/loader.mjs'),join(state,'runtime/scripts/personal-machine/daemon.ts'),'--state',state,'--update'],{cwd:state,detached:true,stdio:['ignore',log.fd,log.fd],env:process.env});
+      child.unref();
+    }finally{await log.close();}
+    return {started:true};
+  };
+  host=await startLocalAgentHost({dataDirectory:data,modelStorageDirectory:join(data,'models'),projectlessWorkspaceDirectory:workspace,runtimeDirectory:root,dshCapabilityPlugin:join(root,'apps/local-agent-host/src/dsh-capability-plugin.mjs'),dshExecutable:join(root,'runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js'),selfUpdate});
   const target=new URL(host.websocketUrl);
   const ingress=createLocalIngress(()=>({port:Number(target.port),origin:'http://personal-machine',path:target.pathname+target.search}),['/rpc']);
   const relay=connectRelay({relay:config.origin,credential:config.credential,ca:config.ca,headers:{'x-opencraft-machine-version':runtimeVersion},acceptStream:stream=>ingress.accept(stream),allowLoopbackInsecure:new URL(config.origin).protocol==='http:'});

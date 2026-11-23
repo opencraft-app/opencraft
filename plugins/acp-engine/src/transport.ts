@@ -123,6 +123,7 @@ export class AcpStdioTransport {
     if (!frame || typeof frame !== "object" || Array.isArray(frame)) throw new Error("Invalid ACP frame");
     if (this.pi) {
       if (frame.type === "extension_ui_request") {
+        if (frame.method === "notify" && typeof frame.message === "string" && frame.message.trim()) this.pi.event(frame);
         if (["select", "confirm", "input", "editor"].includes(frame.method) && typeof frame.id === "string") this.send({ type: "extension_ui_response", id: frame.id, cancelled: true });
       } else if (frame.type === "response") {
         const id = typeof frame.id === "string" && /^[1-9][0-9]*$/u.test(frame.id) ? Number(frame.id) : NaN;

@@ -17,7 +17,8 @@ import {
 } from "@opencraft/appserver-client";
 import {
   OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION,
-  type CatalogModel as Model
+  type CatalogModel as Model,
+  type OpenCraftSlashCommand,
 } from "@opencraft/appserver-protocol";
 import type {
   PermissionProfileSummary,
@@ -1006,6 +1007,7 @@ export interface ComposerCatalogSnapshot {
   readonly models: readonly Model[];
   readonly displayModels: readonly Model[];
   readonly permissionProfiles: readonly PermissionProfileSummary[];
+  readonly slashCommands: readonly OpenCraftSlashCommand[] | undefined;
   readonly isFetching: boolean;
   readonly modelError: Error | null;
   readonly permissionProfileError: Error | null;
@@ -1158,6 +1160,26 @@ export function useComposerCatalog(
     () => permissionProfiles.data?.pages.flatMap((page) => page.data) ?? [],
     [permissionProfiles.data],
   );
+  const slashCommandsQuery = useQuery({
+    queryKey: ["appserver", snapshot.hostId, "slash-commands", connectionGeneration, threadId, permissionTargetModel, cwd] as const,
+    enabled: enabled && typeof runtime.resources.composerCatalog.listSlashCommands === "function",
+    queryFn: () => runtime.resources.composerCatalog.listSlashCommands!({
+      cwd,
+      ...(threadId ? { threadId } : permissionTargetModel ? { model: permissionTargetModel } : {}),
+    }),
+    staleTime: 60_000,
+  });
+  useEffect(() => {
+    if (!runtime.resources.composerCatalog.subscribeSlashCommandsChanged) return undefined;
+    return runtime.resources.composerCatalog.subscribeSlashCommandsChanged(() => {
+      void queryClient.invalidateQueries({
+        queryKey: ["appserver", snapshot.hostId, "slash-commands"],
+      });
+    });
+  }, [queryClient, runtime.resources.composerCatalog, snapshot.hostId]);
+  const slashCommandData = slashCommandsQuery.data?.supported === false
+    ? undefined
+    : slashCommandsQuery.data?.data;
 
   const currentModels = capabilities.data?.metadataReader === runtime.resources.composerCatalog ? capabilities.data.models : undefined;
   const observationOwner = useMemo(() => ({finish:null as ReturnType<typeof beginObservedOperation> | null,done:false}), [snapshot.hostId,threadId,connectionGeneration]);
@@ -1174,6 +1196,7 @@ export function useComposerCatalog(
     models: currentModels ?? [],
     displayModels: currentModels ?? cachedComposerModelMetadata(queryClient, snapshot.hostId, runtime.resources.composerCatalog),
     permissionProfiles: permissionProfileData,
+    slashCommands: slashCommandData,
     isFetching: capabilities.isFetching,
     modelError: personalDefaults.error ? errorOrNull(personalDefaults.error) : capabilities.error ? new Error(`${capabilities.data ? "能力目录刷新失败，当前显示上次结果" : "能力目录加载失败"}：${errorOrNull(capabilities.error)!.message}`) : null,
     permissionProfileError: errorOrNull(permissionProfiles.error),

@@ -307,7 +307,7 @@ function failureMessage(log: string): string | null {
 }
 
 interface LiveTask {
-  kind: "sign-in" | "install";
+  kind: "sign-in" | "install" | "upgrade";
   phase: "running" | "failed";
   message: string | null;
   log: string;
@@ -333,10 +333,43 @@ function activityOf(task: LiveTask | undefined): OnboardingActivity | null {
 export class AgentOnboardingService {
   private readonly tasks = new Map<OnboardingAgentId, LiveTask>();
   private closed = false;
+  private latestVersionsCache: { versions: Record<string, string | null>; checkedAt: number } | null = null;
+  private latestVersionsFlight: Promise<{ versions: Record<string, string | null>; checkedAt: number }> | null = null;
   private readonly native = new Map<OnboardingAgentId,{probe():Promise<OnboardingAgentSnapshot>;historyProbe?():Promise<OnboardingAgentSnapshot>;act(action:unknown):Promise<void>}>();
   registerNative(id:OnboardingAgentId,adapter:{probe():Promise<OnboardingAgentSnapshot>;historyProbe?():Promise<OnboardingAgentSnapshot>;act(action:unknown):Promise<void>}) { this.native.set(id,adapter); }
 
   constructor(private readonly deps: OnboardingDeps = createOnboardingDeps()) {}
+
+  async packageVersions(force = false): Promise<{ versions: Readonly<Record<string, string | null>>; checkedAt: number }> {
+    if (this.closed) throw new Error("Agent onboarding is closed");
+    if (!force && this.latestVersionsCache && Date.now() - this.latestVersionsCache.checkedAt < 10 * 60_000) {
+      return this.latestVersionsCache;
+    }
+    if (!force && this.latestVersionsFlight) return this.latestVersionsFlight;
+    const flight = (async () => {
+      const entries = await Promise.all(ONBOARDING_AGENTS.map(async agent => {
+        if (!agent.installPackage) return [agent.id, null] as const;
+        try {
+          const response = await fetch(`https://registry.npmjs.org/${encodeURIComponent(agent.installPackage)}/latest`, {
+            headers: { accept: "application/json" },
+            signal: AbortSignal.timeout(4000),
+          });
+          if (!response.ok) return [agent.id, null] as const;
+          const body = await response.json() as { version?: unknown };
+          return [agent.id, typeof body?.version === "string" && body.version.trim() ? body.version.trim() : null] as const;
+        } catch {
+          return [agent.id, this.latestVersionsCache?.versions[agent.id] ?? null] as const;
+        }
+      }));
+      const result = { versions: Object.fromEntries(entries), checkedAt: Date.now() };
+      this.latestVersionsCache = result;
+      return result;
+    })().finally(() => {
+      if (this.latestVersionsFlight === flight) this.latestVersionsFlight = null;
+    });
+    this.latestVersionsFlight = flight;
+    return flight;
+  }
 
   async historyStatus(): Promise<OnboardingSnapshot> {
     if (this.closed) throw new Error("Agent onboarding is closed");
@@ -367,6 +400,7 @@ export class AgentOnboardingService {
     if (action === "cancel") this.clear(agent.id);
     else if (action === "sign-in") await this.start(agent, "sign-in");
     else if (action === "install") await this.start(agent, "install");
+    else if (action === "upgrade") await this.start(agent, "upgrade");
     else if (action === "submit-code") {
       const code = typeof params.code === "string" ? params.code.trim() : "";
       if (!code || code.length > 4096 || /[\r\n]/u.test(code)) throw new Error("Invalid authorization code");
@@ -392,28 +426,31 @@ export class AgentOnboardingService {
     this.tasks.delete(id);
   }
 
-  private async start(agent: (typeof ONBOARDING_AGENTS)[number], kind: "sign-in" | "install"): Promise<void> {
+  private async start(agent: (typeof ONBOARDING_AGENTS)[number], kind: "sign-in" | "install" | "upgrade"): Promise<void> {
     const current = this.tasks.get(agent.id);
     if (current?.phase === "running") return;
     this.clear(agent.id);
-    if (kind === "install" && agent.installPackage === null) throw new Error("This agent is installed from its own site");
-    const executable = kind === "install"
+    const installing = kind === "install" || kind === "upgrade";
+    if (installing && agent.installPackage === null) throw new Error("This agent is installed from its own site");
+    const executable = installing
       ? await resolveExecutable([process.platform === "win32" ? "npm.cmd" : "npm"], this.deps)
       : await resolveExecutable(agent.commands, this.deps);
-    if (!executable) throw new Error(kind === "install" ? "npm is not available" : "Agent is not installed");
+    if (!executable) throw new Error(installing ? "npm is not available" : "Agent is not installed");
     if (kind === "sign-in" && agent.signInArgs.length === 0) throw new Error("Sign in from the native agent client before connecting");
     const headlessLinuxCodex = kind === "sign-in" && agent.id === "codex" && process.platform === "linux" && !this.deps.env.DISPLAY && !this.deps.env.WAYLAND_DISPLAY;
-    const args = kind === "install"
-      ? ["install", "-g", agent.installPackage!]
-      : headlessLinuxCodex
-        ? [...agent.signInArgs, "--device-auth"]
-        : agent.signInArgs;
+    const args = kind === "upgrade"
+      ? ["install", "-g", `${agent.installPackage!}@latest`]
+      : kind === "install"
+        ? ["install", "-g", agent.installPackage!]
+        : headlessLinuxCodex
+          ? [...agent.signInArgs, "--device-auth"]
+          : agent.signInArgs;
     const env = { ...this.deps.env, ...agent.signInEnv, PATH: augmentedPath(this.deps.env, this.deps.homedir) };
     const child = this.deps.spawn(executable, args, env);
     const task: LiveTask = { kind, phase: "running", message: null, log: `$ ${args.join(" ")}\n`, process: child, timer: null };
     this.tasks.set(agent.id, task);
     child.onOutput(chunk => { task.log += chunk; });
-    task.timer = setTimeout(() => this.fail(agent.id, "Timed out"), kind === "install" ? INSTALL_TIMEOUT_MS : SIGN_IN_TIMEOUT_MS);
+    task.timer = setTimeout(() => this.fail(agent.id, "Timed out"), installing ? INSTALL_TIMEOUT_MS : SIGN_IN_TIMEOUT_MS);
     void child.exited.then(result => {
       if (this.tasks.get(agent.id) !== task) return;
       if (task.timer) clearTimeout(task.timer);

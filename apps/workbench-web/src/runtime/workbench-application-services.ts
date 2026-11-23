@@ -244,6 +244,20 @@ export interface WebHostDefinition extends HostRuntimeDescriptor {
   readonly url: string;
 }
 
+function isSameOriginBundledHost(definition: WebHostDefinition): boolean {
+  if (definition.kind !== "local" && definition.kind !== "durable") return false;
+  if (typeof window === "undefined") return false;
+  try {
+    const page = new URL(window.location.href);
+    const endpoint = new URL(definition.url);
+    const protocol = page.protocol === "https:" ? "wss:" : page.protocol === "http:" ? "ws:" : null;
+    return protocol !== null && endpoint.protocol === protocol
+      && endpoint.host === page.host && endpoint.pathname === serverUrl("/appserver");
+  } catch {
+    return false;
+  }
+}
+
 export function hostDefinitionProfile(host: WebHostDefinition): HostConnectionProfile {
   return {
     hostId: host.hostId,
@@ -253,7 +267,7 @@ export function hostDefinitionProfile(host: WebHostDefinition): HostConnectionPr
     providerConfigVersion: 1,
     hostKind: host.kind,
     enabled: true,
-    autoConnect: false,
+    autoConnect: isSameOriginBundledHost(host),
     includeInSidebar: true,
     credentialRef: null,
     transportEndpoint: host.transportEndpoint,
@@ -277,15 +291,18 @@ export async function refreshBundledHostProfiles(
     if (current === undefined || current.providerId !== "opencraft.websocket") continue;
     const refreshEndpoint = typeof providerUrl === "string" && serverEndpointNeedsRefresh(providerUrl, definition.url);
     const refreshRoots = current.workspaceBrowseRoots.length === 0 && definition.workspaceBrowseRoots.length > 0;
+    const refreshAutoConnect = !current.autoConnect && isSameOriginBundledHost(definition)
+      && (providerUrl === definition.url || refreshEndpoint);
     // A stale/custom endpoint must not prevent an independent deployment-owned
     // capability repair. Older browser profiles may retain an absolute endpoint
     // while still missing the workspace roots introduced by a newer release.
     if (providerUrl !== definition.url && !refreshEndpoint && !refreshRoots) continue;
-    if (!refreshEndpoint && !refreshRoots) continue;
+    if (!refreshEndpoint && !refreshRoots && !refreshAutoConnect) continue;
     await store.put({
       ...current,
       ...(refreshEndpoint ? { providerConfig: { ...current.providerConfig as object, url: definition.url } } : {}),
       ...(refreshRoots ? { workspaceBrowseRoots: definition.workspaceBrowseRoots } : {}),
+      ...(refreshAutoConnect ? { autoConnect: true } : {}),
       revision: current.revision + 1,
     });
   }

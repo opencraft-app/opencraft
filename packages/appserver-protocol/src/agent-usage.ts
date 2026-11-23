@@ -16,7 +16,7 @@ export interface AgentUsageWindow {
 }
 export interface AgentProviderUsage {
   id: "codex" | "cursor"; status: "ok" | "signedOut" | "expired" | "unavailable";
-  plan: string | null; observedAt: number | null; windows: AgentUsageWindow[];
+  plan: string | null; account?: string | null; observedAt: number | null; windows: AgentUsageWindow[];
 }
 export interface AgentUsageSnapshot {
   providers: AgentProviderUsage[]; conversation: AgentConversationUsage | null; readAt: number;

@@ -28,6 +28,8 @@ test("native quota normalization keeps window units, spend cents and missing val
   assert.deepEqual(u.windows[1].cost, { usedCents: 2500, limitCents: 10000, currency: "USD" });
   assert.equal(u.windows[1].scope, "team");
   assert.equal(u.windows[0].resetsAt, 2000000);
+  assert.equal(codexQuota({ ...codex, email: "dev@example.com" }, 1000).account, "dev@example.com");
+  assert.equal(cursorQuota(cursor, { email: "team@example.com", planInfo: { planName: "Team" } }, 1000).account, "team@example.com");
   assert.deepEqual(cursorQuota({ planUsage: {} }, {}, 1000).windows, []);
   assert.deepEqual(codexQuota({ rate_limit: {} }, 1000).windows, []);
   assert.throws(() => codexQuota({}, 1000)); assert.throws(() => cursorQuota({}, {}, 1000));

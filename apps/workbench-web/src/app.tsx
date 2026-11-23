@@ -89,6 +89,7 @@ import { nativeProjectPicker } from "./runtime/project-folder-picker";
 import { groupWorkInMachines as groupNewConversationMachines, workInAgentHosts, chooseWorkInHost, ThreadTitleWriter, legacyDirectServerProjectionFromHost, projectThreadAgent } from "@opencraft/workbench-runtime";
 import { readCachedThreadName, writeCachedThreadName } from "./runtime/thread-title-cache";
 import { AgentUsage } from "./components/agent-usage";
+import { RemoteMachineUpgrades } from "./components/remote-machine-upgrades";
 import { archiveThread } from "./runtime/thread-archive";
 import { forkAndOpenThread } from "./runtime/thread-fork-navigation";
 import { formatDocumentTitle } from "./runtime/document-title";
@@ -735,11 +736,6 @@ export function App({
       ?? draft?.target.execution.workspace.cwd ?? activeHost.workspaceBrowseRoots[0] ?? null,
   };
   const sideChatAction = panelToolbarActions.find(action => action.id === "sidechat.new");
-  const threadShortcutCommands = activeThreadLease !== null && sideChatAction
-    && (sideChatAction.isAvailable?.(panelToolbarContext) ?? true)
-    ? [{ name: SIDE_CHAT_COMPOSER_COMMAND.name, description: sideChatAction.label, submitOnSelect: true },
-      ...(hostShortcutCommands ?? []).filter(command => command.name !== SIDE_CHAT_COMPOSER_COMMAND.name)]
-    : hostShortcutCommands;
   const presentedPanelRenderers = presentation.filePreviewOnly
     ? panelRenderers.filter(renderer => renderer.kind === "browser" || renderer.kind === "resource" || renderer.kind === "cloud-desktop")
       .map(renderer => renderer.kind === "resource" ? { ...renderer, Component: WorkspaceResourcePreviewPanel } : renderer)
@@ -900,14 +896,16 @@ export function App({
   }, [activeThreadLease, notices, intl, snapshot.hostId, activeThreadId]);
   const updateQueuedSubmission = useCallback(
     async (id: string, intent: SubmitIntent) => {
+      if (localOutbox && await localOutbox.update(id, intent)) return;
       if (activeThreadLease === null)
         throw new Error("No active Thread owns this queue");
       await activeThreadLease.updateQueuedSubmission(
         id,
         compileSubmitIntent(intent).input,
+        intent,
       );
     },
-    [activeThreadLease],
+    [activeThreadLease, localOutbox],
   );
   const deleteQueuedSubmission = useCallback(
     async (id: string) => {
@@ -937,11 +935,12 @@ export function App({
   );
   const steerQueuedSubmission = useCallback(
     async (id: string) => {
+      if (localOutbox && await localOutbox.retry(id)) return;
       if (activeThreadLease === null)
         throw new Error("No active Thread owns this queue");
       await activeThreadLease.steerQueuedSubmission(id);
     },
-    [activeThreadLease],
+    [activeThreadLease, localOutbox],
   );
   const resumeQueuedSubmissions = useCallback(async () => {
     if (activeThreadLease === null)
@@ -1420,6 +1419,49 @@ export function App({
     presentation.runtimeHostConfiguration,
     currentHandoff?.targetHostId === snapshot.hostId ? currentHandoff.model : explicitSetupModel,
   );
+  const draftShortcutCommands = useMemo(() => {
+    if (hostShortcutCommands === undefined && composerCatalog.slashCommands === undefined) {
+      return undefined;
+    }
+    const merged: import("@opencraft/composer-editor").ComposerShortcutCommand[] = [];
+    const seen = new Set<string>();
+    const push = (command: import("@opencraft/composer-editor").ComposerShortcutCommand) => {
+      const key = command.name.trim().toLowerCase();
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      merged.push(command);
+    };
+    for (const command of hostShortcutCommands ?? []) push(command);
+    for (const command of composerCatalog.slashCommands ?? []) {
+      push({
+        name: command.name,
+        description: command.description,
+        ...(command.inputHint ? { inputHint: command.inputHint } : {}),
+        ...(command.source ? { source: command.source } : {}),
+      });
+    }
+    return merged;
+  }, [hostShortcutCommands, composerCatalog.slashCommands]);
+  const sideChatShortcutAvailable = activeThreadLease !== null && Boolean(sideChatAction)
+    && (sideChatAction?.isAvailable?.(panelToolbarContext) ?? true);
+  const threadShortcutCommands = useMemo(() => {
+    if (!sideChatShortcutAvailable && draftShortcutCommands === undefined) {
+      return undefined;
+    }
+    const merged: import("@opencraft/composer-editor").ComposerShortcutCommand[] = [];
+    const seen = new Set<string>();
+    const push = (command: import("@opencraft/composer-editor").ComposerShortcutCommand) => {
+      const key = command.name.trim().toLowerCase();
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      merged.push(command);
+    };
+    if (sideChatShortcutAvailable && sideChatAction) {
+      push({ name: SIDE_CHAT_COMPOSER_COMMAND.name, description: sideChatAction.label, submitOnSelect: true, source: "host" });
+    }
+    for (const command of draftShortcutCommands ?? []) push(command);
+    return merged;
+  }, [sideChatShortcutAvailable, sideChatAction, draftShortcutCommands]);
   const setupModelPage = resolveHostModelSettingsPage(
     settingsContributionSnapshot.settingsPages.map(({ contribution }) => contribution),
     snapshot.hostId, extensionPlatform, internalDeveloperMode,
@@ -2630,6 +2672,15 @@ export function App({
   [presentation.shellNavigation, conversationRouteOpen, standaloneManagementOpen, settingsSection,
     hostCatalog.extensionContributions, selectSettingsSection]);
 
+  const presentedCatalogThreads = useMemo(() => {
+    if (draft !== null || !activeThreadId || !isStreaming) return multiHostCatalog.threads;
+    return multiHostCatalog.threads.map(thread =>
+      thread.connectionHostId === snapshot.hostId && thread.id === activeThreadId && thread.status === "ready"
+        ? { ...thread, status: "running" as const }
+        : thread,
+    );
+  }, [multiHostCatalog.threads, draft, activeThreadId, isStreaming, snapshot.hostId]);
+
   return (
     <ImageEditorContext.Provider value={imageEditor}>
     <IdentityAvatarContext.Provider value={identityAvatar}>
@@ -2729,14 +2780,14 @@ export function App({
             {miniAppSettingsOpen ? null : routeSettingsOpen ? settingsNavigation : (conversationSurfaceVisible || standaloneManagementOpen) ? <Sidebar
               instanceNameScope={displayScope}
               searchInDialog={presentation.shellNavigation}
-              threads={serverSpaces.filter(multiHostCatalog.threads)}
+              threads={serverSpaces.filter(presentedCatalogThreads)}
               threadCatalogs={multiHostCatalog.catalogs}
               threadCatalogDiscovery={multiHostCatalog.discovery}
               {...sidebarCommands}
               onNewTaskInFolder={presentation.executionSelection === "selectable" ? sidebarCommands.onNewTaskInFolder : undefined}
               managementNavigation={sidebarManagementNavigation}
               showFooter={false}
-              footerAccessory={<AgentUsage hostId={snapshot.hostId} threadId={draft === null ? activeThreadId ?? null : null} busy={isStreaming} />}
+              footerAccessory={<><RemoteMachineUpgrades activeHostId={snapshot.hostId} /><AgentUsage hostId={snapshot.hostId} threadId={draft === null ? activeThreadId ?? null : null} busy={isStreaming} /></>}
               showNewChat={presentation.shellNavigation}
               showStart={!presentation.shellNavigation}
               threadCapabilities={sidebarThreadCapabilities}
@@ -2862,7 +2913,7 @@ export function App({
             }}
             composerAddMenuContent={composerAddMenuContent}
             composerEndActions={composerEndActions}
-            shortcutCommands={hostShortcutCommands}
+            shortcutCommands={draftShortcutCommands}
             onSubmit={sendMessage}
           />
         ) : (
@@ -2911,8 +2962,9 @@ export function App({
                     onReviewTurnDiff: openTurnDiffReview,
                     composerChangeSummaryTurnId: snapshot.conversation?.activeTurn?.turnId ?? null,
                     onForkConversation: !showingDisplayCache && nativeSession.data?.fork ? conversationToolbarProps.onFork : undefined,
+                    onStartHandoff: !showingDisplayCache && canContinueWithAgent ? startCurrentAgentHandoff : undefined,
                     onForkTurn: !showingDisplayCache && snapshot.conversation?.authoritative === true
-                      && activeThreadId !== null && !activeThreadId.startsWith("codex_") && hostCatalog.threadManagement.capabilities(snapshot.hostId, activeThreadId).fork
+                      && activeThreadId !== null && !activeThreadId.startsWith("codex_") && !activeThreadId.startsWith("pi_") && hostCatalog.threadManagement.capabilities(snapshot.hostId, activeThreadId).fork
                       ? turnId => forkAndOpenThread({
                           routeScopeId: () => workbenchNavigation.getSnapshot().routeScopeId,
                           fork: () => hostCatalog.threadManagement.fork(snapshot.hostId, activeThreadId, turnId),
@@ -3134,7 +3186,7 @@ export function App({
         <ConversationSearch enabled={presentation.shellNavigation} open={conversationSearchOpen} onOpenChange={setConversationSearchOpen}
           sources={multiHostCatalog.searchSources}
           incomplete={multiHostCatalog.discovery === "error" || multiHostCatalog.catalogs.some(catalog => catalog.phase === "error" || catalog.phase === "unavailable" || catalog.partial)}
-          threads={multiHostCatalog.threads} loading={multiHostCatalog.discovery === "loading" || multiHostCatalog.catalogs.some(catalog => catalog.phase === "loading")}
+          threads={presentedCatalogThreads} loading={multiHostCatalog.discovery === "loading" || multiHostCatalog.catalogs.some(catalog => catalog.phase === "loading")}
           onSelectThread={selectSearchedThread} />
         </AppShell>
       </AppShellRouteRegionsProvider>

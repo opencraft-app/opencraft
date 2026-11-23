@@ -1,0 +1,36 @@
+@use '@opencraft/design-system/typography-mixins.web' as typography;
+
+.remote-machine-upgrades {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--spacing) * 1.5);
+  padding: calc(var(--spacing) * 2) calc(var(--spacing) * 2) 0;
+  border-top: .5px solid var(--color-border-default);
+
+  &__machine {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing);
+  }
+
+  &__machine-header {
+    @include typography.role(metadata, tertiary);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing);
+    min-width: 0;
+
+    > span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
+  &__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: calc(var(--spacing) * 1.5);
+  }
+}

@@ -29,7 +29,7 @@ function fixture(send?: (i: SubmitIntent) => Promise<void>) {
   const sent: SubmitIntent[] = [];
   const create = () => createConversationOutbox({ key, storage, ready: () => ready, blocked: () => false, publish() {}, retire() {},
     async send(i) { sent.push(i); await send?.(i); return { commandId: i.commandId, clientMessageId: i.clientMessageId, hostId: key.hostId, threadId: key.threadId, turnId: null, acceptedAt: 1, replayed: false }; } });
-  return { create, sent, rows: () => rows, ready: () => { ready = true; }, fail: () => { fail = true; },
+  return { create, sent, rows: () => rows, ready: (next = true) => { ready = next; }, fail: () => { fail = true; },
     changeScope: () => { rows = []; for (const listener of listeners) listener(); } };
 }
 
@@ -232,4 +232,99 @@ for (const retire of [false, true]) test(`a positively rejected queue admission 
   await new Promise(resolve => setTimeout(resolve, 180));
   assert.equal(f.sent.length, retire ? 1 : 2);
   if (!retire) { assert.equal(f.rows().length, 0); assert.equal(f.sent[0]!.clientMessageId, f.sent[1]!.clientMessageId); box.dispose(); }
+});
+
+test("waiting, failed, and unknown local outbox messages support edit and explicit retry while sending refuses edits", async () => {
+  let failFirst = true;
+  const f = fixture(async i => {
+    if (failFirst && i.commandId === "one") {
+      failFirst = false;
+      throw new Error("Host rejected old content");
+    }
+  });
+  const box = f.create();
+  await box.admit(intent("one"));
+  await box.admit(intent("two"));
+
+  // Edit a waiting entry in place without disturbing FIFO order or its clientMessageId.
+  const updatedWaiting = {
+    ...intent("one"),
+    clientMessageId: "client-edited-waiting",
+    document: { version: 1 as const, blocks: [{ type: "paragraph" as const, children: [{ type: "text" as const, text: "one edited" }] }] },
+  };
+  assert.equal(await box.update("one", updatedWaiting), true);
+  assert.deepEqual(box.project().map(item => item.preview), ["one edited", "two"]);
+  assert.equal(box.project()[0]?.clientMessageId, "client-one");
+
+  // Attachments cannot be smuggled into an offline outbox edit.
+  await assert.rejects(
+    box.update("one", { ...updatedWaiting, context: [{ id: "c", kind: "file", title: "file", uri: "blob:x", visible: true }] }),
+    /Reconnect/,
+  );
+
+  // Trigger a failure on head, then edit the failed entry: it resets to waiting with the fresh clientMessageId and drains!
+  f.ready();
+  box.wake();
+  await settle();
+  assert.equal(box.project()[0]?.state, "failed");
+  const retryEdited = {
+    ...intent("one"),
+    clientMessageId: "client-one-retry",
+    document: { version: 1 as const, blocks: [{ type: "paragraph" as const, children: [{ type: "text" as const, text: "one fixed" }] }] },
+  };
+  assert.equal(await box.update("one", retryEdited), true);
+  await settle();
+  assert.deepEqual(f.sent.slice(-2).map(item => [item.commandId, item.clientMessageId]), [
+    ["one", "client-one-retry"],
+    ["two", "client-two"],
+  ]);
+  assert.equal(box.project().length, 0);
+  box.dispose();
+
+  // Unknown-outcome entries never auto-retry on wake, but let the user explicitly resend or edit after reviewing.
+  let uncertainShouldFail = true;
+  const uncertain = fixture(async () => {
+    if (uncertainShouldFail) throw new SubmissionOutcomeUnknownError();
+  });
+  const uncertainBox = uncertain.create();
+  await uncertainBox.admit(intent("uncertain"));
+  uncertain.ready();
+  uncertainBox.wake();
+  await settle();
+  assert.equal(uncertainBox.project()[0]?.state, "unknown");
+  assert.equal(uncertainBox.project()[0]?.steerable, true);
+
+  // Offline retry is rejected; editing remains available offline.
+  uncertain.ready(false);
+  assert.equal(uncertainBox.project()[0]?.steerable, false);
+  await assert.rejects(uncertainBox.retry("uncertain"), /This action requires a connection/);
+
+  // Explicit retry while online preserves clientMessageId for server-side idempotency.
+  uncertainShouldFail = false;
+  uncertain.ready(true);
+  assert.equal(await uncertainBox.retry("uncertain"), true);
+  await settle();
+  assert.equal(uncertainBox.project().length, 0);
+  assert.deepEqual(uncertain.sent.map(item => [item.commandId, item.clientMessageId]), [
+    ["uncertain", "client-uncertain"],
+    ["uncertain", "client-uncertain"],
+  ]);
+
+  // Explicit edit on an unknown entry replaces content and uses the edited clientMessageId.
+  uncertainShouldFail = true;
+  await uncertainBox.admit(intent("uncertain-edit"));
+  uncertainBox.wake();
+  await settle();
+  assert.equal(uncertainBox.project()[0]?.state, "unknown");
+  uncertainShouldFail = false;
+  assert.equal(await uncertainBox.update("uncertain-edit", {
+    ...intent("uncertain-edit"),
+    clientMessageId: "client-uncertain-edited",
+  }), true);
+  await settle();
+  assert.equal(uncertainBox.project().length, 0);
+  assert.deepEqual(uncertain.sent.slice(-1).map(item => [item.commandId, item.clientMessageId]), [
+    ["uncertain-edit", "client-uncertain-edited"],
+  ]);
+  uncertainBox.dispose();
 });

@@ -42,3 +42,4 @@ export * from "./catalog-merkle-pages";
 export * from "./native-conversation-project";
 
 export * from "./model-refresh";
+export * from "./slash-commands";

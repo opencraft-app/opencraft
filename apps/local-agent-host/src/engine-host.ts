@@ -13,7 +13,7 @@ import { dirname, join } from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
 import { AppServerRpcError, serializeHistoryReply, type ExecutionEngineClient, type ExecutionEngineProvider } from "@opencraft/appserver-client";
-import { SCOPED_PERMISSION_CATALOG_EXTENSION, SCOPED_PERMISSION_CATALOG_METHOD, SCOPED_SKILL_CATALOG_EXTENSION, SCOPED_SKILL_CATALOG_METHOD, OPENCRAFT_METHOD_ACCESS_EXTENSION, parseAppServerMethodAccess } from "@opencraft/appserver-protocol";
+import { SCOPED_PERMISSION_CATALOG_EXTENSION, SCOPED_PERMISSION_CATALOG_METHOD, SCOPED_SKILL_CATALOG_EXTENSION, SCOPED_SKILL_CATALOG_METHOD, SCOPED_SLASH_COMMAND_CATALOG_EXTENSION, SCOPED_SLASH_COMMAND_CATALOG_METHOD, SLASH_COMMAND_LIST_METHOD, OPENCRAFT_METHOD_ACCESS_EXTENSION, parseAppServerMethodAccess } from "@opencraft/appserver-protocol";
 
 type Value = Record<string, any>;
 interface LegacyHost { websocketUrl: string; resolveWebsocketUrl?: () => Promise<string>; close(): Promise<void>; storageOutcomes?: readonly unknown[] }
@@ -255,9 +255,10 @@ export async function startEngineHost(options: {
             if (!stopped && clients.get(clientId) === state) catalogClients.add(state.owner);
             const access = parseAppServerMethodAccess(initialized.capabilities?.extensions?.[OPENCRAFT_METHOD_ACCESS_EXTENSION]);
             reply({ ...initialized, capabilities: { ...initialized.capabilities, extensions: { ...initialized.capabilities?.extensions, ...resources?.extensions,
-              ...(access ? { [OPENCRAFT_METHOD_ACCESS_EXTENSION]: { ...access, methods: [...new Set([...access.methods, SCOPED_SKILL_CATALOG_METHOD, SCOPED_PERMISSION_CATALOG_METHOD, MODEL_CATALOG_REFRESH_METHOD, "opencraft/agent-session/export-context"])] } } : {}),
+              ...(access ? { [OPENCRAFT_METHOD_ACCESS_EXTENSION]: { ...access, methods: [...new Set([...access.methods, SCOPED_SKILL_CATALOG_METHOD, SCOPED_PERMISSION_CATALOG_METHOD, SCOPED_SLASH_COMMAND_CATALOG_METHOD, SLASH_COMMAND_LIST_METHOD, MODEL_CATALOG_REFRESH_METHOD, "opencraft/agent-session/export-context"])] } } : {}),
               [SCOPED_SKILL_CATALOG_EXTENSION]: { version: 1 },
               [SCOPED_PERMISSION_CATALOG_EXTENSION]: { version: 1 },
+              [SCOPED_SLASH_COMMAND_CATALOG_EXTENSION]: { version: 1 },
               [SCOPED_MODEL_REFRESH_EXTENSION]: { version: 1 },
               "opencraft/agent-session": { version: 1, contextExport: [...(options.legacy ? [options.legacy.id] : []), ...options.providers.map(provider => provider.id)] },
               "opencraft/execution-engines": { version: 1, defaultEngine: options.defaultEngine, providers: options.providers.map(provider => ({ id: provider.id, threadPrefix: provider.threadPrefix, modelPrefix: provider.modelPrefix, extensions: provider.extensions })) },
@@ -334,6 +335,20 @@ export async function startEngineHost(options: {
             reply(await callLegacy("permissionProfile/list", native, clientId)); return;
           }
           if (method === "permissionProfile/list" && !options.legacy) { reply(await registry.get(options.defaultEngine)!.request(method, params, state.owner)); return; }
+          if (method === SLASH_COMMAND_LIST_METHOD || method === SCOPED_SLASH_COMMAND_CATALOG_METHOD) {
+            const scoped = method === SCOPED_SLASH_COMMAND_CATALOG_METHOD;
+            if (scoped && ((params.threadId !== undefined && (typeof params.threadId !== "string" || !params.threadId))
+              || (params.model !== undefined && (typeof params.model !== "string" || !params.model)))) throw new Error("Invalid slash command catalog target");
+            const provider = scoped && params.threadId !== undefined
+              ? options.providers.find(provider => provider.ownsThread(params.threadId))
+              : scoped && params.model !== undefined
+                ? options.providers.find(provider => provider.ownsModel(params.model))
+                : registry.get(options.defaultEngine);
+            const native = { cwd: params.cwd, ...(params.threadId ? { threadId: params.threadId } : {}) };
+            if (provider) { reply(await provider.request(SLASH_COMMAND_LIST_METHOD, native, state.owner)); return; }
+            if (!options.legacy) { reply({ data: [] }); return; }
+            reply(await callLegacy(SLASH_COMMAND_LIST_METHOD, native, clientId)); return;
+          }
           if (method === "skills/list" || method === SCOPED_SKILL_CATALOG_METHOD) {
             const scoped = method === SCOPED_SKILL_CATALOG_METHOD;
             if (scoped && ((params.threadId !== undefined && (typeof params.threadId !== "string" || !params.threadId))

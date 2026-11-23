@@ -254,3 +254,48 @@ test("pending queue accepts Steer independently of edit and delete custody", () 
   assert.match(ready, /aria-label="Delete queued message"[^>]*disabled=""/u);
   assert.match(render("starting"), /aria-label="Steer with queued message"[^>]*disabled=""/u);
 });
+
+test("unsent local outbox entries enable Edit and Delete while keeping Send and Reorder disabled", () => {
+  const doc = { version: 1 as const, blocks: [{ type: "paragraph" as const, children: [{ type: "text" as const, text: "Saved offline draft" }] }] };
+  const baseLocal = {
+    local: true,
+    commandId: "outbox-1",
+    clientMessageId: "client-outbox-1",
+    serverSubmissionId: null,
+    document: doc,
+    input: [],
+    preview: "Saved offline draft",
+    operation: "idle" as const,
+    createdAt: 100,
+    error: null,
+  };
+  const waitingPresentation = queuedSubmissionPresentation({ ...baseLocal, state: "queued", pausedReason: "outbox-waiting" }, true);
+  assert.equal(waitingPresentation.actionable, false);
+  assert.equal(waitingPresentation.editable, true);
+  assert.equal(waitingPresentation.dismissible, true);
+  assert.equal(waitingPresentation.reorderable, false);
+  assert.deepEqual(waitingPresentation.editableContent.document, doc);
+
+  const waitingMarkup = renderToStaticMarkup(
+    <ComposerQueueTray items={[{ ...waitingPresentation, editing: false }]} isResponseInProgress={false} />,
+  );
+  assert.match(waitingMarkup, /aria-label="Edit queued message"(?![^>]*disabled="")/u);
+  assert.match(waitingMarkup, /aria-label="Delete queued message"(?![^>]*disabled="")/u);
+  assert.match(waitingMarkup, /aria-label="Start queued message"[^>]*disabled=""/u);
+
+  const unknownOffline = queuedSubmissionPresentation({ ...baseLocal, state: "unknown", steerable: false, pausedReason: "outbox-unconfirmed" }, true);
+  assert.equal(unknownOffline.editable, true);
+  assert.equal(unknownOffline.steerable, false);
+
+  const unknownOnline = queuedSubmissionPresentation({ ...baseLocal, state: "unknown", steerable: true, pausedReason: "outbox-unconfirmed" }, true);
+  assert.equal(unknownOnline.editable, true);
+  assert.equal(unknownOnline.steerable, true);
+  const unknownOnlineMarkup = renderToStaticMarkup(
+    <ComposerQueueTray items={[{ ...unknownOnline, editing: false }]} isResponseInProgress={false} />,
+  );
+  assert.match(unknownOnlineMarkup, /aria-label="Start queued message"(?![^>]*disabled="")/u);
+  assert.match(unknownOnlineMarkup, /aria-label="Edit queued message"(?![^>]*disabled="")/u);
+
+  const submittingPresentation = queuedSubmissionPresentation({ ...baseLocal, state: "submitting", pausedReason: "outbox-waiting" }, true);
+  assert.equal(submittingPresentation.editable, false);
+});

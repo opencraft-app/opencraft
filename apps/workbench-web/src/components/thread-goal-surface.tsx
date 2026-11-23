@@ -67,6 +67,7 @@ function duration(seconds: number, intl: IntlShape): string {
 
 export interface ThreadGoalSurfaceProps {
   readonly threadId: string | null;
+  readonly capabilityTarget?: string | null;
   readonly goals: ThreadGoalResource;
   readonly draftScope?: object;
   readonly onCreateGoal?: (objective: string) => Promise<void>;
@@ -85,7 +86,7 @@ function menuReturnFocus(event: Event): HTMLElement | null {
 const NO_THREAD_GOAL: ThreadGoalSnapshot = { goal: null, completedGoal: null, phase: "idle", busy: false, error: null };
 
 /** Presentation owns only disclosure and an unsaved edit draft. */
-export function ThreadGoalSurface({ threadId, goals, draftScope, onCreateGoal, disabled = false, portalContainer, children }: ThreadGoalSurfaceProps) {
+export function ThreadGoalSurface({ threadId, capabilityTarget, goals, draftScope, onCreateGoal, disabled = false, portalContainer, children }: ThreadGoalSurfaceProps) {
   const intl = useIntl();
   const presentationActive = useWorkbenchPresentationActive();
   const presentationRoot = useWorkbenchPresentationRoot();
@@ -98,7 +99,7 @@ export function ThreadGoalSurface({ threadId, goals, draftScope, onCreateGoal, d
   const read = useCallback(() => threadId === null ? NO_THREAD_GOAL : goals.getSnapshot(threadId), [goals, threadId]);
   const snapshot = useSyncExternalStore(subscribe, read, read);
   const goal = snapshot.goal ?? snapshot.completedGoal;
-  const capability = goals.capability(threadId ?? undefined);
+  const capability = goals.capability(threadId ?? capabilityTarget ?? undefined);
   const [creating, setCreating] = useState(false);
   const creatingRef = useRef(false);
   const [expanded, setExpanded] = useState(false);

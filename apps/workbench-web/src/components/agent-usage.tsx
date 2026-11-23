@@ -1,26 +1,138 @@
-import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useIntl } from "@opencraft/i18n/react";
 import { Button, IconButton } from "@opencraft/design-system-web/button";
-import { AgentBrandIcon, GaugeIcon, RefreshIcon, ChevronDownIcon, ChevronUpIcon } from "@opencraft/design-system-web/action-icons";
-import type { AgentUsageSnapshot, AgentProviderUsage, AgentUsageWindow } from "@opencraft/appserver-protocol";
+import { AgentBrandIcon, DownloadIcon, GaugeIcon, LaptopIcon, RefreshIcon, ChevronDownIcon, ChevronUpIcon, ServerIcon } from "@opencraft/design-system-web/action-icons";
+import type { AgentUsageSnapshot, AgentProviderUsage, AgentUsageWindow, OnboardingSnapshot } from "@opencraft/appserver-protocol";
 import { useAppServerHosts } from "../runtime/appserver-runtime-context";
+import { formatAgentVersionShort, isNewerSemver } from "./remote-machine-upgrades";
 import "./agent-usage.scss";
 
-export function AgentUsage({ hostId, threadId, busy }: { hostId: string; threadId: string | null; busy: boolean }) {
-  const { agentRuntimes, threadAttention } = useAppServerHosts();
-  const subscribe = useCallback((listener: () => void) => agentRuntimes.subscribe(hostId, listener), [agentRuntimes, hostId]);
-  const read = useCallback(() => agentRuntimes.getSnapshot(hostId).phase, [agentRuntimes, hostId]);
-  const phase = useSyncExternalStore(subscribe, read, read);
-  const scope = useSyncExternalStore(threadAttention.subscribe, () => threadAttention.getScope() ?? "anonymous");
-  return <AgentUsageView key={JSON.stringify([hostId, scope])} hostId={hostId} scope={scope} threadId={threadId} busy={busy} connected={phase === "ready"}
-    request={params => agentRuntimes.request(hostId, "opencraft/agents/usage", params)} />;
+export interface UsageMachineOption {
+  readonly hostId: string;
+  readonly label: string;
+  readonly remote: boolean;
+  readonly online: boolean;
 }
-export function AgentUsageView({ hostId, scope = "fixture", threadId, busy, connected, request }: {
-  hostId: string; scope?: string; threadId: string | null; busy: boolean; connected: boolean;
+
+export function AgentUsage({ hostId, threadId, busy }: { hostId: string; threadId: string | null; busy: boolean }) {
+  const intl = useIntl();
+  const queryClient = useQueryClient();
+  const { agentRuntimes, threadAttention, profiles, hosts } = useAppServerHosts();
+  const scope = useSyncExternalStore(threadAttention.subscribe, () => threadAttention.getScope() ?? "anonymous");
+  const [selectedHostId, setSelectedHostId] = useState(hostId);
+  useEffect(() => { setSelectedHostId(hostId); }, [hostId]);
+
+  const machines = useMemo<readonly UsageMachineOption[]>(() => {
+    const items: UsageMachineOption[] = [];
+    for (const host of hosts) {
+      const profile = profiles.find(entry => entry.hostId === host.hostId);
+      if (profile && !profile.enabled) continue;
+      const remote = host.kind !== "local";
+      const online = !remote || profile?.machinePresence !== "offline";
+      if (remote && !online && host.hostId !== hostId) continue;
+      const label = host.kind === "local"
+        ? (profile?.machineIdentity?.name
+          ? `${intl.formatMessage({ id: "agentUsage.localMachine", defaultMessage: "Local" })} · ${profile.machineIdentity.name}`
+          : intl.formatMessage({ id: "agentUsage.localMachine", defaultMessage: "Local" }))
+        : (profile?.machineIdentity?.name || profile?.displayName || host.label);
+      items.push({ hostId: host.hostId, label, remote, online });
+    }
+    return items;
+  }, [hosts, profiles, hostId, intl]);
+
+  const effectiveHostId = machines.some(item => item.hostId === selectedHostId) ? selectedHostId : hostId;
+  const effectiveRemote = machines.find(item => item.hostId === effectiveHostId)?.remote ?? effectiveHostId !== "local";
+  const localHostId = hosts.find(host => host.kind === "local")?.hostId ?? hostId;
+
+  const subscribe = useCallback((listener: () => void) => agentRuntimes.subscribe(effectiveHostId, listener), [agentRuntimes, effectiveHostId]);
+  const read = useCallback(() => agentRuntimes.getSnapshot(effectiveHostId).phase, [agentRuntimes, effectiveHostId]);
+  const phase = useSyncExternalStore(subscribe, read, read);
+
+  const selectedOnline = machines.find(item => item.hostId === effectiveHostId)?.online ?? true;
+  const connected = effectiveRemote ? selectedOnline : phase === "ready";
+  const targetThreadId = effectiveHostId === hostId ? threadId : null;
+
+  const onboardingQuery = useQuery({
+    queryKey: ["agent-usage-onboarding", effectiveHostId, scope],
+    enabled: connected,
+    queryFn: () => agentRuntimes.request(effectiveHostId, "opencraft/agents/onboarding/status", {}),
+    retry: false,
+    staleTime: 30_000,
+    refetchInterval: query => query.state.data?.agents?.some(agent => agent.activity?.phase === "running") ? 2500 : false,
+    refetchOnWindowFocus: false,
+  });
+
+  const packageVersionsQuery = useQuery({
+    queryKey: ["agent-package-versions", localHostId],
+    enabled: localHostId !== null,
+    queryFn: () => agentRuntimes.request(localHostId, "opencraft/agents/onboarding/package-versions", {}),
+    retry: false,
+    staleTime: 10 * 60_000,
+    refetchOnWindowFocus: false,
+  });
+
+  const upgradeCli = async (agentId: "codex" | "cursor") => {
+    let result: OnboardingSnapshot;
+    try {
+      result = await agentRuntimes.request(effectiveHostId, "opencraft/agents/onboarding/act", { id: agentId, action: "upgrade" });
+    } catch {
+      result = await agentRuntimes.request(effectiveHostId, "opencraft/agents/onboarding/act", { id: agentId, action: "install" });
+    }
+    queryClient.setQueryData(["agent-usage-onboarding", effectiveHostId, scope], result);
+  };
+
+  return (
+    <AgentUsageView
+      key={scope}
+      hostId={effectiveHostId}
+      scope={scope}
+      threadId={targetThreadId}
+      busy={effectiveHostId === hostId ? busy : false}
+      connected={connected}
+      remoteHost={effectiveRemote}
+      machines={machines.length > 1 ? machines : undefined}
+      selectedMachineHostId={effectiveHostId}
+      onSelectMachine={setSelectedHostId}
+      onboarding={onboardingQuery.data}
+      latestVersions={packageVersionsQuery.data?.versions}
+      onUpgradeAgent={upgradeCli}
+      request={params => agentRuntimes.request(effectiveHostId, "opencraft/agents/usage", params)}
+    />
+  );
+}
+
+export function AgentUsageView({
+  hostId,
+  scope = "fixture",
+  threadId,
+  busy,
+  connected,
+  remoteHost = false,
+  machines,
+  selectedMachineHostId,
+  onSelectMachine,
+  onboarding,
+  latestVersions,
+  onUpgradeAgent,
+  request,
+}: {
+  hostId: string;
+  scope?: string;
+  threadId: string | null;
+  busy: boolean;
+  connected: boolean;
+  remoteHost?: boolean;
+  machines?: readonly UsageMachineOption[];
+  selectedMachineHostId?: string;
+  onSelectMachine?: (hostId: string) => void;
+  onboarding?: OnboardingSnapshot;
+  latestVersions?: Readonly<Record<string, string | null>>;
+  onUpgradeAgent?: (id: "codex" | "cursor") => Promise<void>;
   request(params: { threadId?: string; force?: boolean }): Promise<AgentUsageSnapshot>;
 }) {
   const intl = useIntl(), [open, setOpen] = useState(false), [provider, setProvider] = useState(() => threadId?.startsWith("cursor_") ? "cursor" : "codex");
+  const [upgradingId, setUpgradingId] = useState<string | null>(null);
   const manualProvider = useRef(false);
   const trigger = useRef<HTMLButtonElement>(null), panelId = useId();
   const force = useRef(false), previousBusy = useRef(busy);
@@ -37,6 +149,15 @@ export function AgentUsageView({ hostId, scope = "fixture", threadId, busy, conn
     : id === "cursor" ? intl.formatMessage({ id: "onboard.agent.cursor", defaultMessage: "Cursor" }) : id;
   const label = intl.formatMessage({ id: "agentUsage.current", defaultMessage: "This conversation" });
   const active = data?.providers.find(item => item.id === provider) ?? data?.providers[0];
+  const activeId = (active?.id ?? provider) as "codex" | "cursor";
+  const onboardingEntry = onboarding?.agents.find(agent => agent.id === activeId);
+  const accountEmail = active?.account ?? onboardingEntry?.account ?? null;
+  const cliVersion = formatAgentVersionShort(onboardingEntry?.version);
+  const latestCliVersion = latestVersions?.[activeId] ?? null;
+  const cliHasUpdate = Boolean(onboardingEntry?.installed && onboardingEntry.canInstallPackage && isNewerSemver(latestCliVersion, onboardingEntry.version));
+  const cliBusy = upgradingId === activeId
+    || (onboardingEntry?.activity?.phase === "running" && (onboardingEntry.activity.kind === "install" || onboardingEntry.activity.kind === "upgrade"));
+
   const context = current?.context;
   const percent = context ? context.usedTokens / context.limitTokens * 100 : null;
   const observedAt = active?.observedAt ?? current?.observedAt ?? data?.readAt;
@@ -61,6 +182,24 @@ export function AgentUsageView({ hostId, scope = "fixture", threadId, busy, conn
       {open ? <ChevronDownIcon size={14} aria-hidden="true" /> : <ChevronUpIcon size={14} aria-hidden="true" />}
     </Button>
     {open ? <div className="agent-usage__content">
+      {machines && machines.length > 1 && onSelectMachine ? (
+        <div className="agent-usage__machines" role="group" aria-label={intl.formatMessage({ id: "agentUsage.machineSelector", defaultMessage: "Machine" })}>
+          {machines.map(machine => (
+            <Button
+              key={machine.hostId}
+              size="sm"
+              density="compact"
+              contentLayout="row"
+              variant={selectedMachineHostId === machine.hostId ? "outline" : "ghost"}
+              aria-pressed={selectedMachineHostId === machine.hostId}
+              onClick={() => onSelectMachine(machine.hostId)}
+            >
+              {machine.remote ? <ServerIcon size={12} aria-hidden="true" /> : <LaptopIcon size={12} aria-hidden="true" />}
+              <span>{machine.label}</span>
+            </Button>
+          ))}
+        </div>
+      ) : null}
       <div className="agent-usage__header">
         <div role="tablist" aria-label={intl.formatMessage({ id: "agentUsage.providers", defaultMessage: "Usage provider" })}>
           {(data?.providers ?? [{ id: "codex" }, { id: "cursor" }]).map((item, index, list) => <IconButton key={item.id} size="accessory" variant={provider === item.id ? "outline" : "ghost"}
@@ -75,6 +214,41 @@ export function AgentUsageView({ hostId, scope = "fixture", threadId, busy, conn
         <IconButton size="accessory" variant="ghost" disabled={!connected || query.isFetching} aria-label={intl.formatMessage({ id: "agentUsage.refresh", defaultMessage: "Refresh usage" })}
           aria-busy={query.isFetching} onClick={refresh}><RefreshIcon size={15} aria-hidden="true" /></IconButton>
       </div>
+      {(accountEmail || cliVersion || (remoteHost && active?.status === "ok" && !accountEmail) || (cliHasUpdate && onUpgradeAgent)) ? (
+        <div className="agent-usage__identity">
+          {accountEmail ? (
+            <div className="agent-usage__account" title={accountEmail}>{accountEmail}</div>
+          ) : remoteHost && active?.status === "ok" ? (
+            <div className="agent-usage__account">{intl.formatMessage({ id: "agentUsage.accountAfterPluginUpdate", defaultMessage: "Update OpenCraft service to show account" })}</div>
+          ) : null}
+          {(cliVersion || ((cliHasUpdate || (remoteHost && onboardingEntry?.installed && onboardingEntry.canInstallPackage)) && onUpgradeAgent)) ? (
+            <div className="agent-usage__version-row">
+              <span>{cliVersion ? `${providerName(activeId)} ${cliVersion}` : providerName(activeId)}</span>
+              {(cliHasUpdate || (remoteHost && onboardingEntry?.installed && onboardingEntry.canInstallPackage)) && onUpgradeAgent ? (
+                <Button
+                  size="sm"
+                  density="compact"
+                  variant="outline"
+                  contentLayout="row"
+                  loading={Boolean(cliBusy)}
+                  disabled={!connected}
+                  onClick={() => {
+                    setUpgradingId(activeId);
+                    void onUpgradeAgent(activeId).finally(() => setUpgradingId(null));
+                  }}
+                >
+                  {cliBusy ? null : <DownloadIcon size={12} aria-hidden="true" />}
+                  <span>
+                    {cliHasUpdate && latestCliVersion
+                      ? intl.formatMessage({ id: "agentUsage.upgradeCliTo", defaultMessage: "Update to v{version}" }, { version: latestCliVersion })
+                      : intl.formatMessage({ id: "remoteUpgrade.agentButton", defaultMessage: "Update {agent}" }, { agent: providerName(activeId) })}
+                  </span>
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       <div className="agent-usage__provider" role="tabpanel" id={panelId} aria-labelledby={`${panelId}-${provider}`}>
         {query.isPending && connected ? <p role="status">{intl.formatMessage({ id: "agentUsage.loading", defaultMessage: "Reading usage…" })}</p> : null}
         {query.isError || !connected ? <p role="status">{intl.formatMessage({ id: "agentUsage.failed", defaultMessage: "Could not refresh usage. Try again when connected." })}</p> : null}
