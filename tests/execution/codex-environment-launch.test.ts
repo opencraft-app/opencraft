@@ -24,6 +24,7 @@ import { ExecutionEnvironmentRuntime, environmentProjectId } from "@opencraft/ex
 import { LocalAccountServerPlugin } from "../../plugins/local-account/src/server.js";
 import { createNodePasswordHasher } from "../../plugins/local-account/src/password-hash-node.js";
 import { openHeadlessAssetsStorage } from "../../apps/headless-server/src/headless-assets-storage.js";
+import { openAssetConfigurations } from "@opencraft/plugin-assets/server";
 import {
   codexExecutionGit,
   coreCodexEnvironmentLaunch,
@@ -40,6 +41,7 @@ import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 
+const identityVaultWorker = new URL("../fixtures/identity-vault-execution.worker.ts", import.meta.url);
 const admissionWorker = fileURLToPath(
   new URL("../../apps/headless-server/src/execution-admission.worker.ts", import.meta.url),
 );
@@ -650,10 +652,12 @@ test("a runtime owner without a receiver behind an accounts-only Core refuses a 
 });
 
 /** The vault owner of an identity composition that owns its vault: a Worker
- * that seals capsules and grants. Main receives only this port, shaped like
- * `identity.environmentLaunch` with the Codex record readers and Git owner. */
+ * that seals capsules and grants, composed only from public entry points
+ * (`@opencraft/headless-server/assets-execution-records`). Main receives only
+ * this port, shaped like `identity.environmentLaunch` with the Codex record
+ * readers and Git owner. */
 async function identityVaultOwner(t: test.TestContext, f: Awaited<ReturnType<typeof durable>>) {
-  const vault = await openHeadlessAssetsStorage(f.directory, { environmentLaunch: true });
+  const vault = await openAssetConfigurations(f.directory, { entry: identityVaultWorker, environmentLaunch: true });
   const reader = openExecutionAdmission({ workerFile: admissionWorker, directory: f.directory });
   t.after(async () => {
     await reader.close();

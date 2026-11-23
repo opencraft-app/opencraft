@@ -2,14 +2,9 @@ import { WorkspaceBotOwner } from "./workspaces/bot-owner.js";
 import { createWorkspaceExecutionOwner } from "./workspaces/execution-owner.js";
 import { createAssetsStorage } from "@opencraft/plugin-assets/server/storage";
 import type { GitConnectionProvider } from "@opencraft/plugin-assets/server/git-connections";
-import { GitExecutionAuthority, executionScope, resolveExecutionAdmission } from "./git-execution-authority.js";
-import { parseGitExecutionLocator } from "@opencraft/execution-environment/git-execution";
 import { createHeadlessSandboxProviders } from "./sandbox-providers.js";
-import { codexTurnAdmission, creationAdmission } from "./environment-launch-admission.js";
-import {
-  EnvironmentAccountPartitions,
-  type EnvironmentAccountMapping,
-} from "@opencraft/execution-environment/environment-account";
+import type { EnvironmentAccountMapping } from "@opencraft/execution-environment/environment-account";
+import { createHeadlessExecutionRecords } from "./assets-execution-records.js";
 /** Only this compiled native host adds execution admission to the shared vault owner. */
 export function createHeadlessAssetsStorage(
   directory: string,
@@ -26,36 +21,15 @@ export function createHeadlessAssetsStorage(
     environmentIssuer?: { publish?: string; generation?: string };
   } = {},
 ) {
-  const authority = new GitExecutionAuthority(directory, "actor");
   const { environmentAccount, ...storageOptions } = options;
-  const environmentAccounts =
-    environmentAccount === undefined
-      ? undefined
-      : new EnvironmentAccountPartitions(
-          {
-            owner: (actorId) => authority.environmentAccountOwner(actorId),
-            actorOf: (binding) => authority.environmentAccountActor(binding),
-          },
-          environmentAccount,
-        );
+  const { execution, environmentRecords, environmentAccounts } = createHeadlessExecutionRecords({
+    directory,
+    ...(environmentAccount ? { environmentAccount } : {}),
+  });
   return createAssetsStorage(
     directory,
     providers,
-    {
-      resolve: (raw) => resolveExecutionAdmission(authority, raw),
-      reserve(raw) {
-        const input = parseGitExecutionLocator(raw);
-        if (input.hostId !== "local-codex" || !input.inputId || input.turnId) throw Error("git_execution_unavailable");
-        const current = authority.reserve(input);
-        if (!current) {
-          if (authority.unowned(input, "pending")) return null;
-          throw Error("git_execution_unavailable");
-        }
-        return { scope: executionScope(input, current), native: { incarnation: current.incarnation } };
-      },
-      actor: (account) => authority.actor(account),
-      close: () => authority.close(),
-    },
+    execution,
     async (context) => {
       const providers = createHeadlessSandboxProviders();
       const bots = new WorkspaceBotOwner(context, { providers });
@@ -81,17 +55,9 @@ export function createHeadlessAssetsStorage(
     {
       ...storageOptions,
       ...(environmentAccounts ? { environmentAccounts } : {}),
-      ...(storageOptions.environmentLaunch
-        ? {
-            // Core's own durable records: the pending Codex input lease and the
-            // Server owner's creation reservation, with the current Actor epoch.
-            environmentRecords: {
-              codexTurn: (locator) => codexTurnAdmission(authority, locator),
-              creation: (locator) => creationAdmission(authority, locator),
-              actorEpoch: (actorId) => authority.actorEpoch(actorId),
-            },
-          }
-        : {}),
+      // Core's own durable records: the pending Codex input lease and the
+      // Server owner's creation reservation, with the current Actor epoch.
+      ...(storageOptions.environmentLaunch ? { environmentRecords } : {}),
     },
   );
 }

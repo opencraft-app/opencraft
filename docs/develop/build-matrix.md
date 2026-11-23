@@ -217,12 +217,14 @@ behavioral tests; optional preview/media errors must not break those flows.
 
 ## Pull-request CI selection
 
-`build-matrix` runs on every PR and again on every commit pushed to `main`. A PR
-is tested against the `main` it saw; when several merge close together, the
-push run is what tests their combination, and it reports a break right after
-the merge rather than preventing it. Each `main` commit keeps its own run and is
-never cancelled, so a failure names the merge that caused it; a push run selects
-jobs from the pushed range. `scripts/ci/ci-plan.mjs` chooses its jobs from
+`build-matrix` runs on every PR and on every merge queue group. A PR is tested
+against the `main` it saw; the queue then tests it combined with the PRs ahead
+of it, selecting jobs from the group's whole range, and `main` advances to
+exactly the commit that group tested, so a combination break is caught before it
+lands. Each group has its own ref and run and is never cancelled, so a failure
+names the PR that caused it. There is no second run on push to `main`: it would
+repeat the group's run on the same tree and only compete for runners.
+`scripts/ci/ci-plan.mjs` chooses its jobs from
 Git's full merge-base diff. It includes deleted paths and both sides of a rename;
 it does not use GitHub's limited workflow path filter or a paginated file API.
 The reusable `ci-plan.yml` tests the selector and aggregate check without
@@ -263,7 +265,11 @@ On pull requests `core-tests` also formats and lints the source files the PR
 adds (`check:format`, `lint:changed`). Its suites run with
 `tests/support/test-isolation.mjs`: each test file gets a private HOME/TMPDIR,
 and the global teardown stops and reports any process a test file left running,
-which fails the step.
+which fails the step. A test file process that is still alive after
+`OPENCRAFT_TEST_FILE_BUDGET_MS` (default five minutes, `0` disables it) fails
+with its file name and the resources still holding it (for example an open
+server or timer), whether a test never settled or a handle outlived the last
+test, instead of hanging silently until the step times out.
 
 The server job installs dependencies once and always runs selected server tests;
 archive building, archive smoke and upload are separately conditional. Shared

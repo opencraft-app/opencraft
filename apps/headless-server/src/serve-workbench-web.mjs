@@ -935,6 +935,11 @@ export async function createWorkbenchWebServer({
         sendJson(response, 403, { error: 'actor_access_denied' }); return;
       }
       if (local && url.pathname === '/__opencraft_access/admission' && request.method === 'GET') { response.writeHead(204, { 'cache-control': 'no-store' }); response.end(); return; }
+      // Assets fences every in-flight request on login/member/Actor authority
+      // events and answers a definite 403 before any write. The polling watch
+      // below would instead drop the connection, leaving a credential save with
+      // an unknown outcome, so assets is dispatched before it is attached.
+      if (assetsService && await assetsService.handle(request, response)) return;
       if (accessService) {
         const identity = accessService.authenticate(request);
         if (identity) { const unwatch = accessService.watch(identity, () => response.destroy()); response.once('close', unwatch); }
@@ -976,7 +981,6 @@ export async function createWorkbenchWebServer({
         response.writeHead(204, { "cache-control": "private, no-store" }); response.end(); return;
       }
       if (modelPolicyService && await modelPolicyService(request, response)) return;
-      if (assetsService && await assetsService.handle(request, response)) return;
       if (identityService && await identityService.handle(request, response)) return;
       if (url.pathname.startsWith("/__opencraft_speech/")) {
         if (speechService === null) {

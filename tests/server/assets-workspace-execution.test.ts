@@ -8,7 +8,7 @@ import { WorkspaceBrowserClient } from "../../apps/headless-server/src/workspace
 import { WorkspaceTerminalClient } from "../../apps/headless-server/src/workspaces/terminal-client.js";
 import { WorkspaceArtifactClient } from "../../apps/headless-server/src/workspaces/artifact-client.js";
 import { createHash } from "node:crypto";
-import { openWorkspaceExecutionService } from "../../apps/headless-server/src/workspaces/execution-service.js";
+import { openWorkspaceExecutionService } from "@opencraft/headless-server/workspaces/execution-service";
 import { createWorkspaceNativeRouting } from "../../apps/headless-server/src/workspaces/native-routing.js";
 import { WorkspacePlacementProjection } from "../../apps/headless-server/src/workspaces/placement-projection.js";
 import { createWorkspaceExecutionAuthority } from "@opencraft/sandbox-node/workspace-execution-channel";

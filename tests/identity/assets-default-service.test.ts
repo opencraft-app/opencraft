@@ -340,6 +340,9 @@ for (const mutation of ["logout", "password", "membership", "actor", "role"] as 
         other.setActor(f.actorId, "member", mutation === "role", "fixture");
         other.close();
       }
+      // Keep the revoked request in flight past one tick of the router's 500 ms
+      // access watch; the answer must still be the assets fence's definite 403.
+      await new Promise((resolve) => setTimeout(resolve, 600));
     } finally {
       pause.release();
     }

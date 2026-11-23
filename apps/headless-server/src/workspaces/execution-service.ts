@@ -18,17 +18,27 @@ import { WorkspaceNativeAdmission } from "./native-admission.js";
 import { WorkspacePlacementProjection } from "./placement-projection.js";
 import { createWorkspaceNativeRouting } from "./native-routing.js";
 
-/** Gateway composition over an already owned Assets Worker. Never opens storage,
- * provisions compute, reads installed secrets, or constructs a second Bot pool. */
-export async function openWorkspaceExecutionService(options: {
+export type WorkspaceExecutionServiceOptions = {
+  /** The public workspace owner of the Worker that owns the Assets vault: core's
+   * assets Worker, or the vault Worker of an identity composition. Every call
+   * crosses to that Worker; this facade holds no vault or store access. */
   port: WorkspaceExecutionPort & Pick<AssetStoragePort, "workspaceCatalog">;
+  /** The Gateway's in-memory Actor and membership projections. */
   actors: ConstructorParameters<typeof WorkspaceNativeAdmission>[0]["actors"];
   access: ConstructorParameters<typeof WorkspaceNativeAdmission>[0]["access"];
+  /** The workspace execution channel this installation configured. */
   socketPath: string;
   token: string;
   assertThreadActive?(threadId: string): void;
   onCleanupUnconfirmed(): void;
-}) {
+};
+export type WorkspaceExecutionService = Awaited<ReturnType<typeof openWorkspaceExecutionService>>;
+
+/** Gateway composition over an already owned Assets Worker. Never opens storage,
+ * provisions compute, reads installed secrets, or constructs a second Bot pool.
+ * An identity composition that owns its vault Worker opens this over that
+ * Worker's port and offers the result as its `codexWorkspaceRouting`. */
+export async function openWorkspaceExecutionService(options: WorkspaceExecutionServiceOptions) {
   const admission = new WorkspaceNativeAdmission(options),
     placement = new WorkspacePlacementProjection(options.port);
   let authority: Awaited<ReturnType<typeof createWorkspaceExecutionAuthority>> | undefined;
@@ -55,6 +65,8 @@ export async function openWorkspaceExecutionService(options: {
   let browserInstalled = false;
   const assetAdmission = (context: TransportSubmissionContext): AssetAdmission => {
     const access = admission.admit(context);
+    // Workspace catalogs are partitioned by the canonical Actor account,
+    // whichever composition owns the vault.
     return {
       scope: "actor:" + access.actorId,
       expiresAt: access.expiresAt,

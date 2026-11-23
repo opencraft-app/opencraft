@@ -223,6 +223,22 @@ Ports in this slice:
   Core checks that the admitted creation record is the request it sent and
   rechecks the Actor before and after the vault owner answers; the Git owner
   rechecks the Actor and the native process around every grant, as before.
+- Public entry points for such an identity composition, so it builds these
+  members from core's records instead of copying core code:
+  - `@opencraft/headless-server/assets-execution-records`:
+    `createHeadlessExecutionRecords({ directory, environmentAccount? })` returns
+    `{ execution, environmentRecords, environmentAccounts? }`, exactly what core's
+    own assets Worker passes to `createAssetsStorage` (the `GitExecutionResolver`
+    and the `codexTurn`/`creation`/`actorEpoch` readers over the data
+    directory's execution leases, creation reservations and Actor store).
+    Its reads are synchronous SQLite: call it only inside the vault Worker.
+  - `@opencraft/headless-server/workspaces/execution-service`:
+    `openWorkspaceExecutionService(options)`, the Gateway facade over that
+    Worker's public workspace owner. With
+    `assistantEnvironmentConfigurationManaged` core opens no assets Worker and
+    requires `codexWorkspaceRouting` from the identity; the composition opens
+    this facade over its own Worker port and offers the result. It holds no
+    vault access; catalogs stay partitioned by `actor:<actorId>`.
 - Receiver: `createEnvironmentLaunchAdmissionReceiver({ purpose, instance,
 issuer, admission: { turn?, creation?, terminal? } })` (subpath
   `environment-launch-receiver`). `kinds` lists what it can admit (allowed for

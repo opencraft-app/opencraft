@@ -127,10 +127,12 @@ test('isolation setup supplies NODE_OPTIONS to subsequent Bash steps', () => {
   }
 });
 
-test('every main commit runs build-matrix in its own run', () => {
-  assert.match(workflow, /^on:\n  pull_request:\n  merge_group:\n(?:  #[^\n]*\n)*  push:\n    branches: \[main\]\n/m);
-  // A PR commit supersedes its predecessor; main commits are never grouped or cancelled.
-  assert.match(workflow, /group: build-matrix-\$\{\{ github\.event\.pull_request\.number \|\| \(github\.event_name == 'push' && github\.sha\) \|\| github\.ref \}\}/);
+test('the merge queue, not a second push run, verifies every main commit', () => {
+  // main advances to the commit its merge queue group tested; a push run would repeat it.
+  assert.match(workflow, /^on:\n  pull_request:\n(?:  #[^\n]*\n)*  merge_group:\n  workflow_dispatch:\n/m);
+  assert.doesNotMatch(workflow.match(/^on:\n(?:  [^\n]*\n|    [^\n]*\n)*/m)[0], /^  push:/m);
+  // A PR commit supersedes its predecessor; each queue group has its own ref and is never cancelled.
+  assert.match(workflow, /group: build-matrix-\$\{\{ github\.event\.pull_request\.number \|\| github\.ref \}\}/);
   assert.match(workflow, /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/);
 });
 
