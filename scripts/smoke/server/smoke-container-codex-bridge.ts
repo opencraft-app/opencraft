@@ -1,5 +1,3 @@
-// Not applicable while the container Gateway attaches Brain's own Codex runtime through the
-// workspace endpoint (docs/operations/managed-headless.md); kept for the bridge provider work.
 // The 4-container deployment (deploy/docker/compose.yaml) moving Codex to the
 // provider bridge: a conversation made while the Gateway runs the legacy path
 // (OPENCRAFT_CODEX_BRIDGE=0) stays listed, readable and continuable after the
@@ -9,7 +7,7 @@
 // keeps every conversation continuable.
 //
 // The image must carry the drill Core (tests/fixtures/bridge-stack-core.ts as
-// runtime/codex-core.cjs) so Brain's Core only reaches the local stand-in model:
+// runtime/codex-core.cjs) so the proxy's account Core only reaches the local stand-in model:
 //   OPENCRAFT_IMAGE=opencraft:bridge-drill node --import tsx scripts/smoke/server/smoke-container-codex-bridge.ts
 import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -55,13 +53,13 @@ const env: NodeJS.ProcessEnv = {
   OPENCRAFT_PLATFORM: `linux/${execFileSync("docker", ["image", "inspect", image, "--format", "{{.Architecture}}"], { encoding: "utf8" }).trim()}`,
   OPENCRAFT_DRILL_UPSTREAM: model.url,
 };
-// Brain's drill Core reads the stand-in model; the Gateway chooses its Codex path.
+// The proxy's drill Core reads the stand-in model; the Gateway chooses its Codex path.
 const override = join(directory, "compose.drill.yaml");
 await writeFile(
   override,
   [
     "services:",
-    "  brain:",
+    "  proxy:",
     "    environment:",
     "      OPENCRAFT_DRILL_UPSTREAM: ${OPENCRAFT_DRILL_UPSTREAM}",
     "  gateway:",
@@ -172,7 +170,7 @@ const result: Record<string, unknown> = { image };
 let passed = false;
 try {
   const layout = await prepareLayout(env, { uid: process.getuid!(), gid: process.getgid!() });
-  // A synthetic account for Brain's Core, in the Codex data directory it opens.
+  // A synthetic account for the proxy's account Core, in the Codex data directory it opens.
   await mkdir(join(data, "codex"), { recursive: true, mode: 0o700 });
   const store = new AccountPoolStore({
     databasePath: join(data, "codex", "account-pool.sqlite"),
@@ -198,7 +196,7 @@ try {
       layout.gitCredentials,
       layout.workspace,
       layout.logs,
-      ...["brain", "gateway", "hands"].map((service) => join(logs, service)),
+      ...["brain", "gateway", "hands", "proxy"].map((service) => join(logs, service)),
     ])
       await chown(path, uid, gid).catch(() => undefined);
     // The seeded account (store and secrets) belongs to the containers' user.
