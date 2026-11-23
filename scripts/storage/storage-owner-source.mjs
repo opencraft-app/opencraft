@@ -1,8 +1,8 @@
 import ts from 'typescript';
 import { build } from 'esbuild';
-import { readFileSync, readdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 /** Evaluate only repository code, in disposable tooling, never installed databases. */
@@ -26,11 +26,10 @@ export async function readOwnerMigrations(root, store) {
   // guards and startup side effects (for example Worker-only modules) never run.
   const imported = importedBinding(file, expression);
   const scratch = mkdtempSync(join(tmpdir(), 'opencraft-schema-owner-'));
-  // The generated module is outside the checkout, so preserve the workspace's
-  // external dependency resolution without putting scratch state in `.runtime`.
-  symlinkSync(join(root, 'node_modules'), join(scratch, 'node_modules'), 'dir');
   try {
-    const output = join(scratch, 'owner.mjs');
+    // The generated module is outside the checkout, so preserve the workspace's
+    // external dependency resolution without putting scratch state in `.runtime`.
+    const output = join(dependencyScope(scratch, root), 'owner.mjs');
     await build({ stdin: { contents: imported
         ? `export { ${imported.name} as __storageMigrations } from ${JSON.stringify(imported.specifier)};\n`
         : source + '\nexport const __storageMigrations = ' + expression + ';\n',
@@ -38,6 +37,25 @@ export async function readOwnerMigrations(root, store) {
       bundle: true, platform: 'node', format: 'esm', packages: 'external', treeShaking: true, logLevel: 'silent' });
     return (await import(pathToFileURL(output).href)).__storageMigrations;
   } finally { rmSync(scratch, { recursive: true, force: true }); }
+}
+
+/**
+ * Mirror the node_modules chain Node would search from `root`: a nested project
+ * (one with its own node_modules inside a larger workspace) still falls back to
+ * its ancestors' dependencies. Returns the directory the module is written into.
+ */
+function dependencyScope(scratch, root) {
+  const chain = [];
+  for (let directory = resolve(root); ; directory = dirname(directory)) {
+    if (existsSync(join(directory, 'node_modules'))) chain.unshift(join(directory, 'node_modules'));
+    if (dirname(directory) === directory) break;
+  }
+  let level = scratch;
+  chain.forEach((modules, index) => {
+    if (index) mkdirSync(level = join(level, 'nested'));
+    symlinkSync(modules, join(level, 'node_modules'), 'dir');
+  });
+  return level;
 }
 
 /** Fail new owned callers that bypass the common schema registration. */
