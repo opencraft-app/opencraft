@@ -62,7 +62,10 @@ export function createRemoteEnvironmentLaunch(options: {
     purpose: options.purpose,
     instance: options.instance,
     issuer: options.issuer,
-    authorize: async (expected) => {
+    // This owner only ever opens v1 Turn contexts; a v2 one fails the lookup.
+    authorize: async (raw) => {
+      const expected = raw as EnvironmentLaunchContext;
+      if (!expected?.scope || !expected.native) return unavailable();
       const entry = pinned.get(canonical(expected));
       if (closed || !entry) return unavailable();
       const current = await options.admission(entry.input);

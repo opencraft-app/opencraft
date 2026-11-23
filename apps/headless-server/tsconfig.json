@@ -19,6 +19,7 @@
     "src/host-environment-launch.ts",
     "src/environment-metadata-transport.ts",
     "src/capability-execution-context.ts",
+    "src/git-status-capability.ts",
     "src/execution-admission.worker.ts"
   ]
 }

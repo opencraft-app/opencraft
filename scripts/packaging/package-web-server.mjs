@@ -28,6 +28,7 @@ import { createHash } from 'node:crypto';
 import { normalizeFullRuntimeEngines, packageFullRuntime } from '../full-release/package-runtime.mjs';
 import { buildGitIdentityRuntime } from './package-git-identity-runtime.mjs';
 import { buildConversationCli } from './build-conversation-cli.mjs';
+import { verifyWorkspaceLinks } from './workspace-links.mjs';
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 export const temporaryWebPackagePrefix = () => join(tmpdir(), 'opencraft-web-package-');
 
@@ -274,5 +275,6 @@ export async function packageWebServerFromEnvironment(composition = {}) {
     output: process.env.OPENCRAFT_WEB_PACKAGE_OUTPUT, ...composition });
 }
 if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
+  verifyWorkspaceLinks();
   console.log(JSON.stringify(await packageWebServerFromEnvironment(), null, 2));
 }

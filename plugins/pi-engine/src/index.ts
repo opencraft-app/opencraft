@@ -18,7 +18,7 @@ import { isDeepStrictEqual } from "node:util";
 import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { isAbsolute, join, resolve, sep } from "node:path";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai/models";
-import { PiDurableSession, createPiModels, type PiSnapshot, type PiForkContext } from "./session.js";
+import { PiDurableSession, createPiModels, type PiSnapshot, type PiForkContext, type PiExecutionLaunchPort } from "./session.js";
 import { assertPiFields, compareThreads, fullAccessProfile, piModel, selection, thinking, workspace } from "./contract.js";
 import { compilePiInput } from "./input.js";
 import { piSkillCatalog, validatePiSkillInput } from "./skills.js";
@@ -120,7 +120,10 @@ export class PiEngine {
   private resolvedModels?: Awaited<ReturnType<typeof createPiModels>>;
   private readonly transcriptCache: ReturnType<typeof createPiTranscriptCache>;
   private readonly cliLeases = new Map<string, ExecutionCliLease>();
-  constructor(private readonly options: { executionCli?: ScopedExecutionCliPort; modelPolicyPath?: string; dataDirectory?: string; directory: string; cwd: string; executionEnvironment?: ExecutionEnvironmentRuntime; executionGit?:ExecutionGitPort; modelDirectory?: string; models?: Awaited<ReturnType<typeof createPiModels>>; configuration?: PiModelConfiguration; sessionCapabilities?: SessionCapabilityPort; attachmentDirectory?: string; prepareAttachmentInput?: (threadId: string, input: Value[]) => Promise<Value[]>; admission?: { open(): boolean; run<T>(operation: () => Promise<T>, reconciliation?: boolean): Promise<T> } }) {
+  constructor(private readonly options: { executionCli?: ScopedExecutionCliPort; modelPolicyPath?: string; dataDirectory?: string; directory: string; cwd: string; executionEnvironment?: ExecutionEnvironmentRuntime; executionGit?:ExecutionGitPort; executionLaunch?: PiExecutionLaunchPort; modelDirectory?: string; models?: Awaited<ReturnType<typeof createPiModels>>; configuration?: PiModelConfiguration; sessionCapabilities?: SessionCapabilityPort; attachmentDirectory?: string; prepareAttachmentInput?: (threadId: string, input: Value[]) => Promise<Value[]>; admission?: { open(): boolean; run<T>(operation: () => Promise<T>, reconciliation?: boolean): Promise<T> } }) {
+    // Delivered ENV has one owner and travels beside the Git grant of the same admission.
+    if (options.executionLaunch && options.executionEnvironment) throw new Error("Execution ENV cannot have two owners");
+    if (options.executionLaunch && !options.executionGit) throw new Error("Environment delivery requires the Git execution port");
     nodeObserver("pi", { processResources: false });
     this.modelsRuntime = (options.models ? Promise.resolve(options.models) : createPiModels(options.modelDirectory ?? options.directory))
       .then(models => { this.resolvedModels = models; return models; });
@@ -260,7 +263,7 @@ export class PiEngine {
     if (session.ephemeral && session.failed) throw new Error("Temporary Pi session is no longer available");
     return session.starting ??= (async () => {
       const native = await PiDurableSession.open({ threadId: session.id, cwd: session.cwd, file: join(this.options.directory, `${session.id}.sqlite`),
-        executionEnvironment: this.options.executionEnvironment, executionGit:this.options.executionGit, projectId: session.projectId ?? null,
+        executionEnvironment: this.options.executionEnvironment, executionGit:this.options.executionGit, executionLaunch:this.options.executionLaunch, projectId: session.projectId ?? null,
         ephemeral: session.ephemeral, inherited: session.inherited, admissionOpen: this.admissionOpen, onPolicyDenied: error => this.notify("warning",{threadId:session.id,message:error.message}),
         modelPolicyPath: this.options.modelPolicyPath, policyCatalog: () => this.models(), admitBackground: operation => this.admit(async () => {
           assertModelPolicy(this.options.modelPolicyPath, "pi", session.model, session.effort, await this.models());

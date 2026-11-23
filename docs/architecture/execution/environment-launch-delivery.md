@@ -1,13 +1,17 @@
 # Execution ENV launch delivery
 
-Status: slices 1 and 3 implemented, slice 8 partially implemented. The
+Status: slices 1, 2, 3 and 4 implemented, slice 8 partially implemented. The
 receiver takes its expected context from the execution owner's own durable
-admission (Decision 1). DSH in `assets` mode receives Turn ENV through
+admission (Decision 1). Slice 4 adds the v2 launch context (Turn, creation and
+terminal admissions) to the protocol, the issuer and the receiver only; no
+consumer uses it yet. DSH in `assets` mode receives Turn ENV through
 `EnvironmentLaunchReceiver` when either the identity composition supplies a
 vault-owner port or the installation sets `environmentDelivery: 'vault-owner'`,
-which makes the core vault Worker the issuer and the owner of ENV metadata.
-Every other consumer still reads a decrypted snapshot from
-`ExecutionEnvironmentRuntime` synchronously in its own process.
+which makes the core vault Worker the issuer and the owner of ENV metadata. Pi
+receives it the same way in the independent engine host when that host's
+configuration pins `environmentIssuer`. Every other consumer still reads a
+decrypted snapshot from `ExecutionEnvironmentRuntime` synchronously in its own
+process.
 
 Related: [account environment variables](../identity/account-environment.md),
 [execution control](execution-control-authority.md),
@@ -114,6 +118,74 @@ execution owner: read its own durable admission (Worker), require the relayed
   (`ExecutionEnvironmentRuntime.seal/open`). Creator provenance and Project
   binding remain non-secret metadata and move to an asynchronous owner port.
 
+## Launch context v2
+
+The v1 context is an admitted native Turn (`{scope, native}`) and stays valid:
+v1 capsules (`env1.`) keep opening for the purposes `dsh`, `pi` and `codex`,
+byte for byte as before. ACP session creation, Codex `thread/start`/`fork` and
+Hands terminals launch before or outside a Turn, so v2 carries a discriminated
+admission instead:
+
+```
+{ version: 2, admission:
+    { kind: "turn",     account, actorGeneration, membershipRevision, hostId,
+                        threadId, inputId, executionId, leaseGeneration, turnId, incarnation }
+  | { kind: "creation", account, actorGeneration, membershipRevision, hostId,
+                        operationId, source /* forked Thread or null */, incarnation }
+  | { kind: "terminal", account, actorGeneration, membershipRevision, hostId,
+                        threadId /* or null */, resource, operation, incarnation } }
+```
+
+- **Wire.** Capsule prefix `env2.`; the AEAD associated data (and the HKDF info
+  that hashes it) starts with the label `opencraft.environment-launch.v2`
+  instead of `.v1`. Each kind has an exact key set, normalized in a fixed order,
+  and the `kind` is part of the authenticated header. The receiver chooses the
+  version from the owner's expected context, never from the capsule, so a v1
+  capsule cannot open against a v2 expectation (or the reverse) and a capsule of
+  one kind cannot open against another kind with overlapping identifiers.
+- **No Project.** A v2 context has no `projectId` field at all. Only Human Actor
+  accounts (`actor:human://…`) with their generation and membership revision are
+  admitted.
+- **Purpose and kind.** `dsh` and `pi`: `turn`. `acp` and `codex`: `creation`,
+  `turn`. `terminal`: `terminal`. Codex targets `local-codex`; DSH, Pi and ACP
+  target `opencraft-server`; a terminal may target either. A v1 context is never
+  sealed for `acp` or `terminal`. The issuer checks this before reading values;
+  the receiver refuses an expectation its purpose cannot carry.
+- **One-shot.** Every capsule is consumed once (nonce set). A Turn launches once
+  per capsule (one per command). A creation or terminal admission launches once
+  per receiver: a second capsule for the same admission is refused even when it
+  is fresh. The lasting fence is the durable record leaving its admissible state
+  once the launch happens; the receiver's set closes the window before that
+  write.
+
+### Durable admission per kind
+
+Decision 1 applies to every kind: both the vault owner (issuer) and the
+execution owner (receiver) read core's own durable record, compare the relayed
+claim with it field by field and reread it around the value read and the
+decryption. A request, a relayed context or a Main-signed scope envelope is
+never the authority.
+
+| Kind       | Durable record                                                                                                                                                                                                                                                        | Admissible while                                                      | Project source (vault owner)                                     |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `turn`     | Execution lease and submission plus the Actor store, as for v1 (`GitExecutionAuthority`).                                                                                                                                                                             | the lease is active for that Turn and native incarnation              | the Thread binding                                               |
+| `creation` | A creation reservation keyed by Host and creation `operationId`, written by core when it accepts the authenticated creation request and before the native creation: Actor and epoch at admission, source Thread (fork), Project and the owner incarnation holding it. | the reservation is pending; it stops being admissible once it commits | the reservation (fork: the source Thread binding at admission)   |
+| `terminal` | The terminal owner's reservation (Host, `resource`, `operation`), written before spawn, together with the Actor epoch it was admitted under and the owner incarnation.                                                                                                | the reservation is held and nothing has been launched for it          | the Thread binding, or the reservation for a threadless terminal |
+
+Ports in this slice:
+
+- Issuer: `new EnvironmentLaunchOwner(vault, turnAdmission, { creation?, terminal? })`.
+  A reader returns `{ admission, project }` from the durable record, or `null`.
+  A kind without a reader is refused before any value is read; the Headless
+  composition passes none, so it issues only Turns.
+- Receiver: `createEnvironmentLaunchAdmissionReceiver({ purpose, instance,
+issuer, admission: { turn?, creation?, terminal? } })` (subpath
+  `environment-launch-receiver`). `kinds` lists what it can admit (allowed for
+  its purpose and backed by a reader); `open(locator, reply)` reads the record
+  the locator names, requires the relayed context to equal it, opens against
+  the record and handles `{context: null}` exactly as v1 (an empty launch only
+  when neither side holds a Human admission).
+
 ## Cancellation, late and duplicate delivery
 
 - A capsule expires after at most 60 s and is consumed once per receiver
@@ -178,6 +250,9 @@ values.
   without the assets vault Worker or without execution admission.
 - `environmentLaunch` without the Actor/lease handoff (`humanGitExecution`) is
   rejected at startup instead of failing every command.
+- Delivery together with Pi running inside Main (no `engineHostDescriptor`) is
+  rejected at startup instead of launching Pi without ENV. An engine host given
+  `environmentIssuer` outside the Assets execution context is rejected too.
 - Owners that have not migrated keep the synchronous snapshot. A configured
   receiver against a Gateway without the route fails closed.
 - Independently installed execution owners must be updated before their
@@ -197,11 +272,24 @@ synchronous runtime.
    and issuer, audience separation, compatibility. Evidence: package and app
    typechecks, existing DSH/Git/session-capability tests, a pinned-DSH run with
    `OPENCRAFT_DSH_RUNTIME` showing a command reading a vault-only value.
-2. **Pi engine host.** Enable purpose `pi` in the relay; Pi receives ENV beside
-   its Git port and combines both into one snapshot (values plus Git grant).
-   In-process Pi inside Main cannot host a receiver; `environmentLaunch`
-   requires the independent engine host. Tests: Pi shell worker per snapshot,
-   worker reuse keyed by snapshot, revocation. Evidence: engine-host smoke.
+2. **Pi engine host (implemented).** The relay serves purpose `pi`; the
+   independent engine host constructs the receiver (`instance`
+   `server:<machine>:pi`) with its issuer pinned by its own configuration
+   (`environmentIssuer`, Assets execution context only) and reads its durable
+   admission by input in the same admission Worker as DSH, additionally
+   requiring a Pi Thread of this live process. For each shell launch Pi
+   prepares the opaque ENV and its Git grant for the same input and joins them
+   with `ExecutionEnvironmentSnapshot.combine` (same owner, no name shadowing a
+   Git variable), then rechecks that the input still owns the live run. Shell
+   workers are keyed by the combined snapshot. Headless refuses delivery
+   together with in-process Pi at startup, and `PiEngine` refuses a receiver
+   without its Git port or beside a synchronous runtime. Tests
+   (`pi-environment-launch.test.ts`, `environment-launch-owner.test.ts`,
+   `independent-engine-host.test.mjs`, `headless-composition.test.mjs`): one
+   worker per snapshot, reuse by key, revocation retires the worker and
+   interrupts its command, unowned input, no value in any relayed reply,
+   combine refusals, in-process refusal, unconfigured compatibility, a durable
+   admission read by input, and an engine host booting with a pinned issuer.
 3. **Core vault-owner Worker issuer (implemented).** `EnvironmentLaunchOwner`
    runs `AccountEnvironment.launchEnvironment` in the Headless assets Worker that
    owns the vault, so core installations can use slices 1-2 without a downstream
@@ -211,12 +299,18 @@ synchronous runtime.
    from Thread metadata, wrong-project and forged contexts refused, one ENV
    owner at startup, close drains and retires the key, restart pins a new key.
    `check-main-thread-sync-io` adds no call.
-4. **Protocol change: launch context without a native Turn.** ACP session
-   creation, Codex `thread/start`/`fork` and Hands terminals launch before or
-   outside a Turn, which the v1 context cannot express. Add a v2 header with a
-   discriminated admission (`turn` | `creation` | `terminal`), purposes `acp`
-   and `terminal`, while v1 capsules keep opening. Tests: v1/v2 domain
-   separation, no cross-kind confusion, compatibility.
+4. **Protocol change: launch context without a native Turn (implemented).**
+   ACP session creation, Codex `thread/start`/`fork` and Hands terminals launch
+   before or outside a Turn, which the v1 context cannot express. The v2 header
+   carries a discriminated admission (`turn` | `creation` | `terminal`), purposes
+   `acp` and `terminal` exist, and v1 capsules keep opening (see
+   [Launch context v2](#launch-context-v2)). Protocol, issuer and receiver
+   validation only; the Gateway relay still serves `dsh` and no consumer
+   changed. Tests (`environment-launch-context-v2.test.ts`): v1/v2 domain
+   separation including relabelled bodies, no cross-kind confusion, wrong
+   purpose/Host/attachment, replay and one-shot per kind, receiver and issuer
+   checks against the durable record (including a record changing during
+   decryption), kinds without a reader refused, v1 compatibility.
 5. **ACP host.** Replace the scope envelope and the ACP host's own vault open
    with a creation capsule; keep per-session environment and local
    `redactError`. Tests: session reopen, account/Project switch requires a new
@@ -297,6 +391,42 @@ Recorded after the first slice; later slices follow them.
 - **A configured vault owner refuses execution owners that do not request a
   capsule** (for example an old DSH runtime), with an explicit upgrade error,
   instead of launching with an empty ENV. Missing delivery must fail closed.
+- **A refused delivery retires Pi's delivered-value workers.** Values live
+  only in the environment of the shell worker process, so stopping it is the
+  only revocation. When a configured delivery is refused for a Pi Thread (lease
+  replaced, Actor revoked, process replaced, or the Gateway unreachable), every
+  worker holding delivered values for that Thread is stopped and its running
+  commands are marked interrupted and are not replayed; a cancelled call does
+  not retire anything. Idle workers of an older snapshot are still pruned when
+  a new snapshot starts its worker, as before.
+- **The independent engine host pins its issuer through its own
+  configuration.** It is never learnt from the Gateway or its capability
+  descriptor. A composition port with a stable issuer key suits this directly.
+  The core vault-owner issuer's key lives for one Worker lifetime, so with it
+  the engine host must be relaunched with the new key after the vault owner
+  restarts; until then its deliveries fail closed. Supervisor wiring that
+  writes the key into the engine host configuration is not part of slice 2.
+- **Pi's native file-tool environment receives no delivered values.** Only the
+  shell worker launches commands with personal ENV; the native
+  `NodeExecutionEnv` keeps the base environment, as it already does with the
+  Git port alone.
 - **The downstream port shape `{issuer, seal(target, context): Promise<string>}` is
   accepted for now**; slice 3 adds a core vault-owner issuer so installations no
   longer need to supply it. Implemented as `environmentDelivery: 'vault-owner'`.
+- **v2 is a separate domain, selected by the receiver.** The version label is
+  part of the authenticated header and the owner's expected context picks the
+  version. v1 stays unchanged so already pinned execution owners keep working;
+  new purposes exist only in v2.
+- **A v2 context cannot name a Project.** Decision 2 becomes structural: the
+  field does not exist. The vault owner takes the Project from the durable
+  record of each kind (Thread binding or the creation/terminal reservation).
+- **Creation and terminal admissions are one-shot; Turns are per capsule.** A
+  reservation authorizes one launch. Durable one-shot is the record's state
+  change, which slices 5 and 6 must write before or with the launch.
+- **An issuer or receiver without a reader for a kind refuses that kind.** There
+  is no fallback from a missing creation or terminal record to a Turn, to the
+  relayed claim or to the synchronous runtime.
+- **The durable creation and terminal records are not added in this slice.**
+  Both can be added additively (a new table through an appended migration, or a
+  new journal version written only by an upgraded owner); slices 5 and 6 own
+  them together with their readers.

@@ -145,6 +145,10 @@ test('core ENV delivery has one owner and fails at startup without execution adm
   assert.equal(closed, 1);
   // The vault Worker starts its issuer, but no Human execution admission exists.
   await assert.rejects(startHeadlessServer({ ...f.options, environmentDelivery: 'vault-owner' }), /requires execution admission/);
+  // Pi inside Main cannot host a receiver; it is refused instead of running without ENV.
+  for (const engines of [['pi'], ['dsh', 'pi']])
+    await assert.rejects(startHeadlessServer({ ...f.options, engines, defaultEngine: engines[0], environmentDelivery: 'vault-owner' }),
+      /independent Pi engine host/);
   assert.equal(f.starts(), 0);
   const app = await startHeadlessServer(f.options); t.after(() => app.close());
   assert.equal((await fetch(app.url)).status, 200);

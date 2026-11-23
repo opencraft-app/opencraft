@@ -29,6 +29,7 @@ import { buildDshCapabilityPlugin } from './package-dsh-capability-runtime.mjs';
 import { buildConversationCli } from './build-conversation-cli.mjs';
 import { splitProductPluginPacks } from '../../apps/headless-server/src/web-deployment/product-plugin-packs.mjs';
 import { productVersion } from '../release/product-version.mjs';
+import { verifyWorkspaceLinks } from './workspace-links.mjs';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -236,6 +237,7 @@ export async function packageHeadlessLinux(composition = {}) {
 const isMain = process.argv[1] != null
   && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url));
 if (isMain) {
+  verifyWorkspaceLinks();
   packageHeadlessLinux().then((path) => process.stdout.write(`${path}\n`)).catch((error) => {
     console.error(error);
     process.exitCode = 1;
