@@ -2,11 +2,10 @@ name: build-matrix
 
 on:
   pull_request:
+  # main changes only through the merge queue, which tests each group exactly as
+  # it lands: main advances to the tested commit itself, so a push run would
+  # repeat that run on the same tree and only compete for runners.
   merge_group:
-  # Each merge is tested again on main: PRs that each passed against an older
-  # main are only tested together here, right after they land.
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       validation:
@@ -24,9 +23,9 @@ permissions:
   actions: read
 
 concurrency:
-  # A newer PR commit replaces the old run; each main commit keeps its own run,
-  # so a regression points at the merge that introduced it.
-  group: build-matrix-${{ github.event.pull_request.number || (github.event_name == 'push' && github.sha) || github.ref }}
+  # A newer PR commit replaces the old run; each merge queue group has its own
+  # ref, so its run is never grouped with or cancelled by another.
+  group: build-matrix-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
