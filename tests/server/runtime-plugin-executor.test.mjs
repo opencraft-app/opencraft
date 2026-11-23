@@ -29,7 +29,12 @@ async function executionPackage(root, roles = ["execution"]) {
     store = join(root, "store"),
     marker = join(root, "marker");
   await mkdir(output, { recursive: true });
-  const code = `import {writeFile} from 'node:fs/promises';export async function activate(context){await writeFile(${JSON.stringify(marker)},context.role);return {close(){return writeFile(${JSON.stringify(marker)},'closed');}};}`;
+  // The fixture reads its marker path from a packaged data file rather than having it spliced into code.
+  const code =
+    "import {readFile,writeFile} from 'node:fs/promises';" +
+    "const marker=JSON.parse(await readFile(new URL('./marker.json',import.meta.url),'utf8')).path;" +
+    "export async function activate(context){await writeFile(marker,context.role);return {close(){return writeFile(marker,'closed');}};}";
+  const data = JSON.stringify({ path: marker });
   const manifest = {
     schemaVersion: 1,
     id: "fixture.executor",
@@ -46,9 +51,13 @@ async function executionPackage(root, roles = ["execution"]) {
         },
       ]),
     ),
-    files: [{ path: "entry.mjs", size: Buffer.byteLength(code), sha256: hash(code) }],
+    files: [
+      { path: "entry.mjs", size: Buffer.byteLength(code), sha256: hash(code) },
+      { path: "marker.json", size: Buffer.byteLength(data), sha256: hash(data) },
+    ],
   };
   await writeFile(join(output, "entry.mjs"), code);
+  await writeFile(join(output, "marker.json"), data);
   await writeFile(join(output, "manifest.json"), JSON.stringify(manifest));
   await installRuntimePlugin(output, store, { enable: true });
   return { store, marker, output };
