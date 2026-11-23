@@ -237,6 +237,19 @@ Closing the Worker retires the issuer key first, then the admission reader and
 the vault; seals accepted before close are drained, later ones are refused. A
 Worker that was asked to issue but did not start an issuer fails startup.
 
+The same Worker also serves the personal Git seal port
+(`PersonalGitSealPort` from `@opencraft/execution-environment/personal-git-seal`,
+`{ authority, seal(scope): Promise<string> }`), exposed to Main as
+`assetsStorage.personalGitSeal`. Only the grant fields of an admitted scope go
+in and only the opaque grant comes back. `PersonalGitSealOwner` seals a scope
+only while it equals the Worker's own durable admission (the active Turn, or a
+Codex pending reservation), read before and after signing; it serves no key or
+credential getter. Grants keep the existing `v2.`/`v3.` envelope and authority,
+so the Git runtime verifies them exactly as before. The Worker's
+`executionGitGrant` and `executionGitReservation` handoffs already sealed in this
+Worker and are unchanged. Close retires the seal owner with the ENV issuer;
+seals accepted before close are drained.
+
 In this mode the same Worker also owns the non-secret ENV metadata (slice 8):
 Main composes `EnvironmentMetadataTransport` instead of the synchronous
 `ExecutionEnvironmentTransport`, and Thread->Project bindings, creator
@@ -266,6 +279,16 @@ values.
   opt in, or an old one, ignores the declared issuer and a delivery Host
   refuses to spawn on it. An old Host attaching to a new owner declares no
   issuer and spawns as before.
+- Personal Git grants. Without a seal port `ExecutionEnvironmentRuntime` signs
+  in-process with the vault key, as before (`snapshot` and `prepare` are the
+  same). Given `{ gitSeal }` it never uses the vault key for grants: `prepare`
+  admits the scope, awaits the port, then rechecks admission and its own close;
+  a synchronous `snapshot` of a grant-bearing scope fails with
+  `personal_git_async_issuer_required` instead of signing locally. Grant format,
+  authority and verification are unchanged, so grants issued before an upgrade
+  and the Git runtime keep working. The Codex adapter issues through `prepare`.
+  Synchronous-only consumers (in-process Pi's `env` callback, the Hands terminal,
+  DSH `legacy`, the ACP host) cannot use a seal port and fail closed with it.
 
 ## Slices
 
@@ -507,6 +530,14 @@ Recorded after the first slice; later slices follow them.
 - **An issuer or receiver without a reader for a kind refuses that kind.** There
   is no fallback from a missing creation or terminal record to a Turn, to the
   relayed claim or to the synchronous runtime.
+- **Personal Git grants are signed by the vault owner through an asynchronous
+  port.** `PersonalGitSealPort` has the shape of the ENV ports (a public
+  `authority` and `seal(scope): Promise<string>`). The core vault-owner Worker
+  serves it; an identity composition that owns its own vault passes its own port
+  as `new ExecutionEnvironmentRuntime(…, { gitSeal })`. Issuance happens after
+  admission and before any launch; the owner checks its durable admission around
+  the signature and the caller rechecks after each await. A failed or closed
+  owner fails closed; there is no synchronous fallback to the vault key.
 - **The durable creation and terminal records are not added in slice 4.**
   Both can be added additively (a new table through an appended migration, or a
   new journal version written only by an upgraded owner); slices 5 and 6 own

@@ -10,6 +10,8 @@ import {
   EnvironmentLaunchOwner,
   environmentTerminalRecords,
 } from "@opencraft/execution-environment/environment-launch-owner";
+import { PersonalGitSealOwner } from "@opencraft/execution-environment/personal-git-seal";
+import type { GitGrantScope } from "@opencraft/execution-environment/personal-git-protocol";
 import {
   EnvironmentMetadata,
   type EnvironmentExecutionScope,
@@ -39,9 +41,11 @@ export async function createAssetsStorage(
   const vault = new EmployeeGitVaultStore(directory);
   let workspaces: AssetWorkspaceExecutionOwner | undefined;
   let environment: EnvironmentLaunchOwner | undefined;
+  let gitSeal: PersonalGitSealOwner | undefined;
   // Retire the issuer key before the admission reader and the vault close.
   const release = async () => {
     environment?.close();
+    gitSeal?.close();
     try {
       await workspaces?.close();
     } finally {
@@ -64,6 +68,22 @@ export async function createAssetsStorage(
               : {},
           )
         : undefined;
+    // The same owner serves `PersonalGitSealPort`: Main awaits a grant and never
+    // holds the vault key. A scope is sealed only while it is this owner's own
+    // durable admission (an active Turn, or a Codex pending reservation).
+    gitSeal = environment
+      ? new PersonalGitSealOwner(vault, (scope) => {
+          const locator = { hostId: scope.hostId, threadId: scope.threadId, inputId: scope.inputId };
+          for (const read of [execution!.resolve, execution!.reserve])
+            try {
+              const admitted = read?.call(execution, locator)?.scope;
+              if (admitted) return admitted;
+            } catch {
+              /* Not admissible through this record; the next one may hold it. */
+            }
+          return null;
+        })
+      : undefined;
     const metadata = environment ? new EnvironmentMetadata(vault) : undefined;
     // Metadata runs FIFO with every other vault write; nothing it returns is a value.
     const metadataCall = <T>(operation: (owner: EnvironmentMetadata) => T): T => {
@@ -157,6 +177,7 @@ export async function createAssetsStorage(
             ...(environment
               ? [
                   "executionEnvironmentLaunch",
+                  "personalGitSeal",
                   "environmentMetadataAdmit",
                   "environmentMetadataProject",
                   ...(execution.actor ? ["executionEnvironmentActor"] : []),
@@ -287,6 +308,14 @@ export async function createAssetsStorage(
               executionEnvironmentLaunch: (target: EnvironmentLaunchTarget, context: AnyEnvironmentLaunchContext) => {
                 try {
                   return environment!.seal(target, context);
+                } catch {
+                  throw new SandboxConfigurationError("execution_unavailable", 503);
+                }
+              },
+              // Returns only the opaque grant; the key never leaves this Worker.
+              personalGitSeal: (scope: GitGrantScope) => {
+                try {
+                  return gitSeal!.seal(scope);
                 } catch {
                   throw new SandboxConfigurationError("execution_unavailable", 503);
                 }
