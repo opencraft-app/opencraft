@@ -5,6 +5,7 @@ import { conversationResourceMethods } from "./conversation-resources.js";
 import { conversationResourceLegacyJournal } from "./conversation-resource-journal.js";
 import { accountModelDefaultsMethods } from "./account-model-defaults.js";
 import { environmentCreationReservationMethods } from "./environment-creation-reservations.js";
+import { actorSshKeyMethods } from "./actor-ssh-keys.js";
 import type { ServerMigrationComposition } from "./migration-composition.js";
 
 /** Domain services that run beside the Server owner, on its connection. */
@@ -43,6 +44,7 @@ export function serveServerCoreOwner(
       let resources: ReturnType<typeof conversationResourceMethods>;
       let modelDefaults: ReturnType<typeof accountModelDefaultsMethods>;
       let reservations: ReturnType<typeof environmentCreationReservationMethods>;
+      let sshKeys: ReturnType<typeof actorSshKeyMethods>;
       try {
         creation = conversationCreationReceiptMethods(owner.database);
         // The retired journal lives beside the database; it is imported when the
@@ -50,6 +52,7 @@ export function serveServerCoreOwner(
         resources = conversationResourceMethods(owner.database, conversationResourceLegacyJournal(directory));
         modelDefaults = accountModelDefaultsMethods(owner.database);
         reservations = environmentCreationReservationMethods(owner.database);
+        sshKeys = actorSshKeyMethods(owner.database);
         served = domains?.(owner, data ?? {}) ?? { methods: {} };
       } catch (error) {
         await owner.close();
@@ -57,7 +60,7 @@ export function serveServerCoreOwner(
       }
       return {
         ready: { outcome: owner.outcome, contract: owner.contract },
-        methods: { ...served.methods, ...creation, ...resources, ...modelDefaults, ...reservations },
+        methods: { ...served.methods, ...creation, ...resources, ...modelDefaults, ...reservations, ...sshKeys },
         close: async () => {
           try {
             await served.close?.();

@@ -111,7 +111,8 @@ function createSshHttpIngress(options) {
         let accepted;
         try {
           accepted = (principals.get(context.username) ?? []).map(key => ({ key, dynamic: false })).find(matches);
-          if (!accepted) accepted = (options.resolveAuthorizedKeys?.(context.username) ?? [])
+          // The offered key lets a key-indexed resolver answer without listing every key.
+          if (!accepted) accepted = (options.resolveAuthorizedKeys?.(context.username, context.key.data) ?? [])
             .map(value => ({ key: parsePublicKey(value), dynamic: true })).find(matches);
         } catch { context.reject(['publickey']); return; }
         const key = accepted?.key;

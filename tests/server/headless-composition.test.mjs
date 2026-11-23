@@ -495,3 +495,58 @@ test('personal model defaults follow the signed-in Actor and instance admission 
   assert.equal(revoked.status, 200, await revoked.clone().text());
   assert.equal((await fetch(path, { headers: { cookie: member } })).status, 403);
 });
+
+test('personal SSH keys sign people in over the real SSH ingress and follow membership revocation', { timeout: 60_000 }, async t => {
+  const { default: ssh2 } = await import('ssh2');
+  const { generateEd25519KeyPair } = await import('../support/ssh-ed25519.mjs');
+  const f = await fixture(t);
+  const host = generateEd25519KeyPair(), operator = generateEd25519KeyPair(), personal = generateEd25519KeyPair();
+  const hostKeyFile = join(f.root, 'ssh-host-key'), sshConfig = join(f.root, 'ssh.json');
+  await writeFile(hostKeyFile, host.private, { mode: 0o600 });
+  await writeFile(sshConfig, JSON.stringify({ hostKeyFile, authorizedKeys: { operator: [operator.public] } }), { mode: 0o600 });
+  const probe = await startHeadlessServer(f.options); await probe.close();
+  const proof = randomBytes(32).toString('base64url');
+  const proofPath = join(f.root, 'setup-token'), configPath = join(f.root, 'human-auth.json');
+  await writeFile(proofPath, JSON.stringify({ token: proof }), { mode: 0o600 });
+  await writeFile(configPath, JSON.stringify({ origin: probe.url, local: true, oidc: [], setupTokenFile: proofPath }), { mode: 0o600 });
+  const app = await startHeadlessServer({ ...f.options, port: Number(new URL(probe.url).port), humanAuthConfig: configPath, sshConfig }); f.own(() => app.close());
+  const path = app.url + '/__opencraft_ssh_keys';
+  const json = { origin: app.url, 'content-type': 'application/json' };
+  assert.equal((await fetch(path)).status, 401);
+  const setup = await fetch(app.url + '/__opencraft_account/setup', { method: 'POST', headers: json,
+    body: JSON.stringify({ proof, mode: 'web', username: 'owner', password: 'Fixture-account-password-42' }) });
+  assert.equal(setup.status, 200, await setup.text());
+  const owner = setup.headers.get('set-cookie')?.split(';')[0];
+  const invitation = await fetch(app.url + '/__opencraft_account/invitations', { method: 'POST', headers: { ...json, cookie: owner }, body: '{}' }).then(r => r.json());
+  const accepted = await fetch(app.url + '/__opencraft_account/accept', { method: 'POST', headers: json,
+    body: JSON.stringify({ code: invitation.code, username: 'member', password: 'Fixture-member-password-42' }) });
+  assert.equal(accepted.status, 201, await accepted.clone().text());
+  const member = accepted.headers.get('set-cookie')?.split(';')[0];
+  const listed = await fetch(path, { headers: { cookie: member } }).then(r => r.json());
+  assert.deepEqual({ sshLogin: listed.sshLogin, keys: listed.keys, administrator: listed.administrator }, { sshLogin: true, keys: [], administrator: false });
+  const memberId = listed.actorId;
+  const added = await fetch(path, { method: 'POST', headers: { ...json, cookie: member }, body: JSON.stringify({ publicKey: personal.public + ' member@laptop', expectedActorId: memberId }) });
+  assert.equal(added.status, 201, await added.clone().text());
+  const ownerView = await fetch(path + '?' + new URLSearchParams({ actorId: memberId }), { headers: { cookie: owner } }).then(r => r.json());
+  assert.equal(ownerView.administrator, true);
+  assert.deepEqual(ownerView.keys.map(key => key.name), ['member@laptop']);
+
+  const clients = [];
+  t.after(() => { for (const client of clients) client.destroy(); });
+  const connect = privateKey => new Promise((resolve, reject) => {
+    const client = new ssh2.Client(); clients.push(client);
+    client.once('ready', () => resolve(client)); client.once('error', reject);
+    client.connect({ host: '127.0.0.1', port: Number(new URL(app.url).port), username: 'member', privateKey, readyTimeout: 3000 });
+  });
+  const session = await connect(personal.private);
+  await assert.rejects(new Promise((resolve, reject) => session.exec('opencraft app-server proxy', (error, stream) => error ? reject(error) : resolve(stream))),
+    /Unable to exec/, 'a personal key never enters the unscoped legacy bridge');
+  const closed = once(session, 'close');
+  const revoked = await fetch(app.url + '/__opencraft_account/members', { method: 'POST', headers: { ...json, cookie: owner },
+    body: JSON.stringify({ actorId: memberId, role: 'member', enabled: false }) });
+  assert.equal(revoked.status, 200, await revoked.clone().text());
+  await closed;
+  await assert.rejects(connect(personal.private), /authentication/);
+  assert.deepEqual((await fetch(path + '?' + new URLSearchParams({ actorId: memberId }), { headers: { cookie: owner } }).then(r => r.json())).keys, [],
+    'membership revocation durably revokes the key');
+});

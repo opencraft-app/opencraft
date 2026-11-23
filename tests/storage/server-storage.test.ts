@@ -28,6 +28,7 @@ import { nodeSqlDatabase, openManagedDatabase, createSchemaValidator } from "@op
 import { accountModelDefaultsMethods } from "../../packages/storage-node/src/server/account-model-defaults.js";
 import { conversationCreationReceiptMethods } from "../../packages/storage-node/src/server/conversation-creation-receipts.js";
 import { environmentCreationReservationMethods, readEnvironmentCreationReservation } from "../../packages/storage-node/src/server/environment-creation-reservations.js";
+import { actorSshKeyMethods, sshKeyFingerprint } from "../../packages/storage-node/src/server/actor-ssh-keys.js";
 const serverSource = (managed: { database: import('node:sqlite').DatabaseSync; outcome: import('@opencraft/sqlite-node').DatabaseOutcome }) => ({ database: nodeSqlDatabase(managed.database), outcome: managed.outcome });
 
 function fixture(t: test.TestContext) {
@@ -535,6 +536,45 @@ test("conversation resources upgrade the preceding Server contract, keep its dat
     assert.equal(owner.database.prepare("SELECT count(*) n FROM conversation_resources").get()?.n, 0);
     assert.throws(() => owner.database.prepare("INSERT INTO conversation_resources VALUES('h', 't', 'closed', 1, '[]')").run(), /CHECK/);
     assert.throws(() => owner.database.prepare("INSERT INTO conversation_resources VALUES('h', 't', 'archived', 1, '{}')").run(), /CHECK/);
+  } finally { await owner.close(); }
+
+  const changed = new DatabaseSync(path);
+  changed.prepare("UPDATE schema_migrations SET checksum=? WHERE version=?").run("0".repeat(64), priorVersion + 1);
+  changed.close();
+  await assert.rejects(openServerDatabase(root), { kind: "history-mismatch" });
+});
+
+test("personal SSH keys upgrade the preceding Server contract, keep its data and reject a tampered checksum", async t => {
+  const root = fixture(t), path = join(root, "opencraft-server.sqlite");
+  const priorVersion = 25;
+  assert.equal(SERVER_MIGRATIONS[priorVersion]?.name, "0025_actor_ssh_keys");
+  const prior = openManagedDatabase({ path, migrations: SERVER_MIGRATIONS.slice(0, priorVersion) });
+  importServerData(prior.database, root, { productVersion: "0.2.0", hash: "previous-conversation-resources-contract" });
+  const actors = new ActorStore(serverSource(prior));
+  const person = actors.resolveHuman({ provider: "local", subject: "retained-person", displayName: "Retained", expiresAt: Date.now() + 60_000 });
+  actors.close();
+  assert.ok(person);
+  const defaults = accountModelDefaultsMethods(nodeSqlDatabase(prior.database));
+  assert.equal(defaults.compareAndSetAccountModelDefaults(person.actorId, "host", 0, { model: "kept", effort: null }).updated, true);
+  const ledger = prior.database.prepare("SELECT * FROM schema_migrations ORDER BY version").all();
+  prior.database.close();
+
+  const owner = await openServerDatabase(root);
+  try {
+    assert.equal(owner.outcome.status, "migrated");
+    assert.equal(owner.outcome.appliedVersion, SERVER_MIGRATIONS.length);
+    assert.deepEqual(owner.database.prepare("SELECT * FROM schema_migrations WHERE version<=? ORDER BY version").all(priorVersion), ledger);
+    const restored = new ActorStore(owner);
+    assert.equal(restored.findHuman({ provider: "local", subject: "retained-person" })?.id, person.actorId);
+    restored.close();
+    assert.equal((accountModelDefaultsMethods(owner.database).readAccountModelDefaults(person.actorId, "host").selection as { model: string }).model, "kept");
+    const keys = actorSshKeyMethods(owner.database);
+    assert.deepEqual(keys.actorSshKeysSnapshot(), []);
+    const blob = Buffer.concat([Buffer.from([0, 0, 0, 11]), Buffer.from("ssh-ed25519"), Buffer.from([0, 0, 0, 32]), Buffer.alloc(32, 7)]);
+    const added = keys.addActorSshKey({ id: "key-1", actorId: person.actorId, actorGeneration: 0, name: "laptop", algorithm: "ssh-ed25519",
+      publicKey: "ssh-ed25519 " + blob.toString("base64"), fingerprint: sshKeyFingerprint(blob), operator: "test" });
+    assert.equal(keys.actorSshKeysSnapshot()[0]?.id, added.id);
+    assert.equal(keys.actorSshKeyAudit(person.actorId, 10)[0]?.action, "add");
   } finally { await owner.close(); }
 
   const changed = new DatabaseSync(path);
