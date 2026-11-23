@@ -14,17 +14,29 @@ export function ownedCleanup(t) {
   t.after(async () => {
     const errors = [];
     for (const cleanup of resources.reverse()) {
-      try { await cleanup(); } catch (error) { errors.push(error); }
+      try {
+        await cleanup();
+      } catch (error) {
+        errors.push(error);
+      }
     }
     for (const removal of removals) {
-      try { await removal(); } catch (error) { errors.push(error); }
+      try {
+        await removal();
+      } catch (error) {
+        errors.push(error);
+      }
     }
-    if (errors.length) throw errors.length === 1 ? errors[0] : new AggregateError(errors, 'test cleanup failed');
+    if (errors.length) throw errors.length === 1 ? errors[0] : new AggregateError(errors, "test cleanup failed");
   });
   return {
     /** A resource to close before any removal; closes run newest first. */
-    own(cleanup) { resources.push(cleanup); },
+    own(cleanup) {
+      resources.push(cleanup);
+    },
     /** A removal (for example the test's data root) that runs after every resource closed. */
-    last(removal) { removals.push(removal); },
+    last(removal) {
+      removals.push(removal);
+    },
   };
 }
