@@ -13,6 +13,7 @@ import { readDshHostIdentity } from '../../apps/headless-server/src/server-deplo
 import { readEngineHostIdentity } from '../../apps/headless-server/src/server-deployment/engine-host-client.mjs';
 import { readHandsIncarnation, watchHandsIncarnation } from './hands-incarnation.mjs';
 import { codexCoreArguments, waitForProxy } from './proxy-core.mjs';
+import { executionHostIssuer, relaunchOnIssuerChange, writeExecutionHostConfigurations } from './execution-hosts.mjs';
 
 // Run this launcher as the independent Brain owner, outside Gateway's lifecycle.
 if (process.platform !== 'linux' || !['x64', 'arm64'].includes(process.arch))
@@ -67,27 +68,9 @@ try {
   try { await writeFile(paths.tokenPath, randomBytes(32).toString('hex') + '\n', { mode: 0o600, flag: 'wx' }); }
   catch (error) { if (error.code !== 'EEXIST') throw error; }
   await readPrivateToken(paths.tokenPath);
-  await writeFile(paths.engineConfig, JSON.stringify({
-    descriptorPath: paths.engineDescriptor, dataDirectory: paths.dataDirectory,
-    runtimeDirectory: paths.runtimeDirectory, engines: ['dsh', 'pi'], defaultEngine: 'pi',
-    executionContext: paths.executionContext, gitWorkerFile: join(root, 'runtime', 'personal-git-worker.mjs'),
-    dshDescriptorPath: paths.dshDescriptor,
-    fileSystemOwner: {endpoint:paths.fileSystemEndpoint,tokenFile:paths.fileSystemToken},
-  }) + '\n', { mode: 0o600 });
-  await writeFile(paths.dshConfig, JSON.stringify({
-    executionContext:paths.executionContext,
-    fileSystemOwner: {endpoint:paths.fileSystemEndpoint,tokenFile:paths.fileSystemToken},
-    artifactDirectory: join(paths.dataDirectory,"artifacts"),
-    descriptorPath: paths.dshDescriptor, dataDirectory: join(paths.dataDirectory, 'agent'),
-    machineIdentityDirectory: paths.dataDirectory, runtimeDirectory: paths.runtimeDirectory,
-    dshExecutable: process.env.OPENCRAFT_DSH_EXECUTABLE?.trim() || join(root, 'runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js'),
-    dshCapabilityPlugin: join(root, 'runtime/dsh/opencraft-capability-plugin.mjs'),
-    modelStorageDirectory: join(paths.dataDirectory, 'models'), speechModelManagement: true,
-    projectStorageDirectory: join(paths.dataDirectory, 'projects'),
-    projectlessWorkspaceDirectory: paths.dshProjectlessDirectory,
-    skillsDirectory: join(paths.dataDirectory, 'skills'),
-    taskCodexCoreEndpoint: paths.coreEndpoint, taskCodexCoreTokenFile: paths.tokenPath,
-  }) + '\n', { mode: 0o600 });
+  // With ENV delivery, DSH and Pi pin the vault owner's published issuer key.
+  const pinnedIssuer = await executionHostIssuer(paths);
+  await writeExecutionHostConfigurations(paths, root, process.env, pinnedIssuer);
   await writeFile(paths.sandboxConfig, JSON.stringify({
     schemaVersion: 1,
     backend: { id: 'hands-unix', options: { endpoint: paths.handsExecutionEndpoint, tokenFile: paths.handsExecutionToken } },
@@ -125,16 +108,21 @@ try {
   let appServer = start('codex-app-server.cjs', appServerArgs, appServerEnv);
   // With an external proxy, engines reach configured providers through it with their own caller token.
   const callerFile = name => paths.proxyMode === 'external' ? { OPENCRAFT_PROXY_CALLER_FILE: join(paths.runDirectory, 'proxy-callers', name + '.json') } : {};
-  start('dsh-host.mjs', [], { OPENCRAFT_DSH_HOST_CONFIG: paths.dshConfig, ...callerFile('dsh') });
-  start('engine-host.mjs', [], { OPENCRAFT_ENGINE_HOST_CONFIG: paths.engineConfig, ...callerFile('pi') });
-  let ready = false;
-  for (let attempt = 0; attempt < 60 && !stopping; attempt++) {
-    try {
-      await Promise.all([coreHealth(paths.coreEndpoint, paths.tokenPath), readEngineHostIdentity(paths.engineDescriptor), readDshHostIdentity(paths.dshDescriptor)]);
-      ready = true; break;
-    } catch { await new Promise(accept => setTimeout(accept, 500)); }
-  }
-  if (!ready || failed || stopping) throw new Error('Native execution Host did not become ready');
+  const startExecutionHosts = () => [
+    start('dsh-host.mjs', [], { OPENCRAFT_DSH_HOST_CONFIG: paths.dshConfig, ...callerFile('dsh') }),
+    start('engine-host.mjs', [], { OPENCRAFT_ENGINE_HOST_CONFIG: paths.engineConfig, ...callerFile('pi') }),
+  ];
+  const executionHostsReady = async () => {
+    for (let attempt = 0; attempt < 60 && !stopping; attempt++) {
+      try {
+        await Promise.all([coreHealth(paths.coreEndpoint, paths.tokenPath), readEngineHostIdentity(paths.engineDescriptor), readDshHostIdentity(paths.dshDescriptor)]);
+        return true;
+      } catch { await new Promise(accept => setTimeout(accept, 500)); }
+    }
+    return false;
+  };
+  let [dshHost, engineHost] = startExecutionHosts();
+  if (!await executionHostsReady() || failed || stopping) throw new Error('Native execution Host did not become ready');
   void watchHandsIncarnation({
     initial: handsIncarnation,
     signal: lifecycle.signal,
@@ -156,6 +144,22 @@ try {
       }
       if (!available && !stopping) throw new Error('Codex execution owner did not reconnect');
       console.log(JSON.stringify({ type: 'codex-hands-owner-rebound' }));
+    },
+  }).catch(() => { failed = true; void stop(1); });
+  // A new vault-owner key (first enablement or explicit rotation) relaunches DSH
+  // and Pi with it: Pi first, since it attaches DSH, then DSH.
+  void relaunchOnIssuerChange({ paths, root, env: process.env, pinned: pinnedIssuer, signal: lifecycle.signal,
+    relaunch: async configure => {
+      for (const host of [engineHost, dshHost]) {
+        host.replacing = true; host.signal('SIGTERM');
+        const timer = setTimeout(() => host.signal('SIGKILL'), 30_000);
+        try { await host.exited; } finally { clearTimeout(timer); }
+        children.splice(children.indexOf(host), 1);
+      }
+      if (stopping) return;
+      await configure();
+      [dshHost, engineHost] = startExecutionHosts();
+      if (!await executionHostsReady() && !stopping) throw new Error('Execution Hosts did not relaunch');
     },
   }).catch(() => { failed = true; void stop(1); });
   console.log('OpenCraft native execution Hosts ready; start docker compose in a separate terminal.');

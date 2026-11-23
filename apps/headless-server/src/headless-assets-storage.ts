@@ -9,6 +9,8 @@ export async function openHeadlessAssetsStorage(
     terminalOwner?: { directory: string; endpoint: string; tokenFile: string };
     /** The sole vault Worker also issues opaque execution ENV capsules. */
     environmentLaunch?: boolean;
+    /** Publication path and rotation generation of its sealed issuer key. */
+    environmentIssuer?: { publish?: string; generation?: string };
   } = {},
 ) {
   let entry = new URL("./assets-runtime-worker.mjs", import.meta.url);
@@ -24,5 +26,6 @@ export async function openHeadlessAssetsStorage(
     ...(options.workspaceMachineId === undefined ? {} : { workspaceMachineId: options.workspaceMachineId }),
     ...(options.installationFile === undefined ? {} : { installationFile: options.installationFile }),
     ...(options.environmentLaunch ? { environmentLaunch: true } : {}),
+    ...(options.environmentIssuer ? { environmentIssuer: options.environmentIssuer } : {}),
   });
 }

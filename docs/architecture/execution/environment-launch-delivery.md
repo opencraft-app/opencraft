@@ -1,6 +1,7 @@
 # Execution ENV launch delivery
 
-Status: slices 1, 2, 3 and 4 implemented, slice 8 partially implemented. The
+Status: slices 1, 2 (with supervisor wiring), 3 and 4 implemented, slice 8
+partially implemented. The
 receiver takes its expected context from the execution owner's own durable
 admission (Decision 1). Slice 4 adds the v2 launch context (Turn, creation and
 terminal admissions) to the protocol, the issuer and the receiver only; no
@@ -9,7 +10,9 @@ consumer uses it yet. DSH in `assets` mode receives Turn ENV through
 vault-owner port or the installation sets `environmentDelivery: 'vault-owner'`,
 which makes the core vault Worker the issuer and the owner of ENV metadata. Pi
 receives it the same way in the independent engine host when that host's
-configuration pins `environmentIssuer`. Every other consumer still reads a
+configuration pins `environmentIssuer`; the independent DSH host takes the same
+key. The deployment supervisors pin the key the vault owner publishes (see
+[Supervisor wiring](#supervisor-wiring)). Every other consumer still reads a
 decrypted snapshot from `ExecutionEnvironmentRuntime` synchronously in its own
 process.
 
@@ -87,9 +90,11 @@ execution owner: read its own durable admission (Worker), require the relayed
   composition as `identity.environmentLaunch = { issuer, seal(target, context) }`
   or, with `environmentDelivery: 'vault-owner'`, from the core issuer
   (`EnvironmentLaunchOwner`) in the Headless assets Worker, which already is the
-  only opener of `employee-git-vault.sqlite`. The core issuer key lives for one
-  Worker lifetime; execution owners are pinned at launch, so a restarted vault
-  owner requires its execution owners to be relaunched (the embedded DSH is).
+  only opener of `employee-git-vault.sqlite`. The core issuer key is sealed in
+  that vault and survives vault-owner restarts; it changes only by explicit
+  rotation. Execution owners are pinned at launch, so a rotation requires them
+  to be relaunched (the embedded DSH is; independent hosts are relaunched by
+  their supervisor).
 - **Receiver.** Constructed inside the process that spawns commands. `instance`
   is the authenticated capability attachment (`server:<machine>:<engine>`). The
   Gateway derives purpose and instance from that attachment; the request carries
@@ -232,6 +237,49 @@ Closing the Worker retires the issuer key first, then the admission reader and
 the vault; seals accepted before close are drained, later ones are refused. A
 Worker that was asked to issue but did not start an issuer fails startup.
 
+The issuer's X25519 private key is a vault document (`platform:environment`,
+`document-environment-issuer`), encrypted under the vault key with the vault's
+AAD like every other document. `sealedEnvironmentIssuerKey` reads it at start
+or creates it once. A configured rotation generation
+(`OPENCRAFT_ENVIRONMENT_ISSUER_GENERATION`) that differs from the stored one
+replaces the key; no generation keeps the stored key. A stored document that is
+not a valid key fails startup instead of being replaced silently.
+
+## Supervisor wiring
+
+Independent execution owners pin the issuer from their own configuration. The
+configuration gets the key from the vault owner's publication only:
+
+- **Publication.** With `environmentIssuer.publish` (deployment variable
+  `OPENCRAFT_ENVIRONMENT_ISSUER_FILE`), the vault-owner Worker writes
+  `{"schemaVersion":1,"issuer":"<public key>"}` to that path: an owner-only
+  (0600) regular file in the private data directory, replaced atomically and
+  only when its content changes. It never contains the private key. Main does
+  not write it. A Headless Gateway with core delivery and an independent engine
+  host refuses to start without a publication path.
+- **Reading.** `readPublishedEnvironmentIssuer` accepts only a regular file (no
+  symlink) owned by the same user with no group or other access, exactly the
+  two fields and a well-formed key. Anything else is refused. A Gateway reply, a
+  Host descriptor, a request or an environment variable never supplies a key.
+- **Missing or refused key.** The supervisor pins a freshly generated X25519
+  public key whose private half is discarded (`unissuableEnvironmentIssuer`).
+  The receivers exist, every capsule for a Human Turn is refused
+  (`environment_launch_unavailable`), and unowned Turns stay empty as before.
+- **Container (Brain).** `deploymentPaths` reads `OPENCRAFT_ENVIRONMENT_DELIVERY`
+  (Assets context only) and fixes the publication at `run/environment-issuer.json`
+  in the data directory. The Gateway passes that path to the vault owner. Brain
+  writes `environmentIssuer` into the DSH and Pi host configurations before it
+  starts them and polls the publication. When a valid key differs from the
+  pinned one, Brain stops Pi, then DSH, rewrites both configurations and starts
+  them again. Until that completes both keep the previous key and deliveries
+  fail closed. A failed relaunch stops Brain.
+- **systemd.** The engine and DSH host configurations name the publication as
+  `environmentIssuerFile`. Each host resolves it once at launch, with the same
+  rules, into `environmentIssuer`. `opencraft-environment-issuer.path.example`
+  restarts both units when the publication changes.
+- **Unchanged path.** Without delivery there is no publication, no watcher and
+  no `environmentIssuer` in any host configuration.
+
 In this mode the same Worker also owns the non-secret ENV metadata (slice 8):
 Main composes `EnvironmentMetadataTransport` instead of the synchronous
 `ExecutionEnvironmentTransport`, and Thread->Project bindings, creator
@@ -257,6 +305,9 @@ values.
   receiver against a Gateway without the route fails closed.
 - Independently installed execution owners must be updated before their
   delivery is effective; installing a Gateway alone does not migrate them.
+- Without `OPENCRAFT_ENVIRONMENT_DELIVERY` no issuer is published or pinned and
+  the host configurations are unchanged. A key sealed by an earlier delivery
+  stays in the vault unused.
 
 ## Slices
 
@@ -290,6 +341,19 @@ synchronous runtime.
    interrupts its command, unowned input, no value in any relayed reply,
    combine refusals, in-process refusal, unconfigured compatibility, a durable
    admission read by input, and an engine host booting with a pinned issuer.
+
+   Supervisor wiring (implemented after slice 2). The deployment supervisors
+   write the vault owner's published key into the DSH and Pi host
+   configurations and relaunch both when it changes (see
+   [Supervisor wiring](#supervisor-wiring)). The independent DSH host accepts
+   the same top-level `environmentIssuer`. Tests
+   (`environment-issuer-supervision.test.mjs`, `environment-launch-owner.test.ts`,
+   `independent-engine-host.test.mjs`, `headless-composition.test.mjs`): both
+   configurations carry the key, a changed publication relaunches both hosts
+   and an identical one relaunches nothing, untrusted publications are refused,
+   a missing key pins an unissuable key under which a Human Turn fails closed,
+   the sealed key survives a vault-owner restart, explicit rotation, and an
+   unconfigured deployment writes the previous configurations.
 3. **Core vault-owner Worker issuer (implemented).** `EnvironmentLaunchOwner`
    runs `AccountEnvironment.launchEnvironment` in the Headless assets Worker that
    owns the vault, so core installations can use slices 1-2 without a downstream
@@ -297,7 +361,9 @@ synchronous runtime.
    not carried by the handoff. Tests (`environment-launch-owner.test.ts`): no
    decrypted value in any Worker-to-Main message, no decrypted getter, Project
    from Thread metadata, wrong-project and forged contexts refused, one ENV
-   owner at startup, close drains and retires the key, restart pins a new key.
+   owner at startup, close drains and retires the key. A restart originally
+   pinned a new key; the key is now sealed in the vault and kept across
+   restarts (see Decisions).
    `check-main-thread-sync-io` adds no call.
 4. **Protocol change: launch context without a native Turn (implemented).**
    ACP session creation, Codex `thread/start`/`fork` and Hands terminals launch
@@ -402,10 +468,26 @@ Recorded after the first slice; later slices follow them.
 - **The independent engine host pins its issuer through its own
   configuration.** It is never learnt from the Gateway or its capability
   descriptor. A composition port with a stable issuer key suits this directly.
-  The core vault-owner issuer's key lives for one Worker lifetime, so with it
-  the engine host must be relaunched with the new key after the vault owner
-  restarts; until then its deliveries fail closed. Supervisor wiring that
-  writes the key into the engine host configuration is not part of slice 2.
+  Its supervisor writes the key the vault owner publishes; until a changed key
+  is pinned, its deliveries fail closed.
+- **The core issuer key is stable: sealed at rest by the vault owner and
+  rotated explicitly.** Two options were compared. (a) One key per vault-owner
+  Worker lifetime: the supervisor must relaunch DSH and Pi after every Gateway
+  restart or update. The independent hosts exist so that Gateway updates do not
+  stop running turns, so this would end every running DSH and Pi turn on each
+  update. There is also a start-order cycle: the Gateway attaches to running
+  hosts, but the hosts would need the Gateway's new key first. (b) A key sealed
+  in the vault under the vault key and replaced only when the operator changes
+  the rotation generation. Hosts are relaunched only on first enablement and on
+  rotation. We chose (b). The guarantees are unchanged: the private key exists
+  only inside the sole vault owner and is never sent anywhere, and the vault key
+  that protects it already protects the values. Execution owners still pin the
+  key through their own trusted configuration, never from the relay. Capsules
+  stay purpose-, target- and context-bound, expire after 60 s and are opened
+  once. Admission is still reread around every seal and open. The cost: a
+  capsule captured in transit stays decryptable with the vault key until the
+  key is rotated, also after its values change. Rotation closes that window,
+  and Main, which relays capsules, runs in the vault owner's process anyway.
 - **Pi's native file-tool environment receives no delivered values.** Only the
   shell worker launches commands with personal ENV; the native
   `NodeExecutionEnv` keeps the base environment, as it already does with the

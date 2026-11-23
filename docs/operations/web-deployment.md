@@ -132,6 +132,8 @@ daemon 在监听 IPC、报告 ready 前打开并迁移 Host 的五个 SQLite 库
 
 `dataDirectory` 必须等于 Headless 的原数据根，保持 `machine-id`、`models/` 和 `pi/` 原位置；不得复制一份可写历史。私有 descriptor 验证机器、目录、引擎选择和实时 owner PID。网关环境设置 `OPENCRAFT_ENGINE_HOST_DESCRIPTOR`；固定更新入口另外设置相同 descriptor 和 `OPENCRAFT_ENGINE_HOST_UNIT=opencraft-engine-host.service`。配置独立 owner 后，连接失败直接报告不可用，不回退创建本地 Pi。健康响应的 `engineHost.pid` 与该 unit 的 MainPID 一致，日常更新前后保持；候选与回退包须声明 `independentEngineHost: 1`。启动入口自身需包含这份检查，旧 bootstrap 不会被网站 worker 自动替换。
 
+启用个人 ENV 不透明投递（`OPENCRAFT_ENVIRONMENT_DELIVERY=vault-owner`，仅 Assets 执行上下文）时，网关环境另设 `OPENCRAFT_ENVIRONMENT_ISSUER_FILE=/var/lib/opencraft/run/environment-issuer.json`。网关的 vault owner 把签发密钥加密保存在 vault 中，网关重启或更新后密钥不变；它把公钥写入该文件（仅属主可读写，内容变化时才改写），不包含私钥。Pi 与 DSH Host 的配置写 `"environmentIssuerFile"` 指向同一文件（不写 `environmentIssuer`），各自在启动时读取并固定该公钥；文件缺失或不是属主私有的合法发布时，固定一把无人能签发的公钥，个人 ENV 投递失败关闭，无归属 Turn 不受影响。安装 `opencraft-environment-issuer.path.example` 与对应 `.service.example`：文件变化（首次启用或显式轮换）时重启 Pi 与 DSH Host，运行中的 Turn 随之结束；轮换改 `OPENCRAFT_ENVIRONMENT_ISSUER_GENERATION` 后重启网关。密钥只来自该发布文件，不来自网关回复、Host descriptor 或请求。未设置投递时，以上均不生效，现有配置不变。
+
 首次迁移属于一次执行归属交接：先安装包含独立 Host 的版本，再在 Pi 的活动 Turn、原生工具、待恢复输入和未决交互自然清空时停旧 gateway，启动固定 Pi Host，配置 gateway 与固定入口后重启 gateway；全过程保持 DSH Host 和 Core。不得在旧 gateway 仍持有 Pi writer 时启动新 owner。新 composition 以同一 `pi-owner` 锁阻止意外双开，旧版没有该锁，仍必须确认其退出。迁移前保存配置和在线一致备份；验证失败时先停止新 Pi owner，再恢复原 gateway 配置，不能双开或用旧快照覆盖新写入。
 
 此处承诺 owner 保持运行时的更新连续性。Pi/DSH 宿主自身更新、宿主崩溃和 Core/CLI 升级仍是独立维护事项。浏览器平台工具的访问租约仍按断线撤销，未确认的外部副作用不得自动重放；不能用网站重连冒充外部工具本身已执行成功。

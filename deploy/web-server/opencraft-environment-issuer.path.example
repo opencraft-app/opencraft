@@ -1,0 +1,12 @@
+# Install only with ENV delivery (OPENCRAFT_ENVIRONMENT_DELIVERY=vault-owner).
+# The vault owner rewrites this file only when its issuer key changes (first
+# enablement or explicit rotation), so a restarted gateway relaunches nothing.
+[Unit]
+Description=Watch the OpenCraft ENV issuer publication
+
+[Path]
+PathChanged=/var/lib/opencraft/run/environment-issuer.json
+Unit=opencraft-environment-issuer.service
+
+[Install]
+WantedBy=multi-user.target

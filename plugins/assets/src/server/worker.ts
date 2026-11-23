@@ -76,6 +76,8 @@ export async function openAssetConfigurations(
     terminalOwner?: { directory: string; endpoint: string; tokenFile: string };
     /** This Worker also issues opaque execution ENV capsules (core vault owner). */
     environmentLaunch?: boolean;
+    /** Publication path and rotation generation of its sealed issuer key. */
+    environmentIssuer?: { publish?: string; generation?: string };
   } = {},
 ) {
   const { owner, ready } = await WorkerOwner.open<AssetStoragePort, Ready>(
@@ -87,6 +89,9 @@ export async function openAssetConfigurations(
         ...(options.terminalOwner === undefined ? {} : { terminalOwner: options.terminalOwner }),
         ...(options.workspaceMachineId === undefined ? {} : { workspaceMachineId: options.workspaceMachineId }),
         ...(options.environmentLaunch ? { environmentLaunch: true } : {}),
+        ...(options.environmentLaunch && options.environmentIssuer
+          ? { environmentIssuer: { ...options.environmentIssuer } }
+          : {}),
       },
       errors: [SandboxConfigurationError],
       maxPending: 128,

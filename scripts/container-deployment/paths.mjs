@@ -1,5 +1,6 @@
 import { isAbsolute, join, resolve } from 'node:path';
 import { readFile, stat } from 'node:fs/promises';
+import { environmentDeliveryOptions } from '../../apps/headless-server/src/headless-identity.mjs';
 
 export const codexProjectlessDirectory = workspaceDirectory => join(workspaceDirectory, 'sessions', 'codex');
 
@@ -31,8 +32,17 @@ export function deploymentPaths(env = process.env) {
   const executionContext=env.OPENCRAFT_EXECUTION_CONTEXT??'assets';
   if(!['assets','legacy'].includes(executionContext))throw Error('OPENCRAFT_EXECUTION_CONTEXT must be assets or legacy');
   const executionDirectory = absolute('OPENCRAFT_EXECUTION_DIR', join(dataDirectory, 'execution'));
+  // Opaque ENV delivery: Gateway's vault owner publishes its issuer here and
+  // Brain pins it into DSH and Pi. Unset keeps every path unchanged.
+  const environmentIssuerFile = join(dataDirectory, 'run', 'environment-issuer.json');
+  const delivery = environmentDeliveryOptions(env);
+  if (delivery.environmentDelivery && executionContext !== 'assets')
+    throw new Error('OPENCRAFT_ENVIRONMENT_DELIVERY requires OPENCRAFT_EXECUTION_CONTEXT=assets');
+  if (delivery.environmentIssuer?.publish !== undefined && resolve(delivery.environmentIssuer.publish) !== environmentIssuerFile)
+    throw new Error('OPENCRAFT_ENVIRONMENT_ISSUER_FILE must be the deployment issuer path');
   return {
     dataDirectory, runtimeDirectory, executionDirectory, executionContext, ...proxyConfiguration(env),
+    environmentDelivery: delivery.environmentDelivery ?? null, environmentIssuerFile,
     threadCliDirectory: join(executionDirectory, 'cli'),
     terminalDirectory: join(executionDirectory, 'terminal'),
     terminalEndpoint: join(executionDirectory, 'terminal.sock'),

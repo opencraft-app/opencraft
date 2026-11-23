@@ -1,0 +1,8 @@
+# Relaunch the independent execution owners so they pin the published issuer
+# key at launch (their configuration names `environmentIssuerFile`).
+[Unit]
+Description=Relaunch OpenCraft execution owners with the current ENV issuer
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl try-restart opencraft-engine-host.service opencraft-dsh-host.service

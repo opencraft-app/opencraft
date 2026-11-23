@@ -6,7 +6,11 @@ import { WorkspaceBudgetStore, type WorkspaceBudgetRole, type WorkspaceBudgetOut
 import type { SandboxIdentity, SandboxResources } from "@opencraft/sandbox";
 import { parseGitExecutionLocator, type GitExecutionResolver } from "@opencraft/execution-environment/git-execution";
 import { EmployeeGitVaultStore, GitVaultError } from "@opencraft/execution-environment/employee-git-vault-store";
-import { EnvironmentLaunchOwner } from "@opencraft/execution-environment/environment-launch-owner";
+import {
+  EnvironmentLaunchOwner,
+  publishEnvironmentIssuer,
+  sealedEnvironmentIssuerKey,
+} from "@opencraft/execution-environment/environment-launch-owner";
 import {
   EnvironmentMetadata,
   type EnvironmentExecutionScope,
@@ -22,6 +26,13 @@ import { GitConnections, type GitConnectionProvider } from "./git-connections.js
 import { githubConnectionProvider } from "./github-provider.js";
 import type { AssetAdmission } from "./worker.js";
 
+/** Where this owner publishes its issuer public key for local supervisors, and
+ * the explicit rotation generation of the sealed issuer key. */
+export interface EnvironmentIssuerOptions {
+  readonly publish?: string;
+  readonly generation?: string;
+}
+
 export async function createAssetsStorage(
   directory: string,
   providers: readonly GitConnectionProvider[] = [githubConnectionProvider()],
@@ -29,10 +40,11 @@ export async function createAssetsStorage(
   createWorkspaces?: CreateAssetWorkspaceExecutionOwner,
   /** Issue opaque execution ENV capsules from this sole vault owner, which
    * then also owns the non-secret ENV metadata (bindings, creators, catalog). */
-  options: { environmentLaunch?: boolean } = {},
+  options: { environmentLaunch?: boolean; environmentIssuer?: EnvironmentIssuerOptions } = {},
 ) {
   // ENV for a launch needs the durable admission this owner reads itself.
   if (options.environmentLaunch && !execution) throw new Error("Environment delivery requires execution admission");
+  if (options.environmentIssuer && !options.environmentLaunch) throw new Error("Invalid environment issuer");
   const vault = new EmployeeGitVaultStore(directory);
   let workspaces: AssetWorkspaceExecutionOwner | undefined;
   let environment: EnvironmentLaunchOwner | undefined;
@@ -50,10 +62,19 @@ export async function createAssetsStorage(
     }
   };
   try {
+    // The issuer key is sealed in this vault and survives restarts, so execution
+    // owners pinned to it keep running across a vault-owner restart.
     environment =
       options.environmentLaunch && execution
-        ? new EnvironmentLaunchOwner(vault, (input) => execution.resolve(input))
+        ? new EnvironmentLaunchOwner(
+            vault,
+            (input) => execution.resolve(input),
+            {},
+            sealedEnvironmentIssuerKey(vault, options.environmentIssuer?.generation ?? null),
+          )
         : undefined;
+    if (environment && options.environmentIssuer?.publish !== undefined)
+      await publishEnvironmentIssuer(options.environmentIssuer.publish, environment.issuer);
     const metadata = environment ? new EnvironmentMetadata(vault) : undefined;
     // Metadata runs FIFO with every other vault write; nothing it returns is a value.
     const metadataCall = <T>(operation: (owner: EnvironmentMetadata) => T): T => {

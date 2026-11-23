@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { startHeadlessServer } from '../../apps/headless-server/src/headless-server.mjs';
+import { parseHeadlessArguments, startHeadlessServer } from '../../apps/headless-server/src/headless-server.mjs';
 import { createWorkbenchWebServer } from '../../apps/headless-server/src/serve-workbench-web.mjs';
 import { buildHeadlessBundle } from '../../scripts/packaging/package-headless-linux.mjs';
 import { loadLocalMachineAccess } from '../../apps/headless-server/src/local-machine-access.mjs';
@@ -149,7 +149,24 @@ test('core ENV delivery has one owner and fails at startup without execution adm
   for (const engines of [['pi'], ['dsh', 'pi']])
     await assert.rejects(startHeadlessServer({ ...f.options, engines, defaultEngine: engines[0], environmentDelivery: 'vault-owner' }),
       /independent Pi engine host/);
+  // Independent engine hosts pin the issuer only from the published key; a
+  // Gateway that would not publish it is refused before the vault owner starts.
+  await assert.rejects(startHeadlessServer({ ...f.options, engines: ['dsh', 'pi'], defaultEngine: 'dsh', environmentDelivery: 'vault-owner',
+    engineHostDescriptor: join(f.root, 'engine-host.json') }), /requires a published issuer/);
+  await assert.rejects(startHeadlessServer({ ...f.options, environmentIssuer: { publish: join(f.root, 'issuer.json') } }), /requires core environment delivery/);
   assert.equal(f.starts(), 0);
+  // Deployment configuration: unset changes nothing; set values are validated.
+  const parse = env => parseHeadlessArguments(['--data-dir', f.options.dataDirectory], env);
+  for (const key of ['environmentDelivery', 'environmentIssuer']) assert.ok(!(key in parse({})));
+  assert.deepEqual(parse({ OPENCRAFT_ENVIRONMENT_DELIVERY: '' }).environmentDelivery, undefined);
+  const configured = parse({ OPENCRAFT_ENVIRONMENT_DELIVERY: 'vault-owner', OPENCRAFT_ENVIRONMENT_ISSUER_FILE: '/run/issuer.json',
+    OPENCRAFT_ENVIRONMENT_ISSUER_GENERATION: '2026-11' });
+  assert.equal(configured.environmentDelivery, 'vault-owner');
+  assert.deepEqual(configured.environmentIssuer, { publish: '/run/issuer.json', generation: '2026-11' });
+  for (const env of [{ OPENCRAFT_ENVIRONMENT_DELIVERY: 'sync' }, { OPENCRAFT_ENVIRONMENT_ISSUER_FILE: '/run/issuer.json' },
+    { OPENCRAFT_ENVIRONMENT_DELIVERY: 'vault-owner', OPENCRAFT_ENVIRONMENT_ISSUER_FILE: 'relative.json' },
+    { OPENCRAFT_ENVIRONMENT_DELIVERY: 'vault-owner', OPENCRAFT_ENVIRONMENT_ISSUER_GENERATION: 'a b' }])
+    assert.throws(() => parse(env), JSON.stringify(env));
   const app = await startHeadlessServer(f.options); t.after(() => app.close());
   assert.equal((await fetch(app.url)).status, 200);
 });

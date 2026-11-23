@@ -33,6 +33,8 @@ export async function startContainerGateway(composition = {}) {
   const bridgePrograms = await codexBridgePrograms(root, options, process.env, 'runtime/codex-bridge');
   const app = await startHeadlessServer({
     ...options, root, webRoot: join(root, 'web'),
+    // The vault owner publishes its issuer where Brain pins it into DSH and Pi.
+    ...(paths.environmentDelivery ? { environmentIssuer: { ...options.environmentIssuer, publish: paths.environmentIssuerFile } } : {}),
     ...(bridgePrograms ? { codexBridgePrograms: bridgePrograms } : {}),
     runtimeDirectory: paths.runtimeDirectory,
     threadCliDirectory: paths.threadCliDirectory,

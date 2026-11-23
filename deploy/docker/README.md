@@ -286,6 +286,30 @@ browser creates `owner.sock` in its own directory, so Gateway should run with th
 same UID. Owners left as root create root-owned sockets; giving non-root clients
 access to them is a deployment decision outside this option.
 
+## Optional account ENV delivery
+
+With `OPENCRAFT_ENVIRONMENT_DELIVERY=vault-owner` (Assets context only), DSH and
+Pi receive account ENV as opaque capsules from the Gateway's vault owner instead
+of running without it. The vault owner keeps its issuer key sealed in the vault,
+so the key survives Gateway restarts and updates, and publishes the public key
+to `$OPENCRAFT_DATA_DIR/run/environment-issuer.json` (owner-only file, rewritten
+only when the key changes). Brain pins that key into the DSH and Pi host
+configurations at launch and watches the file:
+
+- No published key yet (first enablement): Brain pins a key nobody can issue
+  for, so personal ENV deliveries fail closed. When the Gateway publishes its
+  key, Brain stops Pi and DSH, rewrites both configurations and starts them
+  again. Running DSH and Pi turns end with that relaunch.
+- Rotation is explicit: change `OPENCRAFT_ENVIRONMENT_ISSUER_GENERATION` and
+  recreate the Gateway. It seals a new key and publishes it; Brain relaunches DSH
+  and Pi. Until then they hold the previous key and deliveries fail closed.
+- A publication that is not an owner-only regular file with exactly one valid
+  key is ignored; the key never comes from a Gateway reply, a Host descriptor
+  or a request.
+
+Without the variable nothing changes: no issuer, no publication, and the host
+configurations are written exactly as before.
+
 ## Optional separate model proxy
 
 `compose.proxy.yaml` runs the split Codex account Core (account pool, configured

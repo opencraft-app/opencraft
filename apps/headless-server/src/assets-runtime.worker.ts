@@ -5,11 +5,12 @@ serveWorkerOwner<{
   workspaceMachineId?: string;
   terminalOwner?: { directory: string; endpoint: string; tokenFile: string };
   environmentLaunch?: boolean;
-}>(({ directory, workspaceMachineId, terminalOwner, environmentLaunch }) =>
+  environmentIssuer?: { publish?: string; generation?: string };
+}>(({ directory, workspaceMachineId, terminalOwner, environmentLaunch, environmentIssuer }) =>
   createHeadlessAssetsStorage(
     directory,
     undefined,
     workspaceMachineId === undefined ? undefined : { machineId: workspaceMachineId, terminalOwner },
-    { environmentLaunch: environmentLaunch === true },
+    { environmentLaunch: environmentLaunch === true, ...(environmentIssuer ? { environmentIssuer } : {}) },
   ),
 );
