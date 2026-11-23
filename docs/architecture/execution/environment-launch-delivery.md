@@ -20,10 +20,11 @@ configuration pins `environmentIssuer`; the independent DSH host takes the same
 key. The Hands terminal owner receives it
 for every terminal it launches when the core vault owner is configured (see
 [Hands terminal](#hands-terminal)). Codex receives creation and Turn ENV in
-Codex Core when the core vault owner and a Codex Core endpoint are configured
-(slice 7). The deployment supervisors pin the key the vault owner publishes
-into DSH, Pi and Codex Core (see [Supervisor wiring](#supervisor-wiring)).
-Every other consumer still reads a
+Codex Core when a vault owner with Codex record readers (the core vault owner,
+or an identity port carrying `launch`, `admitCreation` and `git`) and a Codex
+Core endpoint are configured (slice 7). The deployment supervisors pin the key
+the vault owner publishes into DSH, Pi and Codex Core (see
+[Supervisor wiring](#supervisor-wiring)). Every other consumer still reads a
 decrypted snapshot from `ExecutionEnvironmentRuntime` synchronously in its own
 process.
 
@@ -57,7 +58,7 @@ still synchronously on the vault.
 | 2   | Headless Pi (in-process) | `headless-application.mjs:847`                                                                                                        | passes the runtime to `PiEngine` running inside Main                                                                                                       |
 | 3   | Hands terminal           | `headless-application.mjs:931`, `apps/headless-server/src/host-terminal-transport.ts:26`                                              | `snapshot(scope).overlay()` in Main, sent as clear `identity.env` to the terminal owner                                                                    |
 | 4   | Terminal scope           | `headless-application.mjs:966`                                                                                                        | `scope(context, …)` derives account/Project (metadata)                                                                                                     |
-| 5   | Codex adapter wiring     | `headless-application.mjs:1042`                                                                                                       | passes the runtime to the Codex adapter; with the core vault owner and a Codex Core it passes the delivery port instead (slice 7)                          |
+| 5   | Codex adapter wiring     | `headless-application.mjs:1042`                                                                                                       | passes the runtime to the Codex adapter; with a vault owner (core or identity) and a Codex Core it passes the delivery port instead (slice 7)              |
 | 6   | Execution transport      | `headless-application.mjs:1127-1128`, `apps/headless-server/src/execution-environment-transport.ts:20-21,49,57-59,87,106-107,121-123` | `scope`, `bind`, `bindCreator`, `rememberProjects`, `seal` (vault-key scope envelope for ACP creation), and a private `DurableHostProcessService(runtime)` |
 | 7   | Local process identity   | `apps/local-agent-host/src/process-identity.ts:28-41` via `process-service.ts:53`, `durable-process-service.ts:126`                   | `snapshot(scope)`, `apply`, `overlay` for PTY spawn                                                                                                        |
 | 8   | DSH legacy mode          | `apps/local-agent-host/src/dsh-capability-plugin.mjs:80`, `dsh-execution-environment.mjs:7`                                           | opens a second vault runtime in the DSH process; sync `environment(nativeId)` patched into `dsh-bash-local` and `dsh-terminal-bash`                        |
@@ -206,6 +207,21 @@ Ports in this slice:
   (terminals relay their claim to `seal`). `accounts` is the installation's
   [account partition mapping](#account-partition-mapping); it applies to every
   kind, `launch` included.
+- Identity vault owner: `identity.environmentLaunch` may carry the same two
+  record readers, `launch(target, locator): Promise<EnvironmentLaunchReply>`
+  and `admitCreation(request: EnvironmentCreationRequest):
+  Promise<EnvironmentCreationRecord>` (the core Worker's
+  `environmentLaunchRecord` and `environmentCreationAdmission`), both or
+  neither, plus its personal Git execution owner
+  `git: { hosts, authority, grant(locator), reservation(locator) }`, the
+  members the core assets Worker offers as `gitHosts`, `gitAuthority`,
+  `executionGitGrant` and `executionGitReservation`. Headless builds the Codex
+  port (`coreCodexEnvironmentLaunch`) and the Codex adapter's
+  `createExecutionGit` (`codexExecutionGit`) from it exactly as from the core
+  Worker, and the Gateway Git owner (DSH `hostGit`, the Git status tool) too.
+  Core checks that the admitted creation record is the request it sent and
+  rechecks the Actor before and after the vault owner answers; the Git owner
+  rechecks the Actor and the native process around every grant, as before.
 - Receiver: `createEnvironmentLaunchAdmissionReceiver({ purpose, instance,
 issuer, admission: { turn?, creation?, terminal? } })` (subpath
   `environment-launch-receiver`). `kinds` lists what it can admit (allowed for
@@ -403,6 +419,19 @@ vault owner's publication only:
   every await. A failing read is an error, never an empty launch. Supplying an
   admission where core already owns the handoff is rejected (one admission
   owner), as is one without Human instance authority.
+- Such a port may carry `launch`, `admitCreation` and `git` (see
+  [Ports](#durable-admission-per-kind)). `validateHeadlessIdentity` refuses
+  only one of `launch`/`admitCreation`, a non-function reader, and a `git`
+  without non-empty unique lowercase hosts, a 64-hex `authority` or both
+  handoffs. A `git` beside core's own assets vault is refused (one Git owner),
+  as is one without Human instance authority. With a split Codex Core
+  (`codexCoreEndpoint`) any configured vault owner must wire both Codex ENV and
+  Git, or startup fails with `Codex environment delivery requires launch,
+  creation admission and a personal Git owner`; this applies to the core vault
+  owner too, which always has both. Such an installation previously started
+  and ran human Codex Turns without personal ENV or Git; it must now supply
+  the three members. Without a Codex Core endpoint nothing changes (see
+  [Decisions](#decisions)).
 - Such a port may carry `metadata: EnvironmentMetadataPort`; core then composes
   `EnvironmentMetadataTransport` for it exactly as in `vault-owner` mode, so new
   Threads record their Project binding and creator. A port with an admission but
@@ -818,6 +847,23 @@ Recorded after the first slice; later slices follow them.
   the native creation, is admissible only while pending, and its state changes
   when native answers; the receiver's one-shot set covers the window before
   that write.
+- **A configured vault owner refuses to start a split Codex Core it cannot
+  serve.** "Missing delivery must fail closed" is applied at startup: with
+  `environmentLaunch` (identity port or core vault owner) and a Codex Core
+  endpoint, Headless builds the Codex ENV port and the Git owner before any
+  Host exists and fails if either is missing, instead of letting the adapter
+  take its unconfigured path. The identity port's Git owner reuses the shape of
+  the core assets Worker's members rather than letting the adapter accept a
+  `PersonalGitSealPort`: the adapter needs complete handoffs (scope, native
+  identity, authority and grant) read from the owner's durable admission for
+  both the pending reservation and the active Turn, while a seal port signs a
+  scope it is given, so core would have to rebuild the lease reads the vault
+  owner already does. The grant format, the shared execution owner and its
+  checks stay unchanged. The read-only credential Worker of that execution
+  owner still reads the installation's vault in the data directory, as in
+  core vault-owner mode; Main's thread never opens it. Combined and routed
+  Cores keep refusing at input time. Codex without a Core endpoint has no
+  receiver and is outside this rule (open question).
 - **The Codex Core issuer key is pinned by deployment configuration: the
   stable published key.** As for DSH and the Pi engine host, the AppServer's
   `--environment-launch-config` carries the key the vault owner publishes (the

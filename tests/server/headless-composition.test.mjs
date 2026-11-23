@@ -208,6 +208,55 @@ test('an identity-owned vault port brings its own admission and metadata; missin
   assert.deepEqual(calls, [], 'no metadata is written before a Host request');
 });
 
+test('an identity vault port wires Codex ENV and Git delivery or startup fails closed', async t => {
+  const f = await fixture(t);
+  const principal = { provider: 'fixture-directory', subject: 'opaque-human-id', displayName: 'Fixture Human', expiresAt: Date.now() + 60_000 };
+  const metadata = Object.fromEntries(['admit', 'project', 'bind', 'bindCreator', 'rememberProjects'].map(method => [method, async () => null]));
+  const port = { issuer: 'a'.repeat(43), seal: async () => { throw Error('not sealed in this test'); }, admission: async () => null, metadata };
+  const calls = [];
+  const codex = {
+    launch: async () => { calls.push('launch'); return { context: null }; },
+    admitCreation: async () => { calls.push('admitCreation'); throw Error('not admitted in this test'); },
+  };
+  const git = { hosts: ['github.com'], authority: 'b'.repeat(64),
+    grant: async () => { calls.push('grant'); return null; }, reservation: async () => { calls.push('reservation'); return null; } };
+  let closed = 0;
+  const identity = environmentLaunch => async () => ({ assistantEnvironmentConfigurationManaged: true,
+    providers: [{ authenticate: () => principal }], environmentLaunch, close() { closed++; } });
+  const options = { ...f.options, accessMemberProviders: [principal.provider] };
+  const split = { ...options, codexCoreEndpoint: join(f.root, 'nonexistent-core.sock'), codexCoreAuthToken: 'synthetic-token' };
+  // Malformed parts are refused before anything starts.
+  for (const malformed of [{ launch: codex.launch }, { admitCreation: codex.admitCreation }, { ...codex, launch: 'launch' },
+    { git: { ...git, authority: 'not-hex' } }, { git: { ...git, hosts: [] } }, { git: { ...git, hosts: ['github.com', 'github.com'] } },
+    { git: { ...git, hosts: ['HTTPS://github.com'] } }, { git: { ...git, grant: undefined } }, { git: { ...git, reservation: null } }, { git: null }])
+    await assert.rejects(startHeadlessServer(split, { createIdentity: identity({ ...port, ...malformed }) }), /identity adapter/);
+  // With a split Codex Core, a missing record reader or Git owner fails closed
+  // instead of running human Codex Turns without personal ENV or Git.
+  for (const partial of [{}, { ...codex }, { git }])
+    await assert.rejects(startHeadlessServer(split, { createIdentity: identity({ ...port, ...partial }) }),
+      /Codex environment delivery requires launch, creation admission and a personal Git owner/);
+  // The Git owner's live Actor checks need Human instance authority.
+  await assert.rejects(startHeadlessServer({ ...split, accessMemberProviders: undefined },
+    { createIdentity: identity({ ...port, ...codex, git }) }), /Human instance authority/);
+  // Where core's assets vault owns personal Git, a second Git owner is refused.
+  const humanAuthConfig = join(f.root, 'human-auth.json');
+  await writeFile(humanAuthConfig, JSON.stringify({ origin: 'http://127.0.0.1', local: true, oidc: [] }), { mode: 0o600 });
+  await assert.rejects(startHeadlessServer({ ...f.options, humanAuthConfig, accessControl: true },
+    { createIdentity: async () => ({ ...(await identity({ issuer: port.issuer, seal: port.seal, git })()),
+      assistantEnvironmentConfigurationManaged: false }) }), /Personal Git execution cannot have two owners/);
+  assert.equal(closed, 15);
+  assert.equal(f.starts(), 0);
+  // Without a split Core, a port without them is unchanged (covered above); a
+  // complete port starts and nothing is sealed or granted before a request.
+  const dataDirectory = join(f.root, 'identity-vault-data');
+  const app = await startHeadlessServer({ ...split, dataDirectory }, { createIdentity: identity({ ...port, ...codex, git }) });
+  t.after(() => app.close());
+  assert.equal((await fetch(app.url + '/__opencraft_actors/me')).status, 200);
+  assert.deepEqual(calls, []);
+  await assert.rejects(stat(join(dataDirectory, 'employee-git-vault.sqlite')), { code: 'ENOENT' },
+    'Main opens no vault for an identity-owned vault');
+});
+
 test('public listener accepts explicit membership protection without requiring an anonymous-access acknowledgement', async t => {
   const f = await fixture(t);
   await assert.rejects(startHeadlessServer({ ...f.options, host: '0.0.0.0' }), /unauthenticated-public/);
