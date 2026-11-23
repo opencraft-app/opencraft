@@ -74,9 +74,9 @@ editing retains ModalSurface and shared Buttons. Resizing/language changes do
 not remount the Composer or reset an objective draft. There is no independent
 floating primary-colored Goal capsule, and no-Goal consumes no rail space.
 The pursuing Goal's leading Target shares the Design System's 3.2-second,
-65–100% mask shimmer with the Sidebar Target. Only the glyph animates; labels,
-controls and layout stay fixed. Other Goal states remain static. Reduced motion
-renders the full static glyph; hidden/inert presentation pauses its animation.
+75–100% opacity animation with the Sidebar Target. Only the glyph animates.
+Labels, controls, layout and other Goal states remain static. Reduced motion
+renders the full static glyph. Hidden or inert presentation pauses the animation.
 
 Goal elapsed time decomposes full 24-hour periods into days, then remaining
 hours and minutes (316 hours 36 minutes becomes `13 天 4 小时 36 分钟`).

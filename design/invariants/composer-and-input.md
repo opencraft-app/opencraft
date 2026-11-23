@@ -448,9 +448,10 @@ around its upper rounded corners and through the inline gutters above its lower
 arc. At the editor's lower arc, transcript paint stops: neither lower corners nor
 the dock/safe-area strip below the editor may expose another line of transcript.
 The existing viewport/footer observation projects `--thread-reading-bottom-inset`
-from the actual editor bottom and computed lower radius, not from floating pills
-or attached rails. A bottom-only geometric clip preserves physical native
-scrollbar gutters; it never paints a page-colored cover or fades the upper edge.
+from the actual editor bottom and computed lower radius. On desktop this inset
+shortens the native rectangular viewport and its scrollbar track by the same
+amount. The footer reservation shrinks by that amount to preserve the reading
+position. The inline scrollbar gutters still align the transcript and dock.
 The shell and its radius-inheriting material-only pseudo-element own the actual
 rounded contour. No exterior white slabs, opaque gradients or compensating alpha
 masks manufacture corners. A plain reading-plane stacking context keeps transcript

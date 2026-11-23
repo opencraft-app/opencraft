@@ -89,22 +89,20 @@ guess them from protocol items.
   both bounded columns center within the same client rectangle. Overlay
   scrollbars project zero; left-side and two-edge gutters retain their geometry.
 - The Conversation reading scrollport and dock are siblings. The scrollport
-  owns clipping; the dock owns only the Composer, progress and navigation actions.
-  Desktop fades transcript paint continuously above the editing surface using
-  the shared fade-height token. The existing footer observer publishes that
-  surface's occlusion height separately from the complete footer reservation:
-  floating file/status pills cannot raise the fade. Growing drafts and attached
-  rails retain the same geometry owner. Touch leaves the reading plane visible
-  around the floating dock. Neither path paints an opaque footer strip or puts
-  a hard clipping edge across a line of text.
+  owns the reading viewport. The dock owns the Composer, progress and navigation
+  actions. Desktop ends the rectangular scrollport and its native scrollbar at
+  the editor's lower corner arc. The existing footer observer measures the
+  cutoff from the editor and publishes it alongside surface occlusion and full
+  footer height. Touch keeps the full reading plane around the floating dock.
 - Only the editor shell and visible attached rail publish painted occlusion
   surfaces, never the outer Composer stack or floating-content slot. Empty
   rails have no box and contribute no occlusion. The same footer ResizeObserver
   also observes those surfaces: child resize invalidates paint geometry without
-  replacing the complete footer reservation with a child's height. The shared
-  desktop fade spans ten spacing units (40px at the default density).
+  replacing the complete footer height with a child's height.
 - The viewport owner's existing footer observation publishes its measured height
-  to a normal-flow reservation in the transcript. There is no second observer,
+  to a normal-flow reservation in the transcript. The desktop viewport inset is
+  deducted from the reservation and scroll padding to preserve the reading
+  position. There is no second observer,
   React height state, or independent restoration policy. Hidden viewports defer
   measurements and detach/dispose removes both geometry projections.
 - One inline offset is published to transcript and dock; the scrollport and its
