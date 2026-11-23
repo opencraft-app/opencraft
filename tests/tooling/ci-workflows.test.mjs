@@ -125,7 +125,7 @@ test('isolation setup supplies NODE_OPTIONS to subsequent Bash steps', () => {
 });
 
 test('every main commit runs build-matrix in its own run', () => {
-  assert.match(workflow, /^on:\n  pull_request:\n(?:  #[^\n]*\n)*  push:\n    branches: \[main\]\n/m);
+  assert.match(workflow, /^on:\n  pull_request:\n  merge_group:\n(?:  #[^\n]*\n)*  push:\n    branches: \[main\]\n/m);
   // A PR commit supersedes its predecessor; main commits are never grouped or cancelled.
   assert.match(workflow, /group: build-matrix-\$\{\{ github\.event\.pull_request\.number \|\| \(github\.event_name == 'push' && github\.sha\) \|\| github\.ref \}\}/);
   assert.match(workflow, /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/);
@@ -252,7 +252,7 @@ test('web-browser matrix exercises queue Markdown preview', () => {
 
 test('workflow-lint checks every workflow change with pinned actionlint and zizmor', () => {
   const lint = readFileSync(new URL('../../.github/workflows/workflow-lint.yml', import.meta.url), 'utf8');
-  assert.match(lint, /pull_request:\n    paths:\n      - \.github\/\*\*\n  push:\n    branches: \[main\]\n    paths:\n      - \.github\/\*\*/);
+  assert.match(lint, /pull_request:\n    paths:\n      - \.github\/\*\*\n(?:  #[^\n]*\n)*  merge_group:\n  push:\n    branches: \[main\]\n    paths:\n      - \.github\/\*\*/);
   assert.match(lint, /run: go run github\.com\/rhysd\/actionlint\/cmd\/actionlint@v\d+\.\d+\.\d+ -pyflakes=\n/);
   assert.match(lint, /run: pipx run zizmor==\d+\.\d+\.\d+ --offline --min-severity low --config \.github\/zizmor\.yml \.github\/workflows\/\n/);
 });

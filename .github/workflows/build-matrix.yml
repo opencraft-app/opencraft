@@ -2,6 +2,7 @@ name: build-matrix
 
 on:
   pull_request:
+  merge_group:
   # Each merge is tested again on main: PRs that each passed against an older
   # main are only tested together here, right after they land.
   push:

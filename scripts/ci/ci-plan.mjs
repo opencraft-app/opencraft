@@ -80,12 +80,14 @@ export function planChanges(paths, { event = 'pull_request', unknownDiff = false
 
 export function changedPaths(eventName, event, cwd = process.cwd()) {
   if (eventName === 'workflow_dispatch' || eventName === 'schedule') return [];
-  const base = eventName === 'pull_request' ? event.pull_request?.base?.sha : event.before;
-  const head = eventName === 'pull_request' ? event.pull_request?.head?.sha : event.after;
+  const [base, head] = eventName === 'pull_request' ? [event.pull_request?.base?.sha, event.pull_request?.head?.sha]
+    : eventName === 'merge_group' ? [event.merge_group?.base_sha, event.merge_group?.head_sha]
+    : [event.before, event.after];
   if (![base, head].every(sha => typeof sha === 'string' && /^[0-9a-f]{40}$/.test(sha) && !/^0+$/.test(sha))) {
     throw new Error('No usable diff endpoints');
   }
-  // PRs compare against their merge base; pushes cover the entire pushed range.
+  // PRs compare against their merge base; pushes and merge queue groups cover
+  // everything on top of their base (a group holds every PR queued ahead of it).
   // No rename detection: both old and new paths must participate in selection.
   const range = `${base}${eventName === 'pull_request' ? '...' : '..'}${head}`;
   return execFileSync('git', ['diff', '--name-only', '--no-renames', '-z', range, '--'], {

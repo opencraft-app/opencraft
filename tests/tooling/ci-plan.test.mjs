@@ -122,6 +122,7 @@ test('real Git diff covers merge-base semantics, deletions, renames, and more th
     assert(!paths.includes('unrelated.config.js'));
     assert.deepEqual(planChanges(paths).targets, webTargets);
     assert.deepEqual(new Set(changedPaths('push', { before: base, after: head }, cwd)), new Set(paths));
+    assert.deepEqual(new Set(changedPaths('merge_group', { merge_group: { base_sha: base, head_sha: head } }, cwd)), new Set(paths));
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
 test('CLI writes machine-readable outputs and falls back when a base commit is unavailable', () => {
