@@ -16,6 +16,16 @@ import { HUB_CONTROL_PATH, HUB_DATA_PATH } from '@opencraft/hub-network';
 export interface RelayEntryIdentity { principal: Principal; origin: string; }
 export interface RelayServerDirectory { servers: { id: string; name: string; route: string }[]; pending: boolean; }
 export interface RelayIngress { (request: IncomingMessage, response: ServerResponse): boolean; close?: () => Promise<void>; }
+/**
+ * Trusted pre-routing extension. Returning `true` means the handler owns the
+ * response (or upgraded socket); `false` must leave it untouched so the next
+ * handler and then core routing run. See relay deployment docs for the
+ * ordering, error and shutdown contract.
+ */
+export type RelayRequestHandler = (request: IncomingMessage, response: ServerResponse) => boolean | Promise<boolean>;
+export type RelayUpgradeHandler = (request: IncomingMessage, socket: Duplex, head: Buffer) => boolean | Promise<boolean>;
+/** Core relay and Hub endpoints are never offered to extension handlers. */
+export function reservedRelayPath(url: string | undefined) { return /^\/__opencraft_(?:relay|hub)(?:[/?]|$)/u.test(url ?? ''); }
 
 export interface RelayRoute {
   readonly instanceId: string;
@@ -35,11 +45,14 @@ function failure(response: ServerResponse, status: number) {
   response.writeHead(status, { 'cache-control': 'no-store', 'content-type': 'application/json' }); response.end(JSON.stringify({ error: status === 401 ? 'authentication_required' : status === 403 ? 'access_denied' : 'relay_unavailable' }));
 }
 function reject(socket: Duplex, code: number) { socket.end(`HTTP/1.1 ${code} Rejected\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`); }
-const identityHeaders = new Set(['timestamp', 'signature', 'x-rio-seq', 'staffid', 'staffname', 'x-ext-data', 'x-tai-identity']);
+/** Enterprise gateway identity headers; never forwarded from public input. */
+export const identityHeaders: ReadonlySet<string> = new Set(['timestamp', 'signature', 'x-rio-seq', 'staffid', 'staffname', 'x-ext-data', 'x-tai-identity']);
 export function createRelayServer(routes: readonly RelayRoute[], options: { authentication?: { origin: string; provider: IdentityProvider }; entryOrigin?: EntryOriginResolver; build?: { sourceRevision: string | null; buildId: string | null };
-  ingress?: RelayIngress;
+  ingress?: RelayIngress; requestHandlers?: readonly RelayRequestHandler[]; upgradeHandlers?: readonly RelayUpgradeHandler[];
   hub?: RelayHub; cluster?: RelayClusterPort; networkRoute?: (service: HubService) => RelayRoute | null; operator?: { credential: string }; serverSelection?: boolean; selectionDefaults?: ReadonlyMap<string, string>; serverPaths?: ServerPaths } = {}) {
   if ((!routes.length && !options.hub) || routes.length > 1000) throw new Error('Relay requires explicit routes');
+  const requestHandlers = [...options.requestHandlers ?? []], upgradeHandlers = [...options.upgradeHandlers ?? []];
+  if ([...requestHandlers, ...upgradeHandlers].some(handler => typeof handler !== 'function') || requestHandlers.length > 64 || upgradeHandlers.length > 64) throw new Error('Invalid relay extension handlers');
   const byHost = new Map<string, RelayRoute>(), byId = new Map<string, RelayRoute>();
   for (const route of routes) {
     const url = new URL(route.origin);
@@ -281,6 +294,14 @@ export function createRelayServer(routes: readonly RelayRoute[], options: { auth
   const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (req.url === '/__opencraft_relay/live' && req.method === 'GET') { res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end('{"ok":true}'); return; }
     if ((draining && req.url === '/__opencraft_relay/health') || !accepting) { res.setHeader('connection', 'close'); failure(res, 503); return; }
+    // Extensions run in order after admission and before every core route; a
+    // throwing handler fails this request closed instead of falling through.
+    if (requestHandlers.length && !reservedRelayPath(req.url)) for (const handle of requestHandlers) {
+      let handled: boolean;
+      try { handled = await handle(req, res) === true; } catch { failure(res, 503); return; }
+      if (handled || res.headersSent || res.writableEnded) return;
+      if (!accepting) { res.setHeader('connection', 'close'); failure(res, 503); return; }
+    }
     await options.cluster?.prepare();
     if (req.url === '/__opencraft_hub/operator') {
       if (!options.hub || !options.operator || !['127.0.0.1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress ?? '') || !equal(bearer(req), options.operator.credential)) { failure(res, 403); return; }
@@ -370,6 +391,18 @@ export function createRelayServer(routes: readonly RelayRoute[], options: { auth
     upgraded.add(socket); socket.once('close', () => upgraded.delete(socket));
     // Pending data upgrades and Hub links remain available while consumers drain.
     if ((!accepting && ![DATA_PATH, HUB_CONTROL_PATH, HUB_DATA_PATH].includes(req.url ?? '')) || closing) { reject(socket, 503); return; }
+    if (upgradeHandlers.length && !reservedRelayPath(req.url)) for (const handle of upgradeHandlers) {
+      let handled: boolean;
+      // The handler may already have written a handshake, so a failure destroys the socket.
+      try { handled = await handle(req, socket, head) === true; } catch { socket.destroy(); return; }
+      if (handled) {
+        // Accepted extension upgrades count as active streams while draining and are destroyed on close.
+        if (!socket.destroyed) { businessUpgrades.add(socket); socket.once('close', () => businessUpgrades.delete(socket)); }
+        return;
+      }
+      if (socket.destroyed) return;
+      if (!accepting || closing) { reject(socket, 503); return; }
+    }
     await options.cluster?.prepare();
     if (await options.cluster?.forwardUpgrade(req, socket, head)) return;
     if (options.hub?.handleUpgrade(req, socket, head)) return;

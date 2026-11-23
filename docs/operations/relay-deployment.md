@@ -363,6 +363,90 @@ Choose the matching product artifact for real enterprise login validation; the
 public tests below use synthetic providers. The default core artifact deliberately
 rejects unrecognized product configuration.
 
+### Pre-routing extension hooks
+
+A trusted composition may add `RelayComposition.requestHandlers` and
+`upgradeHandlers`: ordered lists of `(req, res) => boolean | Promise<boolean>`
+and `(req, socket, head) => boolean | Promise<boolean>`. Use them instead of
+replacing the listener's `request` or `upgrade` listeners.
+
+- Handlers run in list order after admission (liveness, drain and shutdown
+  gates) and before every other route, including product `createIngress`,
+  authentication, server selection and instance forwarding. They see requests
+  from the public listener and any `peerRequestPaths` request.
+- `/__opencraft_relay/*` and `/__opencraft_hub/*` never reach a handler, so
+  health, operator, enrollment and relay/Hub transport cannot be shadowed.
+- Returning `true` means the handler owns the response or socket and dispatch
+  stops. Returning `false` must leave it untouched; the next handler, then core
+  routing, runs. Any other value counts as `false`.
+- A throwing or rejecting request handler fails that request closed with 503 (or
+  a destroyed response if headers were sent); it never falls through. A failing
+  upgrade handler's socket is destroyed.
+- Handled requests and accepted upgrades count as active work while draining.
+  After `close()` resolves no handler runs again and every socket passed to a
+  handler is destroyed. The composition owns any resources its handlers hold and
+  releases them after `close()`.
+
+### Hub self-enrollment by source network
+
+`Settings → Hub network` and `connectEndpoint` let a machine join by address. A
+relay serves that join only when explicitly configured:
+
+```json
+{
+  "hubNetwork": {
+    "stateFile": "/private/hub-network.json",
+    "operatorCredentialFile": "/private/hub-operator.json",
+    "tlsCertFile": "/private/hub-cert.pem",
+    "tlsKeyFile": "/private/hub-key.pem",
+    "port": 18443,
+    "sourceEnrollment": { "cidrs": ["10.20.0.0/16", "2001:db8:20::/48"] }
+  }
+}
+```
+
+The source is the TCP peer of a TLS socket that this process terminates (the
+peer listener, or the main listener with `tlsCertFile`); configuration without
+one is rejected. `X-Forwarded-For`, `Forwarded`, `X-Real-IP` and enterprise
+identity headers are never consulted, so a deployment behind a TLS-terminating
+proxy cannot use this feature. Requests with an `Origin` header are refused.
+CIDRs are strict: host bits must be zero and `/0` is rejected. IPv4-mapped IPv6
+peers match IPv4 networks. The joining node still signs a proof bound to its key,
+this relay endpoint, a five-minute timestamp and a one-time nonce (shared through
+Relay Redis when `clusterFile` is configured). It may not claim the gateway or a
+configured route origin. The Hub audit records `source-ip:<address>`. Being in
+the network grants only Hub enrollment: identity trust, origin publication and
+membership keep their own checks.
+
+### Channel callback forwarding
+
+Provider webhooks for an IM channel owned by a gateway behind the Hub can be
+forwarded by configuration:
+
+```json
+{
+  "channelCallbacks": [{
+    "path": "/callbacks/chat",
+    "provider": "chat",
+    "hubId": "hub-<40 hex>",
+    "origin": "https://gateway.example.test",
+    "timeoutMs": 4500
+  }]
+}
+```
+
+A `POST` to the exact `path` on any relay Host is buffered (at most 1 MiB) and
+sent over the Hub stream to that `origin` at
+`/__opencraft_im/channel-callback/<provider>` with the query unchanged. The
+gateway's channel transport verifies the provider signature. Cookies,
+`Authorization`, forwarding claims, `x-opencraft-*` and enterprise identity
+headers are removed; other end-to-end headers pass, so header signatures work.
+Only status, `content-type` and body return. Other methods get 405. A missing Hub
+route, a timeout (`timeoutMs`, default 10 s, 1–60 s) or a gateway failure
+returns 503. Choose a timeout shorter than the provider's deadline. The path
+takes precedence over instance forwarding on every Host. It requires
+`hubNetwork`.
+
 ## Bootstrap a new team without its own enterprise identity application
 
 Before the team's first Headless startup, inspect/import its invitation using the
