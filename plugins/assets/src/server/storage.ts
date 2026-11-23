@@ -78,7 +78,7 @@ export async function createAssetsStorage(
       typeof options.environmentAccounts.forLogin !== "function")
   )
     throw new Error("Environment account mapping requires the vault owner");
-  const vault = new EmployeeGitVaultStore(directory);
+  const vault = await EmployeeGitVaultStore.open(directory);
   let workspaces: AssetWorkspaceExecutionOwner | undefined;
   let environment: EnvironmentLaunchOwner | undefined;
   let gitSeal: PersonalGitSealOwner | undefined;
@@ -252,6 +252,7 @@ export async function createAssetsStorage(
         outcome: vault.outcome,
         workspaceExecution: workspaces !== undefined && workspaces.workspaceExecution !== false,
         botExecution: workspaces?.botExecution === true,
+        botBackends: workspaces?.botExecution === true ? [...(workspaces.botBackends ?? [])] : [],
         personalMcp: personalMcp !== undefined,
         gitHosts: providers.map((p) => p.host),
         gitProviders: describeGitProviders(providers),

@@ -5,7 +5,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { join, posix } from "node:path";
 import type { AttachmentRef, AttachmentStageParams, AttachmentStageResponse } from "@opencraft/appserver-protocol";
-import { AttachmentUploadStore, LOCAL_ATTACHMENT_STAGING_CAPABILITY, safeAttachmentFilename, validateAttachmentIdentity, validateClientAttachment } from "@opencraft/local-agent-host/attachments/local-staging";
+import { AttachmentUploadStore, hostFileBlobStore, LOCAL_ATTACHMENT_STAGING_CAPABILITY, safeAttachmentFilename, validateAttachmentIdentity, validateClientAttachment } from "@opencraft/local-agent-host/attachments/local-staging";
 import type { SshFileTransfer } from "./ssh-file-transfer.js";
 
 export const SSH_ATTACHMENT_SFTP_THRESHOLD = 10 * 1024 * 1024;
@@ -73,7 +73,7 @@ export class SshAttachmentStagingService {
   private readonly uploads: AttachmentUploadStore;
   constructor(private readonly storage: SshAttachmentStorage) {
     if (!/^[a-f0-9]{32,64}$/u.test(storage.namespace)) throw new Error("Invalid SSH attachment namespace");
-    this.uploads = new AttachmentUploadStore(join(storage.directory, ".incoming"), (request, path, hash) => this.stageValidated(request, hash, path));
+    this.uploads = new AttachmentUploadStore(hostFileBlobStore(join(storage.directory, ".incoming")), (request, path, hash) => this.stageValidated(request, hash, path));
   }
 
   initialize(codexHome: unknown): boolean {

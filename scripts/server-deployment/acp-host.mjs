@@ -47,7 +47,7 @@ export async function startIndependentAcpHost(options) {
     provider = new AcpGenerationHost({ modelPolicyPath, id, dataDirectory, initialGeneration, inspectOsWork: inspectAcpCgroup,
       runtimeIdentity: runtime.entrySha256, readConfig: async (path, generationId) => {
       const config = await readPrivateJson(path);
-      config.executionEnvironment = ExecutionEnvironmentRuntime.open(identityDirectory, { create: true });
+      config.executionEnvironment = await ExecutionEnvironmentRuntime.open(identityDirectory, { create: true });
       if (config.executionEnvironment) environmentRuntimes.add(config.executionEnvironment);
       // The runtime that supplies the ACP profile is explicit and versioned by
       // the operator. Never replace or restart the previous DSH web owner.

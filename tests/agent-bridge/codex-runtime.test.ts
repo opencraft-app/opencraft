@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CodexBridgeRuntime } from '../../apps/agent-bridge-host/src/codex-runtime.js';
 import { CodexOwnerConnection } from '../../apps/agent-bridge-host/src/codex-owner.js';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:http';
@@ -86,6 +86,36 @@ test('real Unix WebSocket Upgrade attaches existing owner, stale error is typed,
   assert.equal(mutations, 1);
   owner.close();
   assert.equal(native.listening, true); assert.equal(control.listening, true);
+});
+
+test('an accounts-only Core gives broker auth while the deployment names the native socket', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'codex-owner-accounts-'));
+  const requested: string[] = [];
+  // Like a split account Core without a runtime owner: /launch only, no runtime health.
+  const control = createServer((req, res) => {
+    requested.push(String(req.url));
+    res.setHeader('content-type', 'application/json');
+    if (req.url !== '/launch') { res.statusCode = 404; res.end(JSON.stringify({ error: 'This account Core has no runtime owner' })); return; }
+    res.end(JSON.stringify({ dataDirectory: root, launch: { args: [], env: { OPENCRAFT_CODEX_POOL_AUTH_TOKEN: 'synthetic-test' }, auth: { type: 'chatgptAuthTokens', accessToken: 'synthetic-test', chatgptAccountId: 'opencraft-account-pool' } } }));
+  });
+  const native = createServer(), ws = new WebSocketServer({ server: native });
+  let initialized!: () => void;
+  const reached = new Promise<void>(resolve => { initialized = resolve; });
+  ws.on('connection', socket => socket.on('message', raw => {
+    const frame = JSON.parse(String(raw));
+    if (frame.method === 'initialize') socket.send(JSON.stringify({ id: frame.id, result: { userAgent: 'codex/0.167.0' } }));
+    if (frame.method === 'initialized') initialized();
+  }));
+  // A socket elsewhere than the Core's directory, like a Gateway-local workspace endpoint.
+  const endpoint = join(root, 'endpoints', 'codex-native.sock');
+  await mkdir(join(root, 'endpoints'));
+  await new Promise<void>(resolve => native.listen(endpoint, resolve));
+  await new Promise<void>(resolve => control.listen(join(root, 'core.sock'), resolve));
+  const owner = new CodexOwnerConnection(join(root, 'core.sock'), 'private-test-token', () => {}, () => {}, () => {}, endpoint);
+  t.after(async () => { owner.close(); ws.close(); await Promise.all([new Promise<void>(resolve => native.close(() => resolve())), new Promise<void>(resolve => control.close(() => resolve()))]); await rm(root, { recursive: true, force: true }); });
+  await owner.connect();
+  await reached;
+  assert.deepEqual(requested, ['/launch']);
 });
 
 test('unknown paramless notifications and unrouteable server requests cannot kill native attachment', () => {

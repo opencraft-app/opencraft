@@ -53,6 +53,11 @@ export async function bundleDesktopHost({ environment = process.env, outdir = re
   await buildTranscriptCacheRuntime(outdir);
   await buildServerSpacesRuntime(outdir);
   await buildOwnerWorkers(outdir);
+  // The Server core owner Worker serves orchestration on its own connection; a
+  // file-backed Collaboration inside it starts this Worker beside the bundle.
+  await build({ entryPoints: [resolve(root, "packages/access-control/src/orchestration-runtime.worker.ts")],
+    outfile: resolve(outdir, "orchestration-runtime-worker.mjs"), bundle: true, platform: "node", format: "esm",
+    nodePaths: [resolve(root, "node_modules")] });
   await buildTerminalOwnerRuntime(outdir);
   await buildDshCapabilityPlugin(resolve(appRoot, 'build/dsh-capability-plugin.mjs'));
   const [mainEntry, preloadEntry, identityEntry] = resolveDesktopProductEntries(environment);

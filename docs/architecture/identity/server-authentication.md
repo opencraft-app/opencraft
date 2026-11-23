@@ -83,7 +83,13 @@ does not imply that private plugin directories or all client dependencies moved.
 使用请求语言，由页面作用域的 IntlRuntime 格式化现有英文与中文文案。
 成员与连接操作在原控件内反馈，错误在独立通知层呈现，不挤动表单或清除草稿。
 
-插件拥有用户名规范、密码策略、scrypt 验证及改密/禁用的凭据版本证明。核心通过窄存储端口拥有凭据数据、浏览器登录态、自然人绑定和授权；凭据策略仍归插件。Server 启动将既有 `human-logins.sqlite` v1 数据及其余五类核心数据导入 `opencraft-server.sqlite`，原 SQL/hash 作为不可变来源历史保留。账号、密码摘要、local subject、绑定与权限不重新注册。
+插件拥有用户名规范、密码策略、密码哈希验证及改密/禁用的凭据版本证明。核心通过窄存储端口拥有凭据数据、浏览器登录态、自然人绑定和授权；凭据策略仍归插件。Server 启动将既有 `human-logins.sqlite` v1 数据及其余五类核心数据导入 `opencraft-server.sqlite`，原 SQL/hash 作为不可变来源历史保留。账号、密码摘要、local subject、绑定与权限不重新注册。
+
+**密码哈希。** 新账号、改密和管理员重置一律写 Argon2id（OWASP 最低配置 m=19456 KiB、t=2、p=1，16 字节随机 salt，32 字节输出），以标准 PHC 字符串 `$argon2id$v=19$m=19456,t=2,p=1$<salt>$<hash>`（无填充 base64）存入 `local_accounts.password_digest`，`salt` 列为空串；参数随记录保存，不新增迁移。此前写入的 scrypt 记录（非空 salt 文本＋64 位 hex 摘要，N=131072、r=8、p=1）仍按原路径验证，两种形状互不混淆；其他形状按无效记录处理（仍执行一次占位派生，永不匹配）。解析只接受 `argon2id`、`v=19`、规范 base64、salt/摘要 16–64 字节、m≤65536、t≤10、p≤4，防止构造记录造成超量分配。
+
+密码正确且记录是 scrypt 或参数弱于当前值的 Argon2id 时，本次登录在线程池中用当前参数重新哈希，再经 `IdentityWrites.upgradeLocalPassword` 交给 Server owner Worker，在 owner 连接上按"账号仍启用、`version` 与原记录均未变"做 compare-and-set 写回（SQL 只在 Worker 入口装配的 `local-account-upgrade-owner` 中，不在网络主线程上执行），等待提交后再复读 `enabled`/`version` 并签发证明。写回不递增 `version`、不发权限变更通知，既有登录态不受影响；并发改密会递增版本，使这次登录失败且新密码不被覆盖；写回被拒或 owner 失败只保留旧记录，不改变登录结果。错误密码、禁用账号和更强参数的记录都不改写。桌面 Main 同样经 owner 升级：`createDesktopAccountHost` 以 `desktop-account-owner` Worker（`plugins/local-account/src/desktop-account-owner.worker.ts`，打包为 `desktop-account-owner-worker.mjs`）打开 `human-account` 目录的 Server 安装，该 Worker 持有写锁并在其连接上执行同一 `localAccountPasswordUpgrade` compare-and-set，Main 只经异步端口调用；作为 borrower 打开同一目录的 Daemon 不升级。没有 owner 写入端口的组合（Daemon borrower、`auth:account`、Workers 原型）不升级，旧记录继续可验证。浏览器登录态的 `human_logins` 写入仍由原登录签发步骤负责。未知用户名对当前参数的固定占位 PHC 记录执行一次 Argon2id，时间特征与真实账号一致。单进程最多 2 个并发派生（验证与登录升级共用同一名额）和登录尝试上限不变。
+
+哈希经 `PasswordHasher` 端口（`@opencraft/plugin-local-account/password-hash`）由组合根选择：Node（Headless、桌面 Main、`auth:account`）用 `password-hash-node`，即原生 `node:crypto.argon2` 回调形式，在 libuv 线程池计算，不占网络主线程，同时保留 scrypt 旧记录验证；Cloudflare 组合用 `password-hash-portable`，即纯 JS `@noble/hashes` Argon2id（无 WebAssembly），不支持 scrypt 旧记录（Cloudflare 安装均为全新安装）。两侧读写同一 PHC 格式。
 
 配置 `local: true` 由服务器启用随包插件；`false` 禁用本地登录并撤销原本地浏览器登录态，OIDC 登录与 Actor 权限独立。普通服务重启保留有效登录态。插件缺失或停用不能关闭成员准入，未完成的密码验证/创建在插件释放后不会写入或签发登录态。服务端激活的 disposer 只退休自身代次并撤销本地登录，不改变其他身份或权限。
 
@@ -232,7 +238,9 @@ OIDC 身份键为完整 `[issuer, sub]` 元组的 SHA-256，避免不透明 sub 
 
 浏览器使用 host-only、HttpOnly、SameSite=Lax 的不透明 cookie；HTTPS 配置加 Secure。数据库只保存 token 摘要，登录最长八小时，OIDC 登录还受 ID Token 到期约束。每个 Actor 最多保留最近三十二个浏览器登录态。退出撤销当前 OpenCraft 登录态；企业 SSO 平台的会话由该平台管理。
 
-OIDC 事务保存在认证 owner 内存中，十分钟过期、绑定发起浏览器且只能消费一次；取消、退出、原账号变化或服务重启均不能通过迟到回调建立绑定。写接口要求精确同源 JSON，密码验证有全局并发和尝试次数上限，密码使用 scrypt（N=131072、r=8、p=1、独立随机 salt）。实际部署仍需可信 TLS 入口。
+OIDC 事务保存在认证 owner 内存中，十分钟过期、绑定发起浏览器且只能消费一次；取消、退出、原账号变化或服务重启均不能通过迟到回调建立绑定。写接口要求精确同源 JSON，密码验证有全局并发和尝试次数上限，密码使用 Argon2id（m=19456 KiB、t=2、p=1、独立随机 salt，见上文“密码哈希”），旧 scrypt 记录在下次成功登录时升级。实际部署仍需可信 TLS 入口。Cloudflare InstallationCore 上同一哈希与登录态格式的本地验证结果见 [登录入口原型结果](../platform/gateway-split.md#34-登录入口原型结果)。
+
+**HTTP 处理端口。** 登录（`HumanAuth.handle`／`issueSession`）、账号与初始化（`LocalAccountApplication.handle`）、成员管理（`InstanceAccess.handle`）与 Actor 管理（`ActorAccess.handle`）只依赖运行时中立的 HTTP 交换端口 `@opencraft/identity-core/http-exchange`：处理器读取 `HttpExchangeRequest`（`method`、`path`、小写单值 `headers`、原始头列表 `rawHeaders`、传输层给出的 `clientAddress`、按字节流式计数并在超限即停的 `readBody(limit)`、客户端断开时触发的 `signal`，以及交给身份提供方认证的 `identity` 视图），返回 `{status, headers: [name, value][], body}`；可有多条 `set-cookie`，`issueSession` 返回登录 Cookie 而不写应答，未拥有路由时返回 `null`。`identity` 是传输层的同一请求对象（Node 即 `IncomingMessage`），因此一次性中继断言、准入与 Actor 的每请求缓存仍与网关其余部分共用同一键。适配器各一份：`http-exchange-node`（Headless 网关与桌面 Main 的本机账号监听使用；按列表顺序 `setHeader` 后 `writeHead`／`end`，超限请求流在应答写出后释放）和 `http-exchange-fetch`（`Request`／`Response`；`host` 取路由 URL，客户端地址由组合根从可信边缘提供，例如 Cloudflare 的 `CF-Connecting-IP`）。处理器抛出 `HttpExchangeAborted` 表示已提交的应答无法完成：Node 断开连接，Fetch 让请求失败。两个适配器共用 `tests/identity/http-exchange-conformance.test.ts`。同源 JSON、拒绝 `Authorization`、字段白名单、16 KiB 正文上限、尝试次数上限与 Cookie 属性（HTTPS 加 `Secure`）都在处理器内，换适配器不改变；迁移前后 Headless 网关对 77 个请求的原始应答字节（归一化日期、随机 token 与 nonce 后）完全一致。身份产品的 `WorkbenchRequestIdentity.handle` 仍是 `node:http` 形状的下游装配端口，未迁移。
 
 身份绑定、凭据与浏览器会话、Actor 成员资格在 `opencraft-server.sqlite` 的独立领域表中，由同一 Server storage owner 管理连接和迁移；旧六库只作为已记录的迁入来源。旧身份级授权在可信身份首次使用时导入 Actor，旧授权不覆盖已有 Actor 撤权。兼容 `access-admin` 和成员 HTTP API 可按旧稳定身份更新对应 Actor；新 API 也接受 `{actorId, role, enabled}`。资源权限、Session Actor 凭据及业务资源 owner 保持各自权威。
 

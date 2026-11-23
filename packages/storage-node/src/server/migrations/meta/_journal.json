@@ -169,6 +169,13 @@
       "when": 1795404940506,
       "tag": "0023_environment_creation_reservations",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1795413742460,
+      "tag": "0024_conversation_resources",
+      "breakpoints": true
     }
   ]
 }

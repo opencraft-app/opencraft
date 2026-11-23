@@ -1,3 +1,4 @@
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -12,12 +13,12 @@ test("product projects persist, normalize paths and deduplicate concurrent windo
   try {
     const root = join(directory, "workspace");
     await mkdir(root);
-    const a = new ProjectRepository(directory), b = new ProjectRepository(directory);
+    const a = new ProjectRepository(fileStateDocumentStore(directory)), b = new ProjectRepository(fileStateDocumentStore(directory));
     assert.deepEqual(await a.list(), { data: [], nextCursor: null });
     const params = { name: "Workspace", roots: [{ path: root }], idempotencyKey: "add-first" };
     const [first, second] = await Promise.all([a.create(params), b.create({ ...params, roots: [{ path: root + "/." }], idempotencyKey: "add-second" })]);
     assert.equal(first.project.id, second.project.id);
-    const restored = new ProjectRepository(directory);
+    const restored = new ProjectRepository(fileStateDocumentStore(directory));
     assert.deepEqual((await restored.list()).data, [first.project]);
     assert.equal((await restored.create(params)).project.id, first.project.id);
     assert.equal(first.project.metadata.engine, undefined);

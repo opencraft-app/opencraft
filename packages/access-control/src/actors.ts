@@ -1,8 +1,7 @@
 import { AuthorityChanges } from "./authority-changes.js";
 import { PermissionReadCache, withPermissionWrite } from "./permission-read-cache.js";
-import { sqliteTransaction } from "@opencraft/sqlite-node";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
-import type { DatabaseSync } from 'node:sqlite';
+import type { SqlDatabase } from '@opencraft/sql';
 import type { DatabaseOutcome } from "@opencraft/sqlite-node";
 import { openServerRepository, type ServerDatabaseSource } from "@opencraft/storage-node/server-repository";
 import { parsePrincipal, principalKey, type Principal } from '@opencraft/identity-core';
@@ -97,7 +96,7 @@ export class ActorStore {
   readonly #resourceAuthorities = new Set<(resource: string) => boolean>();
   /** Trusted local resource adapters only; registration confers no grants. */
   registerResourceAuthority(owns: (resource: string) => boolean): () => void { this.#resourceAuthorities.add(owns); return () => { this.#resourceAuthorities.delete(owns); }; }
-  readonly #db: DatabaseSync;
+  readonly #db: SqlDatabase;
   readonly #readCache: PermissionReadCache;
   readonly #permissionProjectionEnabled: boolean;
   readonly #hasReservations: boolean;
@@ -200,7 +199,7 @@ export class ActorStore {
     });
     this.#identityChanged(owner.actorId);
   }
-  #transaction<T>(run: () => T): T { const result = withPermissionWrite(() => sqliteTransaction(this.#db, run), this.#readCache); this.#changes.emit(); return result; }
+  #transaction<T>(run: () => T): T { const result = withPermissionWrite(() => this.#db.transaction(run), this.#readCache); this.#changes.emit(); return result; }
   #audit(operator: string, actorId: string, action: string, resource: string | null = null) {
     if (typeof operator !== 'string' || !operator || operator.length > 512) throw new Error('Invalid actor operator');
     this.#db.prepare('INSERT INTO actor_audit(at,operator,actor_id,action,resource) VALUES(?,?,?,?,?)')

@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { parseEnvironmentDocument } from '../../packages/workbench-runtime/src/account-environment';
 
 async function fixture(t: any) {
-  const root = await mkdtemp(join(tmpdir(), 'account-env-')), vault = new EmployeeGitVaultStore(root);
+  const root = await mkdtemp(join(tmpdir(), 'account-env-')), vault = await EmployeeGitVaultStore.open(root);
   t.after(async () => { vault.close(); await rm(root, { recursive: true, force: true }); });
   return { root, vault, env: new AccountEnvironment(vault) };
 }
@@ -59,7 +59,7 @@ test('all values are encrypted on disk; saved secrets never appear in read or mu
     assert.equal(bytes.includes(Buffer.from(secret)), false); assert.equal(bytes.includes(Buffer.from(normal)), false);
   }
   // Another owner uses the same managed DB/key without introducing a new schema.
-  const peer = new EmployeeGitVaultStore(root); t.after(() => peer.close());
+  const peer = await EmployeeGitVaultStore.open(root); t.after(() => peer.close());
   assert.equal(new AccountEnvironment(peer).launchEnvironment('alice', a, {}).SERVICE_KEY, secret);
   vault.writeSecret('alice', 'synthetic-mcp', 0, 'synthetic-token');
   assert.equal(vault.readSecret('alice', 'synthetic-mcp').secret, 'synthetic-token');

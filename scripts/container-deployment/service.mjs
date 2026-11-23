@@ -82,12 +82,14 @@ export async function runLoggedService({ command, args, env = process.env, direc
 
 async function main() {
   const service = process.argv[2];
-  const entries = { brain: 'native-host.mjs', hands: 'native-hands.mjs', gateway: 'container-gateway.mjs', proxy: 'proxy-host.mjs' };
+  // Brain and Hands both run the workspace agent; native-hands.mjs is the (product
+  // composable) agent entry with the Hands and browser roles.
+  const entries = { brain: ['workspace-agent.mjs', '--role', 'brain'], hands: ['native-hands.mjs'], gateway: ['container-gateway.mjs'], proxy: ['proxy-host.mjs'] };
   if (!Object.hasOwn(entries, service)) throw new Error('Usage: container-service.mjs brain|hands|gateway|proxy [arguments]');
   const directory = process.env.OPENCRAFT_LOG_DIR;
   if (!directory || !isAbsolute(directory)) throw new Error('Set OPENCRAFT_LOG_DIR to an absolute path');
   const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-  const result = await runLoggedService({ command: join(root, 'bin/node'), args: [join(root, 'runtime', entries[service]), ...process.argv.slice(3)], directory: join(directory, service) });
+  const result = await runLoggedService({ command: join(root, 'bin/node'), args: [join(root, 'runtime', entries[service][0]), ...entries[service].slice(1), ...process.argv.slice(3)], directory: join(directory, service) });
   process.exitCode = result.code ?? (result.signal === 'SIGINT' ? 130 : 143);
 }
 

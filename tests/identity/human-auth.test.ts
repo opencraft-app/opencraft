@@ -7,6 +7,7 @@ import { once } from 'node:events';
 import WebSocket from 'ws';
 import { HumanAccounts } from '../../packages/access-control/src/human-accounts';
 import { LocalAccountServerPlugin } from '../../plugins/local-account/src/server';
+import { createNodePasswordHasher } from '../../plugins/local-account/src/password-hash-node';
 import { MembershipStore } from '../../packages/access-control/src/index';
 import { parseHumanAuthConfiguration } from '../../packages/access-control/src/human-auth';
 import { humanAuthFixture, AuthBrowser } from '../support/human-auth-fixture';
@@ -26,7 +27,7 @@ test('local login persists, stores no plaintext, grants no membership; explicit 
   assert.equal((await browser.call('/')).status, 200);
   assert.equal((await (await browser.call('/__opencraft_actors/me')).json() as any).actor.id, id);
   const reopened = new HumanAccounts(join(f.directory, 'human-logins.sqlite'), f.actors);
-  const restoredPlugin = new LocalAccountServerPlugin(reopened.localAccountRepository); reopened.registerLocalAccounts(restoredPlugin);
+  const restoredPlugin = new LocalAccountServerPlugin(reopened.localAccountRepository, createNodePasswordHasher()); reopened.registerLocalAccounts(restoredPlugin);
   try { assert.equal(reopened.authenticate(browser.cookies.get('oc_human')!)!.context.actorId, id); } finally { reopened.close(); }
   for (const suffix of ['', '-wal']) {
     const bytes = await readFile(join(f.directory, 'human-logins.sqlite') + suffix).catch(() => Buffer.alloc(0));

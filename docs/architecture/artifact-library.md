@@ -18,7 +18,7 @@ Codex、Pi、DSH、ACP 和生成工具是生产者/消费者，不拥有各自�
 - `apps/local-agent-host/src/attachments/` 提供 staging、内容摘要和提交 manifest。
 - `apps/opencraft-daemon/src/opencraft-message-attachments.ts` 持久化消息附件引用并处理分叉，尚不是跨资源的 GC 账本。
 - `packages/chat-core/src/builtin-projectors.ts` 将 imageGeneration 的 URL、Base64 或 savedPath 投影成图片，不能据此证明结果已入库或已持久保存。
-- `packages/extension-runtime/src/artifact.ts` 定义扩展 ESM 快照；`apps/codex-core/src/generation-artifact-digest.ts` 校验运行程序文件。二者都不是用户内容制品库。
+- `packages/extension-runtime/src/artifact.ts` 定义扩展 ESM 快照，不是用户内容制品库。
 
 首批接入上传附件、AI 生成图片/音频/视频/文档以及转码、抽帧、缩略图等派生内容。
 普通聊天文本保留在消息存储；明确导出的文本文件可以成为制品。

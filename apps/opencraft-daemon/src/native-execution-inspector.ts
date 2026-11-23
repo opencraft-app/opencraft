@@ -52,7 +52,10 @@ export async function createWebSocketExecutionTurnInspector(resolveTarget: () =>
   let closed = false;
   const request = async (method: string, params: Record<string, unknown>, signal: AbortSignal) => {
       const target = new URL(await resolveTarget());
-      if (target.protocol !== "ws:" || target.hostname !== "127.0.0.1" || target.username || target.password
+      // Loopback TCP, or a private Unix socket (`ws+unix:///abs.sock:/rpc`) such as a workspace endpoint listener.
+      const local = target.protocol === "ws:" ? target.hostname === "127.0.0.1"
+        : target.protocol === "ws+unix:" && target.hostname === "" && target.pathname.startsWith("/") && target.pathname.includes(":/");
+      if (!local || target.username || target.password
         || closed || signal.aborted || sockets.size >= 4) throw new Error("Local execution reader unavailable");
       return new Promise((resolve, reject) => {
         const socket = new WebSocket(target, { handshakeTimeout: 1500, maxPayload: 1024 * 1024 });

@@ -16,10 +16,10 @@ import { TURN_RECOVERY_EXTENSION } from "@opencraft/appserver-protocol";
 import { readHostMachineIdentity } from "./machine-identity.js";
 import { parseRuntimeMachineIdentity, type RuntimeMachineIdentity } from "@opencraft/appserver-protocol";
 import { randomBytes, randomUUID } from "node:crypto";
-import { readFile, readdir, stat, lstat, writeFile, mkdtemp, rm, access } from "node:fs/promises";
+import { readFile, readdir, stat, lstat, writeFile, mkdtemp, rm, access, chmod } from "node:fs/promises";
 import { createServer } from "node:http";
 import { homedir, tmpdir } from "node:os";
-import { resolve, dirname, join } from "node:path";
+import { resolve, dirname, join, isAbsolute } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { WebSocket, WebSocketServer } from "ws";
@@ -44,6 +44,8 @@ import { DshRoutedClient } from "./dsh-routed-client.js";
 import { AbsentDshClient } from "./dsh-absent-client.js";
 import { DurableHostProcessService } from "./durable-process-service.js";
 import { ProjectRepository } from "./project-repository.js";
+import { memoryStateDocumentStore } from "@opencraft/document-storage/state";
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import { ThreadCatalogPublisher } from "@opencraft/app-host-server/thread-catalog";
 import { ThreadLifecycle } from "./thread-lifecycle.js";
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
@@ -143,6 +145,8 @@ export async function startLocalAgentHost(options: {
   };
   readonly host?: string;
   readonly port?: number;
+  /** Listen on this private Unix socket instead of TCP (workspace endpoint mode). */
+  readonly socketPath?: string;
   readonly token?: string;
   readonly dshUrl?: string;
   readonly executionCli?: import("@opencraft/session-capabilities/execution-cli").ScopedExecutionCliPort;
@@ -247,7 +251,10 @@ export async function startLocalAgentHost(options: {
       await access(resolve(dirname(plugin), '../../../packages/execution-environment/src/execution-environment.ts'));
       const { build } = await import('esbuild');
       nativePlugin = join(bridgeDirectory, 'dsh-capability-plugin.mjs');
-      await build({ entryPoints: [plugin], outfile: nativePlugin, bundle: true, platform: 'node', format: 'esm', target: 'node24', logLevel: 'silent' });
+      // Bundled CommonJS dependencies (e.g. proper-lockfile via the state-file adapter) need `require` in ESM,
+      // the same banner the packaged DSH routing runtime uses.
+      await build({ entryPoints: [plugin], outfile: nativePlugin, bundle: true, platform: 'node', format: 'esm', target: 'node24', logLevel: 'silent',
+        banner: { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" } });
     } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
     const engineModule = (name: string) => pathToFileURL(resolve(dirname(executable), `../../${name}/lib/index.js`)).href;
     await writeFile(patch, JSON.stringify([
@@ -309,14 +316,20 @@ export async function startLocalAgentHost(options: {
     });
   drainThreads = () => lifecycle.close();
   let modelConfiguration: import('./model-config/dsh-adapter.js').DshModelConfigurationBridge | undefined;
-  if(options.modelStorageDirectory && dshInstalled){
-    const {ModelConfigurationRepository,ModelCredentialRepository}=await import('./model-config/repository.js');
+  // Model configuration is owned by the model storage, not by DSH: Pi and Codex resolve the same models.json, so the
+  // settings surface is mounted whenever storage exists. Only the DSH projection and legacy import depend on DSH.
+  if(options.modelStorageDirectory){
+    const {ModelConfigurationRepository}=await import('./model-config/repository.js');
     const {ModelConfigurationService}=await import('./model-config/service.js');
-    const {DshModelEngineAdapter,DshModelConfigurationBridge}=await import('./model-config/dsh-adapter.js');
-    const {migrateDshModels}=await import('./model-config/migrate-dsh.js');
-    const repository=new ModelConfigurationRepository(options.modelStorageDirectory),credentials=new ModelCredentialRepository(options.modelStorageDirectory);
-    if(options.dataDirectory)await migrateDshModels(repository,credentials,options.dataDirectory,await client.call('settings.describe'));
-    modelConfiguration=new DshModelConfigurationBridge(client,new ModelConfigurationService(repository,credentials,new DshModelEngineAdapter(client)));
+    const {engineModelCredentials}=await import('./model-config/engine-credentials.js');
+    const {DshModelEngineAdapter,DshModelConfigurationBridge,ProductModelEngine}=await import('./model-config/dsh-adapter.js');
+    // Proxy mode (OPENCRAFT_PROXY_CALLER_FILE): no SecretStore over credentials.json is constructed here.
+    const repository=new ModelConfigurationRepository(fileStateDocumentStore(options.modelStorageDirectory)),{credentials,caller}=await engineModelCredentials(options.modelStorageDirectory);
+    if(dshInstalled&&options.dataDirectory){
+      const {migrateDshModels}=await import('./model-config/migrate-dsh.js');
+      await migrateDshModels(repository,credentials,options.dataDirectory,options.modelStorageDirectory,await client.call('settings.describe'));
+    }
+    modelConfiguration=new DshModelConfigurationBridge(client,new ModelConfigurationService(repository,credentials,dshInstalled?new DshModelEngineAdapter(client):new ProductModelEngine(),caller),dshInstalled);
     await modelConfiguration.initialize();
   }
   const authority = storage.executions;
@@ -611,7 +624,8 @@ export async function startLocalAgentHost(options: {
     for (const client of websocketServer.clients) send(client, { jsonrpc: "2.0", method: "opencraft/tasks/changed", params: {} });
   }, storage.tasks);
   cleanup.push(() => tasks.close());
-  const projects = new ProjectRepository(options.projectStorageDirectory ?? options.modelStorageDirectory ?? options.dataDirectory);
+  const projectDirectory = options.projectStorageDirectory ?? options.modelStorageDirectory ?? options.dataDirectory;
+  const projects = new ProjectRepository(projectDirectory ? fileStateDocumentStore(projectDirectory) : memoryStateDocumentStore());
   const token = options.token ?? randomBytes(24).toString("base64url");
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
@@ -1091,15 +1105,21 @@ export async function startLocalAgentHost(options: {
       unsubscribe(); unsubscribeAgents(); unsubscribeProcesses(); connectorListeners.delete(connectorChanged); unsubscribeDocuments();
     });
   });
+  if (options.socketPath !== undefined && (!isAbsolute(options.socketPath) || Buffer.byteLength(options.socketPath) > 107 || options.port !== undefined || options.host !== undefined))
+    throw new Error("Local Agent Host socket must be a short absolute path without a TCP address");
+  if (options.socketPath !== undefined) await rm(options.socketPath, { force: true });
   await new Promise<void>((resolvePromise, reject) => {
     server.once("error", reject);
-    server.listen(options.port ?? 0, options.host ?? "127.0.0.1", () => {
+    const listening = () => {
       server.off("error", reject);
       resolvePromise();
-    });
+    };
+    if (options.socketPath !== undefined) server.listen(options.socketPath, listening);
+    else server.listen(options.port ?? 0, options.host ?? "127.0.0.1", listening);
   });
+  if (options.socketPath !== undefined) await chmod(options.socketPath, 0o600);
   const address = server.address();
-  if (address === null || typeof address === "string") throw new Error("Local Agent Host did not bind a TCP port");
+  if (address === null || typeof address === "string" && options.socketPath === undefined) throw new Error("Local Agent Host did not bind a TCP port");
   if (options.dataDirectory) {
     const taskAgent = await startTasksAgent({
       admission: options.ownerHandoff,
@@ -1125,7 +1145,8 @@ export async function startLocalAgentHost(options: {
   if (options.ownerHandoff?.open() && dshInstalled) await capabilityLink!.nativeOwner("resume");
   schedules.start();
   interrupted.recovery.wake();
-  const websocketUrl = `ws://127.0.0.1:${address.port}/rpc?token=${encodeURIComponent(token)}`;
+  const websocketUrl = typeof address === "string" ? `ws+unix://${options.socketPath}:/rpc?token=${encodeURIComponent(token)}`
+    : `ws://127.0.0.1:${address.port}/rpc?token=${encodeURIComponent(token)}`;
   return {
     websocketUrl,
     inputs,

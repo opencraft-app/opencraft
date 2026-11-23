@@ -12,9 +12,10 @@ Credentials, query parameters, fragments, ambiguous/dot path segments and non-HT
 schemes are rejected. HTTPS is recommended; HTTP remains available for explicitly
 configured local/intranet deployments. No deployment hostname is preselected.
 
-The Gateway keeps `server-information.json` in its existing data directory.
-A process-independent writer lock, private temporary file, atomic replacement,
-file/directory sync and revision fence protect updates. Replace the container
+The Gateway keeps `server-information.json` in its existing data directory,
+through the `StateDocumentStore` port (`fileStateDocumentStore`). A
+process-independent document lock, private temporary file, atomic replacement,
+file/directory sync and the owner's revision fence protect updates. Replace the container
 while retaining that data volume to retain the setting. Restart is not required
 after saving. Damaged/unsupported configuration is reported as unavailable; it is
 never silently overwritten or treated as a missing setting.

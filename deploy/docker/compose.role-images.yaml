@@ -9,3 +9,8 @@ services:
   hands:
     image: ${OPENCRAFT_HANDS_IMAGE:?Set the Hands image reference}
     build: !reset null
+  # The proxy runs the account Core shipped in the Brain image unless a separate
+  # proxy image from the same release is named.
+  proxy:
+    image: ${OPENCRAFT_PROXY_IMAGE:-${OPENCRAFT_BRAIN_IMAGE:?Set the Brain image reference}}
+    build: !reset null

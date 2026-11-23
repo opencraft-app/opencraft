@@ -119,6 +119,11 @@ export const SERVER_MIGRATIONS = [
     "version": 24,
     "name": "0023_environment_creation_reservations",
     "sql": "CREATE TABLE `environment_creation_reservations` (\n\t`host_id` text NOT NULL,\n\t`operation_id` text NOT NULL,\n\t`actor_id` text NOT NULL,\n\t`actor_generation` integer NOT NULL,\n\t`membership_revision` integer NOT NULL,\n\t`source` text,\n\t`incarnation` text NOT NULL,\n\t`project` text,\n\t`state` text NOT NULL,\n\t`created_at` integer NOT NULL,\n\t`expires_at` integer NOT NULL,\n\tPRIMARY KEY(`host_id`, `operation_id`),\n\tCONSTRAINT \"environment_creation_reservation_state\" CHECK(state IN ('pending', 'launched', 'abandoned')),\n\tCONSTRAINT \"environment_creation_reservation_epoch\" CHECK(actor_generation > 0 AND membership_revision >= 0)\n) STRICT;\n"
+  },
+  {
+    "version": 25,
+    "name": "0024_conversation_resources",
+    "sql": "CREATE TABLE `conversation_resource_imports` (\n\t`source` text PRIMARY KEY NOT NULL,\n\t`sha256` text NOT NULL,\n\t`rows` integer NOT NULL,\n\t`imported_at` integer NOT NULL\n) STRICT;\n--> statement-breakpoint\nCREATE TABLE `conversation_resources` (\n\t`host_id` text NOT NULL,\n\t`thread_id` text NOT NULL,\n\t`state` text NOT NULL,\n\t`generation` integer NOT NULL,\n\t`pending` text NOT NULL,\n\tPRIMARY KEY(`host_id`, `thread_id`),\n\tCONSTRAINT \"conversation_resource_row\" CHECK(length(host_id) BETWEEN 1 AND 1024\n    AND length(thread_id) BETWEEN 1 AND 1024\n    AND state IN ('active', 'archived', 'deleted')\n    AND generation >= 1\n    AND json_valid(pending) AND json_type(pending) = 'array')\n) STRICT;\n"
   }
 ] as const;
 export const SERVER_ALTERNATE_MIGRATIONS = [
@@ -244,9 +249,14 @@ export const SERVER_ALTERNATE_MIGRATIONS = [
         "version": 24,
         "name": "converge_0023_environment_creation_reservations",
         "sql": SERVER_MIGRATIONS[23].sql
+      },
+      {
+        "version": 25,
+        "name": "converge_0024_conversation_resources",
+        "sql": SERVER_MIGRATIONS[24].sql
       }
     ]
   }
 ] as const;
-export const SERVER_MIGRATION_CONTRACT_HASH = "113ed5843376171328dd9da12f0787b980700c2d39c112cda295d07d62ed04f6" as const;
+export const SERVER_MIGRATION_CONTRACT_HASH = "2ed80cbc12927521e1d03da6a46692b26b309795d2eaca286487362e315fa341" as const;
 export const OPENCRAFT_VERSION = "0.2.0" as const;

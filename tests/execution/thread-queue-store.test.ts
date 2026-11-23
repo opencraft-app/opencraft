@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
+import { nodeSqlDatabase } from "@opencraft/sqlite-node";
+import type { SqlDatabase } from "@opencraft/sql";
 import test from "node:test";
 import { THREAD_QUEUE_SCHEMA, ThreadQueueStore } from "../../packages/thread-queue/src/index.ts";
 
@@ -7,7 +9,8 @@ const text = (value: string) => [{ type: "text", text: value }];
 function database() {
   const db = new DatabaseSync(":memory:");
   db.exec(THREAD_QUEUE_SCHEMA);
-  return db;
+  // The queue borrows the SQL port; the test owns the node:sqlite connection.
+  return nodeSqlDatabase(db);
 }
 
 test("the shared queue works without any engine hooks: order, dedup, claim, settle and turn receipts", () => {
@@ -90,7 +93,7 @@ test("the shared schema has the same shape the legacy Codex Host state database 
   const legacy = new OpenCraftHostStateDatabase(directory),
     shared = database();
   try {
-    const shape = (db: DatabaseSync) =>
+    const shape = (db: SqlDatabase) =>
       Object.fromEntries(
         ["opencraft_host_queue", "opencraft_input_delivery", "opencraft_turn_delivery"].map((table) => [
           table,
@@ -118,7 +121,7 @@ test("the shared schema has the same shape the legacy Codex Host state database 
           },
         ]),
       );
-    assert.deepEqual(shape(shared), shape(legacy.database));
+    assert.deepEqual(shape(shared), shape(legacy.sql));
   } finally {
     legacy.close();
     rmSync(directory, { recursive: true, force: true });

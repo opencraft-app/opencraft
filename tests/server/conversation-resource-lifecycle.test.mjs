@@ -1,10 +1,30 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+import { openServerCoreOwner } from '@opencraft/storage-node/server-owner';
 import { ConversationResourceLifecycle } from '../../apps/headless-server/src/conversation-resource-lifecycle.mjs';
 const deferred = () => { let resolve; const promise = new Promise(r => resolve = r); return { promise, resolve }; };
+/** A Server core owner Worker in a fresh data directory; `restart` replaces the process-level owner. */
+async function serverCore(prefix) {
+  const dir = await mkdtemp(join(tmpdir(), prefix));
+  let storage = await openServerCoreOwner(dir);
+  return {
+    dir, get storage() { return storage; },
+    async restart() { await storage.close(); storage = await openServerCoreOwner(dir); return storage; },
+    /** Committed rows as another reader of the database sees them. */
+    rows() {
+      const db = new DatabaseSync(join(dir, 'opencraft-server.sqlite'), { readOnly: true });
+      try { return db.prepare('SELECT host_id, thread_id, state, generation, pending FROM conversation_resources ORDER BY host_id, thread_id').all()
+        .map(row => ({ hostId: row.host_id, threadId: row.thread_id, state: row.state, generation: row.generation, pending: JSON.parse(row.pending) })); }
+      finally { db.close(); }
+    },
+    async close() { await storage.close(); await rm(dir, { recursive: true, force: true }); },
+  };
+}
 
 test('a synchronous owner failure does not prevent other owners from releasing resources', async () => {
   let released = 0;
@@ -21,9 +41,9 @@ test('a synchronous owner failure does not prevent other owners from releasing r
 });
 
 test('archive fences immediately, retries only failed owners after restart, and preserves other hosts', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'resource-lifecycle-')), path = join(dir, 'state.json');
+  const core = await serverCore('resource-lifecycle-');
   const calls = [], hold = deferred();
-  let service = await ConversationResourceLifecycle.open(path, {
+  let service = await ConversationResourceLifecycle.open(core.storage, {
     terminal: async row => { calls.push(['terminal', row.hostId]); await hold.promise; },
     browser: async () => { throw Error('owner offline'); },
   });
@@ -32,14 +52,14 @@ test('archive fences immediately, retries only failed owners after restart, and 
     assert.throws(() => service.assertActive('h', 't'));
     service.assertActive('other', 't'); service.assertActive('h', 'other');
     hold.resolve(); await archive; await service.close();
-    service = await ConversationResourceLifecycle.open(path, {
+    service = await ConversationResourceLifecycle.open(await core.restart(), {
       terminal: async () => assert.fail('completed owner should not be retried'),
       browser: async row => calls.push(['browser', row.hostId]),
     });
     await service.observe('h', 't', 'archived');
     assert.deepEqual(calls, [['terminal', 'h'], ['browser', 'h']]);
     assert.throws(() => service.assertActive('h', 't'));
-  } finally { await service.close(); await rm(dir, { recursive: true, force: true }); }
+  } finally { await service.close(); await core.close(); }
 });
 
 test('unarchive waits for outstanding cleanup; old acknowledgement cannot open a new archive', async () => {
@@ -96,31 +116,31 @@ test('a late draft binding invalidates an in-flight cleanup acknowledgement', as
 
 
 test('no-progress cleanup retries retain durable fences without rewriting the journal', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'resource-retry-')), path = join(dir, 'state.json');
+  const core = await serverCore('resource-retry-');
   let available = false, calls = 0, writes = 0;
-  let service = await ConversationResourceLifecycle.open(path, { owner: () => { calls++; if (!available) throw Error('offline'); } });
+  let service = await ConversationResourceLifecycle.open(core.storage, { owner: () => { calls++; if (!available) throw Error('offline'); } });
   const write = service.write.bind(service);
   service.write = rows => { writes++; return write(rows); };
   try {
     await service.observe('h', 't', 'archived');
     assert.equal(writes, 1, 'the close intent is durable before invoking its owner');
-    const original = await readFile(path, 'utf8');
+    const original = core.rows();
     await service.observe('h', 't', 'archived');
     service.retry(); await Promise.all([...service.flights.values()]);
     assert.equal(calls, 3, 'owner retries continue even though the journal is unchanged');
     assert.equal(writes, 1);
-    assert.equal(await readFile(path, 'utf8'), original);
+    assert.deepEqual(core.rows(), original);
     assert.throws(() => service.assertActive('h', 't'));
     await service.close();
-    service = await ConversationResourceLifecycle.open(path, { owner: () => { calls++; if (!available) throw Error('offline'); } });
+    service = await ConversationResourceLifecycle.open(await core.restart(), { owner: () => { calls++; if (!available) throw Error('offline'); } });
     await service.observe('h', 't', 'active');
     assert.throws(() => service.assertActive('h', 't'), 'restoration still waits for cleanup');
-    assert.deepEqual(JSON.parse(await readFile(path, 'utf8')).rows[0].pending, ['owner']);
+    assert.deepEqual(core.rows()[0].pending, ['owner']);
     available = true;
     await service.observe('h', 't', 'active');
     service.assertActive('h', 't');
-    assert.deepEqual(JSON.parse(await readFile(path, 'utf8')).rows[0].pending, []);
-  } finally { await service.close(); await rm(dir, { recursive: true, force: true }); }
+    assert.deepEqual(core.rows()[0].pending, []);
+  } finally { await service.close(); await core.close(); }
 });
 
 test('partial cleanup progress writes only the remaining pending owners', async () => {
@@ -141,10 +161,10 @@ test('partial cleanup progress writes only the remaining pending owners', async 
 
 
 test('retry visits only pending cleanup keys and reconstructs them after restart', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'resource-pending-')), path = join(dir, 'state.json');
+  const core = await serverCore('resource-pending-');
   let calls = [], online = false;
   const owner = row => { calls.push(row.threadId); if (row.threadId === 'pending' && !online) throw Error('offline'); };
-  let service = await ConversationResourceLifecycle.open(path, { owner });
+  let service = await ConversationResourceLifecycle.open(core.storage, { owner });
   try {
     for (const id of ['done-a', 'done-b', 'pending', 'done-c']) await service.observe('h', id, 'archived');
     const pendingKey = JSON.stringify(['h', 'pending']);
@@ -155,13 +175,13 @@ test('retry visits only pending cleanup keys and reconstructs them after restart
     assert.deepEqual(calls, ['pending']);
     service.rows[Symbol.iterator] = iterate;
     await service.close();
-    service = await ConversationResourceLifecycle.open(path, { owner });
+    service = await ConversationResourceLifecycle.open(await core.restart(), { owner });
     assert.deepEqual([...service.pendingKeys], [pendingKey]);
     calls = []; online = true; service.retry(); await Promise.all([...service.flights.values()]);
     assert.deepEqual(calls, ['pending']); assert.equal(service.pendingKeys.size, 0);
     service.rows[Symbol.iterator] = () => { throw Error('empty retry must not scan history'); };
     service.retry(); assert.equal(service.flights.size, 0);
-  } finally { await service.close(); await rm(dir, {recursive: true, force: true}); }
+  } finally { await service.close(); await core.close(); }
 });
 
 test('pending index follows new generations, including a late resource link', async () => {
@@ -245,9 +265,9 @@ test('each archived page takes a fresh admission view and duplicate rows remain 
 // conversation it closes is fenced, others stay usable, owners wait for the
 // durable record, and concurrent intents are serialized without losing either.
 test('an in-flight journal write fences only its conversation and serializes concurrent intents', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'resource-async-')), path = join(dir, 'state.json');
+  const core = await serverCore('resource-async-');
   const calls = [];
-  const service = await ConversationResourceLifecycle.open(path, { owner: row => { calls.push(row.threadId); } });
+  const service = await ConversationResourceLifecycle.open(core.storage, { owner: row => { calls.push(row.threadId); } });
   const write = service.write.bind(service), held = deferred(); let first = true;
   service.write = async rows => { if (first) { first = false; await held.promise; } return write(rows); };
   try {
@@ -258,9 +278,9 @@ test('an in-flight journal write fences only its conversation and serializes con
     assert.deepEqual(calls, [], 'owners wait until the close intent is durable');
     held.resolve(); await Promise.all([a, b]);
     assert.deepEqual(calls.sort(), ['a', 'b']);
-    const saved = JSON.parse(await readFile(path, 'utf8')).rows.map(row => [row.threadId, row.state, row.pending]);
+    const saved = core.rows().map(row => [row.threadId, row.state, row.pending]);
     assert.deepEqual(saved.sort(), [['a', 'archived', []], ['b', 'archived', []]], 'neither intent was lost');
-  } finally { await service.close(); await rm(dir, { recursive: true, force: true }); }
+  } finally { await service.close(); await core.close(); }
 });
 
  test('dependent workspace cleanup waits for positive browser cleanup; unrelated owners remain independent',async()=>{
@@ -268,9 +288,99 @@ test('an in-flight journal write fences only its conversation and serializes con
  try{const work=service.observe('h','t','archived');await entered.promise;assert.ok(calls.includes('terminal'));assert.ok(!calls.includes('workspace'));hold.resolve();await work;assert.ok(!calls.includes('workspace'));assert.deepEqual(service.rows.get(JSON.stringify(['h','t'])).pending,['browser','workspace']);fail=false;await service.observe('h','t','archived');assert.equal(calls.at(-1),'workspace');}finally{await service.close();}
  });
  test('startup replays newly installed cleanup owners on completed closed rows, never active rows, without resetting the canonical generation',async()=>{
- const dir=await mkdtemp(join(tmpdir(),'resource-owner-replay-')),path=join(dir,'state.json');let service=await ConversationResourceLifecycle.open(path,{browser:async()=>{}});
- try{await service.observe('h','closed','archived');await service.observe('h','open','active');await service.close();const calls=[];service=await ConversationResourceLifecycle.open(path,{browser:async r=>calls.push(['browser',r.threadId]),workspace:async r=>calls.push(['workspace',r.threadId])},{replayOwners:['browser','workspace'],dependencies:{workspace:['browser']}});assert.equal(service.rows.get(JSON.stringify(['h','closed'])).generation,1);await service.observe('h','closed','archived');assert.deepEqual(calls,[['browser','closed'],['workspace','closed']]);service.assertActive('h','open');}finally{await service.close();await rm(dir,{recursive:true,force:true});}
+ const core=await serverCore('resource-owner-replay-');let service=await ConversationResourceLifecycle.open(core.storage,{browser:async()=>{}});
+ try{await service.observe('h','closed','archived');await service.observe('h','open','active');await service.close();const calls=[];service=await ConversationResourceLifecycle.open(core.storage,{browser:async r=>calls.push(['browser',r.threadId]),workspace:async r=>calls.push(['workspace',r.threadId])},{replayOwners:['browser','workspace'],dependencies:{workspace:['browser']}});assert.equal(service.rows.get(JSON.stringify(['h','closed'])).generation,1);await service.observe('h','closed','archived');assert.deepEqual(calls,[['browser','closed'],['workspace','closed']]);service.assertActive('h','open');assert.deepEqual(core.rows().map(r=>[r.threadId,r.generation,r.pending]),[['closed',1,[]],['open',1,[]]]);}finally{await service.close();await core.close();}
  });
  test('cyclic or unknown resource-owner dependencies fail closed',()=>{
  assert.throws(()=>new ConversationResourceLifecycle(null,{a:async()=>{},b:async()=>{}},{dependencies:{a:['b'],b:['a']}}),/Cyclic/);assert.throws(()=>new ConversationResourceLifecycle(null,{a:async()=>{}},{dependencies:{a:['missing']}}),/Invalid/);
  });
+
+// The retired journal (conversation-resources.json) is imported once by the
+// Server core owner when the lifecycle opens, and kept unchanged as a backup.
+const legacyJournal = rows => JSON.stringify({ version: 1, rows });
+test('the retired JSON journal imports once with its generations and pending owners, and stays unchanged', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'resource-import-'));
+  const legacy = legacyJournal([
+    { hostId: 'h', threadId: 'archived', state: 'archived', generation: 3, pending: ['browser'] },
+    { hostId: 'h', threadId: 'active', state: 'active', generation: 2, pending: [] },
+    { hostId: 'other', threadId: 'archived', state: 'deleted', generation: 1, pending: [] },
+  ]);
+  await writeFile(join(dir, 'conversation-resources.json'), legacy, { mode: 0o600 });
+  let storage = await openServerCoreOwner(dir), service;
+  const calls = [];
+  const owners = { terminal: () => {}, browser: row => { calls.push(row.threadId); throw Error('offline'); } };
+  try {
+    service = await ConversationResourceLifecycle.open(storage, owners);
+    assert.deepEqual([...service.pendingKeys], [JSON.stringify(['h', 'archived'])]);
+    assert.equal(service.rows.get(JSON.stringify(['h', 'archived'])).generation, 3);
+    assert.throws(() => service.assertActive('h', 'archived'));
+    service.assertActive('h', 'active');
+    assert.throws(() => service.assertActive('other', 'archived'));
+    await service.observe('h', 'active', 'archived');
+    await service.close();
+    // A restart (same file, same receipt) never replays the journal over newer rows.
+    await storage.close(); storage = await openServerCoreOwner(dir);
+    service = await ConversationResourceLifecycle.open(storage, owners);
+    assert.equal(service.rows.get(JSON.stringify(['h', 'active'])).generation, 3);
+    assert.equal(service.rows.get(JSON.stringify(['h', 'active'])).state, 'archived');
+    assert.equal(await readFile(join(dir, 'conversation-resources.json'), 'utf8'), legacy, 'the backup is never written');
+    // Removing the kept backup is an operator action, not evidence of an older writer.
+    await service.close(); await rm(join(dir, 'conversation-resources.json'));
+    service = await ConversationResourceLifecycle.open(storage, owners);
+    assert.equal(service.rows.get(JSON.stringify(['h', 'active'])).state, 'archived');
+    const db = new DatabaseSync(join(dir, 'opencraft-server.sqlite'), { readOnly: true });
+    try {
+      const receipt = db.prepare('SELECT source, sha256, rows FROM conversation_resource_imports').all();
+      assert.deepEqual(receipt.map(r => [r.source, r.rows]), [['conversation-resources.json', 3]]);
+      assert.equal(receipt[0].sha256, createHash('sha256').update(legacy).digest('hex'));
+    } finally { db.close(); }
+  } finally { await service?.close(); await storage.close(); await rm(dir, { recursive: true, force: true }); }
+});
+
+test('a journal changed after import, or created after an absent import, refuses to open', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'resource-import-changed-'));
+  let storage = await openServerCoreOwner(dir);
+  try {
+    // No journal: the absence is the imported source.
+    await (await ConversationResourceLifecycle.open(storage, { owner() {} })).close();
+    // An older writer (e.g. after a rollback) recreates it; merging could regress generations.
+    await writeFile(join(dir, 'conversation-resources.json'), legacyJournal([{ hostId: 'h', threadId: 't', state: 'active', generation: 1, pending: [] }]));
+    await assert.rejects(ConversationResourceLifecycle.open(storage, { owner() {} }), /changed after its import/);
+    await rm(join(dir, 'conversation-resources.json'));
+    await (await ConversationResourceLifecycle.open(storage, { owner() {} })).close();
+  } finally { await storage.close(); await rm(dir, { recursive: true, force: true }); }
+});
+
+test('a corrupt, truncated or unknown-owner journal refuses to open and imports nothing', async () => {
+  for (const [name, text] of [
+    ['truncated', '{"version":1,"rows":[{"hostId":"h"'],
+    ['wrong version', JSON.stringify({ version: 2, rows: [] })],
+    ['bad record', legacyJournal([{ hostId: 'h', threadId: 't', state: 'closed', generation: 1, pending: [] }])],
+    ['unknown owner', legacyJournal([{ hostId: 'h', threadId: 't', state: 'archived', generation: 1, pending: ['retired-owner'] }])],
+  ]) {
+    const dir = await mkdtemp(join(tmpdir(), 'resource-import-corrupt-'));
+    await writeFile(join(dir, 'conversation-resources.json'), text);
+    const storage = await openServerCoreOwner(dir);
+    try {
+      await assert.rejects(ConversationResourceLifecycle.open(storage, { owner() {} }), /Invalid conversation resource/, name);
+      assert.equal(await readFile(join(dir, 'conversation-resources.json'), 'utf8'), text, name);
+      const db = new DatabaseSync(join(dir, 'opencraft-server.sqlite'), { readOnly: true });
+      try {
+        assert.equal(db.prepare('SELECT count(*) n FROM conversation_resources').get().n, 0, name);
+        assert.equal(db.prepare('SELECT count(*) n FROM conversation_resource_imports').get().n, 0, name);
+      } finally { db.close(); }
+    } finally { await storage.close(); await rm(dir, { recursive: true, force: true }); }
+  }
+});
+
+test('a closed or lost Server core owner fences bound conversations and refuses later intents', async () => {
+  const core = await serverCore('resource-owner-lost-');
+  const service = await ConversationResourceLifecycle.open(core.storage, { owner() {} });
+  try {
+    service.assertActive('h', 't');
+    await core.storage.close();
+    await assert.rejects(service.observe('h', 't', 'archived'));
+    assert.throws(() => service.assertActive('h', 'other'), /unavailable/);
+    service.assertActive('h', undefined);
+  } finally { await service.close(); await rm(core.dir, { recursive: true, force: true }); }
+});

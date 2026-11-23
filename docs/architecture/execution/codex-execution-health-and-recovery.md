@@ -2,6 +2,16 @@
 
 状态：用户已授权并实施源码；验证记录见本文末尾。尚未部署到实际服务。
 
+> 2026-11-22 更新：主动恢复（确认故障后停止并替换 AppServer 实例、`execution-recovery.json`
+> 故障日志、Router custody 交接）只在 systemd Generation Router 的托管代次中实现，已随
+> Generation Router 一并删除。保留的是单 APP Server 的执行健康检测（`environment/status`、
+> 执行器生命周期记录，`/health` 报告 `EXECUTION_ENVIRONMENT_UNAVAILABLE`）以及 Host→客户端
+> 的 `execution`／`executionUnavailableThreadIds` 状态契约与 UI。Host 侧原先由代次栅栏与
+> `opencraft/codex/generation/lost` 驱动的故障消费（故障回执 Worker、按会话阻塞执行）已于同日
+> 删除，当前没有生产者设置该状态。后继见
+> [工作区拆分 §3.5](../platform/workspace-host-split.md#35-generation-router已删除) 与 §4.4。
+> 下文 “Implemented contract”“Validation record” 中关于 managed generation／Router 的内容为历史记录。
+
 ## Problem Statement
 
 Codex AppServer 仍能连接、读取会话和返回模型回答时，其共享执行环境可能已经失效，命令执行持续报 `exec-server transport disconnected`。仅检查连接或进程存活，会让用户误以为执行能力正常；反复发送消息也不能恢复工作。

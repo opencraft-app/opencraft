@@ -196,13 +196,15 @@ test('interrupted artifact upload leaves neither a committed object nor a partia
   const req=request({socketPath:options.endpoint,path:'/artifact',method:'POST',headers:{authorization:'Bearer '+credential,
     'content-length':String(metadata.size),'x-opencraft-artifact':Buffer.from(JSON.stringify(metadata)).toString('base64url')}});
   req.on('error',()=>{});req.write(Buffer.alloc(1024));
-  const content=join(root,'artifact-copies','content');
+  // Partial bytes live in the blob store's staging area until the object is complete.
+  const content=join(root,'artifact-copies','.staging');
   const {readdir}=await import('node:fs/promises');
   const until=async(check:()=>Promise<boolean>)=>{const deadline=Date.now()+3000;while(!await check()){if(Date.now()>deadline)throw Error('Cleanup did not settle');await new Promise(r=>setTimeout(r,10));}};
   await until(async()=>{try{return (await readdir(content)).length===1;}catch{return false;}});
   req.destroy();
   await until(async()=>(await readdir(content)).length===0);
   await client.probe();
+  assert.deepEqual(await readdir(join(root,'artifact-copies','content')),[]);
   const {DatabaseSync}=await import('node:sqlite');
   const db=new DatabaseSync(join(root,'artifact-copies','catalog.sqlite'),{readOnly:true});
   try{assert.equal(db.prepare('SELECT count(*) n FROM artifacts').get()!.n,0);}finally{db.close();}

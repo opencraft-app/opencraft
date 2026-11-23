@@ -1,20 +1,29 @@
-import { randomUUID } from "node:crypto";
 import { CodexCoreReadIsolation, isIsolatedCoreRead } from "./codex-core-read-isolation";
 import { CodexCoreSocket } from "./codex-core-socket";
 import { observeStandaloneCodexExecution } from "./native-execution-origin";
-import { CodexCoreControlClient, type CodexGenerationFenceState } from "@opencraft/account-pool-host";
+import { CodexCoreControlClient } from "@opencraft/account-pool-host";
 import type { DuplexTransport, TransportStatus } from "@opencraft/appserver-client/transport";
+
+/** Where the runtime owner (Codex AppServer) is reached when it is not behind the
+ * account Core: its control endpoint and token, and the native socket to dial. A
+ * WorkspaceHost passes local endpoint listeners here; the in-environment paths in
+ * the owner's health are never dialled. */
+export interface CodexRuntimeEndpoints {
+  readonly endpoint: string;
+  /** A function when the credential belongs to the runtime owner's incarnation. */
+  readonly token: string | (() => Promise<string>);
+  readonly nativeSocket?: string;
+}
 
 /** A raw native connection: Host routing and overlays stay in CodexEngineAdapter.
  * Closing this connection never owns/stops the core or its CLI. No request retry. */
 export class CodexNativeCoreTransport implements DuplexTransport {
+  /** Account plane (accounts, subscriptions); also the runtime plane when no runtime is given. */
   readonly control: CodexCoreControlClient;
-  private readonly hostInstance = randomUUID();
+  private readonly runtimeEndpoints: CodexRuntimeEndpoints | undefined;
+  private runtimeClient: { token: string; client: CodexCoreControlClient } | undefined;
   private readonly lifetime = new AbortController();
   private readEpoch = 0;
-  private generationLease: { lease: string; routingEpoch: string } | null = null;
-  private usageSequence = 0;
-  private usageOperation: Promise<void> | null = null;
   private readonly connection: CodexCoreSocket;
   private readonly reads: CodexCoreReadIsolation;
   private readonly messages = new Set<(frame: string) => void>();
@@ -22,33 +31,40 @@ export class CodexNativeCoreTransport implements DuplexTransport {
   private callbackReady = false;
   private titleToolReady = false;
   private ownerIncarnation: string|null = null;
-  private routed = false;
   private standaloneExecution: string | undefined;
   get executionIncarnation(): string | undefined { return this.connection.status.state === "open" ? this.standaloneExecution : undefined; }
-  get supportsOrchestrationRouting():boolean{return this.routed;}
   get callbackIncarnation(): string|null {return this.ownerIncarnation;}
   get supportsOrchestration(): boolean { return this.callbackReady; }
   get supportsThreadTitle(): boolean { return this.callbackReady && this.titleToolReady; }
-  constructor(endpoint: string, token: string, callbackLaneId?: string) {
+  constructor(endpoint: string, token: string, callbackLaneId?: string, runtime?: CodexRuntimeEndpoints) {
     this.control = new CodexCoreControlClient(endpoint, token);
-    this.reads = new CodexCoreReadIsolation(signal => this.control.health(signal, "native"));
+    this.runtimeEndpoints = runtime;
+    this.reads = new CodexCoreReadIsolation(signal => this.health(signal, "native"));
     this.connection = new CodexCoreSocket({
       callbackLaneId,
       health: async signal => {
-        const health = await this.control.health(signal, "native");
+        const health = await this.health(signal, "native");
         this.standaloneExecution = undefined;
-        if (!health.routingEpoch && process.platform === "linux") {
+        if (process.platform === "linux") {
           this.standaloneExecution = (await observeStandaloneCodexExecution(health)).incarnation;
         }
-        this.callbackReady = health.callbackProtocolVersion === 1 && !!callbackLaneId && (!health.routingEpoch || health.orchestrationRoutingVersion === 1);
-        this.routed = health.orchestrationRoutingVersion === 1;
+        this.callbackReady = health.callbackProtocolVersion === 1 && !!callbackLaneId;
         this.titleToolReady = health.threadTitleToolVersion === 1;
-        this.ownerIncarnation = health.routingEpoch ? null : health.callbackIncarnation ?? null;
+        this.ownerIncarnation = health.callbackIncarnation ?? null;
         return health;
       },
       message: frame => { for (const listener of this.messages) listener(frame); },
       status: value => { for (const listener of this.statuses) listener(value); },
     });
+  }
+  /** Runtime owner health; `nativeSocket` is the socket this Host can dial. */
+  async health(signal?: AbortSignal, observation: "execution" | "native" = "execution") {
+    const runtime = this.runtimeEndpoints;
+    if (!runtime) return this.control.health(signal, observation);
+    const token = typeof runtime.token === "function" ? await runtime.token() : runtime.token;
+    if (this.runtimeClient?.token !== token) this.runtimeClient = { token, client: new CodexCoreControlClient(runtime.endpoint, token) };
+    const health = await this.runtimeClient.client.health(signal, observation);
+    return runtime.nativeSocket ? { ...health, nativeSocket: runtime.nativeSocket } : health;
   }
   get status(): TransportStatus { return this.connection.status; }
   subscribeMessage(listener: (frame: string) => void): () => void { this.messages.add(listener); return () => this.messages.delete(listener); }
@@ -67,24 +83,6 @@ export class CodexNativeCoreTransport implements DuplexTransport {
         for (const listener of this.messages) listener(reply);
       });
     } else this.connection.send(frame);
-  }
-  publishGenerationUsage(snapshot: () => { routingEpoch: string; blockedThreadIds: readonly string[]; unscopedBusy: boolean; discoveryComplete: boolean; acknowledgedFenceEpoch: number }, apply: (state: CodexGenerationFenceState) => void): Promise<void> {
-    if (this.usageOperation) return this.usageOperation;
-    const operation = this.sendGenerationUsage(snapshot, apply).finally(() => { if (this.usageOperation === operation) this.usageOperation = null; });
-    this.usageOperation = operation; return operation;
-  }
-  private async sendGenerationUsage(snapshot: () => { routingEpoch: string; blockedThreadIds: readonly string[]; unscopedBusy: boolean; discoveryComplete: boolean; acknowledgedFenceEpoch: number }, apply: (state: CodexGenerationFenceState) => void): Promise<void> {
-    const health = await this.control.health(this.lifetime.signal, "native");
-    if (!health.routingEpoch || snapshot().routingEpoch !== health.routingEpoch) return;
-    if (this.generationLease?.routingEpoch !== health.routingEpoch) this.generationLease = await this.control.claimGenerationHost(this.hostInstance, health.routingEpoch, this.lifetime.signal);
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const before = snapshot();
-      const state = await this.control.publishGenerationHost({ ...before, ...this.generationLease, sequence: ++this.usageSequence }, this.lifetime.signal);
-      if (!state || state.routingEpoch !== health.routingEpoch || !Number.isSafeInteger(state.fenceEpoch) || !Array.isArray(state.fencedGenerationIds)) throw new Error("Invalid generation admission fence");
-      apply(state);
-      if (snapshot().acknowledgedFenceEpoch === before.acknowledgedFenceEpoch) return;
-      // A new fence is applied synchronously before taking the acknowledgement snapshot.
-    }
   }
   async close(): Promise<void> { ++this.readEpoch; this.lifetime.abort(); this.reads.close(); this.connection.close(); }
 }

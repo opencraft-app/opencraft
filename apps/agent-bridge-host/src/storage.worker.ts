@@ -2,7 +2,7 @@ import { parentPort, workerData, isMainThread } from 'node:worker_threads';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { createHash } from 'node:crypto';
-import { openManagedDatabase, acquireProcessWriter, sqliteTransaction } from '@opencraft/sqlite-node';
+import { openManagedDatabase, acquireProcessWriter, sqliteTransaction, nodeSqlDatabase } from '@opencraft/sqlite-node';
 import { projectToAppServer, assemble, createAssemblerState, type AssemblerState, type CanonicalInputState } from '@opencraft/agent-bridge-assembler';
 import { BRIDGE_THREAD_NOTIFICATIONS, parseThreadDeltaParams } from '@opencraft/agent-bridge-protocol';
 import { ThreadQueueStore } from '@opencraft/thread-queue';
@@ -35,7 +35,7 @@ if (workerData.role === 'host') tx(() => {
 });
 // Queued follow-up input of bridge Threads, keyed by Host route. Inputs left
 // mid-dispatch by the previous process become unknown, as commands do.
-const queue = workerData.role === 'host' ? new ThreadQueueStore(db) : null;
+const queue = workerData.role === 'host' ? new ThreadQueueStore(nodeSqlDatabase(db)) : null;
 const QUEUE_METHODS = new Set(['add', 'list', 'find', 'findByClientId', 'firstAwaitingAdmission', 'update', 'delete', 'reorder', 'claim', 'settle',
   'requestRetry', 'resumeRequestedRetry', 'discardUnknown', 'discardThread', 'recordInput', 'finishTurn', 'receipt', 'pendingThreads', 'maintenanceCounts', 'interruptExecution']);
 const receipt = (id: string): Receipt | null => {

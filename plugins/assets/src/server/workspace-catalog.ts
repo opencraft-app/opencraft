@@ -9,6 +9,7 @@ import {
 } from "@opencraft/execution-environment/workspace-selection";
 import { ManagedNfsLibraries, type ManagedNfsLibrary } from "./libraries.js";
 import type { SandboxConfigurations } from "./configurations.js";
+import { credentialInstallation, credentialRevisionFacts } from "./sandbox-installations.js";
 
 /** Supplied by authenticated Human admission, never decoded from a request. */
 export interface WorkspaceCatalogContext {
@@ -67,8 +68,8 @@ export class InstalledWorkspaceCatalog {
       environment.templateId,
       credential.id,
       credential.generation,
-      credential.apiUrl,
-      credential.sandboxUrl,
+      // Provider facts; E2B keeps [apiUrl, sandboxUrl] here so persisted revisions stay valid.
+      ...credentialRevisionFacts(credential),
       policy.workspaceRoot,
       policy.resources.cpuMillis,
       policy.resources.memoryBytes,
@@ -148,13 +149,13 @@ export class InstalledWorkspaceCatalog {
     return {
       policy: structuredClone(current.installed.policy),
       template: structuredClone(current.record.policy),
-      apiUrl: current.record.credential.apiUrl,
-      sandboxUrl: current.record.credential.sandboxUrl,
+      /** Secret-free provider installation; `backend` selects the registered provider. */
+      installation: credentialInstallation(current.record.credential),
       templateId: fixed.templateId,
       authorize: async () => {
         this.currentEnvironment(admission, fixed);
       },
-      readApiKey: async () => this.currentEnvironment(admission, fixed).record.credential.apiKey,
+      readSecret: async () => this.currentEnvironment(admission, fixed).record.credential.apiKey,
     };
   }
   private library(context: WorkspaceCatalogContext, environment: Environment, libraryId: string) {

@@ -5,8 +5,22 @@ import { Worker } from 'node:worker_threads';
 import type { ActorContext } from '@opencraft/identity-core/actors';
 import type { ServerSpaceCommand, ServerSpaceDirectory } from '@opencraft/appserver-protocol/server-spaces';
 import type { SpaceProjection } from './server-spaces-ledger.js';
+import type { ServerSpacesRequest } from './server-spaces-domain.js';
 
-/** One serial storage owner; network hot paths only read its committed projection. */
+/** The Server core owner's port for the space ledger (`serverSpacesOwnerMethods`),
+ * e.g. `openServerCoreOwner(...)`. `onUnavailable` reports a lost owner. */
+export interface ServerSpacesOwner {
+  readonly call: {
+    serverSpacesOpen(bootstrap: {ownerActorId?:string;members?:readonly string[];bootstrapInstance?:boolean}): Promise<{projection:SpaceProjection}>;
+    serverSpaces(request: ServerSpacesRequest): Promise<{result?:unknown;projection?:SpaceProjection;error?:Record<string,unknown>}>;
+  };
+  onUnavailable?(listener: (error: Error) => void): () => void;
+}
+
+/** One serial storage owner; network hot paths only read its committed projection.
+ * With `owner`, the ledger runs on the Server core owner connection in FIFO
+ * order with the other owner domains; otherwise a standalone Worker owns
+ * (`directory`) or borrows (`path`) the database. */
 export class ServerSpacesRuntime {
   private projection: SpaceProjection = {spaces:[],members:[],assignments:[]};
   private assignments=new Map<string,string>();
@@ -18,6 +32,7 @@ export class ServerSpacesRuntime {
   }
   private readonly listeners = new Set<() => void>();
   private readonly pending = new Map<number,{resolve:(value:any)=>void;reject:(error:Error)=>void}>();
+  private readonly inFlight = new Set<Promise<unknown>>();
   private sequence = 0;
   private failed = false;
   private closing = false;
@@ -25,36 +40,69 @@ export class ServerSpacesRuntime {
   private closeOperation?:Promise<void>;
   outcome:DatabaseOutcome|null=null;
   readonly ready: Promise<void>;
-  private readonly worker: Worker;
-  constructor(options: {directory?:string;path?:string;ownerActorId?:string;members?:readonly string[];bootstrapInstance?:boolean}) {
-    this.worker = new Worker(new URL('server-spaces-worker.mjs',typeof __dirname==='string'?pathToFileURL(__dirname+'/'):new URL('.',import.meta.url)),{workerData:{...options,serverMigrationComposition:options.directory?installedServerMigrationComposition():undefined}});
+  private readonly worker?: Worker;
+  private readonly owner?: ServerSpacesOwner;
+  private unsubscribeOwner?: () => void;
+  private failure!: (cause?: unknown) => void;
+  constructor(options: {directory?:string;path?:string;owner?:ServerSpacesOwner;ownerActorId?:string;members?:readonly string[];bootstrapInstance?:boolean}) {
+    const fail = (reject:(error:Error)=>void) => (cause?:unknown) => {
+      this.failed=true; const error=new Error('Server storage unavailable',{cause});reject(error);
+      for(const request of this.pending.values())request.reject(error);this.pending.clear();
+      for(const listener of this.listeners){try{listener();}catch{/* Retired observers do not own the authority. */}}
+    };
+    if (options.owner) {
+      const owner = this.owner = options.owner;
+      const {ownerActorId,members,bootstrapInstance}=options;
+      this.ready = new Promise((resolve,reject) => {
+        this.failure = fail(reject);
+        this.unsubscribeOwner = owner.onUnavailable?.(error=>this.failure(error));
+        owner.call.serverSpacesOpen({...(ownerActorId?{ownerActorId}:{}),...(members?{members}:{}),...(bootstrapInstance?{bootstrapInstance}:{})})
+          .then(reply=>{this.publish(reply.projection);resolve();},error=>this.failure(error));
+      });
+      void this.ready.catch(()=>{});
+      return;
+    }
+    const {owner:_owner,...workerOptions}=options;
+    const worker = this.worker = new Worker(new URL('server-spaces-worker.mjs',typeof __dirname==='string'?pathToFileURL(__dirname+'/'):new URL('.',import.meta.url)),{workerData:{...workerOptions,serverMigrationComposition:options.directory?installedServerMigrationComposition():undefined}});
     this.ready = new Promise((resolve,reject) => {
-      this.worker.on('message', message => {
+      this.failure = fail(reject);
+      worker.on('message', message => {
         if (message.type === 'ready') {this.publish(message.projection);this.localContext=message.localContext;this.outcome=message.outcome??null;resolve();return;}
         const request=this.pending.get(message.id);if(!request)return;this.pending.delete(message.id);
-        if(message.error){request.reject(Object.assign(new Error('Server action unavailable'),message.error));return;}
-        if(message.projection) {
-          this.publish(message.projection);
-          for(const listener of this.listeners) {try{listener();}catch{/* Observers cannot undo a committed mutation. */}}
-        }
-        request.resolve(message.result);
+        this.settle(request,message);
       });
-      const failure = (cause?:unknown) => {
-        this.failed=true; const error=new Error('Server storage unavailable',{cause});reject(error);
-        for(const request of this.pending.values())request.reject(error);this.pending.clear();
-        for(const listener of this.listeners){try{listener();}catch{/* Retired observers do not own the authority. */}}
-      };
-      this.worker.on('error',failure);
-      this.worker.on('exit',()=>{if(!this.closing||this.pending.size)failure();});
+      worker.on('error',this.failure);
+      worker.on('exit',()=>{if(!this.closing||this.pending.size)this.failure();});
     });
     void this.ready.catch(()=>{});
   }
-  private async call(payload: Record<string,unknown>): Promise<any> {
+  /** Publishes a committed projection before the caller sees the result. */
+  private settle(request:{resolve:(value:any)=>void;reject:(error:Error)=>void},message:{result?:unknown;projection?:SpaceProjection;error?:Record<string,unknown>}) {
+    if(message.error){request.reject(Object.assign(new Error('Server action unavailable'),message.error));return;}
+    if(message.projection) {
+      this.publish(message.projection);
+      for(const listener of this.listeners) {try{listener();}catch{/* Observers cannot undo a committed mutation. */}}
+    }
+    request.resolve(message.result);
+  }
+  private async call(payload: ServerSpacesRequest | {method:'close'}): Promise<any> {
     await this.ready;
     if(this.failed || this.closing && payload.method !== 'close')throw new Error('Server storage unavailable');
-    if(this.pending.size>=256)throw new Error('Server storage busy');
+    if(this.pending.size+this.inFlight.size>=256)throw new Error('Server storage busy');
+    // `close` only reaches a standalone Worker; the owner belongs to its composition.
+    if(this.owner&&payload.method!=='close'){
+      const owner=this.owner;
+      const reply=new Promise((resolve,reject)=>{
+        owner.call.serverSpaces(payload).then(message=>this.settle({resolve,reject},message),cause=>{
+          // A lost owner fences the projection: hot paths deny until restart.
+          this.failure(cause);reject(new Error('Server storage unavailable',{cause}));
+        });
+      });
+      this.inFlight.add(reply);void reply.catch(()=>{}).finally(()=>this.inFlight.delete(reply));
+      return reply;
+    }
     return new Promise((resolve,reject)=>{
-      const id=++this.sequence;this.pending.set(id,{resolve,reject});try{this.worker.postMessage({id,...payload});}catch(error){this.pending.delete(id);reject(error); }
+      const id=++this.sequence;this.pending.set(id,{resolve,reject});try{this.worker!.postMessage({id,...payload});}catch(error){this.pending.delete(id);reject(error); }
     });
   }
   async bootstrap(ownerActorId:string,members:readonly string[]=[]):Promise<void> {await this.call({method:'bootstrap',ownerActorId,members});}
@@ -92,7 +140,12 @@ export class ServerSpacesRuntime {
   close():Promise<void> {
     return this.closeOperation??=(async()=>{
       this.closing=true;
-      try {if(!this.failed)await this.call({method:'close'});}finally{await this.worker.terminate();this.listeners.clear();}
+      if(this.owner){
+        // The owner belongs to its composition: drain this port, never close the owner.
+        try{await Promise.allSettled([...this.inFlight]);}finally{this.unsubscribeOwner?.();this.listeners.clear();}
+        return;
+      }
+      try {if(!this.failed)await this.call({method:'close'});}finally{await this.worker!.terminate();this.listeners.clear();}
     })();
   }
 }

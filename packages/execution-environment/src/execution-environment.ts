@@ -46,11 +46,13 @@ export class ExecutionEnvironmentRuntime {
       ? { authority: seal.authority, seal: scope => seal.seal(scope) }
       : { authority: vault.personalGitAuthority(), seal: scope => vault.sealPersonalGitGrant(scope) }, gitMode);
   }
-  static open(directory: string, options?: { create?: boolean }): ExecutionEnvironmentRuntime | undefined {
+  static async open(directory: string, options?: { create?: boolean }): Promise<ExecutionEnvironmentRuntime | undefined> {
     // Independent execution owners can boot before the identity gateway. They
     // must retain a live store so later personal ENV writes become visible.
-    return options?.create || existsSync(join(directory, 'employee-git-vault.sqlite'))
-      ? new ExecutionEnvironmentRuntime(directory, new EmployeeGitVaultStore(directory), true) : undefined;
+    if (!options?.create && !existsSync(join(directory, 'employee-git-vault.sqlite'))) return undefined;
+    const vault = await EmployeeGitVaultStore.open(directory);
+    try { return new ExecutionEnvironmentRuntime(directory, vault, true); }
+    catch (error) { vault.close(); throw error; }
   }
   onClose(dispose: () => void) { this.disposers.add(dispose); }
   close() { this.closed = true; void this.git?.close().catch(() => {}); for (const dispose of this.disposers) dispose(); this.disposers.clear(); if (this.ownsVault) this.vault.close(); }

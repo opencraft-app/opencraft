@@ -10,6 +10,7 @@ import { HumanAuth } from '../../packages/access-control/src/human-auth';
 import { MembershipStore, InstanceAccess } from '../../packages/access-control/src/index';
 import { HumanAccountManagement } from '../../packages/access-control/src/account-management';
 import { LocalAccountServerPlugin } from '../../plugins/local-account/src/server';
+import { createNodePasswordHasher } from '../../plugins/local-account/src/password-hash-node';
 import { LocalAccountApplication } from '../../plugins/local-account/src/application';
 import { humanLoginPage } from '../../apps/headless-server/src/human-login-page';
 import { createWorkbenchWebServer } from '../../apps/headless-server/src/serve-workbench-web.mjs';
@@ -19,7 +20,7 @@ const password = 'Only-for-local-synthetic-tests-42';
 async function fixture(t: any, directory?: string) {
   const root = directory ?? await mkdtemp(join(tmpdir(), 'account-setup-'));
   const actors = new ActorStore(join(root, 'actors.sqlite')), accounts = new HumanAccounts(join(root, 'human-logins.sqlite'), actors);
-  const provider = new LocalAccountServerPlugin(accounts.localAccountRepository); accounts.registerLocalAccounts(provider);
+  const provider = new LocalAccountServerPlugin(accounts.localAccountRepository, createNodePasswordHasher()); accounts.registerLocalAccounts(provider);
   const members = new MembershipStore(join(root, 'memberships.sqlite'));
   const configuration = { origin: 'http://127.0.0.1', local: true, oidc: [] };
   const auth = new HumanAuth(accounts, actors, configuration, humanLoginPage);

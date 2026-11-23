@@ -1,3 +1,4 @@
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
@@ -18,6 +19,7 @@ import {
   ModelConfigurationRepository,
   ModelCredentialRepository,
 } from '../../../apps/local-agent-host/src/model-config/repository.js';
+import { fileSecretStore } from "@opencraft/secret-storage/file";
 
 const run = promisify(execFile);
 const announce = async (value: any) => {
@@ -216,8 +218,8 @@ if (mode === 'entry') {
   try {
     await new Promise<void>((accept) => endpoint.listen(0, '127.0.0.1', accept));
     const models = join(directory, 'data/models');
-    await new ModelCredentialRepository(models).set('FIXTURE', 'synthetic-key');
-    await new ModelConfigurationRepository(models).initialize({
+    await new ModelCredentialRepository(fileSecretStore(models)).set('FIXTURE', 'synthetic-key');
+    await new ModelConfigurationRepository(fileStateDocumentStore(models)).initialize({
       schemaVersion: 1,
       revision: 0,
       providers: [

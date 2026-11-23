@@ -25,6 +25,7 @@ import { ExecutionEnvironmentRuntime, environmentProjectId } from "@opencraft/ex
 import type { GitExecutionLocator } from "@opencraft/execution-environment/git-execution";
 import type { CapabilitySession } from "@opencraft/session-capabilities";
 import { LocalAccountServerPlugin } from "../../plugins/local-account/src/server.js";
+import { createNodePasswordHasher } from "../../plugins/local-account/src/password-hash-node.js";
 import { createAssetsStorage } from "../../plugins/assets/src/server/storage.js";
 import { openAssetConfigurations } from "../../plugins/assets/src/server/worker.js";
 import { openHeadlessAssetsStorage } from "../../apps/headless-server/src/headless-assets-storage.js";
@@ -47,7 +48,7 @@ async function durable(t: test.TestContext) {
     actors = new ActorStore(storage),
     accounts = new HumanAccounts(storage, actors),
     members = new MembershipStore(storage);
-  accounts.registerLocalAccounts(new LocalAccountServerPlugin(accounts.localAccountRepository));
+  accounts.registerLocalAccounts(new LocalAccountServerPlugin(accounts.localAccountRepository, createNodePasswordHasher()));
   const management = new HumanAccountManagement(storage, accounts, actors, members);
   const principal = await management.initialize({
     mode: "web",
@@ -224,8 +225,8 @@ test("an unowned Turn reads as no admission; a closed reader refuses instead of 
 const PROJECT_VALUE = "synthetic-alpha-project-value";
 const GLOBAL_VALUE = "synthetic-global-only-value";
 /** Values and the Thread->Project binding exist before the vault owner starts. */
-function seed(directory: string, account: string, bindings: Record<string, string | null>) {
-  const vault = new EmployeeGitVaultStore(directory);
+async function seed(directory: string, account: string, bindings: Record<string, string | null>) {
+  const vault = await EmployeeGitVaultStore.open(directory);
   try {
     const environment = new AccountEnvironment(vault);
     environment.replace(account, { projectId: null }, 0, [
@@ -274,7 +275,7 @@ test("the core vault owner issues capsules in its Worker: values never reach Mai
   const plain = { hostId: "opencraft-server" as const, threadId: "dsh-plain", turnId: "dsh-turn-dsh-plain-1" };
   f.admit(alpha.threadId, "alpha-input", alpha.turnId);
   f.admit(plain.threadId, "plain-input", plain.turnId);
-  seed(f.directory, f.account, { [alpha.threadId]: "alpha" });
+  await seed(f.directory, f.account, { [alpha.threadId]: "alpha" });
   // Record every message the Worker sends to this (Main) thread.
   const seen: string[] = [];
   const emit = Worker.prototype.emit;
@@ -316,7 +317,7 @@ test("the vault owner refuses wrong-project, forged and cross-Thread contexts", 
   const beta = { hostId: "opencraft-server" as const, threadId: "dsh-beta", turnId: "dsh-turn-dsh-beta-1" };
   f.admit(alpha.threadId, "alpha-input", alpha.turnId);
   f.admit(beta.threadId, "beta-input", beta.turnId);
-  seed(f.directory, f.account, { [alpha.threadId]: "alpha", [beta.threadId]: "beta" });
+  await seed(f.directory, f.account, { [alpha.threadId]: "alpha", [beta.threadId]: "beta" });
   const assets = await openHeadlessAssetsStorage(f.directory, { environmentLaunch: true });
   const reader = openExecutionAdmission({ workerFile: admissionWorker, directory: f.directory });
   const launch = gateway(assets, reader);
@@ -380,7 +381,7 @@ test("close drains an in-flight seal and retires the issuer; a restarted owner k
   const f = await durable(t);
   const alpha = { hostId: "opencraft-server" as const, threadId: "dsh-alpha", turnId: "dsh-turn-dsh-alpha-1" };
   f.admit(alpha.threadId, "alpha-input", alpha.turnId);
-  seed(f.directory, f.account, { [alpha.threadId]: "alpha" });
+  await seed(f.directory, f.account, { [alpha.threadId]: "alpha" });
   const reader = openExecutionAdmission({ workerFile: admissionWorker, directory: f.directory });
   t.after(() => reader.close());
   const owned = (await reader.resolve(alpha))!;

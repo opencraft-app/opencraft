@@ -1,6 +1,6 @@
 import { parseConversationRef } from "@opencraft/appserver-protocol/collaboration";
 import { createHash, randomUUID } from "node:crypto";
-import type { DatabaseSync } from "node:sqlite";
+import type { SqlDatabase } from '@opencraft/sql';
 import type { ActorContext } from "@opencraft/identity-core/actors";
 import { PersonalAssistants } from "./personal-assistants.js";
 import type { Collaboration } from "./collaboration.js";
@@ -30,7 +30,7 @@ export interface AssistantThreadAllocation {
 export class AssistantThreadStore {
   constructor(
     private service: Collaboration,
-    private db: DatabaseSync,
+    private db: SqlDatabase,
   ) {}
   private assistants() {
     return new PersonalAssistants(this.service, this.db);

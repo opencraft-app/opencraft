@@ -148,8 +148,8 @@ while its durable subscription survives timeout or a gateway restart. A non-chil
 
 The Native 0.162 protocol accepts `dynamicTools` only when creating a Thread.
 The four tools are therefore installed on new Threads; existing Threads retain
-their original tool set. A mixed generation router filters these definitions for
-older APP payloads that do not support callback replay.
+their original tool set. (The mixed generation router that filtered these
+definitions for older APP payloads was removed with Generation Router.)
 
 The opt-in `scripts/smoke/execution/smoke-thread-orchestration.ts` exercises a real
 fixed Native CLI with synthetic identities, isolated processes and a local model.

@@ -1,3 +1,4 @@
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import {installAssistantHostExtension} from "../../../apps/personal-assistant/src/runtime/host-extension.mjs";
 import { AssistantThreadCommands } from "../../../packages/access-control/src/assistant-thread-commands";
 import { ThreadAccessStore } from "../../../packages/access-control/src/thread-access";
@@ -95,7 +96,7 @@ const threadCommands = new AssistantThreadCommands(
   threadAccess,
 );
 await threadCommands.initialize();
-const models = new ModelConfigurationRepository(join(root, "models"));
+const models = new ModelConfigurationRepository(fileStateDocumentStore(join(root, "models")));
 await models.initialize();
 await models.update(0, (d) => {
   d.providers = [

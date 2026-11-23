@@ -26,7 +26,7 @@ test("simultaneous history recovery survives one slow native-health probe withou
     assert.equal(request.url, "/health");
     queue = queue.then(async () => {
       if (closing) return;
-      // A cold routing owner has one native-health operation in progress.
+      // A cold owner has one native-health operation in progress.
       // Duplicating it must not consume every history reader's deadline.
       await new Promise<void>(resolve => {
         const timer = setTimeout(() => { timers.delete(timer); resolve(); }, 500);
@@ -65,26 +65,20 @@ test("simultaneous history recovery survives one slow native-health probe withou
   }
 });
 
-test("one cancelled health consumer cannot cancel a peer, and the next directory read observes a new owner", async () => {
+test("one cancelled health consumer cannot cancel a peer, and the next health read observes a new owner", async () => {
   const root = await mkdtemp(join(tmpdir(), "oc-history-health-cancel-"));
   const path = join(root, "control.sock");
   let release!: () => void, arrived!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
   const accepted = new Promise<void>(resolve => { arrived = resolve; });
-  let epoch = "before", holding = true, mismatch = false;
+  let owner = "before", holding = true, routed = false;
   const server = createServer((request, response) => { void (async () => {
     response.setHeader("content-type", "application/json");
-    if (request.url === "/health") {
-      arrived();
-      if (holding) await gate;
-      response.end(JSON.stringify({ protocolVersion: 1, pid: process.ppid, codexPid: process.pid,
-        nativeSocket: join(root, "native.sock"), routingEpoch: epoch }));
-    } else {
-      assert.equal(request.url, "/generation-directory?threadId=thread");
-      response.end(JSON.stringify({ protocolVersion: 1, routingEpoch: mismatch ? "replacement" : epoch,
-        admissionEpoch: 1, homes: [{ generationId: "retained", codexHome: root, incarnation: 1 }],
-        route: { threadId: "thread", generationId: "retained" } }));
-    }
+    assert.equal(request.url, "/health");
+    arrived();
+    if (holding) await gate;
+    response.end(JSON.stringify({ protocolVersion: 1, pid: process.ppid, codexPid: process.pid,
+      nativeSocket: join(root, "native.sock"), callbackIncarnation: owner, ...(routed ? { routingEpoch: "router" } : {}) }));
   })(); });
   await new Promise<void>(resolve => server.listen(path, resolve));
   const client = new CodexCoreControlClient(path, "synthetic-service-token");
@@ -99,16 +93,16 @@ test("one cancelled health consumer cannot cancel a peer, and the next directory
     release();
     await firstRejected;
     const own = await peer;
-    assert.equal(own.routingEpoch, "before");
-    (own as { routingEpoch: string }).routingEpoch = "consumer-local-change";
-    assert.equal((await observer).routingEpoch, "before", "consumers retain independently mutable response objects");
+    assert.equal(own.callbackIncarnation, "before");
+    (own as { callbackIncarnation: string }).callbackIncarnation = "consumer-local-change";
+    assert.equal((await observer).callbackIncarnation, "before", "consumers retain independently mutable response objects");
     holding = false;
-    epoch = "after";
-    assert.equal((await client.generationDirectory("thread"))?.routingEpoch, "after",
+    owner = "after";
+    assert.equal((await client.health()).callbackIncarnation, "after",
       "a completed observation is not a health cache or authority for a later read");
-    mismatch = true;
-    await assert.rejects(client.generationDirectory("thread"), /owner changed/,
-      "sharing an in-flight health probe does not bypass the fresh directory epoch check");
+    routed = true;
+    await assert.rejects(client.health(), /incompatible health response/,
+      "a multi-generation routing owner is no longer a supported Core topology");
   } finally {
     release();
     server.closeAllConnections();
@@ -155,40 +149,4 @@ test("retiring the last history slot cancels its shared probe so a successor can
     await new Promise<void>(resolve => native.close(() => resolve()));
     await rm(root, { recursive: true, force: true });
   }
-});
-
-test("warm history directory reads probe health once but revalidate every route and owner", async t => {
-  const root = await mkdtemp(join(tmpdir(), "oc-history-directory-budget-"));
-  const path = join(root, "control.sock");
-  let healthCalls = 0, directoryCalls = 0, incarnation = 1, epoch = "owner-1";
-  const server = createServer((request, response) => {
-    response.setHeader("content-type", "application/json");
-    if (request.url === "/health") {
-      healthCalls++;
-      response.end(JSON.stringify({ protocolVersion: 1, pid: process.ppid, codexPid: process.pid,
-        nativeSocket: join(root, "native.sock"), routingEpoch: epoch }));
-    } else {
-      directoryCalls++;
-      response.end(JSON.stringify({ protocolVersion: 1, routingEpoch: epoch, admissionEpoch: 1,
-        homes: [{ generationId: "retained", codexHome: root, incarnation }],
-        route: { threadId: "thread", generationId: "retained" } }));
-    }
-  });
-  await new Promise<void>(resolve => server.listen(path, resolve));
-  t.after(async () => { server.closeAllConnections(); await new Promise<void>(r => server.close(() => r())); await rm(root, { recursive: true, force: true }); });
-  const client = new CodexCoreControlClient(path, "synthetic-service-token");
-  await client.generationDirectory("thread");
-  for (let page = 0; page < 5; page++) {
-    incarnation++;
-    assert.equal((await client.generationDirectory("thread"))!.homes[0]!.incarnation, incarnation,
-      "a health optimization cannot cache route or incarnation authority");
-  }
-  assert.equal(healthCalls, 1, "six directory checks must not repeat six recursive health probes");
-  assert.equal(directoryCalls, 6, "each read still obtains a live directory snapshot");
-  epoch = "owner-2";
-  await assert.rejects(client.generationDirectory("thread"), /owner changed/,
-    "a pinned identity cannot authorize a replacement owner's result");
-  assert.equal((await client.generationDirectory("thread"))!.routingEpoch, "owner-2",
-    "the next attempt establishes the successor's identity without a permanent block");
-  assert.equal(healthCalls, 2);
 });

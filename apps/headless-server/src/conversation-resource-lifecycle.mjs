@@ -1,41 +1,37 @@
-import { mkdir, readFile, open, rename, unlink } from 'node:fs/promises';
-import { dirname } from 'node:path';
-import { randomUUID } from 'node:crypto';
-
 const keyOf = (hostId, threadId) => JSON.stringify([hostId, threadId]);
 const valid = value => typeof value === 'string' && value.length > 0 && value.length <= 1024;
 /** Durable projection of acknowledged engine lifecycle events. It owns resource
  * admission and cleanup, never the engine's archive flag or conversation history.
  * A failed owner remains pending across reconnects and process restarts.
  *
- * The journal is written asynchronously, one write at a time. `rows` holds only
- * committed records; owners run only for committed records. A close intent
+ * Records are committed by the Server core owner (InstallationCore SQL, table
+ * `conversation_resources`), one write at a time, off this thread. `rows` holds
+ * only committed records; owners run only for committed records. A close intent
  * fences its conversation from the moment it is observed until it is durable. */
 export class ConversationResourceLifecycle {
-  /** Opens a journal-backed lifecycle. Use the constructor with a null path for memory only. */
-  static async open(path, owners, options = {}) {
-    await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-    let saved;
-    try { saved = JSON.parse(await readFile(path, 'utf8')); }
-    catch (error) { if (error.code !== 'ENOENT') throw error; }
-    const lifecycle = new ConversationResourceLifecycle(path, owners, { ...options, saved });
+  /** Opens the lifecycle on a Server core owner (`openServerCoreOwner`): the
+   * owner imports the retired `conversation-resources.json` once and returns the
+   * committed rows. Use the constructor with a null storage for memory only. */
+  static async open(storage, owners, options = {}) {
+    const replay = options.replayOwners ?? [];
+    if (!Array.isArray(replay) || replay.some(name => !Object.hasOwn(owners, name))) throw Error('Invalid resource replay owners');
+    const saved = await storage.call.openConversationResources({ owners: Object.keys(owners) });
+    const lifecycle = new ConversationResourceLifecycle(storage, owners, { ...options, saved });
     try {
-      const replay = options.replayOwners ?? [];
-      if (!Array.isArray(replay) || replay.some(name => !Object.hasOwn(owners, name))) throw Error('Invalid resource replay owners');
       if (replay.length) await lifecycle.commit(rows => {
-        let changed = false; const next = new Map(rows);
-        for (const [key,row] of rows) if (row.state !== 'active') {
+        const changed = [];
+        for (const row of rows.values()) if (row.state !== 'active') {
           const pending = [...new Set([...row.pending,...replay])];
-          if (pending.length !== row.pending.length) {changed = true; next.set(key,{...row,pending});}
+          if (pending.length !== row.pending.length) changed.push({...row,pending});
         }
-        return changed ? next : null;
+        return changed;
       });
       return lifecycle;
     } catch (error) { await lifecycle.close(); throw error; }
   }
 
-  constructor(path, owners, { retryMs = 5000, diagnose = () => {}, saved, dependencies = {} } = {}) {
-    this.path = path; this.owners = owners; this.diagnose = diagnose;
+  constructor(storage, owners, { retryMs = 5000, diagnose = () => {}, saved, dependencies = {} } = {}) {
+    this.storage = storage; this.owners = owners; this.diagnose = diagnose;
     this.dependencies = {};
     for (const [name,after] of Object.entries(dependencies)) {
       if (!Object.hasOwn(owners,name) || !Array.isArray(after) || after.some(dep => typeof dep !== 'string' || !Object.hasOwn(owners,dep))) throw Error('Invalid resource owner dependency');
@@ -50,8 +46,8 @@ export class ConversationResourceLifecycle {
     // Records observed but not yet durable, and the keys they fence.
     this.intended = new Map(); this.writing = Promise.resolve();
     if (saved) {
-      if (saved.version !== 1 || !Array.isArray(saved.rows)) throw Error('Invalid conversation resource journal');
-      for (const row of saved.rows) {
+      if (!Array.isArray(saved)) throw Error('Invalid conversation resource journal');
+      for (const row of saved) {
         if (!valid(row.hostId) || !valid(row.threadId) || !['archived', 'deleted', 'active'].includes(row.state)
           || !Number.isSafeInteger(row.generation) || row.generation < 1 || !Array.isArray(row.pending)
           || row.pending.some(name => typeof name !== 'string' || !Object.hasOwn(owners, name) || typeof owners[name] !== 'function')) throw Error('Invalid conversation resource record');
@@ -61,14 +57,16 @@ export class ConversationResourceLifecycle {
         else this.pendingKeys.delete(key);
       }
     }
+    // Losing the owner fences every bound conversation, as a failed write does.
+    this.unsubscribe = storage?.onUnavailable?.(() => { this.poisoned = true; }) ?? (() => {});
     this.timer = setInterval(() => this.retry(), retryMs); this.timer.unref();
   }
-  /** Commits a change computed from the committed rows when its turn comes. */
+  /** Commits the rows a change computes from the committed rows when its turn comes. */
   commit(change) {
     const run = this.writing.then(async () => {
       if (this.poisoned) throw Error('Conversation resource journal unavailable');
       const rows = change(this.rows);
-      if (!rows) return;
+      if (!rows?.length) return;
       try { await this.write(rows); } catch (error) { this.poisoned = true; throw error; }
     });
     this.writing = run.catch(() => {});
@@ -77,29 +75,25 @@ export class ConversationResourceLifecycle {
   /** Records a new generation for `key` and fences it until the write settles. */
   intend(key, row) {
     this.intended.set(key, row);
-    return this.commit(rows => new Map(rows).set(key, row))
+    return this.commit(() => [row])
       .finally(() => { if (this.intended.get(key) === row) this.intended.delete(key); });
   }
-  installRows(rows) {
-    this.rows = rows;
-    // A disposable index of the installed journal, never another authority.
-    // Rebuild only on state writes, not on every idle retry timer tick.
-    this.pendingKeys = new Set([...rows].filter(([, row]) => row.pending.length).map(([key]) => key));
-  }
-  async write(rows) {
-    if (!this.path) { this.installRows(rows); return; }
-    const temp = this.path + '.' + randomUUID() + '.tmp';
-    let handle;
-    try {
-      handle = await open(temp, 'wx', 0o600);
-      await handle.writeFile(JSON.stringify({ version: 1, rows: [...rows.values()] })); await handle.sync();
-      await handle.close(); handle = undefined;
-      await rename(temp, this.path); this.installRows(rows);
-      const dir = await open(dirname(this.path), 'r'); try { await dir.sync(); } finally { await dir.close(); }
-    } finally {
-      if (handle !== undefined) await handle.close();
-      try { await unlink(temp); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+  installRows(changes) {
+    // Installed views are replaced, never edited in place (reconcileArchived
+    // keeps the view a page was admitted against).
+    const rows = new Map(this.rows);
+    for (const row of changes) {
+      const key = keyOf(row.hostId, row.threadId);
+      rows.set(key, row);
+      // A disposable index of the committed rows, never another authority.
+      if (row.pending.length) this.pendingKeys.add(key); else this.pendingKeys.delete(key);
     }
+    this.rows = rows;
+  }
+  /** Commits `changes` through the owner, then installs them. */
+  async write(changes) {
+    if (this.storage) await this.storage.call.putConversationResources(changes);
+    this.installRows(changes);
   }
   assertActive(hostId, threadId) {
     if (!threadId) return; // Unbound, human-owned resources have a different lifetime.
@@ -180,13 +174,13 @@ export class ConversationResourceLifecycle {
         if (current.generation !== row.generation) continue; // old ACK cannot clear a new close intent
         const failed = pending.filter((_, i) => results[i].status === 'rejected');
         // Failed owners remain durably pending already. With no progress, a
-        // retry must not serialize/fsync the entire journal again. Partial or
+        // retry must not write the rows again. Partial or
         // successful acknowledgements still persist before admission.
         if (failed.length !== pending.length) {
           await this.commit(rows => {
             const latest = rows.get(key);
             // A newer close intent committed meanwhile keeps all of its owners pending.
-            return latest?.generation === row.generation ? new Map(rows).set(key, { ...latest, pending: failed }) : null;
+            return latest?.generation === row.generation ? [{ ...latest, pending: failed }] : null;
           });
           if (this.rows.get(key)?.generation !== row.generation) continue;
         }
@@ -197,7 +191,7 @@ export class ConversationResourceLifecycle {
     this.flights.set(key, run); return run;
   }
   async close() {
-    this.closed = true; clearInterval(this.timer);
+    this.closed = true; clearInterval(this.timer); this.unsubscribe?.();
     await Promise.allSettled([...this.flights.values(), ...this.reconciliations.values(), this.writing]);
   }
 }

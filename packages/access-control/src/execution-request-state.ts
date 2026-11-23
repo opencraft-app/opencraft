@@ -1,4 +1,4 @@
-import type { DatabaseSync } from 'node:sqlite';
+import type { SqlDatabase } from '@opencraft/sql';
 
 export interface ExecutionRequestState {
   id: string;
@@ -13,7 +13,7 @@ export interface ExecutionRequestState {
  * injection facts cannot be undone by a stale async handoff observation.
  * Exact positive injection can correct a raced negative outcome; it grants no new work.
  * A repeated observation is not a new durable state transition. */
-export function updateExecutionRequest(database: DatabaseSync, value: ExecutionRequestState): void {
+export function updateExecutionRequest(database: SqlDatabase, value: ExecutionRequestState): void {
   database.prepare(`UPDATE actor_execution_requests
     SET state=?,reason=?,queue_id=COALESCE(?,queue_id),turn_id=COALESCE(?,turn_id),updated_at=?
     WHERE id=?

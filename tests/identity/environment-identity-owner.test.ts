@@ -23,6 +23,7 @@ import type { EnvironmentLaunchContext } from "@opencraft/execution-environment/
 import type { GitExecutionLocator } from "@opencraft/execution-environment/git-execution";
 import type { CapabilitySession } from "@opencraft/session-capabilities";
 import { LocalAccountServerPlugin } from "../../plugins/local-account/src/server.js";
+import { createNodePasswordHasher } from "../../plugins/local-account/src/password-hash-node.js";
 import { openHeadlessAssetsStorage } from "../../apps/headless-server/src/headless-assets-storage.js";
 import { createHostEnvironmentLaunch } from "../../apps/headless-server/src/host-environment-launch.ts";
 import { createEnvironmentAdmissionHandoff } from "../../apps/headless-server/src/environment-admission-handoff.ts";
@@ -45,7 +46,7 @@ async function durable(t: test.TestContext) {
     actors = new ActorStore(storage),
     accounts = new HumanAccounts(storage, actors),
     members = new MembershipStore(storage);
-  accounts.registerLocalAccounts(new LocalAccountServerPlugin(accounts.localAccountRepository));
+  accounts.registerLocalAccounts(new LocalAccountServerPlugin(accounts.localAccountRepository, createNodePasswordHasher()));
   const management = new HumanAccountManagement(storage, accounts, actors, members);
   const principal = await management.initialize({
     mode: "web",
@@ -63,7 +64,7 @@ async function durable(t: test.TestContext) {
     leases = new ExecutionLeaseStore(identities.database);
   const native = await observeNativeExecutionProcess(process.pid);
   const account = `actor:${login.login.context.actorId}`;
-  const vault = new EmployeeGitVaultStore(directory);
+  const vault = await EmployeeGitVaultStore.open(directory);
   try {
     const environment = new AccountEnvironment(vault);
     environment.replace(account, { projectId: null }, 0, [{ name: "SERVICE_KEY", value: SECRET, secret: true }]);

@@ -1,10 +1,13 @@
 import { serveWorkerOwner } from "@opencraft/worker-owner/serve";
 import { SandboxCreationFault } from "@opencraft/sandbox";
+import { createSandboxProviderRegistry } from "@opencraft/sandbox/providers";
+import type { SandboxInstallation } from "@opencraft/plugin-assets/server/sandbox-installations";
 import { threadId } from "node:worker_threads";
 import { createHeadlessAssetsStorage } from "../../apps/headless-server/src/assets-runtime-storage.js";
 
-/** Core's own vault Worker composition with a synthetic E2B backend. The
- * optional legacy partition stands in for a composition-compiled hook. */
+/** Core's own vault Worker composition with a synthetic E2B provider in the
+ * sandbox provider registry. The optional legacy partition stands in for a
+ * composition-compiled hook. */
 serveWorkerOwner<{ directory: string; legacyPartition?: Record<string, string> }>(
   async ({ directory, legacyPartition }) => {
     let allocated = 0,
@@ -22,39 +25,44 @@ serveWorkerOwner<{ directory: string; legacyPartition?: Record<string, string> }
             },
           }
         : {}),
-      botBackend: (input) => ({
-        id: "e2b",
-        initialize: async () => {},
-        close: async () => {},
-        create: async (identity, resources, signal) => {
-          signal.throwIfAborted();
-          await input.lease!.authorize(identity);
-          keys.push(await input.readApiKey());
-          if (unknown) throw new SandboxCreationFault("unknown", identity);
-          allocated++;
-          let closed = false;
-          return {
-            resources,
-            capabilities: { terminal: false },
-            spawn: async (_command, onOutput) => {
-              commands++;
-              onOutput?.({ stream: "stdout", data: Buffer.from("synthetic-output") });
+      sandboxProviders: createSandboxProviderRegistry<SandboxInstallation>({
+        e2b: {
+          id: "e2b",
+          createBackend: (input) => ({
+            id: "e2b",
+            initialize: async () => {},
+            close: async () => {},
+            create: async (identity, resources, signal) => {
+              signal.throwIfAborted();
+              await input.lease!.authorize(identity);
+              keys.push(await input.readSecret());
+              if (unknown) throw new SandboxCreationFault("unknown", identity);
+              allocated++;
+              let closed = false;
               return {
-                id: "p-" + commands,
-                kind: "process",
-                writeStdin: async () => {},
-                closeStdin: async () => {},
-                terminate: async () => {},
-                exited: Promise.resolve({ code: 0 }),
+                resources,
+                capabilities: { terminal: false },
+                spawn: async (_command, onOutput) => {
+                  commands++;
+                  onOutput?.({ stream: "stdout", data: Buffer.from("synthetic-output") });
+                  return {
+                    id: "p-" + commands,
+                    kind: "process",
+                    writeStdin: async () => {},
+                    closeStdin: async () => {},
+                    terminate: async () => {},
+                    exited: Promise.resolve({ code: 0 }),
+                  };
+                },
+                close: async () => {
+                  if (!closed) {
+                    closed = true;
+                    deleted++;
+                  }
+                },
               };
             },
-            close: async () => {
-              if (!closed) {
-                closed = true;
-                deleted++;
-              }
-            },
-          };
+          }),
         },
       }),
     });

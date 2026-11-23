@@ -4,6 +4,7 @@ import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {AttachmentUploadStore} from '../../apps/local-agent-host/src/attachments/attachment-upload-store';
+import {hostFileBlobStore} from '../../apps/local-agent-host/src/storage/host-file-blobs';
 import {AttachmentChunkDeadline} from '../../packages/appserver-client/src/attachment-chunk-deadline';
 import {parseAttachmentStagingCapability} from '@opencraft/appserver-protocol';
 
@@ -12,7 +13,7 @@ const ref = {id: 'committed', name: 'one.txt', mimeType: 'text/plain', size: 2, 
 
 test('concurrent identical chunk replay commits each byte once and final replay returns one ref', async t => {
   const root = await mkdtemp(join(tmpdir(), 'upload-owner-')); let commits = 0;
-  const store = new AttachmentUploadStore(root, async () => { commits++; return {ref}; });
+  const store = new AttachmentUploadStore(hostFileBlobStore(root), async () => { commits++; return {ref}; });
   t.after(async () => {await store.close(); await rm(root, {recursive: true, force: true});});
   const initial = await Promise.all([store.chunk(first), store.chunk({...first, retry: true})]);
   assert.deepEqual(initial, [{receivedBytes: 1, ref: null}, {receivedBytes: 1, ref: null}]);
@@ -28,7 +29,7 @@ test('concurrent identical chunk replay commits each byte once and final replay 
 test('expired final receipt and fresh Host cannot recreate an ambiguous committed upload', async t => {
   const root = await mkdtemp(join(tmpdir(), 'upload-expiry-')); let now = Date.now(), commits = 0;
   t.mock.method(Date, 'now', () => now);
-  const make = () => new AttachmentUploadStore(root, async () => {commits++; return {ref};});
+  const make = () => new AttachmentUploadStore(hostFileBlobStore(root), async () => {commits++; return {ref};});
   const old = make(); const one = {...first, size: 1};
   t.after(async () => {await old.close(); await rm(root, {recursive: true, force: true});});
   await old.chunk(one); assert.equal(commits, 1);
@@ -42,7 +43,7 @@ test('expired final receipt and fresh Host cannot recreate an ambiguous committe
 
 test('cancelled partial upload cannot be revived by a retry flag', async t => {
   const root = await mkdtemp(join(tmpdir(), 'upload-cancel-'));
-  const store = new AttachmentUploadStore(root, async () => {throw new Error('No commit allowed');});
+  const store = new AttachmentUploadStore(hostFileBlobStore(root), async () => {throw new Error('No commit allowed');});
   t.after(async () => {await store.close(); await rm(root, {recursive: true, force: true});});
   await store.chunk(first); assert.deepEqual(await store.cancel(first.uploadId), {removed: true});
   await assert.rejects(store.chunk({...first, retry: true}), /expired or is unavailable/);

@@ -121,7 +121,7 @@ test("the vault Worker owns ENV metadata with the same rules as the synchronous 
   }
   // The synchronous runtime of an installation without a separate owner reads
   // the same documents and applies the same rules.
-  const vault = new EmployeeGitVaultStore(path);
+  const vault = await EmployeeGitVaultStore.open(path);
   const runtime = new ExecutionEnvironmentRuntime(path, vault, false, "disabled");
   try {
     assert.equal(runtime.project(HOST, "task-1"), "alpha");

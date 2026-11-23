@@ -1,6 +1,5 @@
 import { randomBytes, createHash, timingSafeEqual } from "node:crypto";
-import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { fileKeyMaterial } from "@opencraft/secret-storage/file";
 import { spawn } from "node:child_process";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { SshServerDescriptor, SshManagementAccessMode } from "@opencraft/app-host-protocol";
@@ -91,12 +90,11 @@ export class SshManagement {
     const store = await SshConnections.open(options.directory);
     if (accessMode === "shared") return new SshManagement(options, store, accessMode, null);
     try {
-      const accessPath = options.accessFile ?? join(options.directory, "access.key");
-      if (!options.accessFile) {
-        try { await writeFile(accessPath, randomBytes(32).toString("base64url"), { flag: "wx", mode: 0o600 }); }
-        catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
-      }
-      const access = (await readPrivateSshFileAsync(accessPath, 4096)).toString().trim();
+      // An operator-provided access file is read only; the default key is created once as base64url text.
+      const access = (options.accessFile
+        ? await readPrivateSshFileAsync(options.accessFile, 4096)
+        : Buffer.from(await fileKeyMaterial(options.directory).ensure("access.key", () => Buffer.from(randomBytes(32).toString("base64url"))))
+      ).toString().trim();
       if (access.length < 32) throw new Error("SSH access key must contain at least 32 characters");
       return new SshManagement(options, store, accessMode, digest(access));
     } catch (error) { await store.close(); throw error; }

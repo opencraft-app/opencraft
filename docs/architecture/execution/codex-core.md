@@ -12,7 +12,7 @@
 - `GET /health` 与 `POST /accounts` 位于独立 Unix HTTP 控制 socket；后者接受 `{method, params}`，仅转发 `opencraft/codex/accounts/*`。两者要求 `Authorization: Bearer <daemon token>`，与 daemon 共用私有 token 文件。无远程 shutdown 接口。
 - socket 目录必须为 0700，控制与原生 socket 均为 0600；原生 listener 依靠 Unix 文件权限限制访问。CLI 可能把原生路径建为符号链接，验收应使用 `stat -L` 检查实际 socket，不能把符号链接自身的 0777 当作目标权限。不要将原生 socket 通过公开网关暴露。
 - 健康检查返回协议版本、core PID、所选 Codex 子进程 PID 与原生 socket。官方 npm CLI 可能有 Node wrapper，部署验收还须记录其实际 native 子进程 PID，不能只比较 wrapper。
-- 执行 ENV 投递（[launch delivery 第 7 片](environment-launch-delivery.md#slices)）的接收方是拆分形态中持有 `codex app-server` 的 APP Server 进程：`--environment-launch-config` 固定签发方公钥、本 owner 的 attachment 与服务器数据目录。公钥是 vault owner 加密保存在 vault 中的稳定签发密钥，只来自其属主私有发布文件，不来自网关或请求（[Supervisor wiring](environment-launch-delivery.md#supervisor-wiring)）：容器中 Brain 先于网关启动，把该公钥、`server:<machine>:codex`、Brain 包内 `runtime/execution-admission-worker.mjs` 与数据目录写入 `run/codex-app-server-environment.json` 并传给 APP Server，发布变化（首次启用或显式轮换）时与 DSH、Pi 一并重启 APP Server；systemd 下配置写 `environmentIssuerFile`，APP Server 启动时按同一规则读取，由 issuer path unit 重启。发布缺失或被拒绝时固定一把无人能签发的公钥，投递失败关闭；网关重启或更新不改变公钥，也不重启 APP Server。daemon 只转发不透明 capsule 与记录定位符；APP Server 在自身 Worker 中读取持久准入（待提交 Codex 输入的 lease 或 Server 的创建预留），打开 capsule 后经 `shell_environment_policy.set` 写入原生 Thread，并在转发原生错误前脱敏。组合形态与多代路由形态没有接收方，配置投递时失败关闭。
+- 执行 ENV 投递（[launch delivery 第 7 片](environment-launch-delivery.md#slices)）的接收方是拆分形态中持有 `codex app-server` 的 APP Server 进程：`--environment-launch-config` 固定签发方公钥、本 owner 的 attachment 与服务器数据目录。公钥是 vault owner 加密保存在 vault 中的稳定签发密钥，只来自其属主私有发布文件，不来自网关或请求（[Supervisor wiring](environment-launch-delivery.md#supervisor-wiring)）：容器中 Brain 的 workspace-agent（`brain` 角色）先于网关启动，把该公钥、`server:<machine>:codex`、Brain 包内 `runtime/execution-admission-worker.mjs` 与数据目录写入容器私有 run 目录（`OPENCRAFT_AGENT_RUN_DIR`）的 `codex-app-server-environment.json` 并传给 APP Server，发布变化（首次启用或显式轮换）时经 agent supervisor 退役并重启 Pi、DSH 与 APP Server（不计为关键子进程失败，后继未就绪则结束 agent）；systemd 下配置写 `environmentIssuerFile`，APP Server 启动时按同一规则读取，由 issuer path unit 重启。发布缺失或被拒绝时固定一把无人能签发的公钥，投递失败关闭；网关重启或更新不改变公钥，也不重启 APP Server。daemon 只转发不透明 capsule 与记录定位符；APP Server 在自身 Worker 中读取持久准入（待提交 Codex 输入的 lease 或 Server 的创建预留），打开 capsule 后经 `shell_environment_policy.set` 写入原生 Thread，并在转发原生错误前脱敏。组合形态与多代路由形态没有接收方，配置投递时失败关闭。
 - 核心服务不可用时 daemon 明确失败，不创建第二个 writer，不重放结果未知的 mutation。Host overlay 主动重连并核对原生执行状态；已确认被打断的任务按[恢复策略](interrupted-turn-recovery.md)系统续跑，不依赖页面点击继续。
 - 设备码授权由核心服务的独立维护 CLI 等待上游结果；成功通知直接触发一次入池与额度刷新，不依赖网页继续 poll。网页返回或重载通过账户列表恢复已完成账号，原页面的短期完成回执可重复查询；pending 会话不跨 core 重启恢复；启动时先由同一账户owner恢复临时profile内原生已写出的可复用授权，全部提交后才清理，存储失败保留文件以便重试。授权完成中的入池先排空，再关闭用量维护和存储。
 - 兼容模式正常维护关闭时先结束 CLI；拆分模式不向 APP Server 发送信号。两种形态均等待账户 RPC、用量维护和代理已接收请求的异步处理结束，最后关闭存储并释放 writer 锁。HTTP 断连不等于其 OAuth 刷新已完成；刷新中的新凭据仍须落盘。
@@ -74,14 +74,16 @@ WantedBy=multi-user.target
 
 ## 容器部署中的独立模型代理（proxy）
 
-容器部署默认仍由 Brain 的 native-host 启动拆分形态的账号 Core（`codex-core.cjs`），即模型代理与 Brain 同生命周期。叠加 `deploy/docker/compose.proxy.yaml` 后，账号 Core 改由独立的 `proxy` 服务运行：
+容器部署（`deploy/docker/compose.yaml`）默认由独立的 `proxy` 服务运行拆分形态的账号 Core（`codex-core.cjs`），Brain 不再内嵌它。`compose.proxy.yaml` 已退役为空叠加文件，仅为兼容旧命令保留。
 
 - `proxy` 使用同一镜像，入口 `container-service.mjs proxy`，以固定 `OPENCRAFT_PROXY_PORT`（默认 45071）启动账号 Core；参数与 Brain 内嵌时完全一致（`scripts/container-deployment/proxy-core.mjs` 单一定义）。健康检查只看账号 owner 处于 `open`（`GET /owner-handoff`），不依赖 Brain 的 APP Server，因此可先于 Brain 启动。
 - Brain 设置 `OPENCRAFT_PROXY_MODE=external` 与相同端口：只等待 proxy 就绪，不再启动或停止账号 Core；APP Server 继续通过控制 socket 取得代理地址与 Host token。
-- 结果：Brain 发布不重启代理与账号存储；proxy 发布只排空代理已接收的请求（`stop_grace_period` 150s），不重启引擎。代理重启期间新的模型请求会失败，按既有重试边界处理，不重放结果未知的 mutation。
-- 未设置 external 时启动流程与之前等价（仅当显式设置 `OPENCRAFT_PROXY_PORT` 时内嵌模式也使用该固定端口）。
+- 结果：Brain 发布不重启代理与账号存储；proxy 发布只排空代理已接收的请求（`stop_grace_period` 150s），不重启引擎。代理重启期间新的模型请求会失败，按既有重试边界处理，不重放结果未知的 mutation。调用者令牌与端口稳定，引擎无需重启即可恢复。
+- 非 Compose 启动（未设置 external）时 `host.mjs` 仍内嵌账号 Core，与之前等价。
 
-既有部署切换到独立 proxy 属于维护操作：账号 writer 锁由内嵌 Core 持有，必须先停止 Brain（会中断其中的活动轮次），再启动 proxy，最后以 external 模式启动 Brain。回退为逆序：停止 Brain 与 proxy，去掉叠加文件后启动 Brain。数据目录与 schema 不变。
+**Brain 不持有模型凭据。** proxy 模式下 Pi 与 DSH 的组合根（`engineModelCredentials`，`apps/local-agent-host/src/model-config/engine-credentials.ts`）不构造任何指向 `models/credentials.json` 的 SecretStore，而是得到 `ProxyModelCredentials`：写入与"是否已配置"经代理 `POST /model-credentials`（仅 `caller:pi`／`caller:dsh` 令牌）交给账号 Core 保存，没有读回接口，`resolve` 一律拒绝。执行投影 `proxyProjection` 把每个 provider 分为三类：经代理（Anthropic Messages、OpenAI Responses、OpenAI 兼容 Chat Completions，需明确的 HTTPS 或本机地址；代理按原生协议转发 `/providers/{id}/…`，Chat Completions 不进入 Codex 目录）、无需引擎凭据（免鉴权、人类订阅／贡献由 Core 处理、语音由 Gateway 处理）、拒绝（目录默认端点、其他协议、明文 LAN 地址）。拒绝类在保存时以用户可读原因失败；切换前已保存且未修改的此类 provider 保留在文档中，但不进入执行投影，绝不回退为直连。Pi／DSH 的 owner handoff 冷读在该模式下也跳过 `credentials.json`。图像生成、语音转写、IM 渠道与个人助理运行在 Gateway，凭据仍由 Gateway 持有。
+
+既有部署切换到独立 proxy 属于维护操作：账号 writer 锁由内嵌 Core 持有，必须先停止 Brain（会中断其中的活动轮次），再启动 proxy，最后以 external 模式启动 Brain。`compose-release.mjs` 按 `hands`、`proxy`、`brain`、`gateway` 顺序应用，并在发现 Brain 未设置 external 时先停止 Brain。回退：停止 Gateway、Brain 与 proxy，用上一版本的 Compose 文件与镜像启动。数据目录与 schema 不变。详见 [Docker 部署](../../../deploy/docker/README.md#model-proxy)。
 
 ## 切换、升级与回退
 
@@ -147,68 +149,18 @@ Core 对网关仍返回 protocolVersion 1 的 `pid/codexPid/nativeSocket`；拆�
 
 输入接口是持久执行意图/提交回执及恢复后原生 Thread/Turn 状态，而不是 socket close 或旧健康 PID。恢复 owner 先对账：原 Turn 仍执行/已完成则只恢复订阅；确已终止且允许恢复时才能提交可追溯后继轮次。必须把原 Turn、恢复 episode 与新 Turn 关联，保留未知送达 fence、用户取消、审批和工具副作用；一个 episode 只能有一个提交者。
 
-第 1 步不会在 Core 重启、health 503 或 native 断连时调用 turn/start/resume mutation；只恢复代理传输。第 2 步必须区分账号 Core outage 与 native runtime replacement，以原生权威读数为依据。第 3 步提供 generation ID/接纳 epoch 后，恢复意图也按该代次查询；旧代任务未完成不能仅因新代 ready 就启动重复执行。具体恢复存储/算法由自动续跑实现的正式契约负责，本页不另建队列或第二个 writer。
+第 1 步不会在 Core 重启、health 503 或 native 断连时调用 turn/start/resume mutation；只恢复代理传输。第 2 步必须区分账号 Core outage 与 native runtime replacement，以原生权威读数为依据。具体恢复存储/算法由自动续跑实现的正式契约负责，本页不另建队列或第二个 writer。
 
-### 第 3 步：新旧并行
+### 第 3 步：新旧并行（Generation Router，已删除）
 
-固定路由协调 owner 单写 `threadId → generationId` 及接纳 epoch；独立 APP Server generation 只拥有自己的 native `CODEX_HOME`、socket 和固定 CLI/payload。所有 generation 共用**同一个**账号 Core loopback 代理，通过现有 Host token 与 thread affinity 选账号，不让它们打开 account-pool 或 secrets；配额、刷新和账户亲和性保持单写。
-
-候选 ready 后原子切换新建 Thread 默认 generation。既有会话的读取、resume、输入、工具回复、queue/goal 和取消继续去其原 generation，目录查询聚合去重；客户端重连不改变归属。迟到响应同时校验 Thread、generation、Turn 与连接 epoch。旧 generation 停接新建 Thread，现有任务自然排完再退，不能以超时杀进程完成退休。已加载但空闲的 Thread 不要求旧二进制永久驻留：退役事务先关闭该 runtime 的新执行准入（未接纳请求明确可重试，未知送达先对账），最后核实无 Turn/工具/queue/goal/审批后关闭 native，保留原 HOME 的绝对路径。以后该 HOME 中的 Thread 再被访问时，由当前版本对同一 HOME 独占冷启动，兼容性/备份验证通过并更新 registry 的 runtime incarnation 后再接纳输入；新建 Thread 仍进新的 HOME。这样无需把运行中的原生 SQLite/rollout 挪到别处，也能退出旧版本。对不同 HOME 合库或逐 Thread 搬迁仍需另验原生导入/导出，首版不依赖此能力。本节双版本隔离演练已验证 0.162.0→0.162.1 的原 HOME 冷启动；其它版本仍须分别验证兼容性。
-
-**不能让新旧 APP Server 共用同一个可写 CODEX_HOME。** 固定 0.162.0 隔离实验中，第二进程能启动同一 HOME，但 resume 第一个进程已加载的 Thread 被原生拒绝为 `already has an active writer`。SQLite 可打开并不表示会话可跨进程任意接管，跨版本日志、auth/config 和 loaded-thread 状态也不是可共享无状态资源。第 1 步的两个 owner 锁明确区分账号与运行时；第 3 步将 runtime 锁按代次目录实例化，保留账号锁。单 APP 模式继续只允许一个 runtime；显式多代模式新增独立 routing owner 与 registry，各 runtime 锁按独立目录实例化。账号服务不搬回 APP Server，代理地址保持固定。
-
-共享 Host overlay 库仍只有一个 owner，generation 只提供原生帧。账号 Core、Host overlay 和 registry 的写权限不得复制到每代。旧代包/CLI/目录被活动映射引用时不能被版本清理删去。新代失败只撤回新建路由，已有新代写入保留；数据兼容不足时前向修复或保留该代，不恢复旧快照。长期 goal/queue/schedule、待审批或 unknown 保持旧代与明确诊断；不自动暂停、取消或批准来制造空闲。
-
-#### 路由、监督与退休协议
-
-`apps/codex-core/src/generation-bin.ts` 构建为独立 `generations.cjs`。它持有稳定 native socket 和唯一 `codex-generations.sqlite` writer；各代 APP 服务由 systemd sibling unit 监督。重启账号 Core 不停止 routing owner 或 APP；重启 routing owner 不停止 APP/native，但前端连接、订阅和连接私有 PTY lease 会丢失，维护路由进程本身仍须先排空这些 lease。CLI 代次升级保持 routing owner，不切换其连接。
-
-共享 socket 父目录由 routing service 显式创建，不设为路由 unit 的 `RuntimeDirectory`：systemd 停止或重启路由 unit 时不能递归删除仍属于 sibling APP 的 socket，也不能递归改写执行 UID 的目录。路由只清理自己的 facade/control socket，各代只清理自己的入口。系统重启后由各服务重新创建 `/run` 路径。
-
-registry schema v1 记录不可变代定义、当前默认代/接纳 epoch、Thread 归属、未知创建提交、runtime incarnation 与维护回执。独立 SQLite EXCLUSIVE lease 拒绝第二 routing writer。每代使用私有 socket 目录与独立可写 HOME，拒绝别名与嵌套 HOME。固定 bundle、CLI、node 的绝对路径不得指向自动更新链接；unit MainPID/start ticks、执行 UID 与 native 二进制 hash 经核对后才 ready，不隐式提升既有执行身份。初始 bootstrap 注册后中断会在 epoch=0 时继续就绪与首次激活；已建立的默认代不覆盖。
-
-执行 UID/GID 固定为账号数据目录的 owner，注册定义不能改变该身份；systemd 显式传入两者，接入既有 external unit 时同时核对 APP/native 的身份，不要求它与具有 unit 管理权限的 routing owner 相同。跨 UID 启动只继承基本语言/PATH 环境和 Core 提供的合成 broker，不继承 routing owner 的私有 HOME 或凭据环境。registry 放在 routing owner 的可信目录（模板为 `/var/lib/opencraft-codex-routing`），不能放在执行用户可替换的父目录中。
-
-每代 unit 使用 `PrivateTmp=yes` 及 HOME 内的 TMPDIR。Codex 0.162 的 Unix 入口会链接到 `/tmp/codex-daemon-<uid>`，所以显式 generation APP 在自己的 namespace 内连接原生入口，再在共享 `/run` 目录暴露一个 0600 的真实 Unix socket，透明转发字节；不解析或重放 RPC。原来未指定独立 runtime 根的单 APP 保持原入口。固定 node、bundle、完整 CLI vendor、cwd、数据与 control/socket 路径必须位于 `/tmp` 以外，避免 namespace 隐藏它们。冷验证 socket 也位于配置的路由 socket 父目录；路径须满足 Unix socket 长度限制。
-
-私有认证 control 的 `POST /generations` 接收 `{operation,params}`：`prepare` 校验并启动候选；`activate` 用 `expectedEpoch` CAS 原子切默认代；`retire` 尝试自然退休；`discard` 只停止从未 ready/接纳工作的失败候选，保留 HOME。`GET /generations` 返回状态与有限诊断。bootstrap 文件在尚未完成首次接纳时继续建立默认代，进程重启不覆盖已建立的持久默认代。此接口只面向受信维护进程，不加入用户菜单或公开 HTTP 路由。
-
-原生文件读取者用账号 Core 的认证 `GET /generation-directory?threadId=…`（`CodexCoreControlClient.generationDirectory`）取得版本 1 的 `routingEpoch`、接纳 epoch、登记的 `{generationId,codexHome,incarnation}` 及所查 Thread 的归属；不传 Thread 时只返回 HOME 目录，不扫描全部 Thread。未发现的 Thread 返回空归属，不能据此宣称无用量。查询不取得 Host lease、不启动退休 HOME、不返回文件内容；combined/单 APP 返回 `null`。读取期间 owner epoch 改变时明确重试，缓存缺少 Thread 时也要重查，因为新 Thread 不会推进默认接纳 epoch。
-
-共享文件读取使用可信 Host 解析出的 `NativeRolloutSource`，包含 HOME、owner/generation/incarnation 标识与读完后的有效性检查；RPC 客户端不能提交 HOME。历史缓存每次按 Thread 取得来源，即使命中也核验 canonical 路径及 owner，有效性变化会拒绝迟到页并使旧游标失效。默认代切换不改变旧 Thread 的来源；combined/单 APP 继续受原 HOME 边界约束。来源目录和文件读取不会取得 Host lease 或启动原生；缓存的 canonical history 投影继续由既有 Native 只读端口提供。
-
-所有原生文件消费者消费同一份 HOME 归属。历史缓存与实时 collector 按 Thread 解析来源；Headless 用量 worker 只枚举 registry 已登记的 HOME，并对每个 rollout 按 Thread 复核来源，历史文件尚无执行路由时也只允许登记 HOME 内的原生 session identity。读后 owner/incarnation 复核通过才提交计量或缓存水位；默认接纳 epoch 的 CAS 不改变旧 Thread 的来源。目录不可用、登记 HOME 丢失或来源变化明确返回不可用/部分覆盖，保留既有证据，不能报告完整零用量。combined/单 APP 的 null 目录仍沿原单 HOME 边界；collector 后续 initialize 可更新兼容 HOME。不可用共同父目录放宽路径边界，也不可复制 rollout 到旧 HOME；统计规则、计量 writer 和异步 attempt writer 保持不变。
-
-普通新 root `thread/start` 跟随默认代，在发送前持久接纳票据，响应即使迟到仍只能绑定其原代。受信委托子创建是明确例外：prepared settings 保存授权的 canonical source Thread 与实际 callback Host incarnation，routing owner 从源 Thread 的唯一归属解析目标代，复用 `acceptCreation(targetGeneration, operationId)`，如同 fork 跟源代；默认 CAS 或回退不会改变该子创建归属。客户端不能指定或伪造该来源；目标代不能接纳、已被退休 fence 或 incarnation 已变时明确失败/未知，不换代、不盲重发。四工具定义在多代连接上提供受信 superset，再按实际目标 APP 能力过滤。送达未知的创建不自动重发并阻止该代退休。`thread/fork` 在源 HOME 内执行，因此新 fork 跟随源代；没有验证跨 HOME 导入前不搬会话。目录按 native 排序合并、去重并分页，切默认代后旧游标明确失效。路径 resume 仅允许已知 HOME 内真实 rollout 的 `session_meta.id`；不接受任意 history 导入。Thread/Turn、owner epoch、runtime incarnation 及连接 ID 分别校验，旧结果不能满足新请求。原生审批请求使用连接私有映射回原代。`process/spawn` 的 handle 与 `command/exec` 的 processId 都由客户端指定且属于连接，后续 write/resize/terminate 固定原代，活动 ID 不能覆盖。审批结束通知反向转换为公开请求 ID。全局迟到查询可明确要求重读；已经接纳的 mutation 保留原代票据与结果，不能因默认 epoch 改变将已执行副作用伪装成可安全重试。
-
-旧代先转 `draining`，继续接既有会话工作。退休先检查 Native 已加载 Thread 的实际状态、goal、未决 RPC/审批与 OS 子进程。Host 以认证 `/generation-host` 报告同一 routing epoch 下的 queue、goal、schedule、恢复意图、标题工作、在途接纳及未知工作；唯一 Host lease 与单调序号拒绝旧回执。Host 初始化/goal 目录扫描未完成、观测超时或未知工作均保留旧代。只有已核对为原生透传、没有 Host overlay writer 的部署才显式使用 `--native-only`，此时 Native/RPC/OS 仍全部参与排空。具有 Host queue/goal/recovery 数据的 Headless 部署必须保留 Host ACK，不能用该选项跳过未知工作。
-
-退休用两阶段握手避免“读到空闲后又接纳”：routing owner 提交代次 fence；Host 同步拒绝该代新执行并以新 fence epoch 报告此前已接纳的全部工作，取消/暂停与读取仍可用。ACK 仍忙则撤 fence，继续原任务。ACK 空后才同步关闭该 runtime 准入，再核 Native、Host、RPC 与所有 Linux worker task 的子进程（含后台 shell）；持久记 `retiring` 后停止已验证的 unit，确认退出后记 `retired`。stop 失败保留 fence 与当前数据，重启继续该交接，不在旧 writer 尚活时打开 HOME。长期 goal/queue/schedule/unknown 不强制退休；新代继续接新 Thread。
-
-Linux 委派子树把 APP/native 放在 service 的 `app` 叶子，工具可位于同一 service 的其他子组。
-OS 工作观测必须递归整个 service；进程当前位于叶子并不缩小 owner 范围。
-原生子进程树仍检查所有 worker task；退休的最后核验还覆盖委派子树里的孤儿工具，
-不因工具已失去 Native 父进程而认证为空闲。目录或成员不可读保持 unknown/拒绝退休。
-服务级停止沿 `KillMode=control-group` 覆盖嵌套工具，不把工具迁到独立 tools slice。
-该观测兼容不自动启用 Delegate、不重启旧代，也不改变 Core 与 APP 的独立停止边界。
-
-
-旧 HOME 再被访问时，自动只向前升级可比较的稳定 CLI 版本；默认回退到较旧 CLI 时仍使用该 HOME 原固定 payload，未知版本也不猜测升级次序。先从已经退出的 HOME 制作备份与验证副本，逐 SQLite `quick_check`；验证 unit 启动前原子持久记录其身份，routing owner 重启先完成遗留验证 unit 的清理，失败保留交接记录。用当前 CLI 在私有 mount namespace 将副本绑定到**原绝对 HOME**，只执行 list/read 验证，避免 native 数据中的绝对 rollout 路径误读真实目录。验证成功后才用当前 payload 在原 HOME 独占冷启动并增加 incarnation。验证不执行 resume、Turn 或工具；兼容失败保留原目录/副本，返回不可用，不恢复旧快照。此冷验证目前要求 systemd 路径不含空白、冒号或反斜线。
-
-回退只 CAS 新建默认路由到仍就绪的原代；新代已创建 Thread 与数据继续保留并按其归属服务。原代已退休时，显式 activate 先验证并重开它保留的 payload/HOME。已冷升级的 HOME 不承诺旧 CLI 可读，不做 schema 降级。单代异常只通知 Host 受影响 Thread，沿现有恢复 owner 读实际状态、恢复订阅和必要的后继，不断开其它代、不盲重发 mutation。
-
-#### 并行隔离演练
-
-先 `npm run build --workspace @opencraft/codex-core`。在清空凭据的环境中运行
-`scripts/smoke/execution/smoke-codex-generations.ts`，显式设置
-`OPENCRAFT_GENERATION_DRILL_ISOLATED=1`、`OPENCRAFT_CODEX_OLD_EXECUTABLE`、
-`OPENCRAFT_CODEX_NEW_EXECUTABLE` 与可选私有 `OPENCRAFT_CORE_DRILL_ROOT`。
-设置 `OPENCRAFT_DRILL_ROUTING_UNIT=1` 可验证真实 systemd routing unit 的崩溃重启，同时保留各代 APP/native 与 socket。
-需要 Linux/systemd 与创建独立 unit/mount namespace 的权限。脚本只用合成账号、
-私有 HOME 与 loopback 假模型，使用两个不同真实 CLI；覆盖长流/shell 跨切代、
-默认路由回退、旧 HOME 退休/原路径冷验证、routing owner 重启及单代崩溃。
-可设置 `OPENCRAFT_DRILL_EXECUTION_UID/GID` 与 `OPENCRAFT_DRILL_ADOPT_EXTERNAL=1`，验证接入已运行的非 root APP/native 且其 PID/执行身份不变。运行目录默认使用私有 `/run/opencraft-generation-drills` 子目录；固定二进制复制到夹具目录，避免 PrivateTmp 隐藏源码目录。测试会停止自建 units/listeners，保留私有报告；不替代实际账号与外部模型验收。
-
+此前的第 3 步由 systemd 完整发布装配中的独立 Generation Router（`generations.cjs`、
+`codex-generations.sqlite`、按代次路由、退休与冷验证协议及其隔离演练）实现。该装配已无部署使用，
+Router 及其 unit、维护协议与测试已于 2026-11-22 删除；Docker、Electron 与 Headless 继续运行单
+APP Server／单 `CODEX_HOME`。不中断升级的计划后继是 WorkspaceHost 按工作区固定容器镜像，见
+[工作区拆分 §3.5](../platform/workspace-host-split.md#35-generation-router已删除)。
+账号 Core 的 `/generation-host` 与 `/generation-directory` 路由、控制客户端方法和 Host 侧的代次
+栅栏/路由/故障消费也已删除；Core health 中出现 `routingEpoch` 时，客户端按不兼容拒绝，而不是
+静默按单 HOME 继续。
 
 ## 拆分的首次上线与回退计划
 
@@ -254,23 +206,9 @@ Linux 上可额外设置 `OPENCRAFT_CORE_DRILL_SYSTEMD=1`，使用自动清理�
 
 ### 无 systemd 的拆分形态（桌面）
 
-账号 Core 加单个独立 APP Server（`app-server-bin`）本身不依赖 systemd：APP Server 直接启动 native，systemd 只用于服务器的多代 routing/generation 监督。不设 `OPENCRAFT_CORE_DRILL_SYSTEMD` 时，上述演练在 Linux 上用固定的 native 0.162.1 全部通过，包括 Core 重启与崩溃、APP Server 崩溃后由新 owner 接手，以及退回合并形态；Codex bridge 也能经该 Core 的 `/launch` 与 native socket 完成握手。合并形态不提供 `/launch`，bridge 只能接拆分形态。
+账号 Core 加单个独立 APP Server（`app-server-bin`）本身不依赖 systemd：APP Server 直接启动 native，不需要 systemd 监督。不设 `OPENCRAFT_CORE_DRILL_SYSTEMD` 时，上述演练在 Linux 上用固定的 native 0.162.1 全部通过，包括 Core 重启与崩溃、APP Server 崩溃后由新 owner 接手，以及退回合并形态；Codex bridge 也能经该 Core 的 `/launch` 与 native socket 完成握手。合并形态不提供 `/launch`，bridge 只能接拆分形态。
 
 演练和部署必须直接使用 native 可执行文件，不能用 npm 的 `codex` 启动脚本：没有 cgroup 时，强杀启动脚本会留下仍占用同一 `CODEX_HOME` 的 native 子进程，新的 owner 会因此拒绝启动。账号 Core 的开机身份在 Linux 仍取内核 boot ID，macOS 取 `kern.bootsessionuuid`，Windows 取最近启动时间。Windows 目前仍不可用：Core 与 APP Server 只监听 Unix socket。
-
-
-Stage 1 appends registry schema v2 for immutable creation incarnation. Explicit
-orchestration claims replay confirmed success or rejection from the same APP
-Host; ordinary Native mutations retain their original no-retry contract.
-Callback attachment uses the routing identity even when the default APP is a
-legacy payload, so a capable historical generation retains its own callback lane
-through default rollback. Pending callbacks and unacknowledged creation receipts
-block retirement; retirement rechecks fresh Host health before its final fence.
-
-The routing facade advertises `orchestrationRoutingVersion: 1` independently of
-the default APP callback capability. A gateway requires this version before
-using the mixed-generation tool superset or callback attachment fallback; an
-older router with only `routingEpoch` cannot accidentally advertise Stage 1.
 
 ## 准入拒绝记录
 
@@ -286,31 +224,6 @@ input、objective、工具参数或请求正文。新建 Thread 尚无 ID 或 ID
 服务部署需将诊断输出接入持久日志；跨 Host 重启的窗口总数按时间范围内的事件条数汇总，
 不能把重置后的实例计数当成整个窗口累计值。持久日志不可用时明确报告审计不完整。
 
-## Prepared generation activation and revocation
-
-Private generation control supports `preparation {id}`, returning an opaque,
-short-lived receipt for the routing owner, current Host lease, native process
-identity, generation incarnation and admission epoch. Upgrade callers pass it to
-`activate {id, expectedEpoch, preparation, expectedOwner, expectedHost, operationId}`. Both preparation and activation check the plan expected owner/Host identity.
-Activation atomically persists its operation receipt with the default. It refreshes health and
-checks the receipt again at the admission CAS. Replacing the router or Host,
-restarting a native owner, changing the default or expiry invalidates it. The
-legacy manual API remains available; an upgrade adapter requires the new receipt.
-
-`revoke {id, expectedEpoch, preparation}` handles only owned `ready` candidates
-that have never been activated, have no historical route or creation claim, and
-have quiet native children. `discard` remains limited to never-ready candidates.
-Revocation takes the shared lifecycle fence before its first asynchronous
-probe, preventing a delayed ensure from restarting the discarded owner. It durably enters `revoking` before stopping the exact identified owner;
-only confirmed stop changes it to `discarded`. Uncertain stop leaves `revoking`,
-which cannot admit, activate or automatically restart, including after router
-restart. Artifacts and HOME remain on disk. No old goal, queue, approval or
-historical binding is cancelled to obtain readiness. Previously activated HOMEs
-use normal draining and retirement, never candidate revocation.
-
-See [generation upgrade transactions](../../operations/full-upgrade-generations.md) for plan
-acceptance, compatibility and compensation boundaries.
-
 ## Split account Core owner handoff
 
 Linux split accounts expose authenticated local `/owner-handoff` with protocol 1.
@@ -319,7 +232,7 @@ fence/inspect/release/cold-ready/resume lifecycle as other upgrade owners. Its
 fixed private descriptor contains the Unix endpoint, expected PID and control
 token. It is not a complete parent upgrade recipe.
 
-Core and registry-router advertise `operatorLeaseProtocolVersion: 1`. New fences
+The account Core advertises `operatorLeaseProtocolVersion: 1`. New fences
 require `operatorLease: { version: 1, id, controller: { pid, startTime, bootId },
 ttlMs }`, with a live same-boot Linux process and a 1–30 second TTL. The public
 adapters bind their own PID, renew every three seconds (default TTL 15 seconds),
@@ -427,7 +340,7 @@ compatible previous bundle against current data. The recovered process takes a
 new cold proof before admission opens. It never restores an old database snapshot.
 An unconfirmed release stays fenced for explicit reconciliation. The deployment
 owner retains its existing activation lock throughout switching and compensation.
-Account evidence is not a backup or cold-read proof for native/router/Host stores.
+Account evidence is not a backup or cold-read proof for native/Host stores.
 
 The isolated split drill supports `OPENCRAFT_CORE_HANDOFF_DRILL=1` for real CLI
 long streams, shell continuity, candidate failure, stale-proof rejection and

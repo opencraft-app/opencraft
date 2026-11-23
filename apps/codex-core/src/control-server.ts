@@ -79,7 +79,7 @@ export async function startControlServer(endpoint: string, token: string,
   } };
 }
 
-/** Same bounded JSON envelope used by the private account and generation planes. */
+/** Same bounded JSON envelope used by the private account plane. */
 export async function readControlJson(request: IncomingMessage, maxBytes = 1024 * 1024): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = []; let size = 0;
   for await (const chunk of request) {

@@ -1,113 +1,102 @@
-import { generateKeyPairSync, randomUUID } from "node:crypto";
-import {
-  lstatSync,
-  openSync,
-  closeSync,
-  readFileSync,
-  writeFileSync,
-  renameSync,
-  fsyncSync,
-  mkdirSync,
-  constants,
-} from "node:fs";
-import { dirname, isAbsolute } from "node:path";
+import { mkdir } from "node:fs/promises";
+import { basename, dirname, isAbsolute } from "node:path";
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import { acquireProcessWriter } from "@opencraft/sqlite-node";
-import type { HubService } from "./contract.js";
-import { hubId, parseHubState, recordChange, storedService, type State } from "./store.js";
+import { HubNetwork } from "./node.js";
+import type { HubNetworkOptions } from "./open.js";
+import { hubId, MemoryHubStore, type State } from "./store.js";
+import { documentHubStore, type HubStateDocument } from "./document-hub-store.js";
 
-// Synchronous file owner. It runs in the Hub state Worker, in admin tools and
-// in tests; network processes use openHubNetwork(), which keeps it off their
-// event loop.
-/** One deployment-owned, atomic private state; never browser preferences or relay replicas. */
-export class HubStore {
-  readonly state: State;
-  readonly id: string;
+// Node owner of one Hub state file. It runs in the Hub state Worker, in
+// offline admin tools and in tests; network processes use openHubNetwork(),
+// which keeps it (and the synchronous writer fence) off their event loop.
+
+/**
+ * One deployment-owned, private Hub state file (`hub-network.json` by
+ * default); never browser preferences or relay replicas. The process-writer
+ * fence `<path>.lock` makes this the only writer; the document itself goes
+ * through a StateDocumentStore over the file's directory.
+ */
+export class HubStateFile {
+  #pending = 0;
+  #drained: (() => void) | undefined;
+  #closing: Promise<void> | undefined;
+  readonly #hubState: HubStateDocument;
   readonly #release: () => void;
-  #closed = false;
-  constructor(readonly path: string) {
+  private constructor(readonly state: State, readonly id: string, hubState: HubStateDocument, release: () => void) {
+    this.#hubState = hubState;
+    this.#release = release;
+  }
+
+  static async open(path: string): Promise<HubStateFile> {
     if (!isAbsolute(path)) throw new Error("Hub state requires an absolute path");
-    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-    this.#release = acquireProcessWriter(`${path}.lock`);
+    await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+    const release = acquireProcessWriter(`${path}.lock`);
     try {
-      let present = false;
-      try {
-        lstatSync(path);
-        present = true;
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      }
-      if (present) {
-        const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
-        try {
-          const info = lstatSync(path);
-          if (
-            !info.isFile() ||
-            info.size > 1_048_576 ||
-            info.mode & 0o077 ||
-            (process.getuid && info.uid !== process.getuid())
-          )
-            throw new Error("Hub state must be private");
-          this.state = JSON.parse(readFileSync(fd, "utf8"));
-        } finally {
-          closeSync(fd);
-        }
-        this.state = parseHubState(this.state);
-      } else {
-        const pair = generateKeyPairSync("ed25519");
-        this.state = {
-          schemaVersion: 1,
-          revision: 0,
-          privateKey: pair.privateKey.export({ format: "pem", type: "pkcs8" }).toString(),
-          publicKey: pair.publicKey.export({ format: "pem", type: "spki" }).toString(),
-          name: "OpenCraft Hub",
-          endpoint: "",
-          origin: "",
-          accepting: false,
-          forwarding: false,
-          authority: null,
-          peers: [],
-          invitations: [],
-          audit: [],
-        };
-        this.save();
-      }
-      this.id = hubId(this.state.publicKey);
+      // `<path>.lock` is the process-writer fence (shared with earlier releases),
+      // so the document lock sits beside it.
+      const documents = fileStateDocumentStore(dirname(path), {
+        lockfilePath: (file) => `${file}.state-lock`,
+        // The document holds the node's private key.
+        private: { maxBytes: 1_048_576 },
+      });
+      const hubState = documentHubStore(documents, basename(path));
+      const state = await hubState.open();
+      return new HubStateFile(state, hubId(state.publicKey), hubState, release);
     } catch (error) {
-      this.#release();
+      release();
       throw error;
     }
   }
-  save() {
-    if (this.#closed) throw new Error("Hub store is closed");
-    const temp = this.path + "." + randomUUID() + ".tmp";
-    const fd = openSync(temp, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+
+  /** Writes a state committed by the Hub after validating it keeps this identity. */
+  async save(state: unknown): Promise<void> {
+    if (this.#closing) throw new Error("Hub store is closed");
+    if (hubId((state as State).publicKey) !== this.id) throw new Error("Hub state belongs to another Hub identity");
+    this.#pending++;
     try {
-      writeFileSync(fd, JSON.stringify(this.state));
-      fsyncSync(fd);
+      await this.#hubState.save(state);
     } finally {
-      closeSync(fd);
+      if (--this.#pending === 0) this.#drained?.();
     }
-    renameSync(temp, this.path);
   }
-  record(operator: string, action: string) {
-    recordChange(this.state, operator, action);
-    this.save();
-  }
-  /** Writes a state committed by a network-thread owner after validating it. */
-  replace(state: unknown) {
-    const next = parseHubState(structuredClone(state));
-    if (hubId(next.publicKey) !== this.id) throw new Error("Hub state belongs to another Hub identity");
-    for (const key of Object.keys(this.state) as (keyof State)[]) delete this.state[key];
-    Object.assign(this.state, next);
-    this.save();
-  }
-  service(): HubService | null {
-    return storedService(this.state, this.id);
-  }
-  close() {
-    if (!this.#closed) {
-      this.#closed = true;
+
+  /** Releases the writer fence after every started write finished. */
+  close(): Promise<void> {
+    return (this.#closing ??= (async () => {
+      if (this.#pending) await new Promise<void>((resolve) => (this.#drained = resolve));
       this.#release();
-    }
+    })());
+  }
+}
+
+class LocalHubStore extends MemoryHubStore {
+  constructor(state: State, readonly file: HubStateFile) {
+    super(state);
+  }
+  override close() {
+    super.close();
+    // Releases the writer fence once writes already started have finished.
+    void this.file.close();
+  }
+}
+
+/**
+ * A durable-mode Hub over a state file in this thread, for offline tools and
+ * tests; closing the Hub releases the file. Network processes use
+ * openHubNetwork(), which keeps the file in a Worker.
+ */
+export async function openLocalHubNetwork(path: string, options: HubNetworkOptions = {}): Promise<HubNetwork> {
+  const file = await HubStateFile.open(path);
+  let node: HubNetwork | undefined;
+  try {
+    node = new HubNetwork(new LocalHubStore(file.state, file), { ...options, persist: (state) => file.save(state) });
+    // Configuring the identity authority at open is itself a change to persist.
+    if (node.store.state.revision !== file.state.revision) await file.save(structuredClone(node.store.state));
+    return node;
+  } catch (error) {
+    node?.close();
+    await file.close();
+    throw error;
   }
 }

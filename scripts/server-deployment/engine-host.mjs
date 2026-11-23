@@ -25,6 +25,9 @@ import { RemoteEngineProvider } from '../../apps/local-agent-host/src/remote-eng
 import { attachEngineHost } from '../../apps/headless-server/src/server-deployment/engine-host-client.mjs';
 import { handleHostInput } from '../../apps/local-agent-host/src/host-input-http.ts';
 import { createPiModelConfiguration } from '../../apps/local-agent-host/src/model-config/pi-adapter.ts';
+import { ModelConfigurationRepository } from '../../apps/local-agent-host/src/model-config/repository.ts';
+import { engineModelCredentials } from '../../apps/local-agent-host/src/model-config/engine-credentials.ts';
+import { fileStateDocumentStore } from '@opencraft/document-storage/state-file';
 import { PiEngine, piHandoffReconciliation } from '../../plugins/pi-engine/src/index.ts';
 import { BridgeEngineProvider } from '../../apps/local-agent-host/src/bridge-engine-provider.ts';
 import { RemoteSessionCapabilities } from '../../packages/session-capabilities/src/remote.ts';
@@ -35,7 +38,11 @@ import { pinPublishedEnvironmentIssuer } from './environment-issuer.mjs';
 /** Owns Pi execution independently of a versioned gateway. DSH remains in its
  * existing pinned Host; this process only attaches to it. */
 export async function startIndependentEngineHost(options) {
-  const { descriptorPath, dataDirectory, dshDescriptorPath, runtimeDirectory } = options;
+  const { descriptorPath, dataDirectory, dshDescriptorPath, runtimeDirectory, socketPath } = options;
+  // socketPath: one private Unix socket for websocket and control (a workspace endpoint);
+  // otherwise loopback TCP with a separate control port.
+  if (socketPath !== undefined && (typeof socketPath !== 'string' || !isAbsolute(socketPath)))
+    throw new Error('Engine Host socket must be an absolute path');
   if (
     ![descriptorPath, dataDirectory, runtimeDirectory].every((value) => typeof value === 'string' && isAbsolute(value))
   )
@@ -71,7 +78,7 @@ export async function startIndependentEngineHost(options) {
   catch (error) { await releaseKernel(); throw error; }
   const runtime = { entrySha256: createHash('sha256').update(readFileSync(fileURLToPath(import.meta.url))).digest('hex'), node: process.version, nodeAbi: process.versions.modules, sourceRevision:process.env.OPENCRAFT_OBSERVE_SOURCE_REVISION ?? null, buildId:process.env.OPENCRAFT_OBSERVE_BUILD_ID ?? null, configSha256:createHash('sha256').update(JSON.stringify(options)).digest('hex') };
   const bootId = await bootIdentity();
-  const handoff = new PiOwnerHandoff(dataDirectory, runtime, inspectOwnerCgroup);
+  const handoff = new PiOwnerHandoff(dataDirectory, runtime, inspectOwnerCgroup, { credentialsExternal: !!process.env.OPENCRAFT_PROXY_CALLER_FILE });
   let host, pi, server, closed, executionEnvironment, executionGit, executionAdmission, executionLaunch;
   const artifactFiles=options.fileSystemOwner?createHostFileSystem(options.fileSystemOwner):null;
   const artifactInputs=new LocalAttachmentStagingService(join(dataDirectory,"agent","attachments"),join(dataDirectory,"artifacts"));
@@ -81,6 +88,8 @@ export async function startIndependentEngineHost(options) {
     await Promise.all(['pi','projects','models'].map(name => mkdir(join(dataDirectory,name), { recursive:true, mode:0o700 })));
     new ModelPolicyStore(join(dataDirectory, "model-usage-policy.sqlite")).close();
     await handoff.load();
+    // Proxy mode (OPENCRAFT_PROXY_CALLER_FILE): Pi gets the account Core port, never a SecretStore over credentials.json.
+    const modelCredentials = await engineModelCredentials(join(dataDirectory, 'models'));
     const machine = await readDaemonMachineIdentity(dataDirectory, options.machineName);
     const scope = `server:${machine.machineId}:pi`;
     const capabilities = new RemoteSessionCapabilities(dataDirectory, scope);
@@ -92,7 +101,7 @@ export async function startIndependentEngineHost(options) {
         return (await observeNativeExecutionProcess(process.pid)).incarnation===grant.native.incarnation;
       },
     });
-    else executionEnvironment=ExecutionEnvironmentRuntime.open(dataDirectory,{create:true});
+    else executionEnvironment=await ExecutionEnvironmentRuntime.open(dataDirectory,{create:true});
     // This process owns the receiver key; the Gateway relays only a capsule. The
     // expected context is this owner's durable admission, read in a Worker, and
     // must name a Pi Thread of this live process.
@@ -111,7 +120,7 @@ export async function startIndependentEngineHost(options) {
     const retireExecution=async()=>{executionLaunch?.close();await executionAdmission?.close();await executionGit?.close();};
     pi = new PiEngine({
       prepareAttachmentInput:(threadId,input)=>artifactInputs.prepareInput(input,threadId,artifactFiles?(artifact,owner,signal)=>artifactFiles.prepareArtifact(artifact,owner,signal):undefined),
-      ...(await createPiModelConfiguration(join(dataDirectory, 'models'), join(dataDirectory, 'pi'))),
+      ...(await createPiModelConfiguration(new ModelConfigurationRepository(fileStateDocumentStore(join(dataDirectory, 'models'))), modelCredentials.credentials, fileStateDocumentStore(join(dataDirectory, 'pi')), modelCredentials.caller)),
       modelPolicyPath: join(dataDirectory, "model-usage-policy.sqlite"),
       executionEnvironment, executionGit, ...(executionLaunch ? { executionLaunch } : {}), admission: handoff, dataDirectory, directory: join(dataDirectory, 'pi'),
       attachmentDirectory: join(dataDirectory, 'agent', 'attachments'),
@@ -156,34 +165,7 @@ export async function startIndependentEngineHost(options) {
       receipt: (threadId,inputId) => threadId.startsWith('pi_') ? pi.inputs.receipt(threadId,inputId) : remoteInputCustody.receipt(threadId,inputId),
       submit: (threadId,inputId,text,admit) => threadId.startsWith('pi_') ? pi.inputs.submit(threadId,inputId,text,admit) : remoteInputCustody.submit(threadId,inputId,text,admit),
     };
-    host = await startEngineHost({
-      providers: [...(piBridge ? [piBridge] : []), pi, ...remotes, ...(dshBridge ? [dshBridge] : [])],
-      defaultEngine,
-      machine, strictClose: true, admitRequest: (method, operation) => handoff.run(operation, piHandoffReconciliation(method)),
-      resources: {
-        projectDirectory: join(dataDirectory, 'projects'),
-        attachmentDirectory: join(dataDirectory, 'agent', 'attachments'),
-        artifactDirectory:join(dataDirectory,'artifacts'),
-      },
-      ...(engines.includes('dsh')
-        ? {
-            legacy: {
-              id: 'dsh',
-              label: 'DeepSeek Harness',
-              models: ['claude-code:', 'codex:', 'cursor:', 'codebuddy:'],
-              start: () => attachDshHost(dshDescriptorPath, join(dataDirectory, 'agent'), machine.machineId),
-            },
-          }
-        : {}),
-    });
-    if(executionGit) {
-      const closeHost=host.close.bind(host);
-      host.close=async()=>{try {await closeHost();} finally {await retireExecution();}};
-    }
-    runtime.machineId = machine.machineId;
-    handoff.attach(pi, host, remotes, remoteInputCustody);
-    if (!host.ready) throw new Error('Independent execution engine did not become ready');
-    server = createServer((request, response) => {
+    const control = (request, response) => {
       const url = new URL(request.url ?? '/', 'http://127.0.0.1');
       if (url.pathname === '/host-inputs') {
         void handleHostInput(request, response, token, inputs, (threadId, inputId) =>
@@ -245,11 +227,42 @@ export async function startIndependentEngineHost(options) {
           storage: host.storageOutcomes, handoff: handoff.authority.snapshot(), runtime, bootId,
         }),
       );
+    };
+    host = await startEngineHost({
+      ...(socketPath ? { socketPath, handleRequest: control } : {}),
+      providers: [...(piBridge ? [piBridge] : []), pi, ...remotes, ...(dshBridge ? [dshBridge] : [])],
+      defaultEngine,
+      machine, strictClose: true, admitRequest: (method, operation) => handoff.run(operation, piHandoffReconciliation(method)),
+      resources: {
+        projectDirectory: join(dataDirectory, 'projects'),
+        attachmentDirectory: join(dataDirectory, 'agent', 'attachments'),
+        artifactDirectory:join(dataDirectory,'artifacts'),
+      },
+      ...(engines.includes('dsh')
+        ? {
+            legacy: {
+              id: 'dsh',
+              label: 'DeepSeek Harness',
+              models: ['claude-code:', 'codex:', 'cursor:', 'codebuddy:'],
+              start: () => attachDshHost(dshDescriptorPath, join(dataDirectory, 'agent'), machine.machineId),
+            },
+          }
+        : {}),
     });
-    await new Promise((accept, reject) => {
-      server.once('error', reject);
-      server.listen(0, '127.0.0.1', accept);
-    });
+    if(executionGit) {
+      const closeHost=host.close.bind(host);
+      host.close=async()=>{try {await closeHost();} finally {await retireExecution();}};
+    }
+    runtime.machineId = machine.machineId;
+    handoff.attach(pi, host, remotes, remoteInputCustody);
+    if (!host.ready) throw new Error('Independent execution engine did not become ready');
+    if (!socketPath) {
+      server = createServer(control);
+      await new Promise((accept, reject) => {
+        server.once('error', reject);
+        server.listen(0, '127.0.0.1', accept);
+      });
+    }
     await mkdir(dirname(descriptorPath), { recursive: true, mode: 0o700 });
     await writeFile(
       temporary,
@@ -261,7 +274,7 @@ export async function startIndependentEngineHost(options) {
         engines,
         defaultEngine,
         websocketUrl: host.websocketUrl,
-        controlUrl: `http://127.0.0.1:${server.address().port}`,
+        ...(server ? { controlUrl: `http://127.0.0.1:${server.address().port}` } : {}),
         token,
       }),
       { mode: 0o600 },
@@ -272,8 +285,8 @@ export async function startIndependentEngineHost(options) {
       pid: process.pid, pi, handoff,
       close() {
         return (closed ??= (async () => {
-          server.closeAllConnections();
-          await new Promise((accept) => server.close(accept));
+          server?.closeAllConnections();
+          if (server) await new Promise((accept) => server.close(accept));
           if (!handoff.released) await host.close();
           await rm(descriptorPath, { force: true });
           await artifactInputs.close(); artifactFiles?.close();

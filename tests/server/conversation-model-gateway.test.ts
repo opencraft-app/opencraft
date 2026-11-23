@@ -44,7 +44,7 @@ async function fixture(t: test.TestContext) {
   const owner = await openServerCoreOwner<{ filterGatewayModelCatalog(path: string, actorId: string | null, models: unknown[]): unknown[] }>(
     join(root, 'server'), { entry: new URL('../../apps/headless-server/src/server-core-worker.mjs', import.meta.url) });
   cleanup.push(() => owner.close());
-  const vault = new EmployeeGitVaultStore(root); cleanup.push(() => vault.close());
+  const vault = await EmployeeGitVaultStore.open(root); cleanup.push(() => vault.close());
   const environments = new AccountEnvironment(vault);
   const runtime = new ExecutionEnvironmentRuntime(root, vault); cleanup.push(() => runtime.close());
   const principals = new Map(['alice', 'bob'].map(subject => [subject, {provider: 'fixture', subject,

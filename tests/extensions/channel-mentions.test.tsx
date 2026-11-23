@@ -313,7 +313,7 @@ test("composer preserves exact nested text/emoji offsets and separates person me
   assert.equal((html.match(/class="im-channel-mention"/g) || []).length, 2);
 });
 test("the previous populated schema upgrades additively and a changed mention migration checksum refuses reopen", async (t) => {
-  const { openManagedDatabase } = await import("@opencraft/sqlite-node");
+  const { openManagedDatabase, nodeSqlDatabase } = await import("@opencraft/sqlite-node");
   const { SERVER_MIGRATIONS } = await import("@opencraft/storage-node/server");
   const { DatabaseSync } = await import("node:sqlite");
   const dir = await mkdtemp(join(tmpdir(), "mention-migration-"));
@@ -323,7 +323,7 @@ test("the previous populated schema upgrades additively and a changed mention mi
       path,
       migrations: SERVER_MIGRATIONS.slice(0, -1),
     }),
-    actors = new ActorStore(previous),
+    actors = new ActorStore({ database: nodeSqlDatabase(previous.database), outcome: previous.outcome }),
     actor = actors.createSession("Retained identity", "fixture");
   const ledger = previous.database
     .prepare("SELECT * FROM schema_migrations ORDER BY version")
@@ -332,7 +332,7 @@ test("the previous populated schema upgrades additively and a changed mention mi
   previous.database.close();
   const upgraded = openManagedDatabase({ path, migrations: SERVER_MIGRATIONS });
   try {
-    const restored = new ActorStore(upgraded);
+    const restored = new ActorStore({ database: nodeSqlDatabase(upgraded.database), outcome: upgraded.outcome });
     assert.deepEqual(restored.get(actor.id), actor);
     restored.close();
     assert.deepEqual(
@@ -501,7 +501,7 @@ test("an unseen @ survives a latest-50 read; acknowledgements are scoped, idempo
   }
 });
 test("mention-read migration preserves the old read watermark but not unseen alerts", async (t) => {
-  const { openManagedDatabase } = await import("@opencraft/sqlite-node");
+  const { openManagedDatabase, nodeSqlDatabase } = await import("@opencraft/sqlite-node");
   const { SERVER_MIGRATIONS } = await import("@opencraft/storage-node/server");
   // Public and downstream append positions differ; the tested migration's
   // logical identity and all watermark/alert assertions remain the same.
@@ -516,7 +516,7 @@ test("mention-read migration preserves the old read watermark but not unseen ale
       path,
       migrations: SERVER_MIGRATIONS.slice(0, mentionReadIndex),
     }),
-    actors = new ActorStore(old);
+    actors = new ActorStore({ database: nodeSqlDatabase(old.database), outcome: old.outcome });
   const human = (subject: string) =>
     actors.resolveHuman(
       parsePrincipal({

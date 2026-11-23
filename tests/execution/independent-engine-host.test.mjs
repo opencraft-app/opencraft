@@ -1,3 +1,4 @@
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile, chmod, rm, stat } from 'node:fs/promises';
@@ -17,7 +18,7 @@ async function fixture(t, overrides = {}) {
     defaultEngine: 'pi',
     ...overrides,
   };
-  await new ModelConfigurationRepository(join(options.dataDirectory, 'models')).initialize({
+  await new ModelConfigurationRepository(fileStateDocumentStore(join(options.dataDirectory, 'models'))).initialize({
     schemaVersion: 1,
     revision: 0,
     providers: [],
@@ -93,7 +94,7 @@ test('compiled independent Assets owner boots with packaged Workers and no TypeS
  const output=join(root,'runtime','engine-host.mjs');
  await buildHeadlessBundle(output,{headlessEntry:fileURLToPath(new URL('../../scripts/server-deployment/engine-host.mjs',import.meta.url))});
  const directory=join(root,'data');
- await new ModelConfigurationRepository(join(directory,'models')).initialize({schemaVersion:1,revision:0,providers:[],defaultModel:null});
+ await new ModelConfigurationRepository(fileStateDocumentStore(join(directory,'models'))).initialize({schemaVersion:1,revision:0,providers:[],defaultModel:null});
  const options={dataDirectory:directory,descriptorPath:join(root,'owner.json'),runtimeDirectory:root,engines:['pi'],defaultEngine:'pi',executionContext:'assets'};
  const env={...process.env};delete env.NODE_OPTIONS;
  const result=await promisify(execFile)(process.execPath,['--input-type=module','-e',`

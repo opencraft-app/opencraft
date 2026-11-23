@@ -13,7 +13,7 @@ const context = (subject: string): TransportSubmissionContext => ({ sender: null
   executionPrincipal: { provider: 'employee', subject }, validUntil: Date.now() + 60_000 });
 async function fixture(t: test.TestContext) {
   const directory = await mkdtemp(join(tmpdir(), 'personal-env-owner-'));
-  const vault = new EmployeeGitVaultStore(directory), runtime = new ExecutionEnvironmentRuntime(directory, vault);
+  const vault = await EmployeeGitVaultStore.open(directory), runtime = new ExecutionEnvironmentRuntime(directory, vault);
   const environment = new AccountEnvironment(vault);
   environment.replace('employee:alice', { projectId: null }, 0, [{ name: 'SERVICE_KEY', value: 'synthetic-alice', secret: true }]);
   environment.replace('employee:bob', { projectId: null }, 0, [{ name: 'SERVICE_KEY', value: 'synthetic-bob', secret: true }]);

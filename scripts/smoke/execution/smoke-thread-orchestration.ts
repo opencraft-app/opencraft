@@ -1,21 +1,17 @@
 import assert from 'node:assert/strict';
 import { spawn, fork, execFileSync, type ChildProcess } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, writeFile, appendFile, cp, copyFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, appendFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { createServer, type ServerResponse } from 'node:http';
 import { zstdDecompressSync, gunzipSync } from 'node:zlib';
 import { setTimeout as delay } from 'node:timers/promises';
-import {request as httpRequest} from 'node:http';
-import {startCodexGenerationService} from '../../../apps/codex-core/src/generation-service';
-import {CodexGenerationRegistry} from '../../../apps/codex-core/src/generation-registry';
-import {SystemdGenerationSupervisor} from '../../../apps/codex-core/src/generation-supervisor';
 import { AccountPoolStore, CodexCoreControlClient } from '@opencraft/account-pool-host';
 
 // Opt-in real Native CLI. No real account, upstream, HOME, or existing service.
-const executable=process.env.OPENCRAFT_CODEX_EXECUTABLE,mixedLegacyBundle=process.env.OPENCRAFT_ORCHESTRATION_LEGACY_BUNDLE;
+const executable=process.env.OPENCRAFT_CODEX_EXECUTABLE;
 if(!executable)throw Error('Set OPENCRAFT_CODEX_EXECUTABLE to the fixed CLI under test');
-const drillParent=process.env.OPENCRAFT_ORCHESTRATION_DRILL_ROOT??(mixedLegacyBundle?'/run/opencraft-orchestration-drills':tmpdir());await mkdir(drillParent,{recursive:true,mode:0o755});
+const drillParent=process.env.OPENCRAFT_ORCHESTRATION_DRILL_ROOT??tmpdir();await mkdir(drillParent,{recursive:true,mode:0o755});
 const root=await mkdtemp(join(drillParent,'orchestration-drill-'));
 const cwd=resolve(import.meta.dirname,'../../..'),home=join(root,'home');await mkdir(home,{mode:0o700});
 const authToken='synthetic-orchestration-control-'.repeat(3),records:any[]=[],children=new Set<ChildProcess>();
@@ -77,15 +73,10 @@ async function stop(child:ChildProcess,signal:NodeJS.Signals='SIGTERM'){
  const timeout=setTimeout(()=>child.kill('SIGKILL'),5000);await done;clearTimeout(timeout);
 }
 let gateway:ChildProcess|undefined,core:ChildProcess|undefined,app:ChildProcess|undefined;
-let routing:Awaited<ReturnType<typeof startCodexGenerationService>>|undefined,ownerControl=control;
-const tokenFile=join(root,'synthetic-token'),registryDirectory=join(root,'registry');
-async function admin(operation:string,params:object){return new Promise<any>((resolve,reject)=>{
- const request=httpRequest({socketPath:appServerEndpoint,path:'/generations',method:'POST',headers:{authorization:'Bearer '+authToken,'content-type':'application/json'}},response=>{const chunks:Buffer[]=[];response.on('data',chunk=>chunks.push(chunk));response.on('end',()=>{const result=JSON.parse(Buffer.concat(chunks).toString());response.statusCode===200?resolve(result):reject(Error('Generation operation rejected'));});});request.on('error',reject);request.end(JSON.stringify({operation,params}));
-});}
 
 let rpc:(command:string,params?:unknown)=>Promise<any>;
 async function startGateway(crashTool?:string){
- const config=join(root,'gateway.json');await writeFile(config,JSON.stringify({...common,root,gatewayDirectory,endpoint,crashMarker,crashTool,...(mixedLegacyBundle?{nativeHome:join(root,'modern/runtime')}:{})}),{mode:0o600});
+ const config=join(root,'gateway.json');await writeFile(config,JSON.stringify({...common,root,gatewayDirectory,endpoint,crashMarker,crashTool}),{mode:0o600});
  const child=fork(join(cwd,'tests/fixtures/orchestration-gateway.ts'),[config],{cwd,env,execArgv:['--import','tsx'],stdio:['ignore','pipe','pipe','ipc']});gateway=child;children.add(child);
  let ready=false,seq=0,errors='';const pending=new Map<number,{resolve(value:any):void;reject(error:Error):void}>();
  child.stderr!.on('data',c=>{errors+=c;void appendFile(join(root,`gateway-live-${child.pid}.log`),c);});child.stdout!.resume();child.on('exit',()=>{children.delete(child);for(const value of pending.values())value.reject(Error('Gateway exited'));void writeFile(join(root,`gateway-${child.pid}.log`),errors);});
@@ -95,26 +86,18 @@ async function startGateway(crashTool?:string){
 }
 try{
  core=await owner('core',{...common,endpoint,appServerEndpoint,proxyPort,nativeCodexHomeDirectory:join(root,'unused'),upstreamBaseUrl:`http://127.0.0.1:${modelPort}`});
- if(mixedLegacyBundle){
-  await writeFile(tokenFile,authToken,{mode:0o600});
-  await cp(dirname(dirname(executable!)),join(root,'cli'),{recursive:true});await copyFile(join(cwd,'apps/codex-core/dist/app-server.cjs'),join(root,'app-server.cjs'));
-  const definition=(id:string,bundle:string)=>({id,endpoint:join(root,'execution',id,'control.sock'),runtimeDataDirectory:join(root,id),executable:join(root,'cli/bin/codex'),bundle,node:process.execPath,cwd:root});
-  routing=await startCodexGenerationService({endpoint:appServerEndpoint,coreEndpoint:endpoint,tokenFile,token:authToken,dataDirectory,registryDirectory,systemdScope:'system',requireHostUsage:true,bootstrap:{generation:definition('legacy',mixedLegacyBundle)}});
-  await admin('prepare',{definition:definition('modern',join(root,'app-server.cjs'))});await admin('activate',{id:'modern',expectedEpoch:1});
-  ownerControl=new CodexCoreControlClient(join(root,'execution/modern/control.sock'),authToken);
- }else app=await owner('runtime',{...common,endpoint:appServerEndpoint,coreEndpoint:endpoint,waitForCore:true});
- const before=await ownerControl.health();assert.equal(before.callbackProtocolVersion,1);
- for(const kind of (process.env.OPENCRAFT_ORCHESTRATION_RECOVERY_ONLY?[]:mixedLegacyBundle?['SPAWN']:['TELL','SPAWN'])){
+ app=await owner('runtime',{...common,endpoint:appServerEndpoint,coreEndpoint:endpoint,waitForCore:true});
+ const before=await control.health();assert.equal(before.callbackProtocolVersion,1);
+ for(const kind of (process.env.OPENCRAFT_ORCHESTRATION_RECOVERY_ONLY?[]:['TELL','SPAWN'])){
   await startGateway(kind==='TELL'?'thread_tell':'thread_spawn');
   await rpc('rpc',{method:'opencraft/token-usage/configure',arguments:{enabled:true}});
   const {thread}=await rpc('rpc',{method:'thread/start',arguments:{cwd:root,model:'gpt-test',approvalPolicy:'never',sandbox:'danger-full-access'}});
-  if(mixedLegacyBundle)await admin('activate',{id:'legacy',expectedEpoch:2});
   await rpc('rpc',{method:'turn/start',arguments:{threadId:thread.id,clientUserMessageId:`human-${kind}`,input:[{type:'text',text:`ROOT-${kind} ${thread.id}`}]}});
   await wait(()=>readFile(crashMarker,'utf8').then(text=>JSON.parse(text).name===(kind==='TELL'?'thread_tell':'thread_spawn'),()=>false),'durable child tool before reply');
   const crashed=JSON.parse(await readFile(crashMarker,'utf8'));assert.notEqual(crashed.thread,thread.id);
   await stop(gateway!,'SIGKILL');const restartedAt=Date.now();await startGateway();
-  await wait(async()=>{if(mixedLegacyBundle){const result=await rpc('rpc',{method:'thread/read',arguments:{threadId:crashed.thread,includeTurns:true}});return result.thread.turns.some((turn:any)=>turn.id===crashed.turn&&turn.status==='completed');}const state=await rpc('inspect',{threadId:crashed.thread});return state.state==='completed';},'original child Turn completion');
-  const after=await ownerControl.health();assert.equal(after.codexPid,before.codexPid);assert.equal(after.appServerPid,before.appServerPid);
+  await wait(async()=>{const state=await rpc('inspect',{threadId:crashed.thread});return state.state==='completed';},'original child Turn completion');
+  const after=await control.health();assert.equal(after.codexPid,before.codexPid);assert.equal(after.appServerPid,before.appServerPid);
   const history=await rpc('rpc',{method:'thread/read',arguments:{threadId:crashed.thread,includeTurns:true}});
   const original=history.thread.turns.find((turn:any)=>turn.id===crashed.turn);assert.equal(original?.status,'completed');
   const state=await rpc('state'),operation=state.operations.find((op:any)=>op.operation_id===crashed.result.operationId);
@@ -125,13 +108,11 @@ try{
   if(kind==='SPAWN')assert.equal(state.threads.filter((child:any)=>child.parentThreadId===crashed.thread).length,1);
   const day=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Shanghai'}).format(Date.now());let usage:any;
   await wait(async()=>{usage=await rpc('rpc',{method:'opencraft/token-usage/query',arguments:{serverId:'server',scope:'team',from:day,through:day,threadId:crashed.thread}});return BigInt(usage.summary.categories.system)>0n;},'system known Token dashboard category');
-  if(mixedLegacyBundle){const directory=await control.generationDirectory(crashed.result.threadId);assert.equal(directory?.route?.generationId,'modern');}
-  result.scenarios.push({kind,mixedLegacyDefault:!!mixedLegacyBundle,crashBeforeBrokerCommit:crashed.beforeBrokerCommit===true,threadId:crashed.thread,turnId:crashed.turn,toolCallKey:crashed.key,reconnectMs:Date.now()-restartedAt,nativePidUnchanged:true,operationCount:1,targetTurns:targetHistory.thread.turns.length,systemKnownTokens:usage.summary.categories.system});
+  result.scenarios.push({kind,crashBeforeBrokerCommit:crashed.beforeBrokerCommit===true,threadId:crashed.thread,turnId:crashed.turn,toolCallKey:crashed.key,reconnectMs:Date.now()-restartedAt,nativePidUnchanged:true,operationCount:1,targetTurns:targetHistory.thread.turns.length,systemKnownTokens:usage.summary.categories.system});
   await stop(gateway!);gateway=undefined;
   // Only our own synthetic marker; the next case must reach its own operation.
   await writeFile(crashMarker,'{}');
  }
- if(!mixedLegacyBundle){
  await startGateway();
  const {thread:parent}=await rpc('rpc',{method:'thread/start',arguments:{cwd:root,model:'gpt-test',approvalPolicy:'never',sandbox:'danger-full-access'}});
  const {turn:parentTurn}=await rpc('rpc',{method:'turn/start',arguments:{threadId:parent.id,clientUserMessageId:'human-recovery',input:[{type:'text',text:`ROOT-RECOVERY ${parent.id}`}]}});
@@ -160,15 +141,11 @@ try{
  await wait(async()=>notices(await rpc('state')).length===1,'one parent completion notice');await delay(2200);assert.equal(notices(await rpc('state')).length,1);
  const final=await rpc('inspect',{threadId:child.threadId});assert.equal(final.rootTurnId,initial.rootTurnId);assert.notEqual(final.turnId,initial.turnId);
  result.scenarios.push({kind:'RECOVERY',threadId:child.threadId,rootTurnId:final.rootTurnId,originalTurnId:initial.turnId,continuedTurnId:final.turnId,parentNoticesDuringRecovery:0,parentNoticesAfterCompletion:1,queuedAgentDidNotCancelRecovery:true,nativeKilledOnlyInIsolatedEnvironment:true});
- }
  assert.equal(records.filter(record=>record.error).length,0,JSON.stringify(records.filter(record=>record.error)));
  result.passed=true;
 }finally{
  allowRecovery=true;
  if(gateway)await stop(gateway);
- if(mixedLegacyBundle){try{await routing?.close();const registry=new CodexGenerationRegistry(registryDirectory),supervisor=new SystemdGenerationSupervisor({registryDirectory,coreEndpoint:endpoint,dataDirectory,tokenFile,token:authToken,scope:'system'});
-  try{for(const generation of registry.list()){const identity=registry.metadata(`runtime:${generation.id}`);if(identity&&generation.state!=='retired')await supervisor.stop(generation,identity as any);}}finally{registry.close();}}catch(error){result.cleanupError=String(error);}
- }
  if(core)await stop(core);if(app)await stop(app);
  for(const child of children)await stop(child,'SIGKILL');model.closeAllConnections();await new Promise<void>(resolve=>model.close(()=>resolve()));
  await writeFile(join(root,'model-records.json'),JSON.stringify(records,null,2));await writeFile(join(root,'report.json'),JSON.stringify(result,null,2));

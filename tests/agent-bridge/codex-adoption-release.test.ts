@@ -9,9 +9,9 @@ test("the local Codex Host releases only an idle Thread for adoption, and stops 
     closeOperation: null,
     nativeSubscribedThreads: new Set(["idle", "busy"]),
     withThreadOperation: (_id: string, work: () => Promise<unknown>) => work(),
-    executionBlocked: (id: string) => id === "recovering",
-    // The Host's own busy set: turns, queue, goals, retries, recovery, titles, schedules, approvals.
-    generationUsageSnapshot: () => ({ blockedThreadIds: ["busy"] }),
+    // The Host's own hold on a Thread: turns, queue, goals, retries, recovery, titles, schedules,
+    // approvals and admissions in flight.
+    threadHeldForAdoption: (id: string) => id === "busy" || id === "recovering",
     requestPhysical: async (method: string, params: unknown) => {
       calls.push([method, params]);
       return {};

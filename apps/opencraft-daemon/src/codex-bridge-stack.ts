@@ -203,6 +203,7 @@ async function launchEngineHost(
     node: string;
     coreEndpoint: string;
     coreToken: string;
+    coreNativeSocket?: string;
     stateDirectory: string;
     cli?: CodexEngineHostOptions["cli"];
     serverId?: string;
@@ -221,7 +222,11 @@ async function launchEngineHost(
   await copyFile(options.programs.provider, artifact);
   const attachment = await privateFile(
     "provider-core.json",
-    JSON.stringify({ endpoint: options.coreEndpoint, token: options.coreToken }),
+    JSON.stringify({
+      endpoint: options.coreEndpoint,
+      token: options.coreToken,
+      ...(options.coreNativeSocket ? { nativeSocket: options.coreNativeSocket } : {}),
+    }),
   );
   const launch = {
     command: [options.node, artifact, attachment],
@@ -266,6 +271,11 @@ export interface CodexEngineHostOptions {
   /** The running Core this Engine Host's Codex provider attaches to. */
   readonly coreEndpoint: string;
   readonly coreToken: string;
+  /**
+   * Native Codex socket, when the Core owns accounts only and the native AppServer is reached
+   * elsewhere (a workspace endpoint). Without it the provider asks the Core's health.
+   */
+  readonly coreNativeSocket?: string;
   readonly runtimeDirectory: string;
   /** Private state: Engine Host database, sandbox records, generation artifacts, gateway inbox. */
   readonly stateDirectory: string;
@@ -305,6 +315,7 @@ export async function startCodexEngineHost(
       node: options.node,
       coreEndpoint: options.coreEndpoint,
       coreToken: options.coreToken,
+      ...(options.coreNativeSocket ? { coreNativeSocket: options.coreNativeSocket } : {}),
       stateDirectory: options.stateDirectory,
       ...(options.cli ? { cli: options.cli } : {}),
       ...(options.serverId ? { serverId: options.serverId } : {}),

@@ -6,10 +6,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SandboxCommand, SandboxEnvironment, SandboxProcess } from "@opencraft/sandbox";
 import {
-  ordinaryMountProbe,
-  validateOrdinaryMountReceipt,
-  verifyOrdinaryWorkspaceMounts,
-} from "../../apps/headless-server/src/workspaces/ordinary-workspace-mounts.js";
+  e2bMountProbe,
+  validateE2BMountReceipt,
+  verifyE2BWorkspaceMounts,
+} from "../../packages/sandbox-e2b/src/workspace-mounts.js";
 
 const unavailable = /ordinary_workspace_mounts_unavailable/;
 const privateVolumeId = "a1b2c3d4-2222-4333-8444-555555555555";
@@ -35,11 +35,11 @@ const libraryReceipt = () => ({
 });
 
 test("mount receipts accept exactly the verified private and library NFS volumes", () => {
-  assert.deepEqual(validateOrdinaryMountReceipt(privateReceipt(), { privateName: "private-volume" }), {
+  assert.deepEqual(validateE2BMountReceipt(privateReceipt(), { privateName: "private-volume" }), {
     cwd: "/workspace",
   });
   assert.deepEqual(
-    validateOrdinaryMountReceipt(libraryReceipt(), {
+    validateE2BMountReceipt(libraryReceipt(), {
       privateName: "private-volume",
       sharedName: "library-volume",
       relativePath: "docs/guides",
@@ -47,7 +47,7 @@ test("mount receipts accept exactly the verified private and library NFS volumes
     { cwd: "/workspace", libraryPath: "/shared/docs/guides" },
   );
   assert.deepEqual(
-    validateOrdinaryMountReceipt(
+    validateE2BMountReceipt(
       { ...libraryReceipt(), library: "/shared" },
       { privateName: "private-volume", sharedName: "library-volume", relativePath: "" },
     ),
@@ -66,7 +66,7 @@ test("mount receipts reject malformed expectations and every unverified filesyst
     { privateName: "private-volume", sharedName: "library-volume", relativePath: "/absolute" },
   ])
     assert.throws(
-      () => validateOrdinaryMountReceipt(libraryReceipt(), expected),
+      () => validateE2BMountReceipt(libraryReceipt(), expected),
       unavailable,
       JSON.stringify(expected),
     );
@@ -143,11 +143,11 @@ test("mount receipts reject malformed expectations and every unverified filesyst
     ["truthy directory", { ...libraryReceipt(), directory: 1 }],
   ];
   for (const [name, receipt] of rejected)
-    assert.throws(() => validateOrdinaryMountReceipt(receipt, expected), unavailable, name);
+    assert.throws(() => validateE2BMountReceipt(receipt, expected), unavailable, name);
   // Without a library binding, only the private volume is evidence; no library is reported.
   assert.throws(
     () =>
-      validateOrdinaryMountReceipt(
+      validateE2BMountReceipt(
         { ...privateReceipt(), mounts: [...privateReceipt().mounts, nfs("/workspace/x", "y")] },
         { privateName: "private-volume" },
       ),
@@ -177,11 +177,11 @@ test(
       ].join("\n"),
     );
     const marker = "'/proc/self/mountinfo'";
-    assert.equal(ordinaryMountProbe.split(marker).length, 2);
+    assert.equal(e2bMountProbe.split(marker).length, 2);
     const run = (selected: string) => {
       const result = spawnSync(
         "python3",
-        ["-c", ordinaryMountProbe.replace(marker, JSON.stringify(mountinfo)), selected],
+        ["-c", e2bMountProbe.replace(marker, JSON.stringify(mountinfo)), selected],
         {
           encoding: "utf8",
         },
@@ -264,7 +264,7 @@ function probeSandbox(
 }
 
 function verifyInput(
-  overrides: Partial<Parameters<typeof verifyOrdinaryWorkspaceMounts>[0]> = {},
+  overrides: Partial<Parameters<typeof verifyE2BWorkspaceMounts>[0]> = {},
   responses: Record<string, () => Response> = {},
 ) {
   const requests: { url: string; init: RequestInit | undefined }[] = [];
@@ -284,7 +284,7 @@ function verifyInput(
     return respond();
   }) as Fetch;
   const { sandbox, calls } = probeSandbox();
-  const input: Parameters<typeof verifyOrdinaryWorkspaceMounts>[0] = {
+  const input: Parameters<typeof verifyE2BWorkspaceMounts>[0] = {
     sandbox,
     workspaceId: "ws-alpha",
     instanceId: "instance-1",
@@ -321,13 +321,13 @@ test("verification rejects malformed identities and endpoints before reading any
     { apiUrl: "https://volumes.example.test/api/" },
     { apiUrl: "https://volumes.example.test/?region=1" },
     { apiUrl: "https://volumes.example.test/#x" },
-  ] satisfies Partial<Parameters<typeof verifyOrdinaryWorkspaceMounts>[0]>[]) {
+  ] satisfies Partial<Parameters<typeof verifyE2BWorkspaceMounts>[0]>[]) {
     const { input, events } = verifyInput(overrides);
-    await assert.rejects(verifyOrdinaryWorkspaceMounts(input), unavailable, JSON.stringify(overrides));
+    await assert.rejects(verifyE2BWorkspaceMounts(input), unavailable, JSON.stringify(overrides));
     assert.deepEqual(events, [], JSON.stringify(overrides));
   }
   const { input, events } = verifyInput({ apiUrl: "not a url" });
-  await assert.rejects(verifyOrdinaryWorkspaceMounts(input));
+  await assert.rejects(verifyE2BWorkspaceMounts(input));
   assert.deepEqual(events, []);
 });
 
@@ -341,7 +341,7 @@ test("verification reads metadata with the current key, then probes the private 
       return sandbox.spawn(command, onOutput);
     },
   };
-  assert.deepEqual(await verifyOrdinaryWorkspaceMounts(input), { cwd: "/workspace" });
+  assert.deepEqual(await verifyE2BWorkspaceMounts(input), { cwd: "/workspace" });
   assert.deepEqual(events, [
     "authorize",
     "key",
@@ -358,7 +358,7 @@ test("verification reads metadata with the current key, then probes the private 
   assert.equal(requests[0]!.init?.redirect, "error");
   assert.ok(requests[0]!.init?.signal instanceof AbortSignal);
   const [command] = calls.spawned;
-  assert.deepEqual(command!.command, ["/usr/bin/python3", "-c", ordinaryMountProbe, ""]);
+  assert.deepEqual(command!.command, ["/usr/bin/python3", "-c", e2bMountProbe, ""]);
   assert.equal(command!.cwd, "/workspace");
   assert.deepEqual(command!.env, { PATH: "/usr/bin:/bin" });
 });
@@ -374,7 +374,7 @@ test("verification binds the library volume by identity and probes the selected 
       return sandbox.spawn(command, onOutput);
     },
   };
-  assert.deepEqual(await verifyOrdinaryWorkspaceMounts(input), {
+  assert.deepEqual(await verifyE2BWorkspaceMounts(input), {
     cwd: "/workspace",
     libraryPath: "/shared/docs/guides",
   });
@@ -390,7 +390,7 @@ test("verification rejects metadata that does not bind this allocation, without 
   const cases: [
     string,
     Record<string, () => Response>,
-    Partial<Parameters<typeof verifyOrdinaryWorkspaceMounts>[0]>?,
+    Partial<Parameters<typeof verifyE2BWorkspaceMounts>[0]>?,
   ][] = [
     ["schema", { "/workspaces/ws-alpha": () => json(metadata({ schemaVersion: 1 })) }],
     ["workspace", { "/workspaces/ws-alpha": () => json(metadata({ workspaceID: "ws-beta" })) }],
@@ -430,7 +430,7 @@ test("verification rejects metadata that does not bind this allocation, without 
   ];
   for (const [name, responses, overrides] of cases) {
     const { input, calls } = verifyInput(overrides, responses);
-    await assert.rejects(verifyOrdinaryWorkspaceMounts(input), unavailable, name);
+    await assert.rejects(verifyE2BWorkspaceMounts(input), unavailable, name);
     assert.equal(calls.spawned.length, 0, name);
   }
 });
@@ -443,7 +443,7 @@ test("verification stops when authority is revoked between steps", async () => {
         if (++calls === failAt) throw Error("revoked");
       },
     });
-    await assert.rejects(verifyOrdinaryWorkspaceMounts(input), failAt <= 3 ? /revoked/ : unavailable, String(failAt));
+    await assert.rejects(verifyE2BWorkspaceMounts(input), failAt <= 3 ? /revoked/ : unavailable, String(failAt));
     // Spawning requires the fourth authorization.
     assert.equal(probe.spawned.length > 0, failAt > 4, String(failAt));
   }
@@ -462,12 +462,12 @@ test("verification rejects unusable probes and releases the probe process", asyn
     const { input } = verifyInput();
     const probe = probeSandbox(reply);
     input.sandbox = probe.sandbox;
-    await assert.rejects(verifyOrdinaryWorkspaceMounts(input), unavailable, name);
+    await assert.rejects(verifyE2BWorkspaceMounts(input), unavailable, name);
     assert.equal(probe.calls.terminated, 1, name);
   }
   const { input, cleanupUnconfirmed } = verifyInput();
   input.sandbox = probeSandbox({ code: 1, terminateFails: true }).sandbox;
-  await assert.rejects(verifyOrdinaryWorkspaceMounts(input), unavailable);
+  await assert.rejects(verifyE2BWorkspaceMounts(input), unavailable);
   assert.equal(cleanupUnconfirmed(), 1, "an unconfirmed cleanup is reported to the allocation owner");
 });
 
@@ -485,7 +485,7 @@ test("verification expires a probe that does not finish and terminates it", asyn
       return child;
     },
   };
-  const verification = verifyOrdinaryWorkspaceMounts(input);
+  const verification = verifyE2BWorkspaceMounts(input);
   await started;
   mock.timers.tick(20000);
   await assert.rejects(verification, unavailable);

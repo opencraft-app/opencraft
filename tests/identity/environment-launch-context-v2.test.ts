@@ -377,7 +377,7 @@ test("the receiver refuses kinds outside its purpose even with a reader, and han
 /** Vault with personal and Project values, and a Thread bound to `alpha`. */
 async function vault(t: test.TestContext) {
   const directory = await mkdtemp(join(tmpdir(), "env-v2-"));
-  const store = new EmployeeGitVaultStore(directory);
+  const store = await EmployeeGitVaultStore.open(directory);
   const environment = new AccountEnvironment(store);
   environment.replace(ACCOUNT, { projectId: null }, 0, [
     { name: "SERVICE_KEY", value: SECRET, secret: true },

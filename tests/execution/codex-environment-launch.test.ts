@@ -22,6 +22,7 @@ import { EmployeeGitVaultStore } from "@opencraft/execution-environment/employee
 import { AccountEnvironment } from "@opencraft/execution-environment/account-environment";
 import { ExecutionEnvironmentRuntime, environmentProjectId } from "@opencraft/execution-environment";
 import { LocalAccountServerPlugin } from "../../plugins/local-account/src/server.js";
+import { createNodePasswordHasher } from "../../plugins/local-account/src/password-hash-node.js";
 import { openHeadlessAssetsStorage } from "../../apps/headless-server/src/headless-assets-storage.js";
 import { openAssetConfigurations } from "@opencraft/plugin-assets/server";
 import {
@@ -67,7 +68,7 @@ async function durable(t: test.TestContext) {
     actors = new ActorStore(storage),
     accounts = new HumanAccounts(storage, actors),
     members = new MembershipStore(storage);
-  accounts.registerLocalAccounts(new LocalAccountServerPlugin(accounts.localAccountRepository));
+  accounts.registerLocalAccounts(new LocalAccountServerPlugin(accounts.localAccountRepository, createNodePasswordHasher()));
   const management = new HumanAccountManagement(storage, accounts, actors, members);
   const principal = await management.initialize({
     mode: "web",
@@ -97,7 +98,7 @@ async function durable(t: test.TestContext) {
     leases.capture(threadId, inputId, snapshotExecutionSubmission(context), "accepted");
     return leases.begin(threadId, inputId, native.incarnation);
   };
-  const vault = new EmployeeGitVaultStore(directory);
+  const vault = await EmployeeGitVaultStore.open(directory);
   try {
     const environment = new AccountEnvironment(vault);
     environment.replace(account, { projectId: null }, 0, [{ name: "SERVICE_KEY", value: SECRET, secret: true }]);
@@ -501,7 +502,7 @@ test("the Codex adapter requires one ENV owner, a Codex Core and the Git owner f
   assert.equal(coreCodexEnvironmentLaunch(core, server, "/core.sock", INSTANCE)?.instance, INSTANCE);
 });
 
-test("the Codex adapter reserves a Human creation and forwards only a staged capsule to the split Core", async (t) => {
+async function adapterCreation(t: test.TestContext, mode: "split" | "accounts-only" | "runtime-without-receiver") {
   const f = await durable(t);
   const { assets, reader, port } = await owners(t, f);
   // The native process the split Core owns, a child of this process as the
@@ -536,9 +537,7 @@ test("the Codex adapter reserves a Human creation and forwards only a staged cap
   );
   const relay = await startOrchestrationCallbackRelay(proxy, nativePath, { environment });
   const token = "synthetic-" + randomUUID();
-  const control = await startControlServer(endpoint, token, async () => ({
-    status: 200,
-    value: {
+  const health = {
       protocolVersion: 1,
       pid: process.pid,
       codexPid: child.pid,
@@ -547,7 +546,15 @@ test("the Codex adapter reserves a Human creation and forwards only a staged cap
       environmentLaunchVersion: 1,
       dataDirectory: join(f.root, "codex"),
       proxyBaseUrl: "http://127.0.0.1:9",
-    },
+  };
+  // An accounts-only Core has no runtime plane: its health is not found, and the
+  // runtime owner (the workspace AppServer) answers through its own endpoint.
+  const control = await startControlServer(endpoint, token, async () =>
+    mode === "split" ? { status: 200, value: health } : { status: 404, value: { error: "Not found" } });
+  const runtimeEndpoint = join(f.root, "runtime-control.sock");
+  const runtimeControl = mode === "split" ? undefined : await startControlServer(runtimeEndpoint, token, async () => ({
+    status: 200,
+    value: mode === "accounts-only" ? health : { ...health, environmentLaunchVersion: undefined },
   }));
   // Every value the adapter relays crosses this port.
   const relayed: unknown[] = [];
@@ -565,6 +572,7 @@ test("the Codex adapter reserves a Human creation and forwards only a staged cap
     dataDirectory: join(f.root, "codex-adapter"),
     coreEndpoint: endpoint,
     coreAuthToken: token,
+    ...(runtimeControl ? { coreRuntime: { endpoint: runtimeEndpoint, token, nativeSocket: proxy } } : {}),
     coreHostOverlays: true,
     environmentLaunch: observed,
     createExecutionGit: () => ({
@@ -583,6 +591,7 @@ test("the Codex adapter reserves a Human creation and forwards only a staged cap
   t.after(async () => {
     await adapter.close();
     await control.close();
+    await runtimeControl?.close();
     await relay.close();
     for (const socket of wss.clients) socket.terminate();
     wss.close();
@@ -600,6 +609,14 @@ test("the Codex adapter reserves a Human creation and forwards only a staged cap
   };
   await adapter.connect();
   await call("initialize", {});
+  if (mode === "runtime-without-receiver") {
+    // A runtime owner started without a receiver: the creation fails closed and
+    // native never sees it.
+    await assert.rejects(call("thread/start", { cwd: f.root, projectId: "alpha" }), /Environment delivery was refused/u);
+    assert.equal(requests.some((m) => m.method === "thread/start"), false);
+    assert.equal(relayed.length, 0);
+    return;
+  }
   const created = await call("thread/start", { cwd: f.root, projectId: "alpha" });
   assert.equal(created.error, undefined, JSON.stringify(created.error));
   const start = requests.find((m) => m.method === "thread/start");
@@ -620,6 +637,18 @@ test("the Codex adapter reserves a Human creation and forwards only a staged cap
   assert.equal(anonymous.error, undefined);
   assert.equal(relayed.length, 1);
   assert.equal(requests.filter((m) => m.method === "thread/start").at(-1).params.config?.[POLICY], undefined);
+}
+
+test("the Codex adapter reserves a Human creation and forwards only a staged capsule to the split Core", async (t) => {
+  await adapterCreation(t, "split");
+});
+
+test("with an accounts-only Core the adapter finds the receiver in the runtime owner's health", async (t) => {
+  await adapterCreation(t, "accounts-only");
+});
+
+test("a runtime owner without a receiver behind an accounts-only Core refuses a Human creation", async (t) => {
+  await adapterCreation(t, "runtime-without-receiver");
 });
 
 /** The vault owner of an identity composition that owns its vault: a Worker

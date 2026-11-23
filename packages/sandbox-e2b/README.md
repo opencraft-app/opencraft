@@ -2,7 +2,7 @@
 
 `@opencraft/sandbox-e2b` implements the existing `SandboxBackend` port using the
 pinned E2B JavaScript SDK. It does not add an environment allocator, Bot table,
-model gateway, queue or persistent assistant runtime. It is not automatically registered in engine assembly. The optional daemon installation config connects it to managed-Bot execution (see `docs/architecture/identity/managed-bots.md`). Consumers must explicitly install and select this backend.
+model gateway, queue or persistent assistant runtime. It is not automatically registered in engine assembly. `e2bSandboxProvider()` is its provider definition for the `@opencraft/sandbox/providers` registry; headless and daemon deployment assembly register it, and workspace/Bot owners select it only through an installation whose `backend` is `e2b` (an absent backend in schemaVersion 1 files and version-1 vault credentials). See `docs/architecture/execution/execution-sandbox.md` and `docs/architecture/identity/managed-bots.md`. Consumers must explicitly install and select this backend.
 
 An installation supplies trusted API/proxy endpoints, one approved template and
 a private secret-reader function. User-facing Bot settings must contain only a
@@ -36,9 +36,11 @@ Capacity is local to the pool, not account-wide distributed admission.
 ## Execution and secrets
 
 The template must contain Python 3 at the explicitly configured absolute path
-(default `/usr/bin/python3`). A small per-process transport broker preserves
+(default `/usr/bin/python3`). The shared per-process transport broker from
+`@opencraft/sandbox/broker` preserves
 binary stdin/stdout/stderr, literal argv, EOF and exit status over the SDK's text
-callbacks. It is not a task scheduler or a business-state owner. Payload argv,
+callbacks; this adapter only uploads it with `files.write` and launches it with
+`commands.run(..., { stdin: true, background: true })`. It is not a task scheduler or a business-state owner. Payload argv,
 cwd and environment are sent through stdin, not launcher argv. Host environment,
 team key, Bot credentials, memory and model configuration are not copied into
 the guest. Cwd is an existing path in the remote filesystem; no Host path is
@@ -94,6 +96,7 @@ changes and processes are not retained, and no old NFS/process handle is reused.
 Existing temporary workspaces are not migrated. Do not clone a deployment identity
 into an independent installation or use user-supplied workspace IDs.
 
+The provider's `persistentWorkspaces` capability (receipt, inspection and NFS mount verification) wraps these calls for the ordinary workspace allocator.
 The optional read-only inspector requires a schemaVersion 2 workspace/volume API supplied by that extension. It returns unknown on unsupported schemas, authorization loss, changed generations or unconfirmed volumes. An observation is not an allocation lock; creation must still honor the provider occupancy fence. Neither extension is enabled by default.
 
 

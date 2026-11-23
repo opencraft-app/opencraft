@@ -1,24 +1,52 @@
-import {join} from 'node:path';
-import {stat} from 'node:fs/promises';
+import type {StateDocumentStore} from '@opencraft/document-storage/state';
+import {StateDocumentNotPrivateError} from '@opencraft/document-storage/state-file';
+import {SecretStoreCorruptError,validateSecretName,validateSecretValue,type SecretStore} from '@opencraft/secret-storage';
 import {emptyModelDocument,validateModelDocument,type ModelDocument} from './model-document.js';
-import {readJson,writeJson,locked} from './json-file.js';
+import {configurationDocument} from './state-documents.js';
+import type {ModelCredentialPort} from './service.js';
 
+export const MODEL_DOCUMENT_KEY='models.json';
 export class ModelConfigurationConflict extends Error {readonly code='settings-conflict';constructor(){super('模型配置已在其他窗口更新，请刷新后重试')}}
 export class ModelConfigurationRepository {
-  readonly path:string;
-  constructor(readonly directory:string){this.path=join(directory,'models.json')}
-  async read():Promise<ModelDocument>{const value=await readJson(this.path);if(value===null)return emptyModelDocument();validateModelDocument(value);return value;}
-  async initialize(seed:ModelDocument=emptyModelDocument()){return locked(this.path,async()=>{if(await readJson(this.path)!==null)return this.read();validateModelDocument(seed);await writeJson(this.path,seed);return seed})}
-  async update(expectedRevision:number,change:(draft:ModelDocument)=>void){return locked(this.path,async()=>{const current=await this.read();if(current.revision!==expectedRevision)throw new ModelConfigurationConflict();const next=structuredClone(current);change(next);next.revision=current.revision+1;validateModelDocument(next);await writeJson(this.path,next);return next})}
+  constructor(readonly documents:StateDocumentStore){}
+  async read():Promise<ModelDocument>{const value=await configurationDocument(this.documents.read(MODEL_DOCUMENT_KEY));if(value===null)return emptyModelDocument();validateModelDocument(value);return value;}
+  async initialize(seed:ModelDocument=emptyModelDocument()){return configurationDocument(this.documents.update(MODEL_DOCUMENT_KEY,(current):{result:ModelDocument}|{result:ModelDocument;next:ModelDocument}=>{
+    if(current!==null){validateModelDocument(current);return {result:current};}
+    validateModelDocument(seed);return {result:seed,next:seed};
+  }))}
+  async update(expectedRevision:number,change:(draft:ModelDocument)=>void){return configurationDocument(this.documents.update(MODEL_DOCUMENT_KEY,current=>{
+    const base=current===null?emptyModelDocument():current;validateModelDocument(base);
+    if(base.revision!==expectedRevision)throw new ModelConfigurationConflict();
+    const next=structuredClone(base);change(next);next.revision=base.revision+1;validateModelDocument(next);return {result:next,next};
+  }))}
 }
 
-/** No secret readback API; adapters receive values only at the execution boundary. */
-export class ModelCredentialRepository {
-  readonly path:string;
-  constructor(directory:string){this.path=join(directory,'credentials.json')}
-  async stamp(){try{const s=await stat(this.path,{bigint:true});return `${s.ino}:${s.mtimeNs}:${s.size}`}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return 'absent';throw error}}
-  private async read():Promise<Record<string,string>>{const doc=await readJson(this.path) as {schemaVersion?:unknown;entries?:unknown}|null;if(doc===null)return {};if(doc.schemaVersion!==1||!doc.entries||typeof doc.entries!=='object'||Array.isArray(doc.entries)||Object.values(doc.entries).some(v=>typeof v!=='string'))throw new Error('凭据存储格式无效');return doc.entries as Record<string,string>;}
-  async resolve(ref:string){const entries=await this.read();return Object.hasOwn(entries,ref)?entries[ref]:undefined;}
-  async set(ref:string,value:string){if(!/^[_A-Za-z][_A-Za-z0-9]*$/.test(ref)||!value||/[\r\n\0]/.test(value))throw new Error('凭据格式无效');await locked(this.path,async()=>{const entries=await this.read();await writeJson(this.path,{schemaVersion:1,entries:{...entries,[ref]:value}})})}
-  async remove(ref:string){await locked(this.path,async()=>{const entries=await this.read();delete entries[ref];await writeJson(this.path,{schemaVersion:1,entries})})}
+/** User-visible over RPC; kept identical to the previous file repository's messages. */
+export const INVALID_CREDENTIAL_MESSAGE='凭据格式无效',CORRUPT_CREDENTIALS_MESSAGE='凭据存储格式无效';
+/** The credentials file is a symlink, not this user's private (0600) regular file, or oversized; it is neither read nor overwritten. */
+export const UNSAFE_CREDENTIALS_MESSAGE='凭据文件权限不安全，未读取';
+async function credentialStorage<T>(operation:Promise<T>):Promise<T>{
+  try{return await configurationDocument(operation)}catch(error){
+    if(error instanceof SecretStoreCorruptError)throw new Error(CORRUPT_CREDENTIALS_MESSAGE,{cause:error});
+    // Private reads open with O_NOFOLLOW, so a symlinked file fails with ELOOP before any check.
+    if(error instanceof StateDocumentNotPrivateError||(error as NodeJS.ErrnoException|null)?.code==='ELOOP')throw new Error(UNSAFE_CREDENTIALS_MESSAGE,{cause:error});
+    throw error;
+  }
+}
+const storableName=(ref:string)=>{try{validateSecretName(ref);return true}catch{return false}};
+
+/** Model credentials over a SecretStore. No secret readback API; adapters
+ * receive values only at the execution boundary. Unknown or malformed
+ * references resolve as absent, as configuration may name any reference. */
+export class ModelCredentialRepository implements ModelCredentialPort {
+  constructor(private readonly secrets:SecretStore){}
+  /** Changes exactly when a stored credential changes (content-derived). */
+  stamp(){return credentialStorage(this.secrets.stamp())}
+  async resolve(ref:string){return storableName(ref)?credentialStorage(this.secrets.get(ref)):undefined}
+  async configured(ref:string){return await this.resolve(ref)!==undefined}
+  async set(ref:string,value:string){
+    try{validateSecretName(ref);validateSecretValue(value)}catch{throw new Error(INVALID_CREDENTIAL_MESSAGE)}
+    await credentialStorage(this.secrets.set(ref,value));
+  }
+  async remove(ref:string){if(storableName(ref))await credentialStorage(this.secrets.delete(ref))}
 }

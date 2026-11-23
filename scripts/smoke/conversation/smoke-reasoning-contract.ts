@@ -1,3 +1,4 @@
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {mkdtemp,rm} from 'node:fs/promises';
@@ -10,6 +11,7 @@ import {createConversationKey} from '@opencraft/chat-core';
 import {startLocalAgentHost} from "../../../apps/local-agent-host/src/main";
 import {DshClient} from "../../../apps/local-agent-host/src/dsh-client";
 import {ModelConfigurationRepository,ModelCredentialRepository} from "../../../apps/local-agent-host/src/model-config/repository";
+import { fileSecretStore } from "@opencraft/secret-storage/file";
 
 const root=await mkdtemp(join(tmpdir(),'opencraft-reasoning-contract-'));
 let receivedResolve!:()=>void;
@@ -55,7 +57,7 @@ let uiServer:any;
 let browser:any;
 try{
  await new Promise<void>(r=>endpoint.listen(0,'127.0.0.1',r));const port=(endpoint.address() as {port:number}).port;
- const directory=join(root,'product'),repository=new ModelConfigurationRepository(directory),credentials=new ModelCredentialRepository(directory);
+ const directory=join(root,'product'),repository=new ModelConfigurationRepository(fileStateDocumentStore(directory)),credentials=new ModelCredentialRepository(fileSecretStore(directory));
  await credentials.set('TEST_KEY','synthetic-key');
  await repository.initialize({schemaVersion:1,revision:0,providers:[{id:'plain-provider',name:'Plain model',protocol:'openai-completions',baseUrl:`http://127.0.0.1:${port}/v1`,credentialRef:'TEST_KEY',enabled:true,models:[{id:'plain-model',enabled:true}]}],defaultModel:{providerId:'plain-provider',modelId:'plain-model'}});
  host=await startLocalAgentHost({dataDirectory:join(root,'runtime'),modelStorageDirectory:directory,dshExecutable:resolve('runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js')});

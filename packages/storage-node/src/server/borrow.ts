@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { join } from 'node:path';
+import { nodeSqlDatabase } from '@opencraft/sqlite-node';
 import { DEFAULT_SERVER_MIGRATION_COMPOSITION } from './migration-composition.js';
 
 const SERVER_DATA_CONTRACT = DEFAULT_SERVER_MIGRATION_COMPOSITION.contract;
@@ -16,9 +17,10 @@ export interface BorrowOptions {
 }
 export function borrowServerDatabase(directory: string, options: BorrowOptions = {}): Exclude<ServerDatabaseSource,string> & { close(): void } {
   const migrationVersion = options.migrationVersion ?? SERVER_DATA_CONTRACT.migrationVersion;
-  const db = new DatabaseSync(join(directory,'opencraft-server.sqlite'), {open:false});
+  const location = join(directory,'opencraft-server.sqlite');
+  const db = new DatabaseSync(location, {open:false});
   // Never create an empty installation when the owning process has not prepared it.
-  const probe = new DatabaseSync(join(directory,'opencraft-server.sqlite'), {readOnly:true});
+  const probe = new DatabaseSync(location, {readOnly:true});
   try {
     const version=Number(probe.prepare('SELECT MAX(version) AS version FROM schema_migrations').get()?.version);
     if(version!==migrationVersion)throw Error('Server storage owner must migrate before borrowing');
@@ -28,7 +30,7 @@ export function borrowServerDatabase(directory: string, options: BorrowOptions =
     db.open();
     if (options.foreignKeys !== false) db.exec('PRAGMA foreign_keys=ON');
     if (options.busyTimeoutMs !== undefined) db.exec(`PRAGMA busy_timeout=${Math.max(0, Math.trunc(options.busyTimeoutMs))}`);
-    return {database:db,outcome:{status:'up-to-date',appliedVersion:migrationVersion,movedAsidePaths:[]},close:()=>db.close()};
+    return {database:nodeSqlDatabase(db),location,outcome:{status:'up-to-date',appliedVersion:migrationVersion,movedAsidePaths:[]},close:()=>db.close()};
   }
   catch(error){db.close();throw error;}
 }

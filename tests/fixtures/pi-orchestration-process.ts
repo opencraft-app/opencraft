@@ -11,6 +11,7 @@ import { startEngineHost } from "../../apps/local-agent-host/src/engine-host.js"
 import { RemoteSessionCapabilities } from "../../packages/session-capabilities/src/remote.js";
 import { SessionCapabilities } from "../../packages/session-capabilities/src/index.js";
 import { SessionCapabilityMcp, capabilitySigningKey } from "../../packages/session-capabilities/src/mcp.js";
+import { fileKeyMaterial } from "@opencraft/secret-storage/file";
 import { THREAD_ORCHESTRATION_TOOLS } from "../../packages/appserver-protocol/src/collaboration.js";
 import { ActorStore } from "../../packages/access-control/src/actors.js";
 import { Collaboration, type ConversationExecutionPort } from "../../packages/access-control/src/collaboration.js";
@@ -51,7 +52,7 @@ if (kind === "host") {
     } else if (command === "identity") result = { pid: process.pid, incarnation: engine.orchestrationIncarnation };
     else throw new Error("Unknown isolated Host command");
     response.setHeader("content-type", "application/json"); response.end(JSON.stringify({ result }));
-  })().catch(error => { response.writeHead(500); response.end(JSON.stringify({ error: String(error) })); }); });
+  })().catch(error => { response.writeHead(500, { "content-type": "application/json" }); response.end(JSON.stringify({ error: error instanceof Error ? error.message : "Non-error fixture failure" })); }); });
   await new Promise<void>(resolve => control.listen(0, "127.0.0.1", resolve));
   await writeFile(join(root, "pi-host.json"), JSON.stringify({ controlUrl: `http://127.0.0.1:${(control.address() as any).port}`, token,
     websocketUrl: host.websocketUrl }), { mode: 0o600 });
@@ -97,7 +98,7 @@ if (kind === "host") {
     inspect: (threadId, limit) => rpc("opencraft/orchestration/inspect", { operationId: `inspect:${randomUUID()}`, threadId, limit }),
   };
   const broker = new ThreadOrchestrationBroker(service, execution);
-  const key = await capabilitySigningKey(join(data, "session-capabilities.key"));
+  const key = await capabilitySigningKey(fileKeyMaterial(data));
   const mcp = new SessionCapabilityMcp(new SessionCapabilities(), key, undefined, { descriptorPath: join(data, "session-capabilities.json"),
     async orchestration(session, request) {
       if (session.serverId !== serverId) throw new Error("Wrong synthetic scope");

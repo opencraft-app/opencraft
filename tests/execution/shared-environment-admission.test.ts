@@ -12,7 +12,7 @@ import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
 const context = (subject: string) => ({ sender: null, executionPrincipal: { provider: 'employee', subject }, validUntil: Date.now() + 60_000 });
 async function fixture(t: test.TestContext) {
   const directory = await mkdtemp(join(tmpdir(), 'shared-environment-'));
-  const vault = new EmployeeGitVaultStore(directory), runtime = new ExecutionEnvironmentRuntime(directory, vault);
+  const vault = await EmployeeGitVaultStore.open(directory), runtime = new ExecutionEnvironmentRuntime(directory, vault);
   const env = new AccountEnvironment(vault);
   for (const user of ['creator', 'participant']) env.replace('employee:' + user, { projectId: null }, 0, [{ name: 'KEY', value: 'synthetic-' + user, secret: true }]);
   runtime.bindCreator(runtime.scope(context('creator'), 'host', {}), 'shared');

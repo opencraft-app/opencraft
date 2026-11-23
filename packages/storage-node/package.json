@@ -8,9 +8,11 @@
     "./server-borrow": "./src/server/borrow.ts",
     "./server": "./src/server/index.ts",
     "./server-legacy": "./src/server/legacy.ts",
-    "./server-repository": "./src/server/repository.ts",
+    "./server-repository": { "workerd": "./src/server/repository.workerd.ts", "default": "./src/server/repository.ts" },
+    "./server-sql": "./src/server/sql-owner.ts",
     "./server-owner": "./src/server/owner.ts",
     "./server-owner-serve": "./src/server/owner-serve.ts",
+    "./server-conversation-resources": "./src/server/conversation-resources.ts",
     "./server-environment-reservations": "./src/server/environment-creation-reservations.ts",
     "./server-composition": "./src/server/migration-composition.ts",
     "./server/schema": "./src/server/schema.ts",
@@ -18,6 +20,7 @@
   },
   "dependencies": {
     "@opencraft/sqlite-node": "0.1.0",
+    "@opencraft/sql": "0.1.0",
     "drizzle-orm": "0.45.4",
     "@opencraft/worker-owner": "0.1.0"
   },

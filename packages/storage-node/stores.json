@@ -20,11 +20,6 @@
     "index": 0
   },
   {
-    "id": "generation-registry",
-    "owner": "apps/codex-core/src/generation-registry.ts",
-    "index": 0
-  },
-  {
     "id": "post-receipts",
     "owner": "plugins/im/src/post-receipts.ts",
     "index": 0

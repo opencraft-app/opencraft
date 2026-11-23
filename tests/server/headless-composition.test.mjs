@@ -18,19 +18,23 @@ import { generateKeyPairSync } from 'node:crypto';
 import { publishEnvironmentIssuer } from '@opencraft/execution-environment/environment-launch-owner';
 import { deploymentPaths } from '../../scripts/container-deployment/paths.mjs';
 import { executionHostIssuer } from '../../scripts/container-deployment/execution-hosts.mjs';
+import { ownedCleanup } from '../support/owned-cleanup.mjs';
 
 async function fixture(t) {
   const runtime = fileURLToPath(new URL('../../.runtime/', import.meta.url));
   await mkdir(runtime, { recursive: true });
   const root = await mkdtemp(join(runtime, 'headless-composition-'));
-  t.after(() => rm(root, { recursive: true, force: true }));
+  // Servers a test starts close before the shared root is removed (tests/support/owned-cleanup.mjs).
+  const cleanup = ownedCleanup(t);
+  cleanup.last(() => rm(root, { recursive: true, force: true }));
+  const own = cleanup.own;
   const webRoot = join(root, 'web'); await mkdir(webRoot);
   await writeFile(join(webRoot, 'index.html'), '<!doctype html><title>Public workbench</title>');
   await writeFile(join(webRoot, 'version.json'), JSON.stringify({ schemaVersion: 1, buildId: 'composition-test', headlessServer: true, headlessHostId: 'opencraft-server' }));
   let starts = 0;
   const options = { root, webRoot, dataDirectory: join(root, 'data'), port: 0,
     startAgentHost: async () => { starts++; return { websocketUrl: 'ws://127.0.0.1:9/rpc', close: async () => {} }; } };
-  return { root, options, starts: () => starts };
+  return { root, options, own, starts: () => starts };
 }
 
 test('public Headless artifact has no enterprise implementation and its CLI rejects private configuration', async t => {
@@ -68,7 +72,7 @@ test('public Headless artifact has no enterprise implementation and its CLI reje
   const app = await api.startHeadlessServer({ ...f.options, createWebServer: async input => {
     await input.remoteBrowserService.load();
     return createWorkbenchWebServer(input);
-  } }); t.after(() => app.close());
+  } }); f.own(() => app.close());
   const health = await fetch(app.url + '/__opencraft_health').then(response => response.json());
   const storage = health.storage.find(row => row.name === 'remote-browser');
   assert.equal(storage.appliedVersion, 4);
@@ -83,7 +87,7 @@ test('public Headless artifact has no enterprise implementation and its CLI reje
   await writeFile(proofPath, JSON.stringify({ token: proof }), { mode: 0o600 });
   await writeFile(configPath, JSON.stringify({ origin: app.url, local: true, oidc: [], setupTokenFile: proofPath }), { mode: 0o600 });
   const human = await api.startHeadlessServer({ ...f.options, port: Number(new URL(app.url).port), humanAuthConfig: configPath });
-  t.after(() => human.close());
+  f.own(() => human.close());
   assert.equal((await stat(join(f.root, 'assets-runtime-worker.mjs'))).isFile(), true);
   const setup = await fetch(human.url + '/__opencraft_account/setup', { method: 'POST',
     headers: { origin: human.url, 'content-type': 'application/json' },
@@ -106,7 +110,7 @@ test('verified external human identity does not require an enterprise provider n
   const principal = { provider: 'fixture-directory', subject: 'opaque-human-id', displayName: 'Fixture Human', expiresAt: Date.now() + 60_000 };
   const app = await startHeadlessServer({ ...f.options, accessMemberProviders: [principal.provider] }, {
     createIdentity: async () => ({ providers: [{ authenticate: request => current && request.headers['x-fixture-proof'] === 'verified' ? principal : null }], close() {} }),
-  }); t.after(() => app.close());
+  }); f.own(() => app.close());
   const headers = { 'x-fixture-proof': 'verified' };
   const connectorOwner = await (await fetch(app.url + '/__opencraft_connectors')).json();
   assert.deepEqual(Object.keys(connectorOwner.hosts).sort(), ['local-codex', 'opencraft-server']);
@@ -136,7 +140,7 @@ test('missing or malformed identity fails before execution and rollback releases
   let closed = 0;
   await assert.rejects(startHeadlessServer(f.options, { createIdentity: async () => ({ providers: [{}], close() { closed++; } }) }), /identity adapter/);
   assert.equal(closed, 1); assert.equal(f.starts(), 0);
-  const app = await startHeadlessServer(f.options); t.after(() => app.close());
+  const app = await startHeadlessServer(f.options); f.own(() => app.close());
   assert.equal((await fetch(app.url)).status, 200);
 });
 
@@ -173,7 +177,7 @@ test('core ENV delivery has one owner and fails at startup without execution adm
     { OPENCRAFT_ENVIRONMENT_DELIVERY: 'vault-owner', OPENCRAFT_ENVIRONMENT_ISSUER_FILE: 'relative.json' },
     { OPENCRAFT_ENVIRONMENT_DELIVERY: 'vault-owner', OPENCRAFT_ENVIRONMENT_ISSUER_GENERATION: 'a b' }])
     assert.throws(() => parse(env), JSON.stringify(env));
-  const app = await startHeadlessServer(f.options); t.after(() => app.close());
+  const app = await startHeadlessServer(f.options); f.own(() => app.close());
   assert.equal((await fetch(app.url)).status, 200);
 });
 
@@ -209,7 +213,7 @@ test('an identity-owned vault port brings its own admission and metadata; missin
   assert.equal(closed, 5);
   assert.equal(f.starts(), 0);
   const app = await startHeadlessServer(options, { createIdentity: identity({ ...port, admission: async () => null, metadata }) });
-  t.after(() => app.close());
+  f.own(() => app.close());
   assert.equal((await fetch(app.url + '/__opencraft_actors/me')).status, 200);
   assert.deepEqual(calls, [], 'no metadata is written before a Host request');
 });
@@ -252,7 +256,7 @@ test('with ENV delivery an identity-owned vault is the only owner, publishes the
   assert.equal(f.starts(), 0);
   // Delivery on with the port: the port is the only owner, core opens no vault Worker.
   const app = await startHeadlessServer(options, { createIdentity: identity(port) });
-  t.after(() => app.close());
+  f.own(() => app.close());
   assert.equal((await fetch(app.url + '/__opencraft_actors/me')).status, 200);
   assert.deepEqual(contexts.at(-1), { publish: paths.environmentIssuerFile, generation: '2026-11' });
   assert.ok(Object.isFrozen(contexts.at(-1)));
@@ -303,7 +307,7 @@ test('an identity vault port wires Codex ENV and Git delivery or startup fails c
   // complete port starts and nothing is sealed or granted before a request.
   const dataDirectory = join(f.root, 'identity-vault-data');
   const app = await startHeadlessServer({ ...split, dataDirectory }, { createIdentity: identity({ ...port, ...codex, git }) });
-  t.after(() => app.close());
+  f.own(() => app.close());
   assert.equal((await fetch(app.url + '/__opencraft_actors/me')).status, 200);
   assert.deepEqual(calls, []);
   await assert.rejects(stat(join(dataDirectory, 'employee-git-vault.sqlite')), { code: 'ENOENT' },
@@ -314,7 +318,7 @@ test('public listener accepts explicit membership protection without requiring a
   const f = await fixture(t);
   await assert.rejects(startHeadlessServer({ ...f.options, host: '0.0.0.0' }), /unauthenticated-public/);
   assert.equal(f.starts(), 0);
-  const app = await startHeadlessServer({ ...f.options, host: '0.0.0.0', accessControl: true }); t.after(() => app.close());
+  const app = await startHeadlessServer({ ...f.options, host: '0.0.0.0', accessControl: true }); f.own(() => app.close());
   assert.equal((await fetch(app.url)).status, 401, 'no identity provider or member cannot downgrade to anonymous admission');
   assert.equal((await fetch(app.url + '/__opencraft_actors/me')).status, 401);
 });
@@ -344,14 +348,14 @@ test('local machine ingress proves the socket source and preserves remote and Ac
   assert.equal((await loadLocalMachineAccess(path)).origin(good), null, 'a replacement key retires old proofs');
 
   const backend = new WebSocketServer({ host: '127.0.0.1', port: 0 }); await once(backend, 'listening');
-  t.after(() => new Promise(resolve => backend.close(resolve)));
+  f.own(() => new Promise(resolve => backend.close(resolve)));
   backend.on('connection', socket => socket.on('message', data => {
     const request = JSON.parse(data.toString());
     socket.send(JSON.stringify({ id: request.id, result: 'local-proof-echo' }));
   }));
   const app = await startHeadlessServer({ ...f.options, localAccessFile: path, accessControl: true,
     startAgentHost: async () => ({ websocketUrl: 'ws://127.0.0.1:' + backend.address().port, close: async () => {} }),
-  }); t.after(() => app.close());
+  }); f.own(() => app.close());
   const current = await loadLocalMachineAccess(path);
   const proofFor = (url, method = 'GET') => { const parsed = new URL(app.url), req = { method, url, headers: { host: parsed.host },
     socket: { remoteAddress: '127.0.0.1', localAddress: '127.0.0.1', localPort: Number(parsed.port) } };
@@ -390,7 +394,7 @@ test('anonymous handoff is selected by deployment configuration on both real RPC
       const app = await startHeadlessServer({...f.options,
         startAgentHost:async()=>({websocketUrl:`ws://127.0.0.1:${backend.address().port}`,close:async()=>{}}),
       },identityConfigured ? {createIdentity:async()=>({providers:[],close(){}})} : {});
-      t.after(async()=>{await app.close();await new Promise(resolve=>backend.close(resolve));});
+      f.own(()=>new Promise(resolve=>backend.close(resolve)));f.own(()=>app.close());
       assert.equal((await fetch(app.url+'/__opencraft_actors/me')).status,401);
       for (const path of ['/appserver','/apphost']) {
         const socket = new WebSocket(app.url.replace('http:','ws:')+path,{origin:app.url});await once(socket,'open');
@@ -435,7 +439,7 @@ test('anonymous installation can subsequently initialize its first real administ
   const proofPath=join(f.root,'setup-token'),configPath=join(f.root,'human-auth.json');
   await writeFile(proofPath,JSON.stringify({token:proof}),{mode:0o600});
   await writeFile(configPath,JSON.stringify({origin:anonymous.url,local:true,oidc:[],setupTokenFile:proofPath}),{mode:0o600});
-  const app=await startHeadlessServer({...f.options,port:Number(new URL(anonymous.url).port),humanAuthConfig:configPath});t.after(()=>app.close());
+  const app=await startHeadlessServer({...f.options,port:Number(new URL(anonymous.url).port),humanAuthConfig:configPath});f.own(()=>app.close());
   assert.equal((await fetch(app.url+'/setup')).status,200);
   const setup=await fetch(app.url+'/__opencraft_account/setup',{method:'POST',headers:{origin:anonymous.url,'content-type':'application/json'},body:JSON.stringify({proof,mode:'web',username:'owner',password:'Fixture-account-password-42'})});
   assert.equal(setup.status,200,await setup.text());
@@ -445,7 +449,7 @@ test('anonymous installation can subsequently initialize its first real administ
 test('an explicitly anonymous native installation declares no personal Git authority rather than failing every shell',async t=>{
  const {RemoteSessionCapabilities}=await import('../../packages/session-capabilities/src/remote.ts');
  const f=await fixture(t);
- const app=await startHeadlessServer({...f.options,engines:['pi'],defaultEngine:'pi'});t.after(()=>app.close());
+ const app=await startHeadlessServer({...f.options,engines:['pi'],defaultEngine:'pi'});f.own(()=>app.close());
  const machineId=(await readFile(join(f.options.dataDirectory,'machine-id'),'utf8')).trim();
  const remote=new RemoteSessionCapabilities(f.options.dataDirectory,`server:${machineId}:pi`);
  assert.deepEqual(await remote.hostGit('pi_synthetic',{inputId:'unowned-input'}),{mode:'anonymous'});
@@ -458,7 +462,7 @@ test('personal model defaults follow the signed-in Actor and instance admission 
   const proofPath = join(f.root, 'setup-token'), configPath = join(f.root, 'human-auth.json');
   await writeFile(proofPath, JSON.stringify({ token: proof }), { mode: 0o600 });
   await writeFile(configPath, JSON.stringify({ origin: probe.url, local: true, oidc: [], setupTokenFile: proofPath }), { mode: 0o600 });
-  const app = await startHeadlessServer({ ...f.options, port: Number(new URL(probe.url).port), humanAuthConfig: configPath }); t.after(() => app.close());
+  const app = await startHeadlessServer({ ...f.options, port: Number(new URL(probe.url).port), humanAuthConfig: configPath }); f.own(() => app.close());
   const path = app.url + '/__opencraft_model_defaults';
   const json = { origin: app.url, 'content-type': 'application/json' };
   assert.equal((await fetch(path)).status, 401);

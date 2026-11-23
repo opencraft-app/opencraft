@@ -1,11 +1,12 @@
-import type { DatabaseSync } from "node:sqlite";
+import type { SqlDatabase } from "@opencraft/sql";
 import type { MessageSender } from "@opencraft/appserver-protocol";
+import { sqlPort, type SqlConnection } from "./sql-connection.js";
 
 /** One instance per stable Server identity directory; message identity outlives connections. */
 export class OpenCraftMessageSenders {
-  private readonly db: DatabaseSync;
-  constructor(database: DatabaseSync) {
-    this.db = database;
+  private readonly db: SqlDatabase;
+  constructor(database: SqlConnection) {
+    this.db = sqlPort(database);
   }
   record(threadId: string, messageId: string, sender: MessageSender | null): void {
     if (!threadId || !messageId || threadId.length > 4096 || messageId.length > 4096) throw new Error("Message identity is required");
@@ -32,17 +33,13 @@ export class OpenCraftMessageSenders {
   /** Only an observed history item is projected; an unused fork mapping creates no messages. */
   cloneThread(source: string, target: string): void {
     if (!source || !target || source === target) return;
-    this.db.exec("SAVEPOINT message_sender_clone");
-    try {
+    this.db.transaction(() => {
       this.db.prepare(`INSERT OR IGNORE INTO message_senders
         SELECT ?,client_message_id,sender_json,accepted_at_ms FROM message_senders WHERE thread_id=?`).run(target, source);
       this.db.prepare(`INSERT OR IGNORE INTO message_sender_origins
         SELECT ?,s.client_message_id,COALESCE(o.source_thread_id,?) FROM message_senders s
         LEFT JOIN message_sender_origins o ON o.thread_id=s.thread_id AND o.client_message_id=s.client_message_id
         WHERE s.thread_id=?`).run(target, source, source);
-      this.db.exec("RELEASE message_sender_clone");
-    } catch (error) {
-      this.db.exec("ROLLBACK TO message_sender_clone; RELEASE message_sender_clone"); throw error;
-    }
+    });
   }
 }

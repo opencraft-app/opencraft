@@ -1,15 +1,19 @@
-/** Runs in the selected sandbox. Descriptor-relative traversal refuses symlinks
- * and special files. Caller authorization and mount trust remain Host concerns. */
-export const workspaceFileHelper = String.raw`import os,sys,json,stat,base64,secrets
+/** Resident process in the selected sandbox: one attached process serves many requests,
+ * one JSON line each (`{id, method, root, relative, ...}`), answered by `{id, ...}` lines
+ * in completion order. Requests run on a small bounded thread pool. Descriptor-relative
+ * traversal refuses symlinks and special files. Caller authorization and mount trust
+ * remain Host concerns. stdin EOF ends the process after in-flight requests answer. */
+export const workspaceFileHelper = String.raw`import os,sys,json,stat,base64,secrets,threading
+from concurrent.futures import ThreadPoolExecutor
 MAX=1024*1024
-fds=[]
-def opened(fd):
-    fds.append(fd)
-    return fd
-def directory(parent,name):
-    return opened(os.open(name,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=parent))
-def execute():
-    value=json.loads(sys.stdin.buffer.read(1500001))
+LINE=1500001
+lock=threading.Lock()
+def execute(value,fds):
+    def opened(fd):
+        fds.append(fd)
+        return fd
+    def directory(parent,name):
+        return opened(os.open(name,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=parent))
     root=value['root']
     parts=value['relative'].split('/') if value['relative'] else []
     if any(p in ('','.','..') or '/' in p or '\\' in p for p in parts):raise ValueError()
@@ -80,10 +84,28 @@ def execute():
             except FileNotFoundError:pass
         return {}
     raise ValueError()
-try:print(json.dumps(execute(),separators=(',',':')))
-except Exception:print('{"error":"workspace_file_rejected"}')
-finally:
-    for fd in reversed(fds):
-        try:os.close(fd)
-        except OSError:pass
+def serve(id,value):
+    fds=[]
+    try:answer=execute(value,fds)
+    except Exception:answer={'error':'workspace_file_rejected'}
+    finally:
+        for fd in reversed(fds):
+            try:os.close(fd)
+            except OSError:pass
+    answer['id']=id
+    data=(json.dumps(answer,separators=(',',':'))+'\n').encode()
+    with lock:
+        sys.stdout.buffer.write(data)
+        sys.stdout.buffer.flush()
+pool=ThreadPoolExecutor(max_workers=8)
+stream=sys.stdin.buffer
+while True:
+    line=stream.readline(LINE+1)
+    if not line:break
+    if len(line)>LINE or not line.endswith(b'\n'):sys.exit(3)
+    value=json.loads(line)
+    id=value.pop('id')
+    if not isinstance(id,int) or isinstance(id,bool):sys.exit(3)
+    pool.submit(serve,id,value)
+pool.shutdown(wait=True)
 `;

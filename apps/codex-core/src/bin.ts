@@ -4,6 +4,7 @@ import { startCodexCore, type CodexCoreOptions } from "./main.js";
 import { AccountCoreOwner, sealLegacyAccountMaintenance, sealFencedAccountMaintenance, sealExportedAccountMaintenance, inspectRetainedAccountExport } from "./account-owner.js";
 import { isAbsolute, dirname, join } from "node:path";
 import { createConfiguredCodexResponses } from "./configured-responses.js";
+import { fileModelCredentials } from "@opencraft/local-agent-host/model-config";
 
 function argument(name: string): string {
   const index = process.argv.indexOf(name);
@@ -27,9 +28,13 @@ async function main() {
     executable: argument("--codex-executable"), runtimeDirectory: argument("--runtime-directory"),
     dataDirectory: argument("--data-directory"), nativeCodexHomeDirectory: argument("--native-codex-home-directory"),
     appServerEndpoint: optional("--app-server-endpoint"),
+    // Account plane only: no runtime owner behind this Core (it never forwards health to one).
+    accountsOnly: process.argv.includes("--accounts-only"),
     configuredResponses: createConfiguredCodexResponses(modelDirectory, {
       allowInsecureLocalNetwork: process.argv.includes("--allow-insecure-local-model-network"),
     }),
+    // The account Core owns provider keys; proxy-mode engines store them here without reading them back.
+    modelCredentials: fileModelCredentials(modelDirectory),
     proxyPort: optional("--proxy-port") === undefined ? undefined : Number(argument("--proxy-port")),
     onFailure: error => { console.error(error.message); void shutdown?.(1); },
   };
@@ -71,6 +76,6 @@ async function main() {
   shutdown = async (code: number) => { await core.close(); process.exit(code); };
   process.once("SIGTERM", () => void shutdown!(0));
   process.once("SIGINT", () => void shutdown!(0));
-  process.stdout.write(`${JSON.stringify({ type: process.argv.includes("--app-server-endpoint") ? "codex-accounts-listening" : "codex-core-ready", ...core.health })}\n`);
+  process.stdout.write(`${JSON.stringify({ type: process.argv.includes("--app-server-endpoint") || options.accountsOnly ? "codex-accounts-listening" : "codex-core-ready", ...core.health })}\n`);
 }
 void main().catch(error => { console.error(error); process.exitCode = 1; });

@@ -3,9 +3,8 @@ import { Collaboration } from './collaboration.js';
 import { ActorStore } from './actors.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { isMainThread } from 'node:worker_threads';
-import type { DatabaseSync } from 'node:sqlite';
+import type { SqlDatabase } from '@opencraft/sql';
 import type { ActorContext } from '@opencraft/identity-core/actors';
-import { sqliteTransaction } from '@opencraft/sqlite-node';
 import { canonical } from './orchestration-ledger.js';
 import { AutomationError, automationFields, automationRecord, automationRunKey, automationText, parseAutomationSchedule,
   parseAutomationTarget, type Automation, type AutomationRun, type AutomationTarget } from './automation.js';
@@ -17,7 +16,7 @@ export interface AutomationGrant {
 export interface AutomationCaller { context: ActorContext; authorityId?: string }
 /** Borrows the installation owner's migrated connection in its serialized Worker. */
 export class AutomationLedger {
-  constructor(private readonly db: DatabaseSync, private readonly now: number) {
+  constructor(private readonly db: SqlDatabase, private readonly now: number) {
     if (isMainThread) throw Error('Automation SQL requires a Worker');
   }
   private row(sql: string, ...args: any[]) { return this.db.prepare(sql).get(...args); }
@@ -43,7 +42,7 @@ export class AutomationLedger {
   private mutation<T>(caller: AutomationCaller, key: unknown, input: unknown, change:()=>T): T {
     this.actor(caller.context);
     const id=automationText(key,128),digest=createHash('sha256').update(JSON.stringify(canonical(input))).digest('hex');
-    return sqliteTransaction(this.db,()=>{
+    return this.db.transaction(()=>{
       const old=this.row('SELECT digest,result FROM automation_mutations WHERE actor_id=? AND key=?',caller.context.actorId,id);
       if(old) {
         if(old.digest!==digest)throw new AutomationError('automation_idempotency_conflict',409);
@@ -161,7 +160,7 @@ export class AutomationLedger {
   }
   eligible(): Automation[] {return this.all('SELECT value FROM project_automations WHERE enabled=1 AND deleted=0').map(row=>JSON.parse(String(row.value)));}
   recover(): void {
-    sqliteTransaction(this.db,()=>{
+    this.db.transaction(()=>{
       for(const row of this.all("SELECT key,value FROM automation_runs WHERE state IN ('admitted','running')")) {
         const value=JSON.parse(String(row.value)) as AutomationRun;
         this.storeRun({...value,state:'unknown'});
@@ -173,7 +172,7 @@ export class AutomationLedger {
       run.key,run.automationId,run.revision,run.occurrenceId,run.state,run.at,JSON.stringify(run));
   }
   claim(id: string, revision: number, occurrenceId: string): { run: AutomationRun; fresh: boolean; grant?: AutomationGrant; automation?: Automation } {
-    return sqliteTransaction(this.db,()=>{
+    return this.db.transaction(()=>{
       const key=automationRunKey(id,revision,occurrenceId),old=this.row('SELECT value FROM automation_runs WHERE key=?',key);
       if(old)return {run:JSON.parse(String(old.value)),fresh:false};
       const value=this.definition(id);
@@ -189,7 +188,7 @@ export class AutomationLedger {
     });
   }
   settle(key: string, state: AutomationRun['state'], result?: unknown, proof?: string): AutomationRun {
-    return sqliteTransaction(this.db,()=>{
+    return this.db.transaction(()=>{
       const row=this.row('SELECT value FROM automation_runs WHERE key=?',key);
       if(!row)throw new AutomationError('automation_run_unavailable',404);
       const run=JSON.parse(String(row.value)) as AutomationRun;
@@ -207,7 +206,7 @@ export class AutomationLedger {
     });
   }
   delegation(key: string, sourceThreadId: string): {id:string;context:ActorContext;sourceThreadId:string;expiresAtMs:number} {
-    return sqliteTransaction(this.db,()=>{
+    return this.db.transaction(()=>{
       const run=this.row("SELECT * FROM automation_runs WHERE key=? AND state='admitted'",key);
       if(!run)throw new AutomationError('automation_run_not_admitted',409);
       const automation=this.definition(String(run.automation_id)),grant=this.currentGrant(automation.grantId);
@@ -218,7 +217,7 @@ export class AutomationLedger {
     });
   }
   enqueue(key:string, id:string, threadId:string):{requestId:string;inputId:string} {
-    return sqliteTransaction(this.db,()=>{
+    return this.db.transaction(()=>{
       const grantCheck=this.checkDelegation(id);
       if(!grantCheck.valid || !grantCheck.grant)throw new AutomationError('automation_grant_revoked',403);
       const grant=grantCheck.grant,target=grant.target;
@@ -245,7 +244,7 @@ export class AutomationLedger {
   projection(): {authorityId:string;grantId:string;valid:boolean}[] {
     // Only live run authorities participate. Historical audit rows stay durable
     // without entering the per-second projection or the main-thread Map.
-    return sqliteTransaction(this.db,()=>this.all(`SELECT d.authority_id,d.grant_id FROM automation_runs r
+    return this.db.transaction(()=>this.all(`SELECT d.authority_id,d.grant_id FROM automation_runs r
       JOIN automation_delegations d ON d.run_key=r.key WHERE r.state IN ('admitted','running','unknown')`).map(row=>{
       const id=String(row.authority_id),valid=this.checkDelegation(id).valid;
       if(valid){

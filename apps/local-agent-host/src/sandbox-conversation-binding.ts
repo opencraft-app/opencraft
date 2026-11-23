@@ -49,7 +49,7 @@ export async function createSandboxConversationBinding(options: {
   const bridge = await createSandboxJsonRpcBridge({ sandbox: options.sandbox,
     command: { command: ["/opt/opencraft/runtime/codex/bin/codex", "exec-server", "--listen", "stdio"], cwd: options.cwd,
       env: { PATH: "/opt/opencraft/bin:/usr/local/bin:/usr/bin:/bin", HOME: "/home/user" } }, authorize,
-    onLost() { closed = true; void processes?.close().catch(() => options.onCleanupUnconfirmed()); options.onLost(); } });
+    onLost() { closed = true; void processes?.close().catch(() => options.onCleanupUnconfirmed()); void files.close().catch(() => {}); options.onLost(); } });
   type NativeRequest = (method: string, params: Record<string, unknown>) => Promise<unknown>;
   // Each target is an actual Native owner channel. A router channel is not a
   // target: it can select a different generation for an existing thread.
@@ -75,6 +75,7 @@ export async function createSandboxConversationBinding(options: {
   } catch (error) {
     closed = true;
     try { await bridge.close(); } catch { options.onCleanupUnconfirmed(); }
+    await files.close().catch(() => {});
     throw error;
   }
   return {
@@ -107,7 +108,7 @@ export async function createSandboxConversationBinding(options: {
     },
     async close() {
       closed = true;
-      const results = await Promise.allSettled([bridge.close(), processes?.close()]);
+      const results = await Promise.allSettled([bridge.close(), processes?.close(), files.close()]);
       if (results.some(result => result.status === "rejected")) { options.onCleanupUnconfirmed(); throw Error("Sandbox binding cleanup unconfirmed"); }
     },
   };

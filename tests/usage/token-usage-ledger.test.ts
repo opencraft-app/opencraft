@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { OpenCraftHostStateDatabase, OPENCRAFT_HOST_STATE_MIGRATIONS } from "../../apps/opencraft-daemon/src/opencraft-host-state-database.js";
+import { OpenCraftHostStateDatabase, OPENCRAFT_HOST_STATE_CURRENT_MIGRATIONS, OPENCRAFT_HOST_STATE_MIGRATIONS } from "../../apps/opencraft-daemon/src/opencraft-host-state-database.js";
 import { OpenCraftTokenUsageLedger, normalizeUsageCounts, type UsageSource } from "../../apps/opencraft-daemon/src/token-usage-ledger.js";
 import { TokenUsageStateDatabase } from "../../apps/opencraft-daemon/src/token-usage-state-database.js";
 import { openManagedDatabase } from "../../packages/sqlite-node/src/index.js";
@@ -140,7 +140,7 @@ test("v6 metering sources survive the additive v7/v8 recovery upgrade with their
     previous.database.close();
     const upgraded=new OpenCraftHostStateDatabase(directory);
     try {
-      assert.equal(upgraded.outcome.appliedVersion,14);
+      assert.equal(upgraded.outcome.appliedVersion,OPENCRAFT_HOST_STATE_CURRENT_MIGRATIONS.at(-1)!.version);
       assert.equal(upgraded.database.prepare("SELECT checksum FROM schema_migrations WHERE version=6").get()!.checksum,checksum);
       const source=upgraded.database.prepare("SELECT counts_json,observed_ms FROM token_usage_sources").get()!;
       assert.equal(JSON.parse(String(source.counts_json)).totalTokens,"123");
@@ -250,7 +250,7 @@ test("NF-11: upgrade from the published v5 preserves queue/sender data and rejec
     old.database.prepare("INSERT INTO message_senders VALUES(?,?,?,?)").run("old-thread", "old-input", '{"kind":"synthetic"}', 42);
     old.database.close();
     const upgraded = new OpenCraftHostStateDatabase(root);
-    assert.equal(upgraded.outcome.status, "migrated"); assert.equal(upgraded.outcome.appliedVersion, 14);
+    assert.equal(upgraded.outcome.status, "migrated"); assert.equal(upgraded.outcome.appliedVersion, OPENCRAFT_HOST_STATE_CURRENT_MIGRATIONS.at(-1)!.version);
     assert.equal(upgraded.database.prepare("SELECT accepted_at_ms FROM message_senders").get()?.accepted_at_ms, 42);
     assert.equal(upgraded.database.prepare("SELECT COUNT(*) AS n FROM token_usage_sources").get()?.n, 0);
     upgraded.database.exec("UPDATE schema_migrations SET checksum='synthetic-invalid-checksum' WHERE version=5");
