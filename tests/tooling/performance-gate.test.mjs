@@ -58,12 +58,17 @@ test('stable app releases are gated unconditionally before staging, with retaine
   const source = readFileSync(new URL('../../.github/workflows/app-release.yml', import.meta.url), 'utf8');
   const job = source.split('\n  performance:\n')[1]?.split('\n\n  ')[0];
   assert.ok(job);
-  assert.match(job, /^    needs: tag\n    if: needs\.tag\.outputs\.prerelease == 'false'\n/);
-  const step = job.match(/      - name: Gate stable releases on performance regressions\n([\s\S]*?)(?=\n      - name:)/)?.[1];
+  assert.match(job, /^    needs: tag\n    if: needs\.tag\.outputs\.prerelease == 'false'\n    uses: \.\/\.github\/workflows\/performance\.yml\n/);
+  assert.ok(job.includes('evidence_name: performance-${{ inputs.tag }}-${{ github.run_attempt }}'), 'Failed reruns retain a distinct artifact for every attempt');
+  // The shared workflow owns the gate: it is unconditional and keeps its evidence.
+  const gate = readFileSync(new URL('../../.github/workflows/performance.yml', import.meta.url), 'utf8');
+  const step = gate.match(/      - name: Gate on performance regressions\n([\s\S]*?)(?=\n      - name:)/)?.[1];
   assert.ok(step); assert.match(step, /run: npm run gate:performance -- --output/);
   assert.doesNotMatch(step, /continue-on-error|if:/);
-  assert.match(job, /name: Retain performance samples and failure evidence\n        if: always\(\)/);
-  assert.ok(job.includes('name: performance-${{ inputs.tag }}-${{ github.run_attempt }}'), 'Failed reruns retain a distinct artifact for every attempt');
+  assert.match(gate, /name: Retain performance samples and failure evidence\n        if: always\(\)/);
+  assert.match(gate, /if-no-files-found: error/);
+  // It also runs nightly on main, so drift surfaces before a release needs it.
+  assert.match(gate, /\n  workflow_call:\n/); assert.match(gate, /\n  schedule:\n    - cron: /);
   // Staging, and so publishing, waits for the gate whenever it runs.
   assert.match(source, /candidate:\n    needs: \[[^\]]*\bperformance\b[^\]]*\]\n[^\n]*\n    if: \$\{\{ !cancelled\(\) && !failure\(\) \}\}/);
   const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));

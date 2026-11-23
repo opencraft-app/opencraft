@@ -182,6 +182,11 @@ error annotation naming the scenario, metric, quantile, baseline, actual,
 percentage/millisecond change and budget; a measurement or behavior failure also
 emits an error and blocks publication. The baseline is never updated by release
 CI. Daily deployment and normal build gates remain outside this full suite.
+`.github/workflows/performance.yml` owns the suite's CI job: the stable App
+release calls it before staging, and it also runs nightly on `main` (and on
+manual dispatch) with the same retained evidence. A behavior check or workload
+that drifts with the product therefore fails within a day instead of at the
+next stable release.
 
 ## Shared portrait and footer correction (2026-11-16)
 

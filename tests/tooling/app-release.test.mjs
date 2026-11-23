@@ -18,8 +18,7 @@ test("one workflow releases every platform for a beta or a stable tag", () => {
   assert.match(release, /node scripts\/release\/product-version\.mjs check "\$TAG"/u);
   assert.match(release, /secure_release\.py changelog \\\n\s+--tag "\$TAG" --changelog CHANGELOG\.md/u);
   // Only stable releases run the performance gate, and staging waits for it.
-  assert.match(release, /performance:\n {4}needs: tag\n {4}if: needs\.tag\.outputs\.prerelease == 'false'/u);
-  assert.match(release, /run: npm run gate:performance -- --output/u);
+  assert.match(release, /performance:\n {4}needs: tag\n {4}if: needs\.tag\.outputs\.prerelease == 'false'\n {4}uses: \.\/\.github\/workflows\/performance\.yml/u);
   assert.match(
     release,
     /candidate:\n {4}needs: \[tag, linux, windows, macos, android, ios_testflight, ios_unsigned, performance\]\n[^\n]*\n {4}if: \$\{\{ !cancelled\(\) && !failure\(\) \}\}/u,
