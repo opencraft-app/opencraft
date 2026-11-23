@@ -23,6 +23,7 @@
     "./web-deployment/product-plugin-packs": "./src/web-deployment/product-plugin-packs.mjs",
     "./workbench-web-server": "./src/workbench-web-server.mjs",
     "./workspace-turn-output-context": "./src/workspace-turn-output-context.mjs",
+    "./workspaces/actor-admission": "./src/workspaces/actor-admission.ts",
     "./workspaces/actor-authority": "./src/workspaces/actor-authority.ts",
     "./workspaces/bot-client": "./src/workspaces/bot-client.ts",
     "./workspaces/bot-owner": "./src/workspaces/bot-owner.ts",

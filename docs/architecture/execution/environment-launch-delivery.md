@@ -254,6 +254,19 @@ Ports in this slice:
     main thread inside the trusted composition; `admitResource` is for a
     stored grant the caller has already authorized. Actor or membership
     changes and `close()` retire the permits they issued.
+  - `@opencraft/headless-server/workspaces/actor-admission`:
+    `openActorAdmission({ actors, membership, access })` issues the same Human
+    proof without workspace execution (no `socketPath`/`token`), for a
+    composition whose vault Worker also serves settings routes, Bot
+    environment providers or MCP sessions. It is the one implementation the
+    execution service uses. `access` may be a function, for instance policy
+    created after the identity; while it is absent nothing is admitted.
+    Members: `admit(context)`; `admitPrincipal(principal, { provider? })` for
+    an authenticated login principal, resolved by its identity binding and
+    valid until its expiry, at most 120 seconds; `admitResource(actorId,
+    generation?)` for a durable owner, 30 seconds, refused when a given
+    generation is not current; `close()`. The resource permit is shared per
+    Actor generation and membership revision and retires as above.
 - Receiver: `createEnvironmentLaunchAdmissionReceiver({ purpose, instance,
 issuer, admission: { turn?, creation?, terminal? } })` (subpath
   `environment-launch-receiver`). `kinds` lists what it can admit (allowed for

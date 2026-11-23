@@ -42,6 +42,40 @@ class Safety(unittest.TestCase):
                 changed=deepcopy(config);mutate(changed['services'])
                 with self.assertRaises(ValueError):deploy.validate(changed,release)
 
+    def test_environment_delivery_is_one_gateway_and_brain_decision(self):
+        from copy import deepcopy
+        def state(config):
+            for role in ('gateway', 'brain'):
+                config['services'][role]['volumes'].append({'type':'bind','source':'/srv/one/state','target':'/var/lib/opencraft','bind':{'create_host_path':False}})
+            return config
+        config, release = fixture()
+        deploy.validate(config, release)
+        for gateway, brain in [('opaque', 'opaque'), ('vault-owner', 'opaque'), ('opaque', 'vault-owner')]:
+            changed = state(deepcopy(config))
+            changed['services']['gateway']['environment'].update(OPENCRAFT_ENVIRONMENT_DELIVERY=gateway,
+                OPENCRAFT_ENVIRONMENT_ISSUER_GENERATION='2026-11',
+                OPENCRAFT_ENVIRONMENT_ISSUER_FILE='/var/lib/opencraft/run/environment-issuer.json')
+            changed['services']['brain']['environment'].update(OPENCRAFT_ENVIRONMENT_DELIVERY=brain)
+            deploy.validate(changed, release)
+        enabled = state(deepcopy(config))
+        for role in ('gateway', 'brain'):
+            enabled['services'][role]['environment']['OPENCRAFT_ENVIRONMENT_DELIVERY'] = 'opaque'
+        deploy.validate(enabled, release)
+        for base, mutate in [(enabled, lambda s:s['brain']['environment'].update(OPENCRAFT_ENVIRONMENT_DELIVERY='')),
+                             (enabled, lambda s:s['brain']['environment'].pop('OPENCRAFT_ENVIRONMENT_DELIVERY')),
+                             (enabled, lambda s:s['gateway']['environment'].update(OPENCRAFT_ENVIRONMENT_DELIVERY='')),
+                             (enabled, lambda s:[s[r]['environment'].update(OPENCRAFT_ENVIRONMENT_DELIVERY='sync') for r in ('gateway','brain')]),
+                             (enabled, lambda s:s['hands']['environment'].update(OPENCRAFT_ENVIRONMENT_DELIVERY='other')),
+                             (enabled, lambda s:s['brain']['environment'].update(OPENCRAFT_EXECUTION_CONTEXT='legacy')),
+                             (enabled, lambda s:s['gateway']['environment'].update(OPENCRAFT_ENVIRONMENT_ISSUER_FILE='/elsewhere/issuer.json')),
+                             (enabled, lambda s:s['gateway']['environment'].update(OPENCRAFT_ENVIRONMENT_ISSUER_GENERATION='a b')),
+                             (enabled, lambda s:s['brain']['volumes'][-1].update(source='/srv/other/state')),
+                             (enabled, lambda s:s['brain']['volumes'].pop()),
+                             (config, lambda s:s['gateway']['environment'].update(OPENCRAFT_ENVIRONMENT_DELIVERY='opaque')),
+                             (config, lambda s:s['gateway']['environment'].update(OPENCRAFT_ENVIRONMENT_ISSUER_GENERATION='2'))]:
+            changed = deepcopy(base); mutate(changed['services'])
+            with self.assertRaises(ValueError): deploy.validate(changed, release)
+
     def test_feature_flags_are_explicit_not_inherited_or_duplicated(self):
         from unittest.mock import patch
         with tempfile.TemporaryDirectory() as temp:

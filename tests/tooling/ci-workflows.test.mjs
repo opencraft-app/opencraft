@@ -213,6 +213,15 @@ test('managed-web runs every suite exactly once across its parallel groups', () 
   assert.match(security, /needs: \[plan, secrets, dependency-audit, managed-web\]/);
 });
 
+test('the security workflow runs every downstream tooling Python suite', () => {
+  const security = readFileSync(new URL('../../.github/workflows/security.yml', import.meta.url), 'utf8');
+  const suites = readdirSync(new URL('../../scripts/tests/', import.meta.url)).filter(file => /^test_.+\.py$/.test(file));
+  assert.ok(suites.length > 0);
+  for (const suite of suites) {
+    assert.match(security, new RegExp(`run: python3 -B -m unittest discover -s scripts/tests -p ${suite.replace('.', '\\.')}\\n`), suite);
+  }
+});
+
 test('electron-fork cancels superseded PR runs but never main commits', () => {
   const fork = readFileSync(new URL('../../.github/workflows/electron-fork.yml', import.meta.url), 'utf8');
   assert.match(fork, /group: electron-fork-\$\{\{ github\.event\.pull_request\.number \|\| \(github\.event_name == 'push' && github\.sha\) \|\| github\.ref \}\}/);

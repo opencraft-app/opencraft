@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { existsSync, realpathSync } from "node:fs";
+import { dirname, isAbsolute, join, posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertHeadlessWebRelease } from "../../apps/headless-server/src/headless-web-release.mjs";
 
@@ -52,16 +53,44 @@ function runCommand(command, args, { cwd, env }) {
 }
 
 /**
+ * A product prefix is a separately locked npm project inside this checkout (for
+ * example `products/acme`) that a distribution layers over the core lock. It
+ * must be a normalized relative path below the repository root, reached without
+ * symbolic links, with its own `package.json` and `package-lock.json`. Returns
+ * its absolute path.
+ */
+export function resolveProductPrefix(prefix, root = repositoryRoot) {
+  if (
+    typeof prefix !== "string" ||
+    !prefix ||
+    isAbsolute(prefix) ||
+    posix.normalize(prefix) !== prefix ||
+    prefix === "." ||
+    prefix.endsWith("/") ||
+    prefix.split("/").includes("..")
+  )
+    throw new Error("The product prefix must be a normalized relative directory inside the repository");
+  const directory = join(root, prefix);
+  if (!existsSync(join(directory, "package.json")) || !existsSync(join(directory, "package-lock.json")))
+    throw new Error(`The product prefix ${prefix} must contain package.json and package-lock.json`);
+  if (realpathSync(directory) !== join(realpathSync(root), prefix))
+    throw new Error(`The product prefix ${prefix} must not be reached through a symbolic link`);
+  return directory;
+}
+
+/**
  * Build the release Web tree for a headless server and verify it with
- * `assertHeadlessWebRelease`. Pass either `script` (a root npm script, default
+ * `assertHeadlessWebRelease`. Pass either `script` (an npm script, default
  * `build:web:release`) or `viteConfig` (an absolute path to an installation
- * config that wraps `createWorkbenchWebConfig`). `env` adds build variables;
- * the headless variables always win. Resolves to the verified release metadata.
- * `run` and `verify` are test seams.
+ * config that wraps `createWorkbenchWebConfig`). With `prefix` (see
+ * `resolveProductPrefix`), `script` is that product project's script instead of
+ * a root one. `env` adds build variables; the headless variables always win.
+ * Resolves to the verified release metadata. `run` and `verify` are test seams.
  */
 export async function buildHeadlessWeb({
   script,
   viteConfig,
+  prefix,
   env = {},
   run = runCommand,
   verify = assertHeadlessWebRelease,
@@ -70,9 +99,12 @@ export async function buildHeadlessWeb({
   if (viteConfig !== undefined && (typeof viteConfig !== "string" || !isAbsolute(viteConfig))) {
     throw new Error("viteConfig must be an absolute path");
   }
+  if (prefix !== undefined && viteConfig !== undefined)
+    throw new Error("A product prefix selects a script, not a viteConfig");
   const buildEnv = { ...env, ...headlessWebBuildEnvironment() };
   if (viteConfig === undefined) {
-    await run("npm", ["run", script ?? "build:web:release"], { cwd: repositoryRoot, env: buildEnv });
+    const project = prefix === undefined ? [] : ["--prefix", resolveProductPrefix(prefix)];
+    await run("npm", [...project, "run", script ?? "build:web:release"], { cwd: repositoryRoot, env: buildEnv });
   } else {
     const releaseEnv = { ...buildEnv, OPENCRAFT_RELEASE_MINIFY: "standard" };
     await run("npm", ["run", "build:preview-bridge"], { cwd: repositoryRoot, env: releaseEnv });

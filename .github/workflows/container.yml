@@ -30,7 +30,7 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci --no-audit --no-fund
-      - run: node --import tsx --test tests/server/container-deployment.test.mjs tests/server/environment-issuer-supervision.test.mjs tests/browser/remote-browser-owner.test.mjs tests/server/upgrade-environment.test.mjs
+      - run: node --import tsx --test tests/server/container-deployment.test.mjs tests/server/environment-issuer-supervision.test.mjs tests/browser/remote-browser-owner.test.mjs tests/server/upgrade-environment.test.mjs tests/server/root-hands.test.mjs
       - run: node --test tests/browser/remote-browser-artifact.test.mjs tests/browser/install-owned-browser-runtime.test.mjs tests/browser/owned-electron-packaging.test.mjs
       - run: node --import tsx --test tests/execution/hands-unix-sandbox.test.ts
       - uses: ./.github/actions/owned-electron

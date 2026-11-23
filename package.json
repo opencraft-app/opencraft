@@ -101,7 +101,7 @@
     "serve:web:static": "node scripts/dev/serve-workbench-web-cli.mjs",
     "package:headless:linux:amd64": "node scripts/packaging/package-headless-linux.mjs",
     "package:container": "node scripts/packaging/package-container.mjs",
-    "test:container": "node --test tests/server/container-deployment.test.mjs tests/server/environment-issuer-supervision.test.mjs tests/server/hands-owner-roles.test.mjs tests/server/hands-owner-privileges.test.mjs tests/server/container-service.test.mjs tests/server/upgrade-environment.test.mjs",
+    "test:container": "node --test tests/server/container-deployment.test.mjs tests/server/environment-issuer-supervision.test.mjs tests/server/hands-owner-roles.test.mjs tests/server/hands-owner-privileges.test.mjs tests/server/root-hands.test.mjs tests/server/container-service.test.mjs tests/server/upgrade-environment.test.mjs",
     "smoke:container": "node scripts/smoke/server/smoke-container.mjs",
     "smoke:upgrade:environment": "node scripts/smoke/server/smoke-upgrade-environment.mjs",
     "smoke:upgrade": "node scripts/smoke/server/smoke-upgrade.mjs",
@@ -348,7 +348,7 @@
     "test:convergence": "node scripts/check/test-convergence.mjs",
     "smoke:sidebar-row-geometry": "tsx tests/shell/sidebar-row-geometry.browser.ts",
     "smoke:assets": "tsx tests/extensions/assets-view.browser.ts",
-    "test:assets-service": "node --import tsx --test tests/extensions/assets-service.test.ts tests/extensions/git-connections.test.ts tests/server/assets-worker-packaging.test.mjs tests/server/headless-default-workspaces.test.ts tests/extensions/workspace-budget.test.ts tests/extensions/workspace-catalog.test.ts tests/server/assets-workspace-execution.test.ts tests/server/ordinary-git-copy.test.ts tests/server/ordinary-workspace-mounts.test.ts tests/server/assets-workspace-bot.test.ts tests/server/workspace-terminal-admission.test.ts tests/server/workspace-browser-router.test.mjs tests/server/workspace-browser-service.test.mjs tests/server/workspace-preinstalled-browser.test.ts tests/server/personal-mcp-owner.test.ts",
+    "test:assets-service": "node --import tsx --test tests/extensions/assets-service.test.ts tests/extensions/git-connections.test.ts tests/server/assets-worker-packaging.test.mjs tests/server/headless-default-workspaces.test.ts tests/extensions/workspace-budget.test.ts tests/extensions/workspace-catalog.test.ts tests/server/assets-workspace-execution.test.ts tests/server/workspace-actor-admission.test.ts tests/server/ordinary-git-copy.test.ts tests/server/ordinary-workspace-mounts.test.ts tests/server/assets-workspace-bot.test.ts tests/server/workspace-terminal-admission.test.ts tests/server/workspace-browser-router.test.mjs tests/server/workspace-browser-service.test.mjs tests/server/workspace-preinstalled-browser.test.ts tests/server/personal-mcp-owner.test.ts",
     "smoke:assets-default": "tsx tests/extensions/assets-default.browser.ts",
     "test:assets-default": "tsx --test tests/identity/assets-default-service.test.ts tests/extensions/assets-default-client.test.ts"
   },

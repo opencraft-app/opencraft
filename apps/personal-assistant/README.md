@@ -12,7 +12,7 @@ or real external service acceptance is implied. `npm run check --workspace
 @opencraft/personal-assistant` checks module syntax, not TypeScript semantics.
 
 The evaluation support directory retains generic test harnesses, synthetic scenarios,
-smoke input and an explicitly configured lifecycle probe. It contains no model credentials. Research reports, private source
+smoke input and explicitly configured live probes (see `evaluation/README.md`). It contains no model credentials. Research reports, private source
 archives, dataset payloads, comparison configurations and historical acceptance
 records are not included. Full Host/Web integration and public contribution
 acceptance remain separate work; this is not a deployment or release.

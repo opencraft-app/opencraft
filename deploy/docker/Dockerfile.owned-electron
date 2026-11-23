@@ -1,6 +1,9 @@
 # syntax=docker/dockerfile:1
 ARG NODE_IMAGE=node:26.7.0-bookworm-slim@sha256:4db36457f406501e6f608802e5da617e5fbd0e80b75901b6a09de1ae5a667d32
 ARG RUNTIME_IMAGE=debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3
+# Brain image DSH runtime: `none` (default, unchanged image) or `packaged`, which
+# adds the separately locked runtime/dsh installation and OPENCRAFT_DSH_EXECUTABLE.
+ARG OPENCRAFT_BRAIN_DSH=none
 # Override with --build-context owned-electron=/absolute/verified/browser.
 # An omitted context is empty and fails provenance validation, never downloads stock.
 FROM scratch AS owned-electron
@@ -16,6 +19,10 @@ ARG OPENCRAFT_CONTAINER_WEB_SCRIPT=build:web:release
 ARG OPENCRAFT_CONTAINER_GATEWAY_ENTRY=scripts/container-deployment/gateway.mjs
 ARG OPENCRAFT_CONTAINER_GATEWAY_BUILD_SCRIPT
 ARG OPENCRAFT_CONTAINER_HANDS_ENTRY=scripts/container-deployment/hands.mjs
+# Optional distribution project inside the context (for example products/acme)
+# with its own lock, installed over the core lock. Its Web script
+# (OPENCRAFT_CONTAINER_WEB_SCRIPT) then runs in that project. Empty: core only.
+ARG OPENCRAFT_PRODUCT_PREFIX=
 ARG OPENCRAFT_BUILD_ID=development
 ARG OPENCRAFT_SOURCE_REVISION=unknown
 ARG SOURCE_DATE_EPOCH
@@ -27,6 +34,10 @@ WORKDIR /src
 COPY . .
 RUN test "$(node --version)" = "v$(cat .nvmrc)"
 RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
+RUN --mount=type=cache,target=/root/.npm if [ -n "$OPENCRAFT_PRODUCT_PREFIX" ]; then \
+      product="$(node --input-type=module -e "import { resolveProductPrefix } from './scripts/packaging/headless-web-build.mjs'; console.log(resolveProductPrefix(process.argv[1]))" "$OPENCRAFT_PRODUCT_PREFIX")" \
+      && npm ci --prefix "$product" --no-audit --no-fund; \
+    fi
 FROM build-dependencies AS build-control
 RUN --mount=type=cache,target=/root/.npm node scripts/packaging/package-container.mjs /out --without-browser
 
@@ -35,6 +46,11 @@ RUN --mount=type=bind,from=browser-input,source=/src,target=/verified-browser-in
     --mount=type=cache,target=/root/.npm \
     --mount=type=bind,from=owned-electron,target=/opt/owned-electron,ro \
     OPENCRAFT_BROWSER_ELECTRON_DISTRIBUTION=/opt/owned-electron node scripts/packaging/package-container.mjs /out
+
+# Built only for OPENCRAFT_BRAIN_DSH=packaged: the core preparation script installs
+# and verifies runtime/dsh from its own lock and applies the core DSH patches.
+FROM build-dependencies AS dsh-runtime
+RUN --mount=type=cache,target=/root/.npm node scripts/packaging/prepare-dsh-runtime.mjs
 
 # Export with --target host-artifact --output type=local,dest=./.local/docker-host.
 FROM scratch AS host-artifact
@@ -92,9 +108,15 @@ WORKDIR /opt/opencraft
 USER ${OPENCRAFT_UID}:${OPENCRAFT_GID}
 ENTRYPOINT ["/opt/opencraft/bin/node", "/opt/opencraft/runtime/container-service.mjs", "gateway"]
 
-FROM control-runtime AS brain
+FROM control-runtime AS brain-dsh-none
 LABEL org.opencraft.role=brain
 ENTRYPOINT ["/opt/opencraft/bin/node", "/opt/opencraft/runtime/container-service.mjs", "brain"]
+
+FROM brain-dsh-none AS brain-dsh-packaged
+COPY --from=dsh-runtime /src/runtime/dsh/node_modules /opt/opencraft/runtime/dsh/node_modules
+ENV OPENCRAFT_DSH_EXECUTABLE=/opt/opencraft/runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js
+
+FROM brain-dsh-${OPENCRAFT_BRAIN_DSH} AS brain
 
 FROM runtime AS hands
 LABEL org.opencraft.role=hands

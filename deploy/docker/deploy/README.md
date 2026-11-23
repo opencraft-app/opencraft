@@ -99,9 +99,12 @@ New bundles use the explicit root/client Hands contract: `OPENCRAFT_HANDS_ROOT=1
 explicit nonroot sites are not silently rewritten; `OPENCRAFT_HANDS_ROOT=0`
 remains supported with a compatible image.
 Gateway/Brain/Proxy and Chromium retain `OPENCRAFT_UID:GID`. Never set the global
-UID to zero. Use a verified new Hands image containing the product root/client
-bridge, not the old single-UID image plus a root override. No host JS injection is
-required. The generic core owner remains independent from plugin lifecycles.
+UID to zero. Use a verified Hands image whose core entry contains the root/client
+bridge (`scripts/container-deployment/root-hands.mjs`), not an older single-UID
+image plus a root override. The core Hands entry selects root mode only when it
+runs as UID 0 and then requires the `OPENCRAFT_ROOT_HANDS_*` contract this profile
+sets; UID 0 without it fails at startup. No host JS injection is required. The
+generic core owner remains independent from plugin lifecycles.
 
 Set `OPENCRAFT_HOST_HANDS_ROOT_DIR=/srv/opencraft/hands-ipc` and
 `OPENCRAFT_HOST_EXECUTION_DIR=/srv/opencraft/hands-ipc/client`. The root profile
@@ -162,3 +165,12 @@ turn. The worker advertises only execution-owned brokers; a Gateway restart must
 not revoke a live command. Disabling the profile is explicit legacy deployment
 configuration, never permission to fall back to server credentials. Managed Git
 operations with missing authority intentionally fail closed.
+
+Optional opaque account ENV delivery (`OPENCRAFT_ENVIRONMENT_DELIVERY=opaque`,
+alias `vault-owner`; see the [container README](../README.md#optional-account-env-delivery))
+is one decision for the Gateway and Brain: the compose file passes the
+`site.env` value to both, and preflight rejects a pair that disagrees, an issuer
+setting without delivery, a non-Assets execution context, an issuer file other
+than `$OPENCRAFT_DATA_DIR/run/environment-issuer.json`, or Gateway and Brain
+state directories that are not the same host directory. Hands and Proxy do not
+receive it. `OPENCRAFT_ENVIRONMENT_ISSUER_GENERATION` goes to the Gateway only.

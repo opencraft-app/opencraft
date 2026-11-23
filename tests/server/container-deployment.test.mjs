@@ -203,6 +203,32 @@ test('custom container candidates carry pinned bases, source identity and a veri
   assert.ok(installIndex >= 0 && testIndex > installIndex, 'install dependencies before the container regressions');
 });
 
+test('product prefix and Brain DSH are opt-in build arguments whose defaults keep the core images', async () => {
+  const dockerfile = await readFile(new URL('../../deploy/docker/Dockerfile.owned-electron', import.meta.url), 'utf8');
+  const stages = dockerfile.split(/^(?=FROM )/mu);
+  const stage = name => stages.find(text => new RegExp(`^FROM \\S+ AS ${name}\\n`, 'u').test(text));
+  // The stage name is chosen by a global argument whose default adds nothing to Brain.
+  assert.match(stages[0], /^ARG OPENCRAFT_BRAIN_DSH=none$/mu);
+  assert.equal(stage('brain'), 'FROM brain-dsh-${OPENCRAFT_BRAIN_DSH} AS brain\n\n');
+  assert.match(stage('brain-dsh-none'), /^FROM control-runtime AS brain-dsh-none\nLABEL org\.opencraft\.role=brain\nENTRYPOINT \[[^\n]+"brain"\]\n\n$/u);
+  const packaged = stage('brain-dsh-packaged');
+  assert.match(packaged, /^FROM brain-dsh-none AS/u);
+  assert.match(packaged, /COPY --from=dsh-runtime \/src\/runtime\/dsh\/node_modules \/opt\/opencraft\/runtime\/dsh\/node_modules/u);
+  assert.match(packaged, /ENV OPENCRAFT_DSH_EXECUTABLE=\/opt\/opencraft\/runtime\/dsh\/node_modules\/@deepseek-ai\/dsh\/lib\/bin\.js/u);
+  assert.match(stage('dsh-runtime'), /^FROM build-dependencies AS dsh-runtime\nRUN [^\n]*node scripts\/packaging\/prepare-dsh-runtime\.mjs\n/u);
+  // Only the opt-in Brain stage consumes the DSH install.
+  assert.deepEqual(stages.filter(text => text.includes('--from=dsh-runtime')), [packaged]);
+  // An empty prefix installs nothing beyond the core lock.
+  const dependencies = stage('build-dependencies');
+  assert.match(dependencies, /^ARG OPENCRAFT_PRODUCT_PREFIX=$/mu);
+  assert.match(dependencies, /if \[ -n "\$OPENCRAFT_PRODUCT_PREFIX" \]; then[^]*resolveProductPrefix[^]*npm ci --prefix "\$product" --no-audit --no-fund; \\\n {4}fi\n/u);
+  assert.ok(dependencies.indexOf('npm ci --no-audit --no-fund') < dependencies.indexOf('npm ci --prefix'));
+  // The final stage (the default target) is still the full image.
+  assert.match(stages.at(-1), /^FROM runtime AS full\n/u);
+  const packager = await readFile(new URL('../../scripts/packaging/package-headless-linux.mjs', import.meta.url), 'utf8');
+  assert.match(packager, /process\.env\.OPENCRAFT_PRODUCT_PREFIX \? \{ prefix: process\.env\.OPENCRAFT_PRODUCT_PREFIX \} : \{\}/u);
+});
+
 test('standalone container Core entries ship the registry and recovery Workers beside the runtime', async () => {
   const packager = await readFile(new URL('../../scripts/packaging/package-container.mjs', import.meta.url), 'utf8');
   for (const [source, target] of [['generation-registry.worker.ts', 'generation-registry-worker.mjs'], ['router-evidence.worker.ts', 'router-evidence-worker.mjs']]) {

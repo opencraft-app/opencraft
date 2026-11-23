@@ -33,6 +33,7 @@ OpenCraft 是多端 Agent Workbench 核心，包含 Chat Runtime、Web Workbench
 - 手机端：下游 iOS Shell 与 Bot 桥接的历史设计见 [Mobile shell](history/mobile-shell.md)、[Embedded Bot bridge](history/mobile-bot-bridge.md)；缓存与请求状态：[Mobile data architecture](architecture/mobile/mobile-data-architecture.md)。
 - 行为验证架构：[Harness 设计纲领](architecture/execution/harness.md)。
 - 根目录与文件归属：[仓库布局](develop/repository-layout.md)。
+- 下游产品：[Git 下游模型、产品工作区与边界审计](develop/downstream-products.md)；向上游贡献见 [下游变更贡献](develop/downstream-contribution.md)。
 - 主线程、协议字段与 SQLite 迁移：[代码与 Contract 规则](develop/code-contracts.md)。
 
 ## 核心不变量

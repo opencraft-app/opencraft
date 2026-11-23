@@ -100,7 +100,12 @@ services:
     image: ${OPENCRAFT_BRAIN_IMAGE:?Set Brain repository digest}
     entrypoint: ["/opt/opencraft/bin/node", "/opt/opencraft/runtime/container-service.mjs", "brain"]
     pid: host
-    environment: *environment
+    environment:
+      <<: *environment
+      # Opaque account ENV delivery (`opaque`; `vault-owner` is the same); empty
+      # keeps it off. Brain pins the issuer the Gateway's vault owner publishes,
+      # so both must carry the same value (deploy.py checks this).
+      OPENCRAFT_ENVIRONMENT_DELIVERY: ${OPENCRAFT_ENVIRONMENT_DELIVERY:-}
     volumes:
       - *data
       - *execution
@@ -126,6 +131,8 @@ services:
       <<: *environment
       OPENCRAFT_BROWSER_OWNER_SOCKET: ${OPENCRAFT_BROWSER_OWNER_SOCKET:-${OPENCRAFT_EXECUTION_DIR:-/var/lib/opencraft/execution}/browser/owner.sock}
       OPENCRAFT_USER_PLUGIN_DIRECTORY: ${OPENCRAFT_DATA_DIR:-/var/lib/opencraft}/user-plugins
+      OPENCRAFT_ENVIRONMENT_DELIVERY: ${OPENCRAFT_ENVIRONMENT_DELIVERY:-}
+      OPENCRAFT_ENVIRONMENT_ISSUER_GENERATION: ${OPENCRAFT_ENVIRONMENT_ISSUER_GENERATION:-}
     command: ["--host", "${OPENCRAFT_BIND_HOST:-127.0.0.1}", "--port", "${OPENCRAFT_PORT:?Set Gateway port}", "--data-dir", "${OPENCRAFT_DATA_DIR:-/var/lib/opencraft}", "--access-control", "--engines", "dsh,pi", "--default-engine", "pi"]
     volumes:
       - *data

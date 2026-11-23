@@ -5,6 +5,10 @@ maintainer exports the reviewed reusable change into a **separate clean public
 checkout**; no downstream commits, parents, identity translations, gateway, or
 private fork are required on GitHub.
 
+For the downstream Git model, product workspace layout and the boundary audit
+that keeps product changes out of shared core, see
+[Building a downstream product](downstream-products.md).
+
 Use Python 3, Git, gitleaks (with its `dir` command), and an authenticated `gh`.
 Start from a concrete downstream base and contribution head. List exact files,
 not directories or glob patterns:
