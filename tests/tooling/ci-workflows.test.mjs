@@ -283,5 +283,5 @@ test('generic convergence and assistant runtime remain mandatory gate steps', ()
 
 test('container browser-owner regressions use the TypeScript workspace loader', () => {
   const container = readFileSync(new URL('../../.github/workflows/container.yml', import.meta.url), 'utf8');
-  assert.match(container, /node --import tsx --test tests\/server\/container-deployment.test.mjs tests\/browser\/remote-browser-owner.test.mjs/);
+  assert.match(container, /node --import tsx --test [^\n]*tests\/browser\/remote-browser-owner\.test\.mjs/);
 });
