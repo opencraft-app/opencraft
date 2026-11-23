@@ -28,6 +28,8 @@ export class ThreadIdentity {
     createMetadata?: ThreadMetadataFactory;
     readMessageIds: ThreadMetadataContext["readMessageIds"];
     notify: ThreadMetadataContext["notify"];
+    /** The database file, for providers that keep their storage in a Worker. */
+    databasePath?: string;
   }) {
     this.senders = new OpenCraftMessageSenders(database);
     this.metadata = port.createMetadata?.(database, {
@@ -35,6 +37,7 @@ export class ThreadIdentity {
       hasSenders: threadId => this.senders.hasEmployees(threadId),
       isInheritedMessage: (threadId, messageId) => this.senders.isInherited(threadId, messageId),
       readMessageIds: port.readMessageIds, notify: port.notify,
+      ...(port.databasePath ? { databasePath: port.databasePath } : {}),
     }) ?? null;
   }
   recordSubmission(params: IdentityRecord, context: TransportSubmissionContext): void {
@@ -62,7 +65,8 @@ export class ThreadIdentity {
     return projectThreadMessageResult(this.project, method, params, result, { trustedSubmissionSender: true });
   }
   projectNotification(message: IdentityRecord): IdentityRecord { return projectThreadMessageNotification(this.project, message); }
-  close(): void { this.metadata?.close(); }
+  /** Resolves once the metadata provider drained; close the database afterwards. */
+  async close(): Promise<void> { await this.metadata?.close(); }
 }
 
 /** Read visible message summaries, never tool bodies, to establish participation. */

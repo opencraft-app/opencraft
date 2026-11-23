@@ -2678,5 +2678,19 @@
   "crew.desk.tool.crewDispatch": "转派了工作",
   "crew.desk.tool.crewMessage": "发了消息",
   "crew.desk.to": "发给 {name}",
-  "crew.desk.toFormerMember": "发给已离开团队的人"
+  "crew.desk.toFormerMember": "发给已离开团队的人",
+  "threadParticipants.view": "查看会话参与者",
+  "threadParticipants.viewCount": "查看会话参与者（{count, number}）",
+  "threadParticipants.creator": "创建者",
+  "threadParticipants.heading": "参与者",
+  "threadParticipants.error": "无法更新参与者",
+  "threadParticipants.retry": "重试",
+  "threadParticipants.loading": "正在加载…",
+  "threadParticipants.empty": "暂无已识别的参与者",
+  "threadParticipants.grouping.creator": "按创建者",
+  "threadParticipants.grouping.saveError": "无法保存此显示偏好",
+  "threadParticipants.grouping.loading": "正在加载创建者…",
+  "threadParticipants.grouping.unavailable": "创建者不可用",
+  "threadParticipants.grouping.unknown": "创建者未知",
+  "threadParticipants.filter.mine": "我的会话"
 }

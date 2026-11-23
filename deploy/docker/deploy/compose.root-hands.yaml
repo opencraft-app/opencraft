@@ -1,4 +1,6 @@
 # Standard root Hands profile: OPENCRAFT_HANDS_ROOT=1. Other roles keep OPENCRAFT_UID:GID.
+# Layered over compose.yaml; `tmpfs: !override` needs Docker Compose 2.24.4 or later
+# (an older Compose merges both tmpfs entries; deploy.py refuses it before rendering).
 # The common mount is essential: publishing sockets across separate binds is EXDEV.
 # The Hands workspace agent itself runs as root, so its private run directory (at the
 # fixed path the Gateway's endpoint relays name) is a root-owned tmpfs; a client-owned
@@ -32,4 +34,10 @@ services:
       - type: bind
         source: ${OPENCRAFT_HOST_EXECUTION_DIR:?Set client IPC directory}
         target: ${OPENCRAFT_HANDS_PUBLIC_CLIENT_DIRECTORY:-${OPENCRAFT_EXECUTION_DIR:-/var/lib/opencraft/execution}}
+        bind: {create_host_path: false}
+      # Optional independent root-owned Hands logs (replaces compose.yaml's hands log
+      # mount at the same target); retained client-owned logs are never re-owned.
+      - type: bind
+        source: ${OPENCRAFT_HOST_HANDS_LOG_DIR:-${OPENCRAFT_HOST_LOG_DIR:-${OPENCRAFT_HOST_DATA_DIR}/logs}/hands}
+        target: ${OPENCRAFT_LOG_DIR:-/var/log/opencraft}/hands
         bind: {create_host_path: false}

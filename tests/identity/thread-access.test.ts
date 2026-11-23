@@ -8,6 +8,7 @@ import { ActorStore } from '../../packages/access-control/src/actors';
 import { ThreadAccessStore, ThreadAccessSession, THREAD_ACCESS_SET, THREAD_ACCESS_READ } from '../../packages/access-control/src/thread-access';
 import { Collaboration } from '../../packages/access-control/src/collaboration';
 import { parsePrincipal } from '../../packages/identity-core/src/index';
+import { LEGACY_THREAD_PARTICIPANTS_CHANGED, LEGACY_THREAD_PARTICIPANTS_LIST, THREAD_PARTICIPANTS_CHANGED, THREAD_PARTICIPANTS_LIST } from '../../plugins/thread-participants/src/contract';
 
 async function fixture(t: any) {
   const dir = await mkdtemp(join(tmpdir(),'thread-access-'));
@@ -101,6 +102,23 @@ test('task links and participant batches cannot expose private metadata; another
   const result=bob.result(1,{title:'Independent task',conversations:[{serverId:'server',threadId:'secret',title:'SECRET'},{serverId:'other',threadId:'secret',title:'Other'}]});
   assert.equal(JSON.stringify(result).includes('SECRET'),false);
   assert.equal(result.result.conversations.length,1);
+});
+
+test('only readers of a Thread can list or observe its participants, under the core name and the alias',async t=>{
+  const f=await fixture(t),alice=f.lane(f.alice),bob=f.lane(f.bob);
+  f.store.created('server','secret',f.alice);f.store.set('server','secret','private',1,f.alice);f.store.created('server','open',f.alice);
+  for (const method of [THREAD_PARTICIPANTS_LIST,LEGACY_THREAD_PARTICIPANTS_LIST]) {
+    const denied=await bob.request(method,{threadIds:['open','secret']});
+    assert.equal(denied.consumed,true,'one unreadable Thread denies the whole batch before the Host');
+    assert.equal(denied.response.error.data.code,'THREAD_NOT_FOUND');
+    assert.equal((await bob.request(method,{threadIds:['open']})).consumed,false,'a shared Thread reaches the Host');
+    assert.equal((await alice.request(method,{threadIds:['secret']})).consumed,false,'the creator reads their private Thread');
+  }
+  for (const method of [THREAD_PARTICIPANTS_CHANGED,LEGACY_THREAD_PARTICIPANTS_CHANGED]) {
+    const frame=JSON.stringify({method,params:{threadId:'secret',revision:2}});
+    assert.equal(bob.session.project(frame),null,'non-readers learn no private change');
+    assert.notEqual(alice.session.project(frame),null);
+  }
 });
 
 test('cross-conversation tools obey private policy even with an existing explicit grant',async t=>{
