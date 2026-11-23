@@ -9,7 +9,9 @@ import type { WorkerScenario } from "./worker-runtime.ts";
 export function testScenariosOnMiniflare(label: string, scenarios: readonly WorkerScenario[]): void {
   const runtime = miniflareRuntime();
   let scratch = "";
-  before(async () => { scratch = await mkdtemp(join(tmpdir(), `${label}-`)); });
+  before(async () => {
+    scratch = await mkdtemp(join(tmpdir(), `${label}-`));
+  });
   after(async () => {
     await runtime.dispose();
     if (scratch) await rm(scratch, { recursive: true, force: true });

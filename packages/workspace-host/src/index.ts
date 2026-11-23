@@ -24,7 +24,9 @@ export function workspaceIdentity(id: string, root: string): WorkspaceIdentity {
 }
 
 /** Today's single-workspace layout: the caller passes the existing data root unchanged. */
-export function defaultWorkspace(root: string): WorkspaceIdentity { return workspaceIdentity(DEFAULT_WORKSPACE_ID, root); }
+export function defaultWorkspace(root: string): WorkspaceIdentity {
+  return workspaceIdentity(DEFAULT_WORKSPACE_ID, root);
+}
 
 type Closer = () => void | Promise<void>;
 
@@ -53,7 +55,11 @@ export type WorkspacePhase = "open" | "draining" | "drained" | "closing" | "clos
 async function closeAll(closers: readonly Closer[]): Promise<void> {
   let failure: { error: unknown } | null = null;
   for (const close of closers) {
-    try { await close(); } catch (error) { failure ??= { error }; }
+    try {
+      await close();
+    } catch (error) {
+      failure ??= { error };
+    }
   }
   if (failure) throw failure.error;
 }
@@ -63,7 +69,9 @@ async function closeAll(closers: readonly Closer[]): Promise<void> {
 const ownedRoots = new Set<string>();
 
 export class WorkspaceOwnerConflict extends Error {
-  constructor(readonly identity: WorkspaceIdentity) { super(`Workspace ${identity.id} data root is already owned in this runtime`); }
+  constructor(readonly identity: WorkspaceIdentity) {
+    super(`Workspace ${identity.id} data root is already owned in this runtime`);
+  }
 }
 
 export class WorkspaceOwner<Stores> {
@@ -82,52 +90,80 @@ export class WorkspaceOwner<Stores> {
    * Opens the lock, then whatever `build` opens, in `build`'s order. Opening is all-or-nothing: on failure every
    * owned resource closes in reverse and the lock is released, so the root can be opened again.
    */
-  static async open<Stores>(identity: WorkspaceIdentity, options: WorkspaceOpenOptions,
-    build: (ownership: WorkspaceOwnership) => Stores | Promise<Stores>): Promise<WorkspaceOwner<Stores>> {
+  static async open<Stores>(
+    identity: WorkspaceIdentity,
+    options: WorkspaceOpenOptions,
+    build: (ownership: WorkspaceOwnership) => Stores | Promise<Stores>,
+  ): Promise<WorkspaceOwner<Stores>> {
     identity = workspaceIdentity(identity.id, identity.root);
     if (ownedRoots.has(identity.root)) throw new WorkspaceOwnerConflict(identity);
     ownedRoots.add(identity.root);
     const root = identity.root;
     const opened: { stage: WorkspaceStage | "lock"; close: Closer }[] = [
-      { stage: "lock", close: () => { ownedRoots.delete(root); } },
+      {
+        stage: "lock",
+        close: () => {
+          ownedRoots.delete(root);
+        },
+      },
     ];
     try {
       if (options.lock) opened.push({ stage: "lock", close: await options.lock(identity) });
       const stores = await build({
         identity,
-        own(_name, stage, resource, close) { opened.push({ stage, close: () => close(resource) }); return resource; },
+        own(_name, stage, resource, close) {
+          opened.push({ stage, close: () => close(resource) });
+          return resource;
+        },
       });
-      const reverse = (stage: WorkspaceStage | "lock") => opened.filter(entry => entry.stage === stage).map(entry => entry.close).reverse();
+      const reverse = (stage: WorkspaceStage | "lock") =>
+        opened
+          .filter((entry) => entry.stage === stage)
+          .map((entry) => entry.close)
+          .reverse();
       // The lock (and this runtime's claim on the root) is released only after every passive store has closed.
       return new WorkspaceOwner(identity, stores, reverse("dispatch"), [...reverse("state"), ...reverse("lock")]);
     } catch (error) {
-      await closeAll(opened.map(entry => entry.close).reverse()).catch(() => undefined);
+      await closeAll(opened.map((entry) => entry.close).reverse()).catch(() => undefined);
       throw error;
     }
   }
 
-  get phase(): WorkspacePhase { return this.phaseValue; }
+  get phase(): WorkspacePhase {
+    return this.phaseValue;
+  }
 
   /** Phase 1: stop dispatch owners in reverse open order, waiting for their in-flight work. Idempotent. */
   drain(): Promise<void> {
-    return this.draining ??= (async () => {
+    return (this.draining ??= (async () => {
       this.phaseValue = "draining";
-      try { await closeAll(this.dispatch); }
-      finally { if (this.phaseValue === "draining") this.phaseValue = "drained"; }
-    })();
+      try {
+        await closeAll(this.dispatch);
+      } finally {
+        if (this.phaseValue === "draining") this.phaseValue = "drained";
+      }
+    })());
   }
 
   /** Phase 2 (implies phase 1): close passive state in reverse open order, then release the lock. A failure in
    * one step does not keep later stores open or the lock held. Idempotent. */
   close(): Promise<void> {
-    return this.closing ??= (async () => {
+    return (this.closing ??= (async () => {
       let failure: { error: unknown } | null = null;
-      try { await this.drain(); } catch (error) { failure = { error }; }
+      try {
+        await this.drain();
+      } catch (error) {
+        failure = { error };
+      }
       this.phaseValue = "closing";
-      try { await closeAll(this.state); } catch (error) { failure ??= { error }; }
+      try {
+        await closeAll(this.state);
+      } catch (error) {
+        failure ??= { error };
+      }
       this.phaseValue = "closed";
       if (failure) throw failure.error;
-    })();
+    })());
   }
 }
 
@@ -168,7 +204,11 @@ export function boundedWakeTimer(clock: WakeClock, wake: () => void, maxDelayMs 
   let target: number | null = null;
   let generation = 0;
   let cancelDelay: (() => void) | null = null;
-  const disarm = () => { generation++; cancelDelay?.(); cancelDelay = null; };
+  const disarm = () => {
+    generation++;
+    cancelDelay?.();
+    cancelDelay = null;
+  };
   const schedule = () => {
     disarm();
     if (target === null) return;
@@ -176,7 +216,10 @@ export function boundedWakeTimer(clock: WakeClock, wake: () => void, maxDelayMs 
     cancelDelay = clock.after(Math.min(Math.max(0, target - clock.now()), maxDelayMs), () => {
       if (current !== generation || target === null) return;
       cancelDelay = null;
-      if (clock.now() < target) { schedule(); return; }
+      if (clock.now() < target) {
+        schedule();
+        return;
+      }
       target = null;
       wake();
     });
@@ -187,7 +230,10 @@ export function boundedWakeTimer(clock: WakeClock, wake: () => void, maxDelayMs 
       target = at;
       schedule();
     },
-    cancel() { target = null; disarm(); },
+    cancel() {
+      target = null;
+      disarm();
+    },
   };
 }
 

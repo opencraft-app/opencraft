@@ -1,9 +1,25 @@
 import { join } from "node:path";
 import { acquireCodexWriter } from "@opencraft/account-pool-host";
-import { InterruptedTurnRecovery, ProviderTurnRetry, type ProviderRetryPort, type TurnRecoveryPort } from "@opencraft/host-recovery";
+import {
+  InterruptedTurnRecovery,
+  ProviderTurnRetry,
+  type ProviderRetryPort,
+  type TurnRecoveryPort,
+} from "@opencraft/host-recovery";
 import type { DatabaseOutcome } from "@opencraft/sqlite-node";
-import { boundedWakeTimer, timeoutWakeClock, WorkspaceOwner, type OwnerWakeTimerFactory, type WorkspaceIdentity } from "@opencraft/workspace-host";
-export { DEFAULT_WORKSPACE_ID, defaultWorkspace, workspaceIdentity, type WorkspaceIdentity } from "@opencraft/workspace-host";
+import {
+  boundedWakeTimer,
+  timeoutWakeClock,
+  WorkspaceOwner,
+  type OwnerWakeTimerFactory,
+  type WorkspaceIdentity,
+} from "@opencraft/workspace-host";
+export {
+  DEFAULT_WORKSPACE_ID,
+  defaultWorkspace,
+  workspaceIdentity,
+  type WorkspaceIdentity,
+} from "@opencraft/workspace-host";
 import { ConversationSchedules, type ScheduleExecutionPort } from "./conversation-schedules.js";
 import { ExecutionLeaseStore } from "./execution-lease-store.js";
 import { OpenCraftHostQueue } from "./opencraft-host-queue.js";
@@ -50,7 +66,7 @@ export interface CodexWorkspaceHostOptions {
 
 /** Node wake-up for a dispatch owner: bounded relative delays that re-read the owner clock (`boundedWakeTimer`). */
 export function nodeOwnerWakeTimer(now: () => number = Date.now): OwnerWakeTimerFactory {
-  return wake => boundedWakeTimer(timeoutWakeClock(now), wake);
+  return (wake) => boundedWakeTimer(timeoutWakeClock(now), wake);
 }
 
 /**
@@ -60,31 +76,80 @@ export function nodeOwnerWakeTimer(now: () => number = Date.now): OwnerWakeTimer
  * provider retry. `drain()` stops provider retry, turn recovery and schedules (reverse order, waiting for their
  * flights); `close()` then closes queue, provisional threads and host state, and releases the lock last.
  */
-export function openCodexWorkspaceHost(identity: WorkspaceIdentity, options: CodexWorkspaceHostOptions): Promise<CodexWorkspaceHost> {
+export function openCodexWorkspaceHost(
+  identity: WorkspaceIdentity,
+  options: CodexWorkspaceHostOptions,
+): Promise<CodexWorkspaceHost> {
   const now = options.now ?? Date.now;
   const nodeWake = nodeOwnerWakeTimer(now);
-  return WorkspaceOwner.open(identity, {
-    lock: options.overlaysLock ? ({ root }) => acquireCodexWriter(join(root, "host-overlays-owner")) : undefined,
-  }, ({ identity: { root }, own }) => {
-    const hostState = own("opencraft-host-state", "state", new OpenCraftHostStateDatabase(root), store => store.close());
-    const provisionalThreads = own("thread-creation-lifecycle", "state", new ProvisionalThreads(root), store => store.close());
-    new ExecutionLeaseStore(hostState.sql).suspend();
-    // The queue borrows the host-state connection; its close only releases what it owns itself.
-    const queue = own("opencraft-host-queue", "state", new OpenCraftHostQueue(root, hostState.sql), store => store.close());
-    const migratedNativeQueue = options.migrateNativeQueueFrom ? queue.migrateNativeQueue(options.migrateNativeQueueFrom) : 0;
-    const schedules = own("conversation-schedules", "dispatch",
-      new ConversationSchedules(root, options.schedules, now, options.diagnostic, options.schedulesChanged, undefined,
-        options.scheduleWakeTimer ?? nodeWake), store => store.close());
-    const recovery = own("interrupted-turn-recovery", "dispatch",
-      new InterruptedTurnRecovery(root, options.recovery, undefined, undefined, now, options.recoveryWakeTimer ?? nodeWake), store => store.close());
-    const providerRetry = own("provider-turn-retry", "dispatch",
-      new ProviderTurnRetry(root, options.providerRetry, now, options.random ?? Math.random, options.providerRetryAdmission,
-        options.providerRetryWakeTimer ?? nodeWake), store => store.close());
-    return { hostState, provisionalThreads, queue, schedules, recovery, providerRetry, migratedNativeQueue };
-  });
+  return WorkspaceOwner.open(
+    identity,
+    {
+      lock: options.overlaysLock ? ({ root }) => acquireCodexWriter(join(root, "host-overlays-owner")) : undefined,
+    },
+    ({ identity: { root }, own }) => {
+      const hostState = own("opencraft-host-state", "state", new OpenCraftHostStateDatabase(root), (store) =>
+        store.close(),
+      );
+      const provisionalThreads = own("thread-creation-lifecycle", "state", new ProvisionalThreads(root), (store) =>
+        store.close(),
+      );
+      new ExecutionLeaseStore(hostState.sql).suspend();
+      // The queue borrows the host-state connection; its close only releases what it owns itself.
+      const queue = own("opencraft-host-queue", "state", new OpenCraftHostQueue(root, hostState.sql), (store) =>
+        store.close(),
+      );
+      const migratedNativeQueue = options.migrateNativeQueueFrom
+        ? queue.migrateNativeQueue(options.migrateNativeQueueFrom)
+        : 0;
+      const schedules = own(
+        "conversation-schedules",
+        "dispatch",
+        new ConversationSchedules(
+          root,
+          options.schedules,
+          now,
+          options.diagnostic,
+          options.schedulesChanged,
+          undefined,
+          options.scheduleWakeTimer ?? nodeWake,
+        ),
+        (store) => store.close(),
+      );
+      const recovery = own(
+        "interrupted-turn-recovery",
+        "dispatch",
+        new InterruptedTurnRecovery(
+          root,
+          options.recovery,
+          undefined,
+          undefined,
+          now,
+          options.recoveryWakeTimer ?? nodeWake,
+        ),
+        (store) => store.close(),
+      );
+      const providerRetry = own(
+        "provider-turn-retry",
+        "dispatch",
+        new ProviderTurnRetry(
+          root,
+          options.providerRetry,
+          now,
+          options.random ?? Math.random,
+          options.providerRetryAdmission,
+          options.providerRetryWakeTimer ?? nodeWake,
+        ),
+        (store) => store.close(),
+      );
+      return { hostState, provisionalThreads, queue, schedules, recovery, providerRetry, migratedNativeQueue };
+    },
+  );
 }
 
-export function codexWorkspaceStorageOutcomes({ stores }: CodexWorkspaceHost): readonly { name: string; outcome: DatabaseOutcome }[] {
+export function codexWorkspaceStorageOutcomes({
+  stores,
+}: CodexWorkspaceHost): readonly { name: string; outcome: DatabaseOutcome }[] {
   return [
     { name: "opencraft-host-state", outcome: stores.hostState.outcome },
     { name: "thread-creation-lifecycle", outcome: stores.provisionalThreads.outcome },

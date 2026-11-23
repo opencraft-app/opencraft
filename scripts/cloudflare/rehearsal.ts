@@ -27,10 +27,26 @@ import { miniflareRuntime } from "../../tests/cloudflare/miniflare-runtime.ts";
 import { SCENARIO_GROUPS } from "../../tests/cloudflare/scenarios.ts";
 import type { WorkerRuntime, WorkerScenario } from "../../tests/cloudflare/worker-runtime.ts";
 import { cleanLeftovers } from "./rehearsal-leftovers.ts";
-import { CloudflareApi, cloudflareRuntime, REHEARSAL_PREFIX, type CloudflareRuntime, type InvocationTimes } from "./cloudflare-runtime.ts";
+import {
+  CloudflareApi,
+  cloudflareRuntime,
+  REHEARSAL_PREFIX,
+  type CloudflareRuntime,
+  type InvocationTimes,
+} from "./cloudflare-runtime.ts";
 
-interface Outcome { readonly ok: boolean; readonly ms: number; readonly error?: string; readonly diagnostics: string[] }
-interface Row { readonly group: string; readonly name: string; miniflare?: Outcome; cloudflare?: Outcome }
+interface Outcome {
+  readonly ok: boolean;
+  readonly ms: number;
+  readonly error?: string;
+  readonly diagnostics: string[];
+}
+interface Row {
+  readonly group: string;
+  readonly name: string;
+  miniflare?: Outcome;
+  cloudflare?: Outcome;
+}
 
 const { values: args } = parseArgs({
   options: {
@@ -59,15 +75,19 @@ if (!Number.isFinite(staleMinutes) || staleMinutes < 0) {
 const api = new CloudflareApi(accountId, token);
 // Earlier runs that could not clean up (SIGKILL, crash, --keep) are removed first.
 const leftovers = await cleanLeftovers(api, { staleMinutes, log });
-log(`leftovers of earlier runs: deleted ${leftovers.deletedWorkers.length} workers and ${leftovers.deletedBuckets.length} R2 buckets` +
-  (leftovers.recent.length ? `, left ${leftovers.recent.length} recent` : ""));
+log(
+  `leftovers of earlier runs: deleted ${leftovers.deletedWorkers.length} workers and ${leftovers.deletedBuckets.length} R2 buckets` +
+    (leftovers.recent.length ? `, left ${leftovers.recent.length} recent` : ""),
+);
 if (leftovers.failures.length) {
   for (const failure of leftovers.failures) log(`LEFTOVER CLEANUP FAILED ${failure}`);
   process.exit(1);
 }
 const existingWorkers = await api.listWorkers();
 const existingBuckets = await api.listBuckets();
-log(`account has ${existingWorkers.length} workers and ${existingBuckets.length} R2 buckets before the run; none of them is touched`);
+log(
+  `account has ${existingWorkers.length} workers and ${existingBuckets.length} R2 buckets before the run; none of them is touched`,
+);
 
 const scratch = await mkdtemp(join(tmpdir(), "cf-rehearsal-"));
 const local = miniflareRuntime();
@@ -80,7 +100,9 @@ async function cleanup(): Promise<number> {
     await local.dispose().catch(() => undefined);
     await rm(scratch, { recursive: true, force: true }).catch(() => undefined);
     if (args.keep) {
-      log(`--keep: leaving ${[...cloud.created.workers, ...cloud.created.buckets].join(", ") || "nothing"} for debugging; delete them by exact name afterwards`);
+      log(
+        `--keep: leaving ${[...cloud.created.workers, ...cloud.created.buckets].join(", ") || "nothing"} for debugging; delete them by exact name afterwards`,
+      );
       return 0;
     }
     const failures = await cloud.cleanup();
@@ -91,8 +113,12 @@ async function cleanup(): Promise<number> {
     const leftovers = [...workersAfter, ...bucketsAfter].filter((name) => name.startsWith(REHEARSAL_PREFIX));
     const sameWorkers = JSON.stringify(workersAfter) === JSON.stringify(existingWorkers);
     const sameBuckets = JSON.stringify(bucketsAfter) === JSON.stringify(existingBuckets);
-    log(`after cleanup: ${workersAfter.length} workers [${workersAfter.join(", ")}], ${bucketsAfter.length} R2 buckets [${bucketsAfter.join(", ")}]`);
-    log(`unchanged from before the run: workers ${sameWorkers}, buckets ${sameBuckets}; rehearsal leftovers: ${leftovers.length ? leftovers.join(", ") : "none"}`);
+    log(
+      `after cleanup: ${workersAfter.length} workers [${workersAfter.join(", ")}], ${bucketsAfter.length} R2 buckets [${bucketsAfter.join(", ")}]`,
+    );
+    log(
+      `unchanged from before the run: workers ${sameWorkers}, buckets ${sameBuckets}; rehearsal leftovers: ${leftovers.length ? leftovers.join(", ") : "none"}`,
+    );
     return failures.length || leftovers.length ? 1 : 0;
   })());
 }
@@ -132,11 +158,18 @@ async function reportInvocationTimes() {
   await new Promise((resolve) => setTimeout(resolve, 20_000));
   invocations = await cloud.invocationTimes(runStarted);
   log("Cloudflare-measured time per invocation (Workers Logs), by worker spec, entrypoint and event:");
-  log(`${"spec".padEnd(8)} ${"entrypoint/event".padEnd(36)} ${"n".padStart(6)} ${"cpu p50".padStart(8)} ${"cpu p95".padStart(8)} ${"cpu max".padStart(8)} ${"wall p50".padStart(9)} ${"wall max".padStart(9)}`);
-  for (const row of [...invocations].sort((a, b) => `${a.spec}${a.entrypoint}${a.eventType}`.localeCompare(`${b.spec}${b.entrypoint}${b.eventType}`)))
-    log(`${row.spec.padEnd(8)} ${`${row.entrypoint}/${row.eventType}`.padEnd(36)} ${String(row.count).padStart(6)}${row.sampled ? "*" : " "}` +
-      `${row.cpuMs.p50.toFixed(0).padStart(8)} ${row.cpuMs.p95.toFixed(0).padStart(8)} ${row.cpuMs.max.toFixed(0).padStart(8)} ${row.wallMs.p50.toFixed(0).padStart(9)} ${row.wallMs.max.toFixed(0).padStart(9)}`);
-  if (invocations.some((row) => row.sampled)) log("  * log page limit reached for at least one worker: figures are from a sample");
+  log(
+    `${"spec".padEnd(8)} ${"entrypoint/event".padEnd(36)} ${"n".padStart(6)} ${"cpu p50".padStart(8)} ${"cpu p95".padStart(8)} ${"cpu max".padStart(8)} ${"wall p50".padStart(9)} ${"wall max".padStart(9)}`,
+  );
+  for (const row of [...invocations].sort((a, b) =>
+    `${a.spec}${a.entrypoint}${a.eventType}`.localeCompare(`${b.spec}${b.entrypoint}${b.eventType}`),
+  ))
+    log(
+      `${row.spec.padEnd(8)} ${`${row.entrypoint}/${row.eventType}`.padEnd(36)} ${String(row.count).padStart(6)}${row.sampled ? "*" : " "}` +
+        `${row.cpuMs.p50.toFixed(0).padStart(8)} ${row.cpuMs.p95.toFixed(0).padStart(8)} ${row.cpuMs.max.toFixed(0).padStart(8)} ${row.wallMs.p50.toFixed(0).padStart(9)} ${row.wallMs.max.toFixed(0).padStart(9)}`,
+    );
+  if (invocations.some((row) => row.sampled))
+    log("  * log page limit reached for at least one worker: figures are from a sample");
 }
 try {
   for (const group of SCENARIO_GROUPS) {
@@ -155,7 +188,8 @@ try {
       let row = rows.find((candidate) => candidate.group === group.id && candidate.name === scenario.name);
       if (!row) rows.push((row = { group: group.id, name: scenario.name }));
       row.cloudflare = await attempt(cloud, scenario);
-      const mark = (outcome?: Outcome) => (outcome ? `${outcome.ok ? "pass" : "FAIL"} ${outcome.ms.toFixed(0)}ms` : "-");
+      const mark = (outcome?: Outcome) =>
+        outcome ? `${outcome.ok ? "pass" : "FAIL"} ${outcome.ms.toFixed(0)}ms` : "-";
       log(`${mark(row.miniflare).padEnd(14)} | ${mark(row.cloudflare).padEnd(14)} | ${scenario.name}`);
       if (row.cloudflare.error) log(`    cloudflare: ${row.cloudflare.error.split("\n").slice(0, 6).join("\n    ")}`);
       if (row.miniflare?.error) log(`    miniflare: ${row.miniflare.error.split("\n").slice(0, 6).join("\n    ")}`);
@@ -174,12 +208,20 @@ try {
 
 const differing = rows.filter((row) => row.miniflare && row.cloudflare && row.miniflare.ok !== row.cloudflare.ok);
 const cloudFailures = rows.filter((row) => row.cloudflare && !row.cloudflare.ok);
-log(`finished in ${((Date.now() - runStarted) / 1000).toFixed(0)} s: ${rows.length} scenarios, ` +
-  `${rows.filter((row) => row.cloudflare?.ok).length} passed on Cloudflare, ${cloudFailures.length} failed; ` +
-  `${differing.length} differ from Miniflare`);
-for (const row of differing) log(`  DIFFERS ${row.group}: ${row.name} (miniflare ${row.miniflare!.ok ? "pass" : "fail"}, cloudflare ${row.cloudflare!.ok ? "pass" : "fail"})`);
+log(
+  `finished in ${((Date.now() - runStarted) / 1000).toFixed(0)} s: ${rows.length} scenarios, ` +
+    `${rows.filter((row) => row.cloudflare?.ok).length} passed on Cloudflare, ${cloudFailures.length} failed; ` +
+    `${differing.length} differ from Miniflare`,
+);
+for (const row of differing)
+  log(
+    `  DIFFERS ${row.group}: ${row.name} (miniflare ${row.miniflare!.ok ? "pass" : "fail"}, cloudflare ${row.cloudflare!.ok ? "pass" : "fail"})`,
+  );
 if (args.report) {
-  await writeFile(args.report, JSON.stringify({ run: cloud.run, finishedAt: new Date().toISOString(), rows, invocations }, null, 2));
+  await writeFile(
+    args.report,
+    JSON.stringify({ run: cloud.run, finishedAt: new Date().toISOString(), rows, invocations }, null, 2),
+  );
   log(`report written to ${args.report}`);
 }
 process.exit(exitCode || (cloudFailures.length ? 1 : 0));

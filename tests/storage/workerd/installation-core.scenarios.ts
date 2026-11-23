@@ -37,7 +37,11 @@ function client(instance: WorkerInstance, object = `core-${++sequence}`): Call {
     });
     const text = await response.text();
     let outcome: { ok: boolean; value?: unknown; error?: string };
-    try { outcome = JSON.parse(text); } catch { throw new Error(`HTTP ${response.status}: ${text.slice(0, 500)}`); }
+    try {
+      outcome = JSON.parse(text);
+    } catch {
+      throw new Error(`HTTP ${response.status}: ${text.slice(0, 500)}`);
+    }
     if (!outcome.ok) throw new Error(outcome.error);
     return outcome.value;
   };
@@ -299,4 +303,3 @@ export const INSTALLATION_CORE_SCENARIOS: readonly WorkerScenario[] = [
     },
   },
 ];
-

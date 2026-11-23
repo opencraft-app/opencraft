@@ -6,8 +6,13 @@ type SecretDocument = { schemaVersion: 1; entries: Record<string, string> };
 function parse(value: unknown): SecretDocument {
   if (value === null) return { schemaVersion: 1, entries: {} };
   const doc = value as { schemaVersion?: unknown; entries?: unknown };
-  if (doc.schemaVersion !== 1 || !doc.entries || typeof doc.entries !== "object" || Array.isArray(doc.entries)
-    || Object.values(doc.entries).some((entry) => typeof entry !== "string")) {
+  if (
+    doc.schemaVersion !== 1 ||
+    !doc.entries ||
+    typeof doc.entries !== "object" ||
+    Array.isArray(doc.entries) ||
+    Object.values(doc.entries).some((entry) => typeof entry !== "string")
+  ) {
     throw new SecretStoreCorruptError();
   }
   return { schemaVersion: 1, entries: { ...(doc.entries as Record<string, string>) } };
@@ -18,7 +23,8 @@ function parse(value: unknown): SecretDocument {
 // within one process. The key is created on first use because workerd forbids
 // generating random values in global scope.
 let stampKey: Promise<CryptoKey> | undefined;
-const stampingKey = () => (stampKey ??= crypto.subtle.generateKey({ name: "HMAC", hash: "SHA-256" }, false, ["sign"]) as Promise<CryptoKey>);
+const stampingKey = () =>
+  (stampKey ??= crypto.subtle.generateKey({ name: "HMAC", hash: "SHA-256" }, false, ["sign"]) as Promise<CryptoKey>);
 
 /**
  * Secrets as one `{schemaVersion: 1, entries}` state document (the existing
@@ -52,9 +58,12 @@ export function documentSecretStore(documents: StateDocumentStore, key = "creden
     async stamp() {
       const value = await documents.read(key);
       if (value === null) return "absent";
-      const digest = await crypto.subtle.sign("HMAC", await stampingKey(), new TextEncoder().encode(JSON.stringify(parse(value).entries)));
+      const digest = await crypto.subtle.sign(
+        "HMAC",
+        await stampingKey(),
+        new TextEncoder().encode(JSON.stringify(parse(value).entries)),
+      );
       return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
     },
   };
 }
-

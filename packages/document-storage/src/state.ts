@@ -39,7 +39,8 @@ export class StateAsyncChangeError extends Error {
 
 const KEY = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
 export function validateStateKey(key: unknown): asserts key is string {
-  if (typeof key !== "string" || !KEY.test(key) || key.includes("..")) throw new TypeError("Invalid state document key");
+  if (typeof key !== "string" || !KEY.test(key) || key.includes(".."))
+    throw new TypeError("Invalid state document key");
 }
 
 /** Applies a change result; returns the serialized next document or undefined when unchanged. */
@@ -48,7 +49,8 @@ export function stateChangeOutcome<T>(change: StateChange<T>): { result: T; json
     throw new StateAsyncChangeError();
   }
   if (!("next" in change)) return { result: change.result };
-  if (change.next === null || change.next === undefined) throw new TypeError("State documents cannot be written as null");
+  if (change.next === null || change.next === undefined)
+    throw new TypeError("State documents cannot be written as null");
   const json = JSON.stringify(change.next);
   if (json === undefined) throw new TypeError("State documents must be JSON");
   return { result: change.result, json };

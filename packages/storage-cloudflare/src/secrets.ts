@@ -1,4 +1,9 @@
-import { SecretStoreCorruptError, validateKeyName, type KeyMaterial, type SecretStore } from "@opencraft/secret-storage";
+import {
+  SecretStoreCorruptError,
+  validateKeyName,
+  type KeyMaterial,
+  type SecretStore,
+} from "@opencraft/secret-storage";
 import { documentSecretStore } from "@opencraft/secret-storage/documents";
 import type { DurableObjectStorage } from "./bindings.js";
 import { durableObjectStateDocumentStore } from "./state.js";
@@ -37,7 +42,8 @@ export function durableObjectKeyMaterial(storage: DurableObjectStorage): KeyMate
         const existing = load(name);
         if (existing) return existing;
         const fresh = create();
-        if (!(fresh instanceof Uint8Array) || !fresh.byteLength) throw new TypeError("Key material must be non-empty bytes");
+        if (!(fresh instanceof Uint8Array) || !fresh.byteLength)
+          throw new TypeError("Key material must be non-empty bytes");
         const copy = new Uint8Array(fresh);
         storage.kv.put(`key/${name}`, copy);
         return new Uint8Array(copy);

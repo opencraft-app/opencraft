@@ -1,9 +1,17 @@
 import {
-  BlobDigestError, BlobExistsError, BlobLimitError, validateBlobKey, validateBlobLimit, validateBlobRange, validateSha256,
-  type BlobStore, type BlobUpload,
+  BlobDigestError,
+  BlobExistsError,
+  BlobLimitError,
+  validateBlobKey,
+  validateBlobLimit,
+  validateBlobRange,
+  validateSha256,
+  type BlobStore,
+  type BlobUpload,
 } from "./contract.js";
 
-const hex = (bytes: ArrayBuffer) => [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+const hex = (bytes: ArrayBuffer) =>
+  [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 
 /** In-process adapter for tests and runtimes without durable object storage. */
 export function memoryBlobStore(): BlobStore {
@@ -12,12 +20,16 @@ export function memoryBlobStore(): BlobStore {
     validateBlobKey(key);
     validateBlobLimit(maxBytes);
     const chunks: Uint8Array[] = [];
-    let size = 0, finished = false;
+    let size = 0,
+      finished = false;
     return {
       async write(chunk) {
         if (finished) throw new Error("Blob upload is finished");
         if (!(chunk instanceof Uint8Array)) throw new TypeError("Blob chunks must be bytes");
-        if (size + chunk.byteLength > maxBytes) { finished = true; throw new BlobLimitError(); }
+        if (size + chunk.byteLength > maxBytes) {
+          finished = true;
+          throw new BlobLimitError();
+        }
         chunks.push(new Uint8Array(chunk));
         size += chunk.byteLength;
       },
@@ -27,14 +39,19 @@ export function memoryBlobStore(): BlobStore {
         if (options.sha256 !== undefined) validateSha256(options.sha256);
         const bytes = new Uint8Array(size);
         let offset = 0;
-        for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+        for (const chunk of chunks) {
+          bytes.set(chunk, offset);
+          offset += chunk.byteLength;
+        }
         const sha256 = hex(await crypto.subtle.digest("SHA-256", bytes));
         if (options.sha256 !== undefined && options.sha256 !== sha256) throw new BlobDigestError();
         if (objects.has(key)) throw new BlobExistsError(key);
         objects.set(key, bytes);
         return { key, size, sha256 };
       },
-      async abort() { finished = true; },
+      async abort() {
+        finished = true;
+      },
     };
   };
   return {
@@ -60,8 +77,20 @@ export function memoryBlobStore(): BlobStore {
       const start = Math.min(range?.offset ?? 0, bytes.byteLength);
       const end = range?.length === undefined ? bytes.byteLength : Math.min(bytes.byteLength, start + range.length);
       const slice = bytes.slice(start, end);
-      return { key, size: bytes.byteLength, body: new ReadableStream<Uint8Array>({ start(controller) { if (slice.byteLength) controller.enqueue(slice); controller.close(); } }) };
+      return {
+        key,
+        size: bytes.byteLength,
+        body: new ReadableStream<Uint8Array>({
+          start(controller) {
+            if (slice.byteLength) controller.enqueue(slice);
+            controller.close();
+          },
+        }),
+      };
     },
-    async delete(key) { validateBlobKey(key); objects.delete(key); },
+    async delete(key) {
+      validateBlobKey(key);
+      objects.delete(key);
+    },
   };
 }

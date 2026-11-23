@@ -14,7 +14,8 @@ import { openServerDatabase, SERVER_MIGRATIONS } from "@opencraft/storage-node/s
 import { conversationResourceMethods } from "@opencraft/storage-node/server-conversation-resources";
 
 const COMPATIBILITY_DATE = "2026-07-30";
-const RESOURCES_VERSION = SERVER_MIGRATIONS.findIndex((migration) => migration.name === "0024_conversation_resources") + 1;
+const RESOURCES_VERSION =
+  SERVER_MIGRATIONS.findIndex((migration) => migration.name === "0024_conversation_resources") + 1;
 let directory: string;
 let script: string;
 let sequence = 0;
@@ -60,7 +61,10 @@ async function stop(miniflare: Miniflare) {
 }
 function client(miniflare: Miniflare, object = `core-${++sequence}`) {
   return async (method: string, ...args: unknown[]): Promise<any> => {
-    const response = await miniflare.dispatchFetch("http://core/", { method: "POST", body: JSON.stringify({ object, method, args }) });
+    const response = await miniflare.dispatchFetch("http://core/", {
+      method: "POST",
+      body: JSON.stringify({ object, method, args }),
+    });
     const outcome = (await response.json()) as { ok: boolean; value?: unknown; error?: string };
     if (!outcome.ok) throw new Error(outcome.error);
     return outcome.value;
@@ -68,7 +72,13 @@ function client(miniflare: Miniflare, object = `core-${++sequence}`) {
 }
 
 const owners = { owners: ["terminal", "browser", "workspace"] };
-const row = (threadId: string, state: string, generation: number, pending: string[]) => ({ hostId: "h", threadId, state, generation, pending });
+const row = (threadId: string, state: string, generation: number, pending: string[]) => ({
+  hostId: "h",
+  threadId,
+  state,
+  generation,
+  pending,
+});
 /** One call sequence; each step records its value or error message so both runtimes compare equal. */
 async function scenario(call: (method: string, ...args: unknown[]) => Promise<unknown>) {
   const steps: [string, unknown][] = [];
@@ -80,11 +90,20 @@ async function scenario(call: (method: string, ...args: unknown[]) => Promise<un
     }
   };
   await step("open empty", "openConversationResources", owners);
-  await step("archive intent", "putConversationResources", [row("a", "archived", 1, ["terminal", "browser"]), row("b", "active", 1, [])]);
+  await step("archive intent", "putConversationResources", [
+    row("a", "archived", 1, ["terminal", "browser"]),
+    row("b", "active", 1, []),
+  ]);
   await step("partial acknowledgement", "putConversationResources", [row("a", "archived", 1, ["browser"])]);
-  await step("invalid generation refused", "putConversationResources", [row("b", "deleted", 3, []), row("a", "active", 0, [])]);
+  await step("invalid generation refused", "putConversationResources", [
+    row("b", "deleted", 3, []),
+    row("a", "active", 0, []),
+  ]);
   await step("advance", "putConversationResources", [row("a", "active", 2, [])]);
-  await step("older generation refused atomically", "putConversationResources", [row("b", "active", 2, []), row("a", "archived", 1, [])]);
+  await step("older generation refused atomically", "putConversationResources", [
+    row("b", "active", 2, []),
+    row("a", "archived", 1, []),
+  ]);
   await step("unknown owner refused on open", "openConversationResources", { owners: ["terminal"] });
   await step("reopen", "openConversationResources", owners);
   return steps;
@@ -93,7 +112,10 @@ async function scenario(call: (method: string, ...args: unknown[]) => Promise<un
 test("conversation resource rows: published migrations and domain results match the Node owner", async () => {
   const call = client(start());
   const ledger = await call("ledger");
-  assert.deepEqual(ledger.map((entry: { name: string }) => entry.name), SERVER_MIGRATIONS.map((migration) => migration.name));
+  assert.deepEqual(
+    ledger.map((entry: { name: string }) => entry.name),
+    SERVER_MIGRATIONS.map((migration) => migration.name),
+  );
   const onDurableObject = await scenario(call);
 
   const root = await mkdtemp(join(directory, "node-"));
@@ -103,7 +125,13 @@ test("conversation resource rows: published migrations and domain results match 
     const onNode = await scenario(async (method, ...args) => (methods as any)[method](...args));
     assert.deepEqual(onDurableObject, onNode);
     assert.deepEqual(onNode.at(-1)![1], [row("a", "active", 2, []), row("b", "active", 1, [])]);
-    assert.deepEqual(ledger, owner.database.prepare("SELECT version, name, checksum FROM schema_migrations ORDER BY version").all().map((entry) => ({ ...entry })));
+    assert.deepEqual(
+      ledger,
+      owner.database
+        .prepare("SELECT version, name, checksum FROM schema_migrations ORDER BY version")
+        .all()
+        .map((entry) => ({ ...entry })),
+    );
   } finally {
     await owner.close();
   }
@@ -114,7 +142,10 @@ test("conversation resource rows: an older Server contract upgrades across a res
   let miniflare = start(persist, RESOURCES_VERSION - 1);
   let call = client(miniflare, "upgrade");
   assert.equal((await call("ledger")).length, RESOURCES_VERSION - 1);
-  await call("sql", "INSERT INTO conversation_creation_receipts(actor_id, operation_key, server_id, fingerprint, state) VALUES('a', 'k', 's', 'f', 'claimed')");
+  await call(
+    "sql",
+    "INSERT INTO conversation_creation_receipts(actor_id, operation_key, server_id, fingerprint, state) VALUES('a', 'k', 's', 'f', 'claimed')",
+  );
   await stop(miniflare);
 
   miniflare = start(persist);
@@ -126,7 +157,11 @@ test("conversation resource rows: an older Server contract upgrades across a res
 
   miniflare = start(persist);
   call = client(miniflare, "upgrade");
-  assert.deepEqual(await call("openConversationResources", owners), [row("t", "archived", 1, ["browser"])], "a restart applies nothing and keeps rows");
+  assert.deepEqual(
+    await call("openConversationResources", owners),
+    [row("t", "archived", 1, ["browser"])],
+    "a restart applies nothing and keeps rows",
+  );
   assert.equal(await call("tamperLedger", RESOURCES_VERSION), 1);
   await stop(miniflare);
 

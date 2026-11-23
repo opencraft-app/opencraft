@@ -11,7 +11,10 @@ import {
   DEFAULT_SERVER_MIGRATION_COMPOSITION,
 } from "@opencraft/storage-node/server-composition";
 import { migrateServerSqlDatabase } from "@opencraft/storage-node/server-sql";
-import { conversationResourceMethods, type ConversationResourceMethods } from "@opencraft/storage-node/server-conversation-resources";
+import {
+  conversationResourceMethods,
+  type ConversationResourceMethods,
+} from "@opencraft/storage-node/server-conversation-resources";
 import type { SqlDatabase } from "@opencraft/sql";
 
 interface Env {
@@ -38,10 +41,13 @@ export class ResourcesObject extends DurableObject<Env> {
               productVersion: "conversation-resources-test",
             })
           : undefined;
-        const handle = migrateServerSqlDatabase(durableObjectSqlDatabase(ctx.storage as unknown as DurableObjectStorage), {
-          ...(composition ? { composition } : {}),
-          ownedByRuntime: (name) => name.startsWith("_cf_"),
-        });
+        const handle = migrateServerSqlDatabase(
+          durableObjectSqlDatabase(ctx.storage as unknown as DurableObjectStorage),
+          {
+            ...(composition ? { composition } : {}),
+            ownedByRuntime: (name) => name.startsWith("_cf_"),
+          },
+        );
         this.#database = handle.database;
         this.#methods = conversationResourceMethods(handle.database);
       } catch (error) {
@@ -53,7 +59,8 @@ export class ResourcesObject extends DurableObject<Env> {
   call(method: Method, args: unknown[]): unknown {
     const database = this.#database;
     if (!database) throw new Error(`Server core unavailable: ${failure(this.#failure)}`);
-    if (method === "ledger") return database.prepare("SELECT version, name, checksum FROM schema_migrations ORDER BY version").all();
+    if (method === "ledger")
+      return database.prepare("SELECT version, name, checksum FROM schema_migrations ORDER BY version").all();
     // Test probe: one statement with positional parameters.
     if (method === "sql") {
       const [text, ...params] = args as [string, ...(string | number | null)[]];
@@ -61,7 +68,11 @@ export class ResourcesObject extends DurableObject<Env> {
       return /^\s*SELECT/i.test(text) ? statement.all(...params) : Number(statement.run(...params).changes);
     }
     if (method === "tamperLedger")
-      return Number(database.prepare("UPDATE schema_migrations SET checksum=? WHERE version=?").run("0".repeat(64), args[0] as number).changes);
+      return Number(
+        database
+          .prepare("UPDATE schema_migrations SET checksum=? WHERE version=?")
+          .run("0".repeat(64), args[0] as number).changes,
+      );
     if (!this.#methods) throw new Error("Conversation resources are only available on the current contract");
     return (this.#methods[method] as (...values: unknown[]) => unknown)(...args);
   }

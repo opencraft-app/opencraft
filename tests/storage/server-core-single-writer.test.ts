@@ -18,17 +18,36 @@ const entry = new URL("../../apps/headless-server/src/server-core-worker.mjs", i
 const snapshot = { threadId: "child", rootTurnId: "root", turnId: "turn", state: "active" as const };
 /** Lets a call reach the owner Worker before the next one is issued. */
 const posted = () => new Promise((resolve) => setImmediate(resolve));
-const relation = (threadId: string): ThreadRelation => ({ threadId, serverId: "fixture-server", driverKind: "codex",
-  ownerActorId: "fixture-actor", parentThreadId: null, lifecycleOwnerThreadId: null, forkedFromId: null, visibility: "visible",
-  engineHostGeneration: null, nativeSessionId: null, runtimeStatus: "starting", rootTurnId: null, turnId: null,
-  delegationRevision: 1, autoExchangeDepth: 0, hasDirectUserInput: false, userInputExcerpt: null });
+const relation = (threadId: string): ThreadRelation => ({
+  threadId,
+  serverId: "fixture-server",
+  driverKind: "codex",
+  ownerActorId: "fixture-actor",
+  parentThreadId: null,
+  lifecycleOwnerThreadId: null,
+  forkedFromId: null,
+  visibility: "visible",
+  engineHostGeneration: null,
+  nativeSessionId: null,
+  runtimeStatus: "starting",
+  rootTurnId: null,
+  turnId: null,
+  delegationRevision: 1,
+  autoExchangeDepth: 0,
+  hasDirectUserInput: false,
+  userInputExcerpt: null,
+});
 
 /** Open handles on the Server database file across all threads of this process. */
 async function serverDatabaseHandles(directory: string): Promise<number> {
   const target = join(directory, "opencraft-server.sqlite");
   let count = 0;
   for (const fd of await readdir("/proc/self/fd")) {
-    try { if (await readlink(join("/proc/self/fd", fd)) === target) count++; } catch { /* closed meanwhile */ }
+    try {
+      if ((await readlink(join("/proc/self/fd", fd))) === target) count++;
+    } catch {
+      /* closed meanwhile */
+    }
   }
   return count;
 }
@@ -39,8 +58,12 @@ async function composition(t: test.TestContext) {
   const storage = await openServerCoreOwner(directory, { entry });
   // Domains not yet moved run on the transitional network-thread connection.
   const actors = new ActorStore(storage);
-  const alice = actors.resolveHuman(parsePrincipal({ provider: "local", subject: "alice", displayName: "Alice", expiresAt: Date.now() + 600_000 })!)!;
-  const bob = actors.resolveHuman(parsePrincipal({ provider: "local", subject: "bob", displayName: "Bob", expiresAt: Date.now() + 600_000 })!)!;
+  const alice = actors.resolveHuman(
+    parsePrincipal({ provider: "local", subject: "alice", displayName: "Alice", expiresAt: Date.now() + 600_000 })!,
+  )!;
+  const bob = actors.resolveHuman(
+    parsePrincipal({ provider: "local", subject: "bob", displayName: "Bob", expiresAt: Date.now() + 600_000 })!,
+  )!;
   new ThreadOrchestrationLedger(storage.database).createThread(relation("child"));
   const baseline = await serverDatabaseHandles(directory);
   const orchestration = new OrchestrationRuntimeWorker(storage);
@@ -70,13 +93,23 @@ test("a Headless composition opens no Server database connection beyond the owne
   assert.ok(f.baseline <= 3, `baseline handles: ${f.baseline}`);
   await f.orchestration.observe(snapshot, 1000);
   const space = await f.spaces.command(f.alice, { action: "create", name: "Project" });
-  assert.equal(f.spaces.directory(f.alice).spaces.some((s) => s.id === space.spaceId), true, "projection published with the reply");
-  const group = await f.collaboration.communicate(f.alice, "opencraft/channels/group/create",
-    { title: "Room", memberActorIds: [f.bob.actorId], clientRequestId: "room" });
+  assert.equal(
+    f.spaces.directory(f.alice).spaces.some((s) => s.id === space.spaceId),
+    true,
+    "projection published with the reply",
+  );
+  const group = await f.collaboration.communicate(f.alice, "opencraft/channels/group/create", {
+    title: "Room",
+    memberActorIds: [f.bob.actorId],
+    clientRequestId: "room",
+  });
   assert.ok(group.id, "communication commits on the owner connection");
   assert.equal(await f.collaboration.personalAssistantAssignments().then(() => true), true);
-  assert.equal(await serverDatabaseHandles(f.directory), f.baseline,
-    "orchestration, communication and spaces add no connection to the Server database");
+  assert.equal(
+    await serverDatabaseHandles(f.directory),
+    f.baseline,
+    "orchestration, communication and spaces add no connection to the Server database",
+  );
 
   // The probe detects connections: a standalone Worker would be one more.
   const standalone = new OrchestrationRuntimeWorker(join(f.directory, "opencraft-server.sqlite"));
@@ -101,16 +134,28 @@ test("a long orchestration command queues spaces and core writes in FIFO instead
   fixture.close();
   const order: string[] = [];
   let ticks = 0;
-  const timer = setInterval(() => { ticks++; }, 5);
+  const timer = setInterval(() => {
+    ticks++;
+  }, 5);
   t.after(() => clearInterval(timer));
   const started = performance.now();
-  const slow = f.orchestration.acknowledge("slow").then(() => { order.push("orchestration"); return performance.now() - started; });
+  const slow = f.orchestration.acknowledge("slow").then(() => {
+    order.push("orchestration");
+    return performance.now() - started;
+  });
   await posted();
-  const space = f.spaces.command(f.alice, { action: "create", name: "Queued" }).then((value) => { order.push("spaces"); return value; });
+  const space = f.spaces.command(f.alice, { action: "create", name: "Queued" }).then((value) => {
+    order.push("spaces");
+    return value;
+  });
   await posted();
-  const note = f.storage.call.exchangeThreadNote("server", "thread", "", "AA==").then(() => { order.push("core"); });
+  const note = f.storage.call.exchangeThreadNote("server", "thread", "", "AA==").then(() => {
+    order.push("core");
+  });
   await posted();
-  const observe = f.orchestration.observe({ ...snapshot, state: "completed" }, 2000).then(() => { order.push("orchestration-2"); });
+  const observe = f.orchestration.observe({ ...snapshot, state: "completed" }, 2000).then(() => {
+    order.push("orchestration-2");
+  });
   const [slowMs, created] = await Promise.all([slow, space, note, observe]);
   clearInterval(timer);
   assert.deepEqual(order, ["orchestration", "spaces", "core", "orchestration-2"], "one owner commits in arrival order");
@@ -144,7 +189,10 @@ test("closing drains queued orchestration, spaces and core writes in order befor
   try {
     const ledger = new ThreadOrchestrationLedger(reopened.database);
     assert.equal(ledger.runtimeSnapshot("child")?.state, "completed");
-    assert.equal(reopened.database.prepare("SELECT count(*) AS n FROM collaboration_spaces WHERE name='Drained'").get()!.n, 1);
+    assert.equal(
+      reopened.database.prepare("SELECT count(*) AS n FROM collaboration_spaces WHERE name='Drained'").get()!.n,
+      1,
+    );
   } finally {
     await reopened.close();
   }

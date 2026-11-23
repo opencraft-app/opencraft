@@ -4,7 +4,13 @@
 // `writeHead(status)` and `end(body)`; Node adds Date/Connection/framing.
 import type { IncomingMessage, ServerResponse } from "node:http";
 // Value imports go through the package export so plain `node` (type stripping, no specifier rewriting) can load this entry.
-import { HttpBodyTooLarge, HttpExchangeAborted, type HttpExchangeHandler, type HttpExchangeRequest, type HttpExchangeResponse } from "@opencraft/identity-core/http-exchange";
+import {
+  HttpBodyTooLarge,
+  HttpExchangeAborted,
+  type HttpExchangeHandler,
+  type HttpExchangeRequest,
+  type HttpExchangeResponse,
+} from "@opencraft/identity-core/http-exchange";
 
 interface NodeExchange {
   readonly request: HttpExchangeRequest;
@@ -24,8 +30,11 @@ function singleValues(headers: IncomingMessage["headers"]): Record<string, strin
 /** Wraps one node:http request. `identity` is the IncomingMessage itself, so per-request provider caches stay shared with the gateway. */
 export function nodeHttpExchange(request: IncomingMessage, response: ServerResponse): NodeExchange {
   const controller = new AbortController();
-  const onClose = () => { if (!response.writableFinished) controller.abort(); };
-  if (response.destroyed) controller.abort(); else response.once("close", onClose);
+  const onClose = () => {
+    if (!response.writableFinished) controller.abort();
+  };
+  if (response.destroyed) controller.abort();
+  else response.once("close", onClose);
   let used = false;
   let overflowed: AsyncIterator<unknown> | null = null;
   const exchange: HttpExchangeRequest = {
@@ -49,7 +58,10 @@ export function nodeHttpExchange(request: IncomingMessage, response: ServerRespo
         const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
         size += bytes.length;
         // Stop reading; the stream is released only after the response is written.
-        if (size > limit) { overflowed = iterator; throw new HttpBodyTooLarge(limit); }
+        if (size > limit) {
+          overflowed = iterator;
+          throw new HttpBodyTooLarge(limit);
+        }
         chunks.push(bytes);
       }
       return Buffer.concat(chunks);
@@ -66,18 +78,23 @@ export function nodeHttpExchange(request: IncomingMessage, response: ServerRespo
       const grouped = new Map<string, string[]>();
       for (const [name, value] of result.headers) {
         const values = grouped.get(name);
-        if (values) values.push(value); else grouped.set(name, [value]);
+        if (values) values.push(value);
+        else grouped.set(name, [value]);
       }
-      for (const [name, values] of grouped) response.setHeader(name, name === "set-cookie" || values.length > 1 ? values : values[0]!);
+      for (const [name, values] of grouped)
+        response.setHeader(name, name === "set-cookie" || values.length > 1 ? values : values[0]!);
       response.writeHead(result.status);
-      if (result.body === null) response.end(); else response.end(result.body);
+      if (result.body === null) response.end();
+      else response.end(result.body);
       await release();
     },
     abort() {
       response.destroy();
       void release();
     },
-    dispose() { response.off("close", onClose); },
+    dispose() {
+      response.off("close", onClose);
+    },
   };
 }
 
@@ -86,17 +103,27 @@ export function nodeHttpExchange(request: IncomingMessage, response: ServerRespo
  * handler does not own the route (nothing written). `HttpExchangeAborted`
  * destroys the connection; other failures propagate to the caller unwritten.
  */
-export async function serveNodeHttpExchange(request: IncomingMessage, response: ServerResponse, handler: HttpExchangeHandler): Promise<boolean> {
+export async function serveNodeHttpExchange(
+  request: IncomingMessage,
+  response: ServerResponse,
+  handler: HttpExchangeHandler,
+): Promise<boolean> {
   const exchange = nodeHttpExchange(request, response);
   try {
     let result: HttpExchangeResponse | null;
-    try { result = await handler(exchange.request); }
-    catch (error) {
-      if (error instanceof HttpExchangeAborted) { exchange.abort(); return true; }
+    try {
+      result = await handler(exchange.request);
+    } catch (error) {
+      if (error instanceof HttpExchangeAborted) {
+        exchange.abort();
+        return true;
+      }
       throw error;
     }
     if (!result) return false;
     await exchange.send(result);
     return true;
-  } finally { exchange.dispose(); }
+  } finally {
+    exchange.dispose();
+  }
 }

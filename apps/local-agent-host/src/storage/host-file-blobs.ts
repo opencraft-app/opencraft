@@ -18,6 +18,9 @@ export function hostFileBlobStore(root: string): HostFileBlobStore {
   const directory = resolve(root);
   return {
     blobs: fileBlobStore(directory),
-    path(key) { validateBlobKey(key); return join(directory, key); },
+    path(key) {
+      validateBlobKey(key);
+      return join(directory, key);
+    },
   };
 }

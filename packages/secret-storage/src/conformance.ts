@@ -13,11 +13,17 @@ class ConformanceFailure extends Error {
   }
 }
 const equal = (actual: unknown, expected: unknown, what: string) => {
-  const a = JSON.stringify(actual), e = JSON.stringify(expected);
+  const a = JSON.stringify(actual),
+    e = JSON.stringify(expected);
   if (a !== e) throw new ConformanceFailure(`${what}: expected ${e}, received ${a}`);
 };
 async function rejects(action: () => Promise<unknown>, what: string) {
-  try { await action(); } catch (error) { if (error instanceof TypeError) return; throw new ConformanceFailure(`${what}: unexpected ${String(error)}`); }
+  try {
+    await action();
+  } catch (error) {
+    if (error instanceof TypeError) return;
+    throw new ConformanceFailure(`${what}: unexpected ${String(error)}`);
+  }
   throw new ConformanceFailure(`${what}: expected a TypeError`);
 }
 
@@ -45,21 +51,27 @@ export const SECRET_CONFORMANCE_CASES: readonly SecretConformanceCase[] = [
       if (one === empty) throw new ConformanceFailure("set did not change the stamp");
       equal(await secrets.stamp(), one, "stable after set");
       await secrets.set("A", "2");
-      if (await secrets.stamp() === one) throw new ConformanceFailure("replace did not change the stamp");
+      if ((await secrets.stamp()) === one) throw new ConformanceFailure("replace did not change the stamp");
     },
   },
   {
     name: "concurrent writes to different names are all retained",
     async run({ secrets }) {
       await Promise.all(Array.from({ length: 12 }, (_, i) => secrets.set(`K${i}`, `v${i}`)));
-      equal(await Promise.all(Array.from({ length: 12 }, (_, i) => secrets.get(`K${i}`))), Array.from({ length: 12 }, (_, i) => `v${i}`), "all");
+      equal(
+        await Promise.all(Array.from({ length: 12 }, (_, i) => secrets.get(`K${i}`))),
+        Array.from({ length: 12 }, (_, i) => `v${i}`),
+        "all",
+      );
     },
   },
   {
     name: "invalid names and values are rejected",
     async run({ secrets }) {
-      for (const name of ["", "1A", "A-B", "a/b"]) await rejects(() => secrets.get(name), `name ${JSON.stringify(name)}`);
-      for (const value of ["", "a\nb", "a\0b"]) await rejects(() => secrets.set("A", value), `value ${JSON.stringify(value)}`);
+      for (const name of ["", "1A", "A-B", "a/b"])
+        await rejects(() => secrets.get(name), `name ${JSON.stringify(name)}`);
+      for (const value of ["", "a\nb", "a\0b"])
+        await rejects(() => secrets.set("A", value), `value ${JSON.stringify(value)}`);
     },
   },
   {
@@ -67,7 +79,9 @@ export const SECRET_CONFORMANCE_CASES: readonly SecretConformanceCase[] = [
     async run({ keys }) {
       equal(await keys.read("vault.key"), undefined, "absent");
       let created = 0;
-      const results = await Promise.all(Array.from({ length: 6 }, (_, i) => keys.ensure("vault.key", () => (created++, new Uint8Array([i + 1, 7, 7])))));
+      const results = await Promise.all(
+        Array.from({ length: 6 }, (_, i) => keys.ensure("vault.key", () => (created++, new Uint8Array([i + 1, 7, 7])))),
+      );
       const first = [...results[0]!];
       for (const result of results) equal([...result], first, "converged");
       equal([...(await keys.read("vault.key"))!], first, "stored");

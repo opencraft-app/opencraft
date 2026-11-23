@@ -4,7 +4,12 @@
 // (for example Cloudflare's `CF-Connecting-IP`); the adapter never trusts a
 // request header for it on its own.
 // Value imports go through the package export so plain `node` (type stripping, no specifier rewriting) can load this entry.
-import { HttpBodyTooLarge, type HttpExchangeHandler, type HttpExchangeRequest, type HttpExchangeResponse } from "@opencraft/identity-core/http-exchange";
+import {
+  HttpBodyTooLarge,
+  type HttpExchangeHandler,
+  type HttpExchangeRequest,
+  type HttpExchangeResponse,
+} from "@opencraft/identity-core/http-exchange";
 import type { IdentityRequest } from "./identity-request.js";
 
 export interface FetchExchangeOptions {
@@ -18,7 +23,9 @@ export interface FetchExchangeOptions {
  * Request view of a fetch Request. `host` comes from the routed URL (the
  * zone/route that accepted the request), replacing any Host header value.
  */
-export function fetchIdentityRequest(request: Request): IdentityRequest & { readonly headers: Record<string, string | undefined>; readonly rawHeaders: string[] } {
+export function fetchIdentityRequest(
+  request: Request,
+): IdentityRequest & { readonly headers: Record<string, string | undefined>; readonly rawHeaders: string[] } {
   const url = new URL(request.url);
   const headers: Record<string, string | undefined> = {};
   const rawHeaders: string[] = [];
@@ -63,7 +70,10 @@ export function fetchHttpExchange(request: Request, options: FetchExchangeOption
       }
       const body = new Uint8Array(size);
       let offset = 0;
-      for (const chunk of chunks) { body.set(chunk, offset); offset += chunk.byteLength; }
+      for (const chunk of chunks) {
+        body.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
       return body;
     },
   };
@@ -79,8 +89,12 @@ export function fetchResponse(result: HttpExchangeResponse): Response {
   const headers = new Headers();
   for (const [name, value] of result.headers) headers.append(name, value);
   // Strings go out as bytes so Response adds no implicit content-type (node:http adds none either).
-  const body = NULL_BODY.has(result.status) || result.body === null ? null
-    : typeof result.body === "string" ? new TextEncoder().encode(result.body) : result.body;
+  const body =
+    NULL_BODY.has(result.status) || result.body === null
+      ? null
+      : typeof result.body === "string"
+        ? new TextEncoder().encode(result.body)
+        : result.body;
   return new Response(body as BodyInit | null, { status: result.status, headers });
 }
 
@@ -89,7 +103,11 @@ export function fetchResponse(result: HttpExchangeResponse): Response {
  * does not own the route. `HttpExchangeAborted` propagates (the runtime fails
  * the request instead of answering), like any other handler failure.
  */
-export async function serveFetchHttpExchange(request: Request, handler: HttpExchangeHandler, options: FetchExchangeOptions = {}): Promise<Response | null> {
+export async function serveFetchHttpExchange(
+  request: Request,
+  handler: HttpExchangeHandler,
+  options: FetchExchangeOptions = {},
+): Promise<Response | null> {
   const result = await handler(fetchHttpExchange(request, options));
   return result ? fetchResponse(result) : null;
 }

@@ -12,8 +12,7 @@ export interface ConversationResourceRow {
 
 /** The retired journal as the owner found it: absent, or its exact bytes and digest. */
 export type ConversationResourceLegacySource =
-  | { readonly kind: "absent" }
-  | { readonly kind: "present"; readonly sha256: string; readonly text: string };
+  { readonly kind: "absent" } | { readonly kind: "present"; readonly sha256: string; readonly text: string };
 
 /** Reads the retired journal. Supplied only by the Node owner; it never writes it. */
 export interface ConversationResourceLegacyJournal {
@@ -32,7 +31,8 @@ export interface ConversationResourceMethods {
 }
 
 const STATES = new Set(["active", "archived", "deleted"]);
-const valid = (value: unknown): value is string => typeof value === "string" && value.length > 0 && value.length <= 1024;
+const valid = (value: unknown): value is string =>
+  typeof value === "string" && value.length > 0 && value.length <= 1024;
 
 /** The record shape the journal accepted; `owners` limits pending names. */
 export function conversationResourceRow(value: unknown, owners: ReadonlySet<string>): ConversationResourceRow {
@@ -79,7 +79,9 @@ export function conversationResourceMethods(
       state=excluded.state, generation=excluded.generation, pending=excluded.pending
     WHERE excluded.generation >= conversation_resources.generation`);
   const receipt = db.prepare("SELECT sha256 FROM conversation_resource_imports WHERE source=?");
-  const record = db.prepare("INSERT INTO conversation_resource_imports(source, sha256, rows, imported_at) VALUES(?, ?, ?, ?)");
+  const record = db.prepare(
+    "INSERT INTO conversation_resource_imports(source, sha256, rows, imported_at) VALUES(?, ?, ?, ?)",
+  );
 
   const importLegacy = (owners: ReadonlySet<string>) => {
     if (!legacy) return;
@@ -93,7 +95,9 @@ export function conversationResourceMethods(
       // let it overwrite newer committed generations. Removing the kept
       // backup is an ordinary operator action and carries no such evidence.
       if (source.kind === "present" && prior.sha256 !== digest)
-        throw new Error(`Conversation resource journal ${legacy.name} changed after its import; resolve it before starting`);
+        throw new Error(
+          `Conversation resource journal ${legacy.name} changed after its import; resolve it before starting`,
+        );
       return;
     }
     let rows: ConversationResourceRow[] = [];
@@ -104,7 +108,8 @@ export function conversationResourceMethods(
       } catch {
         throw new Error("Invalid conversation resource journal");
       }
-      if (!saved || saved.version !== 1 || !Array.isArray(saved.rows)) throw new Error("Invalid conversation resource journal");
+      if (!saved || saved.version !== 1 || !Array.isArray(saved.rows))
+        throw new Error("Invalid conversation resource journal");
       // The journal kept one record per key; a later duplicate replaced an earlier one.
       const byKey = new Map<string, ConversationResourceRow>();
       for (const value of saved.rows) {
@@ -116,7 +121,8 @@ export function conversationResourceMethods(
     db.transaction(() => {
       if (receipt.get(legacy.name)) throw new Error("Conversation resource import raced");
       if (rows.length && all.get()) throw new Error("Conversation resources exist without an import receipt");
-      for (const row of rows) insert.run(row.hostId, row.threadId, row.state, row.generation, JSON.stringify(row.pending));
+      for (const row of rows)
+        insert.run(row.hostId, row.threadId, row.state, row.generation, JSON.stringify(row.pending));
       record.run(legacy.name, digest, rows.length, Date.now());
     });
   };
@@ -147,7 +153,13 @@ export function conversationResourceMethods(
       );
       db.transaction(() => {
         for (const row of checked) {
-          const { changes } = upsert.run(row.hostId, row.threadId, row.state, row.generation, JSON.stringify(row.pending));
+          const { changes } = upsert.run(
+            row.hostId,
+            row.threadId,
+            row.state,
+            row.generation,
+            JSON.stringify(row.pending),
+          );
           if (Number(changes) !== 1) throw new Error("Conversation resource generation regressed");
         }
       });

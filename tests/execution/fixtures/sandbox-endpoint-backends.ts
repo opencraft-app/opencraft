@@ -30,19 +30,29 @@ import { mkdir } from "node:fs/promises";
 function recording(backend: SandboxBackend, commands: SandboxCommand[]): SandboxBackend {
   const wrap = (environment: SandboxEnvironment): SandboxEnvironment => ({
     ...(environment.receipt ? { receipt: environment.receipt } : {}),
-    resources: environment.resources, capabilities: environment.capabilities,
+    resources: environment.resources,
+    capabilities: environment.capabilities,
     ...(environment.processLimits ? { processLimits: environment.processLimits } : {}),
-    spawn(command, onOutput) { commands.push(command); return environment.spawn(command, onOutput); },
+    spawn(command, onOutput) {
+      commands.push(command);
+      return environment.spawn(command, onOutput);
+    },
     close: () => environment.close(),
   });
   return {
     id: backend.id,
     initialize: (policy, signal) => backend.initialize(policy, signal),
     close: () => backend.close(),
-    async create(identity, resources, signal) { return wrap(await backend.create(identity, resources, signal)); },
-    ...(backend.attach ? { async attach(identity: any, receipt: any, resources: any, signal: AbortSignal) {
-      return wrap(await backend.attach!(identity, receipt, resources, signal));
-    } } : {}),
+    async create(identity, resources, signal) {
+      return wrap(await backend.create(identity, resources, signal));
+    },
+    ...(backend.attach
+      ? {
+          async attach(identity: any, receipt: any, resources: any, signal: AbortSignal) {
+            return wrap(await backend.attach!(identity, receipt, resources, signal));
+          },
+        }
+      : {}),
   };
 }
 
@@ -76,25 +86,30 @@ export interface EndpointHarness {
 const defaults = { cpuMillis: 4000, memoryBytes: 8 * 1024 ** 3 };
 
 async function socketHost(mount?: { host: string; guest: string }) {
-  const directory = mount?.host ?? await mkdtemp(join(tmpdir(), "oc-ep-"));
-  const servers: Server[] = [], sockets = new Set<Socket>();
+  const directory = mount?.host ?? (await mkdtemp(join(tmpdir(), "oc-ep-")));
+  const servers: Server[] = [],
+    sockets = new Set<Socket>();
   return {
     directory,
     async listen(handler: (socket: Socket) => void, fileName?: string) {
-      const name = fileName ?? randomUUID().slice(0, 8) + ".sock", path = join(directory, name);
-      const server = createServer({ allowHalfOpen: true }, socket => {
+      const name = fileName ?? randomUUID().slice(0, 8) + ".sock",
+        path = join(directory, name);
+      const server = createServer({ allowHalfOpen: true }, (socket) => {
         sockets.add(socket);
         socket.once("close", () => sockets.delete(socket));
         handler(socket);
       });
       servers.push(server);
-      await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(path, () => resolve()); });
+      await new Promise<void>((resolve, reject) => {
+        server.once("error", reject);
+        server.listen(path, () => resolve());
+      });
       return mount ? mount.guest + "/" + name : path;
     },
     missing: () => (mount ? mount.guest : directory) + "/missing.sock",
     async dispose() {
       for (const socket of sockets) socket.destroy();
-      await Promise.all(servers.map(server => new Promise<void>(resolve => server.close(() => resolve()))));
+      await Promise.all(servers.map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
       if (!mount) await rm(directory, { recursive: true, force: true });
     },
   };
@@ -104,150 +119,285 @@ async function socketHost(mount?: { host: string; guest: string }) {
  * guest interpreter. It models a backend whose processes never need environment
  * retirement (e.g. a supervised local owner). */
 export async function inProcessHarness(): Promise<EndpointHarness> {
-  const host = await socketHost(), commands: SandboxCommand[] = [], closes = { count: 0 };
+  const host = await socketHost(),
+    commands: SandboxCommand[] = [],
+    closes = { count: 0 };
   const environment = (): SandboxEnvironment => {
     let ended = false;
     const live = new Set<() => void>();
     return {
-      resources: defaults, capabilities: { terminal: false },
+      resources: defaults,
+      capabilities: { terminal: false },
       async spawn(command, onOutput) {
         if (ended) throw new SandboxFault("SANDBOX_CLOSED", "closed");
         commands.push(command);
         let resolveExit!: (exit: SandboxExit) => void;
-        const exited = new Promise<SandboxExit>(resolve => { resolveExit = resolve; });
+        const exited = new Promise<SandboxExit>((resolve) => {
+          resolveExit = resolve;
+        });
         let done = false;
-        const finish = (code: number | null) => { if (!done) { done = true; live.delete(kill); resolveExit({ code }); } };
-        const kill = () => { socket?.destroy(); finish(null); };
+        const finish = (code: number | null) => {
+          if (!done) {
+            done = true;
+            live.delete(kill);
+            resolveExit({ code });
+          }
+        };
+        const kill = () => {
+          socket?.destroy();
+          finish(null);
+        };
         live.add(kill);
         let socket: Socket | undefined;
         if (command.command.includes("-c") && command.command.at(-2)?.startsWith("import os,select,socket")) {
           socket = createConnection({ path: command.command.at(-1)!, allowHalfOpen: true });
           socket.on("data", (data: Buffer) => onOutput?.({ stream: "stdout", data: new Uint8Array(data) }));
-          socket.on("end", () => { socket!.destroy(); finish(0); });
+          socket.on("end", () => {
+            socket!.destroy();
+            finish(0);
+          });
           socket.on("error", () => finish(1));
           await once(socket, "connect").catch(() => {});
         }
         const process: SandboxProcess = {
-          id: randomUUID(), kind: "process", exited,
+          id: randomUUID(),
+          kind: "process",
+          exited,
           async writeStdin(data) {
             if (done) throw new SandboxFault("SANDBOX_CLOSED", "closed");
-            if (socket) await new Promise<void>((resolve, reject) => socket!.write(data, error => error ? reject(error) : resolve()));
+            if (socket)
+              await new Promise<void>((resolve, reject) =>
+                socket!.write(data, (error) => (error ? reject(error) : resolve())),
+              );
             else onOutput?.({ stream: "stdout", data });
           },
-          async closeStdin() { if (!done) socket?.end(); },
-          async terminate() { kill(); },
+          async closeStdin() {
+            if (!done) socket?.end();
+          },
+          async terminate() {
+            kill();
+          },
         };
         return process;
       },
-      async close() { if (!ended) { ended = true; closes.count++; for (const kill of [...live]) kill(); } },
+      async close() {
+        if (!ended) {
+          ended = true;
+          closes.count++;
+          for (const kill of [...live]) kill();
+        }
+      },
     };
   };
   return {
-    name: "in-process", python: "/usr/bin/python3", resources: defaults, catCommand: ["cat"], commands, closes,
-    backend: { id: "in-process", async initialize() {}, async create() { return environment(); }, async close() {} },
-    listen: host.listen, missing: host.missing, dispose: host.dispose,
+    name: "in-process",
+    python: "/usr/bin/python3",
+    resources: defaults,
+    catCommand: ["cat"],
+    commands,
+    closes,
+    backend: {
+      id: "in-process",
+      async initialize() {},
+      async create() {
+        return environment();
+      },
+      async close() {},
+    },
+    listen: host.listen,
+    missing: host.missing,
+    dispose: host.dispose,
   };
 }
 
-function childProcess(child: ChildProcessWithoutNullStreams, onOutput?: (output: SandboxOutput) => void): SandboxProcess {
-  const exited = new Promise<SandboxExit>(resolve => child.once("close", (code, signal) => resolve({ code, ...(signal ? { signal } : {}) })));
+function childProcess(
+  child: ChildProcessWithoutNullStreams,
+  onOutput?: (output: SandboxOutput) => void,
+): SandboxProcess {
+  const exited = new Promise<SandboxExit>((resolve) =>
+    child.once("close", (code, signal) => resolve({ code, ...(signal ? { signal } : {}) })),
+  );
   child.stdout.on("data", (data: Buffer) => onOutput?.({ stream: "stdout", data: new Uint8Array(data) }));
   child.stderr.on("data", (data: Buffer) => onOutput?.({ stream: "stderr", data: new Uint8Array(data) }));
   child.stdin.on("error", () => {});
   return {
-    id: randomUUID(), kind: "process", exited,
-    writeStdin: data => new Promise<void>((resolve, reject) => child.stdin.write(data, error => error ? reject(error) : resolve())),
-    async closeStdin() { child.stdin.end(); },
-    async terminate() { if (child.exitCode === null && child.signalCode === null) { child.kill("SIGKILL"); await exited; } },
+    id: randomUUID(),
+    kind: "process",
+    exited,
+    writeStdin: (data) =>
+      new Promise<void>((resolve, reject) => child.stdin.write(data, (error) => (error ? reject(error) : resolve()))),
+    async closeStdin() {
+      child.stdin.end();
+    },
+    async terminate() {
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill("SIGKILL");
+        await exited;
+      }
+    },
   };
 }
 
 /** Local child processes without the broker (a Hands-style local owner). */
 export async function localProcessHarness(): Promise<EndpointHarness> {
-  const host = await socketHost(), commands: SandboxCommand[] = [], closes = { count: 0 };
+  const host = await socketHost(),
+    commands: SandboxCommand[] = [],
+    closes = { count: 0 };
   return {
-    name: "local-process", python: "/usr/bin/python3", resources: defaults, catCommand: ["/bin/cat"], commands, closes,
+    name: "local-process",
+    python: "/usr/bin/python3",
+    resources: defaults,
+    catCommand: ["/bin/cat"],
+    commands,
+    closes,
     backend: {
-      id: "local-process", async initialize() {}, async close() {},
+      id: "local-process",
+      async initialize() {},
+      async close() {},
       async create() {
         const children = new Set<ChildProcessWithoutNullStreams>();
         let ended = false;
         return {
-          resources: defaults, capabilities: { terminal: false },
+          resources: defaults,
+          capabilities: { terminal: false },
           async spawn(command, onOutput) {
             if (ended) throw new SandboxFault("SANDBOX_CLOSED", "closed");
             commands.push(command);
-            const child = spawn(command.command[0]!, command.command.slice(1), { cwd: command.cwd, env: command.env, stdio: ["pipe", "pipe", "pipe"] });
-            children.add(child); child.once("close", () => children.delete(child));
+            const child = spawn(command.command[0]!, command.command.slice(1), {
+              cwd: command.cwd,
+              env: command.env,
+              stdio: ["pipe", "pipe", "pipe"],
+            });
+            children.add(child);
+            child.once("close", () => children.delete(child));
             await once(child, "spawn");
             return childProcess(child, onOutput);
           },
           async close() {
             if (ended) return;
-            ended = true; closes.count++;
-            await Promise.all([...children].map(async child => { child.kill("SIGKILL"); await once(child, "close").catch(() => {}); }));
+            ended = true;
+            closes.count++;
+            await Promise.all(
+              [...children].map(async (child) => {
+                child.kill("SIGKILL");
+                await once(child, "close").catch(() => {});
+              }),
+            );
           },
         };
       },
     },
-    listen: host.listen, missing: host.missing, dispose: host.dispose,
+    listen: host.listen,
+    missing: host.missing,
+    dispose: host.dispose,
   };
 }
 
 /** Real E2B adapter and shared broker; only the vendor SDK is replaced by local processes. */
 export async function e2bFixtureHarness(): Promise<EndpointHarness> {
-  const host = await socketHost(), commands: SandboxCommand[] = [], closes = { count: 0 };
+  const host = await socketHost(),
+    commands: SandboxCommand[] = [],
+    closes = { count: 0 };
   const wire: SandboxCommand[] = [];
-  const directory = await mkdtemp(join(tmpdir(), "oc-e2b-")), children = new Set<ChildProcessWithoutNullStreams>();
+  const directory = await mkdtemp(join(tmpdir(), "oc-e2b-")),
+    children = new Set<ChildProcessWithoutNullStreams>();
   const instances = new Map<string, ReturnType<typeof instance>>();
   const instance = () => {
-  let gone = false;
-  const owned = new Set<ChildProcessWithoutNullStreams>();
-  return {
-    sandboxId: "endpoint-conformance-" + randomUUID(),
-    get gone() { return gone; },
-    async getInfo() { if (gone) throw new SandboxNotFoundError("gone"); return { cpuCount: 4, memoryMB: 8192 }; },
-    async kill() { if (!gone) { gone = true; closes.count++; } for (const child of owned) child.kill("SIGKILL"); },
-    async setTimeout() {},
-    files: { async write(path: string, data: string) { await writeFile(join(directory, basename(path)), data); } },
-    commands: {
-      async run(command: string, options: any) {
-        const child = spawn("/bin/sh", ["-c", command.replace(/\/tmp\/opencraft-exec-/g, directory + "/opencraft-exec-")], { stdio: ["pipe", "pipe", "pipe"] });
-        children.add(child); owned.add(child);
-        const done = once(child, "close");
-        void done.then(() => { children.delete(child); owned.delete(child); });
-        child.stdin.on("error", () => {});
-        child.stdout.on("data", data => options.onStdout(data.toString("ascii")));
-        child.stderr.on("data", data => options.onStderr(data.toString("utf8")));
-        return {
-          sendStdin: (data: string) => {
-            for (const line of data.split("\n")) if (line.startsWith('{"type":"start"')) wire.push(JSON.parse(line).command);
-            return new Promise<void>((resolve, reject) => child.stdin.write(data, error => error ? reject(error) : resolve()));
-          },
-          wait: async () => { const [code] = await done; if (code !== 0) throw Error("transport stopped"); return { exitCode: code }; },
-        };
+    let gone = false;
+    const owned = new Set<ChildProcessWithoutNullStreams>();
+    return {
+      sandboxId: "endpoint-conformance-" + randomUUID(),
+      get gone() {
+        return gone;
       },
-    },
-  };
+      async getInfo() {
+        if (gone) throw new SandboxNotFoundError("gone");
+        return { cpuCount: 4, memoryMB: 8192 };
+      },
+      async kill() {
+        if (!gone) {
+          gone = true;
+          closes.count++;
+        }
+        for (const child of owned) child.kill("SIGKILL");
+      },
+      async setTimeout() {},
+      files: {
+        async write(path: string, data: string) {
+          await writeFile(join(directory, basename(path)), data);
+        },
+      },
+      commands: {
+        async run(command: string, options: any) {
+          const child = spawn(
+            "/bin/sh",
+            ["-c", command.replace(/\/tmp\/opencraft-exec-/g, directory + "/opencraft-exec-")],
+            { stdio: ["pipe", "pipe", "pipe"] },
+          );
+          children.add(child);
+          owned.add(child);
+          const done = once(child, "close");
+          void done.then(() => {
+            children.delete(child);
+            owned.delete(child);
+          });
+          child.stdin.on("error", () => {});
+          child.stdout.on("data", (data) => options.onStdout(data.toString("ascii")));
+          child.stderr.on("data", (data) => options.onStderr(data.toString("utf8")));
+          return {
+            sendStdin: (data: string) => {
+              for (const line of data.split("\n"))
+                if (line.startsWith('{"type":"start"')) wire.push(JSON.parse(line).command);
+              return new Promise<void>((resolve, reject) =>
+                child.stdin.write(data, (error) => (error ? reject(error) : resolve())),
+              );
+            },
+            wait: async () => {
+              const [code] = await done;
+              if (code !== 0) throw Error("transport stopped");
+              return { exitCode: code };
+            },
+          };
+        },
+      },
+    };
   };
   let latest: ReturnType<typeof instance> | undefined;
   const driver = {
-    async create() { const value = instance(); instances.set(value.sandboxId, value); latest = value; return value; },
+    async create() {
+      const value = instance();
+      instances.set(value.sandboxId, value);
+      latest = value;
+      return value;
+    },
     async connect(sandboxId: string) {
       const value = instances.get(sandboxId);
       if (!value || value.gone) throw new SandboxNotFoundError("gone");
       return value;
     },
   } as unknown as E2BConnection;
-  const options = { apiUrl: "https://api.example.test", sandboxUrl: "https://proxy.example.test", templateId: "endpoint-conformance", readApiKey: async () => "synthetic" };
+  const options = {
+    apiUrl: "https://api.example.test",
+    sandboxUrl: "https://proxy.example.test",
+    templateId: "endpoint-conformance",
+    readApiKey: async () => "synthetic",
+  };
   return {
-    name: "e2b-fixture", python: "/usr/bin/python3", resources: defaults, catCommand: ["/bin/cat"], commands, closes,
+    name: "e2b-fixture",
+    python: "/usr/bin/python3",
+    resources: defaults,
+    catCommand: ["/bin/cat"],
+    commands,
+    closes,
     backend: recording(e2bSandboxBackend(options, driver), commands),
     wire,
     reconnect: () => recording(e2bSandboxBackend(options, driver), commands),
     // E2B: the instance is gone (killed outside this Host); its receipt must not re-attach.
-    async replaceInstance() { await latest?.kill(); },
-    listen: host.listen, missing: host.missing,
+    async replaceInstance() {
+      await latest?.kill();
+    },
+    listen: host.listen,
+    missing: host.missing,
     async dispose() {
       for (const child of children) child.kill("SIGKILL");
       await host.dispose();
@@ -259,29 +409,58 @@ export async function e2bFixtureHarness(): Promise<EndpointHarness> {
 /** static-docker with the agent's link server in this process (the channel without
  * a container): real link protocol, ticket, sessions and the shared broker. */
 export async function staticDockerLinkHarness(): Promise<EndpointHarness> {
-  const host = await socketHost(), commands: SandboxCommand[] = [], closes = { count: 0 };
+  const host = await socketHost(),
+    commands: SandboxCommand[] = [],
+    closes = { count: 0 };
   const directory = await mkdtemp(join(tmpdir(), "oc-link-"));
   const link = join(directory, "brain");
   await mkdir(link, { mode: 0o700 });
-  const start = () => serveSandboxLink({
-    directory: link, python: "/usr/bin/python3", policy: "any", endpointDirectory: host.directory,
-    incarnation: { id: randomUUID().replaceAll("-", ""), evidence: "test", startedAt: new Date().toISOString() },
-    limits: async () => ({ cpuMillis: defaults.cpuMillis, memoryBytes: defaults.memoryBytes, tasks: 4096 }),
-  });
+  const start = () =>
+    serveSandboxLink({
+      directory: link,
+      python: "/usr/bin/python3",
+      policy: "any",
+      endpointDirectory: host.directory,
+      incarnation: { id: randomUUID().replaceAll("-", ""), evidence: "test", startedAt: new Date().toISOString() },
+      limits: async () => ({ cpuMillis: defaults.cpuMillis, memoryBytes: defaults.memoryBytes, tasks: 4096 }),
+    });
   let server = await start();
   const counted = (backend: SandboxBackend): SandboxBackend => {
-    const count = (environment: SandboxEnvironment): SandboxEnvironment => ({ ...environment, spawn: environment.spawn,
-      close: async () => { await environment.close(); closes.count++; } });
-    return { ...backend, create: async (...args) => count(await backend.create(...args)),
-      attach: async (...args) => count(await backend.attach!(...args)) };
+    const count = (environment: SandboxEnvironment): SandboxEnvironment => ({
+      ...environment,
+      spawn: environment.spawn,
+      close: async () => {
+        await environment.close();
+        closes.count++;
+      },
+    });
+    return {
+      ...backend,
+      create: async (...args) => count(await backend.create(...args)),
+      attach: async (...args) => count(await backend.attach!(...args)),
+    };
   };
   const make = () => recording(counted(staticDockerSandboxBackend({ directory: link })), commands);
   return {
-    name: "static-docker-link", python: "/usr/bin/python3", resources: defaults, catCommand: ["/bin/cat"], commands, closes,
-    backend: make(), reconnect: make,
-    async replaceInstance() { await server.close(); server = await start(); },
-    listen: host.listen, missing: host.missing,
-    async dispose() { await server.close(); await host.dispose(); await rm(directory, { recursive: true, force: true }); },
+    name: "static-docker-link",
+    python: "/usr/bin/python3",
+    resources: defaults,
+    catCommand: ["/bin/cat"],
+    commands,
+    closes,
+    backend: make(),
+    reconnect: make,
+    async replaceInstance() {
+      await server.close();
+      server = await start();
+    },
+    listen: host.listen,
+    missing: host.missing,
+    async dispose() {
+      await server.close();
+      await host.dispose();
+      await rm(directory, { recursive: true, force: true });
+    },
   };
 }
 
@@ -292,47 +471,86 @@ const run = promisify(execFile);
 export async function dockerHarness(image: string): Promise<EndpointHarness> {
   const mountDirectory = await mkdtemp(join(tmpdir(), "oc-docker-"));
   const host = await socketHost({ host: mountDirectory, guest: "/endpoint" });
-  const commands: SandboxCommand[] = [], closes = { count: 0 };
-  const python = (await run("docker", ["run", "--rm", "--entrypoint", "sh", image, "-c", "command -v python3"])).stdout.trim();
+  const commands: SandboxCommand[] = [],
+    closes = { count: 0 };
+  const python = (
+    await run("docker", ["run", "--rm", "--entrypoint", "sh", image, "-c", "command -v python3"])
+  ).stdout.trim();
   const containers = new Set<string>();
   return {
-    name: "docker-exec", python, resources: defaults, catCommand: ["cat"], commands, closes,
+    name: "docker-exec",
+    python,
+    resources: defaults,
+    catCommand: ["cat"],
+    commands,
+    closes,
     backend: {
-      id: "docker-exec", async initialize() {}, async close() {},
+      id: "docker-exec",
+      async initialize() {},
+      async close() {},
       async create() {
-        const id = (await run("docker", ["run", "-d", "--rm", "--cpus", "4", "--memory", "8g", "-v", mountDirectory + ":/endpoint", "--entrypoint", "sleep", image, "infinity"])).stdout.trim();
+        const id = (
+          await run("docker", [
+            "run",
+            "-d",
+            "--rm",
+            "--cpus",
+            "4",
+            "--memory",
+            "8g",
+            "-v",
+            mountDirectory + ":/endpoint",
+            "--entrypoint",
+            "sleep",
+            image,
+            "infinity",
+          ])
+        ).stdout.trim();
         containers.add(id);
         let ended = false;
         const environment: SandboxEnvironment = {
-          resources: defaults, capabilities: { terminal: true },
+          resources: defaults,
+          capabilities: { terminal: true },
           async spawn(command, onOutput) {
             if (ended) throw new SandboxFault("SANDBOX_CLOSED", "closed");
             commands.push(command);
             return startBrokerProcess({
-              id: randomUUID(), command, onOutput, requestTimeoutMs: 15000, label: "Docker",
+              id: randomUUID(),
+              command,
+              onOutput,
+              requestTimeoutMs: 15000,
+              label: "Docker",
               closeEnvironment: () => environment.close(),
               async launch(onStdout) {
-                const child = spawn("docker", ["exec", "-i", id, python, "-u", "-c", brokerSource], { stdio: ["pipe", "pipe", "ignore"] });
+                const child = spawn("docker", ["exec", "-i", id, python, "-u", "-c", brokerSource], {
+                  stdio: ["pipe", "pipe", "ignore"],
+                });
                 child.stdin.on("error", () => {});
                 child.stdout.setEncoding("ascii").on("data", onStdout);
                 await once(child, "spawn");
                 return {
                   ended: once(child, "close"),
-                  write: frame => new Promise<void>((resolve, reject) => child.stdin.write(frame, error => error ? reject(error) : resolve())),
+                  write: (frame) =>
+                    new Promise<void>((resolve, reject) =>
+                      child.stdin.write(frame, (error) => (error ? reject(error) : resolve())),
+                    ),
                 };
               },
             });
           },
           async close() {
             if (ended) return;
-            ended = true; closes.count++; containers.delete(id);
+            ended = true;
+            closes.count++;
+            containers.delete(id);
             await run("docker", ["rm", "-f", id]);
           },
         };
         return environment;
       },
     },
-    listen: host.listen, missing: host.missing,
+    listen: host.listen,
+    missing: host.missing,
     async dispose() {
       for (const id of containers) await run("docker", ["rm", "-f", id]).catch(() => {});
       await host.dispose();
@@ -348,36 +566,98 @@ export async function dockerHarness(image: string): Promise<EndpointHarness> {
  * and replace the container. Opt-in: OPENCRAFT_SANDBOX_CONFORMANCE_STATIC_DOCKER=<image>. */
 export async function staticDockerContainerHarness(image: string): Promise<EndpointHarness> {
   const directory = await mkdtemp(join(tmpdir(), "oc-sd-"));
-  const link = join(directory, "link"), endpoints = join(directory, "endpoints");
-  await mkdir(link, { mode: 0o700 }); await mkdir(endpoints, { mode: 0o700 });
+  const link = join(directory, "link"),
+    endpoints = join(directory, "endpoints");
+  await mkdir(link, { mode: 0o700 });
+  await mkdir(endpoints, { mode: 0o700 });
   const host = await socketHost({ host: endpoints, guest: "/endpoint" });
-  const commands: SandboxCommand[] = [], closes = { count: 0 };
+  const commands: SandboxCommand[] = [],
+    closes = { count: 0 };
   let container = "";
   const start = async () => {
-    container = (await run("docker", ["run", "-d", "--rm", "--init", "--user", "0:0", "--network", "none", "--cpus", "4", "--memory", "8g",
-      "--tmpfs", "/run/opencraft-agent:mode=0700", "-v", `${link}:/run/opencraft-link`, "-v", `${endpoints}:/endpoint`,
-      "-e", "OPENCRAFT_DATA_DIR=/var/tmp/oc-data", "-e", "OPENCRAFT_WORKSPACE_DIR=/var/tmp/oc-workspace",
-      "-e", "OPENCRAFT_AGENT_LINK_DIR=/run/opencraft-link", "-e", "OPENCRAFT_AGENT_LINK_POLICY=any",
-      "--entrypoint", "/opt/opencraft/bin/node", image, "/opt/opencraft/runtime/workspace-agent.mjs", "--bare"])).stdout.trim();
+    container = (
+      await run("docker", [
+        "run",
+        "-d",
+        "--rm",
+        "--init",
+        "--user",
+        "0:0",
+        "--network",
+        "none",
+        "--cpus",
+        "4",
+        "--memory",
+        "8g",
+        "--tmpfs",
+        "/run/opencraft-agent:mode=0700",
+        "-v",
+        `${link}:/run/opencraft-link`,
+        "-v",
+        `${endpoints}:/endpoint`,
+        "-e",
+        "OPENCRAFT_DATA_DIR=/var/tmp/oc-data",
+        "-e",
+        "OPENCRAFT_WORKSPACE_DIR=/var/tmp/oc-workspace",
+        "-e",
+        "OPENCRAFT_AGENT_LINK_DIR=/run/opencraft-link",
+        "-e",
+        "OPENCRAFT_AGENT_LINK_POLICY=any",
+        "--entrypoint",
+        "/opt/opencraft/bin/node",
+        image,
+        "/opt/opencraft/runtime/workspace-agent.mjs",
+        "--bare",
+      ])
+    ).stdout.trim();
     const deadline = Date.now() + 60_000;
     for (;;) {
-      try { await readFile(join(link, "ticket")); await readFile(join(link, "link.sock")).catch(error => { if (error.code !== "ENXIO" && error.code !== "EOPNOTSUPP") throw error; }); return; }
-      catch { if (Date.now() > deadline) throw Error("static-docker agent did not start"); await new Promise(resolve => setTimeout(resolve, 200)); }
+      try {
+        await readFile(join(link, "ticket"));
+        await readFile(join(link, "link.sock")).catch((error) => {
+          if (error.code !== "ENXIO" && error.code !== "EOPNOTSUPP") throw error;
+        });
+        return;
+      } catch {
+        if (Date.now() > deadline) throw Error("static-docker agent did not start");
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
     }
   };
   await start();
   const counted = (backend: SandboxBackend): SandboxBackend => {
-    const count = (environment: SandboxEnvironment): SandboxEnvironment => ({ ...environment, spawn: environment.spawn,
-      close: async () => { await environment.close(); closes.count++; } });
-    return { ...backend, create: async (...args) => count(await backend.create(...args)), attach: async (...args) => count(await backend.attach!(...args)) };
+    const count = (environment: SandboxEnvironment): SandboxEnvironment => ({
+      ...environment,
+      spawn: environment.spawn,
+      close: async () => {
+        await environment.close();
+        closes.count++;
+      },
+    });
+    return {
+      ...backend,
+      create: async (...args) => count(await backend.create(...args)),
+      attach: async (...args) => count(await backend.attach!(...args)),
+    };
   };
   const make = () => recording(counted(staticDockerSandboxBackend({ directory: link })), commands);
   return {
-    name: "static-docker-container", python: "/usr/bin/python3", resources: defaults, catCommand: ["/bin/cat"], commands, closes,
-    backend: make(), reconnect: make,
+    name: "static-docker-container",
+    python: "/usr/bin/python3",
+    resources: defaults,
+    catCommand: ["/bin/cat"],
+    commands,
+    closes,
+    backend: make(),
+    reconnect: make,
     // A container restart: same declared service, new agent incarnation.
-    async replaceInstance() { await run("docker", ["rm", "-f", container]); await rm(join(link, "ticket"), { force: true }); await start(); },
-    listen: host.listen, missing: host.missing,
+    async replaceInstance() {
+      await run("docker", ["rm", "-f", container]);
+      await rm(join(link, "ticket"), { force: true });
+      await start();
+    },
+    listen: host.listen,
+    missing: host.missing,
     async dispose() {
       await run("docker", ["rm", "-f", container]).catch(() => {});
       await host.dispose();
@@ -388,7 +668,14 @@ export async function staticDockerContainerHarness(image: string): Promise<Endpo
 
 export async function harnesses(): Promise<(() => Promise<EndpointHarness>)[]> {
   const only = process.env.OPENCRAFT_SANDBOX_CONFORMANCE_ONLY;
-  const list = [inProcessHarness, localProcessHarness, e2bFixtureHarness, staticDockerLinkHarness].filter(make => !only || make.name.toLowerCase().startsWith(only));
-  const image = process.env.OPENCRAFT_SANDBOX_CONFORMANCE_DOCKER, workspaceImage = process.env.OPENCRAFT_SANDBOX_CONFORMANCE_STATIC_DOCKER;
-  return [...list, ...(image ? [() => dockerHarness(image)] : []), ...(workspaceImage ? [() => staticDockerContainerHarness(workspaceImage)] : [])];
+  const list = [inProcessHarness, localProcessHarness, e2bFixtureHarness, staticDockerLinkHarness].filter(
+    (make) => !only || make.name.toLowerCase().startsWith(only),
+  );
+  const image = process.env.OPENCRAFT_SANDBOX_CONFORMANCE_DOCKER,
+    workspaceImage = process.env.OPENCRAFT_SANDBOX_CONFORMANCE_STATIC_DOCKER;
+  return [
+    ...list,
+    ...(image ? [() => dockerHarness(image)] : []),
+    ...(workspaceImage ? [() => staticDockerContainerHarness(workspaceImage)] : []),
+  ];
 }

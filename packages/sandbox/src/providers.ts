@@ -51,7 +51,9 @@ export interface PersistentWorkspaceProvider<I extends SandboxProviderInstallati
     input: PersistentWorkspaceAccess<I> & { readonly workspaceId: string; readonly instanceId: string },
   ): Promise<{ instanceId: string; privateVolumeId: string }>;
   /** Point-in-time inspection of an existing binding; any doubt is `unknown`. */
-  inspect(input: PersistentWorkspaceAccess<I> & { readonly binding: PersistentWorkspaceBinding }): Promise<PersistentWorkspaceState>;
+  inspect(
+    input: PersistentWorkspaceAccess<I> & { readonly binding: PersistentWorkspaceBinding },
+  ): Promise<PersistentWorkspaceState>;
   /** Verify the live environment actually mounts the declared volumes. Never mounts. */
   verifyMounts(
     input: PersistentWorkspaceAccess<I> & {
@@ -86,7 +88,10 @@ export interface SandboxProviderRegistry<I extends SandboxProviderInstallation> 
   persistent<V extends I>(installation: V): PersistentWorkspaceProvider<V>;
   /** Selects the provider for an environment URI: the installation must be that
    * provider's and the provider must accept the target. Never falls back. */
-  environment<V extends I>(installation: V, address: SandboxEnvironmentAddress): { definition: SandboxProviderDefinition<V>; templateId: string };
+  environment<V extends I>(
+    installation: V,
+    address: SandboxEnvironmentAddress,
+  ): { definition: SandboxProviderDefinition<V>; templateId: string };
 }
 
 const unavailable = () => new SandboxFault("SANDBOX_UNAVAILABLE", "Selected execution provider is not registered");
@@ -100,7 +105,11 @@ export function createSandboxProviderRegistry<I extends SandboxProviderInstallat
   for (const [id, definition] of Object.entries(definitions) as [string, SandboxProviderDefinition<I> | undefined][]) {
     if (!definition) continue;
     // Short enough to name a per-provider pool (`ordinary-<id>`, 32 characters).
-    if (!/^[a-z0-9][a-z0-9-]{0,22}$/u.test(id) || definition.id !== id || typeof definition.createBackend !== "function")
+    if (
+      !/^[a-z0-9][a-z0-9-]{0,22}$/u.test(id) ||
+      definition.id !== id ||
+      typeof definition.createBackend !== "function"
+    )
       throw new SandboxFault("SANDBOX_POLICY", "Invalid sandbox provider registration");
     entries.set(id, Object.freeze({ ...definition }));
   }
@@ -119,8 +128,11 @@ export function createSandboxProviderRegistry<I extends SandboxProviderInstallat
     resolve: <V extends I>(installation: V) => resolve(installation) as unknown as SandboxProviderDefinition<V>,
     environment: <V extends I>(installation: V, address: SandboxEnvironmentAddress) => {
       const definition = resolve(installation);
-      if (address?.provider !== installation.backend || typeof address.target !== "string"
-        || definition.acceptsTarget && !definition.acceptsTarget(address.target))
+      if (
+        address?.provider !== installation.backend ||
+        typeof address.target !== "string" ||
+        (definition.acceptsTarget && !definition.acceptsTarget(address.target))
+      )
         throw new SandboxFault("SANDBOX_POLICY", "Sandbox environment URI does not match its provider installation");
       return { definition: definition as unknown as SandboxProviderDefinition<V>, templateId: address.target };
     },

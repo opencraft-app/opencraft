@@ -23,7 +23,8 @@ interface Env {
     get(id: unknown): WorkspaceHostStoreObject;
   };
 }
-type Method = "migrate" | "ledger" | "schema" | "scenario" | "tamperLedger" | "seed" | "engineWake" | "observe" | "evict";
+type Method =
+  "migrate" | "ledger" | "schema" | "scenario" | "tamperLedger" | "seed" | "engineWake" | "observe" | "evict";
 type AlarmStore = "interrupted-turn-recovery" | "provider-turn-retry";
 interface AlarmStorage {
   setAlarm(at: number): Promise<void>;
@@ -35,8 +36,12 @@ interface AlarmStorage {
 /** OwnerWakeTimer over the object's alarm: `at` is the owner's wall clock, as an alarm time is. */
 function alarmWakeTimer(storage: AlarmStorage): OwnerWakeTimer {
   return {
-    arm(at) { void storage.setAlarm(at).catch(() => undefined); },
-    cancel() { void storage.deleteAlarm().catch(() => undefined); },
+    arm(at) {
+      void storage.setAlarm(at).catch(() => undefined);
+    },
+    cancel() {
+      void storage.deleteAlarm().catch(() => undefined);
+    },
   };
 }
 const OWNER_KEY = "alarm-owner";
@@ -44,7 +49,12 @@ const OWNER_KEY = "alarm-owner";
 const failure = (error: unknown) => (error instanceof Error ? `${error.name}: ${error.message}` : String(error));
 
 export class WorkspaceHostStoreObject extends DurableObject<Env> {
-  #owner: { store: AlarmStore; recovery?: SqlInterruptedTurnRecovery; retry?: SqlProviderTurnRetry; wake: () => void } | null = null;
+  #owner: {
+    store: AlarmStore;
+    recovery?: SqlInterruptedTurnRecovery;
+    retry?: SqlProviderTurnRetry;
+    wake: () => void;
+  } | null = null;
   /** Owner clock offset, so a seeded provider failure falls due shortly instead of after its real back-off. */
   #skew = 0;
   #alarms = 0;
@@ -63,22 +73,47 @@ export class WorkspaceHostStoreObject extends DurableObject<Env> {
     const lent = { database, close() {} };
     const now = () => Date.now() + this.#skew;
     let wake: () => void = () => {};
-    const timer = (callback: () => void) => { wake = callback; return alarmWakeTimer(this.#alarmStorage); };
-    const continued = (row: { attempts: number }, admit: () => boolean) => Promise.resolve(admit() ? `auto-${row.attempts}` : null);
-    const owner = store === "interrupted-turn-recovery"
-      ? { store, recovery: new SqlInterruptedTurnRecovery(lent, {
-        serialize: (_id, work) => work(),
-        inspect: async row => row.turnId.startsWith("auto-") ? "live" : "lost",
-        continue: (row, _current, admit) => continued(row, admit),
-        changed: () => {},
-      }, 300, () => true, now, timer) }
-      : { store, retry: new SqlProviderTurnRetry(lent, {
-        serialize: (_id, work) => work(),
-        inspect: async row => row.state === "running" ? "live" : { failure: row.failure },
-        continue: (row, _current, admit) => continued(row, admit),
-        changed: () => {},
-      }, now, () => 0, () => true, timer) };
-    return this.#owner = { ...owner, wake: () => wake() };
+    const timer = (callback: () => void) => {
+      wake = callback;
+      return alarmWakeTimer(this.#alarmStorage);
+    };
+    const continued = (row: { attempts: number }, admit: () => boolean) =>
+      Promise.resolve(admit() ? `auto-${row.attempts}` : null);
+    const owner =
+      store === "interrupted-turn-recovery"
+        ? {
+            store,
+            recovery: new SqlInterruptedTurnRecovery(
+              lent,
+              {
+                serialize: (_id, work) => work(),
+                inspect: async (row) => (row.turnId.startsWith("auto-") ? "live" : "lost"),
+                continue: (row, _current, admit) => continued(row, admit),
+                changed: () => {},
+              },
+              300,
+              () => true,
+              now,
+              timer,
+            ),
+          }
+        : {
+            store,
+            retry: new SqlProviderTurnRetry(
+              lent,
+              {
+                serialize: (_id, work) => work(),
+                inspect: async (row) => (row.state === "running" ? "live" : { failure: row.failure }),
+                continue: (row, _current, admit) => continued(row, admit),
+                changed: () => {},
+              },
+              now,
+              () => 0,
+              () => true,
+              timer,
+            ),
+          };
+    return (this.#owner = { ...owner, wake: () => wake() });
   }
   override async alarm(): Promise<void> {
     this.#alarms++;
@@ -93,8 +128,14 @@ export class WorkspaceHostStoreObject extends DurableObject<Env> {
       case "seed": {
         await this.#alarmStorage.put(OWNER_KEY, store);
         const owner = this.#open(store);
-        if (owner.recovery) { owner.recovery.started("t", "original"); owner.recovery.lost("t"); }
-        else { this.#skew = -4_700; owner.retry!.failed("t", "original", { kind: "overloaded" }); this.#skew = 0; }
+        if (owner.recovery) {
+          owner.recovery.started("t", "original");
+          owner.recovery.lost("t");
+        } else {
+          this.#skew = -4_700;
+          owner.retry!.failed("t", "original", { kind: "overloaded" });
+          this.#skew = 0;
+        }
         return this.#observe(store);
       }
       case "engineWake": {
@@ -111,7 +152,12 @@ export class WorkspaceHostStoreObject extends DurableObject<Env> {
   }
   async #observe(store: AlarmStore) {
     const owner = this.#open(store);
-    return { snapshot: (owner.recovery ?? owner.retry)!.snapshot("t"), alarm: await this.#alarmStorage.getAlarm(), alarms: this.#alarms, instance: this.#instance };
+    return {
+      snapshot: (owner.recovery ?? owner.retry)!.snapshot("t"),
+      alarm: await this.#alarmStorage.getAlarm(),
+      alarms: this.#alarms,
+      instance: this.#instance,
+    };
   }
   async call(method: Method, store: WorkspaceHostStore, limit?: number): Promise<unknown> {
     if (method === "seed" || method === "engineWake" || method === "observe" || method === "evict")
@@ -128,14 +174,21 @@ export class WorkspaceHostStoreObject extends DurableObject<Env> {
         migrate(database, store);
         return scenario(database, store);
       case "tamperLedger":
-        return Number(database.prepare("UPDATE schema_migrations SET checksum=? WHERE version=1").run("0".repeat(64)).changes);
+        return Number(
+          database.prepare("UPDATE schema_migrations SET checksum=? WHERE version=1").run("0".repeat(64)).changes,
+        );
     }
   }
 }
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const { object, method, store, limit } = (await request.json()) as { object: string; method: Method; store: WorkspaceHostStore; limit?: number };
+    const { object, method, store, limit } = (await request.json()) as {
+      object: string;
+      method: Method;
+      store: WorkspaceHostStore;
+      limit?: number;
+    };
     try {
       const stub = env.STORE.get(env.STORE.idFromName(object));
       return Response.json({ ok: true, value: await stub.call(method, store, limit) });

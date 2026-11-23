@@ -45,14 +45,16 @@ export function documentHubStore(documents: StateDocumentStore, key = HUB_STATE_
       const fresh = await initialState();
       // Another writer may have created the identity meanwhile; never replace it.
       const state = await documents.update(key, (current) =>
-        current === null ? { result: fresh, next: fresh } : { result: current });
+        current === null ? { result: fresh, next: fresh } : { result: current },
+      );
       return parseHubState(state);
     },
     async save(input) {
       const next = parseHubState(structuredClone(input));
       await documents.update(key, (current) => {
         if (current === null) throw new Error("Hub state disappeared");
-        if ((current as Partial<State>).publicKey !== next.publicKey) throw new Error("Hub state belongs to another Hub identity");
+        if ((current as Partial<State>).publicKey !== next.publicKey)
+          throw new Error("Hub state belongs to another Hub identity");
         return { result: undefined, next };
       });
     },

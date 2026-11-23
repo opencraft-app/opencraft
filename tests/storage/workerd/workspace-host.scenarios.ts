@@ -13,7 +13,14 @@ import { resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { nodeSqlDatabase } from "@opencraft/sqlite-node";
 import { migrate, publishedMigrations, scenario, schema, WORKSPACE_HOST_STORES } from "./workspace-host-domain.ts";
-import { sleep, until, type WorkerInstance, type WorkerRuntime, type WorkerScenario, type WorkerSpec } from "../../cloudflare/worker-runtime.ts";
+import {
+  sleep,
+  until,
+  type WorkerInstance,
+  type WorkerRuntime,
+  type WorkerScenario,
+  type WorkerSpec,
+} from "../../cloudflare/worker-runtime.ts";
 
 export const WORKSPACE_HOST_WORKER: WorkerSpec = {
   id: "wshost",
@@ -34,10 +41,17 @@ const shared = (runtime: WorkerRuntime) => {
 };
 function client(instance: WorkerInstance, object = `workspace-${++sequence}`) {
   return async (method: string, store: string, limit?: number): Promise<any> => {
-    const response = await instance.fetch("http://workspace/", { method: "POST", body: JSON.stringify({ object, method, store, limit }) });
+    const response = await instance.fetch("http://workspace/", {
+      method: "POST",
+      body: JSON.stringify({ object, method, store, limit }),
+    });
     const text = await response.text();
     let outcome: { ok: boolean; value?: unknown; error?: string };
-    try { outcome = JSON.parse(text); } catch { throw new Error(`HTTP ${response.status}: ${text.slice(0, 500)}`); }
+    try {
+      outcome = JSON.parse(text);
+    } catch {
+      throw new Error(`HTTP ${response.status}: ${text.slice(0, 500)}`);
+    }
     if (!outcome.ok) throw new Error(outcome.error);
     return outcome.value;
   };
@@ -86,7 +100,11 @@ export const WORKSPACE_HOST_SCENARIOS: readonly WorkerScenario[] = [
       const recorded: Record<string, unknown> = {};
       for (const store of WORKSPACE_HOST_STORES) {
         // The Host state object stops at v12 so the restart runs v13–v17 (renames, rebuilt queue, foreign key).
-        recorded[store] = await client(first, store)("migrate", store, store === "opencraft-host-state" ? 12 : undefined);
+        recorded[store] = await client(first, store)(
+          "migrate",
+          store,
+          store === "opencraft-host-state" ? 12 : undefined,
+        );
       }
       await client(first, "tampered")("migrate", "conversation-schedules");
       assert.equal(await client(first, "tampered")("tamperLedger", "conversation-schedules"), 1);
@@ -96,10 +114,17 @@ export const WORKSPACE_HOST_SCENARIOS: readonly WorkerScenario[] = [
       for (const store of WORKSPACE_HOST_STORES) {
         const call = client(second, store);
         const ledger = await call("migrate", store);
-        assert.deepEqual(ledger.slice(0, (recorded[store] as unknown[]).length), recorded[store], `${store}: earlier rows kept`);
+        assert.deepEqual(
+          ledger.slice(0, (recorded[store] as unknown[]).length),
+          recorded[store],
+          `${store}: earlier rows kept`,
+        );
         assert.equal(ledger.length, publishedMigrations(store).length);
       }
-      await assert.rejects(client(second, "tampered")("migrate", "conversation-schedules"), /Unsupported database migration history/);
+      await assert.rejects(
+        client(second, "tampered")("migrate", "conversation-schedules"),
+        /Unsupported database migration history/,
+      );
       await runtime.stop(second);
     },
   },
@@ -114,7 +139,12 @@ export const WORKSPACE_HOST_SCENARIOS: readonly WorkerScenario[] = [
       const woken = await call("engineWake", store);
       assert.equal(typeof woken.alarm, "number", "the engine wake arms the single alarm");
       await call("evict", store).catch(() => undefined);
-      const settled = await until(runtime, () => call("observe", store), (value: any) => value.snapshot.state === "running", 5000);
+      const settled = await until(
+        runtime,
+        () => call("observe", store),
+        (value: any) => value.snapshot.state === "running",
+        5000,
+      );
       assert.equal(settled.snapshot.attempts, 1);
       assert.equal(settled.snapshot.turnId, "auto-1");
       assert.notEqual(settled.instance, woken.instance, "eviction replaced the instance that armed the alarm");
@@ -131,7 +161,12 @@ export const WORKSPACE_HOST_SCENARIOS: readonly WorkerScenario[] = [
       assert.equal(seeded.snapshot.state, "waiting");
       assert.equal(typeof seeded.alarm, "number", "the committed failure arms the alarm");
       await call("evict", store).catch(() => undefined);
-      const settled = await until(runtime, () => call("observe", store), (value: any) => value.snapshot.state === "running", 5000);
+      const settled = await until(
+        runtime,
+        () => call("observe", store),
+        (value: any) => value.snapshot.state === "running",
+        5000,
+      );
       assert.equal(settled.snapshot.attempts, 1);
       assert.equal(settled.snapshot.turnId, "auto-1");
       assert.notEqual(settled.instance, seeded.instance, "eviction replaced the instance that armed the alarm");

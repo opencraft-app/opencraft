@@ -10,8 +10,21 @@
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
-import { CONTROL_PATH, DATA_PATH, MAX_RELAY_STREAMS, RELAY_PROTOCOL, STREAM_HEADER, parseOpen } from "@opencraft/relay-protocol";
-import type { TestWebSocket, WorkerInstance, WorkerRuntime, WorkerScenario, WorkerSpec } from "../../cloudflare/worker-runtime.ts";
+import {
+  CONTROL_PATH,
+  DATA_PATH,
+  MAX_RELAY_STREAMS,
+  RELAY_PROTOCOL,
+  STREAM_HEADER,
+  parseOpen,
+} from "@opencraft/relay-protocol";
+import type {
+  TestWebSocket,
+  WorkerInstance,
+  WorkerRuntime,
+  WorkerScenario,
+  WorkerSpec,
+} from "../../cloudflare/worker-runtime.ts";
 
 export const RELAY_HUB_WORKER: WorkerSpec = {
   id: "relay",
@@ -20,7 +33,10 @@ export const RELAY_HUB_WORKER: WorkerSpec = {
 };
 
 const credential = () => randomBytes(32).toString("base64url");
-const INSTALLATIONS = { "inst-a": { credential: credential(), host: "inst-a.relay.test" }, "inst-b": { credential: credential(), host: "inst-b.relay.test" } };
+const INSTALLATIONS = {
+  "inst-a": { credential: credential(), host: "inst-a.relay.test" },
+  "inst-b": { credential: credential(), host: "inst-b.relay.test" },
+};
 /**
  * Wait budgets scale with the runtime of the instance started last: scenarios
  * run one at a time (node:test runs a file's tests in order; so does the rehearsal).
@@ -29,15 +45,22 @@ let scale = 1;
 
 async function start(runtime: WorkerRuntime, options: { reservationMs?: number } = {}): Promise<WorkerInstance> {
   const worker = await runtime.start(RELAY_HUB_WORKER, {
-    vars: { INSTALLATIONS: JSON.stringify(INSTALLATIONS), ROUTE_KEY: "test-route-key",
-      ...(options.reservationMs ? { RESERVATION_MS: options.reservationMs } : {}) },
+    vars: {
+      INSTALLATIONS: JSON.stringify(INSTALLATIONS),
+      ROUTE_KEY: "test-route-key",
+      ...(options.reservationMs ? { RESERVATION_MS: options.reservationMs } : {}),
+    },
   });
   scale = runtime.patience;
   return worker;
 }
 
-const sleep = (ms: number) => new Promise(done => setTimeout(done, ms));
-async function until<T>(check: () => T | undefined | false | Promise<T | undefined | false>, label: string, timeoutMs = 10_000): Promise<T> {
+const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
+async function until<T>(
+  check: () => T | undefined | false | Promise<T | undefined | false>,
+  label: string,
+  timeoutMs = 10_000,
+): Promise<T> {
   const deadline = Date.now() + timeoutMs * scale;
   for (;;) {
     const value = await check();
@@ -53,18 +76,35 @@ class Socket {
   closed: { code: number; reason: string } | null = null;
   onMessage?: (data: string | ArrayBuffer) => void;
   constructor(readonly socket: TestWebSocket) {
-    socket.addEventListener("message", (event) => { this.messages.push(event.data); this.onMessage?.(event.data); });
-    socket.addEventListener("close", (event) => { this.closed = { code: event.code, reason: event.reason }; });
+    socket.addEventListener("message", (event) => {
+      this.messages.push(event.data);
+      this.onMessage?.(event.data);
+    });
+    socket.addEventListener("close", (event) => {
+      this.closed = { code: event.code, reason: event.reason };
+    });
   }
-  get open() { return this.closed === null; }
-  send(data: string | ArrayBuffer | Uint8Array) { this.socket.send(data); }
-  close(code = 1000, reason = "bye") { this.socket.close(code, reason); }
-  waitClosed(label: string) { return until(() => this.closed ?? undefined, `${label} close`); }
+  get open() {
+    return this.closed === null;
+  }
+  send(data: string | ArrayBuffer | Uint8Array) {
+    this.socket.send(data);
+  }
+  close(code = 1000, reason = "bye") {
+    this.socket.close(code, reason);
+  }
+  waitClosed(label: string) {
+    return until(() => this.closed ?? undefined, `${label} close`);
+  }
 }
 
 async function upgrade(worker: WorkerInstance, url: string, headers: Record<string, string> = {}) {
   const response = await worker.upgrade(url, headers);
-  return { status: response.status, socket: response.socket ? new Socket(response.socket) : undefined, text: response.text };
+  return {
+    status: response.status,
+    socket: response.socket ? new Socket(response.socket) : undefined,
+    text: response.text,
+  };
 }
 
 /** The outbound Headless side, shaped like plugins/relay-connect (control + data dials + echo target). */
@@ -74,16 +114,22 @@ class FakeHeadless {
   lastOpen?: { id: string; token: string };
   mode: "accept" | "ignore" = "accept";
   control!: Socket;
-  constructor(readonly worker: WorkerInstance, readonly installation: keyof typeof INSTALLATIONS) {}
+  constructor(
+    readonly worker: WorkerInstance,
+    readonly installation: keyof typeof INSTALLATIONS,
+  ) {}
   async connect() {
     const { status, socket } = await upgrade(this.worker, `http://relay.test${CONTROL_PATH}`, {
-      authorization: `Bearer ${INSTALLATIONS[this.installation].credential}`, "sec-websocket-protocol": RELAY_PROTOCOL });
+      authorization: `Bearer ${INSTALLATIONS[this.installation].credential}`,
+      "sec-websocket-protocol": RELAY_PROTOCOL,
+    });
     assert.equal(status, 101, "control link accepted");
     this.control = socket!;
     const control = socket!;
-    control.onMessage = raw => {
+    control.onMessage = (raw) => {
       const frame = parseOpen(JSON.parse(String(raw)));
-      this.opens++; this.lastOpen = frame;
+      this.opens++;
+      this.lastOpen = frame;
       if (this.mode === "ignore" || control !== this.control) return; // Headless-side discard: the reservation must expire.
       void this.dial(frame.id, frame.token);
     };
@@ -91,22 +137,34 @@ class FakeHeadless {
   }
   async dial(id: string, token: string) {
     const { status, socket } = await upgrade(this.worker, `http://relay.test${DATA_PATH}`, {
-      authorization: `Bearer ${token}`, [STREAM_HEADER]: id, "sec-websocket-protocol": RELAY_PROTOCOL });
+      authorization: `Bearer ${token}`,
+      [STREAM_HEADER]: id,
+      "sec-websocket-protocol": RELAY_PROTOCOL,
+    });
     if (status !== 101) return status;
     this.streams.set(id, socket!);
-    socket!.onMessage = data => { if (socket!.open) socket!.send(data); }; // echo target
+    socket!.onMessage = (data) => {
+      if (socket!.open) socket!.send(data);
+    }; // echo target
     return status;
   }
-  openStreams() { return [...this.streams.values()].filter(s => s.open).length; }
+  openStreams() {
+    return [...this.streams.values()].filter((s) => s.open).length;
+  }
 }
 
-const openClient = (worker: WorkerInstance, installation: keyof typeof INSTALLATIONS = "inst-a", path = "/app/socket") =>
-  upgrade(worker, `http://${INSTALLATIONS[installation].host}${path}`);
+const openClient = (
+  worker: WorkerInstance,
+  installation: keyof typeof INSTALLATIONS = "inst-a",
+  path = "/app/socket",
+) => upgrade(worker, `http://${INSTALLATIONS[installation].host}${path}`);
 const inspect = async (worker: WorkerInstance, installation = "inst-a") =>
   (await worker.fetch(`http://relay.test/__test/inspect?installation=${installation}`)).json() as Promise<any>;
 async function echo(client: Socket, text: string) {
   const from = client.messages.length;
-  const arrived = new Promise<void>(done => { client.onMessage = () => done(); });
+  const arrived = new Promise<void>((done) => {
+    client.onMessage = () => done();
+  });
   client.send(text);
   await Promise.race([arrived, sleep(5_000 * scale)]);
   client.onMessage = undefined;
@@ -139,8 +197,22 @@ export const RELAY_HUB_SCENARIOS: readonly WorkerScenario[] = [
 
       // Installation isolation: inst-b has no control link, so it is unavailable; inst-a is unaffected.
       assert.equal((await openClient(worker, "inst-b")).status, 503);
-      assert.equal((await openClient(worker, "inst-a", "/__opencraft_update/apply")).status, 403, "relay paths are never business routes");
-      assert.equal((await upgrade(worker, `http://relay.test${DATA_PATH}`, { authorization: `Bearer ${credential()}`, [STREAM_HEADER]: id!, "sec-websocket-protocol": RELAY_PROTOCOL })).status, 401, "a used or forged token is rejected");
+      assert.equal(
+        (await openClient(worker, "inst-a", "/__opencraft_update/apply")).status,
+        403,
+        "relay paths are never business routes",
+      );
+      assert.equal(
+        (
+          await upgrade(worker, `http://relay.test${DATA_PATH}`, {
+            authorization: `Bearer ${credential()}`,
+            [STREAM_HEADER]: id!,
+            "sec-websocket-protocol": RELAY_PROTOCOL,
+          })
+        ).status,
+        401,
+        "a used or forged token is rejected",
+      );
       assert.equal(headless.control.open, true);
     },
   },
@@ -156,10 +228,15 @@ export const RELAY_HUB_SCENARIOS: readonly WorkerScenario[] = [
       const headless = await new FakeHeadless(worker, "inst-a").connect();
       const clients = await Promise.all(Array.from({ length: MAX_RELAY_STREAMS }, () => openClient(worker)));
       const statuses: Record<string, number> = {};
-      for (const c of clients) { const key = `${c.status}${c.text ? ` ${c.text.slice(0, 80)}` : ""}`; statuses[key] = (statuses[key] ?? 0) + 1; }
-      if (!clients.every(c => c.status === 101)) {
+      for (const c of clients) {
+        const key = `${c.status}${c.text ? ` ${c.text.slice(0, 80)}` : ""}`;
+        statuses[key] = (statuses[key] ?? 0) + 1;
+      }
+      if (!clients.every((c) => c.status === 101)) {
         const { openTimeouts, rejectedInstance, rejectedTokens } = await inspect(worker);
-        assert.fail(`the full budget is admitted: ${JSON.stringify(statuses)}; openTimeouts ${openTimeouts}, rejectedInstance ${rejectedInstance}, rejectedTokens ${rejectedTokens}, opens ${headless.opens}`);
+        assert.fail(
+          `the full budget is admitted: ${JSON.stringify(statuses)}; openTimeouts ${openTimeouts}, rejectedInstance ${rejectedInstance}, rejectedTokens ${rejectedTokens}, opens ${headless.opens}`,
+        );
       }
       await until(() => headless.openStreams() === MAX_RELAY_STREAMS, "all data streams");
       const opensAtCapacity = headless.opens;
@@ -193,9 +270,15 @@ export const RELAY_HUB_SCENARIOS: readonly WorkerScenario[] = [
       discarding.mode = "ignore";
       const pending = openClient(real);
       pending.catch(() => {});
-      const reserved = await until(async () => { const s = await inspect(real); return s.reservations === 1 && s; }, "reservation");
+      const reserved = await until(async () => {
+        const s = await inspect(real);
+        return s.reservations === 1 && s;
+      }, "reservation");
       assert.equal(reserved.reservationMs, 10_000);
-      assert.ok(reserved.reservationDeadlines[0] > 9_000 && reserved.reservationDeadlines[0] <= 10_000, "10 s reservation deadline");
+      assert.ok(
+        reserved.reservationDeadlines[0] > 9_000 && reserved.reservationDeadlines[0] <= 10_000,
+        "10 s reservation deadline",
+      );
       assert.ok(typeof reserved.alarm === "number", "an alarm owns the deadline");
       // Short timing (RESERVATION_MS=300 binding) proves the alarm path without a 10 s wait.
       const worker = await start(runtime, { reservationMs: 300 });
@@ -210,7 +293,11 @@ export const RELAY_HUB_SCENARIOS: readonly WorkerScenario[] = [
       assert.equal(state.reservations, 0);
       assert.equal(state.openTimeouts, 1);
       assert.equal(headless.control.open, true, "expiry does not touch the control link");
-      assert.equal(await headless.dial(headless.lastOpen!.id, headless.lastOpen!.token), 401, "a late dial for the expired reservation is refused");
+      assert.equal(
+        await headless.dial(headless.lastOpen!.id, headless.lastOpen!.token),
+        401,
+        "a late dial for the expired reservation is refused",
+      );
       headless.mode = "accept";
       assert.equal((await openClient(worker)).status, 101, "the slot is free again");
       await runtime.stop(real);
@@ -226,7 +313,11 @@ export const RELAY_HUB_SCENARIOS: readonly WorkerScenario[] = [
       assert.equal(client.status, 101);
       headless.control.send("{invalid");
       assert.equal((await headless.control.waitClosed("control")).code, 1008);
-      assert.equal((await client.socket!.waitClosed("client")).code, 1008, "client streams of the violating link are closed");
+      assert.equal(
+        (await client.socket!.waitClosed("client")).code,
+        1008,
+        "client streams of the violating link are closed",
+      );
       const state = await inspect(worker);
       assert.equal(state.controls, 0);
       assert.equal(state.active, 0);
@@ -254,7 +345,15 @@ export const RELAY_HUB_SCENARIOS: readonly WorkerScenario[] = [
       assert.equal(state.active, 1);
       assert.equal(state.replacedControls, 1);
       // The old link's close handshake completes in the DO (its webSocketClose ran) ...
-      assert.equal((await until(async () => { const s = await inspect(worker); return s.controlCloses === 1 && s; }, "old control close handshake")).controls, 1);
+      assert.equal(
+        (
+          await until(async () => {
+            const s = await inspect(worker);
+            return s.controlCloses === 1 && s;
+          }, "old control close handshake")
+        ).controls,
+        1,
+      );
       // ... but local workerd releases the TCP connection of a hibernatable socket closed from another
       // event context only when the object hibernates, and open streams keep it awake; the ws client
       // therefore reports the close after its own 30 s closeTimeout at the latest. Not awaited here; see the doc.
@@ -279,16 +378,27 @@ export const RELAY_HUB_SCENARIOS: readonly WorkerScenario[] = [
         await echo(client, `ping-${i}`);
         rtts.push(performance.now() - t);
       }
-      const chunk = new Uint8Array(16_384).fill(7), total = 8 * 1024 * 1024;
+      const chunk = new Uint8Array(16_384).fill(7),
+        total = 8 * 1024 * 1024;
       let received = 0;
       const from = client.messages.length;
       const t = performance.now();
       for (let sent = 0; sent < total; sent += chunk.byteLength) client.send(chunk);
-      await until(() => { for (const m of client.messages.splice(from)) received += (m as ArrayBuffer).byteLength; return received >= total; }, "bulk echo", 60_000);
+      await until(
+        () => {
+          for (const m of client.messages.splice(from)) received += (m as ArrayBuffer).byteLength;
+          return received >= total;
+        },
+        "bulk echo",
+        60_000,
+      );
       const seconds = (performance.now() - t) / 1000;
-      const pct = (values: number[], p: number) => [...values].sort((a, b) => a - b)[Math.min(values.length - 1, Math.floor(values.length * p))]!.toFixed(2);
-      diagnostic(`${runtime.label}: stream open p50=${pct(opens, 0.5)}ms p95=${pct(opens, 0.95)}ms; ` +
-        `echo RTT p50=${pct(rtts, 0.5)}ms p99=${pct(rtts, 0.99)}ms; bulk echo ${(2 * total / 1024 / 1024 / seconds).toFixed(1)} MiB/s through the DO (8 MiB each way, 16 KiB frames)`);
+      const pct = (values: number[], p: number) =>
+        [...values].sort((a, b) => a - b)[Math.min(values.length - 1, Math.floor(values.length * p))]!.toFixed(2);
+      diagnostic(
+        `${runtime.label}: stream open p50=${pct(opens, 0.5)}ms p95=${pct(opens, 0.95)}ms; ` +
+          `echo RTT p50=${pct(rtts, 0.5)}ms p99=${pct(rtts, 0.99)}ms; bulk echo ${((2 * total) / 1024 / 1024 / seconds).toFixed(1)} MiB/s through the DO (8 MiB each way, 16 KiB frames)`,
+      );
       assert.equal(received, total);
       client.close();
     },

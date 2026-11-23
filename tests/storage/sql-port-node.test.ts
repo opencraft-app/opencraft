@@ -8,14 +8,22 @@ import { nodeSqlDatabase } from "@opencraft/sqlite-node";
 for (const conformance of SQL_CONFORMANCE_CASES) {
   test(`node:sqlite adapter: ${conformance.name}`, () => {
     const connection = new DatabaseSync(":memory:");
-    try { conformance.run(nodeSqlDatabase(connection)); } finally { connection.close(); }
+    try {
+      conformance.run(nodeSqlDatabase(connection));
+    } finally {
+      connection.close();
+    }
   });
 }
 
 for (const conformance of SQL_CONFORMANCE_CASES) {
   test(`scoped borrow over node:sqlite: ${conformance.name}`, () => {
     const connection = new DatabaseSync(":memory:");
-    try { conformance.run(scopedSqlDatabase(nodeSqlDatabase(connection)).database); } finally { connection.close(); }
+    try {
+      conformance.run(scopedSqlDatabase(nodeSqlDatabase(connection)).database);
+    } finally {
+      connection.close();
+    }
   });
 }
 
@@ -24,7 +32,9 @@ test("one connection maps to one port object", () => {
   try {
     assert.equal(nodeSqlDatabase(connection), nodeSqlDatabase(connection));
     assert.notEqual(nodeSqlDatabase(connection), nodeSqlDatabase(new DatabaseSync(":memory:")));
-  } finally { connection.close(); }
+  } finally {
+    connection.close();
+  }
 });
 
 test("a closed borrow rejects calls, including earlier statements, without closing the owner", () => {
@@ -40,5 +50,7 @@ test("a closed borrow rejects calls, including earlier statements, without closi
     assert.throws(() => lease.database.prepare("SELECT 1"), /closed/);
     assert.throws(() => lease.database.transaction(() => 1), /closed/);
     assert.equal(owner.prepare("SELECT count(*) AS n FROM t").get()!.n, 1);
-  } finally { connection.close(); }
+  } finally {
+    connection.close();
+  }
 });

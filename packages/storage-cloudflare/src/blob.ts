@@ -1,6 +1,14 @@
 import {
-  BlobDigestError, BlobExistsError, BlobLimitError, validateBlobKey, validateBlobLimit, validateBlobRange, validateSha256,
-  type BlobObject, type BlobStore, type BlobUpload,
+  BlobDigestError,
+  BlobExistsError,
+  BlobLimitError,
+  validateBlobKey,
+  validateBlobLimit,
+  validateBlobRange,
+  validateSha256,
+  type BlobObject,
+  type BlobStore,
+  type BlobUpload,
 } from "@opencraft/blob-storage";
 import type { DigestStreamConstructor, R2Bucket, R2MultipartUpload, R2UploadedPart } from "./bindings.js";
 
@@ -16,17 +24,25 @@ export interface R2BlobStoreOptions {
 }
 
 const MIN_PART_BYTES = 5 * 1024 * 1024;
-const hex = (bytes: ArrayBuffer) => [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+const hex = (bytes: ArrayBuffer) =>
+  [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 
 function concat(chunks: readonly Uint8Array[], size: number): Uint8Array {
   const bytes = new Uint8Array(size);
   let offset = 0;
-  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
   return bytes;
 }
 
 function emptyBody(): ReadableStream<Uint8Array> {
-  return new ReadableStream<Uint8Array>({ start(controller) { controller.close(); } });
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.close();
+    },
+  });
 }
 
 function digestStream(): DigestStreamConstructor {
@@ -53,7 +69,8 @@ function digestStream(): DigestStreamConstructor {
 export function r2BlobStore(bucket: R2Bucket, options: R2BlobStoreOptions = {}): BlobStore {
   if (options.prefix !== undefined) validateBlobKey(options.prefix);
   const partBytes = options.partBytes ?? 8 * 1024 * 1024;
-  if (!Number.isSafeInteger(partBytes) || partBytes < MIN_PART_BYTES) throw new RangeError("R2 parts must be at least 5 MiB");
+  if (!Number.isSafeInteger(partBytes) || partBytes < MIN_PART_BYTES)
+    throw new RangeError("R2 parts must be at least 5 MiB");
   const location = (key: string) => {
     validateBlobKey(key);
     return options.prefix === undefined ? key : `${options.prefix}/${key}`;
@@ -64,7 +81,9 @@ export function r2BlobStore(bucket: R2Bucket, options: R2BlobStoreOptions = {}):
     const run = (commits.get(key) ?? Promise.resolve()).then(action, action);
     const settled = run.catch(() => undefined);
     commits.set(key, settled);
-    void settled.then(() => { if (commits.get(key) === settled) commits.delete(key); });
+    void settled.then(() => {
+      if (commits.get(key) === settled) commits.delete(key);
+    });
     return run;
   };
 
@@ -75,7 +94,9 @@ export function r2BlobStore(bucket: R2Bucket, options: R2BlobStoreOptions = {}):
     const digest = hasher.getWriter();
     const pending: Uint8Array[] = [];
     const parts: R2UploadedPart[] = [];
-    let pendingBytes = 0, size = 0, finished = false;
+    let pendingBytes = 0,
+      size = 0,
+      finished = false;
     let multipart: R2MultipartUpload | undefined;
 
     const discard = async () => {
@@ -92,14 +113,22 @@ export function r2BlobStore(bucket: R2Bucket, options: R2BlobStoreOptions = {}):
       parts.push(await multipart.uploadPart(parts.length + 1, bytes.slice(0, partBytes)));
     };
     const guard = async <T>(action: () => Promise<T>): Promise<T> => {
-      try { return await action(); } catch (error) { await discard(); throw error; }
+      try {
+        return await action();
+      } catch (error) {
+        await discard();
+        throw error;
+      }
     };
 
     return {
       async write(chunk) {
         if (finished) throw new Error("Blob upload is finished");
         if (!(chunk instanceof Uint8Array)) throw new TypeError("Blob chunks must be bytes");
-        if (size + chunk.byteLength > maxBytes) { await discard(); throw new BlobLimitError(); }
+        if (size + chunk.byteLength > maxBytes) {
+          await discard();
+          throw new BlobLimitError();
+        }
         await guard(async () => {
           const copy = new Uint8Array(chunk);
           await digest.write(copy);
@@ -168,12 +197,15 @@ export function r2BlobStore(bucket: R2Bucket, options: R2BlobStoreOptions = {}):
         return object && { key, size: object.size, body: object.body };
       }
       try {
-        const object = await bucket.get(target, { range: range.length === undefined ? { offset: range.offset } : { offset: range.offset, length: range.length } });
+        const object = await bucket.get(target, {
+          range: range.length === undefined ? { offset: range.offset } : { offset: range.offset, length: range.length },
+        });
         if (object) return { key, size: object.size, body: object.body };
       } catch (error) {
         // R2 rejects empty ranges (at or past the end, or zero length); the port clamps them to no bytes.
         const stat = await bucket.head(target);
-        if (stat && (range.offset >= stat.size || range.length === 0)) return { key, size: stat.size, body: emptyBody() };
+        if (stat && (range.offset >= stat.size || range.length === 0))
+          return { key, size: stat.size, body: emptyBody() };
         if (stat) throw error;
       }
       return null;

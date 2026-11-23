@@ -17,9 +17,21 @@ export interface ScenarioGroup {
 
 export const SCENARIO_GROUPS: readonly ScenarioGroup[] = [
   { id: "storage-ports", label: "Storage ports (DO SQL / state / secrets, R2)", scenarios: STORAGE_PORTS_SCENARIOS },
-  { id: "installation-core", label: "InstallationCore (Server migrations and access-control domain on DO SQL)", scenarios: INSTALLATION_CORE_SCENARIOS },
-  { id: "workspace-host", label: "WorkspaceHost stores (five migration chains, domain operations, alarm owners)", scenarios: WORKSPACE_HOST_SCENARIOS },
+  {
+    id: "installation-core",
+    label: "InstallationCore (Server migrations and access-control domain on DO SQL)",
+    scenarios: INSTALLATION_CORE_SCENARIOS,
+  },
+  {
+    id: "workspace-host",
+    label: "WorkspaceHost stores (five migration chains, domain operations, alarm owners)",
+    scenarios: WORKSPACE_HOST_SCENARIOS,
+  },
   { id: "login-entry", label: "Login entry (Argon2id, HumanAuth on DO SQL)", scenarios: LOGIN_ENTRY_SCENARIOS },
-  { id: "client-do", label: "Client DO (hibernatable sockets, resume cursors, alarms)", scenarios: CLIENT_DO_SCENARIOS },
+  {
+    id: "client-do",
+    label: "Client DO (hibernatable sockets, resume cursors, alarms)",
+    scenarios: CLIENT_DO_SCENARIOS,
+  },
   { id: "relay-hub", label: "RelayHub (control link, stream budget, reservations)", scenarios: RELAY_HUB_SCENARIOS },
 ];

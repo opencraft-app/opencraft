@@ -108,7 +108,10 @@ export interface WorkerBundle {
  * runtime put a module around the worker's default export (the rehearsal access
  * guard) while the Durable Object classes are re-exported unchanged.
  */
-export async function bundleWorker(spec: WorkerSpec, wrap?: { readonly module: string; readonly exportName: string }): Promise<WorkerBundle> {
+export async function bundleWorker(
+  spec: WorkerSpec,
+  wrap?: { readonly module: string; readonly exportName: string },
+): Promise<WorkerBundle> {
   const entry = JSON.stringify(spec.entry);
   const stdin = wrap
     ? {
@@ -138,7 +141,13 @@ export async function bundleWorker(spec: WorkerSpec, wrap?: { readonly module: s
 }
 
 /** Polls `read` until `done`, scaled by the runtime's patience; returns the last value. */
-export async function until<T>(runtime: WorkerRuntime, read: () => Promise<T> | T, done: (value: T) => boolean, timeoutMs: number, intervalMs = 25): Promise<T> {
+export async function until<T>(
+  runtime: WorkerRuntime,
+  read: () => Promise<T> | T,
+  done: (value: T) => boolean,
+  timeoutMs: number,
+  intervalMs = 25,
+): Promise<T> {
   const deadline = Date.now() + timeoutMs * runtime.patience;
   for (;;) {
     const value = await read();
@@ -168,10 +177,14 @@ export function bufferedSocket(raw: RawSocket): TestWebSocket {
   const pendingMessages: { data: string | ArrayBuffer }[] = [];
   let pendingClose: { code: number; reason: string } | undefined;
   raw.addEventListener("message", (event: { data: unknown }) => {
-    const data = typeof event.data === "string" ? event.data
-      : event.data instanceof ArrayBuffer ? event.data
-      : ArrayBuffer.isView(event.data) ? new Uint8Array(event.data.buffer, event.data.byteOffset, event.data.byteLength).slice().buffer
-      : String(event.data);
+    const data =
+      typeof event.data === "string"
+        ? event.data
+        : event.data instanceof ArrayBuffer
+          ? event.data
+          : ArrayBuffer.isView(event.data)
+            ? new Uint8Array(event.data.buffer, event.data.byteOffset, event.data.byteLength).slice().buffer
+            : String(event.data);
     if (messages.length) for (const listener of messages) listener({ data });
     else pendingMessages.push({ data });
   });
@@ -189,7 +202,11 @@ export function bufferedSocket(raw: RawSocket): TestWebSocket {
         for (const event of pendingMessages.splice(0)) (listener as MessageListener)(event);
       } else {
         closes.push(listener as CloseListener);
-        if (pendingClose) { const close = pendingClose; pendingClose = undefined; (listener as CloseListener)(close); }
+        if (pendingClose) {
+          const close = pendingClose;
+          pendingClose = undefined;
+          (listener as CloseListener)(close);
+        }
       }
     },
   } as TestWebSocket;

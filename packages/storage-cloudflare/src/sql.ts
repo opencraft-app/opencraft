@@ -1,4 +1,11 @@
-import { isThenable, SqlAsyncTransactionError, type SqlDatabase, type SqlRow, type SqlStatement, type SqlValue } from "@opencraft/sql";
+import {
+  isThenable,
+  SqlAsyncTransactionError,
+  type SqlDatabase,
+  type SqlRow,
+  type SqlStatement,
+  type SqlValue,
+} from "@opencraft/sql";
 import type { DurableObjectSqlStorage, DurableObjectSqlValue, DurableObjectStorage } from "./bindings.js";
 
 /**
@@ -16,7 +23,8 @@ function bind(value: SqlValue): DurableObjectSqlValue | Uint8Array {
 
 function row(source: Record<string, DurableObjectSqlValue>): SqlRow {
   const result: SqlRow = {};
-  for (const [name, value] of Object.entries(source)) result[name] = value instanceof ArrayBuffer ? new Uint8Array(value) : value;
+  for (const [name, value] of Object.entries(source))
+    result[name] = value instanceof ArrayBuffer ? new Uint8Array(value) : value;
   return result;
 }
 

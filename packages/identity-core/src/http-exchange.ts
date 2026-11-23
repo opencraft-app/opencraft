@@ -50,7 +50,11 @@ export type HttpExchangeHandler = (request: HttpExchangeRequest) => Promise<Http
 
 export class HttpBodyTooLarge extends Error {
   readonly limit: number;
-  constructor(limit: number) { super(`Request body exceeds ${limit} bytes`); this.name = "HttpBodyTooLarge"; this.limit = limit; }
+  constructor(limit: number) {
+    super(`Request body exceeds ${limit} bytes`);
+    this.name = "HttpBodyTooLarge";
+    this.limit = limit;
+  }
 }
 
 /**
@@ -59,15 +63,27 @@ export class HttpBodyTooLarge extends Error {
  * the socket; Fetch rejects the request).
  */
 export class HttpExchangeAborted extends Error {
-  constructor(options?: { cause?: unknown }) { super("HTTP exchange aborted", options); this.name = "HttpExchangeAborted"; }
+  constructor(options?: { cause?: unknown }) {
+    super("HTTP exchange aborted", options);
+    this.name = "HttpExchangeAborted";
+  }
 }
 
-export function httpResponse(status: number, headers: HttpHeaderList, body: string | Uint8Array | null = null): HttpExchangeResponse {
+export function httpResponse(
+  status: number,
+  headers: HttpHeaderList,
+  body: string | Uint8Array | null = null,
+): HttpExchangeResponse {
   return { status, headers, body };
 }
 
 /** JSON response; `before` headers (for example `set-cookie`) are sent first. */
-export function jsonResponse(status: number, value: unknown, headers: HttpHeaderList, before: HttpHeaderList = []): HttpExchangeResponse {
+export function jsonResponse(
+  status: number,
+  value: unknown,
+  headers: HttpHeaderList,
+  before: HttpHeaderList = [],
+): HttpExchangeResponse {
   return { status, headers: [...before, ...headers], body: JSON.stringify(value) };
 }
 
@@ -77,5 +93,5 @@ export function decodeUtf8(bytes: Uint8Array): string {
 }
 
 export function setCookies(cookies: readonly string[]): HttpHeaderList {
-  return cookies.map(cookie => ["set-cookie", cookie] as const);
+  return cookies.map((cookie) => ["set-cookie", cookie] as const);
 }

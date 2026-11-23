@@ -4,8 +4,16 @@ import { link, mkdir, open, stat, unlink, type FileHandle } from "node:fs/promis
 import { dirname, join } from "node:path";
 import { Readable } from "node:stream";
 import {
-  BlobDigestError, BlobExistsError, BlobLimitError, validateBlobKey, validateBlobLimit, validateBlobRange, validateSha256,
-  type BlobStat, type BlobStore, type BlobUpload,
+  BlobDigestError,
+  BlobExistsError,
+  BlobLimitError,
+  validateBlobKey,
+  validateBlobLimit,
+  validateBlobRange,
+  validateSha256,
+  type BlobStat,
+  type BlobStore,
+  type BlobUpload,
 } from "./contract.js";
 
 const STAGING = ".staging";
@@ -14,7 +22,11 @@ const STAGING = ".staging";
 async function syncDirectory(directory: string) {
   if (process.platform === "win32") return;
   const handle = await open(directory, "r");
-  try { await handle.sync(); } finally { await handle.close(); }
+  try {
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
 }
 
 /**
@@ -42,7 +54,9 @@ export function fileBlobStore(root: string): BlobStore {
     const staged = join(root, STAGING, randomUUID());
     let handle: FileHandle | undefined = await open(staged, "wx", 0o600);
     const hash: Hash = createHash("sha256");
-    let size = 0, finished = false, writing: Promise<void> = Promise.resolve();
+    let size = 0,
+      finished = false,
+      writing: Promise<void> = Promise.resolve();
     const discard = async () => {
       finished = true;
       await handle?.close().catch(() => undefined);
@@ -54,7 +68,10 @@ export function fileBlobStore(root: string): BlobStore {
         writing = writing.then(async () => {
           if (finished || !handle) throw new Error("Blob upload is finished");
           if (!(chunk instanceof Uint8Array)) throw new TypeError("Blob chunks must be bytes");
-          if (size + chunk.byteLength > maxBytes) { await discard(); throw new BlobLimitError(); }
+          if (size + chunk.byteLength > maxBytes) {
+            await discard();
+            throw new BlobLimitError();
+          }
           await handle.write(chunk);
           hash.update(chunk);
           size += chunk.byteLength;
@@ -110,9 +127,14 @@ export function fileBlobStore(root: string): BlobStore {
       if (!info) return null;
       const start = Math.min(range?.offset ?? 0, info.size);
       const end = range?.length === undefined ? info.size : Math.min(info.size, start + range.length);
-      const body = end > start
-        ? Readable.toWeb(createReadStream(path(key), { start, end: end - 1 })) as ReadableStream<Uint8Array>
-        : new ReadableStream<Uint8Array>({ start(controller) { controller.close(); } });
+      const body =
+        end > start
+          ? (Readable.toWeb(createReadStream(path(key), { start, end: end - 1 })) as ReadableStream<Uint8Array>)
+          : new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.close();
+              },
+            });
       return { ...info, body };
     },
     async delete(key) {

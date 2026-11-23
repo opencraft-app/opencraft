@@ -31,12 +31,23 @@ const API = "https://api.cloudflare.com/client/v4";
 const GUARD_MODULE = new URL("./rehearsal-guard.ts", import.meta.url).pathname;
 const RESOURCE_NAME = /^opencraft-rehearsal-[0-9a-f]{8}(?:-[a-z0-9]+(?:-[a-z0-9]+)*)?$/u;
 
-export interface AccountResource { readonly name: string; readonly changedAt: number }
+export interface AccountResource {
+  readonly name: string;
+  readonly changedAt: number;
+}
 
-interface ApiEnvelope<T> { success: boolean; result: T; errors?: { code: number; message: string }[]; result_info?: { cursor?: string } }
+interface ApiEnvelope<T> {
+  success: boolean;
+  result: T;
+  errors?: { code: number; message: string }[];
+  result_info?: { cursor?: string };
+}
 
 export class CloudflareApi {
-  constructor(readonly accountId: string, readonly token: string) {}
+  constructor(
+    readonly accountId: string,
+    readonly token: string,
+  ) {}
   async call<T>(method: string, path: string, body?: unknown): Promise<T> {
     const init: RequestInit = { method, headers: { authorization: `Bearer ${this.token}` } };
     if (body instanceof FormData) init.body = body;
@@ -48,15 +59,22 @@ export class CloudflareApi {
       const response = await fetch(`${API}/accounts/${this.accountId}${path}`, init);
       const text = await response.text();
       let envelope: ApiEnvelope<T> | undefined;
-      try { envelope = JSON.parse(text) as ApiEnvelope<T>; } catch { /* not JSON */ }
+      try {
+        envelope = JSON.parse(text) as ApiEnvelope<T>;
+      } catch {
+        /* not JSON */
+      }
       if (response.ok && envelope?.success) return envelope.result;
       // Retry rate limits and transient edge failures a few times.
       if ((response.status === 429 || response.status >= 500) && attempt < 4) {
         await new Promise((resolve) => setTimeout(resolve, 1_000 * 2 ** attempt));
         continue;
       }
-      const errors = envelope?.errors?.map((error) => `${error.code} ${error.message}`).join("; ") || text.slice(0, 300);
-      throw Object.assign(new Error(`Cloudflare API ${method} ${path} → HTTP ${response.status}: ${errors}`), { status: response.status });
+      const errors =
+        envelope?.errors?.map((error) => `${error.code} ${error.message}`).join("; ") || text.slice(0, 300);
+      throw Object.assign(new Error(`Cloudflare API ${method} ${path} → HTTP ${response.status}: ${errors}`), {
+        status: response.status,
+      });
     }
   }
   async listWorkers(): Promise<string[]> {
@@ -67,13 +85,18 @@ export class CloudflareApi {
   }
   /** Names with their last change (workers: modified_on; buckets: creation_date), sorted by name. */
   async listWorkerDetails(): Promise<AccountResource[]> {
-    const scripts = await this.call<{ id: string; modified_on?: string; created_on?: string }[]>("GET", "/workers/scripts");
-    return scripts.map((script) => ({ name: script.id, changedAt: Date.parse(script.modified_on ?? script.created_on ?? "") || 0 }))
+    const scripts = await this.call<{ id: string; modified_on?: string; created_on?: string }[]>(
+      "GET",
+      "/workers/scripts",
+    );
+    return scripts
+      .map((script) => ({ name: script.id, changedAt: Date.parse(script.modified_on ?? script.created_on ?? "") || 0 }))
       .sort((a, b) => a.name.localeCompare(b.name));
   }
   async listBucketDetails(): Promise<AccountResource[]> {
     const { buckets } = await this.call<{ buckets: { name: string; creation_date?: string }[] }>("GET", "/r2/buckets");
-    return buckets.map((bucket) => ({ name: bucket.name, changedAt: Date.parse(bucket.creation_date ?? "") || 0 }))
+    return buckets
+      .map((bucket) => ({ name: bucket.name, changedAt: Date.parse(bucket.creation_date ?? "") || 0 }))
       .sort((a, b) => a.name.localeCompare(b.name));
   }
   async subdomain(): Promise<string> {
@@ -94,7 +117,9 @@ export interface InvocationTimes {
   readonly sampled: boolean;
 }
 
-interface TelemetryEvent { $workers?: { entrypoint?: string; eventType?: string; cpuTimeMs?: number; wallTimeMs?: number } }
+interface TelemetryEvent {
+  $workers?: { entrypoint?: string; eventType?: string; cpuTimeMs?: number; wallTimeMs?: number };
+}
 const LOG_PAGE = 2_000;
 /** Extra wait after an `immediate` redeploy before the restarted runtime is used. */
 const RESTART_SETTLE_MS = 5_000;
@@ -144,8 +169,10 @@ export async function cloudflareRuntime(options: CloudflareRuntimeOptions): Prom
   let closed = false;
 
   const assertOwned = (name: string) => {
-    if (!RESOURCE_NAME.test(name) || !name.startsWith(prefix)) throw new Error(`Refusing to touch ${name}: not a resource of rehearsal ${prefix}`);
-    if (options.existingWorkers.includes(name) || options.existingBuckets.includes(name)) throw new Error(`Refusing to touch pre-existing ${name}`);
+    if (!RESOURCE_NAME.test(name) || !name.startsWith(prefix))
+      throw new Error(`Refusing to touch ${name}: not a resource of rehearsal ${prefix}`);
+    if (options.existingWorkers.includes(name) || options.existingBuckets.includes(name))
+      throw new Error(`Refusing to touch pre-existing ${name}`);
   };
 
   async function bucketFor(binding: string): Promise<string> {
@@ -159,9 +186,17 @@ export async function cloudflareRuntime(options: CloudflareRuntimeOptions): Prom
     return name;
   }
 
-  function bindingsFor(deployment: Deployment, vars: Readonly<Record<string, BindingValue>>, r2: Record<string, string>) {
+  function bindingsFor(
+    deployment: Deployment,
+    vars: Readonly<Record<string, BindingValue>>,
+    r2: Record<string, string>,
+  ) {
     const bindings: Record<string, unknown>[] = [
-      ...Object.entries(deployment.spec.durableObjects).map(([name, className]) => ({ type: "durable_object_namespace", name, class_name: className })),
+      ...Object.entries(deployment.spec.durableObjects).map(([name, className]) => ({
+        type: "durable_object_namespace",
+        name,
+        class_name: className,
+      })),
       ...Object.entries(r2).map(([name, bucket]) => ({ type: "r2_bucket", name, bucket_name: bucket })),
       { type: "secret_text", name: "REHEARSAL_KEY", text: key },
       { type: "plain_text", name: "REHEARSAL_GENERATION", text: String(deployment.generation) },
@@ -169,7 +204,9 @@ export async function cloudflareRuntime(options: CloudflareRuntimeOptions): Prom
     ];
     // Strings stay strings and numbers stay numbers, as Miniflare `bindings` give them.
     for (const [name, value] of Object.entries(vars))
-      bindings.push(typeof value === "string" ? { type: "plain_text", name, text: value } : { type: "json", name, json: value });
+      bindings.push(
+        typeof value === "string" ? { type: "plain_text", name, text: value } : { type: "json", name, json: value },
+      );
     return bindings;
   }
 
@@ -187,24 +224,40 @@ export async function cloudflareRuntime(options: CloudflareRuntimeOptions): Prom
       // Workers Logs record per-invocation CPU and wall time (see invocationTimes()).
       observability: { enabled: true, head_sampling_rate: 1 },
       // The Durable Object classes are created by the first version only.
-      ...(deployment.migrated ? {} : { migrations: { new_tag: "v1", new_sqlite_classes: [...new Set(Object.values(deployment.spec.durableObjects))] } }),
+      ...(deployment.migrated
+        ? {}
+        : {
+            migrations: {
+              new_tag: "v1",
+              new_sqlite_classes: [...new Set(Object.values(deployment.spec.durableObjects))],
+            },
+          }),
     };
     const form = new FormData();
     form.set("metadata", new Blob([JSON.stringify(metadata)], { type: "application/json" }));
     form.set("worker.mjs", new Blob([code], { type: "application/javascript+module" }), "worker.mjs");
     const first = !deployment.migrated;
-    if (first) { workers.add(deployment.name); deployed.set(deployment.name, deployment.spec.id); }
+    if (first) {
+      workers.add(deployment.name);
+      deployed.set(deployment.name, deployment.spec.id);
+    }
     const started = Date.now();
     await api.call("PUT", `/workers/scripts/${deployment.name}`, form);
     // An upload that finished after cleanup started is removed here.
-    if (closed) { await deleteWorker(deployment.name); throw new Error("rehearsal is cleaning up; deleted the late upload"); }
+    if (closed) {
+      await deleteWorker(deployment.name);
+      throw new Error("rehearsal is cleaning up; deleted the late upload");
+    }
     deployment.migrated = true;
     if (!first) {
       // A restart must reach Durable Objects that are still active. The upload's implicit
       // deployment uses the default `deferred` code update strategy (an active object keeps
       // its old code and in-memory state for up to 300 s), so deploy the same version again
       // with `immediate`, as a migration-bearing production deploy would have to.
-      const { deployments } = await api.call<{ deployments: { versions: { version_id: string }[] }[] }>("GET", `/workers/scripts/${deployment.name}/deployments`);
+      const { deployments } = await api.call<{ deployments: { versions: { version_id: string }[] }[] }>(
+        "GET",
+        `/workers/scripts/${deployment.name}/deployments`,
+      );
       const version = deployments[0]?.versions[0]?.version_id;
       if (!version) throw new Error(`${deployment.name}: no current version after upload`);
       await api.call("POST", `/workers/scripts/${deployment.name}/deployments`, {
@@ -213,24 +266,37 @@ export async function cloudflareRuntime(options: CloudflareRuntimeOptions): Prom
         code_update_strategy: { mode: "immediate" },
       });
     }
-    if (first) await api.call("POST", `/workers/scripts/${deployment.name}/subdomain`, { enabled: true, previews_enabled: false });
+    if (first)
+      await api.call("POST", `/workers/scripts/${deployment.name}/subdomain`, {
+        enabled: true,
+        previews_enabled: false,
+      });
     // Wait until the edge serves this generation.
     const deadline = Date.now() + 90_000;
     let consecutive = 0;
     for (;;) {
       try {
-        const response = await fetch(deployment.origin + REHEARSAL_HEALTH_PATH, { headers: { [REHEARSAL_KEY_HEADER]: key } });
-        const body = response.ok ? await response.json() as { generation: string | null } : await response.text().then(() => null);
+        const response = await fetch(deployment.origin + REHEARSAL_HEALTH_PATH, {
+          headers: { [REHEARSAL_KEY_HEADER]: key },
+        });
+        const body = response.ok
+          ? ((await response.json()) as { generation: string | null })
+          : await response.text().then(() => null);
         consecutive = body?.generation === String(deployment.generation) ? consecutive + 1 : 0;
         if (consecutive >= 3) break;
-      } catch { consecutive = 0; }
-      if (Date.now() > deadline) throw new Error(`${deployment.name} generation ${deployment.generation} did not become reachable`);
+      } catch {
+        consecutive = 0;
+      }
+      if (Date.now() > deadline)
+        throw new Error(`${deployment.name} generation ${deployment.generation} did not become reachable`);
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
     // The edge serving the new generation does not mean every active object has reset yet;
     // the probe in the docs measured about 1 s more. No prototype exposes its version, so settle.
     if (!first) await new Promise((resolve) => setTimeout(resolve, RESTART_SETTLE_MS));
-    log(`${first ? "deployed" : "redeployed"} ${deployment.name} (generation ${deployment.generation}) in ${Date.now() - started} ms`);
+    log(
+      `${first ? "deployed" : "redeployed"} ${deployment.name} (generation ${deployment.generation}) in ${Date.now() - started} ms`,
+    );
   }
 
   function target(deployment: Deployment, url: string) {
@@ -246,7 +312,8 @@ export async function cloudflareRuntime(options: CloudflareRuntimeOptions): Prom
     created: { workers, buckets },
     bundle(spec) {
       let bundle = bundles.get(spec.id);
-      if (!bundle) bundles.set(spec.id, (bundle = bundleWorker(spec, { module: GUARD_MODULE, exportName: "rehearsalGuard" })));
+      if (!bundle)
+        bundles.set(spec.id, (bundle = bundleWorker(spec, { module: GUARD_MODULE, exportName: "rehearsalGuard" })));
       return bundle;
     },
     async start(spec, startOptions: StartOptions = {}) {
@@ -258,8 +325,10 @@ export async function cloudflareRuntime(options: CloudflareRuntimeOptions): Prom
         deployment = { name, spec, origin: `https://${name}.${subdomain}.workers.dev`, generation: 1, migrated: false };
         if (startOptions.persist) persisted.set(startOptions.persist, deployment);
       }
-      if (deployment.spec.entry !== spec.entry) throw new Error(`persist key ${startOptions.persist} is bound to ${deployment.spec.id}`);
-      const vars = typeof startOptions.vars === "function" ? startOptions.vars(deployment.origin) : (startOptions.vars ?? {});
+      if (deployment.spec.entry !== spec.entry)
+        throw new Error(`persist key ${startOptions.persist} is bound to ${deployment.spec.id}`);
+      const vars =
+        typeof startOptions.vars === "function" ? startOptions.vars(deployment.origin) : (startOptions.vars ?? {});
       await deploy(deployment, vars);
       const current = deployment;
       const instance: WorkerInstance = {
@@ -273,7 +342,9 @@ export async function cloudflareRuntime(options: CloudflareRuntimeOptions): Prom
         },
         upgrade(url, headers = {}) {
           const { url: address, virtual } = target(current, url);
-          const { "sec-websocket-protocol": protocol, ...rest } = Object.fromEntries(Object.entries(headers).map(([name, value]) => [name.toLowerCase(), value]));
+          const { "sec-websocket-protocol": protocol, ...rest } = Object.fromEntries(
+            Object.entries(headers).map(([name, value]) => [name.toLowerCase(), value]),
+          );
           return new Promise<WorkerUpgrade>((resolve, reject) => {
             const socket = new WebSocket(address.replace(/^https:/u, "wss:"), protocol ? protocol.split(/,\s*/u) : [], {
               headers: { ...rest, [REHEARSAL_KEY_HEADER]: key, [REHEARSAL_URL_HEADER]: virtual },
@@ -295,7 +366,10 @@ export async function cloudflareRuntime(options: CloudflareRuntimeOptions): Prom
                 open.delete(socket);
               });
             });
-            socket.once("error", (error) => { open.delete(socket); reject(error); });
+            socket.once("error", (error) => {
+              open.delete(socket);
+              reject(error);
+            });
           });
         },
       };
@@ -308,25 +382,35 @@ export async function cloudflareRuntime(options: CloudflareRuntimeOptions): Prom
       if (!deployment) return;
       for (const socket of sockets.get(deployment.name) ?? []) socket.terminate();
       // Fresh-storage deployments are deleted right away; persisted ones wait for their restart.
-      if (![...persisted.values()].includes(deployment) && ![...deployments.values()].includes(deployment)) await deleteWorker(deployment.name);
+      if (![...persisted.values()].includes(deployment) && ![...deployments.values()].includes(deployment))
+        await deleteWorker(deployment.name);
     },
     async invocationTimes(since) {
       const rows: InvocationTimes[] = [];
-      const quantile = (values: number[], q: number) => values[Math.min(values.length - 1, Math.floor(q * values.length))] ?? 0;
-      const groups = new Map<string, { spec: string; entrypoint: string; eventType: string; cpu: number[]; wall: number[]; sampled: boolean }>();
+      const quantile = (values: number[], q: number) =>
+        values[Math.min(values.length - 1, Math.floor(q * values.length))] ?? 0;
+      const groups = new Map<
+        string,
+        { spec: string; entrypoint: string; eventType: string; cpu: number[]; wall: number[]; sampled: boolean }
+      >();
       for (const [worker, spec] of deployed) {
-        const result = await api.call<{ events?: { events?: TelemetryEvent[] } }>("POST", "/workers/observability/telemetry/query", {
-          queryId: `rehearsal-${run}`,
-          timeframe: { from: since - 60_000, to: Date.now() + 60_000 },
-          view: "events",
-          limit: LOG_PAGE,
-          parameters: { filters: [{ key: "$metadata.service", operation: "eq", type: "string", value: worker }] },
-        });
+        const result = await api.call<{ events?: { events?: TelemetryEvent[] } }>(
+          "POST",
+          "/workers/observability/telemetry/query",
+          {
+            queryId: `rehearsal-${run}`,
+            timeframe: { from: since - 60_000, to: Date.now() + 60_000 },
+            view: "events",
+            limit: LOG_PAGE,
+            parameters: { filters: [{ key: "$metadata.service", operation: "eq", type: "string", value: worker }] },
+          },
+        );
         const events = result.events?.events ?? [];
         for (const event of events) {
           const fields = event.$workers;
           if (typeof fields?.cpuTimeMs !== "number") continue;
-          const entrypoint = fields.entrypoint ?? "fetch", eventType = fields.eventType ?? "unknown";
+          const entrypoint = fields.entrypoint ?? "fetch",
+            eventType = fields.eventType ?? "unknown";
           const id = `${spec}/${entrypoint}/${eventType}`;
           let group = groups.get(id);
           if (!group) groups.set(id, (group = { spec, entrypoint, eventType, cpu: [], wall: [], sampled: false }));
@@ -339,7 +423,10 @@ export async function cloudflareRuntime(options: CloudflareRuntimeOptions): Prom
         group.cpu.sort((a, b) => a - b);
         group.wall.sort((a, b) => a - b);
         rows.push({
-          spec: group.spec, entrypoint: group.entrypoint, eventType: group.eventType, count: group.cpu.length,
+          spec: group.spec,
+          entrypoint: group.entrypoint,
+          eventType: group.eventType,
+          count: group.cpu.length,
           cpuMs: { p50: quantile(group.cpu, 0.5), p95: quantile(group.cpu, 0.95), max: group.cpu.at(-1)! },
           wallMs: { p50: quantile(group.wall, 0.5), max: group.wall.at(-1)! },
           sampled: group.sampled,
@@ -355,12 +442,21 @@ export async function cloudflareRuntime(options: CloudflareRuntimeOptions): Prom
       for (const deployment of new Set([...persisted.values(), ...deployments.values()])) {
         if (!deployment.spec.r2Buckets?.length || !workers.has(deployment.name)) continue;
         try {
-          const response = await fetch(deployment.origin + REHEARSAL_PURGE_PATH, { method: "POST", headers: { [REHEARSAL_KEY_HEADER]: key } });
+          const response = await fetch(deployment.origin + REHEARSAL_PURGE_PATH, {
+            method: "POST",
+            headers: { [REHEARSAL_KEY_HEADER]: key },
+          });
           log(`purged R2 through ${deployment.name}: ${await response.text()}`);
-        } catch (error) { log(`R2 purge through ${deployment.name} failed: ${String(error)}`); }
+        } catch (error) {
+          log(`R2 purge through ${deployment.name} failed: ${String(error)}`);
+        }
       }
       for (const name of [...workers]) {
-        try { await deleteWorker(name); } catch (error) { failures.push(`worker ${name}: ${String(error)}`); }
+        try {
+          await deleteWorker(name);
+        } catch (error) {
+          failures.push(`worker ${name}: ${String(error)}`);
+        }
       }
       for (const name of [...buckets]) {
         try {
@@ -375,7 +471,9 @@ export async function cloudflareRuntime(options: CloudflareRuntimeOptions): Prom
           }
           buckets.delete(name);
           log(`deleted R2 bucket ${name}`);
-        } catch (error) { failures.push(`bucket ${name}: ${String(error)}`); }
+        } catch (error) {
+          failures.push(`bucket ${name}: ${String(error)}`);
+        }
       }
       return failures;
     },

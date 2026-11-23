@@ -21,14 +21,21 @@ const SECRET_DOCUMENT_MAX_BYTES = 1_048_576;
  * atomic and 0600.
  */
 export function fileSecretStore(directory: string, key = "credentials.json"): SecretStore {
-  return documentSecretStore(fileStateDocumentStore(directory, { private: { maxBytes: SECRET_DOCUMENT_MAX_BYTES } }), key);
+  return documentSecretStore(
+    fileStateDocumentStore(directory, { private: { maxBytes: SECRET_DOCUMENT_MAX_BYTES } }),
+    key,
+  );
 }
 
 /** Directory handles cannot be fsynced on Windows; rename/link durability there is the file system's. */
 async function syncDirectory(directory: string) {
   if (process.platform === "win32") return;
   const handle = await open(directory, "r");
-  try { await handle.sync(); } finally { await handle.close(); }
+  try {
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
 }
 
 /**
@@ -49,11 +56,18 @@ export function fileKeyMaterial(directory: string): KeyMaterial {
     }
     try {
       const info = await file.stat();
-      if (!info.isFile() || (process.platform !== "win32" && ((info.mode & 0o077) !== 0 || info.uid !== process.getuid?.()))) {
+      if (
+        !info.isFile() ||
+        (process.platform !== "win32" && ((info.mode & 0o077) !== 0 || info.uid !== process.getuid?.()))
+      ) {
         throw new Error("Key material file must be private");
       }
       const raw = await file.readFile();
-      try { return new Uint8Array(raw); } finally { raw.fill(0); }
+      try {
+        return new Uint8Array(raw);
+      } finally {
+        raw.fill(0);
+      }
     } finally {
       await file.close();
     }
@@ -66,11 +80,16 @@ export function fileKeyMaterial(directory: string): KeyMaterial {
       const key = create();
       if (!(key instanceof Uint8Array) || !key.byteLength) throw new TypeError("Key material must be non-empty bytes");
       await mkdir(directory, { recursive: true, mode: 0o700 });
-      const target = join(directory, name), temporary = `${target}.${randomUUID()}.tmp`;
+      const target = join(directory, name),
+        temporary = `${target}.${randomUUID()}.tmp`;
       try {
         await writeFile(temporary, key, { flag: "wx", mode: 0o600 });
         const file = await open(temporary, "r");
-        try { await file.sync(); } finally { await file.close(); }
+        try {
+          await file.sync();
+        } finally {
+          await file.close();
+        }
         try {
           await link(temporary, target);
         } catch (error) {

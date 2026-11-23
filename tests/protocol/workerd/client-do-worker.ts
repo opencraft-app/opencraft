@@ -54,31 +54,66 @@ type ClientFrame =
 
 function parseClientFrame(text: string): ClientFrame | null {
   let value: unknown;
-  try { value = JSON.parse(text); } catch { return null; }
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return null;
+  }
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
-  const thread = typeof record.workspaceId === "string" && ID.test(record.workspaceId)
-    && typeof record.threadId === "string" && ID.test(record.threadId);
+  const thread =
+    typeof record.workspaceId === "string" &&
+    ID.test(record.workspaceId) &&
+    typeof record.threadId === "string" &&
+    ID.test(record.threadId);
   switch (record.type) {
     case "client/hello": {
-      if (record.v !== RESUME_PROTOCOL_VERSION || !record.cursors || typeof record.cursors !== "object" || Array.isArray(record.cursors)) return null;
+      if (
+        record.v !== RESUME_PROTOCOL_VERSION ||
+        !record.cursors ||
+        typeof record.cursors !== "object" ||
+        Array.isArray(record.cursors)
+      )
+        return null;
       const cursors = record.cursors as Record<string, unknown>;
       for (const [key, seq] of Object.entries(cursors)) {
         const [workspaceId, threadId, extra] = key.split("/");
-        if (extra !== undefined || !workspaceId || !threadId || !ID.test(workspaceId) || !ID.test(threadId) || !isAcknowledgement(seq)) return null;
+        if (
+          extra !== undefined ||
+          !workspaceId ||
+          !threadId ||
+          !ID.test(workspaceId) ||
+          !ID.test(threadId) ||
+          !isAcknowledgement(seq)
+        )
+          return null;
       }
       return { type: "client/hello", v: RESUME_PROTOCOL_VERSION, cursors: cursors as Record<string, number> };
     }
     case "thread/subscribe": {
       const after = record.after ?? 0;
       return thread && isAcknowledgement(after)
-        ? { type: "thread/subscribe", workspaceId: record.workspaceId as string, threadId: record.threadId as string, after } : null;
+        ? {
+            type: "thread/subscribe",
+            workspaceId: record.workspaceId as string,
+            threadId: record.threadId as string,
+            after,
+          }
+        : null;
     }
     case "thread/unsubscribe":
-      return thread ? { type: "thread/unsubscribe", workspaceId: record.workspaceId as string, threadId: record.threadId as string } : null;
+      return thread
+        ? { type: "thread/unsubscribe", workspaceId: record.workspaceId as string, threadId: record.threadId as string }
+        : null;
     case "event/ack":
       return thread && isAcknowledgement(record.seq)
-        ? { type: "event/ack", workspaceId: record.workspaceId as string, threadId: record.threadId as string, seq: record.seq } : null;
+        ? {
+            type: "event/ack",
+            workspaceId: record.workspaceId as string,
+            threadId: record.threadId as string,
+            seq: record.seq,
+          }
+        : null;
     case "client/logout":
       return { type: "client/logout" };
     default:
@@ -88,12 +123,22 @@ function parseClientFrame(text: string): ClientFrame | null {
 
 // ---- test token (stands in for the IC access session) -------------------------
 
-interface AccessSession { readonly clientInstanceId: string; readonly actorId: string; readonly expiresAt: number }
+interface AccessSession {
+  readonly clientInstanceId: string;
+  readonly actorId: string;
+  readonly expiresAt: number;
+}
 
 const encoder = new TextEncoder();
-const base64url = (bytes: ArrayBuffer) => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/gu, "-").replace(/\//gu, "_").replace(/=+$/u, "");
+const base64url = (bytes: ArrayBuffer) =>
+  btoa(String.fromCharCode(...new Uint8Array(bytes)))
+    .replace(/\+/gu, "-")
+    .replace(/\//gu, "_")
+    .replace(/=+$/u, "");
 async function hmac(secret: string, payload: string): Promise<string> {
-  const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, [
+    "sign",
+  ]);
   return base64url(await crypto.subtle.sign("HMAC", key, encoder.encode(payload)));
 }
 async function verifyToken(secret: string, token: string, now: number): Promise<AccessSession | null> {
@@ -104,7 +149,8 @@ async function verifyToken(secret: string, token: string, now: number): Promise<
   const expected = await hmac(secret, `${clientInstanceId}.${actorId}.${expires}`);
   if (expected.length !== signature.length) return null;
   let difference = 0;
-  for (let index = 0; index < expected.length; index++) difference |= expected.charCodeAt(index) ^ signature.charCodeAt(index);
+  for (let index = 0; index < expected.length; index++)
+    difference |= expected.charCodeAt(index) ^ signature.charCodeAt(index);
   const expiresAt = Number(expires);
   return difference === 0 && expiresAt > now ? { clientInstanceId, actorId, expiresAt } : null;
 }
@@ -118,23 +164,39 @@ export default {
     const url = new URL(request.url);
     if (url.pathname === "/__test/token") {
       // Test-only issuer; a deployment receives sessions from InstallationCore.
-      const { clientInstanceId, actorId, expiresAt } = await request.json() as AccessSession;
-      return new Response(`${clientInstanceId}.${actorId}.${expiresAt}.${await hmac(env.TOKEN_SECRET, `${clientInstanceId}.${actorId}.${expiresAt}`)}`);
+      const { clientInstanceId, actorId, expiresAt } = (await request.json()) as AccessSession;
+      return new Response(
+        `${clientInstanceId}.${actorId}.${expiresAt}.${await hmac(env.TOKEN_SECRET, `${clientInstanceId}.${actorId}.${expiresAt}`)}`,
+      );
     }
     if (url.pathname === "/__test/workspace") {
       // Test-only driver for the fake WorkspaceHost (a real WH appends from execution).
-      const { workspaceId, method, args } = await request.json() as { workspaceId: string; method: "append" | "stats" | "subscribers"; args: unknown[] };
-      const host = env.WORKSPACE.get(env.WORKSPACE.idFromName(workspaceId)) as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>;
+      const { workspaceId, method, args } = (await request.json()) as {
+        workspaceId: string;
+        method: "append" | "stats" | "subscribers";
+        args: unknown[];
+      };
+      const host = env.WORKSPACE.get(env.WORKSPACE.idFromName(workspaceId)) as unknown as Record<
+        string,
+        (...args: unknown[]) => Promise<unknown>
+      >;
       return Response.json(await host[method]!(...args));
     }
     if (url.pathname === "/__test/client") {
-      const { clientInstanceId, method } = await request.json() as { clientInstanceId: string; method: "inspect" | "abort" };
+      const { clientInstanceId, method } = (await request.json()) as {
+        clientInstanceId: string;
+        method: "inspect" | "abort";
+      };
       const client = env.CLIENT.get(env.CLIENT.idFromName(clientInstanceId));
-      if (method === "abort") { await client.abortForTest().catch(() => undefined); return Response.json({ ok: true }); }
+      if (method === "abort") {
+        await client.abortForTest().catch(() => undefined);
+        return Response.json({ ok: true });
+      }
       return Response.json(await client.inspect());
     }
     if (url.pathname !== "/apphost") return new Response("Not found", { status: 404 });
-    if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") return new Response("Expected WebSocket", { status: 426 });
+    if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket")
+      return new Response("Expected WebSocket", { status: 426 });
     const bearer = request.headers.get("Authorization")?.match(/^Bearer (.+)$/u)?.[1];
     const session = bearer ? await verifyToken(env.TOKEN_SECRET, bearer, Date.now()) : null;
     if (!session) return new Response("Unauthorized", { status: 401 });
@@ -152,8 +214,16 @@ export default {
 // ---- ClientDO ------------------------------------------------------------------
 
 /** Per Thread: acked ≤ delivered ≤ WorkspaceHost head. Payloads stay in the WorkspaceHost log. */
-interface Subscription { readonly workspaceId: string; readonly threadId: string; acked: number; delivered: number }
-interface Attachment { readonly generation: number; ready: boolean }
+interface Subscription {
+  readonly workspaceId: string;
+  readonly threadId: string;
+  acked: number;
+  delivered: number;
+}
+interface Attachment {
+  readonly generation: number;
+  ready: boolean;
+}
 type DeliverOutcome = "forwarded" | "detached" | "duplicate" | "unsubscribed";
 
 const SESSION = "session";
@@ -186,25 +256,30 @@ export class ClientDO extends DurableObject<Env> {
   }
 
   async #subscriptions(): Promise<Map<string, Subscription>> {
-    return await this.ctx.storage.list<Subscription>({ prefix: SUBSCRIPTION }) as Map<string, Subscription>;
+    return (await this.ctx.storage.list<Subscription>({ prefix: SUBSCRIPTION })) as Map<string, Subscription>;
   }
 
   #openSockets(): WebSocket[] {
-    return this.ctx.getWebSockets().filter(socket => socket.readyState === WebSocket.OPEN);
+    return this.ctx.getWebSockets().filter((socket) => socket.readyState === WebSocket.OPEN);
   }
 
   #readySockets(): WebSocket[] {
-    return this.#openSockets().filter(socket => (socket.deserializeAttachment() as Attachment | null)?.ready);
+    return this.#openSockets().filter((socket) => (socket.deserializeAttachment() as Attachment | null)?.ready);
   }
 
   #send(socket: WebSocket, frame: unknown) {
-    try { socket.send(JSON.stringify(frame)); } catch { /* closing; the cursor is unchanged so resume replays it */ }
+    try {
+      socket.send(JSON.stringify(frame));
+    } catch {
+      /* closing; the cursor is unchanged so resume replays it */
+    }
   }
 
   async #schedule(session: AccessSession) {
     const detachMs = Number(this.env.DETACH_MS ?? DEFAULT_DETACH_MS);
     const disconnectedAt = await this.ctx.storage.get<number>(DISCONNECTED_AT);
-    const idleDeadline = this.#openSockets().length || disconnectedAt === undefined ? Infinity : disconnectedAt + detachMs;
+    const idleDeadline =
+      this.#openSockets().length || disconnectedAt === undefined ? Infinity : disconnectedAt + detachMs;
     await this.ctx.storage.setAlarm(Math.min(session.expiresAt, idleDeadline));
   }
 
@@ -212,12 +287,18 @@ export class ClientDO extends DurableObject<Env> {
     const clientInstanceId = request.headers.get("x-oc-client");
     const actorId = request.headers.get("x-oc-actor");
     const expiresAt = Number(request.headers.get("x-oc-expires"));
-    if (!clientInstanceId || !actorId || !Number.isSafeInteger(expiresAt)) return new Response("Forbidden", { status: 403 });
+    if (!clientInstanceId || !actorId || !Number.isSafeInteger(expiresAt))
+      return new Response("Forbidden", { status: 403 });
     return this.#serial(async () => {
       const stored = await this.ctx.storage.get<AccessSession>(SESSION);
       // The DO name is the client instance; a session for another actor never reuses its state.
-      if (stored && (stored.clientInstanceId !== clientInstanceId || stored.actorId !== actorId)) return new Response("Forbidden", { status: 403 });
-      const session: AccessSession = { clientInstanceId, actorId, expiresAt: Math.max(expiresAt, stored?.expiresAt ?? 0) };
+      if (stored && (stored.clientInstanceId !== clientInstanceId || stored.actorId !== actorId))
+        return new Response("Forbidden", { status: 403 });
+      const session: AccessSession = {
+        clientInstanceId,
+        actorId,
+        expiresAt: Math.max(expiresAt, stored?.expiresAt ?? 0),
+      };
       const generation = ((await this.ctx.storage.get<number>(GENERATION)) ?? 0) + 1;
       // A new attachment supersedes older sockets of the same client instance.
       for (const socket of this.ctx.getWebSockets()) socket.close(CLOSE_SUPERSEDED, "superseded");
@@ -234,17 +315,28 @@ export class ClientDO extends DurableObject<Env> {
 
   override async webSocketMessage(socket: WebSocket, message: string | ArrayBuffer): Promise<void> {
     const frame = typeof message === "string" ? parseClientFrame(message) : null;
-    if (!frame) { this.#send(socket, { type: "error", reason: "invalid-frame" }); return; }
+    if (!frame) {
+      this.#send(socket, { type: "error", reason: "invalid-frame" });
+      return;
+    }
     await this.#serial(async () => {
       const attachment = socket.deserializeAttachment() as Attachment;
       const session = await this.#session();
-      if (!session || attachment.generation !== session.generation) { socket.close(CLOSE_SUPERSEDED, "superseded"); return; }
+      if (!session || attachment.generation !== session.generation) {
+        socket.close(CLOSE_SUPERSEDED, "superseded");
+        return;
+      }
       switch (frame.type) {
-        case "client/hello": return this.#resume(socket, attachment, frame.cursors);
-        case "thread/subscribe": return this.#subscribe(socket, frame.workspaceId, frame.threadId, frame.after);
-        case "thread/unsubscribe": return this.#unsubscribe(socket, frame.workspaceId, frame.threadId);
-        case "event/ack": return this.#acknowledge(socket, frame.workspaceId, frame.threadId, frame.seq);
-        case "client/logout": return this.#reclaim("logout");
+        case "client/hello":
+          return this.#resume(socket, attachment, frame.cursors);
+        case "thread/subscribe":
+          return this.#subscribe(socket, frame.workspaceId, frame.threadId, frame.after);
+        case "thread/unsubscribe":
+          return this.#unsubscribe(socket, frame.workspaceId, frame.threadId);
+        case "event/ack":
+          return this.#acknowledge(socket, frame.workspaceId, frame.threadId, frame.seq);
+        case "client/logout":
+          return this.#reclaim("logout");
       }
     });
   }
@@ -258,7 +350,12 @@ export class ClientDO extends DurableObject<Env> {
    */
   async #resume(socket: WebSocket, attachment: Attachment, cursors: Record<string, number>) {
     const subscriptions = await this.#subscriptions();
-    const byKey = new Map([...subscriptions.values()].map(subscription => [threadKey(subscription.workspaceId, subscription.threadId), subscription]));
+    const byKey = new Map(
+      [...subscriptions.values()].map((subscription) => [
+        threadKey(subscription.workspaceId, subscription.threadId),
+        subscription,
+      ]),
+    );
     const failures: { thread: string; reason: "unknown-subscription" | "stale" | "forged" }[] = [];
     for (const [key, cursor] of Object.entries(cursors)) {
       const subscription = byKey.get(key as ThreadKey);
@@ -276,7 +373,10 @@ export class ClientDO extends DurableObject<Env> {
       subscription.acked = cursor;
       subscription.delivered = cursor;
       // Idempotent re-registration repairs a WorkspaceHost that lost the subscriber.
-      await this.#workspace(subscription.workspaceId).subscribe(subscription.threadId, (await this.#session())!.clientInstanceId);
+      await this.#workspace(subscription.workspaceId).subscribe(
+        subscription.threadId,
+        (await this.#session())!.clientInstanceId,
+      );
       await this.#replay([socket], subscription);
     }
     attachment.ready = true;
@@ -284,7 +384,12 @@ export class ClientDO extends DurableObject<Env> {
     this.#send(socket, {
       type: "client/ready",
       generation: attachment.generation,
-      subscriptions: [...subscriptions.values()].map(({ workspaceId, threadId, acked, delivered }) => ({ workspaceId, threadId, acked, delivered })),
+      subscriptions: [...subscriptions.values()].map(({ workspaceId, threadId, acked, delivered }) => ({
+        workspaceId,
+        threadId,
+        acked,
+        delivered,
+      })),
     });
   }
 
@@ -292,8 +397,15 @@ export class ClientDO extends DurableObject<Env> {
     this.#counters.pullCalls++;
     const events = await this.#workspace(subscription.workspaceId).read(subscription.threadId, subscription.delivered);
     const thread = threadKey(subscription.workspaceId, subscription.threadId);
-    if (events === null) { for (const socket of sockets) this.#send(socket, { type: "resume/failed", failures: [{ thread, reason: "gap" }] }); return; }
-    for (const event of events) { for (const socket of sockets) this.#send(socket, { type: "thread/event", ...event }); this.#counters.forwarded++; }
+    if (events === null) {
+      for (const socket of sockets)
+        this.#send(socket, { type: "resume/failed", failures: [{ thread, reason: "gap" }] });
+      return;
+    }
+    for (const event of events) {
+      for (const socket of sockets) this.#send(socket, { type: "thread/event", ...event });
+      this.#counters.forwarded++;
+    }
     if (events.length) subscription.delivered = events.at(-1)!.seq;
     await this.ctx.storage.put(SUBSCRIPTION + threadKey(subscription.workspaceId, subscription.threadId), subscription);
   }
@@ -303,7 +415,10 @@ export class ClientDO extends DurableObject<Env> {
     const key = SUBSCRIPTION + threadKey(workspaceId, threadId);
     // Thread access belongs to InstallationCore (ThreadAccessSession); the prototype admits any authenticated client.
     const head = await this.#workspace(workspaceId).subscribe(threadId, session.clientInstanceId);
-    if (after > head) { this.#send(socket, { type: "error", reason: "forged", workspaceId, threadId }); return; }
+    if (after > head) {
+      this.#send(socket, { type: "error", reason: "forged", workspaceId, threadId });
+      return;
+    }
     const subscription: Subscription = { workspaceId, threadId, acked: after, delivered: after };
     await this.ctx.storage.put(key, subscription);
     this.#send(socket, { type: "thread/subscribed", workspaceId, threadId, head });
@@ -355,10 +470,16 @@ export class ClientDO extends DurableObject<Env> {
   }
 
   override async webSocketClose(socket: WebSocket, code: number, reason: string): Promise<void> {
-    try { socket.close(code, reason); } catch { /* already closed */ }
+    try {
+      socket.close(code, reason);
+    } catch {
+      /* already closed */
+    }
     await this.#detached();
   }
-  override async webSocketError(): Promise<void> { await this.#detached(); }
+  override async webSocketError(): Promise<void> {
+    await this.#detached();
+  }
 
   async #detached() {
     await this.#serial(async () => {
@@ -377,7 +498,8 @@ export class ClientDO extends DurableObject<Env> {
       const detachMs = Number(this.env.DETACH_MS ?? DEFAULT_DETACH_MS);
       const disconnectedAt = await this.ctx.storage.get<number>(DISCONNECTED_AT);
       if (session.expiresAt <= now) return this.#reclaim("expired");
-      if (!this.#openSockets().length && disconnectedAt !== undefined && disconnectedAt + detachMs <= now) return this.#reclaim("detached");
+      if (!this.#openSockets().length && disconnectedAt !== undefined && disconnectedAt + detachMs <= now)
+        return this.#reclaim("detached");
       await this.#schedule(session);
     });
   }
@@ -405,7 +527,9 @@ export class ClientDO extends DurableObject<Env> {
   }
 
   /** Test-only: evict this instance; the next request builds a new one on the same storage. */
-  async abortForTest() { this.ctx.abort("evicted for test"); }
+  async abortForTest() {
+    this.ctx.abort("evicted for test");
+  }
 }
 
 // ---- fake WorkspaceHostDO ---------------------------------------------------------
@@ -424,22 +548,32 @@ export class WorkspaceHostDO extends DurableObject<Env> {
 
   async subscribe(threadId: string, clientInstanceId: string): Promise<number> {
     const subscribers = await this.#subscribers(threadId);
-    if (!subscribers.includes(clientInstanceId)) await this.ctx.storage.put(SUBSCRIBERS + threadId, [...subscribers, clientInstanceId]);
+    if (!subscribers.includes(clientInstanceId))
+      await this.ctx.storage.put(SUBSCRIBERS + threadId, [...subscribers, clientInstanceId]);
     return (await this.ctx.storage.get<number>(HEAD + threadId)) ?? 0;
   }
 
   async unsubscribe(threadId: string, clientInstanceId: string): Promise<void> {
     const subscribers = await this.#subscribers(threadId);
-    if (subscribers.includes(clientInstanceId)) await this.ctx.storage.put(SUBSCRIBERS + threadId, subscribers.filter(id => id !== clientInstanceId));
+    if (subscribers.includes(clientInstanceId))
+      await this.ctx.storage.put(
+        SUBSCRIBERS + threadId,
+        subscribers.filter((id) => id !== clientInstanceId),
+      );
   }
 
-  async subscribers(threadId: string): Promise<string[]> { return this.#subscribers(threadId); }
+  async subscribers(threadId: string): Promise<string[]> {
+    return this.#subscribers(threadId);
+  }
 
   /** Events after `after`, in order; null when the log no longer holds them (never, in this prototype). */
   async read(threadId: string, after: number): Promise<ThreadEvent[] | null> {
     const head = (await this.ctx.storage.get<number>(HEAD + threadId)) ?? 0;
     if (after > head) return null;
-    const events = await this.ctx.storage.list<ThreadEvent>({ start: eventKey(threadId, after + 1), end: eventKey(threadId, head + 1) });
+    const events = await this.ctx.storage.list<ThreadEvent>({
+      start: eventKey(threadId, after + 1),
+      end: eventKey(threadId, head + 1),
+    });
     return [...events.values()];
   }
 
@@ -448,16 +582,22 @@ export class WorkspaceHostDO extends DurableObject<Env> {
    * event is durable before any delivery, so a failed or detached delivery is
    * recovered by resume from this log.
    */
-  async append(workspaceId: string, threadId: string, event: unknown): Promise<{ seq: number; outcomes: Record<string, DeliverOutcome | "failed"> }> {
+  async append(
+    workspaceId: string,
+    threadId: string,
+    event: unknown,
+  ): Promise<{ seq: number; outcomes: Record<string, DeliverOutcome | "failed"> }> {
     const seq = ((await this.ctx.storage.get<number>(HEAD + threadId)) ?? 0) + 1;
     const record: ThreadEvent = { workspaceId, threadId, seq, event };
     await this.ctx.storage.put({ [HEAD + threadId]: seq, [eventKey(threadId, seq)]: record });
     this.#stats.appends++;
     const subscribers = await this.#subscribers(threadId);
-    const results = await Promise.allSettled(subscribers.map(clientInstanceId => {
-      this.#stats.deliverRpcs++;
-      return this.env.CLIENT.get(this.env.CLIENT.idFromName(clientInstanceId)).deliver(record);
-    }));
+    const results = await Promise.allSettled(
+      subscribers.map((clientInstanceId) => {
+        this.#stats.deliverRpcs++;
+        return this.env.CLIENT.get(this.env.CLIENT.idFromName(clientInstanceId)).deliver(record);
+      }),
+    );
     const outcomes: Record<string, DeliverOutcome | "failed"> = {};
     results.forEach((result, index) => {
       const outcome = result.status === "fulfilled" ? result.value : "failed";
@@ -465,10 +605,16 @@ export class WorkspaceHostDO extends DurableObject<Env> {
       this.#stats.outcomes[outcome] = (this.#stats.outcomes[outcome] ?? 0) + 1;
     });
     // A reclaimed client instance answers "unsubscribed"; prune it here as a second defence.
-    const gone = subscribers.filter(id => outcomes[id] === "unsubscribed");
-    if (gone.length) await this.ctx.storage.put(SUBSCRIBERS + threadId, (await this.#subscribers(threadId)).filter(id => !gone.includes(id)));
+    const gone = subscribers.filter((id) => outcomes[id] === "unsubscribed");
+    if (gone.length)
+      await this.ctx.storage.put(
+        SUBSCRIBERS + threadId,
+        (await this.#subscribers(threadId)).filter((id) => !gone.includes(id)),
+      );
     return { seq, outcomes };
   }
 
-  async stats() { return this.#stats; }
+  async stats() {
+    return this.#stats;
+  }
 }

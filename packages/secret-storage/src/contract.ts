@@ -61,7 +61,8 @@ export function memoryKeyMaterial(): KeyMaterial {
       validateKeyName(name);
       if (!keys.has(name)) {
         const key = create();
-        if (!(key instanceof Uint8Array) || !key.byteLength) throw new TypeError("Key material must be non-empty bytes");
+        if (!(key instanceof Uint8Array) || !key.byteLength)
+          throw new TypeError("Key material must be non-empty bytes");
         keys.set(name, new Uint8Array(key));
       }
       return new Uint8Array(keys.get(name)!);

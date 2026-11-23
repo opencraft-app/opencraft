@@ -52,16 +52,30 @@ export class LoginCore extends DurableObject<Env> {
     super(ctx, env);
     void ctx.blockConcurrencyWhile(async () => {
       try {
-        const handle = migrateServerSqlDatabase(durableObjectSqlDatabase(ctx.storage as unknown as DurableObjectStorage), {
-          ownedByRuntime: (name) => name.startsWith("_cf_"),
-        });
+        const handle = migrateServerSqlDatabase(
+          durableObjectSqlDatabase(ctx.storage as unknown as DurableObjectStorage),
+          {
+            ownedByRuntime: (name) => name.startsWith("_cf_"),
+          },
+        );
         const now = () => Date.now() + this.#skew;
         const actors = new ActorStore(handle, now);
         const accounts = new HumanAccounts(handle, actors, now);
-        const local = new LocalAccountServerPlugin(accounts.localAccountRepository, createPortablePasswordHasher(), now);
+        const local = new LocalAccountServerPlugin(
+          accounts.localAccountRepository,
+          createPortablePasswordHasher(),
+          now,
+        );
         accounts.registerLocalAccounts(local);
         const members = new MembershipStore(handle);
-        const auth = new HumanAuth(accounts, actors, { origin: env.ORIGIN, local: true, oidc: [] }, () => "<!doctype html>", () => null, now);
+        const auth = new HumanAuth(
+          accounts,
+          actors,
+          { origin: env.ORIGIN, local: true, oidc: [] },
+          () => "<!doctype html>",
+          () => null,
+          now,
+        );
         const access = new InstanceAccess(members, [auth], actors);
         this.#graph = { actors, accounts, local, members, auth, access };
       } catch (error) {
@@ -85,7 +99,9 @@ export class LoginCore extends DurableObject<Env> {
       const principal = access.authenticate(identity);
       const actor = principal ? actors.findHuman(principal) : null;
       return Response.json(
-        status === 204 ? { actorId: actor?.id ?? null, provider: principal!.provider, subject: principal!.subject } : { error: status },
+        status === 204
+          ? { actorId: actor?.id ?? null, provider: principal!.provider, subject: principal!.subject }
+          : { error: status },
         { status: status === 204 ? 200 : status },
       );
     }
@@ -144,7 +160,9 @@ export default {
     if (url.pathname !== "/__test") return stub.fetch(request);
     const { method, args } = (await request.json()) as { method: string; args: unknown[] };
     try {
-      const value = await (stub as unknown as Record<string, (...values: unknown[]) => Promise<unknown>>)[method]!(...args);
+      const value = await (stub as unknown as Record<string, (...values: unknown[]) => Promise<unknown>>)[method]!(
+        ...args,
+      );
       return Response.json({ ok: true, value: value ?? null });
     } catch (error) {
       return Response.json({ ok: false, error: failure(error) });

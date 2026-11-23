@@ -76,7 +76,10 @@ test("pipe process: start frame, binary stdin in bounded chunks, EOF, split outp
   await process.closeStdin();
   await process.closeStdin();
   assert.equal(t.frames.filter((f) => f.type === "eof").length, 1);
-  await assert.rejects(process.writeStdin(new Uint8Array([1])), (e) => e instanceof SandboxFault && e.code === "SANDBOX_CLOSED");
+  await assert.rejects(
+    process.writeStdin(new Uint8Array([1])),
+    (e) => e instanceof SandboxFault && e.code === "SANDBOX_CLOSED",
+  );
   const binary = Buffer.from([0, 255, 10, 13, 0x80]);
   const line = JSON.stringify({ type: "output", stream: "stderr", data: binary.toString("base64") }) + "\n";
   t.raw(line.slice(0, 7));
@@ -108,7 +111,10 @@ test("terminal process: single stream, resize, invalid size rejected locally, te
   assert.equal("closeStdin" in process, false);
   await process.resize({ cols: 120, rows: 40 });
   assert.deepEqual(t.frames.at(-1), { type: "resize", size: { cols: 120, rows: 40 } });
-  await assert.rejects(process.resize({ cols: 0, rows: 40 }), (e) => e instanceof SandboxFault && e.code === "SANDBOX_POLICY");
+  await assert.rejects(
+    process.resize({ cols: 0, rows: 40 }),
+    (e) => e instanceof SandboxFault && e.code === "SANDBOX_POLICY",
+  );
   assert.equal(t.frames.filter((f) => f.type === "resize").length, 1);
   await process.terminate();
   assert.deepEqual(await process.exited, { code: null, signal: "SIGKILL" });
@@ -126,7 +132,10 @@ test("transport loss before exit fails the process, retires the environment and 
   await tick();
   assert.equal(t.closes, 1);
   const before = t.frames.length;
-  await assert.rejects(process.writeStdin(new Uint8Array([1])), (e) => e instanceof SandboxFault && e.code === "SANDBOX_CLOSED");
+  await assert.rejects(
+    process.writeStdin(new Uint8Array([1])),
+    (e) => e instanceof SandboxFault && e.code === "SANDBOX_CLOSED",
+  );
   assert.equal(t.frames.length, before);
 });
 
@@ -143,13 +152,19 @@ test("attached process: transport loss, startup failure and unacknowledged termi
   await assert.rejects(process.exited, (e) => e instanceof SandboxFault && e.code === "SANDBOX_START");
   await tick();
   assert.equal(t.closes, 0, "attached transport loss never retires the environment");
-  await assert.rejects(process.writeStdin(new Uint8Array([1])), (e) => e instanceof SandboxFault && e.code === "SANDBOX_CLOSED");
+  await assert.rejects(
+    process.writeStdin(new Uint8Array([1])),
+    (e) => e instanceof SandboxFault && e.code === "SANDBOX_CLOSED",
+  );
 
   const malformed = fakeTransport();
   malformed.on((frame) => {
     if (frame.type === "start") queueMicrotask(() => malformed.raw("not-json\n"));
   });
-  await assert.rejects(startBrokerProcess(malformed.options(attached, [])), (e) => e instanceof SandboxFault && e.code === "SANDBOX_START");
+  await assert.rejects(
+    startBrokerProcess(malformed.options(attached, [])),
+    (e) => e instanceof SandboxFault && e.code === "SANDBOX_START",
+  );
   await tick();
   assert.equal(malformed.closes, 0);
 
@@ -175,7 +190,11 @@ test("attached process: transport loss, startup failure and unacknowledged termi
 });
 
 test("malformed or out-of-order broker frames and oversized start fail closed", async () => {
-  for (const reply of ['{"type":"output","stream":"stdout","data":"YQ=="}\n', "not-json\n", '{"type":"exit","code":"x"}\n']) {
+  for (const reply of [
+    '{"type":"output","stream":"stdout","data":"YQ=="}\n',
+    "not-json\n",
+    '{"type":"exit","code":"x"}\n',
+  ]) {
     const t = fakeTransport();
     t.on((frame) => {
       if (frame.type === "start") queueMicrotask(() => t.raw(reply));
@@ -197,9 +216,21 @@ test("malformed or out-of-order broker frames and oversized start fail closed", 
 
 test("a start failure carries why the broker or its transport refused, never a raw diagnostic", async () => {
   const cases: [string, (t: ReturnType<typeof fakeTransport>) => void, RegExp][] = [
-    ["error frame", (t) => t.emit({ type: "error", reason: "broker-unavailable" }), /^Fake broker reported an error: broker-unavailable$/u],
-    ["guest start failure", (t) => t.emit({ type: "error", reason: "start-failed" }), /^Fake broker reported an error: start-failed$/u],
-    ["unvetted reason", (t) => t.emit({ type: "error", reason: "/secret/path ENOENT" }), /^Fake broker reported an error$/u],
+    [
+      "error frame",
+      (t) => t.emit({ type: "error", reason: "broker-unavailable" }),
+      /^Fake broker reported an error: broker-unavailable$/u,
+    ],
+    [
+      "guest start failure",
+      (t) => t.emit({ type: "error", reason: "start-failed" }),
+      /^Fake broker reported an error: start-failed$/u,
+    ],
+    [
+      "unvetted reason",
+      (t) => t.emit({ type: "error", reason: "/secret/path ENOENT" }),
+      /^Fake broker reported an error$/u,
+    ],
     ["transport end", (t) => t.end(), /^Fake broker transport ended before the process started$/u],
   ];
   for (const [name, reply, cause] of cases) {
@@ -207,14 +238,28 @@ test("a start failure carries why the broker or its transport refused, never a r
     t.on((frame) => {
       if (frame.type === "start") queueMicrotask(() => reply(t));
     });
-    await assert.rejects(startBrokerProcess(t.options(pipe, [])), (e) =>
-      e instanceof SandboxFault && e.code === "SANDBOX_START" && e.message === "Fake process could not start"
-      && e.cause instanceof Error && cause.test(e.cause.message), name);
+    await assert.rejects(
+      startBrokerProcess(t.options(pipe, [])),
+      (e) =>
+        e instanceof SandboxFault &&
+        e.code === "SANDBOX_START" &&
+        e.message === "Fake process could not start" &&
+        e.cause instanceof Error &&
+        cause.test(e.cause.message),
+      name,
+    );
   }
   // A launch the provider rejected keeps the provider's own error as the cause.
   const refused = Error("link refused the process");
-  await assert.rejects(startBrokerProcess({ ...fakeTransport().options(pipe, []), launch: async () => { throw refused; } }),
-    (e) => e instanceof SandboxFault && e.cause === refused);
+  await assert.rejects(
+    startBrokerProcess({
+      ...fakeTransport().options(pipe, []),
+      launch: async () => {
+        throw refused;
+      },
+    }),
+    (e) => e instanceof SandboxFault && e.cause === refused,
+  );
 });
 
 test("a rejected EOF is accepted only when the framed exit arrives; unacknowledged terminate tears down", async () => {
@@ -239,7 +284,12 @@ test("a rejected EOF is accepted only when the framed exit arrives; unacknowledg
 
 test("provider registry resolves by configured backend and fails closed otherwise", () => {
   type Installation = { backend: "alpha"; endpoint: string } | { backend: "beta"; region: string };
-  const backend = (id: string) => ({ id, initialize: async () => {}, create: async () => Promise.reject(Error()), close: async () => {} });
+  const backend = (id: string) => ({
+    id,
+    initialize: async () => {},
+    create: async () => Promise.reject(Error()),
+    close: async () => {},
+  });
   const persistent = {
     receipt: async () => ({ instanceId: "i", privateVolumeId: "v" }),
     inspect: async () => "unknown" as const,
@@ -251,7 +301,10 @@ test("provider registry resolves by configured backend and fails closed otherwis
   });
   assert.deepEqual(registry.ids(), ["alpha", "beta"]);
   assert.equal(registry.resolve({ backend: "alpha", endpoint: "x" }).id, "alpha");
-  assert.equal(registry.persistent({ backend: "alpha", endpoint: "x" }), registry.persistent({ backend: "alpha", endpoint: "y" }));
+  assert.equal(
+    registry.persistent({ backend: "alpha", endpoint: "x" }),
+    registry.persistent({ backend: "alpha", endpoint: "y" }),
+  );
   assert.equal(registry.supports("alpha", "persistentWorkspaces"), true);
   assert.equal(registry.supports("beta"), true);
   assert.equal(registry.supports("beta", "persistentWorkspaces"), false);
@@ -264,9 +317,15 @@ test("provider registry resolves by configured backend and fails closed otherwis
   assert.deepEqual(empty.ids(), []);
   assert.throws(() => empty.resolve({ backend: "alpha", endpoint: "x" }), unavailable);
   const policy = (e: unknown) => e instanceof SandboxFault && e.code === "SANDBOX_POLICY";
-  assert.throws(() => createSandboxProviderRegistry({ alpha: { id: "beta", createBackend: () => backend("beta") } } as never), policy);
   assert.throws(
-    () => createSandboxProviderRegistry({ ["x".repeat(24)]: { id: "x".repeat(24), createBackend: () => backend("x") } } as never),
+    () => createSandboxProviderRegistry({ alpha: { id: "beta", createBackend: () => backend("beta") } } as never),
+    policy,
+  );
+  assert.throws(
+    () =>
+      createSandboxProviderRegistry({
+        ["x".repeat(24)]: { id: "x".repeat(24), createBackend: () => backend("x") },
+      } as never),
     policy,
   );
 });

@@ -47,7 +47,9 @@ const legacyCredential = {
 const legacyDocument = {
   version: 1,
   credentials: [legacyCredential],
-  environments: [{ id: "installed-legacy", name: "Legacy", credentialId: legacyCredential.id, templateId: "legacy-template" }],
+  environments: [
+    { id: "installed-legacy", name: "Legacy", credentialId: legacyCredential.id, templateId: "legacy-template" },
+  ],
   installation: {
     backendId: "e2b",
     capacity: resources,
@@ -112,7 +114,15 @@ test("a version-1 vault document without backend loads as E2B with an unchanged 
   // An existing write path rewrites the document; E2B credentials keep their stored shape.
   configurations.update(
     scope,
-    { revision: 1, source: "platform", action: "save-environment", id: "installed-legacy", name: "Renamed", credentialId: legacyCredential.id, templateId: "legacy-template" },
+    {
+      revision: 1,
+      source: "platform",
+      action: "save-environment",
+      id: "installed-legacy",
+      name: "Renamed",
+      credentialId: legacyCredential.id,
+      templateId: "legacy-template",
+    },
     true,
     true,
   );
@@ -125,7 +135,10 @@ test("a version-1 vault document without backend loads as E2B with an unchanged 
 test("an explicit E2B backend is accepted; an unknown backend makes the document unavailable", () => {
   const explicit = structuredClone(legacyDocument);
   (explicit.credentials[0] as Record<string, unknown>).backend = "e2b";
-  assert.equal(new SandboxConfigurations(memoryVault(explicit)).installedRuntime()!.records[0]!.credential.backend, "e2b");
+  assert.equal(
+    new SandboxConfigurations(memoryVault(explicit)).installedRuntime()!.records[0]!.credential.backend,
+    "e2b",
+  );
   for (const backend of ["cloudflare", "", null, 1]) {
     const unknown = structuredClone(legacyDocument);
     (unknown.credentials[0] as Record<string, unknown>).backend = backend;
@@ -162,7 +175,14 @@ test("a schemaVersion 1 installation file without backend is adopted as E2B in t
   assert.equal(await adoptInstalledWorkspaceConfiguration(new SandboxConfigurations(vault), file), true);
   const stored = vault.writes[0] as typeof legacyDocument;
   assert.equal(stored.installation.backendId, "e2b");
-  assert.deepEqual(Object.keys(stored.credentials[0]!).sort(), ["apiKey", "apiUrl", "generation", "id", "name", "sandboxUrl"]);
+  assert.deepEqual(Object.keys(stored.credentials[0]!).sort(), [
+    "apiKey",
+    "apiUrl",
+    "generation",
+    "id",
+    "name",
+    "sandboxUrl",
+  ]);
   assert.equal(stored.credentials[0]!.name, "E2B");
   assert.equal(stored.credentials[0]!.apiKey, "synthetic-installed-key");
 });

@@ -29,8 +29,24 @@ export const SANDBOX_PROVIDER_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,22}$/u;
 /** A provider target: segments of `[A-Za-z0-9._:-]`, `/`-separated, ≤200 bytes. */
 const TARGET_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9._:-]*)(?:\/[A-Za-z0-9][A-Za-z0-9._:-]*)*$/u;
 /** Schemes this repository already uses for other identities; never providers. */
-const RESERVED_SCHEMES = new Set(["workspace", "unix", "stdio", "ws", "wss", "http", "https", "file", "data",
-  "human", "session", "actor-registry", "opencraft", "ui", "skill", "resource"]);
+const RESERVED_SCHEMES = new Set([
+  "workspace",
+  "unix",
+  "stdio",
+  "ws",
+  "wss",
+  "http",
+  "https",
+  "file",
+  "data",
+  "human",
+  "session",
+  "actor-registry",
+  "opencraft",
+  "ui",
+  "skill",
+  "resource",
+]);
 
 export interface WorkspaceEndpointAddress {
   readonly workspaceId: string;
@@ -60,7 +76,8 @@ export function parseWorkspaceEndpointUri(value: unknown): WorkspaceEndpointAddr
 }
 
 export function formatWorkspaceEndpointUri(address: WorkspaceEndpointAddress): string {
-  if (!isWorkspaceId(address?.workspaceId) || !isSandboxEndpointName(address.name)) throw fault("Invalid workspace endpoint");
+  if (!isWorkspaceId(address?.workspaceId) || !isSandboxEndpointName(address.name))
+    throw fault("Invalid workspace endpoint");
   return `${WORKSPACE_PREFIX}${address.workspaceId}/endpoints/${address.name}`;
 }
 
@@ -73,8 +90,11 @@ export function parseSandboxEnvironmentUri(value: unknown): SandboxEnvironmentAd
   const target = at > 0 ? value.slice(at + 3) : "";
   if (!SANDBOX_PROVIDER_ID_PATTERN.test(provider) || RESERVED_SCHEMES.has(provider))
     throw fault("Sandbox environment URI has no provider scheme");
-  if (!TARGET_PATTERN.test(target) || new TextEncoder().encode(target).byteLength > 200
-    || target.split("/").some(segment => segment === "." || segment === ".."))
+  if (
+    !TARGET_PATTERN.test(target) ||
+    new TextEncoder().encode(target).byteLength > 200 ||
+    target.split("/").some((segment) => segment === "." || segment === "..")
+  )
     throw fault("Invalid sandbox environment target");
   return Object.freeze({ provider, target });
 }
@@ -90,6 +110,7 @@ export function formatSandboxEnvironmentUri(address: SandboxEnvironmentAddress):
 export function parseSandboxEnvironmentUris(value: unknown): readonly SandboxEnvironmentAddress[] {
   if (typeof value !== "string") throw fault("Sandbox environment list must be a string");
   const items = value.split(/[\s,]+/u).filter(Boolean);
-  if (!items.length || items.length > 16 || new Set(items).size !== items.length) throw fault("Invalid sandbox environment list");
+  if (!items.length || items.length > 16 || new Set(items).size !== items.length)
+    throw fault("Invalid sandbox environment list");
   return Object.freeze(items.map(parseSandboxEnvironmentUri));
 }

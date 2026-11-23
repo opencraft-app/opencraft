@@ -36,10 +36,14 @@ test("private file state documents refuse symlinks, shared modes and oversized f
   const store = fileStateDocumentStore(directory, { private: { maxBytes: 64 } });
   await store.update("ok.json", () => ({ result: 0, next: { key: "secret" } }));
   deepEqual(await store.read("ok.json"), { key: "secret" });
-  await write(join(directory, "shared.json"), "{}"); await chmod(join(directory, "shared.json"), 0o644);
+  await write(join(directory, "shared.json"), "{}");
+  await chmod(join(directory, "shared.json"), 0o644);
   await write(join(directory, "big.json"), JSON.stringify({ pad: "x".repeat(100) }), { mode: 0o600 });
   await symlink(join(directory, "ok.json"), join(directory, "link.json"));
   for (const key of ["shared.json", "big.json"]) await rejects(store.read(key), StateDocumentNotPrivateError, key);
   await rejects(store.read("link.json"), (error: NodeJS.ErrnoException) => error.code === "ELOOP");
-  await rejects(store.update("shared.json", () => ({ result: 0, next: {} })), StateDocumentNotPrivateError);
+  await rejects(
+    store.update("shared.json", () => ({ result: 0, next: {} })),
+    StateDocumentNotPrivateError,
+  );
 });

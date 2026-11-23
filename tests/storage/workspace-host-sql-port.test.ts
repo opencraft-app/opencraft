@@ -14,7 +14,15 @@ import { ConversationSchedules } from "@opencraft/host-schedules";
 import { InterruptedTurnRecovery, ProviderTurnRetry } from "@opencraft/host-recovery";
 import { OpenCraftHostStateDatabase } from "../../apps/opencraft-daemon/src/opencraft-host-state-database.ts";
 import { ProvisionalThreads } from "../../apps/opencraft-daemon/src/provisional-threads.ts";
-import { ledger, migrate, publishedMigrations, scenario, schema, WORKSPACE_HOST_STORES, type WorkspaceHostStore } from "./workerd/workspace-host-domain.ts";
+import {
+  ledger,
+  migrate,
+  publishedMigrations,
+  scenario,
+  schema,
+  WORKSPACE_HOST_STORES,
+  type WorkspaceHostStore,
+} from "./workerd/workspace-host-domain.ts";
 
 function memory() {
   const connection = new DatabaseSync(":memory:");
@@ -34,7 +42,10 @@ function openNodeOwner(store: WorkspaceHostStore, root: string): { database: Dat
       return { database: fileOf(root, "thread-creations.sqlite"), close: () => owner.close() };
     }
     case "conversation-schedules": {
-      const owner = new ConversationSchedules(root, port, Date.now, undefined, undefined, undefined, () => ({ arm() {}, cancel() {} }));
+      const owner = new ConversationSchedules(root, port, Date.now, undefined, undefined, undefined, () => ({
+        arm() {},
+        cancel() {},
+      }));
       return { database: fileOf(root, "conversation-schedules.sqlite"), close: () => owner.close() };
     }
     case "interrupted-turn-recovery": {
@@ -101,7 +112,11 @@ for (const store of WORKSPACE_HOST_STORES) {
         assert.deepEqual(steps.nested, { inner: { ok: false, error: "abort inner" }, rolledBack: true });
         assert.equal(steps.active.status, "unowned", "an internal start has no human owner");
         assert.equal(steps.ended, "expired");
-        assert.deepEqual(steps.senders, { forked: { kind: "employee", loginName: "alice" }, inherited: true, employees: true });
+        assert.deepEqual(steps.senders, {
+          forked: { kind: "employee", loginName: "alice" },
+          inherited: true,
+          employees: true,
+        });
       }
       if (store === "conversation-schedules") {
         const steps = first as Record<string, any>;

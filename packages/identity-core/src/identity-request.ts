@@ -3,7 +3,8 @@
 import type { IncomingMessage } from "node:http";
 import type { Principal } from "./index.js";
 
-export type IdentityRequest = Pick<IncomingMessage, "headers"> & Partial<Pick<IncomingMessage, "rawHeaders" | "method" | "url">>;
+export type IdentityRequest = Pick<IncomingMessage, "headers"> &
+  Partial<Pick<IncomingMessage, "rawHeaders" | "method" | "url">>;
 export interface IdentityProvider {
   authenticate(request: IdentityRequest): Principal | null;
   /** Authentication-owner enrichment using fresh independently verified directory evidence. */

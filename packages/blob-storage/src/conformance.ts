@@ -6,14 +6,23 @@ export interface BlobConformanceCase {
   run(store: BlobStore): Promise<void>;
 }
 class ConformanceFailure extends Error {
-  constructor(message: string) { super(message); this.name = "BlobConformanceFailure"; }
+  constructor(message: string) {
+    super(message);
+    this.name = "BlobConformanceFailure";
+  }
 }
 const equal = (actual: unknown, expected: unknown, what: string) => {
-  const a = JSON.stringify(actual), e = JSON.stringify(expected);
+  const a = JSON.stringify(actual),
+    e = JSON.stringify(expected);
   if (a !== e) throw new ConformanceFailure(`${what}: expected ${e}, received ${a}`);
 };
 async function rejects(action: () => Promise<unknown>, what: string, check: (error: unknown) => boolean) {
-  try { await action(); } catch (error) { if (check(error)) return; throw new ConformanceFailure(`${what}: unexpected ${String(error)}`); }
+  try {
+    await action();
+  } catch (error) {
+    if (check(error)) return;
+    throw new ConformanceFailure(`${what}: unexpected ${String(error)}`);
+  }
   throw new ConformanceFailure(`${what}: expected a rejection`);
 }
 const bytes = (text: string) => new TextEncoder().encode(text);
@@ -22,10 +31,19 @@ async function text(body: ReadableStream<Uint8Array>) {
   for await (const chunk of body as unknown as AsyncIterable<Uint8Array>) chunks.push(chunk);
   const all = new Uint8Array(chunks.reduce((total, chunk) => total + chunk.byteLength, 0));
   let offset = 0;
-  for (const chunk of chunks) { all.set(chunk, offset); offset += chunk.byteLength; }
+  for (const chunk of chunks) {
+    all.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
   return new TextDecoder().decode(all);
 }
-const stream = (...parts: string[]) => new ReadableStream<Uint8Array>({ start(controller) { for (const part of parts) controller.enqueue(bytes(part)); controller.close(); } });
+const stream = (...parts: string[]) =>
+  new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const part of parts) controller.enqueue(bytes(part));
+      controller.close();
+    },
+  });
 // SHA-256("hello world")
 const HELLO = "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9";
 
@@ -54,17 +72,33 @@ export const BLOB_CONFORMANCE_CASES: readonly BlobConformanceCase[] = [
     name: "objects are immutable: a second put to the key is rejected",
     async run(store) {
       await store.put("k", bytes("one"), { maxBytes: 64 });
-      await rejects(() => store.put("k", bytes("two"), { maxBytes: 64 }), "overwrite", (error) => error instanceof BlobExistsError);
+      await rejects(
+        () => store.put("k", bytes("two"), { maxBytes: 64 }),
+        "overwrite",
+        (error) => error instanceof BlobExistsError,
+      );
       equal(await text((await store.get("k"))!.body), "one", "retained");
     },
   },
   {
     name: "size limits and digest mismatches store nothing",
     async run(store) {
-      await rejects(() => store.put("big", bytes("0123456789"), { maxBytes: 9 }), "limit", (error) => error instanceof BlobLimitError);
-      await rejects(() => store.put("bad", bytes("hello world"), { maxBytes: 64, sha256: "0".repeat(64) }), "digest", (error) => error instanceof BlobDigestError);
+      await rejects(
+        () => store.put("big", bytes("0123456789"), { maxBytes: 9 }),
+        "limit",
+        (error) => error instanceof BlobLimitError,
+      );
+      await rejects(
+        () => store.put("bad", bytes("hello world"), { maxBytes: 64, sha256: "0".repeat(64) }),
+        "digest",
+        (error) => error instanceof BlobDigestError,
+      );
       equal([await store.head("big"), await store.head("bad")], [null, null], "nothing stored");
-      equal(await store.put("ok", bytes("hello world"), { maxBytes: 11, sha256: HELLO }), { key: "ok", size: 11, sha256: HELLO }, "exact limit");
+      equal(
+        await store.put("ok", bytes("hello world"), { maxBytes: 11, sha256: HELLO }),
+        { key: "ok", size: 11, sha256: HELLO },
+        "exact limit",
+      );
     },
   },
   {
@@ -81,7 +115,11 @@ export const BLOB_CONFORMANCE_CASES: readonly BlobConformanceCase[] = [
       await abandoned.abort();
       equal(await store.head("v"), null, "aborted");
       const over = await store.upload("w", { maxBytes: 3 });
-      await rejects(() => over.write(bytes("four")), "upload limit", (error) => error instanceof BlobLimitError);
+      await rejects(
+        () => over.write(bytes("four")),
+        "upload limit",
+        (error) => error instanceof BlobLimitError,
+      );
       equal(await store.head("w"), null, "over limit");
     },
   },
@@ -93,7 +131,11 @@ export const BLOB_CONFORMANCE_CASES: readonly BlobConformanceCase[] = [
       await store.delete("d");
       equal(await store.get("d"), null, "deleted");
       for (const key of ["../x", "/abs", "a//b", ".staging/x", "a/../b", ""])
-        await rejects(() => store.head(key), `key ${JSON.stringify(key)}`, (error) => error instanceof TypeError);
+        await rejects(
+          () => store.head(key),
+          `key ${JSON.stringify(key)}`,
+          (error) => error instanceof TypeError,
+        );
     },
   },
 ];

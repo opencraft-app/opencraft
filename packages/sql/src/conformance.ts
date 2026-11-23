@@ -33,7 +33,8 @@ function throws(action: () => unknown, what: string, check?: (error: unknown) =>
   throw new ConformanceFailure(`${what}: expected an error`);
 }
 
-const count = (database: SqlDatabase, table: string) => Number(database.prepare(`SELECT count(*) AS n FROM ${table}`).get()!.n);
+const count = (database: SqlDatabase, table: string) =>
+  Number(database.prepare(`SELECT count(*) AS n FROM ${table}`).get()!.n);
 
 class Marker extends Error {}
 
@@ -47,8 +48,19 @@ export const SQL_CONFORMANCE_CASES: readonly SqlConformanceCase[] = [
       insert.run(2, "b", "x");
       equal(db.prepare("SELECT id,name,note FROM t WHERE id=?").get(1), { id: 1, name: "a", note: null }, "get");
       equal(db.prepare("SELECT id FROM t WHERE id=?").get(99), undefined, "get missing");
-      equal(db.prepare("SELECT id,name FROM t ORDER BY id").all(), [{ id: 1, name: "a" }, { id: 2, name: "b" }], "all");
-      equal([...db.prepare("SELECT name FROM t WHERE id>? ORDER BY id").iterate(0)], [{ name: "a" }, { name: "b" }], "iterate");
+      equal(
+        db.prepare("SELECT id,name FROM t ORDER BY id").all(),
+        [
+          { id: 1, name: "a" },
+          { id: 2, name: "b" },
+        ],
+        "all",
+      );
+      equal(
+        [...db.prepare("SELECT name FROM t WHERE id>? ORDER BY id").iterate(0)],
+        [{ name: "a" }, { name: "b" }],
+        "iterate",
+      );
     },
   },
   {
@@ -111,10 +123,14 @@ export const SQL_CONFORMANCE_CASES: readonly SqlConformanceCase[] = [
     run(db) {
       db.exec("CREATE TABLE t(v INTEGER) STRICT");
       const marker = new Marker("stop");
-      const error = throws(() => db.transaction(() => {
-        db.prepare("INSERT INTO t VALUES(1)").run();
-        throw marker;
-      }), "outer rollback");
+      const error = throws(
+        () =>
+          db.transaction(() => {
+            db.prepare("INSERT INTO t VALUES(1)").run();
+            throw marker;
+          }),
+        "outer rollback",
+      );
       equal(error === marker, true, "same error");
       equal(db.inTransaction, false, "closed");
       equal(count(db, "t"), 0, "rolled back rows");
@@ -126,10 +142,15 @@ export const SQL_CONFORMANCE_CASES: readonly SqlConformanceCase[] = [
       db.exec("CREATE TABLE t(v INTEGER) STRICT");
       db.transaction(() => {
         db.prepare("INSERT INTO t VALUES(1)").run();
-        throws(() => db.transaction(() => {
-          db.prepare("INSERT INTO t VALUES(2)").run();
-          throw new Marker("inner");
-        }), "inner rollback", (error) => error instanceof Marker);
+        throws(
+          () =>
+            db.transaction(() => {
+              db.prepare("INSERT INTO t VALUES(2)").run();
+              throw new Marker("inner");
+            }),
+          "inner rollback",
+          (error) => error instanceof Marker,
+        );
         equal(db.inTransaction, true, "outer still open");
         db.transaction(() => db.prepare("INSERT INTO t VALUES(3)").run());
       });
@@ -140,10 +161,15 @@ export const SQL_CONFORMANCE_CASES: readonly SqlConformanceCase[] = [
     name: "a failed outer transaction discards committed nested work",
     run(db) {
       db.exec("CREATE TABLE t(v INTEGER) STRICT");
-      throws(() => db.transaction(() => {
-        db.transaction(() => db.prepare("INSERT INTO t VALUES(1)").run());
-        throw new Marker("outer");
-      }), "outer rollback", (error) => error instanceof Marker);
+      throws(
+        () =>
+          db.transaction(() => {
+            db.transaction(() => db.prepare("INSERT INTO t VALUES(1)").run());
+            throw new Marker("outer");
+          }),
+        "outer rollback",
+        (error) => error instanceof Marker,
+      );
       equal(count(db, "t"), 0, "rows");
     },
   },
@@ -151,10 +177,15 @@ export const SQL_CONFORMANCE_CASES: readonly SqlConformanceCase[] = [
     name: "an asynchronous transaction action is rejected and rolled back",
     run(db) {
       db.exec("CREATE TABLE t(v INTEGER) STRICT");
-      throws(() => db.transaction(() => {
-        db.prepare("INSERT INTO t VALUES(1)").run();
-        return Promise.resolve();
-      }), "async action", (error) => error instanceof SqlAsyncTransactionError);
+      throws(
+        () =>
+          db.transaction(() => {
+            db.prepare("INSERT INTO t VALUES(1)").run();
+            return Promise.resolve();
+          }),
+        "async action",
+        (error) => error instanceof SqlAsyncTransactionError,
+      );
       equal(db.inTransaction, false, "closed");
       equal(count(db, "t"), 0, "rolled back rows");
     },

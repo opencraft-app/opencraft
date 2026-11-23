@@ -84,15 +84,20 @@ const SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
 export function validateBlobKey(key: unknown): asserts key is string {
   if (typeof key !== "string" || key.length > 512) throw new TypeError("Invalid blob key");
   const segments = key.split("/");
-  if (segments.length > 8 || segments.some((segment) => !SEGMENT.test(segment) || segment.includes(".."))) throw new TypeError("Invalid blob key");
+  if (segments.length > 8 || segments.some((segment) => !SEGMENT.test(segment) || segment.includes("..")))
+    throw new TypeError("Invalid blob key");
 }
 export function validateBlobLimit(maxBytes: unknown): asserts maxBytes is number {
   if (!Number.isSafeInteger(maxBytes) || (maxBytes as number) < 0) throw new TypeError("Invalid blob size limit");
 }
 export function validateBlobRange(range: BlobRange | undefined): void {
   if (range === undefined) return;
-  if (!Number.isSafeInteger(range.offset) || range.offset < 0
-    || (range.length !== undefined && (!Number.isSafeInteger(range.length) || range.length < 0))) throw new TypeError("Invalid blob range");
+  if (
+    !Number.isSafeInteger(range.offset) ||
+    range.offset < 0 ||
+    (range.length !== undefined && (!Number.isSafeInteger(range.length) || range.length < 0))
+  )
+    throw new TypeError("Invalid blob range");
 }
 export function validateSha256(value: unknown): asserts value is string {
   if (typeof value !== "string" || !/^[a-f0-9]{64}$/u.test(value)) throw new TypeError("Invalid SHA-256 digest");

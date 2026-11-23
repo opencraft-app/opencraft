@@ -22,7 +22,12 @@ export function chooseInitialConversationHost(input: {
   readonly deploymentDefaultHostId?: string | null;
 }): string | undefined {
   const { profiles, requestedHostId, persistedHostId } = input;
-  if (requestedHostId !== undefined && profiles.some(host => host.hostId === requestedHostId)) return requestedHostId;
-  if (profiles.some(host => host.hostId === persistedHostId && (host.hideFromNewChat !== true || input.persistedHasThread))) return persistedHostId!;
+  if (requestedHostId !== undefined && profiles.some((host) => host.hostId === requestedHostId)) return requestedHostId;
+  if (
+    profiles.some(
+      (host) => host.hostId === persistedHostId && (host.hideFromNewChat !== true || input.persistedHasThread),
+    )
+  )
+    return persistedHostId!;
   return chooseNewConversationHost(profiles, null, input.deploymentDefaultHostId)?.hostId;
 }

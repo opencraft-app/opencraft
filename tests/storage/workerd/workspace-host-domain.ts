@@ -17,7 +17,10 @@ import {
   SqlProviderTurnRetry,
 } from "@opencraft/host-recovery";
 import { OPENCRAFT_HOST_STATE_MIGRATIONS } from "../../../apps/opencraft-daemon/src/opencraft-host-state-database.ts";
-import { PROVISIONAL_THREAD_MIGRATIONS, SqlProvisionalThreads } from "../../../apps/opencraft-daemon/src/provisional-threads.ts";
+import {
+  PROVISIONAL_THREAD_MIGRATIONS,
+  SqlProvisionalThreads,
+} from "../../../apps/opencraft-daemon/src/provisional-threads.ts";
 import { SqlHostQueue } from "../../../apps/opencraft-daemon/src/opencraft-host-queue.ts";
 import { ExecutionLeaseStore } from "../../../apps/opencraft-daemon/src/execution-lease-store.ts";
 import { OpenCraftMessageSenders } from "../../../apps/opencraft-daemon/src/opencraft-message-senders.ts";
@@ -65,7 +68,12 @@ export function schema(database: SqlDatabase) {
       "SELECT type,name,tbl_name,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND name NOT LIKE '\\_cf\\_%' ESCAPE '\\' ORDER BY type,name",
     )
     .all()
-    .map((row) => ({ type: String(row.type), name: String(row.name), table: String(row.tbl_name), sql: row.sql === null ? null : String(row.sql) }));
+    .map((row) => ({
+      type: String(row.type),
+      name: String(row.name),
+      table: String(row.tbl_name),
+      sql: row.sql === null ? null : String(row.sql),
+    }));
 }
 
 const lent = (database: SqlDatabase) => ({ database, close() {} });
@@ -76,8 +84,11 @@ const WALL_CLOCK = new Set(["admittedAtMs", "endedAtMs"]);
 function normalize(value: unknown): unknown {
   const seen = new Map<string, string>();
   return JSON.parse(JSON.stringify(value), (key, item) =>
-    WALL_CLOCK.has(key) && typeof item === "number" ? "wall-clock"
-      : typeof item === "string" ? item.replace(uuid, (id) => seen.get(id) ?? (seen.set(id, `uuid-${seen.size + 1}`), `uuid-${seen.size}`)) : item,
+    WALL_CLOCK.has(key) && typeof item === "number"
+      ? "wall-clock"
+      : typeof item === "string"
+        ? item.replace(uuid, (id) => seen.get(id) ?? (seen.set(id, `uuid-${seen.size + 1}`), `uuid-${seen.size}`))
+        : item,
   );
 }
 const attempt = (action: () => unknown) => {
@@ -110,10 +121,12 @@ export async function scenario(database: SqlDatabase, store: WorkspaceHostStore)
     steps.awaiting = queue.firstAwaitingAdmission("t")?.clientUserMessageId ?? null;
     // A failing write inside an outer transaction rolls back only its savepoint.
     steps.nested = database.transaction(() => {
-      const inner = attempt(() => database.transaction(() => {
-        queue.add("t", "c3", [{ type: "text", text: "three" }]);
-        throw new Error("abort inner");
-      }));
+      const inner = attempt(() =>
+        database.transaction(() => {
+          queue.add("t", "c3", [{ type: "text", text: "three" }]);
+          throw new Error("abort inner");
+        }),
+      );
       return { inner, rolledBack: queue.findByClientId("t", "c3") === null };
     });
     const executionId = leases.begin("t", "start-1", "engine-a");
@@ -130,7 +143,11 @@ export async function scenario(database: SqlDatabase, store: WorkspaceHostStore)
     senders.record("t", "c1", { kind: "employee", loginName: "alice" } as never);
     steps.reattribute = attempt(() => senders.record("t", "c1", null));
     senders.cloneThread("t", "fork");
-    steps.senders = { forked: senders.get("fork", "c1"), inherited: senders.isInherited("fork", "c1"), employees: senders.hasEmployees("fork") };
+    steps.senders = {
+      forked: senders.get("fork", "c1"),
+      inherited: senders.isInherited("fork", "c1"),
+      employees: senders.hasEmployees("fork"),
+    };
   } else if (store === "thread-creations") {
     const threads = new SqlProvisionalThreads(lent(database));
     const thread = { id: "t", cwd: "/w", updatedAt: 1, createdAt: 1, preview: "", status: { type: "idle" } };
@@ -161,22 +178,45 @@ export async function scenario(database: SqlDatabase, store: WorkspaceHostStore)
       () => true,
       () => ({ arm() {}, cancel() {} }),
     );
-    const save = { threadId: "t", expectedRevision: 0, prompt: "check", nextRunAt: now + 60_000, intervalMinutes: 60, timeZone: "UTC" };
+    const save = {
+      threadId: "t",
+      expectedRevision: 0,
+      prompt: "check",
+      nextRunAt: now + 60_000,
+      intervalMinutes: 60,
+      timeZone: "UTC",
+    };
     steps.saved = (await schedules.handle("opencraft/schedules/save", save, "alice")).schedule;
-    steps.conflict = await schedules.handle("opencraft/schedules/save", save, "alice").then(() => "saved", (error: Error) => error.message);
-    steps.runNow = (await schedules.handle("opencraft/schedules/action", { threadId: "t", expectedRevision: 1, action: "run-now" }, "alice")).runs;
+    steps.conflict = await schedules.handle("opencraft/schedules/save", save, "alice").then(
+      () => "saved",
+      (error: Error) => error.message,
+    );
+    steps.runNow = (
+      await schedules.handle(
+        "opencraft/schedules/action",
+        { threadId: "t", expectedRevision: 1, action: "run-now" },
+        "alice",
+      )
+    ).runs;
     schedules.suspend("t");
     steps.suspended = schedules.read("t");
     steps.list = schedules.list();
     steps.permissions = schedules.executionPermissions("t", "schedule:missing");
     await schedules.close();
   } else if (store === "interrupted-turn-recovery") {
-    const recovery = new SqlInterruptedTurnRecovery(lent(database), {
-      inspect: async () => "unknown",
-      serialize: (_threadId, operation) => operation(),
-      continue: async () => null,
-      changed: () => {},
-    }, 500, () => true, () => 1_800_000_000_000, () => ({ arm() {}, cancel() {} }));
+    const recovery = new SqlInterruptedTurnRecovery(
+      lent(database),
+      {
+        inspect: async () => "unknown",
+        serialize: (_threadId, operation) => operation(),
+        continue: async () => null,
+        changed: () => {},
+      },
+      500,
+      () => true,
+      () => 1_800_000_000_000,
+      () => ({ arm() {}, cancel() {} }),
+    );
     recovery.started("t", "turn-1");
     recovery.started("u", "turn-u");
     recovery.lost("t");

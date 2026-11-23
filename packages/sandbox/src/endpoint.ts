@@ -39,9 +39,17 @@ s.close()
 /** Endpoint names an image's `workspace-agent` may publish. The agent fixes the name →
  * socket mapping inside the environment; Host callers never choose an in-environment path. */
 export const SANDBOX_ENDPOINT_NAMES = Object.freeze([
-  "control", "codex-control", "codex-native", "pi", "dsh", "exec", "terminal", "files", "browser",
+  "control",
+  "codex-control",
+  "codex-native",
+  "pi",
+  "dsh",
+  "exec",
+  "terminal",
+  "files",
+  "browser",
 ] as const);
-export type SandboxEndpointName = typeof SANDBOX_ENDPOINT_NAMES[number];
+export type SandboxEndpointName = (typeof SANDBOX_ENDPOINT_NAMES)[number];
 /** Default directory where the agent publishes named endpoints (an image/template property). */
 export const SANDBOX_ENDPOINT_DIRECTORY = "/run/opencraft-agent/endpoints";
 export function isSandboxEndpointName(value: unknown): value is SandboxEndpointName {
@@ -88,27 +96,58 @@ export async function openSandboxEndpoint(
 ): Promise<SandboxEndpointConnection> {
   const target = options.target as { name?: unknown; unix?: unknown } | undefined;
   const directory = options.endpointDirectory ?? SANDBOX_ENDPOINT_DIRECTORY;
-  if (target && "name" in target && (!isSandboxEndpointName(target.name) || "unix" in target
-    || typeof directory !== "string" || !directory.startsWith("/") || directory.endsWith("/")))
+  if (
+    target &&
+    "name" in target &&
+    (!isSandboxEndpointName(target.name) ||
+      "unix" in target ||
+      typeof directory !== "string" ||
+      !directory.startsWith("/") ||
+      directory.endsWith("/"))
+  )
     throw fault("SANDBOX_POLICY", "Unknown sandbox endpoint name");
   const path = target && "name" in target ? `${directory}/${target.name as string}` : target?.unix;
   const python = options.python ?? "/usr/bin/python3";
-  if (typeof path !== "string" || !path.startsWith("/") || path.includes("\0") || /(^|\/)\.\.?(\/|$)/u.test(path)
-    || new TextEncoder().encode(path).byteLength > maximumUnixPath || !python.startsWith("/") || python.includes("\0"))
+  if (
+    typeof path !== "string" ||
+    !path.startsWith("/") ||
+    path.includes("\0") ||
+    /(^|\/)\.\.?(\/|$)/u.test(path) ||
+    new TextEncoder().encode(path).byteLength > maximumUnixPath ||
+    !python.startsWith("/") ||
+    python.includes("\0")
+  )
     throw fault("SANDBOX_POLICY", "Invalid sandbox endpoint target");
-  let finished = false, settle!: (end: SandboxEndpointEnd) => void, closing: Promise<void> | undefined;
-  const closed = new Promise<SandboxEndpointEnd>(resolve => {
-    settle = end => { if (!finished) { finished = true; resolve(end); } };
+  let finished = false,
+    settle!: (end: SandboxEndpointEnd) => void,
+    closing: Promise<void> | undefined;
+  const closed = new Promise<SandboxEndpointEnd>((resolve) => {
+    settle = (end) => {
+      if (!finished) {
+        finished = true;
+        resolve(end);
+      }
+    };
   });
   const child: SandboxProcess = await environment.spawn(
-    { command: [python, "-I", "-u", "-c", endpointRelaySource, path], cwd: options.cwd ?? "/", env: {}, attached: true },
-    output => { if (output.stream === "stdout" && !finished) options.onData(output.data); },
+    {
+      command: [python, "-I", "-u", "-c", endpointRelaySource, path],
+      cwd: options.cwd ?? "/",
+      env: {},
+      attached: true,
+    },
+    (output) => {
+      if (output.stream === "stdout" && !finished) options.onData(output.data);
+    },
   );
   if (child.kind !== "process") {
     await child.terminate().catch(() => {});
     throw fault("SANDBOX_UNAVAILABLE", "Sandbox endpoint requires a pipe process");
   }
-  void child.exited.then(exit => settle(exit.code === 0 ? "ended" : "failed"), () => settle("failed"));
+  void child.exited.then(
+    (exit) => settle(exit.code === 0 ? "ended" : "failed"),
+    () => settle("failed"),
+  );
   return {
     closed,
     async write(data) {
@@ -119,12 +158,15 @@ export async function openSandboxEndpoint(
       if (!finished) await child.closeStdin();
     },
     close() {
-      return closing ??= (async () => {
+      return (closing ??= (async () => {
         settle("ended");
         // Terminating an already exited relay is a no-op for conforming backends.
-        try { await child.terminate(); }
-        catch { throw fault("SANDBOX_CLEANUP", "Sandbox endpoint relay cleanup is unconfirmed"); }
-      })();
+        try {
+          await child.terminate();
+        } catch {
+          throw fault("SANDBOX_CLEANUP", "Sandbox endpoint relay cleanup is unconfirmed");
+        }
+      })());
     },
   };
 }

@@ -28,14 +28,23 @@ const instance = (runtime: WorkerRuntime) => {
   return started;
 };
 
-async function run(runtime: WorkerRuntime, request: { suite: string; index?: number; name?: string }): Promise<unknown> {
-  const response = await (await instance(runtime)).fetch(URL, {
+async function run(
+  runtime: WorkerRuntime,
+  request: { suite: string; index?: number; name?: string },
+): Promise<unknown> {
+  const response = await (
+    await instance(runtime)
+  ).fetch(URL, {
     method: "POST",
     body: JSON.stringify({ ...request, prefix: `case-${++sequence}-${Date.now().toString(36)}` }),
   });
   const text = await response.text();
   let outcome: { ok: boolean; result?: unknown; error?: string; stack?: string };
-  try { outcome = JSON.parse(text); } catch { assert.fail(`HTTP ${response.status}: ${text.slice(0, 500)}`); }
+  try {
+    outcome = JSON.parse(text);
+  } catch {
+    assert.fail(`HTTP ${response.status}: ${text.slice(0, 500)}`);
+  }
   if (!outcome.ok) assert.fail(`${outcome.error}\n${outcome.stack ?? ""}`);
   return outcome.result;
 }
@@ -52,7 +61,9 @@ export const STORAGE_PORTS_SCENARIOS: readonly WorkerScenario[] = [
   {
     name: "the bundled suites match the shared conformance modules",
     async run({ runtime }) {
-      const manifest = await (await (await instance(runtime)).fetch(URL)).json() as { suites: Record<string, number> };
+      const manifest = (await (await (await instance(runtime)).fetch(URL)).json()) as {
+        suites: Record<string, number>;
+      };
       assert.deepEqual(manifest.suites, {
         sql: SQL_CONFORMANCE_CASES.length,
         state: STATE_DOCUMENT_CONFORMANCE_CASES.length,
@@ -65,11 +76,15 @@ export const STORAGE_PORTS_SCENARIOS: readonly WorkerScenario[] = [
     cases.map((conformance, index): WorkerScenario => ({
       name: `${label}: ${conformance.name}`,
       run: ({ runtime }) => run(runtime, { suite, index }).then(() => undefined),
-    }))),
+    })),
+  ),
   {
     name: "DO SQL: run().changes is SQLite changes(), not rowsWritten",
     async run({ runtime }) {
-      const { changes, rowsWritten } = await probe(runtime, "sql: changes() vs rowsWritten") as { changes: number; rowsWritten: number };
+      const { changes, rowsWritten } = (await probe(runtime, "sql: changes() vs rowsWritten")) as {
+        changes: number;
+        rowsWritten: number;
+      };
       assert.equal(changes, 2);
       assert.ok(rowsWritten > changes, `rowsWritten ${rowsWritten} includes index writes`);
     },
@@ -77,7 +92,9 @@ export const STORAGE_PORTS_SCENARIOS: readonly WorkerScenario[] = [
   {
     name: "DO SQL: transaction-control text is refused",
     async run({ runtime }) {
-      for (const outcome of await probe(runtime, "sql: transaction-control text is refused by workerd") as { error?: string }[])
+      for (const outcome of (await probe(runtime, "sql: transaction-control text is refused by workerd")) as {
+        error?: string;
+      }[])
         assert.match(outcome.error ?? "", /transactionSync|transaction\(\)/);
     },
   },
@@ -85,7 +102,10 @@ export const STORAGE_PORTS_SCENARIOS: readonly WorkerScenario[] = [
     name: "DO SQL: sqlite_master and PRAGMA foreign_keys are readable",
     async run({ runtime }) {
       assert.deepEqual(await probe(runtime, "sql: sqlite_master and PRAGMA reads"), {
-        objects: [{ type: "table", name: "a" }, { type: "index", name: "a_x" }],
+        objects: [
+          { type: "table", name: "a" },
+          { type: "index", name: "a_x" },
+        ],
         foreignKeys: { value: { foreign_keys: 1 } },
       });
     },
@@ -99,7 +119,10 @@ export const STORAGE_PORTS_SCENARIOS: readonly WorkerScenario[] = [
   {
     name: "DO SQL: integers outside the safe range cannot be bound; reads round (documented gap)",
     async run({ runtime }) {
-      const result = await probe(runtime, "sql: integers outside the safe range") as Record<string, { value?: unknown; error?: string }>;
+      const result = (await probe(runtime, "sql: integers outside the safe range")) as Record<
+        string,
+        { value?: unknown; error?: string }
+      >;
       assert.deepEqual(result.bindSafeBigint, { value: { v: 9007199254740991 } });
       assert.match(result.bindUnsafeBigint!.error ?? "", /RangeError/);
       // workerd converts INTEGER to a JavaScript number without a range check.
@@ -109,8 +132,16 @@ export const STORAGE_PORTS_SCENARIOS: readonly WorkerScenario[] = [
   {
     name: "R2 blobs: multipart bodies are verified before completion and keep immutability",
     async run({ runtime }) {
-      const result = await probe(runtime, "blob: multipart bodies verify size and digest before they become visible") as Record<string, unknown>;
-      assert.deepEqual(result.info, { key: "big", size: 11 * 1024 * 1024 + 3, sha256: (result.info as { sha256: string }).sha256, matches: true });
+      const result = (await probe(
+        runtime,
+        "blob: multipart bodies verify size and digest before they become visible",
+      )) as Record<string, unknown>;
+      assert.deepEqual(result.info, {
+        key: "big",
+        size: 11 * 1024 * 1024 + 3,
+        sha256: (result.info as { sha256: string }).sha256,
+        matches: true,
+      });
       assert.equal(result.roundTrip, true);
       assert.deepEqual(result.tail, result.expectedTail);
       assert.equal(result.overwrite, "BlobExistsError");
@@ -122,7 +153,10 @@ export const STORAGE_PORTS_SCENARIOS: readonly WorkerScenario[] = [
   {
     name: "R2 blobs: concurrent single-part puts to one key store exactly one",
     async run({ runtime }) {
-      const outcomes = await probe(runtime, "blob: concurrent single-part puts to one key store exactly one") as string[];
+      const outcomes = (await probe(
+        runtime,
+        "blob: concurrent single-part puts to one key store exactly one",
+      )) as string[];
       assert.deepEqual([...outcomes].sort(), ["BlobExistsError", "BlobExistsError", "stored"]);
     },
   },

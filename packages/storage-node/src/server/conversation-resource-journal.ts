@@ -17,7 +17,11 @@ export function conversationResourceLegacyJournal(directory: string): Conversati
         if ((error as NodeJS.ErrnoException).code === "ENOENT") return { kind: "absent" };
         throw error;
       }
-      return { kind: "present", sha256: createHash("sha256").update(bytes).digest("hex"), text: bytes.toString("utf8") };
+      return {
+        kind: "present",
+        sha256: createHash("sha256").update(bytes).digest("hex"),
+        text: bytes.toString("utf8"),
+      };
     },
   };
 }

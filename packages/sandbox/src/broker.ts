@@ -1,4 +1,10 @@
-import { SandboxFault, type SandboxCommand, type SandboxExit, type SandboxOutput, type SandboxProcess } from "./contract.js";
+import {
+  SandboxFault,
+  type SandboxCommand,
+  type SandboxExit,
+  type SandboxOutput,
+  type SandboxProcess,
+} from "./contract.js";
 
 /** Backend-neutral process broker for providers whose control channel is a text
  * stream to one guest process (`python3 -u <brokerSource>`). ASCII NDJSON framing
@@ -117,7 +123,8 @@ const fault = (code: ConstructorParameters<typeof SandboxFault>[0], message: str
   new SandboxFault(code, message, cause === undefined ? undefined : { cause });
 /** A broker `error` frame may name why it refused or failed, from a fixed vocabulary
  * (e.g. `policy`, `interpreter-unavailable`); anything else is reported without a reason. */
-const brokerReason = (value: unknown) => typeof value === "string" && /^[a-z][a-z-]{0,63}$/u.test(value) ? value : undefined;
+const brokerReason = (value: unknown) =>
+  typeof value === "string" && /^[a-z][a-z-]{0,63}$/u.test(value) ? value : undefined;
 export const encodeBrokerFrame = (value: unknown) =>
   JSON.stringify(value).replaceAll("\u2028", "\\u2028").replaceAll("\u2029", "\\u2029") + "\n";
 const toBase64 = (data: Uint8Array) => {
@@ -126,7 +133,8 @@ const toBase64 = (data: Uint8Array) => {
   return btoa(binary);
 };
 const fromBase64 = (value: string) => {
-  const binary = atob(value), data = new Uint8Array(binary.length);
+  const binary = atob(value),
+    data = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) data[i] = binary.charCodeAt(i);
   return data;
 };
@@ -163,7 +171,8 @@ export async function startBrokerProcess(options: SandboxBrokerOptions): Promise
   const failure = (reason?: unknown) => {
     if (broken || finished) return;
     broken = true;
-    cause = reason instanceof Error ? reason : Error(reason === undefined ? label + " transport ended" : String(reason));
+    cause =
+      reason instanceof Error ? reason : Error(reason === undefined ? label + " transport ended" : String(reason));
     const error = fault("SANDBOX_START", label + " execution transport failed", cause);
     rejectStart(error);
     rejectExit(error);
@@ -201,7 +210,12 @@ export async function startBrokerProcess(options: SandboxBrokerOptions): Promise
           typeof value.data === "string"
         )
           onOutput?.({ stream: value.stream, data: fromBase64(value.data) });
-        else if (value.type === "exit" && started && !finished && (value.code === null || Number.isSafeInteger(value.code))) {
+        else if (
+          value.type === "exit" &&
+          started &&
+          !finished &&
+          (value.code === null || Number.isSafeInteger(value.code))
+        ) {
           finished = true;
           resolveExit({ code: value.code, ...(value.signal ? { signal: String(value.signal) } : {}) });
         } else if (value.type === "error") {
@@ -221,9 +235,17 @@ export async function startBrokerProcess(options: SandboxBrokerOptions): Promise
     // Broker receives argv/cwd/payload environment privately through stdin, not launcher argv.
     channel = await options.launch(accept);
     void channel.ended.then(() => {
-      if (!finished) failure(Error(started ? label + " broker transport ended" : label + " broker transport ended before the process started"));
+      if (!finished)
+        failure(
+          Error(
+            started ? label + " broker transport ended" : label + " broker transport ended before the process started",
+          ),
+        );
     }, failure);
-    timer = setTimeout(() => failure(Error(label + " broker did not confirm the start in time")), Math.min(requestTimeoutMs, 15000));
+    timer = setTimeout(
+      () => failure(Error(label + " broker did not confirm the start in time")),
+      Math.min(requestTimeoutMs, 15000),
+    );
     const input = encodeBrokerFrame({ type: "start", command: wireCommand });
     if (encoder.encode(input).byteLength > 384 * 1024) throw Error(label + " start frame exceeds its budget");
     await channel.write(input);
@@ -306,7 +328,10 @@ export async function startBrokerProcess(options: SandboxBrokerOptions): Promise
       } catch {
         if (attached) {
           failure(Error(label + " attached process termination was not acknowledged"));
-          throw fault("SANDBOX_CLEANUP", label + " attached process termination was not acknowledged; environment close reclaims it");
+          throw fault(
+            "SANDBOX_CLEANUP",
+            label + " attached process termination was not acknowledged; environment close reclaims it",
+          );
         }
         await closeEnvironment();
         throw fault("SANDBOX_START", label + " process termination required environment teardown");

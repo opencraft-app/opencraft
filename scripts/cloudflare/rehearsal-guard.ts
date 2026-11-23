@@ -15,21 +15,35 @@ export const REHEARSAL_URL_HEADER = "x-opencraft-rehearsal-url";
 export const REHEARSAL_HEALTH_PATH = "/__opencraft_rehearsal/health";
 export const REHEARSAL_PURGE_PATH = "/__opencraft_rehearsal/purge";
 
-interface R2ListResult { objects: { key: string }[]; truncated: boolean; cursor?: string }
-interface PurgeableBucket { list(options: { cursor?: string; limit: number }): Promise<R2ListResult>; delete(keys: string[]): Promise<void> }
+interface R2ListResult {
+  objects: { key: string }[];
+  truncated: boolean;
+  cursor?: string;
+}
+interface PurgeableBucket {
+  list(options: { cursor?: string; limit: number }): Promise<R2ListResult>;
+  delete(keys: string[]): Promise<void>;
+}
 interface GuardEnv {
   readonly REHEARSAL_KEY?: string;
   readonly REHEARSAL_GENERATION?: string;
   readonly REHEARSAL_R2?: readonly string[];
   readonly [binding: string]: unknown;
 }
-interface Worker { fetch(request: Request, env: never, context: never): Promise<Response> | Response }
+interface Worker {
+  fetch(request: Request, env: never, context: never): Promise<Response> | Response;
+}
 
 const encoder = new TextEncoder();
 async function sameKey(presented: string, expected: string): Promise<boolean> {
   // Hash first so the comparison is constant time and length independent.
-  const [left, right] = await Promise.all([presented, expected].map((value) => crypto.subtle.digest("SHA-256", encoder.encode(value))));
-  return (crypto.subtle as unknown as { timingSafeEqual(a: ArrayBuffer, b: ArrayBuffer): boolean }).timingSafeEqual(left!, right!);
+  const [left, right] = await Promise.all(
+    [presented, expected].map((value) => crypto.subtle.digest("SHA-256", encoder.encode(value))),
+  );
+  return (crypto.subtle as unknown as { timingSafeEqual(a: ArrayBuffer, b: ArrayBuffer): boolean }).timingSafeEqual(
+    left!,
+    right!,
+  );
 }
 const notFound = () => new Response("Not found", { status: 404 });
 
@@ -38,7 +52,12 @@ export function rehearsalGuard(worker: Worker): Worker {
     async fetch(request: Request, env: never, context: never): Promise<Response> {
       const guardEnv = env as GuardEnv;
       const expected = guardEnv.REHEARSAL_KEY;
-      if (!expected || expected.length < 32 || !(await sameKey(request.headers.get(REHEARSAL_KEY_HEADER) ?? "", expected))) return notFound();
+      if (
+        !expected ||
+        expected.length < 32 ||
+        !(await sameKey(request.headers.get(REHEARSAL_KEY_HEADER) ?? "", expected))
+      )
+        return notFound();
       const url = new URL(request.url);
       if (url.pathname === REHEARSAL_HEALTH_PATH && request.method === "GET")
         return Response.json({ generation: guardEnv.REHEARSAL_GENERATION ?? null });
@@ -60,7 +79,11 @@ export function rehearsalGuard(worker: Worker): Worker {
       headers.delete(REHEARSAL_KEY_HEADER);
       headers.delete(REHEARSAL_URL_HEADER);
       const body = request.method === "GET" || request.method === "HEAD" ? null : request.body;
-      return worker.fetch(new Request(target ?? request.url, { method: request.method, headers, body, redirect: "manual" }), env, context);
+      return worker.fetch(
+        new Request(target ?? request.url, { method: request.method, headers, body, redirect: "manual" }),
+        env,
+        context,
+      );
     },
   };
 }

@@ -1,5 +1,8 @@
 import {
-  StateDocumentCorruptError, stateChangeOutcome, validateStateKey, type StateDocumentStore,
+  StateDocumentCorruptError,
+  stateChangeOutcome,
+  validateStateKey,
+  type StateDocumentStore,
 } from "@opencraft/document-storage/state";
 import type { DurableObjectStorage } from "./bindings.js";
 
@@ -15,7 +18,10 @@ export interface DurableObjectStateOptions {
  * the object's single thread; it resolves after `storage.sync()` confirms
  * that write, and any write the change observed, is durable.
  */
-export function durableObjectStateDocumentStore(storage: DurableObjectStorage, options: DurableObjectStateOptions = {}): StateDocumentStore {
+export function durableObjectStateDocumentStore(
+  storage: DurableObjectStorage,
+  options: DurableObjectStateOptions = {},
+): StateDocumentStore {
   const prefix = options.prefix ?? "state/";
   const load = (key: string): unknown | null => {
     const stored = storage.kv.get(prefix + key);

@@ -17,7 +17,14 @@
 // DATA_PATH with STREAM_HEADER=id and `Bearer <token>`. Stream ids stay
 // UUID-shaped (`^[0-9a-f-]{36}$`, accepted by `parseOpen`).
 import { DurableObject } from "cloudflare:workers";
-import { CONTROL_PATH, DATA_PATH, MAX_RELAY_STREAMS, RELAY_PROTOCOL, STREAM_HEADER, relayPathAllowed } from "@opencraft/relay-protocol";
+import {
+  CONTROL_PATH,
+  DATA_PATH,
+  MAX_RELAY_STREAMS,
+  RELAY_PROTOCOL,
+  STREAM_HEADER,
+  relayPathAllowed,
+} from "@opencraft/relay-protocol";
 
 /** Same reservation deadline as the Node relay (`localChannel`, Redis `pending:` PX 10000). */
 const RESERVATION_MS = 10_000;
@@ -39,24 +46,49 @@ interface Env {
 }
 
 const encoder = new TextEncoder();
-const hex = (bytes: ArrayBuffer | Uint8Array) => [...new Uint8Array(bytes)].map(b => b.toString(16).padStart(2, "0")).join("");
-const base64url = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "");
+const hex = (bytes: ArrayBuffer | Uint8Array) =>
+  [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, "0")).join("");
+const base64url = (bytes: Uint8Array) =>
+  btoa(String.fromCharCode(...bytes))
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/u, "");
 function equal(a: string, b: string): boolean {
-  const left = encoder.encode(a), right = encoder.encode(b);
-  return left.byteLength === right.byteLength && (crypto.subtle as unknown as { timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean }).timingSafeEqual(left, right);
+  const left = encoder.encode(a),
+    right = encoder.encode(b);
+  return (
+    left.byteLength === right.byteLength &&
+    (crypto.subtle as unknown as { timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean }).timingSafeEqual(
+      left,
+      right,
+    )
+  );
 }
-const status = (code: number, error: string) => new Response(JSON.stringify({ error }), { status: code, headers: { "content-type": "application/json", "cache-control": "no-store" } });
-const upgrading = (request: Request) => request.method === "GET" && request.headers.get("upgrade")?.toLowerCase() === "websocket";
-const bearer = (request: Request) => /^Bearer ([A-Za-z0-9_-]{43})$/u.exec(request.headers.get("authorization") ?? "")?.[1];
+const status = (code: number, error: string) =>
+  new Response(JSON.stringify({ error }), {
+    status: code,
+    headers: { "content-type": "application/json", "cache-control": "no-store" },
+  });
+const upgrading = (request: Request) =>
+  request.method === "GET" && request.headers.get("upgrade")?.toLowerCase() === "websocket";
+const bearer = (request: Request) =>
+  /^Bearer ([A-Za-z0-9_-]{43})$/u.exec(request.headers.get("authorization") ?? "")?.[1];
 
 // ---- edge --------------------------------------------------------------------
 
-interface Registry { byHost: Map<string, string>; byTag: Map<string, string>; credentials: [string, string][]; tags: Map<string, string>; }
+interface Registry {
+  byHost: Map<string, string>;
+  byTag: Map<string, string>;
+  credentials: [string, string][];
+  tags: Map<string, string>;
+}
 let registry: { source: string; value: Promise<Registry> } | undefined;
 
 /** 64-bit routing tag: the first 16 hex digits of every stream id the owning DO mints. */
 async function routeTag(key: string, installationId: string): Promise<string> {
-  const hmac = await crypto.subtle.importKey("raw", encoder.encode(key), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const hmac = await crypto.subtle.importKey("raw", encoder.encode(key), { name: "HMAC", hash: "SHA-256" }, false, [
+    "sign",
+  ]);
   return hex(await crypto.subtle.sign("HMAC", hmac, encoder.encode(installationId))).slice(0, 16);
 }
 function loadRegistry(env: Env): Promise<Registry> {
@@ -66,7 +98,9 @@ function loadRegistry(env: Env): Promise<Registry> {
     const result: Registry = { byHost: new Map(), byTag: new Map(), credentials: [], tags: new Map() };
     for (const [id, entry] of Object.entries(parsed)) {
       const tag = await routeTag(env.ROUTE_KEY, id);
-      result.byHost.set(entry.host, id); result.byTag.set(tag, id); result.tags.set(id, tag);
+      result.byHost.set(entry.host, id);
+      result.byTag.set(tag, id);
+      result.tags.set(id, tag);
       result.credentials.push([id, entry.credential]);
     }
     return result;
@@ -75,11 +109,19 @@ function loadRegistry(env: Env): Promise<Registry> {
   return value;
 }
 
-function forward(env: Env, installationId: string, kind: "control" | "data" | "client" | "inspect", extra: Record<string, string> = {}, upgrade = true) {
+function forward(
+  env: Env,
+  installationId: string,
+  kind: "control" | "data" | "client" | "inspect",
+  extra: Record<string, string> = {},
+  upgrade = true,
+) {
   // Fresh headers only: nothing the client sent reaches the DO as authority.
   const headers = new Headers({ "x-relay-kind": kind, ...extra });
   if (upgrade) headers.set("upgrade", "websocket");
-  return env.RELAY.get(env.RELAY.idFromName(installationId)).fetch(new Request("https://relay-hub.internal/", { headers }));
+  return env.RELAY.get(env.RELAY.idFromName(installationId)).fetch(
+    new Request("https://relay-hub.internal/", { headers }),
+  );
 }
 
 export default {
@@ -91,7 +133,12 @@ export default {
       return installations.tags.has(id) ? forward(env, id, "inspect", {}, false) : status(404, "unknown_installation");
     }
     if (url.pathname === CONTROL_PATH || url.pathname === DATA_PATH) {
-      if (!upgrading(request) || request.headers.get("sec-websocket-protocol") !== RELAY_PROTOCOL || request.headers.has("origin")) return status(401, "authentication_required");
+      if (
+        !upgrading(request) ||
+        request.headers.get("sec-websocket-protocol") !== RELAY_PROTOCOL ||
+        request.headers.has("origin")
+      )
+        return status(401, "authentication_required");
       const token = bearer(request);
       if (!token) return status(401, "authentication_required");
       if (url.pathname === CONTROL_PATH) {
@@ -104,7 +151,9 @@ export default {
       if (!/^[0-9a-f-]{36}$/u.test(stream)) return status(401, "authentication_required");
       const owner = installations.byTag.get(stream.replaceAll("-", "").slice(0, 16));
       // The DO checks the reservation and token; the tag only selects the object.
-      return owner ? forward(env, owner, "data", { "x-relay-stream": stream, "x-relay-token": token }) : status(401, "authentication_required");
+      return owner
+        ? forward(env, owner, "data", { "x-relay-stream": stream, "x-relay-token": token })
+        : status(401, "authentication_required");
     }
     const owner = installations.byHost.get(url.host);
     if (!owner) return status(404, "unknown_installation");
@@ -117,12 +166,26 @@ export default {
 
 // ---- RelayHubDO ---------------------------------------------------------------
 
-interface ControlAttachment { kind: "control"; generation: number; routeTag: string; }
-interface Reservation { token: string; generation: number; expiresAt: number; }
-interface Stream { client: WebSocket; data: WebSocket; generation: number; }
+interface ControlAttachment {
+  kind: "control";
+  generation: number;
+  routeTag: string;
+}
+interface Reservation {
+  token: string;
+  generation: number;
+  expiresAt: number;
+}
+interface Stream {
+  client: WebSocket;
+  data: WebSocket;
+  generation: number;
+}
 
-const SENDABLE = (code: number) => code === 1000 || code === 1001 || code === 1003 || (code >= 1007 && code <= 1014) || (code >= 3000 && code <= 4999);
-const byteLength = (message: string | ArrayBuffer) => typeof message === "string" ? encoder.encode(message).byteLength : message.byteLength;
+const SENDABLE = (code: number) =>
+  code === 1000 || code === 1001 || code === 1003 || (code >= 1007 && code <= 1014) || (code >= 3000 && code <= 4999);
+const byteLength = (message: string | ArrayBuffer) =>
+  typeof message === "string" ? encoder.encode(message).byteLength : message.byteLength;
 
 /**
  * Socket model: the control link uses the Hibernatable WebSockets API, so an
@@ -137,14 +200,28 @@ export class RelayHubDO extends DurableObject<Env> {
   readonly #reservations = new Map<string, Reservation>();
   readonly #waiters = new Map<string, (response: Response) => void>();
   readonly #streams = new Map<string, Stream>();
-  readonly #stats = { opens: 0, rejectedInstance: 0, openTimeouts: 0, rejectedTokens: 0, controlViolations: 0, replacedControls: 0, controlCloses: 0 };
+  readonly #stats = {
+    opens: 0,
+    rejectedInstance: 0,
+    openTimeouts: 0,
+    rejectedTokens: 0,
+    controlViolations: 0,
+    replacedControls: 0,
+    controlCloses: 0,
+  };
 
-  get #reservationMs() { return Number(this.env.RESERVATION_MS ?? RESERVATION_MS); }
+  get #reservationMs() {
+    return Number(this.env.RESERVATION_MS ?? RESERVATION_MS);
+  }
 
   #controls(): WebSocket[] {
-    return (this.ctx as unknown as { getWebSockets(tag: string): WebSocket[] }).getWebSockets("control").filter(ws => ws.readyState === WebSocket.OPEN);
+    return (this.ctx as unknown as { getWebSockets(tag: string): WebSocket[] })
+      .getWebSockets("control")
+      .filter((ws) => ws.readyState === WebSocket.OPEN);
   }
-  #attachment(ws: WebSocket): ControlAttachment { return (ws as unknown as { deserializeAttachment(): ControlAttachment }).deserializeAttachment(); }
+  #attachment(ws: WebSocket): ControlAttachment {
+    return (ws as unknown as { deserializeAttachment(): ControlAttachment }).deserializeAttachment();
+  }
   /** The live control link; after hibernation its generation and tag come back from the attachment. */
   #control(): { ws: WebSocket; generation: number; routeTag: string } | undefined {
     let best: { ws: WebSocket; generation: number; routeTag: string } | undefined;
@@ -154,21 +231,30 @@ export class RelayHubDO extends DurableObject<Env> {
     }
     return best;
   }
-  #close(ws: WebSocket, code: number, reason: string) { try { ws.close(code, reason); } catch { /* already closing */ } }
+  #close(ws: WebSocket, code: number, reason: string) {
+    try {
+      ws.close(code, reason);
+    } catch {
+      /* already closing */
+    }
+  }
   #reject(id: string, code: number, error: string) {
     this.#reservations.delete(id);
-    const waiter = this.#waiters.get(id); this.#waiters.delete(id);
+    const waiter = this.#waiters.get(id);
+    this.#waiters.delete(id);
     waiter?.(status(code, error));
   }
   #end(id: string, code: number, reason: string) {
     const stream = this.#streams.get(id);
     if (!stream) return;
     this.#streams.delete(id);
-    this.#close(stream.client, code, reason); this.#close(stream.data, code, reason);
+    this.#close(stream.client, code, reason);
+    this.#close(stream.data, code, reason);
   }
   /** Closes every stream and reservation up to one control generation (Node: `retire(connection)`). */
   #retire(generation: number, code: number, reason: string) {
-    for (const [id, reservation] of this.#reservations) if (reservation.generation <= generation) this.#reject(id, 503, "relay_unavailable");
+    for (const [id, reservation] of this.#reservations)
+      if (reservation.generation <= generation) this.#reject(id, 503, "relay_unavailable");
     for (const [id, stream] of this.#streams) if (stream.generation <= generation) this.#end(id, code, reason);
   }
   async #schedule(expiresAt: number) {
@@ -179,13 +265,22 @@ export class RelayHubDO extends DurableObject<Env> {
   async fetch(request: Request): Promise<Response> {
     const kind = request.headers.get("x-relay-kind");
     if (kind === "control") return this.#connectControl(request.headers.get("x-relay-route-tag") ?? "");
-    if (kind === "data") return this.#acceptData(request.headers.get("x-relay-stream") ?? "", request.headers.get("x-relay-token") ?? "");
+    if (kind === "data")
+      return this.#acceptData(request.headers.get("x-relay-stream") ?? "", request.headers.get("x-relay-token") ?? "");
     if (kind === "client") return this.#openClient();
     if (kind === "inspect") {
       const control = this.#control();
-      return Response.json({ generation: control?.generation ?? null, controls: this.#controls().length, active: this.#streams.size,
-        reservations: this.#reservations.size, reservationMs: this.#reservationMs,
-        reservationDeadlines: [...this.#reservations.values()].map(r => r.expiresAt - Date.now()), limit: MAX_RELAY_STREAMS, alarm: await this.ctx.storage.getAlarm(), ...this.#stats });
+      return Response.json({
+        generation: control?.generation ?? null,
+        controls: this.#controls().length,
+        active: this.#streams.size,
+        reservations: this.#reservations.size,
+        reservationMs: this.#reservationMs,
+        reservationDeadlines: [...this.#reservations.values()].map((r) => r.expiresAt - Date.now()),
+        limit: MAX_RELAY_STREAMS,
+        alarm: await this.ctx.storage.getAlarm(),
+        ...this.#stats,
+      });
     }
     return status(400, "invalid_request");
   }
@@ -200,25 +295,41 @@ export class RelayHubDO extends DurableObject<Env> {
     for (const ws of previous) this.#close(ws, 1012, "Relay control replaced");
     this.#retire(generation - 1, 1012, "Relay control replaced");
     const pair = new WebSocketPair();
-    (this.ctx as unknown as { acceptWebSocket(ws: WebSocket, tags: string[]): void }).acceptWebSocket(pair[1], ["control"]);
-    (pair[1] as unknown as { serializeAttachment(value: ControlAttachment): void }).serializeAttachment({ kind: "control", generation, routeTag });
+    (this.ctx as unknown as { acceptWebSocket(ws: WebSocket, tags: string[]): void }).acceptWebSocket(pair[1], [
+      "control",
+    ]);
+    (pair[1] as unknown as { serializeAttachment(value: ControlAttachment): void }).serializeAttachment({
+      kind: "control",
+      generation,
+      routeTag,
+    });
     // No DRAIN_HEADER echo: detached-stream preservation is not implemented here.
-    return new Response(null, { status: 101, webSocket: pair[0], headers: { "sec-websocket-protocol": RELAY_PROTOCOL } });
+    return new Response(null, {
+      status: 101,
+      webSocket: pair[0],
+      headers: { "sec-websocket-protocol": RELAY_PROTOCOL },
+    });
   }
 
   async #openClient(): Promise<Response> {
     const control = this.#control();
     if (!control) return status(503, "relay_unavailable");
     // Active and connecting streams share one per-installation budget (MAX_RELAY_STREAMS).
-    if (this.#streams.size + this.#reservations.size >= MAX_RELAY_STREAMS) { this.#stats.rejectedInstance++; return status(503, "relay_unavailable"); }
+    if (this.#streams.size + this.#reservations.size >= MAX_RELAY_STREAMS) {
+      this.#stats.rejectedInstance++;
+      return status(503, "relay_unavailable");
+    }
     const tag = control.routeTag + hex(crypto.getRandomValues(new Uint8Array(8)));
     const id = `${tag.slice(0, 8)}-${tag.slice(8, 12)}-${tag.slice(12, 16)}-${tag.slice(16, 20)}-${tag.slice(20, 32)}`;
     const token = base64url(crypto.getRandomValues(new Uint8Array(32)));
     const expiresAt = Date.now() + this.#reservationMs;
     this.#reservations.set(id, { token, generation: control.generation, expiresAt });
-    const response = new Promise<Response>(resolve => this.#waiters.set(id, resolve));
+    const response = new Promise<Response>((resolve) => this.#waiters.set(id, resolve));
     await this.#schedule(expiresAt);
-    if (!this.#reservations.has(id) || control.ws.readyState !== WebSocket.OPEN) { this.#reject(id, 503, "relay_unavailable"); return response; }
+    if (!this.#reservations.has(id) || control.ws.readyState !== WebSocket.OPEN) {
+      this.#reject(id, 503, "relay_unavailable");
+      return response;
+    }
     this.#stats.opens++;
     control.ws.send(JSON.stringify({ type: "open", id, token }));
     return response;
@@ -226,18 +337,29 @@ export class RelayHubDO extends DurableObject<Env> {
 
   #acceptData(id: string, token: string): Response {
     const reservation = this.#reservations.get(id);
-    if (!reservation || !equal(reservation.token, token)) { this.#stats.rejectedTokens++; return status(401, "authentication_required"); }
-    const waiter = this.#waiters.get(id);
-    this.#reservations.delete(id); this.#waiters.delete(id);
-    if (!waiter || reservation.expiresAt <= Date.now() || this.#control()?.generation !== reservation.generation) {
-      waiter?.(status(503, "relay_unavailable")); return status(401, "authentication_required");
+    if (!reservation || !equal(reservation.token, token)) {
+      this.#stats.rejectedTokens++;
+      return status(401, "authentication_required");
     }
-    const data = new WebSocketPair(), client = new WebSocketPair();
+    const waiter = this.#waiters.get(id);
+    this.#reservations.delete(id);
+    this.#waiters.delete(id);
+    if (!waiter || reservation.expiresAt <= Date.now() || this.#control()?.generation !== reservation.generation) {
+      waiter?.(status(503, "relay_unavailable"));
+      return status(401, "authentication_required");
+    }
+    const data = new WebSocketPair(),
+      client = new WebSocketPair();
     const stream: Stream = { client: client[1], data: data[1], generation: reservation.generation };
     this.#streams.set(id, stream);
-    this.#bridge(id, stream, stream.client, stream.data); this.#bridge(id, stream, stream.data, stream.client);
+    this.#bridge(id, stream, stream.client, stream.data);
+    this.#bridge(id, stream, stream.data, stream.client);
     waiter(new Response(null, { status: 101, webSocket: client[0] }));
-    return new Response(null, { status: 101, webSocket: data[0], headers: { "sec-websocket-protocol": RELAY_PROTOCOL } });
+    return new Response(null, {
+      status: 101,
+      webSocket: data[0],
+      headers: { "sec-websocket-protocol": RELAY_PROTOCOL },
+    });
   }
 
   /** Byte relay between the client and Headless data sockets, bounded like the Node data `maxPayload`. */
@@ -245,13 +367,20 @@ export class RelayHubDO extends DurableObject<Env> {
     from.accept();
     // compatibility_date 2026-07-30 defaults binaryType to "blob" (standard behavior); relay bytes stay ArrayBuffer.
     (from as unknown as { binaryType: string }).binaryType = "arraybuffer";
-    from.addEventListener("message", event => {
+    from.addEventListener("message", (event) => {
       const message = (event as MessageEvent).data as string | ArrayBuffer;
-      if (byteLength(message) > MAX_DATA_MESSAGE) { this.#end(id, 1009, "Relay message too large"); return; }
+      if (byteLength(message) > MAX_DATA_MESSAGE) {
+        this.#end(id, 1009, "Relay message too large");
+        return;
+      }
       if (this.#streams.get(id) !== stream) return;
-      try { to.send(message); } catch { this.#end(id, 1011, "Relay peer gone"); }
+      try {
+        to.send(message);
+      } catch {
+        this.#end(id, 1011, "Relay peer gone");
+      }
     });
-    from.addEventListener("close", event => {
+    from.addEventListener("close", (event) => {
       if (this.#streams.get(id) !== stream) return;
       const { code, reason } = event as CloseEvent;
       this.#end(id, SENDABLE(code) ? code : 1011, SENDABLE(code) ? reason : "Relay peer closed abnormally");
@@ -275,14 +404,18 @@ export class RelayHubDO extends DurableObject<Env> {
     if (!this.#control()) this.#retire(a.generation, 1012, "Relay control closed");
   }
 
-  async webSocketError(ws: WebSocket): Promise<void> { await this.webSocketClose(ws, 1011, "Relay socket error"); }
+  async webSocketError(ws: WebSocket): Promise<void> {
+    await this.webSocketClose(ws, 1011, "Relay socket error");
+  }
 
   async alarm(): Promise<void> {
     const now = Date.now();
     let next = Infinity;
     for (const [id, reservation] of this.#reservations) {
-      if (reservation.expiresAt <= now) { this.#stats.openTimeouts++; this.#reject(id, 503, "relay_unavailable"); }
-      else next = Math.min(next, reservation.expiresAt);
+      if (reservation.expiresAt <= now) {
+        this.#stats.openTimeouts++;
+        this.#reject(id, 503, "relay_unavailable");
+      } else next = Math.min(next, reservation.expiresAt);
     }
     if (next !== Infinity) await this.ctx.storage.setAlarm(next);
   }

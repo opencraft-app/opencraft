@@ -35,22 +35,38 @@ const TAG_BYTES = 32;
 // Records come from trusted storage, but a crafted or corrupted record must not
 // make one login allocate or spin without bound. 64 MiB stays below the
 // Workers isolate limit; anything outside these bounds is rejected unhashed.
-export const ARGON2ID_LIMITS = Object.freeze({ maxMemoryKiB: 65536, maxPasses: 10, maxLanes: 4, minBytes: 16, maxBytes: 64, maxLength: 256 });
+export const ARGON2ID_LIMITS = Object.freeze({
+  maxMemoryKiB: 65536,
+  maxPasses: 10,
+  maxLanes: 4,
+  minBytes: 16,
+  maxBytes: 64,
+  maxLength: 256,
+});
 
 export interface Argon2idPrimitive {
-  derive(password: Uint8Array, salt: Uint8Array, parameters: Argon2idParameters, tagLength: number): Promise<Uint8Array>;
+  derive(
+    password: Uint8Array,
+    salt: Uint8Array,
+    parameters: Argon2idParameters,
+    tagLength: number,
+  ): Promise<Uint8Array>;
   randomBytes(length: number): Uint8Array;
 }
 /** Verifies a pre-Argon2id scrypt record; absent where none can exist (fresh Cloudflare installations). */
 export type LegacyPasswordVerifier = (password: string, record: StoredPassword) => Promise<boolean>;
 
 const encoder = new TextEncoder();
-const base64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replace(/=+$/u, '');
+const base64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replace(/=+$/u, "");
 function unbase64(text: string): Uint8Array | null {
   if (!/^[A-Za-z0-9+/]+$/u.test(text) || text.length % 4 === 1) return null;
   let binary: string;
-  try { binary = atob(text + '='.repeat((4 - text.length % 4) % 4)); } catch { return null; }
-  const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
+  try {
+    binary = atob(text + "=".repeat((4 - (text.length % 4)) % 4));
+  } catch {
+    return null;
+  }
+  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
   return base64(bytes) === text ? bytes : null; // canonical encoding only
 }
 
@@ -59,7 +75,8 @@ export interface Argon2idRecord {
   readonly salt: Uint8Array;
   readonly tag: Uint8Array;
 }
-const PHC = /^\$argon2id\$v=19\$m=([1-9][0-9]{0,7}),t=([1-9][0-9]{0,2}),p=([1-9][0-9]{0,2})\$([A-Za-z0-9+/]+)\$([A-Za-z0-9+/]+)$/u;
+const PHC =
+  /^\$argon2id\$v=19\$m=([1-9][0-9]{0,7}),t=([1-9][0-9]{0,2}),p=([1-9][0-9]{0,2})\$([A-Za-z0-9+/]+)\$([A-Za-z0-9+/]+)$/u;
 
 export function formatArgon2id(record: Argon2idRecord): string {
   const { m, t, p } = record.parameters;
@@ -67,28 +84,36 @@ export function formatArgon2id(record: Argon2idRecord): string {
 }
 /** Strict PHC parser: only Argon2id v=19, bounded parameters, canonical unpadded base64. */
 export function parseArgon2id(text: string): Argon2idRecord | null {
-  if (typeof text !== 'string' || text.length > ARGON2ID_LIMITS.maxLength) return null;
+  if (typeof text !== "string" || text.length > ARGON2ID_LIMITS.maxLength) return null;
   const match = PHC.exec(text);
   if (!match) return null;
   const [m, t, p] = [match[1], match[2], match[3]].map(Number) as [number, number, number];
-  if (p > ARGON2ID_LIMITS.maxLanes || t > ARGON2ID_LIMITS.maxPasses || m > ARGON2ID_LIMITS.maxMemoryKiB || m < 8 * p) return null;
-  const salt = unbase64(match[4]!), tag = unbase64(match[5]!);
-  const sized = (bytes: Uint8Array | null) => !!bytes && bytes.length >= ARGON2ID_LIMITS.minBytes && bytes.length <= ARGON2ID_LIMITS.maxBytes;
+  if (p > ARGON2ID_LIMITS.maxLanes || t > ARGON2ID_LIMITS.maxPasses || m > ARGON2ID_LIMITS.maxMemoryKiB || m < 8 * p)
+    return null;
+  const salt = unbase64(match[4]!),
+    tag = unbase64(match[5]!);
+  const sized = (bytes: Uint8Array | null) =>
+    !!bytes && bytes.length >= ARGON2ID_LIMITS.minBytes && bytes.length <= ARGON2ID_LIMITS.maxBytes;
   if (!sized(salt) || !sized(tag)) return null;
   return { parameters: { m, t, p }, salt: salt!, tag: tag! };
 }
 
 const LEGACY_SCRYPT_DIGEST = /^[0-9a-f]{64}$/u;
-export type StoredPasswordShape = 'argon2id' | 'scrypt' | 'invalid';
+export type StoredPasswordShape = "argon2id" | "scrypt" | "invalid";
 export function storedPasswordShape(record: StoredPassword): StoredPasswordShape {
-  if (record.salt === '' && parseArgon2id(record.passwordDigest)) return 'argon2id';
-  if (typeof record.salt === 'string' && record.salt !== '' && LEGACY_SCRYPT_DIGEST.test(record.passwordDigest)) return 'scrypt';
-  return 'invalid';
+  if (record.salt === "" && parseArgon2id(record.passwordDigest)) return "argon2id";
+  if (typeof record.salt === "string" && record.salt !== "" && LEGACY_SCRYPT_DIGEST.test(record.passwordDigest))
+    return "scrypt";
+  return "invalid";
 }
 
 function weakerThanCurrent(record: Argon2idRecord): boolean {
-  return record.parameters.m < ARGON2ID_PARAMETERS.m || record.parameters.t < ARGON2ID_PARAMETERS.t
-    || record.salt.length < SALT_BYTES || record.tag.length < TAG_BYTES;
+  return (
+    record.parameters.m < ARGON2ID_PARAMETERS.m ||
+    record.parameters.t < ARGON2ID_PARAMETERS.t ||
+    record.salt.length < SALT_BYTES ||
+    record.tag.length < TAG_BYTES
+  );
 }
 function equal(left: Uint8Array, right: Uint8Array): boolean {
   if (left.length !== right.length) return false;
@@ -102,8 +127,12 @@ function equal(left: Uint8Array, right: Uint8Array): boolean {
  * Argon2id derivation at the current parameters, like a real account.
  */
 export const UNKNOWN_ACCOUNT_PASSWORD: StoredPassword = Object.freeze({
-  salt: '',
-  passwordDigest: formatArgon2id({ parameters: ARGON2ID_PARAMETERS, salt: encoder.encode('opencraft-unknown-account'), tag: new Uint8Array(TAG_BYTES) }),
+  salt: "",
+  passwordDigest: formatArgon2id({
+    parameters: ARGON2ID_PARAMETERS,
+    salt: encoder.encode("opencraft-unknown-account"),
+    tag: new Uint8Array(TAG_BYTES),
+  }),
 });
 
 export function createArgon2idHasher(primitive: Argon2idPrimitive, legacy?: LegacyPasswordVerifier): PasswordHasher {
@@ -118,12 +147,12 @@ export function createArgon2idHasher(primitive: Argon2idPrimitive, legacy?: Lega
     },
     async verify(password: string, record: StoredPassword): Promise<PasswordVerification> {
       const shape = storedPasswordShape(record);
-      if (shape === 'scrypt') {
-        if (!legacy) throw new Error('Legacy password record unsupported by this runtime');
+      if (shape === "scrypt") {
+        if (!legacy) throw new Error("Legacy password record unsupported by this runtime");
         const ok = await legacy(password, record);
         return { ok, needsRehash: ok };
       }
-      if (shape === 'invalid') {
+      if (shape === "invalid") {
         await derive(password, dummy); // corrupt record: same cost, never a match
         return { ok: false, needsRehash: false };
       }

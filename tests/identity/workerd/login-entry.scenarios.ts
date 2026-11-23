@@ -70,7 +70,10 @@ interface Controls {
 }
 interface Entry {
   readonly origin: string;
-  request(path: string, init?: { body?: unknown; cookie?: string; headers?: Record<string, string> }): Promise<Exchange>;
+  request(
+    path: string,
+    init?: { body?: unknown; cookie?: string; headers?: Record<string, string> },
+  ): Promise<Exchange>;
   readonly controls: Controls;
 }
 
@@ -78,7 +81,10 @@ async function exchange(response: Response): Promise<Exchange> {
   const text = await response.text();
   return { status: response.status, body: text ? JSON.parse(text) : null, cookies: response.headers.getSetCookie() };
 }
-function init(origin: string, options: { body?: unknown; cookie?: string; headers?: Record<string, string> } = {}): RequestInit {
+function init(
+  origin: string,
+  options: { body?: unknown; cookie?: string; headers?: Record<string, string> } = {},
+): RequestInit {
   return {
     redirect: "manual",
     headers: {
@@ -92,7 +98,10 @@ function init(origin: string, options: { body?: unknown; cookie?: string; header
 
 async function workerdEntry(runtime: WorkerRuntime): Promise<Entry> {
   // One instance per entry, as before; each also uses its own object.
-  const instance = await runtime.start(LOGIN_ENTRY_WORKER, { localOrigin: LOCAL_ORIGIN, vars: (origin) => ({ ORIGIN: origin }) });
+  const instance = await runtime.start(LOGIN_ENTRY_WORKER, {
+    localOrigin: LOCAL_ORIGIN,
+    vars: (origin) => ({ ORIGIN: origin }),
+  });
   const ORIGIN = instance.origin;
   const object = `login-${++sequence}`;
   const call = async (method: string, ...args: unknown[]) => {
@@ -103,7 +112,11 @@ async function workerdEntry(runtime: WorkerRuntime): Promise<Entry> {
     });
     const text = await response.text();
     let outcome: { ok: boolean; value?: unknown; error?: string };
-    try { outcome = JSON.parse(text); } catch { throw new Error(`HTTP ${response.status}: ${text.slice(0, 500)}`); }
+    try {
+      outcome = JSON.parse(text);
+    } catch {
+      throw new Error(`HTTP ${response.status}: ${text.slice(0, 500)}`);
+    }
     if (!outcome.ok) throw new Error(outcome.error);
     return outcome.value as never;
   };
@@ -141,7 +154,14 @@ async function nodeEntry(scratch: string, closers: Closers): Promise<Entry> {
   accounts.registerLocalAccounts(local);
   const members = new MembershipStore(handle);
   const configuration = { origin: "http://127.0.0.1", local: true, oidc: [] };
-  const auth = new HumanAuth(accounts, actors, configuration, () => "<!doctype html>", () => null, now);
+  const auth = new HumanAuth(
+    accounts,
+    actors,
+    configuration,
+    () => "<!doctype html>",
+    () => null,
+    now,
+  );
   const access = new InstanceAccess(members, [auth], actors);
   const server: Server = createServer(async (request: IncomingMessage, response) => {
     if (request.url === "/api/me") {
@@ -151,7 +171,9 @@ async function nodeEntry(scratch: string, closers: Closers): Promise<Entry> {
       response.writeHead(status === 204 ? 200 : status, { "content-type": "application/json" });
       response.end(
         JSON.stringify(
-          status === 204 ? { actorId: actor?.id ?? null, provider: principal!.provider, subject: principal!.subject } : { error: status },
+          status === 204
+            ? { actorId: actor?.id ?? null, provider: principal!.provider, subject: principal!.subject }
+            : { error: status },
         ),
       );
       return;
@@ -209,7 +231,6 @@ async function nodeEntry(scratch: string, closers: Closers): Promise<Entry> {
 
 const median = (values: number[]) => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)]!;
 
-
 /** One browser's request sequence; returns every response for comparison. */
 async function scenario(entry: Entry) {
   const steps: Record<string, Exchange> = {};
@@ -218,12 +239,15 @@ async function scenario(entry: Entry) {
   const login = (password = PASSWORD, extra: Record<string, unknown> = {}) => ({
     body: { mode: "login", username: "Alice", password, ...extra },
   });
-  const session = (exchange: Exchange) => exchange.cookies.find((cookie) => cookie.startsWith("oc_human="))!.split(";")[0]!;
+  const session = (exchange: Exchange) =>
+    exchange.cookies.find((cookie) => cookie.startsWith("oc_human="))!.split(";")[0]!;
 
   const { subject } = await entry.controls.createAccount("alice", PASSWORD);
   await step("anonymous", "/api/me");
   await step("wrong password", "/__opencraft_auth/local", login("wrong-passphrase-value"));
-  await step("unknown user", "/__opencraft_auth/local", { body: { mode: "login", username: "mallory", password: PASSWORD } });
+  await step("unknown user", "/__opencraft_auth/local", {
+    body: { mode: "login", username: "mallory", password: PASSWORD },
+  });
   await step("cross origin", "/__opencraft_auth/local", { ...login(), headers: { origin: "https://evil.example" } });
   await step("form post", "/__opencraft_auth/local", { ...login(), headers: { "content-type": "text/plain" } });
   await step("bearer header", "/__opencraft_auth/local", { ...login(), headers: { authorization: "Bearer x" } });
@@ -258,13 +282,22 @@ async function scenario(entry: Entry) {
  */
 function secureFollowsOrigin(steps: Record<string, Exchange>, origin: string): Record<string, Exchange> {
   const secure = origin.startsWith("https:");
-  return Object.fromEntries(Object.entries(steps).map(([label, exchange]) => [label, {
-    ...exchange,
-    cookies: exchange.cookies.map((cookie) => {
-      assert.equal(cookie.endsWith("; Secure"), secure, `${label}: ${cookie} on ${secure ? "an https" : "a plain http"} origin`);
-      return secure ? cookie.slice(0, -"; Secure".length) : cookie;
-    }),
-  }]));
+  return Object.fromEntries(
+    Object.entries(steps).map(([label, exchange]) => [
+      label,
+      {
+        ...exchange,
+        cookies: exchange.cookies.map((cookie) => {
+          assert.equal(
+            cookie.endsWith("; Secure"),
+            secure,
+            `${label}: ${cookie} on ${secure ? "an https" : "a plain http"} origin`,
+          );
+          return secure ? cookie.slice(0, -"; Secure".length) : cookie;
+        }),
+      },
+    ]),
+  );
 }
 
 /** Stable placeholders for random ids/tokens and the issue-time Max-Age. */
@@ -300,19 +333,37 @@ export const LOGIN_ENTRY_SCENARIOS: readonly WorkerScenario[] = [
         const workerRecord = (await worker.controls.account("workerd-made"))!;
         // PHC string in password_digest, empty salt column; parameters travel with the record.
         assert.equal(workerRecord.salt, "");
-        assert.match(workerRecord.passwordDigest, /^\$argon2id\$v=19\$m=19456,t=2,p=1\$[A-Za-z0-9+/]{22}\$[A-Za-z0-9+/]{43}$/u);
+        assert.match(
+          workerRecord.passwordDigest,
+          /^\$argon2id\$v=19\$m=19456,t=2,p=1\$[A-Za-z0-9+/]{22}\$[A-Za-z0-9+/]{43}$/u,
+        );
         assert.equal(parseArgon2id(workerRecord.passwordDigest)?.salt.length, 16);
         await node.controls.insertAccount(workerRecord);
         assert.equal((await node.controls.verify("workerd-made", PASSWORD)).subject, fromWorker.subject);
         assert.equal((await node.controls.verify("workerd-made", "wrong-passphrase-value")).subject, null);
-        assert.equal((await worker.controls.account("workerd-made"))!.passwordDigest, workerRecord.passwordDigest, "current parameters are never rehashed");
+        assert.equal(
+          (await worker.controls.account("workerd-made"))!.passwordDigest,
+          workerRecord.passwordDigest,
+          "current parameters are never rehashed",
+        );
 
         // Cloudflare installations are fresh: the portable hasher refuses a pre-Argon2id scrypt record.
-        await worker.controls.insertAccount({ ...nodeRecord, id: "00000000-0000-4000-8000-000000000001", username: "scrypt-made",
-          salt: "a".repeat(64), passwordDigest: "b".repeat(64) });
+        await worker.controls.insertAccount({
+          ...nodeRecord,
+          id: "00000000-0000-4000-8000-000000000001",
+          username: "scrypt-made",
+          salt: "a".repeat(64),
+          passwordDigest: "b".repeat(64),
+        });
         await assert.rejects(worker.controls.verify("scrypt-made", PASSWORD), /Legacy password record unsupported/u);
 
-        const timings = { workerd: [] as number[], workerdUnknown: [] as number[], workerdOuter: [] as number[], workerdHash: [] as number[], node: [] as number[] };
+        const timings = {
+          workerd: [] as number[],
+          workerdUnknown: [] as number[],
+          workerdOuter: [] as number[],
+          workerdHash: [] as number[],
+          node: [] as number[],
+        };
         for (let i = 0; i < 5; i++) {
           const started = performance.now();
           timings.workerd.push((await worker.controls.verify("node-made", PASSWORD)).ms);

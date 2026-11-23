@@ -10,8 +10,12 @@ export interface CgroupLimits {
 }
 
 const optional = async (path: string) => {
-  try { return (await readFile(path, "utf8")).trim(); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined; throw error; }
+  try {
+    return (await readFile(path, "utf8")).trim();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
 };
 const limit = (value: string | undefined) => {
   if (value === undefined || value === "max") return null;
@@ -25,7 +29,7 @@ export async function readCgroupLimits(root = "/sys/fs/cgroup"): Promise<CgroupL
   if (cpuMax !== undefined) {
     const [quota, period] = cpuMax.split(/\s+/u);
     return {
-      cpuMillis: quota === "max" || !Number(period) ? null : Math.round(Number(quota) / Number(period) * 1000),
+      cpuMillis: quota === "max" || !Number(period) ? null : Math.round((Number(quota) / Number(period)) * 1000),
       memoryBytes: limit(await optional(join(root, "memory.max"))),
       tasks: limit(await optional(join(root, "pids.max"))),
     };
@@ -35,7 +39,7 @@ export async function readCgroupLimits(root = "/sys/fs/cgroup"): Promise<CgroupL
     if (quota === undefined) continue;
     const period = Number(await optional(join(root, controller, "cpu.cfs_period_us")));
     return {
-      cpuMillis: Number(quota) <= 0 || !period ? null : Math.round(Number(quota) / period * 1000),
+      cpuMillis: Number(quota) <= 0 || !period ? null : Math.round((Number(quota) / period) * 1000),
       memoryBytes: limit(await optional(join(root, "memory/memory.limit_in_bytes"))),
       tasks: limit(await optional(join(root, "pids/pids.max"))),
     };
