@@ -140,6 +140,23 @@ export async function smokeCodexAppHost(origin, projectPath = null) {
   }
 }
 
+export async function unpackHeadlessPackage(archive, directory) {
+  const { stdout: entries } = await exec("tar", ["-tzf", archive], { maxBuffer: 32 * 1024 * 1024 });
+  for (const entry of entries.trim().split("\n")) {
+    assert.ok(entry === "opencraft-server/" ||
+      (entry.startsWith("opencraft-server/") && !entry.split("/").includes("..")),
+    `Unsafe archive path: ${entry}`);
+  }
+  await run("tar", ["-xzf", archive, "-C", directory]);
+  const root = join(directory, "opencraft-server");
+  const manifest = JSON.parse(await readFile(join(root, "manifest.json"), "utf8"));
+  assert.equal(manifest.platform, "linux");
+  assert.equal(manifest.architecture, "amd64");
+  assert.equal(manifest.buildId, (await assertHeadlessWebRelease(join(root, "web"))).buildId);
+  await verifyManifest(root, manifest);
+  return { root, manifest };
+}
+
 export async function smokeHeadlessPackage(archive) {
   if (process.platform !== "linux" || process.arch !== "x64") {
     throw new Error("Headless package smoke requires Linux x64");
@@ -149,19 +166,7 @@ export async function smokeHeadlessPackage(archive) {
   let smokeProcess;
   let socket;
   try {
-    const { stdout: entries } = await exec("tar", ["-tzf", archive], { maxBuffer: 32 * 1024 * 1024 });
-    for (const entry of entries.trim().split("\n")) {
-      assert.ok(entry === "opencraft-server/" ||
-        (entry.startsWith("opencraft-server/") && !entry.split("/").includes("..")),
-      `Unsafe archive path: ${entry}`);
-    }
-    await run("tar", ["-xzf", archive, "-C", directory]);
-    const root = join(directory, "opencraft-server");
-    const manifest = JSON.parse(await readFile(join(root, "manifest.json"), "utf8"));
-    assert.equal(manifest.platform, "linux");
-    assert.equal(manifest.architecture, "amd64");
-    assert.equal(manifest.buildId, (await assertHeadlessWebRelease(join(root, "web"))).buildId);
-    await verifyManifest(root, manifest);
+    const { root, manifest } = await unpackHeadlessPackage(archive, directory);
     smokeProcess = startHeadlessSmokeProcess(join(root, "bin/opencraft-server"), ["--port", "0", "--data-dir", join(directory, "data")], {
       cwd: root,
       env: { ...process.env, ELECTRON_RUN_AS_NODE: "" },

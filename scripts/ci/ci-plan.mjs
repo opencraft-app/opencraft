@@ -39,7 +39,8 @@ export function planChanges(paths, { event = 'pull_request', unknownDiff = false
       || path === 'apps/workbench-web/src/runtime/module-url-extension-loader.ts') extensions = true;
     if (/^(docs|design|\.agents)\//.test(path) || /^[^/]+\.md$/i.test(path) || /(?:^|\/)(?:README|AGENTS)\.md$/i.test(path) || /^(LICENSE|NOTICE)(\.|$)/.test(path)) continue;
     if (/^(deploy\/web-server\/|scripts\/server-deployment\/|apps\/headless-server\/src\/server-deployment\/|apps\/headless-server\/src\/headless-web-release\.mjs$)/.test(path)
-      || /^(scripts\/(packaging\/(package-headless-linux\.mjs|install-headless-linux\.sh|headless-(codex-launcher|server-launcher)\.sh|headless-web-build\.mjs)|smoke\/server\/smoke-headless-package\.mjs)|config\/build-matrix\.json)$/.test(path)
+      || /^(scripts\/(packaging\/(package-headless-linux\.mjs|install-headless-linux\.sh|headless-(codex-launcher|server-launcher)\.sh|headless-web-build\.mjs)|smoke\/server\/(smoke-headless-(package|release-upgrade)|headless-smoke-process)\.mjs)|config\/build-matrix\.json)$/.test(path)
+      || /^(packages\/(sqlite-node|storage-node)\/|\.github\/actions\/headless-upgrade\/)/.test(path)
       || /^tests\/server\/(headless-installer|server-deployment)\.test\.mjs$/.test(path)) {
       headlessTests = true;
       headlessPackage = true;

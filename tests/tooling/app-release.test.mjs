@@ -41,6 +41,26 @@ test("one workflow releases every platform for a beta or a stable tag", () => {
   assert.throws(() => read(".github/workflows/release.yml"), /ENOENT/u);
 });
 
+test("Headless release uploads only after testing the exact archive across an upgrade", () => {
+  const [headless] = read(".github/workflows/server-release.yml").split("\n  container:");
+  const checks = [
+    "npm run matrix:build -- headless-linux-amd64-tar",
+    "npm run smoke:headless:linux",
+    "uses: ./.github/actions/headless-upgrade",
+    "Record the tested archive's digest",
+    "name: opencraft-server-headless-",
+  ];
+  let position = -1;
+  for (const check of checks) {
+    const next = headless.indexOf(check, position + 1);
+    assert.ok(next > position, check);
+    position = next;
+  }
+  const rehearsal = read(".github/actions/headless-upgrade/action.yml");
+  assert.match(rehearsal, /candidate="release\/OpenCraft-server-\$version-linux-amd64\.tar\.gz"/u);
+  assert.match(rehearsal, /npm run smoke:headless:upgrade -- "\$baseline" "\$candidate"/u);
+});
+
 // A checkout with one built input per platform for `tag`, staged and published
 // by the real scripts against a stand-in gh that keeps the notes of the release
 // it is asked to create and stops there.

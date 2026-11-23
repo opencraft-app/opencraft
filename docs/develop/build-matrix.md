@@ -602,6 +602,25 @@ before distribution. GitHub's portable
 matrix produces and smoke-tests this archive as an Actions artifact; a PR build
 is not a published release.
 
+The selected Headless archive CI job and App release require the Linux Headless
+archive to pass an upgrade rehearsal before upload. The pinned baseline is currently the
+standalone build from the published `v0.2.0` source commit, which predates public
+Headless archive attachments. Use the previous supported Headless release as the
+baseline when advancing this pin.
+
+The baseline's own server writes a project, project-bound Pi thread and completed
+turn through AppHost against a loopback model fixture. The candidate must open
+that state, preserve the original project, thread and turn identities, continue
+the thread and read both turns after another restart. A separate disposable copy
+carries a deliberately newer ledger for one required SQLite owner. Startup must
+refuse that copy while the baseline data remains intact. The rehearsal proves
+standalone archive replacement with an existing data directory. Managed Web
+install and recovery have their own [upgrade checks](../operations/web-deployment.md#可选发布前回归门禁).
+
+```sh
+npm run smoke:headless:upgrade -- /absolute/baseline.tar.gz /absolute/candidate.tar.gz
+```
+
 The headless archive must contain a Web release built with
 `OPENCRAFT_HEADLESS_SERVER_BUILD=true` and the `opencraft-server` `/appserver`
 Host profile. Its `web/version.json` records that delivery target; packaging,

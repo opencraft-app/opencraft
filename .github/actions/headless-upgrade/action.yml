@@ -1,0 +1,29 @@
+name: Rehearse the Headless archive upgrade
+description: Upgrade a previous release's real standalone server state with the Headless archive built by the caller.
+runs:
+  using: composite
+  steps:
+    # v0.2.0 predates attached Headless archives. Build its standalone
+    # server from the published tag's exact source commit.
+    - name: Check out the Headless upgrade baseline (v0.2.0)
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        ref: 3238fb046bbf778fce260339b7a8f44a8db6c076
+        path: .upgrade-baseline
+        persist-credentials: false
+    - name: Build the Headless upgrade baseline
+      shell: bash
+      working-directory: .upgrade-baseline
+      run: |
+        test "$(git rev-parse HEAD)" = 3238fb046bbf778fce260339b7a8f44a8db6c076
+        test "$(node -v)" = "v$(cat .nvmrc)"
+        npm ci --no-audit --no-fund
+        npm run matrix:build -- headless-linux-amd64-tar
+    - name: Rehearse with the exact Headless archives
+      shell: bash
+      run: |
+        version="$(node scripts/release/product-version.mjs check)"
+        baseline=".upgrade-baseline/release/OpenCraft-server-0.2.0-linux-amd64.tar.gz"
+        candidate="release/OpenCraft-server-$version-linux-amd64.tar.gz"
+        sha256sum -- "$baseline" "$candidate"
+        npm run smoke:headless:upgrade -- "$baseline" "$candidate"

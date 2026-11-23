@@ -61,6 +61,8 @@ test('server runtime changes test without packaging; archive inputs also build a
   for (const path of ['scripts/packaging/package-headless-linux.mjs', 'scripts/packaging/headless-web-build.mjs', 'scripts/packaging/install-headless-linux.sh',
     'scripts/packaging/headless-codex-launcher.sh', 'scripts/packaging/headless-server-launcher.sh', 'apps/headless-server/src/headless-web-release.mjs',
     'scripts/smoke/server/smoke-headless-package.mjs', 'scripts/server-deployment/service.mjs',
+    'scripts/smoke/server/smoke-headless-release-upgrade.mjs', 'packages/storage-node/src/server/index.ts',
+    'packages/sqlite-node/src/lifecycle.ts',
     'tests/server/headless-installer.test.mjs', 'tests/server/server-deployment.test.mjs', 'deploy/web-server/package.json']) {
     const plan = planChanges([path]);
     assert.equal(plan.headlessTests, true, path);
@@ -68,6 +70,10 @@ test('server runtime changes test without packaging; archive inputs also build a
     assert.equal(plan.native, false, path);
     assert.deepEqual(plan.targets, webTargets, path);
   }
+});
+test('changes to the Headless upgrade action select the archive rehearsal', () => {
+  const plan = planChanges(['.github/actions/headless-upgrade/action.yml']);
+  assert.equal(plan.headlessPackage, true);
 });
 test('isolated lockfiles audit their own install roots and workspace manifests audit the root', () => {
   assert.deepEqual(planChanges(['runtime/dsh/package-lock.json']).audits, ['runtime/dsh']);

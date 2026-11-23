@@ -15,7 +15,7 @@ jobs:
   headless:
     # The same runner image as the PR build of this archive (build-matrix linux-headless).
     runs-on: ubuntu-22.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -32,6 +32,7 @@ jobs:
           kind: browser
       - run: npm run matrix:build -- headless-linux-amd64-tar
       - run: npm run smoke:headless:linux
+      - uses: ./.github/actions/headless-upgrade
       - name: Record the tested archive's digest
         run: |
           version="$(node scripts/release/product-version.mjs check)"
