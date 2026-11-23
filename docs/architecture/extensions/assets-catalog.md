@@ -109,11 +109,61 @@ Bundled consumers must place `assets-configuration-worker.mjs` beside the import
 runs the bundled owner and sibling Worker from an isolated temporary directory.
 The default host composition is implemented by
 `@opencraft/plugin-local-account/assets-server`: it consumes the existing HumanAuth,
-ActorStore, HumanAccounts and InstanceAccess owners. Account/password/session,
-Actor/binding and membership/role changes withdraw request-local admission before
-queued writes. Repositories borrowing the same owner share change notifications;
+ActorStore, HumanAccounts and InstanceAccess owners, and is one composition of
+`openIdentityAssets` (below). Account/password/session, Actor/binding and
+membership/role changes withdraw request-local admission before queued writes. Repositories borrowing the same owner share change notifications;
 these notifications grant nothing. This does not claim that legacy authentication
 storage IO has itself been migrated off the network thread.
+
+### Identity compositions: `openIdentityAssets`
+
+`@opencraft/plugin-assets/server/identity-assets` exports
+`openIdentityAssets({ resolveRequest, port, origin, actors, membership, access,
+provider?, gitHosts?, gitProviders?, environment? })`, the one implementation of the
+`/__opencraft_assets/*` settings routes (status, configurations, Git connections
+and, with `environment`, personal ENV). Any trusted composition uses it, whether it
+authenticates with HumanAuth or with its own provider:
+
+- `resolveRequest(request)` returns the request's verified login principal
+  (`{ provider, subject, expiresAt }`), optionally the Actor it expects, a
+  `current()` check and a `subscribe()` for login changes, or `null`. A bearer
+  credential never reaches these browser settings routes.
+- Main turns the principal into core's Human proof with `openActorAdmission`
+  (`@opencraft/access-control/actor-admission`, also exported as
+  `@opencraft/headless-server/workspaces/actor-admission`). The route's
+  request-local permit replaces the proof's request permit, so a closed response
+  or a login change retires it.
+- `port` is the vault Worker (`openAssetConfigurations(...).store` or a
+  composition's own Worker port). Its settings methods take only that proof:
+  `actorConfigurationsSnapshot/Update`, `actorGitSnapshot/Update` and, where the
+  Worker issues execution ENV, `environmentList/Replace/Projects`. The Worker
+  validates the proof, rechecks it against the committed Actor/member records at
+  admission, at each owner's commit boundary and before answering, and derives
+  the `actor:<actorId>` partition and the role there. Main's
+  `allowCustomEndpoints`/`canManagePlatform` are advisory `false`; the Worker
+  decides both from the committed role (`createHeadlessExecutionRecords().actors.role`,
+  or by default a read-only reader over the data directory's Actor store).
+- The status route reports the proof's scope and, when served, `environment: true`.
+
+A composition that owns its vault Worker therefore keeps only its login adapter
+(`resolveRequest`) and its Worker composition; it no longer reads core's member
+tables, mints account fences or copies the HTTP facades. The older
+`snapshot/update/gitSnapshot/gitUpdate` Worker methods with a Main-built
+`AssetAdmission` remain for existing callers.
+
+### Personal ENV
+
+`/__opencraft_assets/environment` serves the existing `AccountEnvironmentHttp`
+protocol for the signed-in person, pinned to the trusted origin. It exists only
+where the vault Worker is the execution ENV owner (`environmentLaunch`), so a saved
+value is what launches read: the Worker writes the canonical Actor partition, or
+the partition the composition's `environmentAccounts` mapping selects for that
+Actor. Project scopes are limited to remembered Projects. Secret values are
+write-only in both directions; no Worker answer to Main carries one. The default
+client installs `createAssetVariablesEditor` (`@opencraft/plugin-assets/environment`)
+as the view's `VariablesEditor` when status advertises it: the shared
+`EnvironmentVariablesEditor` with `assets.env.*` messages (English defaults), fenced
+to the account scope.
 
 The client-side ServerAssetsAccount is only a resource-scope projection, not a
 second login provider or credential store. It fences late replies, clears on

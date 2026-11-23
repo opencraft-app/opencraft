@@ -12,11 +12,22 @@ import type { IdentityWrites } from './identity-writes.js';
 
 
 export type MemberRole = "admin" | "member";
+/** The instance's view of a policy administration request; never a grant by itself. */
+export interface AdmissionPolicyCaller {
+  /** Authenticated principal of the request, if any. */
+  readonly identity: Principal | null;
+  /** Rechecks, at call time, that the request is from a current administrator. */
+  administrator(): Principal | null;
+  /** The request is a same-origin `application/json` write, as membership writes require. */
+  readonly sameOriginJson: boolean;
+}
 /** Optional trusted provider policy. Cached decisions never authenticate a request. */
 export interface InstanceAdmissionPolicy {
   prepare(identity: Principal): Promise<void>;
   allows(identity: Principal): boolean;
   allowsBinding(binding: Pick<Principal, 'provider' | 'subject'>): boolean;
+  /** Optional administration of the policy under `/__opencraft_access/`; null for paths it does not own. */
+  handle?(request: HttpExchangeRequest, caller: AdmissionPolicyCaller): Promise<HttpExchangeResponse | null>;
 }
 export class MembershipStore {
   readonly #changes: AuthorityChanges;
@@ -207,7 +218,11 @@ export class InstanceAccess {
   async prepare(request: IdentityRequest): Promise<void> {
     if (!this.admissionPolicy) return;
     const identity = this.authenticate(request);
-    if (identity && this.isCurrent(identity)) await this.admissionPolicy.prepare(identity);
+    if (!identity || !this.isCurrent(identity)) return;
+    await this.admissionPolicy.prepare(identity);
+    // Authentication ran before this first decision existed and skipped the
+    // verified-login Actor membership step; complete it now that it may apply.
+    if (identity.expiresAt > Date.now()) this.prepareActorMembership(identity);
   }
   trustedOrigin(request: IdentityRequest): string | null {
     const identity = this.authenticate(request);
@@ -230,13 +245,19 @@ export class InstanceAccess {
     if (path === '/__opencraft_access/admission' && request.method === 'GET') return { status: 204, headers: [['cache-control', 'no-store']], body: null };
     const identity = this.authenticate(request.identity);
     if (path === '/__opencraft_access/session' && request.method === 'GET') return send(200, { principal: identity, role: identity ? this.role(identity) : null });
+    const origin = request.headers.origin;
+    const sameOriginJson = typeof origin === 'string' && ['http:', 'https:'].some(scheme => origin === scheme + '//' + request.headers.host)
+      && request.headers['content-type']?.split(';')[0] === 'application/json';
+    if (this.admissionPolicy?.handle) {
+      const administrator = () => { const current = this.authenticate(request.identity); return current && this.role(current) === 'admin' ? current : null; };
+      const handled = await this.admissionPolicy.handle(request, { identity, administrator, sameOriginJson });
+      if (handled) return handled;
+    }
     if (!identity || this.role(identity) !== 'admin') return send(403, { error: 'administrator_required' });
     if (path === '/__opencraft_access/members' && request.method === 'GET') return send(200, { members: this.store.list(), actors: this.store.listActors() });
     if (path === '/__opencraft_access/audit' && request.method === 'GET') return send(200, { events: this.store.audit() });
     if (path !== '/__opencraft_access/members' || request.method !== 'POST') return send(404, { error: 'missing' });
-    const origin = request.headers.origin;
-    if (typeof origin !== 'string' || !['http:', 'https:'].some(scheme => origin === scheme + '//' + request.headers.host)
-      || request.headers['content-type']?.split(';')[0] !== 'application/json') return send(403, { error: 'same_origin_json_required' });
+    if (!sameOriginJson) return send(403, { error: 'same_origin_json_required' });
     try {
       const change = JSON.parse(decodeUtf8(await request.readBody(16_384)));
       if (this.role(identity) !== 'admin') return send(403, { error: 'administrator_required' });

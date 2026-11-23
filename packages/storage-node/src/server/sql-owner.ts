@@ -26,6 +26,7 @@ export interface ServerSqlOwnerOptions {
  * Slim Server lifecycle for an owner whose SQL database is already exclusive
  * and durable (a Durable Object): ledger validation, checksum refusal and the
  * canonical migrations, each in its own transaction. No process lock, backup,
+ * extension families,
  * legacy six-store import, alternate-lineage adoption or :memory: schema
  * validator; those stay with openServerDatabase (Node). A non-empty database
  * without a ledger is refused rather than adopted. Runs where the opener runs:
@@ -37,6 +38,9 @@ export function migrateServerSqlDatabase(
   options: ServerSqlOwnerOptions = {},
 ): ServerDatabaseHandle & { readonly contract: ServerDataContract } {
   const composition = options.composition ?? serverMigrationComposition();
+  // Extension families need the Node owner's authorizer, backup and adoption; refuse rather than skip them.
+  if (composition.extensions.length)
+    throw new SqlMigrationError("history-mismatch", "Server extension families require the Node Server owner");
   const migrations = hashSqlMigrations(composition.canonical, (text) =>
     createHash("sha256").update(text).digest("hex"),
   );

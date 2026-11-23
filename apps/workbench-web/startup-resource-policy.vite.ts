@@ -61,7 +61,13 @@
 // standard-page baseline of 1,226,388 B. Raw startup JS decreases by 22 B and
 // CSS is unchanged; reserve 500 B for compression/content-hash variance while
 // preserving JS/CSS/chunk limits and all demand-only boundaries.
-export const startupResourceBudget = Object.freeze({ javascript: 3_700_000, css: 734_000, gzip: 1_227_000 });
+// Per-person Assets and ENV settings for any verified principal measure
+// 1,229,902 B gzip against a 1,226,307 B main baseline (+3,595 B): the Assets
+// account/status parsing grows slightly and shared platform chunks regroup
+// around the new demand-only ENV editor edge. The ENV editor itself is declared
+// demand-only above. Reserve 600 B for content-hash variance; JS/CSS/chunk
+// limits and every demand-only boundary are unchanged.
+export const startupResourceBudget = Object.freeze({ javascript: 3_700_000, css: 734_000, gzip: 1_230_500 });
 export const startupJavaScriptChunkBudget = 120;
 export const requiredStartupModule = /\/(?:apps\/workbench-web\/src\/(?:workbench-entry|main)\.tsx?|plugins\/(?:builtin-agents|headless-model-services)\/src\/runtime-entry\.tsx?|plugins\/builtin-agents\/src\/index\.tsx?)$/;
 /** Trusted build owners may add roots and exclusions without relaxing core limits. */
@@ -70,7 +76,7 @@ export interface StartupResourcePolicy {
   readonly demandOnlyModules?: readonly RegExp[];
 }
 const demandOnlyPatterns = [
-  /\/plugins\/assets\/src\/(?:view\.tsx|git\/client\.tsx)$/,
+  /\/plugins\/assets\/src\/(?:view\.tsx|git\/client\.tsx|environment\.tsx)$/,
   /\/packages\/composer-editor\/src\/local-queued-messages\.tsx$/,
   // Desktop capability/attachment owners start synchronously; media is connect-only.
   /\/plugins\/cloud-desktop\/src\/(?:rfb|rfb-client|pointer-input|trackpad-input|text-input|clipboard-input|frame-preview)\.ts$/,

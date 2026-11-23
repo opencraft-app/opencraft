@@ -20,7 +20,10 @@
     "./server/sandbox-installations": "./src/server/sandbox-installations.ts",
     "./server": "./src/server/worker.ts",
     "./server/http": "./src/server/http.ts",
+    "./server/identity-assets": "./src/server/identity-assets.ts",
+    "./server/actor-settings": "./src/server/actor-settings.ts",
     "./client": "./src/client.ts",
+    "./environment": "./src/environment.tsx",
     "./git/contract": "./src/git/contract.ts",
     "./git/client": "./src/git/client.tsx",
     "./server/git-connections": "./src/server/git-connections.ts",
@@ -46,6 +49,8 @@
     "@opencraft/sandbox": "0.1.0",
     "@opencraft/chat-core": "0.1.0",
     "@opencraft/appserver-protocol": "0.1.0",
-    "@opencraft/session-capabilities": "0.1.0"
+    "@opencraft/session-capabilities": "0.1.0",
+    "@opencraft/access-control": "0.1.0",
+    "@opencraft/workbench-runtime": "0.1.0"
   }
 }

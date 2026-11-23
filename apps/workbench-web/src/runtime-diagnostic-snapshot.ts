@@ -1,3 +1,4 @@
+import { isTouchInteraction } from "@opencraft/design-system-web/input-presentation";
 import type { CssSupportProbe, RuntimeEnvironmentSnapshot, RuntimeDiagnosticErrorEntry, RuntimeDiagnosticNetworkEntry } from "./runtime-diagnostics";
 
 // Loaded with the diagnostic export/developer surface, never normal startup.
@@ -56,7 +57,7 @@ export function captureRuntimeEnvironment(): RuntimeEnvironmentSnapshot {
       bottom: readSafeAreaInset("bottom"),
       left: readSafeAreaInset("left"),
     },
-    touchInteraction: typeof document !== "undefined" && document.documentElement.dataset.touchInteraction === "true",
+    touchInteraction: typeof document !== "undefined" && isTouchInteraction(document),
     colorScheme,
     language: typeof navigator === "undefined" ? "" : navigator.language,
     ...(buildId ? { buildId } : {}),

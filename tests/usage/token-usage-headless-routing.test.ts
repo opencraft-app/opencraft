@@ -9,10 +9,12 @@ import { startHeadlessServer } from '../../apps/headless-server/src/headless-ser
 import { readDaemonMachineIdentity } from '../../apps/opencraft-daemon/src/machine-identity.js';
 import { TokenUsageStateDatabase } from '../../apps/opencraft-daemon/src/token-usage-state-database.js';
 import { OpenCraftTokenUsageLedger } from '../../apps/opencraft-daemon/src/token-usage-ledger.js';
+import { ownedCleanup } from '../support/owned-cleanup.mjs';
 
 for (const identityOverlay of [false, true]) for (const entry of ['apphost', 'appserver']) for (const engine of ['dsh', 'pi']) test(`Headless ${engine} ${entry} identity=${identityOverlay} entry queries existing deployment statistics without Codex startup`, async t => {
   const root = await mkdtemp(join(tmpdir(), 'usage-headless-'));
-  t.after(() => rm(root, { recursive: true, force: true }));
+  const cleanup = ownedCleanup(t);
+  cleanup.last(() => rm(root, { recursive: true, force: true }));
   const webRoot = join(root, 'web'), dataDirectory = join(root, 'data');
   await mkdir(webRoot); await writeFile(join(webRoot, 'index.html'), '<title>Fixture</title>');
   await writeFile(join(webRoot, 'version.json'), JSON.stringify({ schemaVersion: 1, buildId: 'test', headlessServer: true, headlessHostId: 'opencraft-server' }));
@@ -24,7 +26,7 @@ for (const identityOverlay of [false, true]) for (const entry of ['apphost', 'ap
     if (request.id !== undefined) ws.send(JSON.stringify({ ...request, method: undefined, params: undefined,
       ...(request.method === 'initialize' ? { result: { capabilities: { extensions: {} } } } : { error: { code: -32603, message: `Method not supported by OpenCraft DSH host: ${request.method}` } }) }));
   }));
-  t.after(async () => { for (const ws of native.clients) ws.terminate(); await new Promise<void>(resolve => native.close(() => resolve())); });
+  cleanup.own(async () => { for (const ws of native.clients) ws.terminate(); await new Promise<void>(resolve => native.close(() => resolve())); });
   const principal = { provider: 'fixture', subject: 'operator', displayName: 'Operator', expiresAt: Date.now() + 60_000 };
   const member = { ...principal, subject: 'member' };
   const memberHeaders = { 'x-test-identity': 'member' };
@@ -37,7 +39,7 @@ for (const identityOverlay of [false, true]) for (const entry of ['apphost', 'ap
     membership.set(member, 'member', true, 'fixture');
     return { ...(identityOverlay ? { createThreadMetadata: () => ({ methods: [], capabilities: {}, supports: () => false, async request() { throw new Error('Unsupported metadata method'); }, observeResult() {}, observeNotification() {}, close() {} }) } : {}), providers: [{ authenticate: (r: any) => r.headers['x-test-identity'] === 'verified' ? principal : r.headers['x-test-identity'] === 'member' ? member : null }], close() {} };
   } });
-  t.after(() => app.close());
+  cleanup.own(() => app.close());
   const actor = (await (await fetch(app.url + '/__opencraft_actors/me', { headers })).json() as any).actor;
   const memberActor = (await (await fetch(app.url + '/__opencraft_actors/me', { headers: memberHeaders })).json() as any).actor;
   const machine = await readDaemonMachineIdentity(dataDirectory);
@@ -53,7 +55,7 @@ for (const identityOverlay of [false, true]) for (const entry of ['apphost', 'ap
   const socket = new WebSocket(app.url.replace('http:', 'ws:') + '/' + entry, { headers: { ...headers, origin: app.url } });
   const received: any[] = [];
   socket.on('message', raw => received.push(JSON.parse(raw.toString())));
-  t.after(() => socket.terminate()); await once(socket, 'open');
+  cleanup.own(() => socket.terminate()); await once(socket, 'open');
   const wait = async (predicate: (value: any) => boolean) => {
     for (let n = 0; n < 500; n++) { const value = received.find(predicate); if (value) return value; await new Promise(resolve => setTimeout(resolve, 10)); }
     throw new Error('Missing expected Host response');
@@ -92,7 +94,7 @@ for (const identityOverlay of [false, true]) for (const entry of ['apphost', 'ap
     // Separate admitted connections retain their own protocol and authority.
     for (const [authHeaders, expectedSelf, expectedTeam] of [[memberHeaders, '600', 403]] as const) {
       const other = new WebSocket(app.url.replace('http:', 'ws:') + '/appserver', { headers: { ...authHeaders, origin: app.url } });
-      t.after(() => other.terminate());
+      cleanup.own(() => other.terminate());
       await once(other, 'open');
       const call = async (method: string, params: object) => {
         const response = once(other, 'message');
@@ -107,7 +109,7 @@ for (const identityOverlay of [false, true]) for (const entry of ['apphost', 'ap
       }
     }
     const anonymous = new WebSocket(app.url.replace('http:', 'ws:') + '/appserver', { headers: { origin: app.url } });
-    t.after(() => anonymous.terminate());
+    cleanup.own(() => anonymous.terminate());
     await assert.rejects(once(anonymous, 'open'), /Unexpected server response: 401/);
     // Non-query RPC remains on the native path.
     assert.equal((await rpc('fixture/unsupported', {})).error.code, engine === 'dsh' ? -32603 : -32000);

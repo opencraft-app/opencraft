@@ -9,6 +9,12 @@
 
 新增或修改界面前，先读 [设计入口](../../design.md)，选择最接近的 Settings、任务/对象目录、Chat、Sidebar 或嵌入 App 范式，并查看对应真实消费者。执行方法见维护 Skill 的 [UI 工作流](../../.agents/skills/opencraft-maintenance/references/ui-design.md)：把范式落实为可见组合，从相关真实使用状态复核，记录实际看过的画面及判断；目录页继续按[组合规范与正反例](collections.md)设计。默认延续 OpenCraft 现有设计语言，优先复用共享组件、交互原语和语义 token；缺少可复用能力时在正确 owner 扩展。用户明确指定视觉方向时按该方向调整，并保留可访问性与工作连续性。Token 数值仍由设计系统源码持有；隔离 App 的可用样式以实际宿主能力为准。不以无溢出、组件导入或生成截图代替视觉复核，不新增用户审批步骤。
 
+## 触控呈现与输入模态
+
+- 触控呈现（`data-ui-density="touch"`，由安装偏好 `interface.touchFriendly` 与触控能力解析）与当前输入模态（`data-touch-interaction`，最近一次指针来自触摸/笔）分别建模，唯一契约是 `@opencraft/design-system-web/input-presentation`：读取用 `isTouchPresentation`、`useTouchLayout`、`isTouchInteraction`，软键盘文本输入语义用 `isTouchTextEntry`；投影只由 Workbench 宿主的 `interaction-density` 与 `pointer-modality` 写入。
+- 业务、共享包与插件不得用 pointer/hover 媒体查询、`maxTouchPoints`/`ontouchstart`、视口宽度或宿主名称另造触控判断，也不得直接读写投影属性。设备容量类决策（缓存预算等）由各自 owner 判断容量，不借用触控呈现；`isPrimaryPointerTouch` 只供这类容量启发式使用。
+- `npm run check:touch`（已接入 `check:boundaries` 与 `gate`）用 AST 检查上述边界；确有非呈现用途的触点探测须在脚本中写明理由登记豁免，失效豁免同样报错。不要通过放宽检查或新增豁免绕过呈现判断。
+
 ## 界面图标禁止 Lucide
 
 OpenCraft 界面图标禁止使用 Lucide，包括 `lucide-react`、其他平台适配包及直接搬用其 SVG 路径。新增、替换与维护图标统一使用项目共享自绘组件（Web 为 `@opencraft/design-system-web/action-icons`，通用图形几何由 `@opencraft/design-system/action-artwork` 持有），缺少语义时在共享图标 owner 补齐，业务插件不另造一份。此要求覆盖此前允许 Lucide 的决定；既有残留应明确记录并迁移，不能以规则更新宣称已经全仓清除。

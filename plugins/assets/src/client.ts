@@ -12,6 +12,7 @@ export class ServerAssetsAccount implements AssetsAccount {
   private available = false;
   private gitHosts: readonly string[] = [];
   private gitProviders: readonly GitProviderDescriptor[] = [];
+  private environment = false;
   private closed = false;
   private generation = 0;
   private readonly listeners = new Set<() => void>();
@@ -22,6 +23,8 @@ export class ServerAssetsAccount implements AssetsAccount {
   getGitHosts = () => this.gitHosts;
   /** Advertised provider metadata; a server without it only offers token hosts. */
   getGitProviders = () => this.gitProviders;
+  /** The server serves the signed-in person's ENV settings. */
+  getEnvironment = () => this.environment;
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
     return () => {
@@ -40,7 +43,8 @@ export class ServerAssetsAccount implements AssetsAccount {
       let gitHosts: readonly string[] = [];
       let gitProviders: readonly GitProviderDescriptor[] = [];
       let scope: string | null,
-        available = false;
+        available = false,
+        environment = false;
       if (
         response.status === 404 ||
         response.status === 401 ||
@@ -56,6 +60,7 @@ export class ServerAssetsAccount implements AssetsAccount {
           scope?: unknown;
           gitHosts?: unknown;
           gitProviders?: unknown;
+          environment?: unknown;
         };
         if (
           !input ||
@@ -73,6 +78,8 @@ export class ServerAssetsAccount implements AssetsAccount {
             input.gitHosts.some((h) => typeof h !== "string" || !/^[a-z0-9.-]{1,253}$/u.test(h)))
         )
           throw Error("assets_unavailable");
+        if (input.environment !== undefined && input.environment !== true) throw Error("assets_unavailable");
+        environment = input.environment === true;
         gitHosts = Array.isArray(input.gitHosts) ? [...new Set(input.gitHosts as string[])] : [];
         try {
           gitProviders =
@@ -94,6 +101,7 @@ export class ServerAssetsAccount implements AssetsAccount {
       this.gitProviders = gitProviders;
       this.scope = scope;
       this.available = available;
+      this.environment = environment;
       if (changed) for (const listener of this.listeners) listener();
     } finally {
       request.dispose();
@@ -136,9 +144,13 @@ export function createServerAssetsExtension(
       // when the host actually mounts this deferred page, not on startup.
       // GitHub's token flow and SSH-key hosts have editors in this client.
       const gitProviders = account.getGitProviders().filter((p) => p.auth === "ssh" || p.host === "github.com");
+      const personalEnvironment = account.getEnvironment();
       return createAssetsExtension(async () => {
         if (disposed) throw Error("Assets extension retired");
-        const git = gitProviders.length ? await import("./git/client.js") : null;
+        const [git, environment] = await Promise.all([
+          gitProviders.length ? import("./git/client.js") : null,
+          personalEnvironment ? import("./environment.js") : null,
+        ]);
         if (disposed) throw Error("Assets extension retired");
         return {
           account,
@@ -148,6 +160,7 @@ export function createServerAssetsExtension(
           useConnections: git
             ? (scope, onUnauthorized) => git.useGitAssetConnections(fetcher, scope, onUnauthorized, gitProviders)
             : undefined,
+          ...(environment ? { VariablesEditor: environment.createAssetVariablesEditor(fetcher, account) } : {}),
         };
       }).activate(api);
     },

@@ -10,16 +10,18 @@ import WebSocket from 'ws';
 import { build } from 'esbuild';
 import { createWorkbenchWebServer } from '../../apps/headless-server/src/serve-workbench-web.mjs';
 import { createHeadlessBackendProxy } from '../../apps/headless-server/src/web-deployment/headless-backend.mjs';
+import { ownedCleanup } from '../support/owned-cleanup.mjs';
 
 async function fixture(t, options = {}) {
   const root = await mkdtemp(join(tmpdir(), 'request-identity-'));
-  t.after(() => rm(root, { recursive: true, force: true }));
+  const cleanup = ownedCleanup(t);
+  cleanup.last(() => rm(root, { recursive: true, force: true }));
   await writeFile(join(root, 'index.html'), '<!doctype html><title>Generic workbench</title>');
   const web = await createWorkbenchWebServer({ root, appServerTarget: null, ...options });
-  t.after(() => web.close());
+  cleanup.own(() => web.close());
   const address = await web.listen({ host: '127.0.0.1', port: 0 });
   const origin = `http://127.0.0.1:${address.port}`;
-  return { root, web, origin };
+  return { root, web, origin, own: cleanup.own };
 }
 
 test('generic identity owns its routes; document admission needs no private identity plugin', async t => {
@@ -58,14 +60,14 @@ test('generic connection proof expires even when instance membership has a later
     role: () => 'member', trustedOrigin: () => null, watch: () => () => {},
     handle: async () => false,
   };
-  const { origin } = await fixture(t, {
+  const { origin, own } = await fixture(t, {
     identityService: { admissionStatus: () => 204, connectionContext: () => ({ sender: null, validUntil: deadline }), handle: () => false },
     accessService,
     desktopService: { accept: () => {}, close: () => {} },
     desktopAccess: 'trusted-internal',
   });
   const socket = new WebSocket(origin.replace('http:', 'ws:') + '/desktop/connect', { origin });
-  t.after(() => socket.terminate());
+  own(() => socket.terminate());
   await once(socket, 'open');
   const [code] = await once(socket, 'close');
   assert.equal(code, 1008);
