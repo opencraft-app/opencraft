@@ -94,7 +94,7 @@ try {
   const sharedRun = await readdir(join(data, 'run'));
   for (const privateName of ['engine-host-config.json', 'dsh-host-config.json', 'codex-hands-sandbox.json', 'native-internal.sock', 'control.sock',
     // Step 4c: the Gateway reaches Brain owners as workspace endpoints, not through the shared run directory.
-    'engine-host.json', 'dsh-host.json', 'codex-app-server.sock', 'native.sock'])
+    'engine-host.json', 'dsh-host.json', 'codex-app-server.sock', 'native.sock', 'codex-app-server-environment.json'])
     assert.ok(!sharedRun.includes(privateName), `${privateName} must stay container-private`);
   const gatewayLinks = docker(['exec', compose(['ps', '-q', 'gateway']), 'ls', '/run/opencraft-links/brain', '/run/opencraft-links/hands']);
   assert.match(gatewayLinks, /link\.sock[\s\S]*link\.sock/, 'the Gateway reaches Brain and Hands through their static-docker links');

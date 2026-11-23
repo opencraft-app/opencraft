@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -31,6 +31,8 @@ import { openAssetConfigurations } from "../../plugins/assets/src/server/worker.
 import { openHeadlessAssetsStorage } from "../../apps/headless-server/src/headless-assets-storage.js";
 import { createHostEnvironmentLaunch } from "../../apps/headless-server/src/host-environment-launch.ts";
 import { validateEnvironmentDelivery } from "../../apps/headless-server/src/headless-identity.mjs";
+import { sealedEnvironmentIssuerKey } from "@opencraft/execution-environment/environment-launch-owner";
+import { unissuableEnvironmentIssuer } from "../../scripts/server-deployment/environment-issuer.mjs";
 
 const admissionWorker = fileURLToPath(
   new URL("../../apps/headless-server/src/execution-admission.worker.ts", import.meta.url),
@@ -368,7 +370,7 @@ test("one ENV owner: two owners or an issuer that did not start are refused at s
   await assert.rejects(openAssetConfigurations(f.directory, { environmentLaunch: true }));
 });
 
-test("close drains an in-flight seal and retires the issuer; a restarted owner pins a new key", async (t) => {
+test("close drains an in-flight seal and retires the issuer; a restarted owner keeps its sealed key", async (t) => {
   const f = await durable(t);
   const alpha = { hostId: "opencraft-server" as const, threadId: "dsh-alpha", turnId: "dsh-turn-dsh-alpha-1" };
   f.admit(alpha.threadId, "alpha-input", alpha.turnId);
@@ -378,27 +380,134 @@ test("close drains an in-flight seal and retires the issuer; a restarted owner p
   const owned = (await reader.resolve(alpha))!;
   const target = { purpose: "dsh" as const, instance: attachment, key: new EnvironmentLaunchIssuer().key };
   const first = await openHeadlessAssetsStorage(f.directory, { environmentLaunch: true });
+  const pinned = gateway(first, reader);
+  assert.equal((await pinned.prepare(alpha)).apply({}).SHARED, PROJECT_VALUE);
   const inFlight = first.environmentLaunch!.seal(target, owned);
   const closed = first.close();
   assert.match(await inFlight, /^env1\./u, "a seal accepted before close completes");
   await closed;
   await assert.rejects(first.environmentLaunch!.seal(target, owned), "no seal after close");
-  // Restart: the issuer key belongs to one vault-owner lifetime. A receiver
-  // pinned to the old key cannot open the new owner's capsules; values and the
-  // Project binding are unchanged, so a relaunched receiver gets the same ENV.
+  // Restart: the issuer key is sealed in the vault, so an execution owner that
+  // pinned it before the restart keeps receiving ENV without being relaunched.
   const second = await openHeadlessAssetsStorage(f.directory, { environmentLaunch: true });
   try {
-    assert.notEqual(second.environmentLaunch!.issuer, first.environmentLaunch!.issuer);
-    const stale = gateway(second, reader, first.environmentLaunch!.issuer);
-    await assert.rejects(stale.prepare(alpha));
-    stale.close();
-    const current = gateway(second, reader);
-    const once = (await current.prepare(alpha)).apply({});
-    const again = (await current.prepare(alpha)).apply({});
-    assert.deepEqual(once, again);
+    assert.equal(second.environmentLaunch!.issuer, first.environmentLaunch!.issuer);
+    const survivor = createRemoteEnvironmentLaunch({
+      purpose: "dsh",
+      instance: attachment,
+      issuer: first.environmentLaunch!.issuer,
+      capabilities: {
+        hostEnvironment: (threadId, source, recipient) =>
+          createHostEnvironmentLaunch({
+            port: second.environmentLaunch!,
+            handoff: (locator) => second.store.executionGitGrant(locator),
+            routes: () => true,
+          })({ serverId: attachment, threadId, execution: source } as CapabilitySession, recipient),
+      },
+      admission: (input) => reader.resolve(input),
+    });
+    const once = (await survivor.prepare(alpha)).apply({});
     assert.equal(once.SHARED, PROJECT_VALUE);
+    survivor.close();
+  } finally {
+    pinned.close();
+    await second.close();
+  }
+});
+
+test("explicit rotation replaces the sealed key; the publication follows it and old pins fail closed", async (t) => {
+  const f = await durable(t);
+  const alpha = { hostId: "opencraft-server" as const, threadId: "dsh-alpha", turnId: "dsh-turn-dsh-alpha-1" };
+  f.admit(alpha.threadId, "alpha-input", alpha.turnId);
+  seed(f.directory, f.account, { [alpha.threadId]: "alpha" });
+  const reader = openExecutionAdmission({ workerFile: admissionWorker, directory: f.directory });
+  t.after(() => reader.close());
+  const publish = join(f.root, "run", "environment-issuer.json");
+  const published = async () => JSON.parse(await readFile(publish, "utf8")) as { schemaVersion: number; issuer: string };
+  const open = (generation?: string) =>
+    openHeadlessAssetsStorage(f.directory, {
+      environmentLaunch: true,
+      environmentIssuer: { publish, ...(generation ? { generation } : {}) },
+    });
+  const first = await open();
+  const original = first.environmentLaunch!.issuer;
+  await first.close();
+  assert.deepEqual(await published(), { schemaVersion: 1, issuer: original });
+  assert.equal((await stat(publish)).mode & 0o777, 0o600);
+  // Generation "1" names a rotation from the unlabelled key; repeating it keeps the new key.
+  const rotated = await open("1");
+  const next = rotated.environmentLaunch!.issuer;
+  await rotated.close();
+  assert.notEqual(next, original);
+  assert.deepEqual(await published(), { schemaVersion: 1, issuer: next });
+  const rotatedAt = (await stat(publish)).mtimeMs;
+  const again = await open("1");
+  try {
+    assert.equal(again.environmentLaunch!.issuer, next);
+    // An unchanged key is not rewritten, so a watching supervisor relaunches nothing.
+    assert.equal((await stat(publish)).mtimeMs, rotatedAt);
+    // An owner still pinned to the retired key fails closed; the new pin works.
+    const stale = gateway(again, reader, original);
+    await assert.rejects(stale.prepare(alpha), { message: "environment_launch_unavailable" });
+    stale.close();
+    const current = gateway(again, reader, next);
+    assert.equal((await current.prepare(alpha)).apply({}).SERVICE_KEY, SECRET);
     current.close();
   } finally {
-    await second.close();
+    await again.close();
+  }
+  // Without a generation the stored key is kept, whatever its label.
+  const kept = await open();
+  assert.equal(kept.environmentLaunch!.issuer, next);
+  await kept.close();
+  // A publication without delivery, or a malformed generation, is refused.
+  await assert.rejects(createAssetsStorage(f.directory, [], undefined, undefined, { environmentIssuer: { publish } }));
+  await assert.rejects(open("not a generation"));
+});
+
+test("a stored issuer document that is not a key is refused instead of silently rotated", () => {
+  const documents = new Map<string, { revision: number; document: unknown }>();
+  const vault = {
+    readDocument: (account: string, namespace: string) =>
+      documents.get(`${account}/${namespace}`) ?? { revision: 0, document: null },
+    writeDocument: (account: string, namespace: string, revision: number, document: unknown) => {
+      documents.set(`${account}/${namespace}`, { revision: revision + 1, document });
+    },
+  };
+  const key = sealedEnvironmentIssuerKey(vault);
+  assert.equal(key.asymmetricKeyType, "x25519");
+  const [stored] = [...documents.values()];
+  assert.equal(stored!.revision, 1);
+  // The stored form is only the private key in the vault's sealed document.
+  assert.deepEqual(Object.keys(stored!.document as object).sort(), ["generation", "privateKey", "version"]);
+  for (const document of [
+    { version: 1, generation: null, privateKey: "AAAA" },
+    { version: 2, generation: null, privateKey: (stored!.document as { privateKey: string }).privateKey },
+    { version: 1, generation: null, privateKey: (stored!.document as { privateKey: string }).privateKey, extra: true },
+    "not a document",
+  ]) {
+    documents.set([...documents.keys()][0]!, { revision: 1, document });
+    assert.throws(() => sealedEnvironmentIssuerKey(vault), { message: "environment_launch_unavailable" });
+  }
+});
+
+test("a receiver pinned to an unissuable key fails closed for a Human Turn and leaves unowned Turns empty", async (t) => {
+  const f = await durable(t);
+  const alpha = { hostId: "opencraft-server" as const, threadId: "dsh-alpha", turnId: "dsh-turn-dsh-alpha-1" };
+  const plain = { hostId: "opencraft-server" as const, threadId: "dsh-unowned", turnId: "dsh-turn-dsh-unowned-1" };
+  f.admit(alpha.threadId, "alpha-input", alpha.turnId);
+  f.admit(plain.threadId, "system-input", plain.turnId, { sender: null });
+  seed(f.directory, f.account, { [alpha.threadId]: "alpha" });
+  const reader = openExecutionAdmission({ workerFile: admissionWorker, directory: f.directory });
+  const assets = await openHeadlessAssetsStorage(f.directory, { environmentLaunch: true });
+  // What a supervisor pins while no key is published.
+  const pending = gateway(assets, reader, await unissuableEnvironmentIssuer());
+  try {
+    await assert.rejects(pending.prepare(alpha), { message: "environment_launch_unavailable" });
+    assert.deepEqual(Object.keys((await pending.prepare(plain)).apply({})), []);
+  } finally {
+    pending.close();
+    await reader.close();
+    await assets.close();
   }
 });

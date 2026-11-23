@@ -17,9 +17,15 @@ import { readDaemonMachineIdentity } from '../../apps/opencraft-daemon/src/machi
 import { readPrivateJson } from '../../apps/headless-server/src/server-deployment/dsh-host-client.mjs';
 import { readTaskCoreConversations } from '../../apps/headless-server/src/tasks-conversation-catalog.mjs';
 import { RemoteSessionCapabilities } from '../../packages/session-capabilities/src/remote.ts';
+import { pinPublishedEnvironmentIssuer } from './environment-issuer.mjs';
 
 export async function startIndependentDshHost(configuration) {
-  const {descriptorPath, machineIdentityDirectory, machineName, taskCodexCoreEndpoint, taskCodexCoreTokenFile, coldDependencyRoots = [], fileSystemOwner, controlSocketPath, ...options} = configuration;
+  const {descriptorPath, machineIdentityDirectory, machineName, taskCodexCoreEndpoint, taskCodexCoreTokenFile, coldDependencyRoots = [], fileSystemOwner, controlSocketPath, environmentIssuer, ...options} = configuration;
+  // Opaque ENV delivery: the issuer key is pinned by this process's own trusted
+  // configuration (written by its supervisor), never by the Gateway.
+  if (environmentIssuer !== undefined && ((options.executionContext ?? 'legacy') !== 'assets'
+    || typeof environmentIssuer !== 'string' || !/^[A-Za-z0-9_-]{1,256}$/u.test(environmentIssuer)))
+    throw new Error('Environment delivery requires the native execution attachment');
   if (!isAbsolute(descriptorPath) || !isAbsolute(options.dataDirectory ?? ''))
     throw new Error('Independent DSH Host requires absolute descriptor and data paths');
   // Unix socket mode (a workspace endpoint): the Host and its owner-handoff control each
@@ -71,8 +77,12 @@ export async function startIndependentDshHost(configuration) {
     const executionContext=options.executionContext??'legacy';
     if(!['assets','legacy'].includes(executionContext))throw Error('Invalid execution context');
     if(executionContext==='legacy')options.environmentDataDirectory ??= machineIdentityDirectory ?? dirname(options.dataDirectory);
-    else options.gitExecution??={directory:machineIdentityDirectory??dirname(options.dataDirectory),machineId:machineIdentity.machineId,
-      workerFile:fileURLToPath(new URL('../runtime/personal-git-worker.mjs',import.meta.url))};
+    else {
+      options.gitExecution??={directory:machineIdentityDirectory??dirname(options.dataDirectory),machineId:machineIdentity.machineId,
+        workerFile:fileURLToPath(new URL('../runtime/personal-git-worker.mjs',import.meta.url))};
+      if(environmentIssuer!==undefined)options.gitExecution={...options.gitExecution,environmentIssuer,
+        admissionWorkerFile:options.gitExecution.admissionWorkerFile??join(dirname(options.gitExecution.workerFile),'execution-admission-worker.mjs')};
+    }
     runtime.machineId = machineIdentity.machineId;
     const sessionCapabilities = new RemoteSessionCapabilities(dirname(options.dataDirectory), `server:${machineIdentity.machineId}:dsh`);
     options.sessionCapabilities ??= sessionCapabilities;
@@ -145,7 +155,7 @@ export async function startIndependentDshHost(configuration) {
 }
 
 if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
-  const config = await readPrivateJson(process.env.OPENCRAFT_DSH_HOST_CONFIG ?? '');
+  const config = await pinPublishedEnvironmentIssuer(await readPrivateJson(process.env.OPENCRAFT_DSH_HOST_CONFIG ?? ''));
   const host = await startIndependentDshHost({
     ...config,
     taskCodexCoreEndpoint: config.taskCodexCoreEndpoint ?? process.env.OPENCRAFT_CODEX_CORE_ENDPOINT,

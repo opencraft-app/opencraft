@@ -480,6 +480,9 @@ jobs:
       - run: npm run test:codex-core
         if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'platform'
         timeout-minutes: 10
+      - run: npm run test:agent-bridge
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'platform'
+        timeout-minutes: 10
       - name: Startup cache evidence
         run: npm run build:preview-bridge && npm run check:startup:cache
         if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'platform'

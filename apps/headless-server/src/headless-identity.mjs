@@ -59,3 +59,22 @@ export function validateEnvironmentDelivery(delivery, identity) {
     throw new Error('Execution ENV cannot have two owners');
   return true;
 }
+
+/** Deployment configuration of core ENV delivery. `OPENCRAFT_ENVIRONMENT_ISSUER_FILE`
+ * is where the vault owner publishes its issuer public key for the supervisor of
+ * independent execution owners; `..._GENERATION` rotates the sealed key
+ * explicitly. Empty values are unset; nothing here selects a key. */
+export function environmentDeliveryOptions(env) {
+  const delivery = env.OPENCRAFT_ENVIRONMENT_DELIVERY || undefined,
+    publish = env.OPENCRAFT_ENVIRONMENT_ISSUER_FILE || undefined,
+    generation = env.OPENCRAFT_ENVIRONMENT_ISSUER_GENERATION || undefined;
+  if (delivery === undefined) {
+    if (publish !== undefined || generation !== undefined) throw new Error('The ENV issuer requires OPENCRAFT_ENVIRONMENT_DELIVERY=vault-owner');
+    return {};
+  }
+  if (delivery !== 'vault-owner') throw new Error('OPENCRAFT_ENVIRONMENT_DELIVERY must be vault-owner');
+  if (publish !== undefined && (!publish.startsWith('/') || publish.length > 4096)) throw new Error('OPENCRAFT_ENVIRONMENT_ISSUER_FILE must be absolute');
+  if (generation !== undefined && !/^[A-Za-z0-9._-]{1,64}$/u.test(generation)) throw new Error('Invalid OPENCRAFT_ENVIRONMENT_ISSUER_GENERATION');
+  return { environmentDelivery: delivery, ...(publish || generation ? { environmentIssuer: {
+    ...(publish ? { publish } : {}), ...(generation ? { generation } : {}) } } : {}) };
+}

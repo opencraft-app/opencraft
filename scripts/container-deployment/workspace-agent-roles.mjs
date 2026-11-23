@@ -13,6 +13,9 @@ import { readEngineHostIdentity } from '../../apps/headless-server/src/server-de
 import { readHandsIncarnation, watchHandsIncarnation } from './hands-incarnation.mjs';
 import { codexCoreArguments, waitForProxy } from './proxy-core.mjs';
 import { handsOwnerSpawnOptions } from './hands-owner-privileges.mjs';
+import { appServerControlTokenFile, codexAppServerEnvironmentArguments, executionHostIssuer, relaunchOnIssuerChange,
+  writeExecutionHostConfigurations } from './execution-hosts.mjs';
+import { readDaemonMachineIdentity } from '../../apps/opencraft-daemon/src/machine-identity.ts';
 
 /** Roles are composition: which owners this agent supervises. They contain no provider
  * branch; a container (static Compose service today, a provisioned workspace later)
@@ -27,6 +30,27 @@ const isSocket = async path => (await stat(path)).isSocket() || Promise.reject(n
 const node = root => join(root, 'bin/node');
 const runtime = (root, entry) => join(root, 'runtime', entry);
 
+/** Brain's ENV issuer relaunch, entirely through the supervisor: Pi (it attaches DSH),
+ * DSH and the AppServer (with its native process group) are retired deliberately, so
+ * no stop is reported as a child failure; then `configure()` rewrites their launch
+ * files and the AppServer, DSH and Pi start again as ordinary critical children. A
+ * successor that does not become ready throws; the caller then ends the agent. Once
+ * they are ready the agent's endpoint generation moves, so a Host observing it drops
+ * the descriptors it cached for the retired owners. */
+export async function relaunchBrainOwners(agent, owners, { configure, startAppServer, startHosts, appServerReady, hostsReady }) {
+  await agent.retire(owners.engineHost, { timeoutMs: 30_000 });
+  await agent.retire(owners.dshHost, { timeoutMs: 30_000 });
+  await agent.retire(owners.appServer);
+  if (agent.signal.aborted) return;
+  await configure();
+  owners.appServer = startAppServer();
+  await appServerReady();
+  Object.assign(owners, startHosts());
+  await hostsReady();
+  // The DSH and Pi descriptors (pid, token) changed under the same incarnation.
+  agent.endpointsReplaced();
+}
+
 /** Brain: Codex AppServer owner (+ native app-server), DSH and Pi engine hosts, and the
  * embedded account Core only when no proxy service owns it. */
 export const brainRole = {
@@ -40,7 +64,7 @@ export const brainRole = {
     // Earlier releases kept launch configuration, engine descriptors and the AppServer
     // sockets in the shared run directory; under the lock no other Brain uses them.
     for (const name of ['engine-host-config.json', 'dsh-host-config.json', 'codex-hands-sandbox.json', 'native-internal.sock',
-      'engine-host.json', 'dsh-host.json', 'codex-app-server.sock', 'native.sock'])
+      'engine-host.json', 'dsh-host.json', 'codex-app-server.sock', 'native.sock', 'codex-app-server-environment.json'])
       await rm(join(paths.runDirectory, name), { force: true });
     const executionResources = handsResources(env);
     try { await writeFile(paths.tokenPath, randomBytes(32).toString('hex') + '\n', { mode: 0o600, flag: 'wx' }); }
@@ -49,33 +73,17 @@ export const brainRole = {
     // The AppServer owner's own control credential, fresh per incarnation and handed to
     // the Host only through the control endpoint. The embedded account Core (restore
     // path) forwards health with the account token, so that mode keeps one token.
-    const appServerTokenFile = paths.proxyMode === 'external' ? paths.appServerTokenFile : paths.tokenPath;
+    const appServerTokenFile = appServerControlTokenFile(paths);
     if (paths.proxyMode === 'external') await writeFile(paths.appServerTokenFile, randomBytes(32).toString('hex') + '\n', { mode: 0o600, flag: 'wx' });
     await privateDirectory(paths.codexPrivateDirectory, 'The Codex private directory must be private');
+    // With ENV delivery, DSH, Pi and the Codex AppServer pin the Gateway vault owner's
+    // published issuer key. Brain starts before that owner, so only the stable
+    // published key (or an unissuable one until it exists) can be pinned. The
+    // AppServer's attachment names the machine the Gateway reads from the shared data directory.
+    const pinnedIssuer = await executionHostIssuer(paths);
+    const machineId = paths.environmentDelivery ? (await readDaemonMachineIdentity(paths.dataDirectory)).machineId : undefined;
     // Launch configuration is agent-private: only this container's children read it.
-    await writeFile(paths.engineConfig, JSON.stringify({
-      descriptorPath: paths.engineDescriptor, socketPath: paths.engineSocket, dataDirectory: paths.dataDirectory,
-      runtimeDirectory: paths.runtimeDirectory, engines: ['dsh', 'pi'], defaultEngine: 'pi',
-      executionContext: paths.executionContext, gitWorkerFile: runtime(root, 'personal-git-worker.mjs'),
-      dshDescriptorPath: paths.dshDescriptor,
-      fileSystemOwner: { endpoint: paths.fileSystemEndpoint, tokenFile: paths.fileSystemToken },
-    }) + '\n', { mode: 0o600 });
-    await writeFile(paths.dshConfig, JSON.stringify({
-      executionContext: paths.executionContext,
-      fileSystemOwner: { endpoint: paths.fileSystemEndpoint, tokenFile: paths.fileSystemToken },
-      artifactDirectory: join(paths.dataDirectory, 'artifacts'),
-      descriptorPath: paths.dshDescriptor, socketPath: paths.dshSocket, controlSocketPath: paths.dshControlSocket,
-      dataDirectory: join(paths.dataDirectory, 'agent'),
-      machineIdentityDirectory: paths.dataDirectory, runtimeDirectory: paths.runtimeDirectory,
-      dshExecutable: env.OPENCRAFT_DSH_EXECUTABLE?.trim() || runtime(root, 'dsh/node_modules/@deepseek-ai/dsh/lib/bin.js'),
-      dshCapabilityPlugin: runtime(root, 'dsh/opencraft-capability-plugin.mjs'),
-      modelStorageDirectory: join(paths.dataDirectory, 'models'), speechModelManagement: true,
-      projectStorageDirectory: join(paths.dataDirectory, 'projects'),
-      projectlessWorkspaceDirectory: paths.dshProjectlessDirectory,
-      skillsDirectory: join(paths.dataDirectory, 'skills'),
-      // Task catalog reads Codex threads from this container's AppServer, not through the account Core.
-      taskCodexCoreEndpoint: paths.appServerEndpoint, taskCodexCoreTokenFile: appServerTokenFile,
-    }) + '\n', { mode: 0o600 });
+    await writeExecutionHostConfigurations(paths, root, env, pinnedIssuer, machineId);
     await writeFile(paths.sandboxConfig, JSON.stringify({
       schemaVersion: 1,
       backend: { id: 'hands-unix', options: { endpoint: paths.handsExecutionEndpoint, tokenFile: paths.handsExecutionToken } },
@@ -106,17 +114,23 @@ export const brainRole = {
       '--token-file', paths.tokenPath, '--control-token-file', appServerTokenFile, '--codex-executable', runtime(root, 'codex/bin/codex'),
       '--runtime-directory', paths.runtimeDirectory, '--data-directory', join(paths.dataDirectory, 'codex'),
       '--private-directory', paths.codexPrivateDirectory,
+      // ENV delivery only: the receiver's launch file in this agent's private run directory.
+      ...codexAppServerEnvironmentArguments(paths),
     ];
     const appServerEnv = { OPENCRAFT_SANDBOX_CONFIG: paths.sandboxConfig, OPENCRAFT_CODEX_PROJECTLESS_DIR: paths.codexProjectlessDirectory };
     // The AppServer owner and its native process form one process group.
     const startAppServer = () => start('codex-app-server', 'codex-app-server.cjs', appServerArgs, appServerEnv, { processGroup: true });
-    let appServer = startAppServer();
     // With an external proxy, engines reach configured providers through it with their own caller token.
     const callerFile = name => paths.proxyMode === 'external' ? { OPENCRAFT_PROXY_CALLER_FILE: join(paths.runDirectory, 'proxy-callers', name + '.json') } : {};
-    start('dsh-host', 'dsh-host.mjs', [], { OPENCRAFT_DSH_HOST_CONFIG: paths.dshConfig, ...callerFile('dsh') });
-    start('engine-host', 'engine-host.mjs', [], { OPENCRAFT_ENGINE_HOST_CONFIG: paths.engineConfig, ...callerFile('pi') });
-    await agent.waitUntil(() => Promise.all([coreHealth(paths.appServerEndpoint, appServerTokenFile),
+    const startHosts = () => ({
+      dshHost: start('dsh-host', 'dsh-host.mjs', [], { OPENCRAFT_DSH_HOST_CONFIG: paths.dshConfig, ...callerFile('dsh') }),
+      engineHost: start('engine-host', 'engine-host.mjs', [], { OPENCRAFT_ENGINE_HOST_CONFIG: paths.engineConfig, ...callerFile('pi') }),
+    });
+    const appServerReady = () => agent.waitUntil(() => coreHealth(paths.appServerEndpoint, appServerTokenFile), { description: 'Codex execution owner' });
+    const hostsReady = () => agent.waitUntil(() => Promise.all([coreHealth(paths.appServerEndpoint, appServerTokenFile),
       readEngineHostIdentity(paths.engineDescriptor), readDshHostIdentity(paths.dshDescriptor)]), { description: 'Native execution Host' });
+    const owners = { appServer: startAppServer(), ...startHosts() };
+    await hostsReady();
     // The Host reaches every Brain owner only as a named endpoint; credentials and
     // engine descriptors come from `describe` on the control endpoint.
     await agent.publishEndpoint('codex-control', paths.appServerEndpoint, async () => ({ token: await readPrivateToken(appServerTokenFile) }));
@@ -126,21 +140,34 @@ export const brainRole = {
       const { ownerHandoff: _ownerHandoff, ...descriptor } = await readPrivateJson(paths.dshDescriptor);
       return descriptor;
     });
+    // AppServer replacements (Hands rebinding, issuer rotation) run one at a time.
+    let replacing = Promise.resolve();
+    const serially = operation => (replacing = replacing.catch(() => {}).then(operation));
     return {
-      // Runs after the agent is ready. A different Hands owner invalidates every cached
-      // stdio execution connection, so the AppServer is replaced, never patched.
-      afterReady: () => watchHandsIncarnation({
-        initial: handsIncarnation,
-        signal: agent.signal,
-        probe: () => readHandsIncarnation(paths.handsExecutionEndpoint, { signal: agent.signal }),
-        replace: async () => {
-          const next = await agent.replace(appServer, startAppServer);
-          if (!next) return;
-          appServer = next;
-          await agent.waitUntil(() => coreHealth(paths.appServerEndpoint, appServerTokenFile), { description: 'Codex execution owner' });
-          console.log(JSON.stringify({ type: 'codex-hands-owner-rebound' }));
-        },
-      }).catch(() => agent.stop(1, 'Hands owner rebinding failed')),
+      // Runs after the agent is ready.
+      afterReady: () => Promise.all([
+        // A different Hands owner invalidates every cached stdio execution connection,
+        // so the AppServer is replaced, never patched.
+        watchHandsIncarnation({
+          initial: handsIncarnation,
+          signal: agent.signal,
+          probe: () => readHandsIncarnation(paths.handsExecutionEndpoint, { signal: agent.signal }),
+          replace: () => serially(async () => {
+            const next = await agent.replace(owners.appServer, startAppServer);
+            if (!next) return;
+            owners.appServer = next;
+            await appServerReady();
+            console.log(JSON.stringify({ type: 'codex-hands-owner-rebound' }));
+          }),
+        }).catch(() => agent.stop(1, 'Hands owner rebinding failed')),
+        // ENV delivery only: a new vault-owner key (first enablement or explicit
+        // rotation) relaunches Pi, DSH and the AppServer with it. Until that completes
+        // they keep the previous key and deliveries fail closed.
+        relaunchOnIssuerChange({ paths, root, env, machineId, pinned: pinnedIssuer, signal: agent.signal,
+          relaunch: configure => serially(() => relaunchBrainOwners(agent, owners,
+            { configure, startAppServer, startHosts, appServerReady, hostsReady })),
+        }).catch(() => agent.stop(1, 'Environment issuer relaunch failed')),
+      ]),
     };
   },
 };

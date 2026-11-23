@@ -185,6 +185,8 @@ for (const make of await harnesses()) {
 
     await t.test("workspace:// endpoints resolve through the agent control endpoint of the provider's environment", async () => {
       const incarnation = { id: "a".repeat(32), evidence: "e", startedAt: new Date(0).toISOString() };
+      // An owner replaced in place moves the agent's endpoint generation; its description changes with it.
+      let generation = 0;
       const control = await h.listen(socket => {
         let text = "";
         socket.on("data", data => {
@@ -192,8 +194,9 @@ for (const make of await harnesses()) {
           if (!text.includes("\n")) return;
           const request = JSON.parse(text.slice(0, text.indexOf("\n")));
           socket.end(JSON.stringify(request.type === "describe"
-            ? { protocol: 1, type: "endpoint", name: request.name, descriptor: { token: "from-control" } }
-            : { protocol: 1, type: "healthy", state: "ready", roles: ["hands"], incarnation, endpoints: ["terminal"] }) + "\n");
+            ? { protocol: 1, type: "endpoint", name: request.name, descriptor: { token: `from-control-${generation}` } }
+            : { protocol: 1, type: "healthy", state: "ready", roles: ["hands"], incarnation, endpoints: ["terminal"],
+              ...(generation ? { endpointGeneration: generation } : {}) }) + "\n");
         });
         socket.on("error", () => {});
       }, "control");
@@ -211,8 +214,13 @@ for (const make of await harnesses()) {
         await connection.write(Buffer.from("by uri"));
         await until(() => Buffer.concat(chunks).toString() === "by uri");
         await connection.close();
-        assert.deepEqual(await runtime.describe(parseWorkspaceEndpointUri("workspace://default/endpoints/terminal")), { token: "from-control" });
+        const terminal = parseWorkspaceEndpointUri("workspace://default/endpoints/terminal");
+        assert.deepEqual(await runtime.describe(terminal), { token: "from-control-0" });
         assert.deepEqual((await runtime.observe()).map(value => value.incarnation), [incarnation.id]);
+        generation = 1;
+        assert.deepEqual(await runtime.describe(terminal), { token: "from-control-0" }, "cached until the agent is observed");
+        assert.deepEqual((await runtime.observe()).map(value => value.incarnation), [incarnation.id]);
+        assert.deepEqual(await runtime.describe(terminal), { token: "from-control-1" }, "a moved generation drops the cache, not the binding");
         assert.equal(records.get("conformance")?.agentIncarnation, incarnation.id);
         assert.equal(records.get("conformance")?.receipt?.backend, h.backend.attach ? h.backend.id : undefined);
         assert.deepEqual(events, ["created"]);

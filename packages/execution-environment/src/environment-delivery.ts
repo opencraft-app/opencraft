@@ -317,10 +317,16 @@ function sharedKey(privateKey: KeyObject, peer: string, nonce: string, aad: Buff
 export class EnvironmentLaunchIssuer {
   #privateKey: KeyObject | undefined;
   readonly key: string;
-  constructor(private readonly now = Date.now) {
-    const pair = generateKeyPairSync("x25519");
-    this.#privateKey = pair.privateKey;
-    this.key = pair.publicKey.export({ type: "spki", format: "der" }).toString("base64url");
+  /** Without `privateKey` the key lives for this object only. The core vault
+   * owner passes the key it keeps sealed in its own vault. */
+  constructor(
+    private readonly now = Date.now,
+    privateKey?: KeyObject,
+  ) {
+    if (privateKey && (privateKey.type !== "private" || privateKey.asymmetricKeyType !== "x25519"))
+      throw Error("environment_launch_unavailable");
+    this.#privateKey = privateKey ?? generateKeyPairSync("x25519").privateKey;
+    this.key = createPublicKey(this.#privateKey).export({ type: "spki", format: "der" }).toString("base64url");
   }
   seal(
     to: EnvironmentLaunchTarget,

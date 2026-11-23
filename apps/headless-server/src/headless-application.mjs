@@ -139,7 +139,7 @@ import { IdentityWrites } from '@opencraft/access-control/identity-writes';
 import { createCommitFenceBuffer } from '@opencraft/access-control/commit-fence';
 import { humanLoginPage } from './human-login-page.ts';
 import { connectRelay, loadRelayConnection } from '@opencraft/plugin-relay-connect/server';
-import { validateHeadlessIdentity, validateEnvironmentDelivery } from "./headless-identity.mjs";
+import { validateHeadlessIdentity, validateEnvironmentDelivery, environmentDeliveryOptions } from "./headless-identity.mjs";
 import { startHeadlessRuntimePlugins, validateRuntimePluginOptions } from "./runtime-plugins.mjs";
 import { installHeadlessExtensions, loadHeadlessExtensions, validateHeadlessExtensions } from "./headless-extensions.mjs";
 import { createHubController } from '@opencraft/hub-network/controller';
@@ -283,7 +283,7 @@ export function parseHeadlessArguments(argv, env = process.env, getHomeDirectory
   if (localDesktop && host !== "127.0.0.1") throw new Error("Local desktop requires a loopback-only listener");
   defaultEngine ??= engines[0];
   if (!engines.includes(defaultEngine)) throw new Error("Default engine must be enabled");
-  return { help: false, host, port, ...(hubTargetPort === undefined ? {} : { hubTargetPort }), ...(engineHostDescriptor ? {engineHostDescriptor} : {}), ...(engines.length !== 1 || engines[0] !== "dsh" ? { engines, defaultEngine } : {}), dataDirectory: resolve(dataDirectory), allowUnauthenticatedPublic,
+  return { help: false, host, port, ...(hubTargetPort === undefined ? {} : { hubTargetPort }), ...(engineHostDescriptor ? {engineHostDescriptor} : {}), ...environmentDeliveryOptions(env), ...(engines.length !== 1 || engines[0] !== "dsh" ? { engines, defaultEngine } : {}), dataDirectory: resolve(dataDirectory), allowUnauthenticatedPublic,
     ...(codexAgentBridgeFile ? {codexAgentBridgeFile} : {}),
     ...(codexBridgePrograms ? {codexBridgePrograms} : {}),
     ...(agentBridgeFile ? {agentBridgeFile} : {}),
@@ -555,6 +555,11 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     }
     // One installation has one ENV owner; configuring two fails here.
     const coreEnvironmentLaunch = validateEnvironmentDelivery(options.environmentDelivery, identity);
+    if (options.environmentIssuer !== undefined && !coreEnvironmentLaunch) throw new Error('The ENV issuer requires core environment delivery');
+    // An independent engine host pins the core issuer only from its supervisor,
+    // which reads the key this vault owner publishes; never from this Gateway.
+    if (coreEnvironmentLaunch && options.engineHostDescriptor && !options.environmentIssuer?.publish)
+      throw new Error('Environment delivery to an independent engine host requires a published issuer');
     workspaceRouting = identity?.codexWorkspaceRouting;
     if (workspaceExecution && workspaceRouting && (typeof workspaceRouting.createCodexWorkspaceHooks !== 'function'
       || typeof workspaceRouting.readCatalog !== 'function'))
@@ -608,7 +613,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       assetsStorage = await openHeadlessAssetsStorage(dataDirectory, {...(workspaceExecution && !workspaceRouting ? {
         workspaceMachineId: machineIdentity.machineId,
         ...(options.terminalOwner ? {terminalOwner: options.terminalOwner} : {}),
-      } : {}), ...(coreEnvironmentLaunch ? {environmentLaunch: true} : {})});
+      } : {}), ...(coreEnvironmentLaunch ? {environmentLaunch: true,
+        ...(options.environmentIssuer ? {environmentIssuer: options.environmentIssuer} : {})} : {})});
       if (!assetsStorage.botExecution) throw Error('Assets Bot execution owner unavailable');
       if (process.env.OPENCRAFT_ASSISTANT_SANDBOX_CONFIG) {
         try { await assetsStorage.store.adoptWorkspaceInstallation(process.env.OPENCRAFT_ASSISTANT_SANDBOX_CONFIG); }

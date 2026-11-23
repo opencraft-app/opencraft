@@ -1,5 +1,6 @@
 import { isAbsolute, join, resolve } from 'node:path';
 import { readFile, stat } from 'node:fs/promises';
+import { environmentDeliveryOptions } from '../../apps/headless-server/src/headless-identity.mjs';
 
 export const codexProjectlessDirectory = workspaceDirectory => join(workspaceDirectory, 'sessions', 'codex');
 
@@ -39,8 +40,17 @@ export function deploymentPaths(env = process.env) {
   if (agentLinkDirectory && [dataDirectory, runtimeDirectory, executionDirectory, agentRunDirectory].some(root => agentLinkDirectory === root
     || agentLinkDirectory.startsWith(root + '/') || root.startsWith(agentLinkDirectory + '/')))
     throw new Error('OPENCRAFT_AGENT_LINK_DIR must be a dedicated link mount, outside the shared and private directories');
+  // Opaque ENV delivery: Gateway's vault owner publishes its issuer here and
+  // Brain pins it into DSH, Pi and the Codex AppServer. Unset keeps every path unchanged.
+  const environmentIssuerFile = join(dataDirectory, 'run', 'environment-issuer.json');
+  const delivery = environmentDeliveryOptions(env);
+  if (delivery.environmentDelivery && executionContext !== 'assets')
+    throw new Error('OPENCRAFT_ENVIRONMENT_DELIVERY requires OPENCRAFT_EXECUTION_CONTEXT=assets');
+  if (delivery.environmentIssuer?.publish !== undefined && resolve(delivery.environmentIssuer.publish) !== environmentIssuerFile)
+    throw new Error('OPENCRAFT_ENVIRONMENT_ISSUER_FILE must be the deployment issuer path');
   return {
     dataDirectory, runtimeDirectory, executionDirectory, executionContext, ...proxyConfiguration(env),
+    environmentDelivery: delivery.environmentDelivery ?? null, environmentIssuerFile,
     threadCliDirectory: join(executionDirectory, 'cli'),
     terminalDirectory: join(executionDirectory, 'terminal'),
     terminalEndpoint: join(executionDirectory, 'terminal.sock'),
@@ -49,8 +59,9 @@ export function deploymentPaths(env = process.env) {
     fileSystemToken: join(executionDirectory, 'files.token'),
     logDirectory: absolute('OPENCRAFT_LOG_DIR', '/var/log/opencraft'),
     browserDirectory: absolute('OPENCRAFT_BROWSER_DATA_DIR', join(executionDirectory, 'browser')),
-    // AccountCore only (§5): daemon.token, codex-core.sock and proxy-callers/. Brain
-    // owners publish nothing here; the Gateway reaches them as workspace endpoints.
+    // AccountCore (§5): daemon.token, codex-core.sock and proxy-callers/, plus the
+    // Gateway vault owner's issuer publication (environmentIssuerFile). Brain owners
+    // publish nothing here; the Gateway reaches them as workspace endpoints.
     runDirectory: join(dataDirectory, 'run'),
     agentRunDirectory,
     agentControlEndpoint: join(agentRunDirectory, 'control.sock'),
@@ -72,6 +83,8 @@ export function deploymentPaths(env = process.env) {
     dshDescriptor: join(agentRunDirectory, 'dsh-host.json'),
     dshConfig: join(agentRunDirectory, 'dsh-host-config.json'),
     sandboxConfig: join(agentRunDirectory, 'codex-hands-sandbox.json'),
+    // The split Codex AppServer's `--environment-launch-config` (ENV delivery only).
+    codexEnvironmentLaunchConfig: join(agentRunDirectory, 'codex-app-server-environment.json'),
     handsExecutionEndpoint: join(executionDirectory, 'exec-owner.sock'),
     handsExecutionToken: join(executionDirectory, 'exec-owner.token'),
     codexProjectlessDirectory: absolute('OPENCRAFT_CODEX_PROJECTLESS_DIR', codexProjectlessDirectory(runtimeDirectory)),

@@ -46,13 +46,14 @@ export function createWorkspaceAgentSupervisor({
 }) {
   if (!incarnation?.id) throw new Error('Workspace agent incarnation is required');
   const children = [], endpoints = new Map(), descriptors = new Map(), cleanups = [], lifecycle = new AbortController();
-  let state = 'starting', stopping, control, settle;
+  let state = 'starting', stopping, control, settle, endpointGeneration = 0;
   const exited = new Promise(resolve => { settle = resolve; });
 
   const describe = () => ({
     protocol: CONTROL_PROTOCOL, state, roles: [...roles], incarnation,
     components: children.map(child => ({ name: child.name, pid: child.pid ?? null, critical: child.critical })),
     endpoints: [...endpoints.keys()].sort(),
+    endpointGeneration,
   });
 
   function stop(code = 0, reason = 'stop') {
@@ -108,14 +109,20 @@ export function createWorkspaceAgentSupervisor({
     return record;
   }
 
-  /** Ends one child deliberately and starts its successor; not a failure. */
-  async function replace(record, startNext, { timeoutMs = 10_000 } = {}) {
+  /** Ends one child deliberately (SIGTERM, then SIGKILL after `timeoutMs`); not a
+   * failure. Its process group goes with it when it was started as one. */
+  async function retire(record, { timeoutMs = 10_000 } = {}) {
     record.replacing = true;
     record.signal('SIGTERM');
     const timer = setTimeout(() => record.signal('SIGKILL'), timeoutMs);
     try { await record.exited; } finally { clearTimeout(timer); }
     const index = children.indexOf(record);
     if (index >= 0) children.splice(index, 1);
+  }
+
+  /** Ends one child deliberately and starts its successor; not a failure. */
+  async function replace(record, startNext, options) {
+    await retire(record, options);
     if (stopping) return undefined;
     return startNext();
   }
@@ -191,7 +198,10 @@ export function createWorkspaceAgentSupervisor({
   return {
     incarnation, signal: lifecycle.signal, exited, children,
     get state() { return state; },
-    describe, start, replace, waitUntil, publishEndpoint, serveControl, markReady, stop,
+    describe, start, retire, replace, waitUntil, publishEndpoint, serveControl, markReady, stop,
+    /** A role replaced owners behind described endpoints in place (new descriptor or
+     * credential, same incarnation): clients observing the agent read descriptions again. */
+    endpointsReplaced() { endpointGeneration += 1; },
     /** Runs after every child has exited, in reverse registration order. */
     defer(cleanup) { cleanups.push(cleanup); },
   };

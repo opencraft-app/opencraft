@@ -1,0 +1,6 @@
+{
+  "environmentIssuerFile": "/var/lib/opencraft/run/environment-issuer.json",
+  "instance": "server:MACHINE_ID:codex",
+  "admissionWorkerFile": "/opt/opencraft-engine-host/runtime/execution-admission-worker.mjs",
+  "directory": "/var/lib/opencraft"
+}

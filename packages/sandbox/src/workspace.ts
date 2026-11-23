@@ -23,6 +23,9 @@ export interface WorkspaceAgentDescription {
   readonly roles: readonly string[];
   readonly incarnation: WorkspaceAgentIncarnation;
   readonly endpoints: readonly SandboxEndpointName[];
+  /** Bumped by the agent when an owner behind a described endpoint was replaced in
+   * place (same incarnation, new credentials or descriptor). 0 for agents that never do. */
+  readonly endpointGeneration: number;
 }
 /** What an endpoint's client needs besides bytes (bearer credentials, engine
  * descriptor fields). Secrets come only through this authenticated control channel. */
@@ -74,13 +77,15 @@ export function parseWorkspaceAgentDescription(value: Record<string, unknown>): 
     || !incarnation || typeof incarnation.id !== "string" || !/^[a-f0-9]{32}$/u.test(incarnation.id)
     || typeof incarnation.evidence !== "string" || typeof incarnation.startedAt !== "string"
     || !Array.isArray(value.roles) || !value.roles.every(role => typeof role === "string")
-    || !Array.isArray(value.endpoints) || !value.endpoints.every(isSandboxEndpointName))
+    || !Array.isArray(value.endpoints) || !value.endpoints.every(isSandboxEndpointName)
+    || value.endpointGeneration !== undefined && (!Number.isSafeInteger(value.endpointGeneration) || (value.endpointGeneration as number) < 0))
     throw fault("SANDBOX_UNAVAILABLE", "Workspace agent identity is unavailable");
   return Object.freeze({
     state: typeof value.state === "string" ? value.state : String(value.type),
     roles: Object.freeze([...value.roles as string[]]),
     incarnation: Object.freeze({ id: incarnation.id, evidence: incarnation.evidence, startedAt: incarnation.startedAt }),
     endpoints: Object.freeze([...value.endpoints as SandboxEndpointName[]]),
+    endpointGeneration: (value.endpointGeneration as number | undefined) ?? 0,
   });
 }
 
@@ -125,14 +130,17 @@ export interface WorkspaceRuntime {
   /** One endpoint connection (one attached relay process). No replay: a lost
    * connection is reported once; the caller reconnects and reconciles. */
   connect(endpoint: WorkspaceEndpointAddress, onData: (data: Uint8Array) => void): Promise<SandboxEndpointConnection>;
-  /** Cached per bound agent incarnation; a rebind (restart, re-attach) reads it again. */
+  /** Cached per bound agent incarnation and endpoint generation; a rebind (restart,
+   * re-attach) or an observed in-place owner replacement reads it again. */
   describe(endpoint: WorkspaceEndpointAddress): Promise<WorkspaceEndpointDescriptor>;
-  /** Probes every environment's agent now; a changed incarnation is re-bound. */
+  /** Probes every environment's agent now; a changed incarnation is re-bound, a changed
+   * endpoint generation drops the cached descriptors. */
   observe(): Promise<readonly { readonly environment: string; readonly incarnation: string; readonly endpoints: readonly SandboxEndpointName[] }[]>;
   close(): Promise<void>;
 }
 
-/** One bound environment; descriptors are cached for this binding (one agent incarnation). */
+/** One bound environment; descriptors are cached for this binding (one agent incarnation,
+ * one endpoint generation). */
 interface Bound { readonly sandbox: Sandbox; readonly agent: WorkspaceAgentDescription; readonly descriptors: Map<SandboxEndpointName, Promise<WorkspaceEndpointDescriptor>> }
 
 /** Owner of one workspace's environment bindings. Opening an environment: re-attach
@@ -251,6 +259,10 @@ export function createWorkspaceRuntime(options: {
           // Same provider instance, restarted agent: rebind so the change is persisted and reported.
           await release(slot, value, "incarnation-changed");
           value = await bound(slot); agent = value.agent;
+        } else if (agent.endpointGeneration !== value.agent.endpointGeneration && slot.current === value) {
+          // Same agent, an owner replaced in place: keep the binding, read descriptors again.
+          value = { sandbox: value.sandbox, agent, descriptors: new Map() };
+          slot.current = value;
         }
         results.push({ environment: slot.name, incarnation: agent.incarnation.id, endpoints: agent.endpoints });
       }

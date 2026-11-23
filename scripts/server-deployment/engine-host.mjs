@@ -33,6 +33,7 @@ import { BridgeEngineProvider } from '../../apps/local-agent-host/src/bridge-eng
 import { RemoteSessionCapabilities } from '../../packages/session-capabilities/src/remote.ts';
 import { readDaemonMachineIdentity } from '../../apps/opencraft-daemon/src/machine-identity.ts';
 import { attachDshHost, readPrivateJson } from '../../apps/headless-server/src/server-deployment/dsh-host-client.mjs';
+import { pinPublishedEnvironmentIssuer } from './environment-issuer.mjs';
 
 /** Owns Pi execution independently of a versioned gateway. DSH remains in its
  * existing pinned Host; this process only attaches to it. */
@@ -308,7 +309,7 @@ export async function startIndependentEngineHost(options) {
 }
 
 if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
-  const host = await startIndependentEngineHost(await readPrivateJson(process.env.OPENCRAFT_ENGINE_HOST_CONFIG ?? ''));
+  const host = await startIndependentEngineHost(await pinPublishedEnvironmentIssuer(await readPrivateJson(process.env.OPENCRAFT_ENGINE_HOST_CONFIG ?? '')));
   console.log('Independent execution Host ready');
   const stop = () =>
     void host.close().then(

@@ -1,5 +1,5 @@
 import { build } from 'esbuild';
-import { cp, mkdir, readFile, writeFile, readdir, chmod } from 'node:fs/promises';
+import { access, cp, mkdir, readFile, writeFile, readdir, chmod } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -39,6 +39,11 @@ for (const [source, target, format] of [
 ]) await build({ entryPoints: [join(repository, source)], outfile: join(root, 'runtime', target),
   bundle: true, platform: 'node', format, target: 'node26',
   ...(format === 'esm' ? { banner: { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" } } : {}) });
+// Brain names these Workers in its owners' configurations rather than by URL, so
+// the sibling check below cannot see them: the Pi/DSH Git port and the durable
+// admission reader of DSH, Pi and the Codex AppServer's ENV receiver.
+const BRAIN_CONFIGURED_WORKERS = Object.freeze(['personal-git-worker.mjs', 'execution-admission-worker.mjs']);
+for (const name of BRAIN_CONFIGURED_WORKERS) await access(join(root, 'runtime', name));
 // The Gateway's own Codex Engine Host and provider; native commands still run in Hands via the AppServer.
 await buildCodexBridgeRuntime(join(root, 'runtime/codex-bridge'), { nodePty: '../node_modules/node-pty/lib/index.js' });
 // Trusted distribution assembly must also ship its process/worker sidecars.

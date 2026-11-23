@@ -21,6 +21,9 @@ export function createHeadlessAssetsStorage(
      * Worker data, a request or configuration. It maps a verified owner to the
      * vault partition its ENV is read from, among that Actor's verified bindings. */
     environmentAccount?: EnvironmentAccountMapping;
+    /** Where the vault owner publishes its stable issuer public key, and the
+     * explicit rotation generation of that key. */
+    environmentIssuer?: { publish?: string; generation?: string };
   } = {},
 ) {
   const authority = new GitExecutionAuthority(directory, "actor");

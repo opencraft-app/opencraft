@@ -1,6 +1,7 @@
 # Execution ENV launch delivery
 
-Status: slices 1, 2, 3, 4, 6 and 7 implemented, slice 8 partially implemented.
+Status: slices 1, 2, 3, 4, 6 and 7 implemented, slice 8 partially implemented,
+with supervisor wiring of the stable issuer key into DSH, Pi and Codex Core.
 The receiver takes its expected context from the execution owner's own durable
 admission (Decision 1). Slice 4 adds the v2 launch context (Turn, creation and
 terminal admissions) to the protocol, the issuer and the receiver; slice 6
@@ -15,12 +16,15 @@ identity composition that owns the vault itself can supply its durable
 execution admission and its metadata port with that port, and is then relayed
 on the same path (see [Compatibility](#compatibility)). Pi
 receives it the same way in the independent engine host when that host's
-configuration pins `environmentIssuer`. The Hands terminal owner receives it
+configuration pins `environmentIssuer`; the independent DSH host takes the same
+key. The Hands terminal owner receives it
 for every terminal it launches when the core vault owner is configured (see
 [Hands terminal](#hands-terminal)). Codex receives creation and Turn ENV in
 Codex Core when a vault owner with Codex record readers (the core vault owner,
 or an identity port carrying `launch`, `admitCreation` and `git`) and a Codex
-Core endpoint are configured (slice 7). Every other consumer still reads a
+Core endpoint are configured (slice 7). The deployment supervisors pin the key
+the vault owner publishes into DSH, Pi and Codex Core (see
+[Supervisor wiring](#supervisor-wiring)). Every other consumer still reads a
 decrypted snapshot from `ExecutionEnvironmentRuntime` synchronously in its own
 process.
 
@@ -98,9 +102,11 @@ execution owner: read its own durable admission (Worker), require the relayed
   composition as `identity.environmentLaunch = { issuer, seal(target, context) }`
   or, with `environmentDelivery: 'vault-owner'`, from the core issuer
   (`EnvironmentLaunchOwner`) in the Headless assets Worker, which already is the
-  only opener of `employee-git-vault.sqlite`. The core issuer key lives for one
-  Worker lifetime; execution owners are pinned at launch, so a restarted vault
-  owner requires its execution owners to be relaunched (the embedded DSH is).
+  only opener of `employee-git-vault.sqlite`. The core issuer key is sealed in
+  that vault and survives vault-owner restarts; it changes only by explicit
+  rotation. Execution owners are pinned at launch, so a rotation requires them
+  to be relaunched (the embedded DSH is; independent hosts are relaunched by
+  their supervisor).
 - **Receiver.** Constructed inside the process that spawns commands. `instance`
   is the authenticated capability attachment (`server:<machine>:<engine>`). The
   Gateway derives purpose and instance from that attachment; the request carries
@@ -270,6 +276,14 @@ Closing the Worker retires the issuer key first, then the admission reader and
 the vault; seals accepted before close are drained, later ones are refused. A
 Worker that was asked to issue but did not start an issuer fails startup.
 
+The issuer's X25519 private key is a vault document (`platform:environment`,
+`document-environment-issuer`), encrypted under the vault key with the vault's
+AAD like every other document. `sealedEnvironmentIssuerKey` reads it at start
+or creates it once. A configured rotation generation
+(`OPENCRAFT_ENVIRONMENT_ISSUER_GENERATION`) that differs from the stored one
+replaces the key; no generation keeps the stored key. A stored document that is
+not a valid key fails startup instead of being replaced silently.
+
 The same Worker also serves the personal Git seal port
 (`PersonalGitSealPort` from `@opencraft/execution-environment/personal-git-seal`,
 `{ authority, seal(scope): Promise<string> }`), exposed to Main as
@@ -330,6 +344,67 @@ supply or select it.
 - Without a mapping both are unchanged. Personal Git grants still carry the
   canonical Actor account; mapping their partition is not part of this change.
 
+## Supervisor wiring
+
+Independent execution owners (DSH, Pi and the split Codex AppServer) pin the
+issuer from their own configuration. The configuration gets the key from the
+vault owner's publication only:
+
+- **Publication.** With `environmentIssuer.publish` (deployment variable
+  `OPENCRAFT_ENVIRONMENT_ISSUER_FILE`), the vault-owner Worker writes
+  `{"schemaVersion":1,"issuer":"<public key>"}` to that path: an owner-only
+  (0600) regular file in the private data directory, replaced atomically and
+  only when its content changes. It never contains the private key. Main does
+  not write it. A Headless Gateway with core delivery and an independent engine
+  host refuses to start without a publication path.
+- **Reading.** `readPublishedEnvironmentIssuer`
+  (`@opencraft/execution-environment/environment-issuer-publication`, shared by
+  the deployment supervisors and Codex Core) accepts only a regular file (no
+  symlink) owned by the same user with no group or other access, exactly the
+  two fields and a well-formed key. Anything else is refused. A Gateway reply, a
+  Host descriptor, a request or an environment variable never supplies a key.
+- **Missing or refused key.** The supervisor pins a freshly generated X25519
+  public key whose private half is discarded (`unissuableEnvironmentIssuer`).
+  The receivers exist, every capsule for a Human Turn is refused
+  (`environment_launch_unavailable`), and unowned Turns stay empty as before.
+- **Container (Brain).** `deploymentPaths` reads `OPENCRAFT_ENVIRONMENT_DELIVERY`
+  (Assets context only) and fixes the publication at `run/environment-issuer.json`
+  in the shared data directory. The Gateway passes that path to the vault owner.
+  Brain's workspace agent (`workspace-agent-roles.mjs`, `brain` role) starts before
+  the Gateway's vault owner exists, so only this stable published key (or an
+  unissuable one until it is published) can be pinned. The role writes
+  `environmentIssuer` into the DSH and Pi host configurations and
+  `codex-app-server-environment.json` for the split Codex AppServer
+  (`{issuer, instance: "server:<machine>:codex", admissionWorkerFile, directory}`:
+  the same key, the machine read from the shared data directory's `machine-id`,
+  `runtime/execution-admission-worker.mjs` of the Brain payload and the data
+  directory), all three in the agent's container-private run directory
+  (`OPENCRAFT_AGENT_RUN_DIR`), passes the last as `--environment-launch-config`,
+  then starts them and polls the publication. When a valid key differs from the
+  pinned one, the role retires Pi, DSH and the AppServer (its native process
+  group included) through the agent supervisor, so none of these stops counts as
+  a critical child failure, rewrites all three files and starts the AppServer,
+  then DSH and Pi again as ordinary critical children. AppServer replacements
+  (this one and a Hands rebinding) run one at a time. Until that completes all
+  three keep the previous key and deliveries fail closed. A successor that does
+  not become ready, or a failed rewrite, ends the agent (a new Brain incarnation).
+  Once the successors are ready the agent's `endpointGeneration` moves, so the
+  Gateway's workspace runtime drops the DSH and Pi descriptors it cached for the
+  retired owners at its next observation (Gateway health) and reattaches.
+  The container packaging checks that the admission Worker is in the payload.
+- **systemd.** The engine and DSH host configurations name the publication as
+  `environmentIssuerFile`. Each host resolves it once at launch, with the same
+  rules, into `environmentIssuer`. The AppServer's launch file
+  (`opencraft-codex-appserver-environment.json.example`, passed by the drop-in
+  `opencraft-codex-appserver-environment.conf.example`) names it as
+  `environmentIssuerFile` too; `app-server-bin` resolves it once at launch into
+  `issuer`, and names a pinned payload's `execution-admission-worker.mjs`.
+  `opencraft-environment-issuer.path.example` restarts the three units when the
+  publication changes.
+- **Unchanged path.** Without delivery there is no publication, no watcher, no
+  `environmentIssuer` in any host configuration and no AppServer launch file or
+  flag.
+
 ## Compatibility
 
 - No `identity.environmentLaunch` and no `environmentDelivery`: every path is
@@ -378,6 +453,9 @@ supply or select it.
   receiver against a Gateway without the route fails closed.
 - Independently installed execution owners must be updated before their
   delivery is effective; installing a Gateway alone does not migrate them.
+- Without `OPENCRAFT_ENVIRONMENT_DELIVERY` no issuer is published or pinned and
+  the host configurations are unchanged. A key sealed by an earlier delivery
+  stays in the vault unused.
 - A Hands terminal owner opts in (`environmentLaunch`); an owner that did not
   opt in, or an old one, ignores the declared issuer and a delivery Host
   refuses to spawn on it. An old Host attaching to a new owner declares no
@@ -425,6 +503,22 @@ synchronous runtime.
    interrupts its command, unowned input, no value in any relayed reply,
    combine refusals, in-process refusal, unconfigured compatibility, a durable
    admission read by input, and an engine host booting with a pinned issuer.
+
+   Supervisor wiring (implemented after slice 2, extended to slice 7). The
+   deployment supervisors write the vault owner's published key into the DSH
+   and Pi host configurations and the split Codex AppServer's launch file, and
+   relaunch all three when it changes (see
+   [Supervisor wiring](#supervisor-wiring)). The independent DSH host accepts
+   the same top-level `environmentIssuer`. Tests
+   (`environment-issuer-supervision.test.mjs`, `environment-launch-owner.test.ts`,
+   `independent-engine-host.test.mjs`, `headless-composition.test.mjs`): all
+   three configurations carry the key, the AppServer's with its attachment,
+   admission Worker and data directory, a changed publication relaunches all
+   three and an identical one relaunches nothing, the AppServer resolves a
+   named publication with the same rules, untrusted publications are refused,
+   a missing key pins an unissuable key under which a Human Turn fails closed,
+   the sealed key survives a vault-owner restart, explicit rotation, and an
+   unconfigured deployment writes the previous configurations.
 3. **Core vault-owner Worker issuer (implemented).** `EnvironmentLaunchOwner`
    runs `AccountEnvironment.launchEnvironment` in the Headless assets Worker that
    owns the vault, so core installations can use slices 1-2 without a downstream
@@ -432,7 +526,9 @@ synchronous runtime.
    not carried by the handoff. Tests (`environment-launch-owner.test.ts`): no
    decrypted value in any Worker-to-Main message, no decrypted getter, Project
    from Thread metadata, wrong-project and forged contexts refused, one ENV
-   owner at startup, close drains and retires the key, restart pins a new key.
+   owner at startup, close drains and retires the key. A restart originally
+   pinned a new key; the key is now sealed in the vault and kept across
+   restarts (see Decisions).
    `check-main-thread-sync-io` adds no call.
 4. **Protocol change: launch context without a native Turn (implemented).**
    ACP session creation, Codex `thread/start`/`fork` and Hands terminals launch
@@ -467,7 +563,8 @@ synchronous runtime.
    OpenCraft's own Codex Core process that owns `codex app-server` (the split
    AppServer, `startCodexAppServer({ environmentLaunch })`, configured by
    `--environment-launch-config` with the pinned issuer key, its attachment
-   `server:<machine>:codex` and the server data directory). No native Codex
+   `server:<machine>:codex` and the server data directory; the supervisors
+   write it, see [Supervisor wiring](#supervisor-wiring)). No native Codex
    release is needed: the native server keeps receiving
    `shell_environment_policy.set`, now from Codex Core.
    - The Codex adapter (Main) relays only opaque capsules and record locators.
@@ -660,10 +757,26 @@ Recorded after the first slice; later slices follow them.
 - **The independent engine host pins its issuer through its own
   configuration.** It is never learnt from the Gateway or its capability
   descriptor. A composition port with a stable issuer key suits this directly.
-  The core vault-owner issuer's key lives for one Worker lifetime, so with it
-  the engine host must be relaunched with the new key after the vault owner
-  restarts; until then its deliveries fail closed. Supervisor wiring that
-  writes the key into the engine host configuration is not part of slice 2.
+  Its supervisor writes the key the vault owner publishes; until a changed key
+  is pinned, its deliveries fail closed.
+- **The core issuer key is stable: sealed at rest by the vault owner and
+  rotated explicitly.** Two options were compared. (a) One key per vault-owner
+  Worker lifetime: the supervisor must relaunch DSH and Pi after every Gateway
+  restart or update. The independent hosts exist so that Gateway updates do not
+  stop running turns, so this would end every running DSH and Pi turn on each
+  update. There is also a start-order cycle: the Gateway attaches to running
+  hosts, but the hosts would need the Gateway's new key first. (b) A key sealed
+  in the vault under the vault key and replaced only when the operator changes
+  the rotation generation. Hosts are relaunched only on first enablement and on
+  rotation. We chose (b). The guarantees are unchanged: the private key exists
+  only inside the sole vault owner and is never sent anywhere, and the vault key
+  that protects it already protects the values. Execution owners still pin the
+  key through their own trusted configuration, never from the relay. Capsules
+  stay purpose-, target- and context-bound, expire after 60 s and are opened
+  once. Admission is still reread around every seal and open. The cost: a
+  capsule captured in transit stays decryptable with the vault key until the
+  key is rotated, also after its values change. Rotation closes that window,
+  and Main, which relays capsules, runs in the vault owner's process anyway.
 - **Pi's native file-tool environment receives no delivered values.** Only the
   shell worker launches commands with personal ENV; the native
   `NodeExecutionEnv` keeps the base environment, as it already does with the
@@ -705,8 +818,8 @@ Recorded after the first slice; later slices follow them.
   them together with their readers. Slice 6 added the terminal record as
   terminal journal v2; slice 7 added the creation reservation.
 - **The terminal owner pins its issuer per attachment.** It outlives Hosts and
-  keeps PTYs across their restarts, while the core issuer key lives for one
-  vault Worker lifetime, so a key in the owner's own configuration would force a
+  keeps PTYs across their restarts, and the core issuer key changes on
+  rotation, so a key in the owner's own configuration would force a
   PTY-killing restart. The Host declares the key from its trusted composition
   in the token-authenticated attach frame; the owner builds one receiver for
   that attachment, and the receiver dies with it. A browser frame or process
@@ -760,12 +873,20 @@ Recorded after the first slice; later slices follow them.
   Cores keep refusing at input time. An accounts-only Core (the container
   delivery's `proxy`) owns no runtime: the adapter reads the receiver from the
   runtime owner's health (the workspace AppServer reached through its
-  endpoint), and the container delivery starts Brain's AppServer without a
-  receiver, so human Codex creations and Turns are refused at input time there
-  (see `deploy/docker/README.md`, "Personal execution ENV for Codex"). Codex without a Core endpoint has no
+  `codex-control` endpoint). With `OPENCRAFT_ENVIRONMENT_DELIVERY=vault-owner`
+  Brain starts that AppServer with the pinned receiver above, whose admission
+  Worker reads the Gateway's durable admission read-only from the shared data
+  directory, so human Codex creations and Turns are delivered. An identity
+  composition's vault owner publishes no issuer Brain could pin; Brain then
+  starts the AppServer without a receiver and human Codex creations and Turns
+  are refused at input time (see `deploy/docker/README.md`, "Personal execution
+  ENV for Codex"). Codex without a Core endpoint has no
   receiver and is outside this rule (open question).
-- **The Codex Core issuer key is pinned by deployment configuration.** As for
-  the Pi engine host, the core vault owner's key lives for one Worker lifetime,
-  so the AppServer must be relaunched with the new key after the vault owner
-  restarts; until then delivery fails closed. Supervisor wiring that writes the
-  key is not part of slice 7.
+- **The Codex Core issuer key is pinned by deployment configuration: the
+  stable published key.** As for DSH and the Pi engine host, the AppServer's
+  `--environment-launch-config` carries the key the vault owner publishes (the
+  stable-key Decision above), written by its supervisor, never learnt from the
+  Gateway or a request. Because the key survives vault-owner restarts, the
+  AppServer is relaunched only on first enablement and on rotation; until a
+  changed key is pinned, delivery fails closed. A missing or refused
+  publication pins an unissuable key (see [Supervisor wiring](#supervisor-wiring)).

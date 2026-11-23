@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createAgentIncarnation, createWorkspaceAgentSupervisor, prepareAgentRunDirectory, probeWorkspaceAgent } from '../../scripts/container-deployment/workspace-agent-supervisor.mjs';
 import { parseAgentRoles, startWorkspaceAgent } from '../../scripts/container-deployment/workspace-agent-application.mjs';
+import { relaunchBrainOwners } from '../../scripts/container-deployment/workspace-agent-roles.mjs';
 import { deploymentPaths } from '../../scripts/container-deployment/paths.mjs';
 import { createHandsTerminalService } from '../../apps/headless-server/src/host-terminal-transport.ts';
 
@@ -101,6 +102,81 @@ test('a deliberate replacement is not a failure; drain stops the agent cleanly',
   assert.equal((await probeWorkspaceAgent(join(f.runDirectory, 'control.sock'), { request: { type: 'drain' } })).type, 'draining');
   assert.equal(await f.agent.exited, 0);
   assert.equal(alive(next.pid), false);
+});
+
+test('an ENV issuer relaunch retires Pi, DSH and the AppServer group through the supervisor and restarts them configured', async t => {
+  const f = await supervisorFixture(t);
+  await f.agent.serveControl();
+  const issuerFile = join(f.directory, 'issuer');
+  await writeFile(issuerFile, 'first');
+  // Each owner records the issuer its launch configuration held when it started.
+  const owner = (name, options = {}) => f.agent.start(name, process.execPath, ['-e', `
+    const fs = require('fs');
+    fs.appendFileSync(${JSON.stringify(join(f.directory, 'order'))}, ${JSON.stringify(name)} + ':' + fs.readFileSync(${JSON.stringify(issuerFile)}, 'utf8') + '\\n');
+    ${options.processGroup ? `const native = require('child_process').spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+    fs.writeFileSync(${JSON.stringify(join(f.directory, 'native'))}, String(native.pid));` : ''}
+    setInterval(() => {}, 1000)`], options);
+  const startAppServer = () => owner('codex-app-server', { processGroup: true });
+  const startHosts = () => ({ dshHost: owner('dsh-host'), engineHost: owner('engine-host') });
+  const started = count => until(f.order, value => value.length === count);
+  const owners = { appServer: startAppServer() };
+  await started(1);
+  const native = Number(await until(() => readFile(join(f.directory, 'native'), 'utf8')));
+  Object.assign(owners, startHosts());
+  await started(3);
+  f.agent.markReady();
+  assert.equal((await probeWorkspaceAgent(join(f.runDirectory, 'control.sock'))).endpointGeneration, 0);
+  const before = { ...owners };
+  const steps = [];
+  await relaunchBrainOwners(f.agent, owners, {
+    configure: async () => {
+      // Every owner of the old key has ended before its configuration is rewritten.
+      steps.push(['configure', ...[before.engineHost, before.dshHost, before.appServer].map(owner => alive(owner.pid))]);
+      await writeFile(issuerFile, 'second');
+    },
+    startAppServer,
+    startHosts,
+    appServerReady: () => started(4),
+    hostsReady: () => started(6),
+  });
+  assert.deepEqual(steps, [['configure', false, false, false]]);
+  await until(() => !alive(native)); // the AppServer's native process group ends with it
+  // The AppServer starts before DSH and Pi (which start together), each time with the configuration then current.
+  const order = await f.order();
+  assert.deepEqual([order[0], ...order.slice(1, 3).sort(), order[3], ...order.slice(4).sort()], ['codex-app-server:first', 'dsh-host:first', 'engine-host:first',
+    'codex-app-server:second', 'dsh-host:second', 'engine-host:second']);
+  for (const name of ['appServer', 'dshHost', 'engineHost']) assert.notEqual(owners[name].pid, before[name].pid, name);
+  // Deliberate retirement is not a child failure: the agent stays healthy with the successors only.
+  const probe = await probeWorkspaceAgent(join(f.runDirectory, 'control.sock'));
+  assert.equal(probe.type, 'healthy');
+  // Same incarnation, new DSH/Pi descriptors: a Host observing the agent reads them again.
+  assert.equal(probe.endpointGeneration, 1);
+  assert.equal(probe.incarnation.id, f.agent.incarnation.id);
+  assert.deepEqual(probe.components.map(c => [c.name, c.pid]),
+    [['codex-app-server', owners.appServer.pid], ['dsh-host', owners.dshHost.pid], ['engine-host', owners.engineHost.pid]]);
+  assert.ok(!f.events.some(event => event.type === 'workspace-agent-child-failed'));
+  // The successors are ordinary critical children: losing one still ends the agent.
+  owners.dshHost.signal('SIGKILL');
+  assert.equal(await f.agent.exited, 1);
+});
+
+test('an ENV issuer relaunch whose successor does not become ready leaves the caller to end the agent', async t => {
+  const f = await supervisorFixture(t);
+  const owners = { appServer: f.child('codex-app-server', { processGroup: true }), dshHost: f.child('dsh-host'), engineHost: f.child('engine-host') };
+  f.agent.markReady();
+  await assert.rejects(relaunchBrainOwners(f.agent, owners, {
+    configure: async () => {},
+    startAppServer: () => f.child('codex-app-server', { processGroup: true }),
+    startHosts: () => ({ dshHost: f.child('dsh-host'), engineHost: f.child('engine-host') }),
+    appServerReady: () => f.agent.waitUntil(() => Promise.reject(new Error('no health')), { attempts: 2, delayMs: 1, description: 'Codex execution owner' }),
+    hostsReady: async () => assert.fail('hosts start only after the AppServer is ready'),
+  }), /Codex execution owner did not become ready/);
+  assert.equal(f.agent.describe().endpointGeneration, 0, 'no successor is announced before it is ready');
+  // A stopping agent rewrites nothing and starts no successor.
+  await f.agent.stop(1, 'Environment issuer relaunch failed');
+  await relaunchBrainOwners(f.agent, owners, { configure: async () => assert.fail('no rewrite while stopping'),
+    startAppServer: () => assert.fail('no start while stopping'), startHosts: () => assert.fail('no start while stopping'),
+    appServerReady: async () => {}, hostsReady: async () => {} });
 });
 
 test('a child that cannot start is a critical failure', async t => {

@@ -9,6 +9,8 @@ import { EmployeeGitVaultStore, GitVaultError } from "@opencraft/execution-envir
 import {
   EnvironmentLaunchOwner,
   environmentTerminalRecords,
+  publishEnvironmentIssuer,
+  sealedEnvironmentIssuerKey,
   type EnvironmentLaunchRecordReaders,
 } from "@opencraft/execution-environment/environment-launch-owner";
 import type { EnvironmentAccountResolver } from "@opencraft/execution-environment/environment-account";
@@ -30,6 +32,13 @@ import { GitConnections, type GitConnectionProvider } from "./git-connections.js
 import { githubConnectionProvider } from "./github-provider.js";
 import type { AssetAdmission } from "./worker.js";
 
+/** Where this owner publishes its issuer public key for local supervisors, and
+ * the explicit rotation generation of the sealed issuer key. */
+export interface EnvironmentIssuerOptions {
+  readonly publish?: string;
+  readonly generation?: string;
+}
+
 export async function createAssetsStorage(
   directory: string,
   providers: readonly GitConnectionProvider[] = [githubConnectionProvider()],
@@ -48,10 +57,14 @@ export async function createAssetsStorage(
     /** Trusted composition only: the vault partition an admitted owner's ENV
      * and creator provenance use. Without it, the canonical Actor partition. */
     environmentAccounts?: EnvironmentAccountResolver;
+    /** Where the stable issuer public key is published, and its explicit
+     * rotation generation. */
+    environmentIssuer?: EnvironmentIssuerOptions;
   } = {},
 ) {
   // ENV for a launch needs the durable admission this owner reads itself.
   if (options.environmentLaunch && !execution) throw new Error("Environment delivery requires execution admission");
+  if (options.environmentIssuer && !options.environmentLaunch) throw new Error("Invalid environment issuer");
   if (
     options.environmentAccounts !== undefined &&
     (!options.environmentLaunch ||
@@ -78,6 +91,8 @@ export async function createAssetsStorage(
     }
   };
   try {
+    // The issuer key is sealed in this vault and survives restarts, so execution
+    // owners pinned to it keep running across a vault-owner restart.
     environment =
       options.environmentLaunch && execution
         ? new EnvironmentLaunchOwner(
@@ -92,9 +107,15 @@ export async function createAssetsStorage(
               ...(options.environmentRecords?.codexTurn ? { codexTurn: options.environmentRecords.codexTurn } : {}),
               ...(options.environmentRecords?.creation ? { creation: options.environmentRecords.creation } : {}),
             },
-            options.environmentAccounts ? { accounts: options.environmentAccounts } : {},
+            {
+              ...(options.environmentAccounts ? { accounts: options.environmentAccounts } : {}),
+              // The stable key sealed in this vault; it changes only by rotation.
+              issuerKey: sealedEnvironmentIssuerKey(vault, options.environmentIssuer?.generation ?? null),
+            },
           )
         : undefined;
+    if (environment && options.environmentIssuer?.publish !== undefined)
+      await publishEnvironmentIssuer(options.environmentIssuer.publish, environment.issuer);
     const records = environment ? options.environmentRecords : undefined;
     // The same owner serves `PersonalGitSealPort`: Main awaits a grant and never
     // holds the vault key. A scope is sealed only while it is this owner's own
@@ -112,7 +133,7 @@ export async function createAssetsStorage(
           return null;
         })
       : undefined;
-        // Issuer and metadata share one mapping, so a Thread's creator and its
+    // Issuer and metadata share one mapping, so a Thread's creator and its
     // values name the same partition.
     const metadata = environment ? new EnvironmentMetadata(vault, options.environmentAccounts) : undefined;
     // Metadata runs FIFO with every other vault write; nothing it returns is a value.

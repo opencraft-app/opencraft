@@ -333,6 +333,45 @@ browser creates `owner.sock` in its own directory; the agent publishes it as the
 Owners left as root create root-owned sockets; giving non-root clients access to
 them is a deployment decision outside this option.
 
+## Optional account ENV delivery
+
+With `OPENCRAFT_ENVIRONMENT_DELIVERY=vault-owner` (Assets context only), DSH,
+Pi and Codex receive account ENV as opaque capsules from the Gateway's vault owner instead
+of running without it. Set it for Brain and Gateway alike (Compose passes it to
+both). The vault owner keeps its issuer key sealed in the vault,
+so the key survives Gateway restarts and updates, and publishes the public key
+to `$OPENCRAFT_DATA_DIR/run/environment-issuer.json` (owner-only file, rewritten
+only when the key changes). Brain's workspace agent starts before the Gateway, so
+it pins that stable key into the DSH and Pi host configurations and into
+`codex-app-server-environment.json`, which it passes to the split Codex AppServer
+as `--environment-launch-config` (with the attachment `server:<machine-id>:codex`,
+the `runtime/execution-admission-worker.mjs` shipped in the image and the data
+directory). All three launch files live in the agent's container-private run
+directory (`OPENCRAFT_AGENT_RUN_DIR`, a tmpfs), never in the shared `run/`. The
+agent then watches the publication:
+
+- No published key yet (first enablement): Brain pins a key nobody can issue
+  for, so personal ENV deliveries fail closed. When the Gateway publishes its
+  key, the agent retires Pi, DSH and the Codex AppServer (with its native process
+  group), rewrites their configurations and starts the AppServer, DSH and Pi
+  again as ordinary critical children. Running DSH, Pi and Codex turns end with
+  that relaunch. A successor that does not become ready ends the agent (a new
+  Brain incarnation), like any other critical child failure. The Gateway
+  picks up the new DSH and Pi descriptors at its next health observation.
+- Rotation is explicit: change `OPENCRAFT_ENVIRONMENT_ISSUER_GENERATION` and
+  recreate the Gateway. It seals a new key and publishes it; Brain relaunches DSH,
+  Pi and the Codex AppServer. Until then they hold the previous key and
+  deliveries fail closed. A Gateway restart or update keeps the key and
+  relaunches nothing. AppServer replacements (this one and a Hands rebinding)
+  run one at a time.
+- A publication that is not an owner-only regular file with exactly one valid
+  key is ignored; the key never comes from a Gateway reply, a Host descriptor
+  or a request.
+
+Without the variable nothing changes: no issuer, no publication, the host
+configurations are written exactly as before and the AppServer starts without
+`--environment-launch-config`.
+
 ## Model proxy
 
 The `proxy` service is the split Codex account Core with its own lifecycle and a
@@ -353,19 +392,25 @@ personal assistant run in the Gateway, which remains the owner of those keys.
 
 The `proxy` service runs `--accounts-only`: it owns accounts and models but no
 Codex runtime, so it is not the receiver that opens Codex ENV launch capsules.
-Codex Threads run on Brain's own AppServer, which this delivery starts without
-`--environment-launch-config`: wiring a receiver there needs the vault owner's
-pinned issuer and a read of the Server core's creation reservations from inside
-Brain, which this deployment does not yet provide (Brain does not open the
-Server database). Codex ENV delivery is therefore not enabled in this delivery.
+Codex Threads run on Brain's own AppServer, and that AppServer is the receiver:
 
-The core runs no vault owner here unless a product composition supplies one
-(`identity.environmentLaunch`). When it does, the Gateway keeps Headless's
-startup rule (Codex ENV and personal Git must both be wired) and every human
-Codex Thread creation or Turn is refused with `environment-delivery-refused`,
-because the Brain AppServer's health does not report a receiver; a human Codex
-Turn never runs without its personal ENV. DSH, Pi and terminal delivery are
-unaffected. Without a vault owner, Codex behaves as before.
+- With `OPENCRAFT_ENVIRONMENT_DELIVERY=vault-owner` (see
+  [Optional account ENV delivery](#optional-account-env-delivery)) Brain starts it
+  with `--environment-launch-config`. Its health, which the Gateway reads through
+  the `codex-control` workspace endpoint, then reports the receiver; human Codex
+  Thread creations and Turns get their personal ENV. The receiver's admission
+  Worker reads the Gateway's durable admission (the Codex input lease and the
+  creation reservation the Gateway's Server owner wrote) read-only from the
+  shared data directory, the same Worker DSH and Pi use; the AppServer's event
+  loop never opens those databases and Brain never writes them.
+- A product composition that brings its own vault owner
+  (`identity.environmentLaunch`) without `OPENCRAFT_ENVIRONMENT_DELIVERY`
+  publishes no issuer Brain could pin, so Brain starts the AppServer without a
+  receiver. The Gateway keeps Headless's startup rule (Codex ENV and personal
+  Git must both be wired) and every human Codex Thread creation or Turn is
+  refused with `environment-delivery-refused`; a human Codex Turn never runs
+  without its personal ENV. DSH, Pi and terminal delivery are unaffected.
+- Without a vault owner, Codex behaves as before.
 
 | Provider configuration | In this deployment |
 | --- | --- |

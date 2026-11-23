@@ -121,3 +121,23 @@ test('opaque ENV delivery pins the issuer through the engine host configuration 
   {executionContext:'assets',environmentIssuer:issuer.key,admissionWorkerFile:'relative.mjs'}])
   await assert.rejects(startIndependentEngineHost({...f.options,...overrides}),/requires the native execution attachment/);
 });
+
+test('an engine host pins the issuer its supervisor publishes, and the DSH host takes the same configured key',async t=>{
+ const {EnvironmentLaunchIssuer}=await import('@opencraft/execution-environment/environment-delivery');
+ const {fileURLToPath}=await import('node:url');
+ const {pinPublishedEnvironmentIssuer}=await import('../../scripts/server-deployment/environment-issuer.mjs');
+ const {startIndependentDshHost}=await import('../../scripts/server-deployment/dsh-host.mjs');
+ const issuer=new EnvironmentLaunchIssuer();t.after(()=>issuer.close());
+ const root=await mkdtemp(join(tmpdir(),'independent-issuer-'));t.after(()=>rm(root,{recursive:true,force:true}));
+ const environmentIssuerFile=join(root,'environment-issuer.json');
+ await writeFile(environmentIssuerFile,JSON.stringify({schemaVersion:1,issuer:issuer.key}),{mode:0o600});
+ const admissionWorkerFile=fileURLToPath(new URL('../../apps/headless-server/src/execution-admission.worker.ts',import.meta.url));
+ const pinned=await pinPublishedEnvironmentIssuer({executionContext:'assets',admissionWorkerFile,environmentIssuerFile});
+ assert.equal(pinned.environmentIssuer,issuer.key);assert.equal(pinned.environmentIssuerFile,undefined);
+ const f=await fixture(t,pinned);
+ assert.equal((await (await f.attach()).getIdentity()).pid,process.pid);
+ // DSH refuses a configured key outside the Assets attachment before acquiring any owner.
+ const dsh={descriptorPath:join(root,'dsh.json'),dataDirectory:join(root,'agent'),dshExecutable:join(root,'missing.js'),dshCapabilityPlugin:join(root,'plugin.mjs')};
+ for(const overrides of [{environmentIssuer:issuer.key},{executionContext:'legacy',environmentIssuer:issuer.key},{executionContext:'assets',environmentIssuer:'not a key'}])
+  await assert.rejects(startIndependentDshHost({...dsh,...overrides}),/requires the native execution attachment/);
+});

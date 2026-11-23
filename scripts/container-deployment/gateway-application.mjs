@@ -37,6 +37,8 @@ export async function startContainerGateway(composition = {}) {
     await Promise.all([workspace.codexHealth(), readEngineHostIdentity(workspace.piDescriptor), readDshHostIdentity(workspace.dshDescriptor)]);
     app = await startHeadlessServer({
       ...options, root, webRoot: join(root, 'web'),
+      // The vault owner publishes its issuer where Brain pins it into DSH, Pi and the Codex AppServer.
+      ...(paths.environmentDelivery ? { environmentIssuer: { ...options.environmentIssuer, publish: paths.environmentIssuerFile } } : {}),
       runtimeDirectory: paths.runtimeDirectory,
       threadCliDirectory: paths.threadCliDirectory,
       terminalOwner: { directory: join(home, 'terminal'), endpoint: workspace.sockets.terminal, tokenFile: workspace.tokenFiles.terminal },
