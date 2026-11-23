@@ -7,6 +7,10 @@ import {
   type GitExecutionHandoff,
   type GitExecutionLocator,
 } from "@opencraft/execution-environment/git-execution";
+import type {
+  EnvironmentAccountOwner,
+  EnvironmentLoginBinding,
+} from "@opencraft/execution-environment/environment-account";
 export type GitExecutionQuery = {
   hostId: string;
   threadId: string | null;
@@ -147,6 +151,57 @@ export class GitExecutionAuthority {
     }
   }
 
+  private actorDatabase() {
+    if (this.closed) throw Error("git_authority_store_unavailable");
+    if (!this.actors) {
+      this.actors = new DatabaseSync(join(this.directory, "opencraft-server.sqlite"), { readOnly: true });
+      this.actors.exec("PRAGMA query_only=ON; PRAGMA busy_timeout=1000");
+    }
+    return this.actors;
+  }
+  /** The enabled, admitted Human Actor with its verified login bindings, read
+   * with the same rules as an execution's owner; `null` otherwise. */
+  environmentAccountOwner(actorId: string): EnvironmentAccountOwner | null {
+    try {
+      const db = this.actorDatabase();
+      const actor = db
+        .prepare(
+          `SELECT a.id,a.kind,a.enabled,a.generation,m.enabled AS member_enabled FROM actors a LEFT JOIN actor_members m ON m.actor_id=a.id WHERE a.id=?`,
+        )
+        .get(actorId);
+      if (!actor || actor.kind !== "human" || actor.enabled !== 1 || actor.member_enabled === 0) return null;
+      if (
+        db
+          .prepare(
+            `SELECT 1 FROM actor_bindings b JOIN members m ON m.binding=b.binding WHERE b.actor_id=? AND m.enabled=0 LIMIT 1`,
+          )
+          .get(actorId)
+      )
+        return null;
+      const bindings = db
+        .prepare("SELECT binding FROM actor_bindings WHERE actor_id=? ORDER BY binding")
+        .all(actorId)
+        .map((row) => {
+          const [provider, subject] = JSON.parse(String(row.binding)) as [string, string];
+          return { provider, subject };
+        });
+      return { actorId: String(actor.id), actorGeneration: Number(actor.generation), bindings };
+    } catch {
+      throw Error("git_authority_store_unavailable");
+    }
+  }
+  /** The Actor a verified login binding belongs to. */
+  environmentAccountActor(binding: EnvironmentLoginBinding): string | null {
+    try {
+      const row = this.actorDatabase()
+        .prepare("SELECT actor_id FROM actor_bindings WHERE binding=?")
+        .get(JSON.stringify([binding.provider, binding.subject]));
+      return row ? String(row.actor_id) : null;
+    } catch {
+      throw Error("git_authority_store_unavailable");
+    }
+  }
+
   /** The current epoch of an enabled Human Actor member, from the same Actor
    * projection as `resolve` (Actor mode only). Used for terminal ENV admission. */
   actor(account: string): { account: string; actorGeneration: number; membershipRevision: number } | null {
@@ -155,11 +210,8 @@ export class GitExecutionAuthority {
       return null;
     const actorId = account.slice("actor:".length);
     try {
-      if (!this.actors) {
-        this.actors = new DatabaseSync(join(this.directory, "opencraft-server.sqlite"), { readOnly: true });
-        this.actors.exec("PRAGMA query_only=ON; PRAGMA busy_timeout=1000");
-      }
-      const actor = this.actors
+      const db = this.actorDatabase();
+      const actor = db
         .prepare(
           `SELECT a.id,a.kind,a.enabled,a.generation AS actor_generation,m.enabled AS member_enabled FROM actors a
       LEFT JOIN actor_members m ON m.actor_id=a.id WHERE a.id=?`,
@@ -167,21 +219,21 @@ export class GitExecutionAuthority {
         .get(actorId);
       if (!actor || actor.kind !== "human" || actor.enabled !== 1 || actor.member_enabled === 0) return null;
       if (
-        this.actors
+        db
           .prepare(
             `SELECT 1 FROM actor_bindings b JOIN members m ON m.binding=b.binding WHERE b.actor_id=? AND m.enabled=0 LIMIT 1`,
           )
           .get(actorId)
       )
         return null;
-      const bindings = this.actors
+      const bindings = db
         .prepare("SELECT binding FROM actor_bindings WHERE actor_id=?")
         .all(actorId)
         .map((row) => String(row.binding));
       return {
         account,
         actorGeneration: Number(actor.actor_generation),
-        membershipRevision: membershipRevocationRevision(this.actors, actorId, bindings),
+        membershipRevision: membershipRevocationRevision(db, actorId, bindings),
       };
     } catch {
       throw Error("git_authority_store_unavailable");

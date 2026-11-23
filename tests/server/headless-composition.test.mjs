@@ -154,6 +154,43 @@ test('core ENV delivery has one owner and fails at startup without execution adm
   assert.equal((await fetch(app.url)).status, 200);
 });
 
+test('an identity-owned vault port brings its own admission and metadata; missing parts fail at startup', async t => {
+  const f = await fixture(t);
+  const principal = { provider: 'fixture-directory', subject: 'opaque-human-id', displayName: 'Fixture Human', expiresAt: Date.now() + 60_000 };
+  const calls = [];
+  const metadata = Object.fromEntries(['admit', 'project', 'bind', 'bindCreator', 'rememberProjects']
+    .map(method => [method, async () => { calls.push(method); return null; }]));
+  const port = { issuer: 'a'.repeat(43), seal: async () => { throw Error('not sealed in this test'); } };
+  let closed = 0;
+  const identity = environmentLaunch => async () => ({ assistantEnvironmentConfigurationManaged: true,
+    providers: [{ authenticate: () => principal }], environmentLaunch, close() { closed++; } });
+  const options = { ...f.options, accessMemberProviders: [principal.provider] };
+  // An admission without its metadata port would lose new Threads' Project ENV.
+  await assert.rejects(startHeadlessServer(options, { createIdentity: identity({ ...port, admission: async () => null }) }),
+    /identity adapter/);
+  // Core does not own this vault's admission: a port without one has no handoff.
+  await assert.rejects(startHeadlessServer(options, { createIdentity: identity({ ...port, metadata }) }),
+    /requires execution admission/);
+  // Live Actor checks need Human instance authority.
+  await assert.rejects(startHeadlessServer(f.options, { createIdentity: identity({ ...port, admission: async () => null, metadata }) }),
+    /Human instance authority/);
+  // Never beside the synchronous runtime.
+  await assert.rejects(startHeadlessServer(options, { createIdentity: async () => ({ ...(await identity({ ...port, admission: async () => null, metadata })()),
+    executionEnvironment: { close() {} } }) }), /identity adapter/);
+  // Where core owns the Actor/lease handoff, a second admission source is refused.
+  const humanAuthConfig = join(f.root, 'human-auth.json');
+  await writeFile(humanAuthConfig, JSON.stringify({ origin: 'http://127.0.0.1', local: true, oidc: [] }), { mode: 0o600 });
+  await assert.rejects(startHeadlessServer({ ...f.options, humanAuthConfig, accessControl: true },
+    { createIdentity: async () => ({ ...(await identity({ ...port, admission: async () => null, metadata })()),
+      assistantEnvironmentConfigurationManaged: false }) }), /admission cannot have two owners/);
+  assert.equal(closed, 5);
+  assert.equal(f.starts(), 0);
+  const app = await startHeadlessServer(options, { createIdentity: identity({ ...port, admission: async () => null, metadata }) });
+  t.after(() => app.close());
+  assert.equal((await fetch(app.url + '/__opencraft_actors/me')).status, 200);
+  assert.deepEqual(calls, [], 'no metadata is written before a Host request');
+});
+
 test('public listener accepts explicit membership protection without requiring an anonymous-access acknowledgement', async t => {
   const f = await fixture(t);
   await assert.rejects(startHeadlessServer({ ...f.options, host: '0.0.0.0' }), /unauthenticated-public/);

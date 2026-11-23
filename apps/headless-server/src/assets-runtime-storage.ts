@@ -4,14 +4,35 @@ import { createAssetsStorage } from "@opencraft/plugin-assets/server/storage";
 import type { GitConnectionProvider } from "@opencraft/plugin-assets/server/git-connections";
 import { GitExecutionAuthority, executionScope, resolveExecutionAdmission } from "./git-execution-authority.js";
 import { parseGitExecutionLocator } from "@opencraft/execution-environment/git-execution";
+import {
+  EnvironmentAccountPartitions,
+  type EnvironmentAccountMapping,
+} from "@opencraft/execution-environment/environment-account";
 /** Only this compiled native host adds execution admission to the shared vault owner. */
 export function createHeadlessAssetsStorage(
   directory: string,
   providers?: readonly GitConnectionProvider[],
   workspaces?: { machineId: string; terminalOwner?: { directory: string; endpoint: string; tokenFile: string } },
-  options: { environmentLaunch?: boolean } = {},
+  options: {
+    environmentLaunch?: boolean;
+    /** Compiled into this Worker's entry by a trusted composition; never from
+     * Worker data, a request or configuration. It maps a verified owner to the
+     * vault partition its ENV is read from, among that Actor's verified bindings. */
+    environmentAccount?: EnvironmentAccountMapping;
+  } = {},
 ) {
   const authority = new GitExecutionAuthority(directory, "actor");
+  const { environmentAccount, ...storageOptions } = options;
+  const environmentAccounts =
+    environmentAccount === undefined
+      ? undefined
+      : new EnvironmentAccountPartitions(
+          {
+            owner: (actorId) => authority.environmentAccountOwner(actorId),
+            actorOf: (binding) => authority.environmentAccountActor(binding),
+          },
+          environmentAccount,
+        );
   return createAssetsStorage(
     directory,
     providers,
@@ -50,6 +71,6 @@ export function createHeadlessAssetsStorage(
         },
       };
     },
-    options,
+    { ...storageOptions, ...(environmentAccounts ? { environmentAccounts } : {}) },
   );
 }

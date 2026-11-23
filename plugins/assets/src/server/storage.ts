@@ -10,6 +10,7 @@ import {
   EnvironmentLaunchOwner,
   environmentTerminalRecords,
 } from "@opencraft/execution-environment/environment-launch-owner";
+import type { EnvironmentAccountResolver } from "@opencraft/execution-environment/environment-account";
 import { PersonalGitSealOwner } from "@opencraft/execution-environment/personal-git-seal";
 import type { GitGrantScope } from "@opencraft/execution-environment/personal-git-protocol";
 import {
@@ -34,10 +35,22 @@ export async function createAssetsStorage(
   createWorkspaces?: CreateAssetWorkspaceExecutionOwner,
   /** Issue opaque execution ENV capsules from this sole vault owner, which
    * then also owns the non-secret ENV metadata (bindings, creators, catalog). */
-  options: { environmentLaunch?: boolean } = {},
+  options: {
+    environmentLaunch?: boolean;
+    /** Trusted composition only: the vault partition an admitted owner's ENV
+     * and creator provenance use. Without it, the canonical Actor partition. */
+    environmentAccounts?: EnvironmentAccountResolver;
+  } = {},
 ) {
   // ENV for a launch needs the durable admission this owner reads itself.
   if (options.environmentLaunch && !execution) throw new Error("Environment delivery requires execution admission");
+  if (
+    options.environmentAccounts !== undefined &&
+    (!options.environmentLaunch ||
+      typeof options.environmentAccounts?.forActor !== "function" ||
+      typeof options.environmentAccounts.forLogin !== "function")
+  )
+    throw new Error("Environment account mapping requires the vault owner");
   const vault = new EmployeeGitVaultStore(directory);
   let workspaces: AssetWorkspaceExecutionOwner | undefined;
   let environment: EnvironmentLaunchOwner | undefined;
@@ -66,6 +79,7 @@ export async function createAssetsStorage(
             execution.actor
               ? { terminal: environmentTerminalRecords(vault, (account) => execution.actor!(account)) }
               : {},
+            options.environmentAccounts ? { accounts: options.environmentAccounts } : {},
           )
         : undefined;
     // The same owner serves `PersonalGitSealPort`: Main awaits a grant and never
@@ -84,7 +98,9 @@ export async function createAssetsStorage(
           return null;
         })
       : undefined;
-    const metadata = environment ? new EnvironmentMetadata(vault) : undefined;
+        // Issuer and metadata share one mapping, so a Thread's creator and its
+    // values name the same partition.
+    const metadata = environment ? new EnvironmentMetadata(vault, options.environmentAccounts) : undefined;
     // Metadata runs FIFO with every other vault write; nothing it returns is a value.
     const metadataCall = <T>(operation: (owner: EnvironmentMetadata) => T): T => {
       try {
