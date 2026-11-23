@@ -52,7 +52,7 @@
 | 浏览器 | Chromium 沙盒在容器隔离模型下是否可用 |
 | 生命周期 | 能否确认实例已销毁；能否读取实际生效 CPU／内存；休眠、重启与最长运行时间语义 |
 | 持久化 | R2 FUSE／备份／快照用于 Git 工作区时的性能与一致性 |
-| SQL 语义 | **已在本地 workerd（`workerd@1.20260730.1`）回答**：`SELECT changes()` 返回语句直接修改的行数，与 Node 一致；游标 `rowsWritten` 含索引与触发器写入（带索引和审计触发器的表上，修改两行的 UPDATE 为 6），不能用于 CAS。嵌套 `transactionSync` 是 savepoint：内层抛错只回滚内层，外层抛错丢弃全部。多语句 `exec` 依次执行全部语句。`sqlite_master` 与 `PRAGMA foreign_keys`（值为 1）可读。`BEGIN`／`SAVEPOINT`／`COMMIT` 文本被拒绝。BLOB 以 `ArrayBuffer` 返回；`bigint` 不能绑定，范围外 INTEGER 读取时静默取整。`SQL_CONFORMANCE_CASES` 全部通过。仍需在真实 Cloudflare 上复核 |
+| SQL 语义 | **已在本地 workerd（`workerd@1.20260730.1`）回答**：`SELECT changes()` 返回语句直接修改的行数，与 Node 一致；游标 `rowsWritten` 含索引与触发器写入（带索引和审计触发器的表上，修改两行的 UPDATE 为 6），不能用于 CAS。嵌套 `transactionSync` 是 savepoint：内层抛错只回滚内层，外层抛错丢弃全部。多语句 `exec` 依次执行全部语句。`sqlite_master` 与 `PRAGMA foreign_keys`（值为 1）可读。`BEGIN`／`SAVEPOINT`／`COMMIT` 文本被拒绝。BLOB 以 `ArrayBuffer` 返回；`bigint` 不能绑定，范围外 INTEGER 读取时静默取整。`SQL_CONFORMANCE_CASES` 全部通过。2026-11-23 已在真实 Cloudflare 上以相同探针复核，结果一致（见第 7 节） |
 | 网络 | 出站限制到边缘 Worker；Gateway 到容器的连接方式 |
 | 成本 | 冷启动时间、容器常驻与 DO 时长成本 |
 
@@ -60,7 +60,7 @@
 
 ## 5. InstallationCore 原型状态
 
-状态：**仅测试原型，本地 workerd 验证**。`tests/storage/workerd/installation-core-worker.ts` 是一个 SQLite-backed DO，由 `npm run test:installation-core:workerd`（`tests/storage/installation-core-workerd.test.ts`）经 esbuild（`workerd` 导出条件）打包、在 Miniflare（`workerd@1.20260730.1`，兼容日期 `2026-07-30`，`nodejs_compat`）中运行；无网络、无 Cloudflare 账号，未加入 `gate`，也未在真实 Cloudflare 上运行。它不放进包里：还没有部署装配、路由、认证前门与投影分发，正式包会成为无人消费的运行时形态。DO 外壳只有几十行，迁移与领域代码全部来自生产包。
+状态：**仅测试原型，本地 workerd 验证**。`tests/storage/workerd/installation-core-worker.ts` 是一个 SQLite-backed DO，由 `npm run test:installation-core:workerd`（`tests/storage/installation-core-workerd.test.ts`）经 esbuild（`workerd` 导出条件）打包、在 Miniflare（`workerd@1.20260730.1`，兼容日期 `2026-07-30`，`nodejs_compat`）中运行；无网络、无 Cloudflare 账号，未加入 `gate`；同一组场景另由 `npm run cf:rehearsal` 在真实 Cloudflare 上运行过（第 7 节）。它不放进包里：还没有部署装配、路由、认证前门与投影分发，正式包会成为无人消费的运行时形态。DO 外壳只有几十行，迁移与领域代码全部来自生产包。
 
 ### 5.1 已证明
 
@@ -94,7 +94,7 @@ Node 上 `opencraft-server.sqlite` 的编排运行时与 Server space 已在核�
 
 ## 6. RelayHub 原型结果
 
-状态：**仅测试原型，本地 workerd 验证**。`tests/protocol/workerd/relay-hub-worker.ts`（边缘 Worker＋`RelayHubDO`）由 `npm run test:relay-hub:workerd`（`tests/protocol/relay-hub-workerd.test.ts`）经 esbuild 打包、在 Miniflare（`workerd@1.20260730.1`，兼容日期 `2026-07-30`，无 `nodejs_compat`）中运行；无 Cloudflare 账号，未加入 `gate`。测试中的 Headless 是按 `plugins/relay-connect` 行为写的替身（用共享 `parseOpen` 解析 open、按流 id 与 token 回拨 `DATA_PATH`、回显字节），不是真实插件。浏览器侧只验证 WebSocket 客户端连接。
+状态：**仅测试原型，本地 workerd 验证**。`tests/protocol/workerd/relay-hub-worker.ts`（边缘 Worker＋`RelayHubDO`）由 `npm run test:relay-hub:workerd`（`tests/protocol/relay-hub-workerd.test.ts`）经 esbuild 打包、在 Miniflare（`workerd@1.20260730.1`，兼容日期 `2026-07-30`，无 `nodejs_compat`）中运行，已随其他 `test:*:workerd` 套件进入 `npm test`、`gate` 与 CI；本地运行不需要 Cloudflare 账号，真实账号上的运行见第 7 节。测试中的 Headless 是按 `plugins/relay-connect` 行为写的替身（用共享 `parseOpen` 解析 open、按流 id 与 token 回拨 `DATA_PATH`、回显字节），不是真实插件。浏览器侧只验证 WebSocket 客户端连接。
 
 ### 6.1 Redis 集群到 DO 的映射
 
@@ -156,3 +156,52 @@ Hub 级联有两层：联邦模型（稳定节点身份、签名邀请、连接�
 ### 6.7 原型未覆盖
 
 浏览器身份与 installation 准入、普通 HTTP 请求转发、排空交接、15 分钟空闲期限、客户端中途放弃时立即释放预约（目前依赖到期）、Hub 链路、登录会话存储，以及 `relay-observation` 的容量指标。
+
+## 7. 真实 Cloudflare 预演（`npm run cf:rehearsal`）
+
+`npm run cf:rehearsal`（`scripts/cloudflare/rehearsal.ts`）把第 4–6 节的 workerd 原型按与 Miniflare 测试相同的 esbuild 配置打包，经 Cloudflare REST API 部署到真实账号，运行与 `test:*:workerd` **同一组**共享场景（`tests/*/workerd/*.scenarios.ts`，经 `tests/cloudflare/scenarios.ts` 汇总，不复制断言），同时在本进程内用 Miniflare 跑一遍并逐项对比，最后删除本次创建的全部资源。它需要真实账号，不在 `test`、`gate` 或 CI 中；`tests/` 下的原型与场景不进入生产包。
+
+### 7.1 用法与安全边界
+
+```sh
+CLOUDFLARE_ACCOUNT_ID=<32 位十六进制> CLOUDFLARE_API_TOKEN=<Workers Scripts + R2 编辑权限的 token；由代理注入时填任意占位> \
+  npm run cf:rehearsal -- [--only '<分组: 场景名正则>'] [--skip-miniflare] [--report out.json] [--stale-minutes 10] [--keep]
+```
+
+- **只碰自己的名字**：Worker 与 R2 bucket 名称为 `opencraft-rehearsal-<8 位随机运行 ID>-…`，创建、删除前都按精确名称和该正则核对，账号中运行前已存在的资源一律拒绝触碰。不创建容器、D1、KV。
+- **访问密钥**：每次运行生成 32 字节随机密钥，只存在于进程内存与 Worker 的 `secret_text` binding；`scripts/cloudflare/rehearsal-guard.ts` 包在每个原型外层，对所有路由先做 SHA-256 后常量时间比较，不匹配一律 404。场景使用的虚拟主机（如 `inst-a.relay.test`）经请求头还原后再交给原型。
+- **清理**：正常结束、异常、`SIGINT`／`SIGTERM`／`SIGHUP`、未捕获异常都会删除本次 Worker（`force=true` 同时删除 DO 命名空间与存储）和 bucket（先经仍在运行的绑定 Worker 清空对象，若绑定 Worker 已删除则临时部署一个只含清空入口的 `…-purge` Worker）。清理开始后不再部署新版本。结束时重新列出账号并与运行前比较。
+- **残留回收**：`SIGKILL` 或宕机无法清理，因此每次启动先列出 `opencraft-rehearsal-` 前缀资源，按运行 ID 分组；整组在 `--stale-minutes`（默认 10）内没有变化才视为过期并删除（bucket 同样先清空），避免误删另一个仍在运行的预演。`--stale-minutes 0` 立即回收全部前缀残留。`--keep` 仅供调试，保留资源由下一次运行回收。
+- 重启语义：`persist` 场景的“重启”是同名 Worker 上传新版本后再以 `code_update_strategy: immediate` 部署同一版本，使仍活跃的 DO 立即换代（默认 `deferred` 下活跃对象可继续运行旧代码最长约 300 s）。
+- 每次调用的 CPU／墙钟时间取自 Workers Logs（部署时开启 `observability`），因为 Cloudflare 上 isolate 内时钟在纯 CPU 计算期间不前进。
+
+### 7.2 2026-11-23 结果
+
+账号为 Workers Paid；兼容日期 `2026-07-30`，Miniflare `4.20260730.0`。完整运行 74 个场景、用时 348 s；Miniflare 74／74 通过，Cloudflare 73／74 通过，唯一差异见 7.3，修正场景后单独重跑 RelayHub 分组 6／6 通过、无差异。运行前后账号均为原有 8 个 Worker、0 个 R2 bucket，无前缀残留；`--keep` 后用 `--stale-minutes 0` 回收（含清空 8 个对象的 bucket）与运行中 `SIGINT` 清理也各验证一次。
+
+| 分组 | 场景 | Miniflare | Cloudflare | Miniflare 合计 | Cloudflare 合计 |
+| --- | --- | --- | --- | --- | --- |
+| storage-ports（DO SQL、state／secrets／keys、R2 blob 含上传会话、范围读、摘要、已存在拒绝、SQL 语义探针） | 37 | 37 通过 | 37 通过 | 1.5 s | 27 s |
+| installation-core（22 个 Server 迁移、schema 等价、重启／篡改／新旧版本、领域 RPC 与 Node owner 对照） | 7 | 7 | 7 | 1.9 s | 62 s |
+| workspace-host（五条迁移链、领域操作与 `nodeSqlDatabase` 对照、v13–v17 升级、alarm owner） | 13 | 13 | 13 | 2.2 s | 23 s |
+| login-entry（Argon2id 双向互验、fetch 登录入口与 Node HTTP 入口对照） | 2 | 2 | 2 | 6.4 s | 26 s |
+| client-do（可休眠 socket、恢复游标、驱逐与重启、alarm 回收） | 9 | 9 | 9 | 3.2 s | 70 s |
+| relay-hub（控制链路、512 流预算、预约到期、1008、替换、吞吐） | 6 | 6 | 5（修正后 6） | 2.1 s | 68 s |
+
+Cloudflare 侧耗时主要是部署（首个版本约 3 s，`immediate` 重启约 8 s）和公网往返，不代表运行时性能。
+
+### 7.3 与 Miniflare 的差异
+
+- **语义差异：未发现**。DO SQL（`changes()`、嵌套事务即 savepoint、多语句 `exec`、事务控制文本被拒、`sqlite_master`／`PRAGMA foreign_keys`、BLOB 与范围外整数）、22 个已发布 Server 迁移与五条 WorkspaceHost 迁移链、账本 checksum 拒绝、DO alarm、可休眠 WebSocket、R2 条件写与 multipart 结果全部与 Miniflare 一致；第 4 节表中的 SQL 结论在真实 Cloudflare 上成立。
+- **RelayHub 预算场景首次失败，根因在驱动端而非 Cloudflare**：512 个客户端升级与 512 个 Headless 回拨都从同一预演进程发出，只放行了 83 个，其余 429 个回拨晚于 10 s 预约期限被判过期（`openTimeouts 429`、`rejectedTokens 429`）。在同一沙盒对 `api.cloudflare.com` 做并发新建 HTTPS 连接探针：16 个约 0.2 s，512 个耗时 10.2 s，1024 个 20.3 s，即出站代理每秒只能建立约 50 个新连接，1024 次握手必然超出 10 s。DO 侧 `RelayHubDO/fetch` 的 CPU 最大 2 ms，没有排队证据。场景现对 `patience > 1` 的运行时按比例放宽该场景的预约期限（10 s 期限本身仍由预约到期场景断言），重跑通过。真实部署中客户端与 Headless 分布在各自网络，不受此限制；单对象在真实网络下的并发建流上限仍需分布式压测。
+- **isolate 内时钟**：Cloudflare 上 `performance.now()` 在纯 CPU 计算期间不前进（Argon2id 读数为 0），Miniflare 本地会前进；需要 CPU 数字时只能读 Workers Logs。
+- **时延与吞吐（仅供量级参考，含本沙盒到边缘的网络）**：Client DO 事件 append→两个 socket p50 134 ms（Miniflare 4.9 ms）；RelayHub 建流 p50 115 ms、回显 RTT p50 31 ms、8 MiB 双向回显 55.9 MiB/s（Miniflare 2.2 ms／0.44 ms／97.5 MiB/s）。
+- Workers Logs 中各 DO 单次调用 CPU：InstallationCore RPC p95 33 ms（迁移整库最大 45 ms），WorkspaceHost RPC p95 15 ms，存储一致性对象最大 549 ms（multipart 摘要校验），其余普遍 ≤ 4 ms。
+
+### 7.4 Argon2id 登录的 CPU 结论
+
+参数 `m=19456,t=2,p=1`，纯 JS 实现（打包 32 KiB）。Workers Logs 计量的 `LoginCore` 单次 RPC（每次一次 Argon2id 验证或哈希）CPU p50 630 ms、p95 843 ms、最大 872 ms；同一对象 fetch 登录入口中含哈希的调用最大 284 ms（两条路径差异本次未细分原因）。对照：Miniflare 本地 isolate 时钟 164 ms，Node 原生 `node:crypto` 24–25 ms；客户端观察到的验证往返中位 689 ms（含网络）。
+
+- **CPU 上限**：Workers Paid 默认每请求 30 s CPU，单次登录最多约 0.9 s，余量 30 倍以上，不需要提高 `limits.cpu_ms`；Workers Free 的 10 ms 则完全不可用。
+- **登录延迟**：约 0.3–0.9 s 的服务端计算加网络往返，交互式登录可以接受，但约为 Node 原生的 25–35 倍。
+- **代价与风险**：CPU 时长按毫秒计费，失败尝试同样消耗 0.6 s 级 CPU，且同一 installation 的登录集中在单线程 DO 上串行执行，并发登录会排队。正式实现必须在哈希之前做按来源与账号的速率限制和并发上限，并评估把哈希移到无状态 Worker（DO 只做记录读写）以避免阻塞同一对象的其他请求；如需降低成本再评估 WebAssembly 实现，参数仍须与 Node 记录互通。
