@@ -241,14 +241,14 @@ try {
         watch();
       });
       release();
-      if (regroupPreview) {
-        const deadline = Date.now() + 10_000;
-        while (!heldResume.length && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 20));
-        assert.ok(heldResume.length, 'Regrouped preview was delivered before the final Resume');
-        await cached.page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-        assert.equal(await cached.page.getByText(cachedAnswer, { exact: true }).count(), 1, 'Cached text keeps its dates while regrouped preview is provisional');
-        assert.equal(await cached.page.getByText(previewAnswer, { exact: true }).count(), 0);
-      } else await cached.page.getByText(previewAnswer, { exact: true }).waitFor();
+      // A partial preview window never replaces a body the View already shows
+      // (appserver-replica preserveExisting); only canonical Resume does.
+      const deadline = Date.now() + 10_000;
+      while (!heldResume.length && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 20));
+      assert.ok(heldResume.length, 'Preview was delivered before the final Resume');
+      await cached.page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      assert.equal(await cached.page.getByText(cachedAnswer, { exact: true }).count(), 1, 'Cached text keeps its dates while the preview is provisional');
+      assert.equal(await cached.page.getByText(previewAnswer, { exact: true }).count(), 0, 'A provisional preview does not replace the shown body');
       assert.ok(heldResume.length > 0, 'Final Resume is still held after preview');
       await assertDateDisclosure(cached.page);
       assert.match(await cached.page.locator(clockSelector).first().innerText(), /54/, 'Preview keeps the already known completed clock');
@@ -270,8 +270,8 @@ try {
     await running.page.waitForFunction(() => Object.keys(localStorage).some(key => {
       if (!key.startsWith('opencraft.display.')) return false;
       const saved = JSON.parse(localStorage.getItem(key)!);
-      return saved.messages?.some((message: any) => message.kind === 'reasoning')
-        && saved.messages?.some((message: any) => message.text === 'Previously seen answer' && message.completed === false);
+      return saved.messages?.some((message: any) => message.block?.type === 'reasoning')
+        && saved.messages?.some((message: any) => message.block?.text === 'Previously seen answer' && message.block.completed === false);
     }));
     const runningState = await running.context.storageState();
     assert.deepEqual(running.errors, []); await running.context.close();
@@ -307,8 +307,8 @@ try {
     await longRun.page.waitForFunction(() => Object.keys(localStorage).some(key => {
       if (!key.startsWith('opencraft.display.')) return false;
       const value = JSON.parse(localStorage.getItem(key)!);
-      return value.messages?.some((message: any) => message.id === 'user-message:fixture-question')
-        && value.messages?.some((message: any) => message.id === 'reasoning:long-reasoning-67');
+      return value.messages?.some((message: any) => message.block?.id === 'user-message:fixture-question')
+        && value.messages?.some((message: any) => message.block?.id === 'reasoning:long-reasoning-67');
     }));
     const longState = await longRun.context.storageState();
     await longRun.context.close(); hold = true;
