@@ -2,6 +2,7 @@ import { combineAbortSignals } from "@opencraft/appserver-client/transport";
 import type { TrustedExtensionDefinition } from "@opencraft/extension-runtime";
 import { ASSETS_MANIFEST, createAssetsExtension, e2bAssetProvider } from "./index.js";
 import type { AssetsAccount } from "./ports.js";
+import { parseGitProviders, type GitProviderDescriptor } from "./git/contract.js";
 
 const STATUS_PATH = "/__opencraft_assets/status";
 /** Resource-account projection only. Login, Actor identity, credentials and
@@ -10,6 +11,7 @@ export class ServerAssetsAccount implements AssetsAccount {
   private scope: string | null = null;
   private available = false;
   private gitHosts: readonly string[] = [];
+  private gitProviders: readonly GitProviderDescriptor[] = [];
   private closed = false;
   private generation = 0;
   private readonly listeners = new Set<() => void>();
@@ -18,6 +20,8 @@ export class ServerAssetsAccount implements AssetsAccount {
   getScope = () => this.scope;
   getAvailable = () => this.available;
   getGitHosts = () => this.gitHosts;
+  /** Advertised provider metadata; a server without it only offers token hosts. */
+  getGitProviders = () => this.gitProviders;
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
     return () => {
@@ -34,6 +38,7 @@ export class ServerAssetsAccount implements AssetsAccount {
         signal: request.signal,
       });
       let gitHosts: readonly string[] = [];
+      let gitProviders: readonly GitProviderDescriptor[] = [];
       let scope: string | null,
         available = false;
       if (
@@ -46,7 +51,12 @@ export class ServerAssetsAccount implements AssetsAccount {
       else {
         if (!response.ok || !response.headers.get("content-type")?.includes("application/json"))
           throw Error("assets_unavailable");
-        const input = (await response.json()) as { version?: unknown; scope?: unknown; gitHosts?: unknown };
+        const input = (await response.json()) as {
+          version?: unknown;
+          scope?: unknown;
+          gitHosts?: unknown;
+          gitProviders?: unknown;
+        };
         if (
           !input ||
           input.version !== 1 ||
@@ -64,12 +74,24 @@ export class ServerAssetsAccount implements AssetsAccount {
         )
           throw Error("assets_unavailable");
         gitHosts = Array.isArray(input.gitHosts) ? [...new Set(input.gitHosts as string[])] : [];
+        try {
+          gitProviders =
+            input.gitProviders === undefined
+              ? gitHosts.map((host) => ({ host, auth: "token" as const }))
+              : parseGitProviders(input.gitProviders);
+        } catch {
+          throw Error("assets_unavailable");
+        }
+        // Provider metadata describes exactly the advertised hosts, never more.
+        if (gitProviders.length !== gitHosts.length || gitProviders.some((p) => !gitHosts.includes(p.host)))
+          throw Error("assets_unavailable");
         scope = input.scope as string | null;
         available = true;
       }
       if (this.closed || generation !== this.generation) return;
       const changed = this.scope !== scope;
       this.gitHosts = gitHosts;
+      this.gitProviders = gitProviders;
       this.scope = scope;
       this.available = available;
       if (changed) for (const listener of this.listeners) listener();
@@ -112,18 +134,19 @@ export function createServerAssetsExtension(
       for (const event of ["focus", "pageshow", "online"]) events?.addEventListener(event, refresh);
       // Registration stays light. The concrete form/controller are only loaded
       // when the host actually mounts this deferred page, not on startup.
-      const githubAvailable = account.getGitHosts().includes("github.com");
+      // GitHub's token flow and SSH-key hosts have editors in this client.
+      const gitProviders = account.getGitProviders().filter((p) => p.auth === "ssh" || p.host === "github.com");
       return createAssetsExtension(async () => {
         if (disposed) throw Error("Assets extension retired");
-        const github = githubAvailable ? await import("./git/client.js") : null;
+        const git = gitProviders.length ? await import("./git/client.js") : null;
         if (disposed) throw Error("Assets extension retired");
         return {
           account,
           fetcher,
           endpoint: "/__opencraft_assets/configurations",
-          providers: [e2bAssetProvider, ...(github ? [github.githubAssetProvider] : [])],
-          useConnections: github
-            ? (scope, onUnauthorized) => github.useGithubAssetConnections(fetcher, scope, onUnauthorized)
+          providers: [e2bAssetProvider, ...(git ? git.gitAssetProviders(gitProviders) : [])],
+          useConnections: git
+            ? (scope, onUnauthorized) => git.useGitAssetConnections(fetcher, scope, onUnauthorized, gitProviders)
             : undefined,
         };
       }).activate(api);

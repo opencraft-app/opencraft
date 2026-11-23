@@ -15,13 +15,16 @@ import {
 import { SettingsCollectionSection } from "@opencraft/extension-react/settings-collection";
 import { AssetDetails } from "../details.js";
 import type { AssetConnections } from "../ports.js";
-import type { GitConnectionInput, GitConnectionsSnapshot } from "./contract.js";
+import type { AssetProvider } from "../providers.js";
+import type { GitConnectionInput, GitConnectionsSnapshot, GitProviderDescriptor } from "./contract.js";
 import { parseGitConnections } from "./contract.js";
-import { useGitConnectionController } from "./controller.js";
-import { gitMessages, type GitMessage } from "./messages.js";
+import { useGitConnectionController, type GitConnectionController } from "./controller.js";
+import { gitMessages, sshGitMessages, type GitMessage } from "./messages.js";
+import { SshConnectionForm } from "./ssh-form.js";
 export { useGitConnectionController } from "./controller.js";
 const HOST = "github.com";
 const ENDPOINT = "/__opencraft_assets/git-connections";
+const GITHUB_ONLY: readonly GitProviderDescriptor[] = [{ host: HOST, auth: "token" }];
 export const githubAssetProvider = {
   id: "github",
   name: "GitHub",
@@ -30,32 +33,48 @@ export const githubAssetProvider = {
   host: HOST,
   about: { id: "assets.git.description", defaultMessage: gitMessages.description },
 } as const;
+/** Catalog rows for the advertised providers this client has an editor for:
+ * GitHub's token flow and any configured SSH-key host. */
+export function gitAssetProviders(providers: readonly GitProviderDescriptor[]): AssetProvider[] {
+  return providers.flatMap((p): AssetProvider[] =>
+    p.auth === "ssh"
+      ? [
+          {
+            id: "git-ssh:" + p.host,
+            name: p.name,
+            capabilities: ["git"],
+            editor: "git",
+            host: p.host,
+            about: sshGitMessages.about,
+          },
+        ]
+      : p.host === HOST
+        ? [githubAssetProvider]
+        : [],
+  );
+}
 function useMessages() {
   const intl = useIntl();
   return (key: GitMessage) => intl.formatMessage({ id: "assets.git." + key, defaultMessage: gitMessages[key] });
 }
-export interface GithubConnectionController {
-  snapshot: GitConnectionsSnapshot | null;
-  busy: boolean;
-  unauthorized: boolean;
-  operationErrors: Record<string, string>;
-  operationCodes: Record<string, string>;
-  load(input?: GitConnectionInput<"github.com">): Promise<boolean>;
-  getSnapshot(): GitConnectionsSnapshot | null;
-  clearHostErrors(host: string): void;
-}
-export function useGithubAssetConnections(
+export type { GitConnectionController };
+export type GithubConnectionController = GitConnectionController;
+/** One metadata controller for every advertised Git host; each host keeps its own
+ * revision, pending namespace and editor. */
+export function useGitAssetConnections(
   fetcher: typeof fetch,
   scope: string,
   onUnauthorized: () => void,
+  providers: readonly GitProviderDescriptor[],
 ): AssetConnections {
   const f = useMessages();
-  const controller = useGitConnectionController<GitConnectionsSnapshot, GitConnectionInput<"github.com">>({
+  const hosts = providers.map((p) => p.host);
+  const controller = useGitConnectionController<GitConnectionsSnapshot, GitConnectionInput>({
     scope,
     fetcher,
     onUnauthorized,
     endpoint: ENDPOINT,
-    parse: (raw, scope) => parseGitConnections(raw, scope, [HOST]),
+    parse: (raw, scope) => parseGitConnections(raw, scope, hosts),
     errorText: (code) => f(Object.hasOwn(gitMessages, code) ? (code as GitMessage) : "unavailable"),
   });
   return {
@@ -63,14 +82,27 @@ export function useGithubAssetConnections(
     busy: controller.busy,
     unauthorized: controller.unauthorized,
     readError: controller.operationErrors.read,
-    configured: (host) => host === HOST && !!controller.snapshot?.hosts[HOST]?.configured,
-    description: (host) => (host === HOST ? (controller.snapshot?.hosts[HOST]?.identity?.username ?? "") : ""),
+    configured: (host) => hosts.includes(host) && !!controller.snapshot?.hosts[host]?.configured,
+    description: (host) => (hosts.includes(host) ? (controller.snapshot?.hosts[host]?.identity?.username ?? "") : ""),
     load: async () => {
       await controller.load();
     },
-    renderEditor: (host, onDraftChange) =>
-      host === HOST ? <GithubConnectionForm controller={controller} onDraftChange={onDraftChange} /> : null,
+    renderEditor: (host, onDraftChange) => {
+      const provider = providers.find((p) => p.host === host);
+      if (provider?.auth === "ssh")
+        return <SshConnectionForm controller={controller} provider={provider} onDraftChange={onDraftChange} />;
+      return provider?.host === HOST ? (
+        <GithubConnectionForm controller={controller} onDraftChange={onDraftChange} />
+      ) : null;
+    },
   };
+}
+export function useGithubAssetConnections(
+  fetcher: typeof fetch,
+  scope: string,
+  onUnauthorized: () => void,
+): AssetConnections {
+  return useGitAssetConnections(fetcher, scope, onUnauthorized, GITHUB_ONLY);
 }
 /** One draft, pinned expected revision and secret input. Refresh never overwrites
  * an edited draft, failed/unknown writes are not replayed, and clear/reload are explicit. */

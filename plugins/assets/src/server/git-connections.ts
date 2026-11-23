@@ -3,11 +3,14 @@ import {
   GitVaultError,
   type GitVaultCredential,
 } from "@opencraft/execution-environment/employee-git-vault-store";
+import { generateGitSigningKey } from "@opencraft/execution-environment/git-keys";
 import { SandboxConfigurationError } from "./errors.js";
-import type { GitConnectionsSnapshot, GitConnectionStatus } from "../git/contract.js";
+import type { GitConnectionsSnapshot, GitConnectionStatus, GitProviderDescriptor } from "../git/contract.js";
 export const GIT_CONNECTIONS_PATH = "/__opencraft_assets/git-connections";
-export interface GitConnectionProvider {
+/** A provider that verifies an account token with its remote service. */
+export interface TokenGitConnectionProvider {
   readonly host: string;
+  readonly auth: "token";
   save(
     input: { username: string; name: string; email: string; token: string },
     previous: GitVaultCredential | null,
@@ -16,6 +19,26 @@ export interface GitConnectionProvider {
   register?(credential: GitVaultCredential, check: () => void): Promise<GitVaultCredential>;
   project?(status: GitConnectionStatus): GitConnectionStatus;
 }
+/** A Git host that authenticates with a key generated here. The private key stays
+ * in the vault; the user registers the public key on the host. This is plain
+ * configuration: a deployment supplies `{ host, auth: "ssh", name }`. */
+export interface SshGitConnectionProvider {
+  readonly host: string;
+  readonly auth: "ssh";
+  /** Product name of the host, shown in settings. */
+  readonly name: string;
+}
+export type GitConnectionProvider = TokenGitConnectionProvider | SshGitConnectionProvider;
+/** Non-secret metadata of compiled providers; never carries a function or secret. */
+export function describeGitProviders(providers: readonly GitConnectionProvider[]): GitProviderDescriptor[] {
+  return providers.map((p) =>
+    p.auth === "ssh" ? { host: p.host, auth: "ssh", name: p.name } : { host: p.host, auth: "token" },
+  );
+}
+const ACTIONS = {
+  token: ["save", "clear", "register"],
+  ssh: ["save", "clear", "generate-ssh", "delete-ssh"],
+} as const;
 function fail(code = "invalid", status = 400): never {
   throw new SandboxConfigurationError(code, status);
 }
@@ -29,7 +52,13 @@ export class GitConnections {
   ) {
     if (
       new Set(providers.map((p) => p.host)).size !== providers.length ||
-      providers.some((p) => !/^[a-z0-9.-]{1,253}$/u.test(p.host))
+      providers.some(
+        (p) =>
+          !/^[a-z0-9.-]{1,253}$/u.test(p.host) ||
+          (p.auth !== "token" && p.auth !== "ssh") ||
+          (p.auth === "ssh" &&
+            (typeof p.name !== "string" || !p.name.trim() || p.name.length > 64 || /[\x00-\x1f\x7f]/u.test(p.name))),
+      )
     )
       fail();
     this.providers = new Map(providers.map((p) => [p.host, p]));
@@ -40,6 +69,8 @@ export class GitConnections {
       hosts: Object.fromEntries(
         [...this.providers].map(([host, p]) => {
           const row = this.vault.status(scope, host);
+          // An SSH binding is usable only with its key; identity alone is a draft.
+          if (p.auth === "ssh") return [host, { ...row, configured: !!row.sshAuth, tokenConfigured: false }];
           return [host, p.project?.(row) ?? row];
         }),
       ),
@@ -49,20 +80,20 @@ export class GitConnections {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) fail();
     const input = raw as Record<string, unknown>,
       provider = typeof input.host === "string" ? this.providers.get(input.host) : undefined;
+    const fields =
+      input.action === "save"
+        ? provider?.auth === "ssh"
+          ? ["username", "name", "email"]
+          : ["username", "name", "email", "token"]
+        : input.action === "generate-ssh"
+          ? ["username", "name", "email"]
+          : [];
     if (
       !provider ||
-      !["save", "clear", "register"].includes(String(input.action)) ||
+      !(ACTIONS[provider.auth] as readonly string[]).includes(String(input.action)) ||
       !Number.isSafeInteger(input.revision) ||
       Number(input.revision) < 0 ||
-      Object.keys(input).some(
-        (k) =>
-          ![
-            "host",
-            "action",
-            "revision",
-            ...(input.action === "save" ? ["username", "name", "email", "token"] : []),
-          ].includes(k),
-      )
+      Object.keys(input).some((k) => !["host", "action", "revision", ...fields].includes(k))
     )
       fail();
     const host = provider.host,
@@ -85,16 +116,42 @@ export class GitConnections {
         this.vault.write(scope, host, revision, null);
         return this.snapshot(scope);
       }
-      let credential: GitVaultCredential;
-      if (input.action === "save") {
-        const text = (v: unknown, max: number, code: string) => {
-          if (typeof v !== "string" || !v.trim() || v.length > max || /[\x00-\x1f\x7f]/u.test(v)) return fail(code);
-          return v.trim();
-        };
+      const text = (v: unknown, max: number, code: string) => {
+        if (typeof v !== "string" || !v.trim() || v.length > max || /[\x00-\x1f\x7f]/u.test(v)) return fail(code);
+        return v.trim();
+      };
+      const identityOf = () => {
         const username = text(input.username, 128, "git_username_invalid"),
           name = text(input.name, 256, "git_name_invalid"),
           email = text(input.email, 320, "git_email_invalid");
         if (!/^[^\s@]+@[^\s@]+$/u.test(email)) fail("git_email_invalid");
+        return { username, name, email };
+      };
+      if (provider.auth === "ssh") {
+        const previous = before.credential;
+        let next: GitVaultCredential;
+        if (input.action === "save") {
+          // Identity only; an existing key is kept. Token and signing never apply.
+          next = { identity: identityOf(), token: "", signing: null, sshAuth: previous?.sshAuth ?? null };
+        } else if (input.action === "generate-ssh") {
+          const supplied = ["username", "name", "email"].some((k) => input[k] !== undefined);
+          const identity = supplied ? identityOf() : previous?.identity;
+          if (!identity) fail("git_username_invalid");
+          // Only the generation, public key and fingerprint ever leave the vault.
+          const { registration: _registration, remoteKeyId: _remote, ...sshAuth } = generateGitSigningKey();
+          next = { identity: identity!, token: "", signing: null, sshAuth };
+        } else {
+          if (!previous?.sshAuth) fail();
+          next = { ...previous!, token: "", signing: null, sshAuth: null };
+        }
+        check();
+        this.vault.write(scope, host, revision, next);
+        check();
+        return this.snapshot(scope);
+      }
+      let credential: GitVaultCredential;
+      if (input.action === "save") {
+        const { username, name, email } = identityOf();
         const token = input.token === undefined || input.token === "" ? before.credential?.token : input.token;
         if (typeof token !== "string" || !token || token.length > 4096 || /[\x00-\x20\x7f]/u.test(token)) fail();
         credential = await provider.save(

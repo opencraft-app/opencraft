@@ -6,7 +6,7 @@ import type {
   GitExecutionHandoff,
   GitExecutionReservation,
 } from "@opencraft/execution-environment/git-execution";
-import type { GitConnectionsSnapshot } from "../git/contract.js";
+import type { GitConnectionsSnapshot, GitProviderDescriptor } from "../git/contract.js";
 import type {
   AnyEnvironmentLaunchContext,
   EnvironmentLaunchTarget,
@@ -88,6 +88,8 @@ export interface AssetStoragePort extends AssetConfigurationPort, WorkspaceBudge
 interface Ready {
   outcome: DatabaseOutcome;
   gitHosts: readonly string[];
+  /** Non-secret provider metadata (host, auth kind, SSH host name) for settings. */
+  gitProviders: readonly GitProviderDescriptor[];
   gitAuthority: string | null;
   environmentIssuer?: string | null;
   /** The issuer also admits Hands terminal launches (Actor epoch reader). */
@@ -160,6 +162,7 @@ export async function openAssetConfigurations(
     store: owner.call,
     outcome: ready.outcome,
     gitHosts: ready.gitHosts,
+    gitProviders: ready.gitProviders,
     gitAuthority: ready.gitAuthority,
     workspaceExecution: ready.workspaceExecution === true,
     botExecution: ready.botExecution === true,

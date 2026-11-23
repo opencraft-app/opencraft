@@ -28,7 +28,7 @@ import type {
 } from "@opencraft/execution-environment/environment-delivery";
 import { PLATFORM_ASSET_SCOPE } from "../contract.js";
 import { SandboxConfigurations, SandboxConfigurationError } from "./configurations.js";
-import { GitConnections, type GitConnectionProvider } from "./git-connections.js";
+import { GitConnections, describeGitProviders, type GitConnectionProvider } from "./git-connections.js";
 import { githubConnectionProvider } from "./github-provider.js";
 import type { AssetAdmission } from "./worker.js";
 
@@ -201,7 +201,7 @@ export async function createAssetsStorage(
     if (
       Object.keys(workspaceMethods).some(
         (name) =>
-          !/^workspace(?:Begin|Status|NativeReceipt|Cancel|Forget|Selection|FileScope|FileRequest|PlacementPage|ArtifactDownload|ArtifactRead|ArtifactUpload|ArtifactWrite|ArtifactFinish|ArtifactClose|TerminalOpen|TerminalProbe|TerminalRequest|TerminalStatus|TerminalForget|TerminalSnapshot|TerminalUnwatch|BrowserOpen|BrowserStatus|BrowserRead|BrowserSend|BrowserSent|BrowserForget|BrowserClose|LifecycleBegin|LifecycleStatus|LifecycleForget|BotCatalog|BotValidate|BotOpen|BotStatus|BotExecute|BotOperation|BotForget|BotClose|BotCallbacks|BotReply)$/.test(
+          !/^workspace(?:Begin|Status|NativeReceipt|Cancel|Forget|Selection|FileScope|FileRequest|PlacementPage|ArtifactDownload|ArtifactRead|ArtifactUpload|ArtifactWrite|ArtifactFinish|ArtifactClose|TerminalOpen|TerminalProbe|TerminalRequest|TerminalStatus|TerminalForget|TerminalSnapshot|TerminalUnwatch|BrowserOpen|BrowserStatus|BrowserRead|BrowserSend|BrowserSent|BrowserForget|BrowserClose|LifecycleBegin|LifecycleStatus|LifecycleForget|BotCatalog|BotValidate|BotOpen|BotSources|BotSourceValidate|BotSourceOpen|BotStatus|BotExecute|BotOperation|BotForget|BotClose|BotCallbacks|BotReply)$/.test(
             name,
           ),
       )
@@ -243,6 +243,7 @@ export async function createAssetsStorage(
         botExecution: workspaces?.botExecution === true,
         botBackends: workspaces?.botExecution === true ? [...(workspaces.botBackends ?? [])] : [],
         gitHosts: providers.map((p) => p.host),
+        gitProviders: describeGitProviders(providers),
         gitAuthority: execution ? vault.personalGitAuthority("actor") : null,
         environmentIssuer: environment?.issuer ?? null,
         environmentTerminal: !!environment && !!execution?.actor,

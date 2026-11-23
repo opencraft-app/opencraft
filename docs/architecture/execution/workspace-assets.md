@@ -265,6 +265,54 @@ source/default Bot assembly, not live cloud, model or container acceptance.
 Default ordinary Native assembly and shared local/remote terminal admission are
 described below; live provider acceptance is not implied.
 
+#### Bot environments per Actor
+
+The same owner also resolves a Bot owner's environments from three sources
+(`apps/headless-server/src/workspaces/bot-environments.ts`). The
+`workspaceBotSources`, `workspaceBotSourceValidate` and `workspaceBotSourceOpen`
+methods take Main's `WorkspaceActorAdmission`; the Worker rechecks it against
+committed Actor, member and revocation state on every catalogue, open, command
+and lease authorization. A disabled Actor or revoked membership has no
+environment, and an entry already running on any source stops. Request
+cancellation only blocks publication of a pending entry.
+
+| Order | Source | Records | Backend ID |
+|---|---|---|---|
+| 1 | personal | `actor:<actorId>` partition; custom endpoints only for administrators | `<backend>-` + 40 hex of (identity partition, Actor generation, record fingerprint) |
+| 2 | platform | platform partition, minus environments that belong to the installation | `<backend>-shared-` + 40 hex of the record fingerprint |
+| 3 | installed | the adopted installation, all templates | `<backend>` |
+
+`<backend>` is the provider ID of the record's credential installation (`e2b`
+today). Every source's credential goes through `credentialInstallation` and the
+Worker's deployment-registered sandbox provider registry
+(`createHeadlessSandboxProviders`, or the compiled `sandboxProviders` option of
+`createHeadlessAssetsStorage`); a source whose backend is not registered is not
+published, and creation resolves the same registry and fails closed, never
+falling back to another provider. The secret is read from the current matching
+record on every backend request.
+
+The three ID namespaces are disjoint, so no source shadows another. A record
+fingerprint covers the environment, template, credential ID and generation and
+both endpoints: rotating a key or removing the record retires entries on that
+source and needs a new Bot selection, while changes to another source do not.
+A personal pool belongs to one Actor partition and generation; a platform pool
+is shared by every member, and each Bot entry is still authorized by its own
+assignment. Every allocation, from any source, reserves in the installation's
+global workspace budget, so personal and platform sources cannot allocate
+without an installed capacity. Their pools use 2 vCPU / 2 GiB per sandbox
+within 4 vCPU / 8 GiB per configuration.
+
+The identity partition of personal IDs defaults to the Actor partition. A
+composition whose Bots were bound to IDs derived from an older account
+partition compiles a `backendIdentity(record, actor)` hook into its Worker
+(`createHeadlessAssetsStorage` option `botBackendIdentity`, or the
+`WorkspaceBotOwner` option `backendIdentity`); throwing denies that Actor's
+catalogue. In Main, `createWorkspaceBotProvider({ admission })` exposes
+`forContext(context)`; the default Headless composition uses it with
+`WorkspaceNativeAdmission` whenever Human instance authority exists, and keeps
+the installation-wide provider otherwise, published under each of the Worker's
+`botBackends` (registered provider IDs).
+
 ### One admission owner for local and remote UI terminals
 
 CPU/memory environment capacity remains in the Assets vault; UI terminal counts

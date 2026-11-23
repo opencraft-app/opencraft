@@ -85,6 +85,22 @@ export class WorkspaceActorAuthority {
       return false;
     }
   }
+  /** Same role projection as instance access: an Actor membership wins;
+   * without one, an enabled administrator binding. Call only after `current`. */
+  administrator(actorId: string): boolean {
+    try {
+      if (this.closed || !this.db) return false;
+      const member = this.db.prepare("SELECT enabled,role FROM actor_members WHERE actor_id=?").get(actorId);
+      if (member) return member.enabled === 1 && member.role === "admin";
+      return !!this.db
+        .prepare(
+          "SELECT 1 FROM actor_bindings b JOIN members m ON m.binding=b.binding WHERE b.actor_id=? AND m.enabled=1 AND m.role='admin' LIMIT 1",
+        )
+        .get(actorId);
+    } catch {
+      return false;
+    }
+  }
   close() {
     this.closed = true;
     this.db?.close();

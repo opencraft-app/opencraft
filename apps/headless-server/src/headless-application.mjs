@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import {openWorkspaceExecutionService} from './workspaces/execution-service.js';
+import {WorkspaceNativeAdmission} from './workspaces/native-admission.js';
 import {openHeadlessAssetsStorage} from './headless-assets-storage.js';
 import {humanGitRuntimeDirectory,createHumanGitExecution} from './human-git-execution.js';
 import { openHumanAssets } from '@opencraft/plugin-local-account/assets-server';
@@ -419,7 +420,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let membership;
   let assetsService;
   let assetsStorage;
-  let installedBotProvider;
+  let installedBotProvider, botAdmission;
   let workspaceRouting;
   let ownedWorkspaceRouting;
   let humanGitExecution;
@@ -518,7 +519,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       for (const dispose of [() => executionDatabase?.close(),
         () => modelPolicy?.close(), () => mcpApps?.close(), () => sshManagement?.close(), () => identity?.executionEnvironment?.close(), () => identity?.close?.(),
 
-        () => ownedWorkspaceRouting?.close(), () => installedBotProvider?.close(), () => humanGitExecution?.close(), () => assetsService?.close(), () => assetsStorage?.close(), () => composition.close?.(), () => accountApplication?.close(), () => accountManagement?.close(), () => humanAuth?.close(), () => humanAccounts?.close(),
+        () => ownedWorkspaceRouting?.close(), () => installedBotProvider?.close(), () => botAdmission?.close(), () => humanGitExecution?.close(), () => assetsService?.close(), () => assetsStorage?.close(), () => composition.close?.(), () => accountApplication?.close(), () => accountManagement?.close(), () => humanAuth?.close(), () => humanAccounts?.close(),
         () => identityWrites?.close(), () => capabilityBindings?.close(), () => actorStore?.close(), () => membership?.close()]) {
         await settle([dispose]);
       }
@@ -638,8 +639,12 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         try { await assetsStorage.store.adoptWorkspaceInstallation(process.env.OPENCRAFT_ASSISTANT_SANDBOX_CONFIG); }
         catch { console.warn('assistant_environment_configuration_unavailable'); }
       }
+      // With Human instance authority, a Bot owner's personal, platform and
+      // installed environments are resolved per Actor in the vault Worker.
+      if (instanceAccess) botAdmission = new WorkspaceNativeAdmission({actors:actorStore, access:instanceAccess});
       installedBotProvider = createWorkspaceBotProvider({port:assetsStorage.store,
-        onCleanupUnconfirmed:()=>console.warn('assistant_environment_reconciliation_required')});
+        onCleanupUnconfirmed:()=>console.warn('assistant_environment_reconciliation_required'),
+        ...(botAdmission ? {admission:context=>botAdmission.admitResource(context.actorId)} : {})});
       if (workspaceExecution && !workspaceRouting) {
         if (!assetsStorage.workspaceExecution) throw Error('Assets Native execution owner unavailable');
         ownedWorkspaceRouting = await openWorkspaceExecutionService({port:assetsStorage.store,
@@ -1592,9 +1597,14 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     if (relayConfiguration) relay = connectRelay({ ...relayConfiguration.options, targetPort: relayConfiguration.options.targetPort ?? address.port });
     hubController.node?.start(hubTargetPort ?? address.port);
     if (options.codexCoreEndpoint) codexReadiness = maintainHeadlessCodexHost(appHostServer);
-    // The Worker's deployment-registered backends; the installation selects one of them.
-    const environmentProviders=installedBotProvider?Object.fromEntries(assetsStorage.botBackends.map(id=>[id,installedBotProvider])):{};
-    personalAssistantHost = await createPersonalAssistantHost({directory:dataDirectory,service:actorCollaboration,environmentProviders,environmentProvidersFor:identity?.environmentProvidersFor,
+    // Per-Actor sources replace the installation-wide provider; an identity
+    // composition's providers are merged after them, as before. Without Actor
+    // admission the installed source is published under the Worker's
+    // deployment-registered backends; the installation selects one of them.
+    const environmentProviders=installedBotProvider&&!botAdmission?Object.fromEntries(assetsStorage.botBackends.map(id=>[id,installedBotProvider])):{};
+    const environmentProvidersFor=botAdmission?async context=>({...await installedBotProvider.forContext(context),
+      ...(await identity?.environmentProvidersFor?.(context) ?? {})}):identity?.environmentProvidersFor;
+    personalAssistantHost = await createPersonalAssistantHost({directory:dataDirectory,service:actorCollaboration,environmentProviders,environmentProvidersFor,
       modelSource:createAssistantModelSource(join(dataDirectory,'models'),modelPolicyPath,{
         fetch:async(input,init)=>{
           const request=new Request(input,init);

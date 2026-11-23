@@ -35,7 +35,7 @@ async function command(executable: string, args: string[], cwd: string, env: Nod
   const [code] = await once(child, "close");
   return { code, out: out.trim(), err };
 }
-async function fixture(t: test.TestContext) {
+async function fixture(t: test.TestContext, worker = "../fixtures/assets-git-execution.worker.ts") {
   const root = await mkdtemp(join(tmpdir(), "actor-git-execution-")),
     directory = join(root, "data"),
     runtime = join(root, "runtime");
@@ -67,7 +67,7 @@ async function fixture(t: test.TestContext) {
       auth,
       access,
       openStorage: (dir) =>
-        openAssetConfigurations(dir, { entry: new URL("../fixtures/assets-git-execution.worker.ts", import.meta.url) }),
+        openAssetConfigurations(dir, { entry: new URL(worker, import.meta.url) }),
     });
   } finally {
     if (before === undefined) delete process.env.OPENCRAFT_TEST_GITHUB_ORIGIN;
@@ -200,6 +200,10 @@ async function fixture(t: test.TestContext) {
     metadata,
     execution,
     request,
+    readStatus: () =>
+      fetch(config.origin + "/__opencraft_assets/status", {
+        headers: { origin: config.origin, cookie: `oc_human=${login.token}` },
+      }),
     nativeGit,
     base,
     setLive(v: boolean) {
@@ -273,6 +277,62 @@ test("handoff is not an HTTP action; Actor revocation and unknown/rejected input
     host: "github.com",
   });
   assert.equal(credential.status, "expired");
+});
+
+test("an SSH-key host: HTTP generates in the sole vault Worker and the Actor grant opens its SSH identity", async (t) => {
+  const f = await fixture(t, "../fixtures/assets-git-ssh-execution.worker.ts"),
+    host = "git.example.test";
+  assert.deepEqual([...f.assets.gitHosts], ["github.com", host]);
+  const status = await f.readStatus();
+  assert.deepEqual((await status.json()).gitProviders, [
+    { host: "github.com", auth: "token" },
+    { host, auth: "ssh", name: "Example Git" },
+  ]);
+  const generated = await f.request({
+    host,
+    action: "generate-ssh",
+    revision: 0,
+    username: "fixture",
+    name: "Fixture",
+    email: "fixture@example.test",
+  });
+  assert.equal(generated.status, 200);
+  const text = await generated.text();
+  assert.ok(!text.includes("PRIVATE KEY") && !text.includes("privateKey"));
+  const metadata = JSON.parse(text).hosts[host];
+  assert.equal(metadata.configured, true);
+  assert.match(metadata.sshAuth.publicKey, /^ssh-ed25519 /u);
+  const handoff = await f.assets.executionGitGrant(f.locator);
+  assert.ok(handoff);
+  assert.ok(!JSON.stringify(handoff).includes("PRIVATE KEY"));
+  const binding = (await f.execution.status(f.locator))!.hosts.find((row) => row.host === host);
+  assert.deepEqual(binding, { host, bound: true, transport: "ssh", signing: false, username: "fixture" });
+  const env = (await f.execution.prepare(f.locator)).overlay();
+  const opened = await queryGitIdentityBroker(env.OPENCRAFT_GIT_BROKER_SOCKET!, {
+    op: "open",
+    threadId: f.locator.threadId,
+    host,
+    operation: "ls-remote",
+    capability: env.OPENCRAFT_GIT_CAPABILITY,
+  });
+  assert.equal(opened.status, "configured");
+  assert.deepEqual(opened.identity, { username: "fixture", name: "Fixture", email: "fixture@example.test" });
+  assert.equal(opened.sshAuth.publicKey, metadata.sshAuth.publicKey);
+  assert.equal(typeof opened.sshAuth.socket, "string");
+  assert.ok(!JSON.stringify(opened).includes("PRIVATE KEY"));
+  // No HTTPS password exists for a key-only binding.
+  const credential = await queryGitIdentityBroker(env.OPENCRAFT_GIT_BROKER_SOCKET!, {
+    op: "credential",
+    sessionId: opened.sessionId,
+    protocol: "https",
+    host,
+  });
+  assert.equal(credential.status, "denied");
+  await queryGitIdentityBroker(env.OPENCRAFT_GIT_BROKER_SOCKET!, { op: "close", sessionId: opened.sessionId });
+  // Deleting the key removes the transport from the next grant.
+  assert.equal((await f.request({ host, action: "delete-ssh", revision: 1 })).status, 200);
+  const after = (await f.execution.status(f.locator))!.hosts.find((row) => row.host === host);
+  assert.equal(after?.transport, null);
 });
 
 test("status reports the run Actor's non-secret Git binding only while its lease is live", async (t) => {
