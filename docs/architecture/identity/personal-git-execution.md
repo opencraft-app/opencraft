@@ -28,6 +28,15 @@ The first admitted native input refreshes its Git environment even when the
 creator and sender are the same account. Native configuration waits for readiness;
 a failed preflight rejects before dispatch rather than pretending input was sent.
 
+An installation with a separate vault owner signs grants there instead:
+`PersonalGitSealPort` (`{ authority, seal(scope): Promise<string> }`, subpath
+`personal-git-seal`) is served by the core vault-owner Worker
+(`environmentDelivery: 'vault-owner'`) or supplied by an identity composition
+as `ExecutionEnvironmentRuntime`'s `gitSeal` option. The owner seals only its own
+durable admission and the caller rechecks after the await; grants are
+byte-compatible with in-process ones. See
+[ENV launch delivery](../execution/environment-launch-delivery.md#core-vault-owner-issuer).
+
 Workers query vault/lease stores off the routing event loop. No private key is
 exported to command environment, files, responses or image layers.
 

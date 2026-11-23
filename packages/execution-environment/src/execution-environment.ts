@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { PersonalGitEnvironment, type PersonalGitGrant } from './personal-git.js';
+import { validPersonalGitSealPort, type PersonalGitSealPort } from './personal-git-seal.js';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -16,6 +17,7 @@ export {EnvironmentMetadata,environmentProjectId,environmentScopeRequest,environ
 export type {EnvironmentExecutionScope,EnvironmentScopeRequest,EnvironmentMetadataPort} from './environment-metadata.js';
 export {executionEnvironmentOwner,ExecutionEnvironmentSnapshot} from "./execution-snapshot.js";
 import {executionEnvironmentOwner,ExecutionEnvironmentSnapshot} from "./execution-snapshot.js";
+const grantBearing = (scope: EnvironmentExecutionScope) => !!(scope.account && scope.threadId && scope.inputId && scope.executionId);
 const text = (value: unknown): value is string => typeof value === 'string' && value.length > 0 && value.length <= 512 && !/[\0\r\n]/u.test(value);
 
 /** Trusted Node owner port. Storage and signed scope reuse the credential vault;
@@ -27,12 +29,22 @@ export class ExecutionEnvironmentRuntime {
   private readonly disposers = new Set<() => void>();
   private readonly consumed = new Map<string, number>();
   private readonly snapshots = new Set<WeakRef<ExecutionEnvironmentSnapshot>>();
-  constructor(readonly directory: string, private readonly vault: EmployeeGitVaultStore, private readonly ownsVault = false, gitMode: 'execution' | 'issuer' | 'disabled' = 'execution') {
+  private readonly gitSeal: PersonalGitSealPort | undefined;
+  private closed = false;
+  constructor(readonly directory: string, private readonly vault: EmployeeGitVaultStore, private readonly ownsVault = false, gitMode: 'execution' | 'issuer' | 'disabled' = 'execution',
+    /** `gitSeal`: a separate vault owner signs personal Git grants. The vault key
+     * is then never used here for grants, and they are issued only by `prepare`. */
+    options: { gitSeal?: PersonalGitSealPort } = {}) {
+    if (options.gitSeal !== undefined && !validPersonalGitSealPort(options.gitSeal)) throw Error('personal_git_issuer_unavailable');
     this.environment = new AccountEnvironment(vault);
     this.metadata = new EnvironmentMetadata(vault);
+    this.gitSeal = options.gitSeal;
+    const seal = options.gitSeal;
     // Compiled ENV delivery may borrow the sole vault without constructing a
     // second Git bridge. Existing execution/issuer callers remain unchanged.
-    this.git = gitMode === 'disabled' ? undefined : PersonalGitEnvironment.fromEnvironment(directory, { authority: vault.personalGitAuthority(), seal: scope => vault.sealPersonalGitGrant(scope) }, gitMode);
+    this.git = gitMode === 'disabled' ? undefined : PersonalGitEnvironment.fromEnvironment(directory, seal
+      ? { authority: seal.authority, seal: scope => seal.seal(scope) }
+      : { authority: vault.personalGitAuthority(), seal: scope => vault.sealPersonalGitGrant(scope) }, gitMode);
   }
   static open(directory: string, options?: { create?: boolean }): ExecutionEnvironmentRuntime | undefined {
     // Independent execution owners can boot before the identity gateway. They
@@ -41,7 +53,7 @@ export class ExecutionEnvironmentRuntime {
       ? new ExecutionEnvironmentRuntime(directory, new EmployeeGitVaultStore(directory), true) : undefined;
   }
   onClose(dispose: () => void) { this.disposers.add(dispose); }
-  close() { void this.git?.close().catch(() => {}); for (const dispose of this.disposers) dispose(); this.disposers.clear(); if (this.ownsVault) this.vault.close(); }
+  close() { this.closed = true; void this.git?.close().catch(() => {}); for (const dispose of this.disposers) dispose(); this.disposers.clear(); if (this.ownsVault) this.vault.close(); }
   // Non-secret metadata shares its implementation with the vault-owner Worker.
   project(hostId: string, threadId: string): string | null { return this.metadata.project(hostId, threadId); }
   bind(hostId: string, threadId: string, projectId: string | null) { this.metadata.bind(hostId, threadId, projectId); }
@@ -113,10 +125,28 @@ export class ExecutionEnvironmentRuntime {
     // Cold catalog/resume work has no active admission. It may receive an empty
     // environment, never the bound account's values.
     if (scope.account !== null) scope = this.admittedScope(scope);
+    // A separate vault owner signs asynchronously; there is no synchronous fallback.
+    if (this.gitSeal && this.git && grantBearing(scope)) throw Error('personal_git_async_issuer_required');
+    return this.build(scope, () => this.git?.grant(scope, options));
+  }
+  /** Asynchronous snapshot. With a separate vault owner (`gitSeal`) the grant is
+   * issued after admission and before the caller launches anything; admission
+   * is checked again after the await. Without one it is `snapshot`. */
+  async prepare(scope: EnvironmentExecutionScope, options?: { creation?: boolean }): Promise<ExecutionEnvironmentSnapshot> {
+    if (!this.gitSeal || !this.git) return this.snapshot(scope, options);
+    if (this.closed) throw new EnvironmentError('unavailable', 403);
+    if (scope.account !== null) scope = this.admittedScope(scope);
+    const admitted = JSON.stringify(scope);
+    const grant = await this.git.issue(scope, options);
+    if (this.closed || (scope.account !== null && JSON.stringify(this.admittedScope(scope)) !== admitted))
+      throw new EnvironmentError('unavailable', 403);
+    return this.build(scope, () => grant);
+  }
+  private build(scope: EnvironmentExecutionScope, grant: () => PersonalGitGrant | undefined): ExecutionEnvironmentSnapshot {
     const variables = scope.account ? this.environment.launchEnvironment(scope.account, {
       projectId: scope.projectId === null ? null : environmentProjectId(scope.hostId, scope.projectId),
     }, {}) : {};
-    const snapshot = new ExecutionEnvironmentSnapshot(scope, variables as Record<string, string>, this.git?.grant(scope, options), !!this.git && !!scope.account && (!scope.inputId || !scope.executionId));
+    const snapshot = new ExecutionEnvironmentSnapshot(scope, variables as Record<string, string>, grant(), !!this.git && !!scope.account && (!scope.inputId || !scope.executionId));
     for (const reference of this.snapshots) if (!reference.deref()) this.snapshots.delete(reference);
     this.snapshots.add(new WeakRef(snapshot));
     return snapshot;
