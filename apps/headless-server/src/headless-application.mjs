@@ -14,8 +14,7 @@ import { ServerInformationStore, serverInformationHttp } from './server-informat
 import { accountModelDefaultsHttp, humanActorAccess } from './account-model-defaults-http.ts';
 import { ActorSshKeys, composeSshAccess, installationSshKeyAuthority } from './actor-ssh-keys.ts';
 import { actorSshKeysHttp } from './actor-ssh-keys-http.ts';
-import { configuredModelGatewayPath, modelGatewayHttp, CodexCoreControlClient } from "@opencraft/account-pool-host";
-import { gatewayContributions } from "@opencraft/local-agent-host/model-config";
+import { configuredModelGatewayPath, CodexCoreControlClient } from "@opencraft/account-pool-host";
 import { createAssistantModelSource } from '@opencraft/local-agent-host/model-config/assistant';
 import { createWorkspaceBotProvider } from './workspaces/bot-client.js';
 import { createPersonalAssistantHost } from '@opencraft/personal-assistant/host';
@@ -35,9 +34,8 @@ import { resolveCodexPermissions } from '@opencraft/opencraft-daemon/codex-bridg
 import { codexBridgeConversationTools, codexBridgeCreationTools } from '@opencraft/opencraft-daemon/codex-bridge-conversation-tools';
 import { openServerCoreOwner } from "@opencraft/storage-node/server-owner";
 import { ownerEntry } from '@opencraft/worker-owner';
-import { ModelPolicyStore } from '@opencraft/model-usage-policy';
-import { modelPolicyHttp } from '@opencraft/model-usage-policy/http';
 import { ModelPolicyTransport } from '@opencraft/model-usage-policy/transport';
+import { assembleAccount } from './assembly/account.mjs';
 import { startAvailabilityNotification } from './availability-notification.mjs';
 import { ExecutionEnvironmentTransport } from './execution-environment-transport.ts';
 import { EnvironmentMetadataTransport } from './environment-metadata-transport.ts';
@@ -114,8 +112,6 @@ import { LocalDesktopService } from "@opencraft/local-agent-host/desktop";
 import { createNativeObserver, localDesktopMachineIdentity } from "@opencraft/local-agent-host/desktop-native";
 import { createNativeDesktopControl } from "@opencraft/local-agent-host/desktop/native-control";
 import { ModelConfigurationRepository, ModelCredentialRepository } from "@opencraft/local-agent-host/model-config/repository";
-import { SpeechModelConfiguration } from "@opencraft/local-agent-host/model-config/speech";
-import { SpeechTranscriptionService } from "./speech-transcription-service.mjs";
 import { MembershipStore, InstanceAccess } from '@opencraft/access-control';
 import { ActorStore } from '@opencraft/access-control/actors';
 import { ThreadAccessStore, ThreadAccessSession } from '@opencraft/access-control/thread-access';
@@ -422,7 +418,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let ingress;
   let instanceAccess;
   let loginAdmission;
-  let modelPolicy;
+  let account;
   let membership;
   let assetsService;
   let assetsStorage;
@@ -524,7 +520,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       // Each writer finishes before the root kernel lock is released. A failed
       // disposer is reported, but must not skip the remaining flushes.
       for (const dispose of [() => executionDatabase?.close(),
-        () => modelPolicy?.close(), () => mcpApps?.close(), () => sshManagement?.close(), () => identity?.executionEnvironment?.close(), () => identity?.close?.(), () => loginAdmission?.close(),
+        () => account?.close(), () => mcpApps?.close(), () => sshManagement?.close(), () => identity?.executionEnvironment?.close(), () => identity?.close?.(), () => loginAdmission?.close(),
 
         () => ownedWorkspaceRouting?.close(), () => installedBotProvider?.close(), () => botAdmission?.close(), () => humanGitExecution?.close(), () => assetsService?.close(), () => assetsStorage?.close(), () => composition.close?.(), () => accountApplication?.close(), () => accountManagement?.close(), () => humanAuth?.close(), () => humanAccounts?.close(),
         () => identityWrites?.close(), () => capabilityBindings?.close(), () => actorStore?.close(), () => membership?.close()]) {
@@ -548,8 +544,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     if (options.accessControl || humanConfiguration?.setupTokenFile || options.accessMemberProviders?.length || relayConfiguration || hubController.node?.store.state.origin)
       membership = new MembershipStore(serverStorage);
     const machineIdentity = await readDaemonMachineIdentity(dataDirectory, options.machineName);
-    const modelPolicyPath = join(dataDirectory, 'model-usage-policy.sqlite');
-    modelPolicy = new ModelPolicyStore(modelPolicyPath);
+    account = assembleAccount({ dataDirectory, codexCoreEndpoint: options.codexCoreEndpoint, codexCoreAuthToken: options.codexCoreAuthToken });
+    const { modelPolicyPath } = account;
     // Identity adapters can bind their own credentials to this stable Human authority.
     actorStore = new ActorStore(serverStorage);
     // ENV delivery is a deployment setting independent of the vault owner:
@@ -1535,33 +1531,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       ],
       desktopService: desktop ?? null,
       desktopAccess,
-      modelPolicyService: (() => {
-        const gatewayPath = configuredModelGatewayPath();
-        const contributions=gatewayPath?gatewayContributions(join(dataDirectory,"models"),gatewayPath):null;
-        const subscriptionCore=options.codexCoreEndpoint&&options.codexCoreAuthToken?new CodexCoreControlClient(options.codexCoreEndpoint,options.codexCoreAuthToken):null;
-        const gateway = gatewayPath ? modelGatewayHttp({path:gatewayPath,
-          ...contributions,
-          subscription:subscriptionCore?async(actor,input,assertCurrent)=>{
-            assertCurrent();
-            const result=await subscriptionCore.accountRequest('opencraft/codex/accounts/personal/'+input.operation,{actor,sessionId:input.sessionId});
-            assertCurrent();
-            if(result.status==='complete')return {status:'complete',...await contributions.connectSubscription(actor,result.connection,assertCurrent)};
-            return result;
-          }:undefined,
-          authority: request => {
-            const context = actorAccess.authenticate(request);
-            if (!context || actorStore.get(context.actorId)?.kind !== 'human') return null;
-            const principal = instanceAccess?.authenticate(request);
-            return {actor:context.actorId,administrator:!!principal && instanceAccess.role(principal)==='admin',
-              origin:actorAccess.options.trustedOrigin?.(request) ?? null};
-          }}) : null;
-        const policy = modelPolicyHttp(modelPolicy, request => {
-        const principal=instanceAccess?.authenticate(request);
-        if(!principal || !instanceAccess.role(principal)) return null;
-        return {actor:JSON.stringify([principal.provider,principal.subject]),administrator:instanceAccess.role(principal)==='admin',origin:instanceAccess.trustedOrigin(request)};
-        });
-        return async (request,response) => gateway && await gateway(request,response) || await policy(request,response);
-      })(),
+      modelPolicyService: account.createHttpService({ actorAccess, actorStore, instanceAccess }),
       assetsService,
       identityService: identity?.service ?? null,
       ...(runtimePlugins ? { runtimePluginService: runtimePlugins } : {}),
@@ -1577,8 +1547,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       accountService: accountApplication ?? null,
       hubService: hubController,
       remoteBrowserService: remoteBrowser,
-      speechService: new SpeechTranscriptionService({ configuration: new SpeechModelConfiguration(
-        new ModelConfigurationRepository(fileStateDocumentStore(join(dataDirectory, "models"))), new ModelCredentialRepository(fileSecretStore(join(dataDirectory, "models")))) }),
+      speechService: account.createSpeechService(),
     });
     conversationResources.retry();
     const reconciledResourceHosts = new Map();
