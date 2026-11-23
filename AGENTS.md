@@ -78,6 +78,7 @@ GitHub `opencraft-app/opencraft` 是目标核心上游，产品身份来源、�
 - **SQLite**：表结构只由 owner 的迁移追加 N+1，不改写已发布迁移；所有自有库经 `openManagedDatabase` 打开；改表须有升级保数据与 checksum 拒绝测试。各组件有哪些库、当前版本与跨组件升级规则见[数据库升级总览](docs/architecture/server/sqlite-lifecycle.md#0-按组件的数据库升级总览)；细则见[代码与 Contract 规则](docs/develop/code-contracts.md#边界数据协议与存储)。
 - **国际化**：新增或调整的可见/无障碍文案消费 IntlRuntime/IntlPort 与稳定 ID，不为新增硬编码扩增 baseline。见[国际化约束](docs/develop/internationalization.md#贡献约束)。
 - **图标**：界面图标禁止使用 Lucide（含适配包与搬用 SVG 路径），统一使用 `@opencraft/design-system-web/action-icons`。见 [UI 实现规则](design/ui/implementation-rules.md#界面图标禁止-lucide)。
+- **触控判断**：触控呈现与当前输入模态只经 `@opencraft/design-system-web/input-presentation` 读取，不另用 pointer/hover 媒体查询、触点数、宽度或宿主名推断；`npm run check:touch` 强制。见 [UI 实现规则](design/ui/implementation-rules.md#触控呈现与输入模态)。
 - **UI**：新增或修改界面前先读[设计入口](design.md)与 [UI 专题索引](design/ui/README.md)，再按 [UI 实现规则](design/ui/implementation-rules.md)实现；共享控件消费 `@opencraft/design-system-web/button` 与 `navigation`，运行 `npm run check:controls`、`npm run test:controls`。
 - **手机端**：apps/mobile 只是承载随包 Web Workbench 的 WebView 容器，默认内置模式的代码须预制在安装包中。见 [Expo 局部入口](apps/mobile/AGENTS.md)。
 

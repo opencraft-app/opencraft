@@ -648,5 +648,15 @@ export const STORE_MIGRATIONS = {
       }
     ],
     "migrations": []
+  },
+  "login-admission": {
+    "baseline": [
+      {
+        "version": 1,
+        "name": "login-admission-policy",
+        "checksum": "1f38ba55afa31bdb8828af5deea61c14fd38ddf6484c7384d7321c3ea4f6e862"
+      }
+    ],
+    "migrations": []
   }
 } as const;

@@ -60,7 +60,13 @@ to an ordinary value requires explicitly replacing it. Ordinary values are also
 encrypted, but remain editable by their owner. No administrator export is exposed.
 
 `AccountEnvironmentHttp` receives an already authenticated account and a live
-admission check. It verifies the scope header, same-origin JSON and the project
+admission check. Core serves it at `/__opencraft_assets/environment` through
+`openIdentityAssets` for any verified principal: the account is the Human proof's
+`actor:<actorId>` scope, and the vault Worker's `environmentList`,
+`environmentReplace` and `environmentProjects` recheck that proof against committed
+Actor/member records before reading or writing, so Main never holds a value or
+chooses a partition
+([Assets catalog](../extensions/assets-catalog.md#personal-env)). It verifies the scope header, same-origin JSON and the project
 catalog, rechecks identity after asynchronous work, bounds input and returns
 stable error codes. It never returns raw exception messages or environment
 snapshots. Hosts must not add request-body logging to this route. The editor

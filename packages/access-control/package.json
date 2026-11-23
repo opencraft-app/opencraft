@@ -5,6 +5,8 @@
   "type": "module",
   "exports": {
     "./membership-revocation": "./src/membership-revocation.ts",
+    "./actor-admission": "./src/actor-admission.ts",
+    "./actor-admission-reader": "./src/actor-admission-reader.ts",
     ".": "./src/index.ts",
     "./actors": "./src/actors.ts",
     "./actor-access": "./src/actor-access.ts",

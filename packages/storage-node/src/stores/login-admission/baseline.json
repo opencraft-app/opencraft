@@ -1,0 +1,33 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "login-admission-policy",
+      "checksum": "1f38ba55afa31bdb8828af5deea61c14fd38ddf6484c7384d7321c3ea4f6e862"
+    }
+  ],
+  "tableOptions": {
+    "login_admission_audit": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "login_admission_identities": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "login_admission_imports": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "login_admission_policies": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "login_admission_versions": {
+      "strict": true,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "0532461e582713f34aedcb917e8c4ee5a448b97e11971a651593ef14745aa107",
+  "baselineSnapshotChecksum": "0ce2be02aa2f2b280040977a01066162298e65e528947b2ceee93f405af7b3cd"
+}

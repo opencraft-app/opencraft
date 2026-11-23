@@ -121,7 +121,7 @@
 | --- | --- |
 | [`platform/`](platform/) | 平台拓扑、客户端运行时、连接、存储偏好与呈现输入 |
 | [`execution/`](execution/) | 执行所有权、沙盒、AppServer/DSH/ACP、Codex 核心、能力与模型网关 |
-| [`identity/`](identity/) | 登录与自然人身份、主体协作、多 Human、Git 身份与托管 Bot |
+| [`identity/`](identity/) | 登录与自然人身份、[登录准入策略](identity/login-admission.md)、主体协作、多 Human、Git 身份与托管 Bot |
 | [`chat-ui/`](chat-ui/) | ChatUI 架构、会话呈现、滚动与视口、消息与附件 |
 | [`workbench/`](workbench/) | Workbench 设计语言、页面框架、导航、通知与文件预览 |
 | [`extensions/`](extensions/) | 插件内核与持久化、Connector、MCP App、云桌面、IM、Tasks 与 [会话参与者](extensions/thread-participants.md) |

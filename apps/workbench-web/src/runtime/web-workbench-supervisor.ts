@@ -119,6 +119,7 @@ import { BrowserModuleUrlExtensionLoader } from "./module-url-extension-loader";
 import { loadOptionalFeatureModule } from "./optional-feature-startup";
 import { ServerManagedProfileStore } from "./server-managed-profile-store";
 import { TaskConversationFlow, taskConversationContext } from "./task-conversation-flow";
+import { resolveWorkbenchResourceClass } from "./device-resource-class";
 import { useVoiceInputPreference } from "./use-voice-input-preference";
 import { parseWebDeploymentConfig, resolveLegacyWebsiteLocation, resolveWebDeploymentConfig, restoreLegacyWebsiteSelection } from "./web-deployment-config";
 import { webSshDiscoveryLifecycle } from "./web-ssh-discovery";
@@ -605,7 +606,7 @@ export async function createWebWorkbenchApplicationSupervisor(
       ...(options.navigationMode === "memory" ? { initialEntries: ["/"] } : {}),
     };
   const resourcePolicy = WORKBENCH_RESOURCE_POLICIES[
-    typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches ? "mobile" : "desktop"
+    resolveWorkbenchResourceClass(typeof window === "undefined" ? undefined : window)
   ];
   let conversationPresentationActive = true;
   const setConversationPresentationActive = (active: boolean) => { conversationPresentationActive = active; };

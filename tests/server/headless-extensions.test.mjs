@@ -21,6 +21,7 @@ import {
   claimAssistantHostExtension,
   installAssistantHostExtension,
 } from "@opencraft/personal-assistant/runtime/host-extension";
+import { ownedCleanup } from "../support/owned-cleanup.mjs";
 
 const communicationModule = new URL("../fixtures/headless-communication-extension.mjs", import.meta.url);
 const assistantModule = new URL("../fixtures/headless-assistant-host-extension.mjs", import.meta.url);
@@ -29,7 +30,8 @@ async function fixture(t) {
   const runtime = fileURLToPath(new URL("../../.runtime/", import.meta.url));
   await mkdir(runtime, { recursive: true });
   const root = await mkdtemp(join(runtime, "headless-extensions-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
+  const cleanup = ownedCleanup(t);
+  cleanup.last(() => rm(root, { recursive: true, force: true }));
   const webRoot = join(root, "web");
   await mkdir(webRoot);
   await writeFile(join(webRoot, "index.html"), "<!doctype html><title>Workbench</title>");
@@ -54,7 +56,7 @@ async function fixture(t) {
     await writeFile(path, source);
     return pathToFileURL(path);
   };
-  return { root, options, module };
+  return { root, options, module, own: cleanup.own };
 }
 
 const missing = (path) =>
@@ -105,7 +107,7 @@ test("composition shape is validated without importing anything", () => {
 test("no extensions field keeps startup unchanged and installs nothing", async (t) => {
   const f = await fixture(t);
   const app = await startHeadlessServer(f.options);
-  t.after(() => app.close());
+  f.own(() => app.close());
   assert.equal((await fetch(app.url)).status, 200);
   assert.equal(communicationExtension(), undefined);
   assert.equal(communicationExtensionModule(), undefined);
@@ -131,7 +133,7 @@ test("composed extensions are installed before the storage Worker starts and rel
     },
   });
   let closed = false;
-  t.after(() => !closed && app.close());
+  f.own(() => !closed && app.close());
   assert.equal(communicationExtension(), expected);
   assert.equal(communicationExtensionModule(), communicationModule.href);
   assert.deepEqual(groupCreateOptions(), expected.groupCreateOptions);
