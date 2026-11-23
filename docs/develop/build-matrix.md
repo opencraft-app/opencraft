@@ -401,8 +401,17 @@ from `main` with a new tag naming the product version: `vX.Y.Z-beta.N` publishes
 a GitHub pre-release, `vX.Y.Z` a stable release that requires its `## vX.Y.Z`
 section in `CHANGELOG.md`, passes the performance gate, opens its notes with that
 section and becomes the latest release. Each release calls the macOS, Android,
-TestFlight and unsigned iOS jobs and stages their output alongside the Linux
-AppImage and Windows installer/ZIP from that commit into `release-manifest.json`.
+TestFlight, unsigned iOS and [server](../../.github/workflows/server-release.yml)
+jobs and stages their output alongside the Linux AppImage and Windows
+installer/ZIP from that commit into `release-manifest.json`. The server job
+builds and smoke-tests the headless Linux amd64 archive (attached as
+`OpenCraft-server-<tag>-linux-amd64.tar.gz`) and the container image. Before
+the release is published, the tested image is pushed to
+`ghcr.io/opencraft-app/opencraft-server:<version>` (a stable release also moves
+`latest`) and pulled back to confirm it is the same image. A published version tag
+never moves, and the release notes name the pinned digest. That package only
+receives release images, so it can be public; per-commit CI images stay in the
+private `ghcr.io/opencraft-app/opencraft` package.
 The default `publish=false` stages a candidate artifact. Use `publish=true` to
 publish that run's verified candidate. The publisher checks the manifest, uploads
 to a draft, verifies the downloaded bytes, then publishes the draft and checks the

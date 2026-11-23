@@ -17,7 +17,7 @@ const selected = {
   HOVER_RESULT: 'success',
   PLAN_RESULT: 'success', BUILD_SELECTED: 'true', BUILD_RESULT: 'success',
   NATIVE_SELECTED: 'false', NATIVE_RESULT: 'skipped', PACKAGE_SELECTED: 'false', PACKAGE_RESULT: 'skipped',
-  HEADLESS_SELECTED: 'true', HEADLESS_RESULT: 'success',
+  HEADLESS_SELECTED: 'true', HEADLESS_RESULT: 'success', ARCHIVE_SELECTED: 'true', ARCHIVE_RESULT: 'success',
   CORE_SELECTED: 'true', CORE_RESULT: 'success', GATE_RESULT: 'success',
 };
 function check(env) {
@@ -26,7 +26,7 @@ function check(env) {
 
 test('the real aggregate script accepts Web/server and documentation-only plans', () => {
   assert.equal(check({}), 0);
-  assert.equal(check({ BUILD_SELECTED: 'false', BUILD_RESULT: 'skipped', HEADLESS_SELECTED: 'false', HEADLESS_RESULT: 'skipped', CORE_SELECTED: 'false', CORE_RESULT: 'skipped', GATE_RESULT: 'skipped' }), 0);
+  assert.equal(check({ BUILD_SELECTED: 'false', BUILD_RESULT: 'skipped', HEADLESS_SELECTED: 'false', HEADLESS_RESULT: 'skipped', ARCHIVE_SELECTED: 'false', ARCHIVE_RESULT: 'skipped', CORE_SELECTED: 'false', CORE_RESULT: 'skipped', GATE_RESULT: 'skipped' }), 0);
   assert.equal(check({ EXTENSIONS_SELECTED: 'true', EXTENSIONS_RESULT: 'success' }), 0);
   assert.equal(check({ NATIVE_SELECTED: 'true', NATIVE_RESULT: 'success' }), 0);
   assert.equal(check({ PACKAGE_SELECTED: 'true', PACKAGE_RESULT: 'success' }), 0);
@@ -35,29 +35,32 @@ test('a selected build cannot pass by failing, cancelling, or being skipped', ()
   for (const result of ['failure', 'cancelled', 'skipped', '']) {
     assert.notEqual(check({ PLAN_RESULT: result }), 0, `plan: ${result}`);
     assert.notEqual(check({ HOVER_RESULT: result }), 0, `hover: ${result}`);
-    for (const name of ['BUILD', 'NATIVE', 'PACKAGE', 'HEADLESS', 'EXTENSIONS', 'CORE']) {
+    for (const name of ['BUILD', 'NATIVE', 'PACKAGE', 'HEADLESS', 'ARCHIVE', 'EXTENSIONS', 'CORE']) {
       assert.notEqual(check({ [`${name}_SELECTED`]: 'true', [`${name}_RESULT`]: result }), 0, `${name}: ${result}`);
     }
   }
   assert.notEqual(check({ BUILD_SELECTED: '', BUILD_RESULT: 'skipped' }), 0, 'missing selector output');
 });
 test('the aggregate rejects an unexpected job execution instead of accepting a mismatched plan', () => {
-  for (const name of ['BUILD', 'NATIVE', 'PACKAGE', 'HEADLESS', 'EXTENSIONS', 'CORE']) {
+  for (const name of ['BUILD', 'NATIVE', 'PACKAGE', 'HEADLESS', 'ARCHIVE', 'EXTENSIONS', 'CORE']) {
     assert.notEqual(check({ [`${name}_SELECTED`]: 'false', [`${name}_RESULT`]: 'success' }), 0, name);
   }
 });
-test('server regressions run independently of archive build, smoke and upload', () => {
+test('server regressions and the server archive run as parallel jobs', () => {
   const server = job('linux-headless');
   assert.match(server, /if: needs\.plan\.outputs\.headless-tests == 'true'/);
   const steps = server.split(/      - /);
   const tests = steps.find(step => step.startsWith('run: npm run test:headless-server\n'));
   assert.ok(tests);
   assert.doesNotMatch(tests, /\bif:/);
-  for (const start of ['run: npm run matrix:build -- headless-linux-amd64-tar', 'run: npm run smoke:headless:linux', 'uses: actions/upload-artifact@']) {
-    const step = steps.find(step => step.startsWith(start));
-    assert.ok(step, start);
-    assert.match(step, /if: needs\.plan\.outputs\.headless-package == 'true'/, start);
+  assert.doesNotMatch(server, /matrix:build|smoke:headless:linux|upload-artifact/, 'the archive is not on the regressions path');
+  const archive = job('headless-package');
+  assert.match(archive, /^    needs: plan\n    if: needs\.plan\.outputs\.headless-package == 'true'\n/);
+  for (const step of ['run: npm run matrix:build -- headless-linux-amd64-tar', 'run: npm run smoke:headless:linux', 'name: headless-linux-amd64-tar']) {
+    assert.ok(archive.includes(step), step);
   }
+  assert.ok(archive.indexOf('matrix:build') < archive.indexOf('smoke:headless:linux'), 'smoke the archive it built');
+  assert.match(job('build-checks'), /needs: \[[^\]]*\bheadless-package\b[^\]]*\]/);
 });
 
 test('hover checks run independently of the build plan and scan failures', () => {

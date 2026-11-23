@@ -560,27 +560,41 @@ Acceptance must prove more than HTTP readiness: recreate only Gateway and check
 that Brain PIDs and the Hands worker PID are unchanged, that an existing browser
 tab retains its live document, and that no input is replayed after reattachment.
 
+## Release images
+
+Every App release publishes the server image it built and smoke-tested from the
+release commit to `ghcr.io/opencraft-app/opencraft-server`, Linux amd64:
+
+- `ghcr.io/opencraft-app/opencraft-server:<version>` (for example `0.2.0` or
+  `0.2.0-beta.1`). A published version is never moved to a different image.
+- `ghcr.io/opencraft-app/opencraft-server:latest`: the most recent stable release.
+
+The release notes name the pinned `ghcr.io/opencraft-app/opencraft-server@sha256:…`
+reference; deploy that digest. This package only receives release images.
+
 ## GHCR distribution (edge builds)
 
-The container workflow builds and smoke-tests Linux amd64 and arm64 on native
-runners. PRs only validate; the canonical repository's main branch can publish.
+The container workflow builds and smoke-tests Linux amd64 (arm64 is added once an
+owned linux-arm64 browser artifact exists). PRs only validate; the canonical
+repository's main branch can publish to the private
+`ghcr.io/opencraft-app/opencraft` package.
 Distribution transfers the tested image as a short-lived Actions artifact; it
 never rebuilds the image after testing. Each architecture is uploaded under a
 run-scoped candidate tag, pulled with an empty Docker credential configuration,
-and smoke-tested again by registry digest. Only after both succeed does a
-serialized job assemble a two-platform index and publish:
+and smoke-tested again by registry digest. Only after every built architecture
+succeeds does a serialized job assemble the multi-platform index and publish:
 
 - `ghcr.io/opencraft-app/opencraft:sha-<full-source-commit>`: first successful
   image for that source; a later build with different bytes is rejected.
 - `ghcr.io/opencraft-app/opencraft:edge`: a passing main build, updated only if
   the source is still the current main tip. This is not a stable release.
-- No `latest` or semantic-version tags are published by this workflow.
+- No `latest` or version tags are published here; see Release images.
 
 The Actions summary records the pinned `ghcr.io/opencraft-app/opencraft@sha256:…`
 reference. For deployment, use that full digest, not `edge`. Obtain this Compose
 file from the source commit recorded in the summary. Follow the directory and
 UID/GID setup in First installation, replace `OPENCRAFT_IMAGE` in `.env` with the
-pinned reference, select `linux/amd64` or `linux/arm64`, then run:
+pinned reference, select `linux/amd64`, then run:
 
 ```sh
 node ../scripts/container-deployment/compose-release.mjs doctor

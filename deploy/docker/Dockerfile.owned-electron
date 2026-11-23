@@ -53,7 +53,7 @@ COPY --from=build-control /out/opencraft-server /opt/opencraft
 RUN install -d -o "${OPENCRAFT_UID}" -g "${OPENCRAFT_GID}" -m 0700 /run/opencraft-agent
 LABEL org.opencontainers.image.revision="${OPENCRAFT_SOURCE_REVISION}" \
       org.opencontainers.image.version="${OPENCRAFT_BUILD_ID}" \
-      org.opencontainers.image.licenses="Apache-2.0"
+      org.opencontainers.image.licenses="MIT-0"
 ENV PATH=/opt/opencraft/bin:$PATH
 ARG OPENCRAFT_GIT_HOSTS=github.com
 ENV OPENCRAFT_GIT_HOSTS=${OPENCRAFT_GIT_HOSTS}
@@ -79,7 +79,7 @@ COPY --from=build /out/opencraft-server /opt/opencraft
 LABEL org.opencontainers.image.title="OpenCraft" \
       org.opencontainers.image.description="OpenCraft self-hosted Gateway, Brain and Hands runtime" \
       org.opencontainers.image.source="https://github.com/opencraft-app/opencraft" \
-      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.licenses="MIT-0" \
       org.opencontainers.image.version="${OPENCRAFT_BUILD_ID}" \
       org.opencontainers.image.revision="${OPENCRAFT_SOURCE_REVISION}"
 RUN chown root:root /opt/opencraft/runtime/browser/electron/chrome-sandbox \

@@ -211,20 +211,33 @@ jobs:
       - name: Codex account Core operator lease
         run: npx tsx --test tests/execution/fence-operator-lease.test.ts
       - run: npm run test:headless-server
+      - name: Protected full-target pin copy and installer regressions
+        run: sudo "$(command -v node)" --test tests/execution/full-parent.test.mjs tests/execution/full-install-parent.test.mjs
+
+  # The archive build and smoke do not depend on the regressions above; running
+  # them as their own job keeps the server path off the critical path.
+  headless-package:
+    needs: plan
+    if: needs.plan.outputs.headless-package == 'true'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --no-audit --no-fund
       - uses: ./.github/actions/owned-electron
-        if: needs.plan.outputs.headless-package == 'true'
         with:
           run-id: ${{ vars.OPENCRAFT_ELECTRON_ARTIFACT_RUN_ID }}
           target: linux-x64
           kind: browser
-      - name: Protected full-target pin copy and installer regressions
-        run: sudo "$(command -v node)" --test tests/execution/full-parent.test.mjs tests/execution/full-install-parent.test.mjs
       - run: npm run matrix:build -- headless-linux-amd64-tar
-        if: needs.plan.outputs.headless-package == 'true'
       - run: npm run smoke:headless:linux
-        if: needs.plan.outputs.headless-package == 'true'
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: needs.plan.outputs.headless-package == 'true'
         with:
           name: headless-linux-amd64-tar
           path: release/OpenCraft-server-*-linux-amd64.tar.gz
@@ -474,7 +487,7 @@ jobs:
 
   build-checks:
     if: always()
-    needs: [plan, portable, extensions, macos-native, macos-electron, linux-headless, core-tests, gate-tests, hover-policy]
+    needs: [plan, portable, extensions, macos-native, macos-electron, linux-headless, headless-package, core-tests, gate-tests, hover-policy]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -492,6 +505,8 @@ jobs:
           NATIVE_SELECTED: ${{ needs.plan.outputs.native == 'true' && !(github.event_name == 'workflow_dispatch' && inputs.package_macos) }}
           PACKAGE_SELECTED: ${{ github.event_name == 'workflow_dispatch' && inputs.package_macos }}
           HEADLESS_SELECTED: ${{ needs.plan.outputs.headless-tests }}
+          ARCHIVE_RESULT: ${{ needs.headless-package.result }}
+          ARCHIVE_SELECTED: ${{ needs.plan.outputs.headless-package }}
           CORE_RESULT: ${{ needs.core-tests.result }}
           CORE_SELECTED: ${{ needs.plan.outputs.has-builds == 'true' || needs.plan.outputs.headless-tests == 'true' }}
           GATE_RESULT: ${{ needs.gate-tests.result }}
@@ -510,5 +525,6 @@ jobs:
           require_selected "$NATIVE_SELECTED" "$NATIVE_RESULT"
           require_selected "$PACKAGE_SELECTED" "$PACKAGE_RESULT"
           require_selected "$HEADLESS_SELECTED" "$HEADLESS_RESULT"
+          require_selected "$ARCHIVE_SELECTED" "$ARCHIVE_RESULT"
           require_selected "$CORE_SELECTED" "$CORE_RESULT"
           require_selected "$CORE_SELECTED" "$GATE_RESULT"
