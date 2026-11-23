@@ -10,14 +10,14 @@ Server 存储入口复用 Headless 的 `server.lock` 内核进程锁，离线管
 
 OpenCraft 自有 SQLite 共两类，全部经 `openManagedDatabase` 打开并在打开时向前迁移：
 
-- **Server 核心库** `opencraft-server.sqlite`：迁移链在 `packages/storage-node/src/server/migrations/`，canonical 链 v1–v25；另有一条已发布分叉 `generic-legacy-v13`，在 v13 之后追加收敛迁移，最终结构与 canonical 相同。
+- **Server 核心库** `opencraft-server.sqlite`：迁移链在 `packages/storage-node/src/server/migrations/`，canonical 链 v1–v26；另有一条已发布分叉 `generic-legacy-v13`，在 v13 之后追加收敛迁移，最终结构与 canonical 相同。产品可在同一库内登记自己的扩展迁移族（独立账本，不占核心版本号），见[Server 产品扩展迁移族](#server-产品扩展迁移族)。
 - **36 个独立 owner**：登记在 `packages/storage-node/stores.json`，每个 owner 的迁移在 `packages/storage-node/src/stores/<id>/`，账本互不相关。
 
 下表“版本”是当前源码中该库账本的最高 version。`ui-preferences-store`、`connector-configuration-store`、`client-resources-sqlite` 已退休，只供桌面导入器读取旧文件，不在表中。
 
 | 组件（进程） | 库文件 | owner id | 版本 | 何时打开并迁移 |
 |---|---|---|---|---|
-| **Headless 服务器**（`apps/headless-server`，数据目录 `<H>` = `OPENCRAFT_SERVER_DATA_DIR`） | `<H>/opencraft-server.sqlite` | Server 核心 | v25 | 启动时，业务服务之前；同目录离线管理工具 `access-admin`、`human-account` 须先停服 |
+| **Headless 服务器**（`apps/headless-server`，数据目录 `<H>` = `OPENCRAFT_SERVER_DATA_DIR`） | `<H>/opencraft-server.sqlite` | Server 核心 | v26 | 启动时，业务服务之前；同目录离线管理工具 `access-admin`、`human-account`、`ssh-keys` 须先停服 |
 | | `web-push.sqlite` | web-push-node | v3 | 启动时 |
 | | `im-posts.sqlite`、`im-switchboard.sqlite` | post-receipts、im | v1、v3 | 启动后段（IM 插件） |
 | | `mcp-apps.sqlite` | mcp-apps | v1 | 启动时 |
@@ -34,7 +34,7 @@ OpenCraft 自有 SQLite 共两类，全部经 `openManagedDatabase` 打开并在
 | | `opencraft-managed-connectors.sqlite` | connector-host | v1 | 同上 |
 | | `tasks.sqlite` | tasks | v5 | 同上（配置了数据目录时） |
 | | `conversation-schedules.sqlite`、`interrupted-turn-recovery.sqlite` | host-schedules、host-recovery | v1、v1 | Host 启动时 |
-| | `collaboration/opencraft-server.sqlite` | Server 核心 | v25 | Host 启动时（协作空间） |
+| | `collaboration/opencraft-server.sqlite` | Server 核心 | v26 | Host 启动时（协作空间） |
 | | `cache/transcript-index.sqlite`、`artifacts/catalog.sqlite` | transcript-read-cache、artifact-catalog | v1、v1 | 首次读历史 / 首次用附件时 |
 | **Codex 适配器组**（桌面在 daemon 内；Headless 在 `<H>/codex`） | `opencraft-host-state.sqlite`（旧目录沿用 `codex-host-queue.sqlite`） | opencraft-host-state-database | v17 | 首次连接 Codex Host 时 |
 | | `opencraft-message-attachments.sqlite`（旧名 `codex-message-attachments.sqlite`） | opencraft-message-attachments | v2 | 同上 |
@@ -44,7 +44,7 @@ OpenCraft 自有 SQLite 共两类，全部经 `openManagedDatabase` 打开并在
 | | `account-pool.sqlite` | account-pool-host | v4 | 同上，仅内嵌模式（未配置 codex-core 地址，桌面默认） |
 | | `tasks.sqlite`、`cache/transcript-index.sqlite` | tasks、transcript-read-cache | v5、v1 | 首次请求 Tasks / 首次读历史时 |
 | **Electron Main**（`apps/desktop`，`userData` 目录，只存客户端角色数据） | `opencraft-desktop.sqlite`：界面偏好、连接器选择、扩展本地文档、客户端资源 | desktop-client | v1 | 启动时；首次启动时导入旧版的四个独立文件，见[客户端库合并](#electron-main-客户端库合并) |
-| **桌面 daemon**（服务端角色，随托盘常驻） | `userData/human-account/opencraft-server.sqlite` | Server 核心 | v25 | daemon 启动、监听 IPC 之前打开、迁移并持有 `server.lock`，同时提供本机账号服务；Electron Main 不打开该库，只把账号路由转发给 daemon，见[桌面服务端角色](#桌面服务端角色与账号服务) |
+| **桌面 daemon**（服务端角色，随托盘常驻） | `userData/human-account/opencraft-server.sqlite` | Server 核心 | v26 | daemon 启动、监听 IPC 之前打开、迁移并持有 `server.lock`，同时提供本机账号服务；Electron Main 不打开该库，只把账号路由转发给 daemon，见[桌面服务端角色](#桌面服务端角色与账号服务) |
 | **codex-core**（`apps/codex-core`，独立升级） | `account-pool.sqlite` | account-pool-host | v4 | 账号 Core 启动时 |
 | | `codex-generations.sqlite` | generation-registry | v2 | generation 路由服务启动时 |
 | **其他独立进程** | agent-bridge-host 配置的库路径 | agent-bridge-host | v4（含共享线程排队表） | 进程启动时 |
@@ -112,7 +112,7 @@ OpenCraft 自有 SQLite 共两类，全部经 `openManagedDatabase` 打开并在
 
 | 文件名 | Owner 进程与源码 | 数据目录 | 数据职责 |
 |---|---|---|---|
-| `opencraft-server.sqlite` | [Server storage owner](../../../packages/storage-node/src/server/index.ts)；Headless 与离线管理工具独占同一 fence | Headless installation data directory | Actors、human logins/local accounts、memberships、account onboarding、collaboration/orchestration、session capability bindings、conversation access、shared notes、personal model defaults (keyed by human Actor and Host; v23)、execution ENV creation reservations（v24）、conversation resource lifecycle（v25；旧 `conversation-resources.json` 一次性导入，见 [server-core-owner](server-core-owner.md)） |
+| `opencraft-server.sqlite` | [Server storage owner](../../../packages/storage-node/src/server/index.ts)；Headless 与离线管理工具独占同一 fence | Headless installation data directory | Actors、human logins/local accounts、memberships、account onboarding、collaboration/orchestration、session capability bindings、conversation access、shared notes、personal model defaults (keyed by human Actor and Host; v23)、execution ENV creation reservations（v24）、conversation resource lifecycle（v25；旧 `conversation-resources.json` 一次性导入，见 [server-core-owner](server-core-owner.md)）、personal SSH keys and their audit（v26；见 [personal-ssh-keys](../identity/personal-ssh-keys.md)） |
 | `im-posts.sqlite` | Headless IM composition：[ImPostReceipts](../../../plugins/im/src/post-receipts.ts) | IM data directory | Standalone native channel post claims/receipts; schema v1, hashes and official IDs only, interrupted claims become unknown without resend |
 | `thread-identity.sqlite` | Headless Hub：[ThreadIdentityDatabase](../../../apps/opencraft-daemon/src/thread-identity-database.ts) / AppServerIdentityOverlay | Headless `thread-identities/opencraft-server` | DSH trusted sender/creator, fork origins and derived 企业身份 presence/completion; no native messages or execution state |
 | `thread-read-receipts.sqlite` | [ThreadReadReceiptStore](../../../scripts/thread-read-receipt-store.ts)；当前没有运行时调用方，仅测试构造 | — | Verified-account exact read receipts; existing document-store migrations/CAS |
@@ -1082,3 +1082,37 @@ Server 的 `migration-lineages.json` 只声明源码中已审查的有限历史�
 - Drizzle 生成、schema 检查和物理结构验证必须使用同一份配置中的全部声明源，包括产品拥有的独立 schema。旧迁移的等价内联 FK/CHECK、列顺序和 identifier quoting 不是改写已发布 SQL 的理由；测试对明确列出的旧表示验证列/default/PK/FK/CHECK/index/STRICT，再保留其余对象和 trigger 的严格校验，并用反例验证没有放宽约束。
 
 相关验证：`tests/storage/server-history-convergence.test.ts`、`server-migration-compiler.test.mjs`、`server-schema-assertion.test.ts` 和 `server-storage.test.ts`。完整 `check:storage` 与干净依赖安装仍是交付门槛，单独 Server 编译检查不能替代所有 owner 的验收。
+
+
+### Server 产品扩展迁移族
+
+下游产品若需要在 Server 核心库里保存自己的表（与核心表同事务读写），不再维护一条把公开迁移逐个重编号进去的私有线性账本，而是登记**扩展迁移族**。入口是 `createServerMigrationComposition({ canonical, alternates, extensions })`，由产品启动与离线工具在打开存储前用 `installServerMigrationComposition` 安装，Worker 经现有 composition 交接继承；不从数据库或请求推导。
+
+```ts
+createServerMigrationComposition({
+  canonical: SERVER_MIGRATIONS,                 // 核心链，原样使用
+  alternates: [...SERVER_ALTERNATE_MIGRATIONS, productLineage],   // 可选：待采纳的旧私有线性账本
+  extensions: [{ id: "product-sync", objectPrefix: "product_sync_", migrations: PRODUCT_MIGRATIONS }],
+  productVersion,
+});
+```
+
+- **账本**：核心继续使用 `schema_migrations`，版本号与有无扩展无关；每个族在 `schema_extension_migrations(family, version, name, checksum, applied_at)` 中有自己从 1 开始的连续版本。族 id 不得为 `core`，objectPrefix 小写、以 `_` 结尾、互不前缀重叠，不得使用 `sqlite_`/`schema_`。
+- **顺序与事务**：先由 `openManagedDatabase` 迁移核心（备份、恢复、严格校验不变；核心校验只比较不属于任何族前缀且不是账本的对象），再按声明顺序逐族执行，每族一个事务，族结构校验通过后才提交账本行；任一族变化后再校验一次核心结构。核心已是最新而族有待执行步骤时，先用同一 `pre-v<核心版本>` 命名生成恢复点；核心本次已有升级快照时复用它。
+- **校验**：每族逐行核对 version/name/SHA-256；缺口或改动为 `history-mismatch`，高于声明为 `newer-schema`；账本中出现未声明的族、或只装核心的构建打开含产品对象的库，都拒绝打开。
+- **核心表所有权**：在 Server owner Worker 内（不在网络主线程）先用内存库验证：完整核心链不得声明落入任何族前缀的对象；随后在 SQLite authorizer 下执行各族 SQL，只允许读取任意表，以及创建、修改、删除、建索引、写入本族前缀的对象；触发器、视图、临时对象、ATTACH、事务语句和会写入的 PRAGMA 一律拒绝，执行后核心对象必须逐字不变。真实迁移同样在 authorizer 下执行。authorizer 无法区分 SQLite 内部维护 `sqlite_sequence` 与直接写它；`ALTER TABLE ... RENAME TO` 的新名称由之后的结构校验拦截。需要重建表（`PRAGMA foreign_keys=OFF`）的族迁移不受支持，改用新增表/列。
+- Durable Object 精简 owner（`migrateServerSqlDatabase`）不执行扩展族，遇到含扩展的 composition 直接拒绝。
+
+#### 采纳已有的私有线性账本
+
+已部署库若沿下游私有线性账本运行（核心步骤被重排、改名，产品步骤插在中间，个别步骤合并了多个核心步骤），可把该账本声明为一条带 `adopts` 的 alternate：`adopts[i]` 列出第 i 步代表的 `{ family, version }` 身份。编译期（`createServerMigrationComposition`）要求：长度与步骤一致；身份已声明且只出现一次；只代表一个身份的步骤 SQL 必须与目标逐字节相同；合并步骤只能在同一族内；整条账本恰好覆盖核心与每个族的连续前缀。
+
+打开时在安装写锁内：
+
+1. 只读选择历史：账本同时是 canonical 前缀时按核心处理，不采纳；否则匹配到可采纳 alternate 的精确前缀（version、name、checksum）。未知、篡改、混合或更新的账本照旧拒绝。
+2. 未到该账本末尾时，先沿原账本用 `openManagedDatabase` 补齐（照常备份与严格校验）。
+3. 采纳前验证：账本行与完整 lineage 完全相同；尚无扩展账本行与同 id 回执；被覆盖的核心前缀和每个族前缀的严格结构均与 canonical 顺序重放结果一致（重排或合并产生不同结构即拒绝）。随后生成 `pre-v<K>` 恢复点。
+4. 单一事务：再次核对账本未变；把原始账本行（含 applied_at）写入 `schema_migration_adoptions` 回执；清空并改写 `schema_migrations` 为 canonical v1..vK 身份，扩展身份写入族账本，均沿用对应原步骤的 applied_at；提交前再验证两类账本。
+5. 之后按普通路径追加核心 vK+1… 与族的后续版本。采纳后核心账本已是 canonical 前缀，再次打开不会重复采纳。
+
+采纳只改账本记录，不改 schema 对象、业务行或任何已发布 SQL。采纳后旧构建打开该库会因账本不符拒绝（fail closed），回退需恢复采纳前快照。合并步骤的数据语句无法由结构校验证明，须在声明 `adopts` 前审查。测试见 `tests/storage/server-extension-families.test.ts`。

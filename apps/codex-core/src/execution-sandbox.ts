@@ -29,7 +29,7 @@ export async function configureCodexExecutionSandbox(home: string, executable: s
 export type CodexWorkspaceNativeRequest = (method: string, params: Record<string, unknown>) => Promise<unknown>;
 
 export type CodexWorkspaceResolver = (
-  method: "thread/start" | "thread/resume" | "turn/start", params: Readonly<Record<string, unknown>>,
+  method: "thread/start" | "thread/resume" | "thread/fork" | "turn/start", params: Readonly<Record<string, unknown>>,
 ) => Promise<{ kind: "local" } | { kind: "bound"; binding: {
   /** Register on the final Native target that owns the Thread. */
   registerExecutionEnvironment?(request: CodexWorkspaceNativeRequest): Promise<void>;
@@ -42,7 +42,7 @@ export type CodexWorkspaceResolver = (
 export function codexSandboxRequestPolicy(readThread: (threadId: string) => Promise<unknown>, projectlessRoot?: string, resolveWorkspace?: CodexWorkspaceResolver, nativeRequest?: CodexWorkspaceNativeRequest, assertExecutable?: () => Promise<void>) {
   return async (method: unknown, params: Record<string, unknown>): Promise<Record<string, unknown>> => {
     if (["thread/start", "thread/fork", "turn/start", "turn/steer", "command/exec", "process/spawn"].includes(String(method)) || typeof method === "string" && method.startsWith("fs/")) await assertExecutable?.();
-    if (method !== "thread/start" && method !== "thread/resume" && method !== "turn/start") return params;
+    if (method !== "thread/start" && method !== "thread/resume" && method !== "thread/fork" && method !== "turn/start") return params;
     if (resolveWorkspace) {
       let selection: Awaited<ReturnType<CodexWorkspaceResolver>>;
       try { selection = await resolveWorkspace(method, params); }
@@ -50,7 +50,7 @@ export function codexSandboxRequestPolicy(readThread: (threadId: string) => Prom
       if (selection?.kind === "bound") {
         // Native history/path resume can override threadId. A bound workspace
         // may only resume its authorized persisted thread, never another rollout.
-        if (method === "thread/resume" && (params.history != null || (params.path != null && params.path !== "")))
+        if ((method === "thread/resume" || method === "thread/fork") && (params.history != null || (params.path != null && params.path !== "")))
           throw new ExecutionPreparationError("workspace-binding-conflict");
         let fields: Awaited<ReturnType<Extract<Awaited<ReturnType<CodexWorkspaceResolver>>, { kind: "bound" }>["binding"]["executionFields"]>>;
         try { fields = await selection.binding.executionFields(); }
@@ -83,7 +83,7 @@ export function codexSandboxRequestPolicy(readThread: (threadId: string) => Prom
       if (selection?.kind !== "local") throw new ExecutionPreparationError("workspace-binding-unavailable");
     }
     // Preserve legacy local resume behavior; only bound restores need routing.
-    if (method === "thread/resume") return params;
+    if (method === "thread/resume" || method === "thread/fork") return params;
     let cwd = params.cwd;
     if (method === "thread/start" && cwd == null && projectlessRoot !== undefined) {
       try {

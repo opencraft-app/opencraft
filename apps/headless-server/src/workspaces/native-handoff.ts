@@ -49,7 +49,7 @@ export class WorkspaceNativeHandoff {
       this.closed ||
       this.attempts.has(key) ||
       this.attempts.size >= 64 ||
-      request.method !== (preparation.kind === "start" ? "thread/start" : "thread/resume")
+      request.method !== (preparation.kind === "start" ? "thread/start" : preparation.kind === "fork" ? "thread/fork" : "thread/resume")
     )
       throw Error("Workspace Native request unavailable");
     const context = request.context(),
@@ -72,7 +72,7 @@ export class WorkspaceNativeHandoff {
         this.current(attempt);
         if (status.state === "failed") throw Error("Workspace preparation failed");
         if (status.state === "complete") {
-          if (preparation.kind !== "start") throw Error("Native resume receipt missing");
+          if (preparation.kind === "restore") throw Error("Native resume receipt missing");
           await this.options.placementChanged();
           await this.options.port.workspaceForget(token);
           this.attempts.delete(key);

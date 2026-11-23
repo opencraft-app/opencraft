@@ -1,3 +1,5 @@
+import { TOUCH_INTERACTION_KEY } from "@opencraft/design-system-web/input-presentation";
+
 /** Document-level pointer origin for transient hover and restored focus. */
 export function bindTouchInteractionMode(document: Document): () => void {
   const root = document.documentElement;
@@ -6,16 +8,16 @@ export function bindTouchInteractionMode(document: Document): () => void {
     // preceding Escape/typing heuristic, even after a new pointer interaction.
     root.dataset.pointerFocus = "true";
     if (event.pointerType === "touch" || event.pointerType === "pen") {
-      root.dataset.touchInteraction = "true";
+      root.dataset[TOUCH_INTERACTION_KEY] = "true";
     }
   };
   const onPointerMove = (event: PointerEvent) => {
-    if (event.pointerType === "mouse") delete root.dataset.touchInteraction;
+    if (event.pointerType === "mouse") delete root.dataset[TOUCH_INTERACTION_KEY];
   };
   const onKeyDown = (event: KeyboardEvent) => {
     // A hardware Tab transfers focus ownership back to keyboard navigation.
     // Ordinary text entry from an on-screen keyboard must not restore rings.
-    if (event.key === "Tab") delete root.dataset.touchInteraction;
+    if (event.key === "Tab") delete root.dataset[TOUCH_INTERACTION_KEY];
     // Escape only dismisses the current surface; it does not turn a mouse-
     // opened menu into a keyboard navigation session. Text entry likewise
     // retains the current mode. Moving the mouse alone must not hide Tab focus.
@@ -31,7 +33,7 @@ export function bindTouchInteractionMode(document: Document): () => void {
     document.removeEventListener("pointerdown", onPointerDown, true);
     document.removeEventListener("pointermove", onPointerMove, true);
     document.removeEventListener("keydown", onKeyDown, true);
-    delete root.dataset.touchInteraction;
+    delete root.dataset[TOUCH_INTERACTION_KEY];
     delete root.dataset.pointerFocus;
   };
 }

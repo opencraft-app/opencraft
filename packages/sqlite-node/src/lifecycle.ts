@@ -49,13 +49,16 @@ function normalizeDefinition(definition: string): string {
     .replace(/'(?:''|[^'])*'|"(?:""|[^"])*"|\s+/g, token => /^\s/.test(token) ? "" : token);
 }
 
-/** Strict owner-declared object validation, including constraints and index SQL. */
-export function createSchemaValidator(sql: string): (database: DatabaseSync) => void {
+/** Strict owner-declared object validation, including constraints and index SQL.
+ * `select`, when given, limits both sides to the objects one owner holds in a
+ * database it shares with other ledgers (e.g. Server extension families). */
+export function createSchemaValidator(sql: string, options: { readonly select?: (name: string) => boolean } = {}): (database: DatabaseSync) => void {
   return database => {
     const target = openConnection(":memory:");
     try {
       target.exec(sql);
-      const normalize = (db: DatabaseSync) => schemaObjects(db).map(object => ({ ...object, sql: normalizeDefinition(object.sql) }));
+      const normalize = (db: DatabaseSync) => schemaObjects(db).filter(object => !options.select || options.select(object.name))
+        .map(object => ({ ...object, sql: normalizeDefinition(object.sql) }));
       if (JSON.stringify(normalize(database)) !== JSON.stringify(normalize(target))) {
         throw new SqliteLifecycleError("history-mismatch", "Database schema does not match its owner migrations");
       }

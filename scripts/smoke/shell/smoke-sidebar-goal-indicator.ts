@@ -58,7 +58,7 @@ try {
     assert.equal(await row("目标等待处理").locator(".is-review").count(), 1);
     assert.equal(await row("目标连接错误").locator(".is-error").count(), 1);
     assert.equal(await normalRow.locator(".is-running").count(), 1);
-    const measure = () => page.locator(".sidebar-activity-item-container").evaluateAll(rows => rows.map(row => {
+    const measure = () => page.locator(".sidebar-activity-item-container").evaluateAll(rows => rows.filter(row => row.getBoundingClientRect().width > 0).map(row => {
       const box = (selector: string) => { const rect = row.querySelector(selector)!.getBoundingClientRect(); return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }; };
       return { body: box(".sidebar-activity-item__body"), slot: box(".sidebar-activity-item__trailing"), icon: box(".sidebar-activity-item__status") };
     }));
@@ -75,12 +75,12 @@ try {
       assert.equal(await target.evaluate(el => el.getAnimations().length), 0);
     } else {
       assert.notEqual(glyph.animation, "none");
-      assert.notEqual(glyph.mask, "none");
-      const initial = await target.evaluate(el => getComputedStyle(el).maskPosition);
+      assert.equal(glyph.mask, "none", "Goal motion must not use a repainting mask");
+      const initial = await target.evaluate(el => getComputedStyle(el).opacity);
       // Observe the running animation before controlling its clock for phase captures.
       await page.waitForFunction(previous => {
         const el = document.querySelector(".sidebar-activity-item__status.is-goal")!;
-        return getComputedStyle(el).maskPosition !== previous;
+        return getComputedStyle(el).opacity !== previous;
       }, initial);
       const images = [];
       for (const phase of [0, 0.25, 0.5, 0.75]) {
@@ -91,29 +91,21 @@ try {
           animation.currentTime = duration * phase;
           await new Promise(requestAnimationFrame);
           const style = getComputedStyle(el), box = el.getBoundingClientRect();
-          return { phase, duration, maskPosition: style.maskPosition, transform: style.transform, box: { x: box.x, y: box.y, width: box.width, height: box.height } };
+          return { phase, duration, opacity: Number(style.opacity), transform: style.transform, box: { x: box.x, y: box.y, width: box.width, height: box.height } };
         }, phase));
         images.push(await target.screenshot({ path: `${output}/${name}-phase-${phase}.png` }));
       }
       assert.ok(motion.every(sample => sample.duration >= 2600), "Goal motion must remain slow");
       assert.ok(motion.every(sample => sample.transform === "none"), "Target cannot spin or scale");
-      assert.ok(motion.every(sample => JSON.stringify(sample.box) === JSON.stringify(motion[0].box)), "shimmer cannot move the icon");
-      assert.ok(new Set(motion.map(sample => sample.maskPosition)).size > 1);
-      assert.ok(!images[0].equals(images[1]), "rendered pixels must change across the shimmer");
-      // Simulate 120Hz display samples: a tiny decorative glyph should not
-      // request a new mask paint for every subpixel frame. The same visual
-      // sweep still has to advance throughout the second.
-      const sampledPositions = await target.evaluate(el => {
-        const animation = el.getAnimations()[0]!;
-        const positions = new Set<string>();
-        for (let time = 0; time <= 1000; time += 8) {
-          animation.currentTime = time;
-          positions.add(getComputedStyle(el).maskPosition);
-        }
-        return positions.size;
+      assert.ok(motion.every(sample => JSON.stringify(sample.box) === JSON.stringify(motion[0].box)), "opacity cannot move the icon");
+      assert.equal(motion[0].opacity, 1);
+      assert.equal(motion[2].opacity, 0.75);
+      assert.ok(!images[0].equals(images[1]), "rendered pixels must change with opacity");
+      const animatedProperties = await target.evaluate(el => {
+        const effect = el.getAnimations()[0]!.effect as KeyframeEffect;
+        return [...new Set(effect.getKeyframes().flatMap(frame => Object.keys(frame)))].sort();
       });
-      assert.ok(sampledPositions >= 12 && sampledPositions <= 24,
-        `tiny Goal glyph must advance without display-rate mask repainting: ${sampledPositions}`);
+      assert.deepEqual(animatedProperties, ["composite", "computedOffset", "easing", "offset", "opacity"], "animate only opacity");
       await target.evaluate(el => el.getAnimations()[0]!.play());
       for (const attribute of ["inert", "aria-hidden"]) {
         await goalRow.evaluate((el, attribute) => el.setAttribute(attribute, attribute === "inert" ? "" : "true"), attribute);
@@ -123,6 +115,7 @@ try {
       }
       await page.emulateMedia({ reducedMotion: "reduce" });
       assert.equal(await target.evaluate(el => getComputedStyle(el).maskImage), "none");
+      assert.equal(await target.evaluate(el => getComputedStyle(el).opacity), "1");
       assert.equal(await target.evaluate(el => el.getAnimations().length), 0);
       await page.emulateMedia({ reducedMotion: "no-preference" });
       assert.equal(await target.evaluate(el => el.getAnimations().length), 1);

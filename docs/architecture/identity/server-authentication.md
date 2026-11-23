@@ -54,6 +54,13 @@ cannot enter the legacy unscoped HTTP bridge. Static SSH configuration remains
 available independently; no provider-specific credential policy is built into
 core.
 
+Core also ships its own resolver: [personal SSH keys](personal-ssh-keys.md).
+Each Human registers public keys in Settings or through the HTTP API, operators
+use the offline `ssh-keys` tool, and every change is audited. The ingress asks an
+identity adapter's `sshAccess` first and personal keys second; it passes the
+offered key blob as a second `publicKeys` argument so a key-indexed resolver need
+not list every key.
+
 ## 自部署账号插件
 
 ### Headless composition contract
@@ -63,7 +70,10 @@ lifetime. Its public startup closure must not import enterprise verification or
 infer human identity from an enterprise provider name or employee identifier.
 A trusted server-side composition may supply verified identity providers, a
 request presentation service, Thread metadata, a human-qualification predicate
-and owned storage diagnostics/disposal. This is compiled operator-owned code,
+and owned storage diagnostics/disposal. `loginAdmission: { provider, attribute }`
+enables the optional core [login admission policy](login-admission.md), which
+narrows which verified sign-ins of that provider are admitted; an identity
+composition may instead supply its own `admissionPolicy`, never both. This is compiled operator-owned code,
 not a browser extension or a module path accepted from private JSON.
 
 The managed site preserves its existing enterprise CLI, verification, allowlist compatibility,
@@ -248,7 +258,10 @@ OIDC 事务保存在认证 owner 内存中，十分钟过期、绑定发起浏�
 
 服务端身份来源通过受信的 `WorkbenchRequestIdentity` 装配端口提供请求准入、
 连接 sender/期限和自有 HTTP 路由；通用网关不解释 企业身份 字段或时钟容差。
-核心的成员、Actor 和资源授权仍独立生效。静态网页导航探针使用
+核心的成员、Actor 和资源授权仍独立生效。可选的[登录准入策略](login-admission.md)按
+`{provider, attribute}` 比对已验证登录属性（允许列表、通配模式、属性相等条件，以及在
+QuickJS 沙盒中运行、仅管理员可写的 `admit(input)` 函数），写入为 CAS 并审计；无法
+判定时拒绝。静态网页导航探针使用
 `GET /__opencraft_access/admission`：通过当前准入返回 204，否则返回相应拒绝，
 未配置准入的匿名部署保持可用。WS 连接在成员证明或身份上下文任一较早期限
 到达时关闭，证明缺失/过期或验证异常不建立连接。旧 企业身份 探针别名只由配置的

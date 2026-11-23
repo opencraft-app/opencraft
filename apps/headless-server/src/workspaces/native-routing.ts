@@ -33,6 +33,16 @@ export function readWorkspacePlacement(params: Readonly<Record<string, unknown>>
   };
 }
 
+/** Side chats alone may join their parent's durable working copy. */
+export function readWorkspaceFork(params: Readonly<Record<string, unknown>>) {
+  if (!Object.hasOwn(params, "workspaceFork")) return null;
+  const value = params.workspaceFork;
+  if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).length !== 2
+    || (value as {kind?:unknown}).kind !== "side-chat" || !id((value as {intentId?:unknown}).intentId)
+    || !id(params.threadId) || params.ephemeral === true) throw Error("Invalid shared workspace fork");
+  return {parentThreadId:params.threadId, intentId:(value as {intentId:string}).intentId};
+}
+
 /** A new attachment for each physical adapter, with only private Worker RPC and
  * the existing one-shot Core authority. No SDK, credentials or journal in Main. */
 export function createWorkspaceNativeRouting(options: {
@@ -85,6 +95,7 @@ export function createWorkspaceNativeRouting(options: {
     },
     finalizeNativeCreation: finalize,
     finalizeNativeResume: finalize,
+    finalizeNativeFork: finalize,
     async restoreProvisionalWorkspace(input) {
       check();
       options.assertThreadActive?.(input.threadId);
@@ -148,18 +159,21 @@ export function createWorkspaceNativeRouting(options: {
         if (!request || request.method !== method) throw Error("Workspace Native admission unavailable");
         request.context();
         const placement = method === "thread/start" ? readWorkspacePlacement(params) : null;
-        if (
-          placement ||
-          (method === "thread/resume" && id(params.threadId) && options.placement.has(params.threadId))
-        ) {
+        const fork = method === "thread/fork" ? readWorkspaceFork(params) : null;
+        const remoteThread = id(params.threadId) && options.placement.has(params.threadId);
+        if (placement || (method === "thread/resume" && remoteThread) || (method === "thread/fork" && remoteThread && fork)) {
           const operation = placement
             ? { kind: "start" as const, ...placement }
-            : { kind: "restore" as const, threadId: String(params.threadId) };
+            : method === "thread/fork" && fork
+              ? {kind:"fork" as const,...fork}
+              : { kind: "restore" as const, threadId: String(params.threadId) };
           if (operation.kind === "restore") options.assertThreadActive?.(operation.threadId);
+          if (operation.kind === "fork") options.assertThreadActive?.(operation.parentThreadId);
           const ready = await handoff.prepare(physical.id, request, operation);
           if (ready.kind === "existing") throw Error("Workspace already created; resume the existing Thread");
           return async () => {
             if (operation.kind === "restore") options.assertThreadActive?.(operation.threadId);
+            if (operation.kind === "fork") options.assertThreadActive?.(operation.parentThreadId);
             return ready.resolve();
           };
         }
@@ -212,6 +226,9 @@ export function createWorkspaceNativeRouting(options: {
           if (params && typeof params === "object" && !Array.isArray(params)) {
             if (message.method !== "thread/start" && Object.hasOwn(params, "workspacePlacement"))
               throw Error("Placement is creation-only");
+            if (message.method !== "thread/fork" && Object.hasOwn(params, "workspaceFork"))
+              throw Error("Workspace fork intent is fork-only");
+            const fork = message.method === "thread/fork" ? readWorkspaceFork(params) : null;
             if (message.method === "thread/resume" || message.method === "thread/fork") {
               if (
                 !id(params.threadId) ||
@@ -232,8 +249,8 @@ export function createWorkspaceNativeRouting(options: {
               }
             }
             const remote = id(params.threadId) && options.placement.has(params.threadId);
-            if (message.method === "thread/fork" && remote)
-              throw Error("Workspace fork requires a separately admitted working copy");
+            if (message.method === "thread/fork" && remote && !fork)
+              throw Error("Workspace fork requires a side-chat intent");
             const placement = message.method === "thread/start" && readWorkspacePlacement(params);
             if (
               Array.isArray(params.environments) &&
@@ -249,7 +266,7 @@ export function createWorkspaceNativeRouting(options: {
               !placement
             )
               throw Error("Workspace environment has no admitted placement");
-            if (placement || (message.method === "thread/resume" && remote)) {
+            if (placement || (message.method === "thread/resume" && remote) || (message.method === "thread/fork" && remote && fork)) {
               if (
                 (typeof message.id !== "string" && typeof message.id !== "number") ||
                 owned.size >= 64 ||

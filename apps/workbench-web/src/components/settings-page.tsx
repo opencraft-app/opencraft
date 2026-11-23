@@ -6,7 +6,7 @@ import "../styles/settings-page.scss";
 import { useOptionalAsyncNotices } from "./async-notices";
 import { WorkbenchIcon } from "./ui/workbench-icon";
 import { useDismissSidebarAfterSelection } from "./shell-presentation";
-import { ArchiveIcon as Archive, ArrowLeftIcon as ArrowLeft, ExtensionsIcon as Blocks, AgentIcon as Bot, DatabaseIcon as Database, LabIcon as FlaskConical, ServerIcon as Server } from "@opencraft/design-system-web/action-icons";
+import { ArchiveIcon as Archive, ArrowLeftIcon as ArrowLeft, ExtensionsIcon as Blocks, AgentIcon as Bot, DatabaseIcon as Database, LabIcon as FlaskConical, ServerIcon as Server, TerminalIcon as Terminal } from "@opencraft/design-system-web/action-icons";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { FormattedMessage, useIntl } from "@opencraft/i18n/react";
 import { defineMessages } from "@opencraft/i18n";
@@ -17,6 +17,7 @@ import { ChatSettings } from "./chat-settings";
 import { AgentManagement } from "./agent-management";
 import { HubNetworkSettings } from "./hub-network-settings";
 import { ServerInformationSettings } from "./server-information-settings";
+import { SshKeysSettings } from "./ssh-keys-settings";
 import { ExtensionLibrary } from "./extensions/extension-library";
 import { mobileContainer, openMobileSourceSettings } from "../runtime/mobile-container";
 import { MobileConnectionSettings, mobileConnectionMessages } from "./mobile-connection-settings";
@@ -287,6 +288,9 @@ export function SettingsNavigation({
           {currentPlatform() === 'web' && import.meta.env.VITE_INCLUDE_HEADLESS_APPHOST === 'true' ? <NavigationItem type="button" aria-current={section === 'server-information' ? 'page' : undefined} onClick={() => onSectionChange('server-information')}>
             <Server size={16} /><span data-navigation-label="">{intl.formatMessage({ id: 'settings.serverInformation.title', defaultMessage: 'Server information' })}</span>
           </NavigationItem> : null}
+          {currentPlatform() === 'web' && import.meta.env.VITE_INCLUDE_HEADLESS_APPHOST === 'true' ? <NavigationItem type="button" aria-current={section === 'ssh-keys' ? 'page' : undefined} onClick={() => onSectionChange('ssh-keys')}>
+            <Terminal size={16} /><span data-navigation-label="">{intl.formatMessage({ id: 'settings.sshKeys.title', defaultMessage: 'SSH keys' })}</span>
+          </NavigationItem> : null}
           {currentPlatform() === 'web' && import.meta.env.VITE_INCLUDE_HEADLESS_APPHOST === 'true' ? <NavigationItem type="button" aria-current={section === 'hub-network' ? 'page' : undefined} onClick={() => onSectionChange('hub-network')}>
             <Server size={16} /><span data-navigation-label="">{intl.formatMessage({ id: 'settings.hubNetwork', defaultMessage: 'Hub network' })}</span>
           </NavigationItem> : null}
@@ -478,6 +482,7 @@ export function SettingsContent({
               : section === "machines" ? <SettingsMachines machines={machines} platform={platform} onSectionChange={onSectionChange} />
               : selectedMachine !== null ? <SettingsMachine machine={selectedMachine} pages={extensionPages.filter(page => page.management === undefined)} platform={platform} onSectionChange={onSectionChange} />
               : section === 'server-information' && platform === 'web' && import.meta.env.VITE_INCLUDE_HEADLESS_APPHOST === 'true' ? <ServerInformationSettings />
+              : section === 'ssh-keys' && platform === 'web' && import.meta.env.VITE_INCLUDE_HEADLESS_APPHOST === 'true' ? <SshKeysSettings />
               : section === 'hub-network' && platform === 'web' && import.meta.env.VITE_INCLUDE_HEADLESS_APPHOST === 'true' ? <HubNetworkSettings />
               : section.startsWith("execution-") ? null
               : missingConfigurationHost || section.startsWith("machine-") ? <><SettingsPageHeader title={intl.formatMessage({ id: "settings.machines.unavailable", defaultMessage: "Machine unavailable" })} /><SettingsButton onClick={() => onSectionChange("machines")}>{intl.formatMessage({ id: "settings.machines.title", defaultMessage: "Machines" })}</SettingsButton></>

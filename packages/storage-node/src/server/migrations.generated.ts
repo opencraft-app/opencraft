@@ -124,6 +124,11 @@ export const SERVER_MIGRATIONS = [
     "version": 25,
     "name": "0024_conversation_resources",
     "sql": "CREATE TABLE `conversation_resource_imports` (\n\t`source` text PRIMARY KEY NOT NULL,\n\t`sha256` text NOT NULL,\n\t`rows` integer NOT NULL,\n\t`imported_at` integer NOT NULL\n) STRICT;\n--> statement-breakpoint\nCREATE TABLE `conversation_resources` (\n\t`host_id` text NOT NULL,\n\t`thread_id` text NOT NULL,\n\t`state` text NOT NULL,\n\t`generation` integer NOT NULL,\n\t`pending` text NOT NULL,\n\tPRIMARY KEY(`host_id`, `thread_id`),\n\tCONSTRAINT \"conversation_resource_row\" CHECK(length(host_id) BETWEEN 1 AND 1024\n    AND length(thread_id) BETWEEN 1 AND 1024\n    AND state IN ('active', 'archived', 'deleted')\n    AND generation >= 1\n    AND json_valid(pending) AND json_type(pending) = 'array')\n) STRICT;\n"
+  },
+  {
+    "version": 26,
+    "name": "0025_actor_ssh_keys",
+    "sql": "CREATE TABLE `actor_ssh_key_audit` (\n\t`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,\n\t`at` integer NOT NULL,\n\t`operator` text NOT NULL,\n\t`actor_id` text,\n\t`key_id` text,\n\t`fingerprint` text,\n\t`action` text NOT NULL,\n\t`result` text NOT NULL\n) STRICT;\n--> statement-breakpoint\nCREATE INDEX `actor_ssh_key_audit_actor` ON `actor_ssh_key_audit` (`actor_id`,`id`);--> statement-breakpoint\nCREATE TABLE `actor_ssh_keys` (\n\t`id` text PRIMARY KEY NOT NULL,\n\t`actor_id` text NOT NULL,\n\t`actor_generation` integer NOT NULL,\n\t`name` text NOT NULL,\n\t`algorithm` text NOT NULL,\n\t`public_key` text NOT NULL,\n\t`fingerprint` text NOT NULL,\n\t`created_at` integer NOT NULL,\n\t`created_by` text NOT NULL,\n\t`revoked_at` integer,\n\t`revoked_by` text,\n\t`revoked_reason` text,\n\tCONSTRAINT \"actor_ssh_key_row\" CHECK(length(id) BETWEEN 1 AND 128\n    AND length(actor_id) BETWEEN 1 AND 512\n    AND length(name) BETWEEN 1 AND 128\n    AND length(public_key) BETWEEN 1 AND 16384\n    AND fingerprint LIKE 'SHA256:%'\n    AND (revoked_at IS NULL) = (revoked_by IS NULL))\n) STRICT;\n--> statement-breakpoint\nCREATE INDEX `actor_ssh_keys_actor` ON `actor_ssh_keys` (`actor_id`);--> statement-breakpoint\nCREATE UNIQUE INDEX `actor_ssh_keys_active_fingerprint` ON `actor_ssh_keys` (`fingerprint`) WHERE \"actor_ssh_keys\".\"revoked_at\" IS NULL;"
   }
 ] as const;
 export const SERVER_ALTERNATE_MIGRATIONS = [
@@ -254,9 +259,14 @@ export const SERVER_ALTERNATE_MIGRATIONS = [
         "version": 25,
         "name": "converge_0024_conversation_resources",
         "sql": SERVER_MIGRATIONS[24].sql
+      },
+      {
+        "version": 26,
+        "name": "converge_0025_actor_ssh_keys",
+        "sql": SERVER_MIGRATIONS[25].sql
       }
     ]
   }
 ] as const;
-export const SERVER_MIGRATION_CONTRACT_HASH = "2ed80cbc12927521e1d03da6a46692b26b309795d2eaca286487362e315fa341" as const;
-export const OPENCRAFT_VERSION = "0.2.0" as const;
+export const SERVER_MIGRATION_CONTRACT_HASH = "c3b3fa085fd6403c6317be64cbb32433e5664af77d674237841741953994cc87" as const;
+export const OPENCRAFT_VERSION = "0.3.0" as const;

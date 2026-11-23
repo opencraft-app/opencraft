@@ -170,5 +170,10 @@
     "id": "desktop-client",
     "owner": "apps/desktop/src/desktop-client-storage.ts",
     "index": 0
+  },
+  {
+    "id": "login-admission",
+    "owner": "plugins/login-admission/src/store.ts",
+    "index": 0
   }
 ]

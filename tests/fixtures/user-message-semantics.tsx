@@ -10,6 +10,7 @@ import { ConversationDocumentContext } from "../../apps/workbench-web/src/compon
 import { WorkbenchPresentationRootProvider } from "../../apps/workbench-web/src/components/workbench-presentation-root";
 import { PendingConversationPage } from "../../apps/workbench-web/src/components/pending-conversation-page";
 import { createIntlTestRoot } from "./intl-root";
+import { bindTouchInteractionMode } from "../../apps/workbench-web/src/runtime/pointer-modality";
 import styles from "../../apps/workbench-web/src/styles/app.scss?inline";
 
 const dark = new URLSearchParams(location.search).has("dark");
@@ -102,6 +103,8 @@ function FirstSubmission() {
         : { ...submittedMessageDisplay(firstInput), deliveryStatus: "sent", sender: { kind: "employee", loginName: "alice" } }} />}
   </section>;
 }
+// The Workbench host owns the input modality projection that tap disclosure consumes.
+bindTouchInteractionMode(document);
 createIntlTestRoot(root, undefined, new URLSearchParams(location.search).get("locale") ?? "en-US").render(<WorkbenchPresentationRootProvider target={root}>
   <ConversationDocumentContext.Provider value={{ conversationId: "fixture", cwd: "/workspace", hostId: "fixture", theme: dark ? "dark" : "light", onOpenResource: target => { document.documentElement.dataset.opened = target; } }}>
     <FirstSubmission />

@@ -5,6 +5,7 @@ const legacy = {
   decorateNativeTransport: 'decorateCodexNativeTransport',
   finalizeNativeCreation: 'finalizeCodexNativeCreation',
   finalizeNativeResume: 'finalizeCodexNativeResume',
+  finalizeNativeFork: 'finalizeCodexNativeFork',
   requiresWorkspaceResume: 'requiresCodexWorkspaceResume',
   restoreProvisionalWorkspace: 'restoreCodexProvisionalWorkspace',
 };
@@ -41,7 +42,7 @@ export function createCodexWorkspaceHooks(composition, hostId) {
     || Object.keys(hooks).some(key => !Object.hasOwn(legacy, key)))
     throw Error('Invalid physical workspace hooks');
   for (const key of Object.keys(legacy)) {
-    if (['restoreProvisionalWorkspace','prepareWorkspaceArtifact','readWorkspaceArtifact'].includes(key) && hooks[key] === undefined) continue;
+    if (['restoreProvisionalWorkspace','prepareWorkspaceArtifact','readWorkspaceArtifact','finalizeNativeFork'].includes(key) && hooks[key] === undefined) continue;
     if (typeof hooks[key] !== 'function') throw Error('Incomplete physical workspace hooks: ' + key);
   }
   // Snapshot prevents later mutation of a factory result from redirecting a

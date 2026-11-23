@@ -830,3 +830,50 @@ export const conversationResourceImports = sqliteTable("conversation_resource_im
   rows: integer("rows").notNull(),
   importedAt: integer("imported_at").notNull(),
 });
+
+/**
+ * Personal SSH public keys of a Human Actor. A key is active while `revoked_at` is
+ * null; removal, an Actor disable or a membership revocation revokes it and never
+ * deletes the row. `actor_generation` is the Actor generation the key was added
+ * under: a later disable/enable cycle never revives it. An active fingerprint
+ * belongs to at most one Actor. Written only by the SSH key methods of the owner
+ * Worker; the network thread reads an in-memory projection of the active rows.
+ */
+export const actorSshKeys = sqliteTable("actor_ssh_keys", {
+  id: text("id").primaryKey(),
+  actorId: text("actor_id").notNull(),
+  actorGeneration: integer("actor_generation").notNull(),
+  name: text("name").notNull(),
+  algorithm: text("algorithm").notNull(),
+  // Normalized "<algorithm> <base64>"; no comment, never a private key.
+  publicKey: text("public_key").notNull(),
+  fingerprint: text("fingerprint").notNull(),
+  createdAt: integer("created_at").notNull(),
+  createdBy: text("created_by").notNull(),
+  revokedAt: integer("revoked_at"),
+  revokedBy: text("revoked_by"),
+  revokedReason: text("revoked_reason"),
+}, table => [
+  index("actor_ssh_keys_actor").on(table.actorId),
+  uniqueIndex("actor_ssh_keys_active_fingerprint").on(table.fingerprint).where(sql`${table.revokedAt} IS NULL`),
+  check("actor_ssh_key_row", sql.raw(`length(id) BETWEEN 1 AND 128
+    AND length(actor_id) BETWEEN 1 AND 512
+    AND length(name) BETWEEN 1 AND 128
+    AND length(public_key) BETWEEN 1 AND 16384
+    AND fingerprint LIKE 'SHA256:%'
+    AND (revoked_at IS NULL) = (revoked_by IS NULL)`)),
+]);
+
+/** Every SSH key change and refused change, in order. Never holds key material. */
+export const actorSshKeyAudit = sqliteTable("actor_ssh_key_audit", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  at: integer("at").notNull(),
+  operator: text("operator").notNull(),
+  actorId: text("actor_id"),
+  keyId: text("key_id"),
+  fingerprint: text("fingerprint"),
+  action: text("action").notNull(),
+  result: text("result").notNull(),
+}, table => [
+  index("actor_ssh_key_audit_actor").on(table.actorId, table.id),
+]);

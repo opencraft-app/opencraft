@@ -1,0 +1,32 @@
+{
+  "name": "@opencraft/plugin-login-admission",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./contract": "./src/contract.ts",
+    "./server": "./src/server.ts",
+    "./adoption": "./src/adoption.ts",
+    "./client": "./src/client.tsx"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opencraft/access-control": "*",
+    "@opencraft/design-system": "0.1.0",
+    "@opencraft/extension-react": "0.1.0",
+    "@opencraft/extension-runtime": "*",
+    "@opencraft/i18n": "*",
+    "@opencraft/identity-core": "*",
+    "@opencraft/javascript-runtime": "0.1.0",
+    "@opencraft/sqlite-node": "*",
+    "@opencraft/worker-owner": "0.1.0",
+    "react": "19.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/react": "~19.3.0",
+    "typescript": "^6.0.3"
+  }
+}

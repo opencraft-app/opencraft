@@ -157,7 +157,10 @@ docker compose -f compose.yaml -f compose.role-images.yaml up -d --no-build --wa
 ```
 
 The overlay selects prebuilt images and inherits service commands, health checks
-and mounts from the base file. To roll back this configuration, restore the
+and mounts from the base file. The [portable bundle](deploy/README.md) is this same pair of
+files, exported byte for byte, plus `deploy/compose.portable.yaml` (project name
+and Gateway listener only); change the deployment model here, never in a bundle
+template. To roll back this configuration, restore the
 previous three image references and repeat the commands. The single-image
 transaction command below manages deployments using `OPENCRAFT_IMAGE`.
 
@@ -212,7 +215,11 @@ connection preserves the PTY; restarting Hands ends it. Terminal readiness is
 part of the Hands health check. See [terminal semantics](../../docs/architecture/platform/presentation-and-input.md#conversation-terminal-semantics).
 
 `OPENCRAFT_HOST_DATA_DIR` is mounted as `OPENCRAFT_DATA_DIR` in Brain and
-Gateway. Hands receives only the `execution/` subdirectory and keeps browser and
+Gateway. The execution directory (`OPENCRAFT_HOST_EXECUTION_DIR`, default
+`$OPENCRAFT_HOST_DATA_DIR/execution`) is mounted explicitly at
+`OPENCRAFT_EXECUTION_DIR` in Gateway, Brain and Hands, so a separate host directory
+(such as a root Hands client directory) is the same directory in all three. Hands
+receives only that directory and keeps browser and
 exec-server sockets plus their private token there; it cannot read the account,
 conversation or engine state beside that directory. `OPENCRAFT_HOST_WORKSPACE_DIR` is mounted
 as `OPENCRAFT_WORKSPACE_DIR` in all three containers: Brain uses it for DSH/Pi,
@@ -518,6 +525,67 @@ keys). Replace `$DATA` with the host data directory.
    `docker compose restart proxy`; while it restarts, model calls fail and then
    recover without action; Brain's `StartedAt` is unchanged and its threads keep
    answering after the proxy is healthy.
+
+## Runtime plugin utility modes
+
+The Gateway entry (`runtime/container-gateway.mjs`) also runs two explicit platform
+tools that never start the Gateway: `--runtime-plugin-admin check|install ...` and
+`--runtime-plugin-executor ABSOLUTE_SELECTION_STORE`. The executor loads selected
+plugins in the `execution` role and can read their bytes through the Hands file owner.
+Hands itself never loads plugins. See
+[runtime-plugin-host](../../packages/runtime-plugin-host/README.md#hands-file-source-and-container-utility-modes).
+
+## Multiple workspaces (docker-provisioner, opt-in)
+
+The `default` workspace always runs on the declared `brain` and `hands` containers.
+Further workspaces each get their own container, created on demand by the
+`provisioner` service of the `compose.workspaces.yaml` overlay:
+
+```sh
+docker compose -f compose.yaml -f compose.workspaces.yaml up -d
+```
+
+- **Only the provisioner holds the Docker socket.** It runs as the deployment user
+  plus the socket's group (`OPENCRAFT_DOCKER_GID`, e.g. `stat -c %g /var/run/docker.sock`),
+  with no network, a read-only root filesystem and no capabilities. The Gateway mounts
+  no socket; it reaches the provisioner through the private `provisioner-control`
+  volume (socket and request key, mounted only into the two of them) and signs every
+  request (HMAC with the key the provisioner writes at each start; ±30 s window,
+  one-time nonce).
+- **Four operations, no Docker parameters.** `ensure`, `inspect`, `stop` and `destroy`
+  a workspace by id. Image, command, user, budget, volume, network and mounts come from
+  the provisioner's policy: by default one alias `workspace` =
+  `OPENCRAFT_WORKSPACE_IMAGE` (default `OPENCRAFT_IMAGE`, which must exist locally:
+  the provisioner never pulls) running `workspace-agent --role hands`, with
+  `OPENCRAFT_WORKSPACE_CPUS`/`_MEMORY_BYTES` (default 4 / 8 GiB, also read by the
+  Gateway), 4096 pids, `CapDrop ALL`, `no-new-privileges`, the
+  `opencraft-workspaces` bridge network with inter-container traffic disabled and one
+  named volume `<deployment>-ws-<id>-data` at `/var/lib/opencraft-workspace`.
+  `OPENCRAFT_PROVISIONER_POLICY_FILE` replaces it with a validated JSON policy (root,
+  Docker-socket and system-path mounts are refused). Every request is an audit line
+  (`docker-provisioner-audit`) in the provisioner's log. Objects carry the label
+  `org.opencraft.provisioner=<deployment>`; others are never touched.
+- **Reaching a workspace.** The links volume (`OPENCRAFT_WORKSPACE_LINK_VOLUME`,
+  default `opencraft-workspace-links`; set a distinct name per Compose project on one
+  host) is mounted into the provisioner and the Gateway
+  (`/run/opencraft-links/provisioned`); each workspace container mounts only its own
+  `<id>/` subpath at `/run/opencraft-link`, where its agent serves the same link as
+  Brain/Hands. The Gateway's placement record is
+  `$OPENCRAFT_DATA_DIR/workspaces/<id>/host/placement.json` (receipt = container id +
+  agent incarnation); its local endpoints are under
+  `/run/opencraft-gateway/workspaces/<id>/`.
+- **Lifecycle.** `OPENCRAFT_WORKSPACES="<id> ..."` lists workspaces the Gateway
+  places at startup. A Gateway restart re-attaches the same container and
+  incarnation. Sleep stops the container and keeps its volume; the next use starts it
+  again as a new incarnation (interrupted-turn recovery applies). Discard removes the
+  container, its volume and its link directory: the workspace volume is a cache, Git
+  is the content truth, and uncommitted changes are lost. With the Gateway stopped, an
+  operator can run `node /opt/opencraft/runtime/workspace-admin.mjs open|sleep|discard
+  <id>` in a one-off Gateway container (`docker compose run --rm --no-deps
+  --entrypoint /opt/opencraft/bin/node gateway /opt/opencraft/runtime/workspace-admin.mjs
+  discard <id>`). No product UI creates workspaces yet.
+- **Images.** The runtime image prepares `/var/lib/opencraft-workspace/{data,workspace,logs}`
+  (owned by the deployment user); Docker copies that layout into a new volume.
 
 ## Upgrade and rollback
 

@@ -134,6 +134,32 @@ test('verified external human identity does not require an enterprise provider n
   assert.equal((await fetch(app.url, { headers })).status, 401);
 });
 
+test('composition loginAdmission enables the core policy on the Hub admission path', async t => {
+  const f = await fixture(t);
+  await mkdir(f.options.dataDirectory, { recursive: true });
+  // A policy published earlier (e.g. by an administrator before a restart).
+  const { LoginAdmissionStore } = await import('../../plugins/login-admission/src/store.ts');
+  const store = new LoginAdmissionStore(join(f.options.dataDirectory, 'login-admission.sqlite'));
+  store.publish(JSON.stringify(['fixture-directory', 'login']), 0, JSON.stringify({ enabled: true, allowlist: ['alice'], patterns: [], conditions: [], admitFunction: null }), 'fixture', 1, '{}');
+  store.close();
+  const principal = login => ({ provider: 'fixture-directory', subject: 'id-' + login, displayName: login, expiresAt: Date.now() + 60_000, attributes: { login } });
+  const createIdentity = async () => ({ providers: [{ authenticate: request => request.headers['x-fixture-login'] ? principal(request.headers['x-fixture-login']) : null }], close() {} });
+  await assert.rejects(startHeadlessServer({ ...f.options, accessMemberProviders: ['fixture-directory'] }, { createIdentity, loginAdmission: { provider: 'fixture-directory' } }), /login admission/);
+  await assert.rejects(startHeadlessServer({ ...f.options, accessMemberProviders: ['fixture-directory'] }, {
+    createIdentity: async () => ({ ...(await createIdentity()), admissionPolicy: { prepare: async () => {}, allows: () => true, allowsBinding: () => true } }),
+    loginAdmission: { provider: 'fixture-directory', attribute: 'login' } }), /two owners/);
+  const app = await startHeadlessServer({ ...f.options, accessMemberProviders: ['fixture-directory'] },
+    { createIdentity, loginAdmission: { provider: 'fixture-directory', attribute: 'login' } }); f.own(() => app.close());
+  assert.equal((await fetch(app.url + '/__opencraft_actors/me', { headers: { 'x-fixture-login': 'alice' } })).status, 200);
+  assert.equal((await fetch(app.url, { headers: { 'x-fixture-login': 'alice' } })).status, 200);
+  assert.equal((await fetch(app.url, { headers: { 'x-fixture-login': 'Mallory' } })).status, 403, 'a verified login outside the policy is refused');
+  assert.equal((await fetch(app.url + '/__opencraft_actors/me', { headers: { 'x-fixture-login': 'Mallory' } })).status, 401);
+  const administration = await fetch(app.url + '/__opencraft_access/login-admission', { headers: { 'x-fixture-login': 'alice' } });
+  assert.deepEqual([administration.status, (await administration.json()).error], [403, 'administrator_required']);
+  const health = await fetch(app.url + '/__opencraft_health').then(response => response.json());
+  assert.equal(health.storage.find(row => row.name === 'login-admission')?.appliedVersion, 1);
+});
+
 test('missing or malformed identity fails before execution and rollback releases the data lock', async t => {
   const f = await fixture(t);
   await assert.rejects(startHeadlessServer({ ...f.options, accessMemberProviders: ['fixture'] }), /identity provider/);
@@ -494,4 +520,59 @@ test('personal model defaults follow the signed-in Actor and instance admission 
     body: JSON.stringify({ actorId: memberId, role: 'member', enabled: false }) });
   assert.equal(revoked.status, 200, await revoked.clone().text());
   assert.equal((await fetch(path, { headers: { cookie: member } })).status, 403);
+});
+
+test('personal SSH keys sign people in over the real SSH ingress and follow membership revocation', { timeout: 60_000 }, async t => {
+  const { default: ssh2 } = await import('ssh2');
+  const { generateEd25519KeyPair } = await import('../support/ssh-ed25519.mjs');
+  const f = await fixture(t);
+  const host = generateEd25519KeyPair(), operator = generateEd25519KeyPair(), personal = generateEd25519KeyPair();
+  const hostKeyFile = join(f.root, 'ssh-host-key'), sshConfig = join(f.root, 'ssh.json');
+  await writeFile(hostKeyFile, host.private, { mode: 0o600 });
+  await writeFile(sshConfig, JSON.stringify({ hostKeyFile, authorizedKeys: { operator: [operator.public] } }), { mode: 0o600 });
+  const probe = await startHeadlessServer(f.options); await probe.close();
+  const proof = randomBytes(32).toString('base64url');
+  const proofPath = join(f.root, 'setup-token'), configPath = join(f.root, 'human-auth.json');
+  await writeFile(proofPath, JSON.stringify({ token: proof }), { mode: 0o600 });
+  await writeFile(configPath, JSON.stringify({ origin: probe.url, local: true, oidc: [], setupTokenFile: proofPath }), { mode: 0o600 });
+  const app = await startHeadlessServer({ ...f.options, port: Number(new URL(probe.url).port), humanAuthConfig: configPath, sshConfig }); f.own(() => app.close());
+  const path = app.url + '/__opencraft_ssh_keys';
+  const json = { origin: app.url, 'content-type': 'application/json' };
+  assert.equal((await fetch(path)).status, 401);
+  const setup = await fetch(app.url + '/__opencraft_account/setup', { method: 'POST', headers: json,
+    body: JSON.stringify({ proof, mode: 'web', username: 'owner', password: 'Fixture-account-password-42' }) });
+  assert.equal(setup.status, 200, await setup.text());
+  const owner = setup.headers.get('set-cookie')?.split(';')[0];
+  const invitation = await fetch(app.url + '/__opencraft_account/invitations', { method: 'POST', headers: { ...json, cookie: owner }, body: '{}' }).then(r => r.json());
+  const accepted = await fetch(app.url + '/__opencraft_account/accept', { method: 'POST', headers: json,
+    body: JSON.stringify({ code: invitation.code, username: 'member', password: 'Fixture-member-password-42' }) });
+  assert.equal(accepted.status, 201, await accepted.clone().text());
+  const member = accepted.headers.get('set-cookie')?.split(';')[0];
+  const listed = await fetch(path, { headers: { cookie: member } }).then(r => r.json());
+  assert.deepEqual({ sshLogin: listed.sshLogin, keys: listed.keys, administrator: listed.administrator }, { sshLogin: true, keys: [], administrator: false });
+  const memberId = listed.actorId;
+  const added = await fetch(path, { method: 'POST', headers: { ...json, cookie: member }, body: JSON.stringify({ publicKey: personal.public + ' member@laptop', expectedActorId: memberId }) });
+  assert.equal(added.status, 201, await added.clone().text());
+  const ownerView = await fetch(path + '?' + new URLSearchParams({ actorId: memberId }), { headers: { cookie: owner } }).then(r => r.json());
+  assert.equal(ownerView.administrator, true);
+  assert.deepEqual(ownerView.keys.map(key => key.name), ['member@laptop']);
+
+  const clients = [];
+  t.after(() => { for (const client of clients) client.destroy(); });
+  const connect = privateKey => new Promise((resolve, reject) => {
+    const client = new ssh2.Client(); clients.push(client);
+    client.once('ready', () => resolve(client)); client.once('error', reject);
+    client.connect({ host: '127.0.0.1', port: Number(new URL(app.url).port), username: 'member', privateKey, readyTimeout: 3000 });
+  });
+  const session = await connect(personal.private);
+  await assert.rejects(new Promise((resolve, reject) => session.exec('opencraft app-server proxy', (error, stream) => error ? reject(error) : resolve(stream))),
+    /Unable to exec/, 'a personal key never enters the unscoped legacy bridge');
+  const closed = once(session, 'close');
+  const revoked = await fetch(app.url + '/__opencraft_account/members', { method: 'POST', headers: { ...json, cookie: owner },
+    body: JSON.stringify({ actorId: memberId, role: 'member', enabled: false }) });
+  assert.equal(revoked.status, 200, await revoked.clone().text());
+  await closed;
+  await assert.rejects(connect(personal.private), /authentication/);
+  assert.deepEqual((await fetch(path + '?' + new URLSearchParams({ actorId: memberId }), { headers: { cookie: owner } }).then(r => r.json())).keys, [],
+    'membership revocation durably revokes the key');
 });

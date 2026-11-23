@@ -12,6 +12,8 @@ import { HostWorkspaceCatalogTransport } from './host-workspace-catalog-transpor
 import { createCodexWorkspaceHooks, validateCodexWorkspaceHooks, hasCodexWorkspaceHooks, configuredWorkspaceExecution, workspaceLifecycleRouting } from './codex-workspace-hooks.mjs';
 import { ServerInformationStore, serverInformationHttp } from './server-information.mjs';
 import { accountModelDefaultsHttp, humanActorAccess } from './account-model-defaults-http.ts';
+import { ActorSshKeys, composeSshAccess, installationSshKeyAuthority } from './actor-ssh-keys.ts';
+import { actorSshKeysHttp } from './actor-ssh-keys-http.ts';
 import { configuredModelGatewayPath, modelGatewayHttp, CodexCoreControlClient } from "@opencraft/account-pool-host";
 import { gatewayContributions } from "@opencraft/local-agent-host/model-config";
 import { createAssistantModelSource } from '@opencraft/local-agent-host/model-config/assistant';
@@ -141,7 +143,8 @@ import { IdentityWrites } from '@opencraft/access-control/identity-writes';
 import { createCommitFenceBuffer } from '@opencraft/access-control/commit-fence';
 import { humanLoginPage } from './human-login-page.ts';
 import { connectRelay, loadRelayConnection } from '@opencraft/plugin-relay-connect/server';
-import { validateHeadlessIdentity, environmentLaunchOwner, environmentDeliveryOptions } from "./headless-identity.mjs";
+import { validateHeadlessIdentity, validateLoginAdmission, environmentLaunchOwner, environmentDeliveryOptions } from "./headless-identity.mjs";
+import { openLoginAdmissionPolicy } from '@opencraft/plugin-login-admission/server';
 import { startHeadlessRuntimePlugins, validateRuntimePluginOptions } from "./runtime-plugins.mjs";
 import { installHeadlessExtensions, loadHeadlessExtensions, validateHeadlessExtensions } from "./headless-extensions.mjs";
 import { createHubController } from '@opencraft/hub-network/controller';
@@ -350,6 +353,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   const workspaceExecution = configuredWorkspaceExecution(options);
   if (composition.close !== undefined && typeof composition.close !== "function") throw new Error("Invalid Headless disposer");
   if (composition.isHuman !== undefined && typeof composition.isHuman !== "function") throw new Error("Invalid Headless human qualification");
+  const loginAdmissionScope = validateLoginAdmission(composition.loginAdmission);
   const runtimePluginConfiguration = validateRuntimePluginOptions(composition.runtimePlugins);
   // Extension modules are imported and validated before startup creates any resource.
   const extensions = await loadHeadlessExtensions(validateHeadlessExtensions(composition.extensions));
@@ -407,6 +411,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let web;
   let appHostServer;
   let sshManagement;
+  let personalSshKeys;
   let fileDownloads;
   let desktop;
   let identity;
@@ -416,6 +421,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let mcpApps;
   let ingress;
   let instanceAccess;
+  let loginAdmission;
   let modelPolicy;
   let membership;
   let assetsService;
@@ -500,6 +506,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       // Plugins stop after the listener stopped accepting and before any owner
       // their authority or handlers may still call (admission, identity, stores).
       await settle([() => runtimePlugins?.close()]);
+      personalSshKeys?.close();
       await settle([() => observability?.close()]);
       await settle([() => projectAutomations?.close()]);
       await settle([() => threadOrchestration?.close()]);
@@ -517,7 +524,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       // Each writer finishes before the root kernel lock is released. A failed
       // disposer is reported, but must not skip the remaining flushes.
       for (const dispose of [() => executionDatabase?.close(),
-        () => modelPolicy?.close(), () => mcpApps?.close(), () => sshManagement?.close(), () => identity?.executionEnvironment?.close(), () => identity?.close?.(),
+        () => modelPolicy?.close(), () => mcpApps?.close(), () => sshManagement?.close(), () => identity?.executionEnvironment?.close(), () => identity?.close?.(), () => loginAdmission?.close(),
 
         () => ownedWorkspaceRouting?.close(), () => installedBotProvider?.close(), () => botAdmission?.close(), () => humanGitExecution?.close(), () => assetsService?.close(), () => assetsStorage?.close(), () => composition.close?.(), () => accountApplication?.close(), () => accountManagement?.close(), () => humanAuth?.close(), () => humanAccounts?.close(),
         () => identityWrites?.close(), () => capabilityBindings?.close(), () => actorStore?.close(), () => membership?.close()]) {
@@ -623,7 +630,14 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       }
     }
     const providers = [...(humanAuth ? [humanAuth] : []), ...externalProviders];
-    if (membership) instanceAccess = new InstanceAccess(membership, providers, actorStore, options.accessMemberProviders ?? [], identity?.admissionPolicy);
+    // The optional core login admission policy (composition `loginAdmission`); an
+    // identity composition that supplies its own policy cannot also enable it.
+    if (loginAdmissionScope) {
+      if (identity?.admissionPolicy) throw new Error('Login admission cannot have two owners');
+      if (!membership) throw new Error('Login admission requires instance access');
+      loginAdmission = await openLoginAdmissionPolicy({ ...loginAdmissionScope, path: join(dataDirectory, 'login-admission.sqlite') });
+    }
+    if (membership) instanceAccess = new InstanceAccess(membership, providers, actorStore, options.accessMemberProviders ?? [], identity?.admissionPolicy ?? loginAdmission);
     // An identity product that owns configurations keeps its route and legacy partitions.
     // Never start a second resource writer alongside that composition.
     if (!identity?.assistantEnvironmentConfigurationManaged) {
@@ -1389,13 +1403,24 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       return { actorId: context.actorId, administrator: !!principal && actorStore.findHuman(principal)?.id === context.actorId && instanceAccess.role(principal) === 'admin',
         origin: actorAccess.options.trustedOrigin?.(request) ?? null };
     });
-    const accountModelDefaultsService = accountModelDefaultsHttp(serverStorage.call, humanActorAccess({
+    const signedInHuman = humanActorAccess({
       authenticate: request => actorAccess.authenticate(request),
       refused: request => actorAccess.legacyAdmissionStatus(request) === 403,
       isCurrentHuman: context => actorStore.isCurrent(context) && actorStore.get(context.actorId)?.kind === 'human',
       admits: instanceAccess ? actorId => instanceAccess.admitsActor(actorId) : null,
       trustedOrigin: request => actorAccess.options.trustedOrigin?.(request) ?? null,
-    }));
+    });
+    const accountModelDefaultsService = accountModelDefaultsHttp(serverStorage.call, signedInHuman);
+    // Personal SSH keys: committed by the owner Worker, read from this thread's projection.
+    const sshKeyAuthority = installationSshKeyAuthority({ actors: actorStore, access: instanceAccess });
+    personalSshKeys = await ActorSshKeys.open(serverStorage.call, sshKeyAuthority);
+    serverStorage.onUnavailable(error => personalSshKeys?.fail(error));
+    const actorSshKeysService = actorSshKeysHttp(personalSshKeys, {
+      access: signedInHuman,
+      administrator: (_request, actorId) => sshKeyAuthority.administrator(actorId),
+      isHuman: actorId => actorStore.get(actorId)?.kind === 'human',
+      sshLogin: !!ingressConfiguration,
+    });
     turnPush = new TurnPushService(await openPushStore(join(dataDirectory, 'web-push.sqlite')), {
       hosts: ['local-codex', 'opencraft-server'],
       publicBaseUrl: async () => (await serverInformation.read()).publicUrl,
@@ -1503,7 +1528,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         ...(agentIdentity ? [{ name: "thread-identity", hostId: "opencraft-server", status: agentIdentity.store.outcome.status,
           appliedVersion: agentIdentity.store.outcome.appliedVersion, backupPath: agentIdentity.store.outcome.backupPath,
           movedAside: agentIdentity.store.outcome.movedAsidePaths.length > 0 }] : []),
-        ...(identity?.getStorageOutcomes?.() ?? []), ...[...codexStorageOutcomes.values()].flat(),
+        ...(identity?.getStorageOutcomes?.() ?? []), ...(loginAdmission ? [{ name: 'login-admission', status: loginAdmission.outcome.status, appliedVersion: loginAdmission.outcome.appliedVersion, movedAside: loginAdmission.outcome.movedAsidePaths.length > 0 }] : []), ...[...codexStorageOutcomes.values()].flat(),
         ...(sshManagement ? [{ name: "ssh-connections", status: sshManagement.store.outcome.status,
           appliedVersion: sshManagement.store.outcome.appliedVersion, backupPath: sshManagement.store.outcome.backupPath,
           movedAside: sshManagement.store.outcome.movedAsidePaths.length > 0 }] : []),
@@ -1547,6 +1572,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       turnPushService: turnPush,
       serverInformationService,
       accountModelDefaultsService,
+      actorSshKeysService,
       authService: humanAuth ?? null,
       accountService: accountApplication ?? null,
       hubService: hubController,
@@ -1584,10 +1610,12 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     if (ingressConfiguration) {
       const privateAddress = await web.listen({ host: "127.0.0.1", port: 0 });
       sshNativeRpc = await createSshNativeRpcGateway(appHostServer);
+      const sshAccess = composeSshAccess(identity?.sshAccess, personalSshKeys);
       ingress = createSshHttpIngress({ ...ingressConfiguration, httpPort: privateAddress.port,
-        ...(identity?.sshAccess ? {
-          resolveAuthorizedKeys: username => identity.sshAccess.publicKeys(username),
-          authorizeSession: (username, key) => identity.sshAccess.authorize(username, key),
+        // An identity composition's own keys first, then each person's registered keys.
+        ...(sshAccess ? {
+          resolveAuthorizedKeys: (username, key) => sshAccess.publicKeys(username, key),
+          authorizeSession: (username, key) => sshAccess.authorize(username, key),
           createNativeSession: authorization => createSshNativeRpcGateway(appHostServer, authorization),
         } : {}),
         codexPort: sshNativeRpc.port, codexControl: createSshCodexControl(appHostServer,

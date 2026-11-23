@@ -47,6 +47,7 @@ export const HEADLESS_CORE_ROUTE_PATHS = Object.freeze([
     "server_information",
     "speech",
     "ssh",
+    "ssh_keys",
     "ssh_servers",
     "update",
     "updates",

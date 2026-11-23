@@ -35,6 +35,7 @@
     "./modal-content": "./src/modal-content.tsx",
     "./preview-activation": "./src/preview-activation.tsx",
     "./use-touch-layout": "./src/use-touch-layout.ts",
+    "./input-presentation": "./src/input-presentation.ts",
     "./adaptive-sheet": "./src/adaptive-sheet.tsx",
     "./adaptive-sheet.web": "./src/adaptive-sheet.scss",
     "./motion-reduction": "./src/use-motion-reduction.ts",

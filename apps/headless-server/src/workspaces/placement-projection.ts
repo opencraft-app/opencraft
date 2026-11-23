@@ -36,6 +36,7 @@ export class WorkspacePlacementProjection {
           const page = await this.port.workspacePlacementPage(cursor);
           if (!page || !Array.isArray(page.items) || page.items.length > 256)
             throw Error("Invalid workspace placement page");
+          let lastCursor = cursor;
           for (const row of page.items) {
             if (
               row.hostId !== "local-codex" ||
@@ -45,16 +46,17 @@ export class WorkspacePlacementProjection {
               /[\x00-\x1f\x7f]/u.test(row.threadId) ||
               typeof row.workspaceId !== "string" ||
               !row.workspaceId ||
-              (cursor !== undefined && row.workspaceId <= cursor)
+              (lastCursor !== undefined && row.workspaceId + "." + Buffer.from(row.threadId, "utf8").toString("hex") <= lastCursor)
             )
               throw Error("Invalid workspace placement page");
+            lastCursor = row.workspaceId + "." + Buffer.from(row.threadId, "utf8").toString("hex");
             next.add(row.threadId);
           }
           if (next.size > 100000) throw Error("Workspace placement capacity reached");
           if (page.next === null) break;
           if (
             typeof page.next !== "string" ||
-            page.next !== page.items.at(-1)?.workspaceId ||
+            page.next !== lastCursor ||
             (cursor !== undefined && page.next <= cursor)
           )
             throw Error("Workspace placement cursor did not advance");

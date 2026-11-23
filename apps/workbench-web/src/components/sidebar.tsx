@@ -14,7 +14,7 @@ import { canHandleWorkbenchShortcut, matchesWorkbenchShortcut, shortcutLabel, sh
 import * as ContextMenu from "@opencraft/design-system-web/context-menu";
 import * as DropdownMenu from "@opencraft/design-system-web/dropdown-menu";
 import { ThreadListModeItems } from "./thread-list-mode-menu";
-import { AvatarImage, type ThreadBadgeContribution, type ThreadListGroupingContribution, type ThreadListGroupingSnapshot, type ThreadListLabel } from "@opencraft/extension-react";
+import { AvatarImage, useIdentityAvatarUrl, type ThreadBadgeContribution, type ThreadListGroup, type ThreadListGroupingContribution, type ThreadListGroupingSnapshot, type ThreadListLabel } from "@opencraft/extension-react";
 import { useWorkbenchPresentationRoot } from "./workbench-presentation-root";
 
 import { useIntl } from "@opencraft/i18n/react";
@@ -177,6 +177,11 @@ function SidebarEntryNavigation({ catalogs }: { catalogs: readonly SidebarCatalo
   </>;
 }
 
+/** A product URL wins; otherwise the installed identity resolver supplies the photo. */
+function ThreadGroupAvatar({ group }: { group: ThreadListGroup }) {
+  const resolved = useIdentityAvatarUrl(group.identity?.kind ?? "", group.identity?.name);
+  return <span className="sidebar-thread-group-avatar" aria-hidden="true"><AvatarImage src={group.avatarUrl ?? resolved} fallback={<UserRound size={14} />} /></span>;
+}
 const defaultGrouping: ThreadListGroupingSnapshot = { revision: 0, mode: null, modes: [], hideRowBadge: false, notice: null };
 const noThreadActions: ThreadActionCallbacks = { onRename: async () => {}, onFork: async () => {}, onArchive: async () => {}, onDelete: async () => {} };
 const noSubscribe = () => () => {};
@@ -685,7 +690,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
                   // their initial intent into its exclusive disclosure layout.
                   if ((next !== key) !== group.collapsed) threadListGrouping?.toggleGroup(group.id);
                 }}>
-                  <span className="sidebar-thread-group-avatar" aria-hidden="true"><AvatarImage src={group.avatarUrl} fallback={<UserRound size={14} />} /></span>
+                  <ThreadGroupAvatar group={group} />
                   <span className="sidebar-thread-group-label">{title}</span><ChevronDown size={12} data-group-disclosure="" className={collapsed ? "is-collapsed" : undefined} />
                 </button>}>
                 {rows.map(thread => <div key={identity(thread)}>{renderThreadTree(thread)}</div>)}

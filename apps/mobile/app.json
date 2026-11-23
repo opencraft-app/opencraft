@@ -2,14 +2,17 @@
   "expo": {
     "name": "OpenCraft",
     "slug": "opencraft-workbench",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "scheme": "opencraft",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "dev.opencraft.workbench"
+      "bundleIdentifier": "dev.opencraft.workbench",
+      "config": {
+        "usesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "dev.opencraft.workbench",

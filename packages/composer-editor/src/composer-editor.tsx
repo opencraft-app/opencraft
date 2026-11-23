@@ -1,6 +1,7 @@
 import { ProgressIndicator } from "@opencraft/design-system-web/progress";
 import { DisclosureButton, IconButton } from "@opencraft/design-system-web/button";
 import { TouchContactScope } from "@opencraft/design-system-web/touch-contact";
+import { isTouchTextEntry } from "@opencraft/design-system-web/input-presentation";
 import { useOverlayPresentationActive } from "@opencraft/design-system-web/presentation-root";
 import { parseConversationRef, encodeConversationRef } from "@opencraft/appserver-protocol/collaboration";
 import { useConversationReferences } from "./conversation-references";
@@ -1873,9 +1874,11 @@ export const OpenCraftComposer = forwardRef<
                 dispatch,
               );
             }
-            // Software keyboards expose Return as a newline. iOS may also
-            // route a native paragraph insertion through this Enter command.
-            if (view?.dom.ownerDocument.defaultView?.matchMedia("(pointer: coarse)").matches) {
+            // Touch text entry usually types on a software keyboard, whose
+            // Return is a newline; iOS may also route a native paragraph
+            // insertion through this Enter command. The shared presentation
+            // contract decides, so preference and current modality both count.
+            if (view && isTouchTextEntry(view.dom.ownerDocument)) {
               return splitBlock(state, dispatch);
             }
             submitActionRef.current();

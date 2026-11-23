@@ -1,6 +1,8 @@
 import { extractMarkdownElement } from "@opencraft/chat-render-web";
 import * as Popover from "@radix-ui/react-popover";
 import { NewMessageIcon as MessageSquarePlus } from "@opencraft/design-system-web/action-icons";
+import { isTouchPresentation } from "@opencraft/design-system-web/input-presentation";
+import { useTouchLayout } from "@opencraft/design-system-web/use-touch-layout";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FormattedMessage } from "@opencraft/i18n/react";
 import "./selection-menu.scss";
@@ -51,16 +53,7 @@ export function ConversationSelectionMenu({ root, onAddToChat }: {
   const [selection, setSelection] = useState<TextSelection | null>(null);
   const dismiss = useCallback(() => setSelection(null), []);
   const dragging = useRef(false);
-  const [touchLayout, setTouchLayout] = useState(() => document.documentElement.dataset.uiDensity === "touch");
-  useEffect(() => {
-    if (!root) return;
-    const element = root.ownerDocument.documentElement;
-    const update = () => setTouchLayout(element.dataset.uiDensity === "touch");
-    const observer = new MutationObserver(update);
-    observer.observe(element, { attributes: true, attributeFilter: ["data-ui-density"] });
-    update();
-    return () => observer.disconnect();
-  }, [root]);
+  const touchLayout = useTouchLayout();
   const enabled = onAddToChat !== undefined && !touchLayout;
   useEffect(() => {
     dismiss();
@@ -95,7 +88,7 @@ export function ConversationSelectionMenu({ root, onAddToChat }: {
   virtualAnchor.current = { getBoundingClientRect: () => selection?.rect ?? new DOMRect() };
   if (!enabled || !selection || !root || !onAddToChat) return null;
   const activate = () => {
-    if (root.ownerDocument.documentElement.dataset.uiDensity === "touch") return;
+    if (isTouchPresentation(root.ownerDocument)) return;
     const current = readConversationSelection(root);
     if (current && current.text === selection.text
       && current.range.compareBoundaryPoints(Range.START_TO_START, selection.range) === 0

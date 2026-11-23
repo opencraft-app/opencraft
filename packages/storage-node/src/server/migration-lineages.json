@@ -150,6 +150,12 @@
       "name": "0024_conversation_resources",
       "checksum": "df9c88ffea4c88af2ed097f5f2c1a494c075992da1331e20abb991ade72ac8c7",
       "snapshotChecksum": "aa11274745c955a23f6ef0fa4bac5654d157b4b7aa805d3b27c5876361db20c6"
+    },
+    {
+      "version": 26,
+      "name": "0025_actor_ssh_keys",
+      "checksum": "c51413da869af1f4c0412979c2274db3ef6e0288d4d86c9a541e4da06565f024",
+      "snapshotChecksum": "f85c87a7a3d79cc28e328dd6c615dab27e3aa2517235ddf42fe16eb7c31e723c"
     }
   ],
   "alternates": [
@@ -347,6 +353,11 @@
           "version": 25,
           "name": "converge_0024_conversation_resources",
           "checksum": "df9c88ffea4c88af2ed097f5f2c1a494c075992da1331e20abb991ade72ac8c7"
+        },
+        {
+          "version": 26,
+          "name": "converge_0025_actor_ssh_keys",
+          "checksum": "c51413da869af1f4c0412979c2274db3ef6e0288d4d86c9a541e4da06565f024"
         }
       ]
     }

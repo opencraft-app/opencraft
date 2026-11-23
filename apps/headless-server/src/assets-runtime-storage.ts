@@ -29,7 +29,7 @@ export function createHeadlessAssetsStorage(
   } = {},
 ) {
   const { environmentAccount, botBackendIdentity, sandboxProviders, ...storageOptions } = options;
-  const { execution, environmentRecords, environmentAccounts } = createHeadlessExecutionRecords({
+  const { execution, environmentRecords, environmentAccounts, actors } = createHeadlessExecutionRecords({
     directory,
     ...(environmentAccount ? { environmentAccount } : {}),
   });
@@ -66,6 +66,8 @@ export function createHeadlessAssetsStorage(
     },
     {
       ...storageOptions,
+      // Settings admit the original Human proof against the same records.
+      actors,
       ...(environmentAccounts ? { environmentAccounts } : {}),
       // Core's own durable records: the pending Codex input lease and the
       // Server owner's creation reservation, with the current Actor epoch.

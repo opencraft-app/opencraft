@@ -25,6 +25,12 @@ import { SandboxNotFoundError } from "e2b";
 import { e2bSandboxBackend, type E2BConnection } from "../../../packages/sandbox-e2b/src/index";
 import { serveSandboxLink, staticDockerSandboxBackend } from "@opencraft/sandbox-node/static-docker";
 import { mkdir } from "node:fs/promises";
+import { dockerProvisionerClient, dockerProvisionerSandboxBackend } from "@opencraft/sandbox-node/docker-provisioner";
+import {
+  dockerEngine,
+  parseDockerProvisionerPolicy,
+  serveDockerProvisioner,
+} from "@opencraft/sandbox-node/docker-provisioner-service";
 import { cloudflareSandboxBackend } from "@opencraft/sandbox-cloudflare";
 import { FakeDurableObjectContainer } from "./cloudflare-container";
 
@@ -729,6 +735,107 @@ export async function staticDockerContainerHarness(image: string): Promise<Endpo
   };
 }
 
+/** docker-provisioner against real containers: the provisioner service runs in this
+ * process with the Docker socket (as the Compose `provisioner` service does) and creates
+ * the workspace container from its own policy (the opencraft image's `workspace-agent
+ * --bare` with the `any` link policy, `--network none`). The backend under test holds no
+ * Docker socket: it speaks the signed provisioner protocol and reaches the container only
+ * through the agent's link. Opt-in: OPENCRAFT_SANDBOX_CONFORMANCE_DOCKER_PROVISIONER=<image>. */
+export async function dockerProvisionerContainerHarness(image: string): Promise<EndpointHarness> {
+  const directory = await mkdtemp(join(tmpdir(), "oc-dp-"));
+  const control = join(directory, "control"),
+    links = join(directory, "links"),
+    endpoints = join(directory, "endpoints");
+  for (const path of [control, links, endpoints]) await mkdir(path, { mode: 0o700 });
+  const host = await socketHost({ host: endpoints, guest: "/endpoint" });
+  const commands: SandboxCommand[] = [],
+    closes = { count: 0 };
+  const workspace = "conformance-" + randomUUID().slice(0, 8);
+  const service = await serveDockerProvisioner({
+    directory: control,
+    docker: dockerEngine("/var/run/docker.sock"),
+    log: () => {},
+    policy: parseDockerProvisionerPolicy({
+      deployment: "oc-conformance",
+      maxWorkspaces: 4,
+      network: "none",
+      links: { directory: links },
+      linkDirectory: links,
+      images: {
+        bare: {
+          image,
+          command: ["/opt/opencraft/bin/node", "/opt/opencraft/runtime/workspace-agent.mjs", "--bare"],
+          // This test process (the Host) runs as root: the link must be its identity.
+          user: "0:0",
+          root: true,
+          cpuMillis: defaults.cpuMillis,
+          memoryBytes: defaults.memoryBytes,
+          pidsLimit: 4096,
+          volumeTarget: "/var/lib/opencraft-workspace",
+          env: {
+            OPENCRAFT_DATA_DIR: "/var/lib/opencraft-workspace/data",
+            OPENCRAFT_WORKSPACE_DIR: "/var/lib/opencraft-workspace/workspace",
+            OPENCRAFT_AGENT_LINK_POLICY: "any",
+          },
+          // Operator-declared (policy, never request) mount for the suite's socket targets.
+          mounts: [{ source: endpoints, target: "/endpoint", readOnly: false }],
+        },
+      },
+    }),
+  });
+  const client = dockerProvisionerClient({ directory: control });
+  const counted = (backend: SandboxBackend): SandboxBackend => {
+    const count = (environment: SandboxEnvironment): SandboxEnvironment => ({
+      ...environment,
+      spawn: environment.spawn,
+      close: async () => {
+        await environment.close();
+        closes.count++;
+      },
+    });
+    return {
+      ...backend,
+      create: async (...args) => count(await backend.create(...args)),
+      attach: async (...args) => count(await backend.attach!(...args)),
+    };
+  };
+  const make = () =>
+    recording(
+      counted(
+        dockerProvisionerSandboxBackend({
+          directory: control,
+          linkRoot: links,
+          image: "bare",
+          workspaceId: async () => workspace,
+        }),
+      ),
+      commands,
+    );
+  return {
+    name: "docker-provisioner",
+    python: "/usr/bin/python3",
+    resources: defaults,
+    catCommand: ["/bin/cat"],
+    commands,
+    closes,
+    backend: make(),
+    reconnect: make,
+    // The workspace container is destroyed and provisioned again: new container, new incarnation.
+    async replaceInstance() {
+      await client.request("destroy", workspace);
+      await client.request("ensure", workspace, "bare");
+    },
+    listen: host.listen,
+    missing: host.missing,
+    async dispose() {
+      await client.request("destroy", workspace).catch(() => {});
+      await service.close();
+      await host.dispose();
+      await rm(directory, { recursive: true, force: true });
+    },
+  };
+}
+
 export async function harnesses(): Promise<(() => Promise<EndpointHarness>)[]> {
   const only = process.env.OPENCRAFT_SANDBOX_CONFORMANCE_ONLY;
   const list = [
@@ -741,10 +848,12 @@ export async function harnesses(): Promise<(() => Promise<EndpointHarness>)[]> {
     (make) => !only || make.name.toLowerCase().startsWith(only),
   );
   const image = process.env.OPENCRAFT_SANDBOX_CONFORMANCE_DOCKER,
-    workspaceImage = process.env.OPENCRAFT_SANDBOX_CONFORMANCE_STATIC_DOCKER;
+    workspaceImage = process.env.OPENCRAFT_SANDBOX_CONFORMANCE_STATIC_DOCKER,
+    provisionedImage = process.env.OPENCRAFT_SANDBOX_CONFORMANCE_DOCKER_PROVISIONER;
   return [
     ...list,
     ...(image ? [() => dockerHarness(image)] : []),
     ...(workspaceImage ? [() => staticDockerContainerHarness(workspaceImage)] : []),
+    ...(provisionedImage ? [() => dockerProvisionerContainerHarness(provisionedImage)] : []),
   ];
 }

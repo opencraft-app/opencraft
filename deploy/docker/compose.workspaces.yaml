@@ -1,0 +1,111 @@
+# Multiple workspaces (docker-provisioner), opt-in overlay:
+#   docker compose -f compose.yaml -f compose.workspaces.yaml up -d
+# The `default` workspace stays on the declared brain/hands containers (static-docker).
+# Every other workspace runs in its own container created by the `provisioner` service,
+# the only service holding the Docker socket. The Gateway never holds it: it speaks the
+# provisioner's signed, four-operation protocol over a private control volume and reaches
+# each workspace's agent through that workspace's directory of the links volume.
+# See README.md "Multiple workspaces".
+
+x-provisioner-log: &provisioner-log
+  driver: local
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  provisioner:
+    image: ${OPENCRAFT_IMAGE:-opencraft:local}
+    platform: ${OPENCRAFT_PLATFORM:-linux/amd64}
+    init: true
+    restart: unless-stopped
+    user: "${OPENCRAFT_UID:?Set the deployment user UID}:${OPENCRAFT_GID:?Set the deployment user group GID}"
+    # Only the socket's group, never root: membership grants the Docker API and nothing else.
+    group_add:
+      - "${OPENCRAFT_DOCKER_GID:?Set the group id owning the Docker socket}"
+    # The Docker API is a Unix socket; this service needs no network at all.
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging: *provisioner-log
+    entrypoint: ["/opt/opencraft/bin/node", "/opt/opencraft/runtime/container-service.mjs", "provisioner"]
+    environment:
+      OPENCRAFT_LOG_DIR: ${OPENCRAFT_LOG_DIR:-/var/log/opencraft}
+      OPENCRAFT_UID: ${OPENCRAFT_UID}
+      OPENCRAFT_GID: ${OPENCRAFT_GID}
+      OPENCRAFT_PROVISIONER_DIR: /run/opencraft-provisioner
+      OPENCRAFT_PROVISIONER_LINK_DIR: /run/opencraft-provisioner-links
+      # Docker-side name of the links volume below (workspace containers mount their subpath).
+      OPENCRAFT_PROVISIONER_LINK_VOLUME: ${OPENCRAFT_WORKSPACE_LINK_VOLUME:-opencraft-workspace-links}
+      OPENCRAFT_PROVISIONER_DEPLOYMENT: ${OPENCRAFT_PROVISIONER_DEPLOYMENT:-opencraft}
+      OPENCRAFT_PROVISIONER_NETWORK: ${OPENCRAFT_PROVISIONER_NETWORK:-opencraft-workspaces}
+      OPENCRAFT_PROVISIONER_MAX_WORKSPACES: ${OPENCRAFT_PROVISIONER_MAX_WORKSPACES:-8}
+      # The image of alias `workspace`; it must already exist locally (never pulled).
+      OPENCRAFT_PROVISIONER_WORKSPACE_IMAGE: ${OPENCRAFT_WORKSPACE_IMAGE:-${OPENCRAFT_IMAGE:-opencraft:local}}
+      OPENCRAFT_WORKSPACE_CPUS: ${OPENCRAFT_WORKSPACE_CPUS:-4}
+      OPENCRAFT_WORKSPACE_MEMORY_BYTES: ${OPENCRAFT_WORKSPACE_MEMORY_BYTES:-8589934592}
+      # Optional operator policy (JSON) replacing the default `workspace` alias.
+      OPENCRAFT_PROVISIONER_POLICY_FILE: ${OPENCRAFT_PROVISIONER_POLICY_FILE:-}
+    volumes:
+      - type: bind
+        source: ${OPENCRAFT_DOCKER_SOCKET:-/var/run/docker.sock}
+        target: /var/run/docker.sock
+      - type: volume
+        source: provisioner-control
+        target: /run/opencraft-provisioner
+      - type: volume
+        source: workspace-links
+        target: /run/opencraft-provisioner-links
+      - type: bind
+        source: ${OPENCRAFT_HOST_LOG_DIR:-${OPENCRAFT_HOST_DATA_DIR}/logs}/provisioner
+        target: ${OPENCRAFT_LOG_DIR:-/var/log/opencraft}/provisioner
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD", "/opt/opencraft/bin/node", "-e", "require('fs').statSync('/run/opencraft-provisioner/provisioner.sock').isSocket()||process.exit(1)"]
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 6
+    stop_grace_period: 30s
+
+  gateway:
+    environment:
+      OPENCRAFT_PROVISIONER_DIR: /run/opencraft-provisioner
+      OPENCRAFT_PROVISIONER_IMAGES: workspace
+      OPENCRAFT_WORKSPACE_PROVISIONED_ENVIRONMENTS: docker-provisioner://workspace
+      OPENCRAFT_WORKSPACE_PROVISIONED_LINK_ROOT: /run/opencraft-links/provisioned
+      # The budget the Gateway requests for alias `workspace`; must equal the provisioner's.
+      OPENCRAFT_WORKSPACE_CPUS: ${OPENCRAFT_WORKSPACE_CPUS:-4}
+      OPENCRAFT_WORKSPACE_MEMORY_BYTES: ${OPENCRAFT_WORKSPACE_MEMORY_BYTES:-8589934592}
+      # Workspace ids the Gateway places at startup (space separated); empty places none.
+      OPENCRAFT_WORKSPACES: ${OPENCRAFT_WORKSPACES:-}
+    volumes:
+      - type: volume
+        source: provisioner-control
+        target: /run/opencraft-provisioner
+      - type: volume
+        source: workspace-links
+        target: /run/opencraft-links/provisioned
+    depends_on:
+      provisioner:
+        condition: service_healthy
+
+volumes:
+  # Socket and request key of the provisioner; mounted only into it and the Gateway.
+  provisioner-control:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "uid=${OPENCRAFT_UID},gid=${OPENCRAFT_GID},mode=0700,size=1m"
+  # One link directory per provisioned workspace. The provisioner creates `<id>/` and mounts
+  # only that subpath into the workspace's container; the Gateway sees all of them.
+  workspace-links:
+    name: ${OPENCRAFT_WORKSPACE_LINK_VOLUME:-opencraft-workspace-links}
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "uid=${OPENCRAFT_UID},gid=${OPENCRAFT_GID},mode=0700,size=8m"

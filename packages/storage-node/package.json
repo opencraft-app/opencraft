@@ -14,6 +14,7 @@
     "./server-owner-serve": "./src/server/owner-serve.ts",
     "./server-conversation-resources": "./src/server/conversation-resources.ts",
     "./server-environment-reservations": "./src/server/environment-creation-reservations.ts",
+    "./server-actor-ssh-keys": "./src/server/actor-ssh-keys.ts",
     "./server-composition": "./src/server/migration-composition.ts",
     "./server/schema": "./src/server/schema.ts",
     "./server/migrations": "./src/server/migration-chain.ts"

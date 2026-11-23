@@ -70,7 +70,7 @@ export * from "./thread-read-receipts";
 
 export * from "./attachment-upload";
 
-export { WORKBENCH_RESOURCE_POLICIES } from "./resource-policy";
+export { WORKBENCH_RESOURCE_POLICIES, type WorkbenchResourceClass } from "./resource-policy";
 
 export * from "./account-model-defaults";
 

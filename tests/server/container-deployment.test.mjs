@@ -233,9 +233,22 @@ test('rendered Compose separates gateway, brain and hands while preserving path 
   // Some Compose versions omit false-valued bind options from JSON output.
   assert.deepEqual(service.volumes.filter(v => v.type === 'bind').map(v => [v.type, v.source, v.target, v.bind?.create_host_path ?? false]), [
     ['bind', '/srv/opencraft/state/execution/git-credentials', '/var/lib/opencraft/git-credentials', false],
-    ['bind', '/srv/opencraft/state', '/var/lib/opencraft', false], ['bind', '/srv/opencraft/workspaces', '/workspace', false],
+    ['bind', '/srv/opencraft/state', '/var/lib/opencraft', false],
+    ['bind', '/srv/opencraft/state/execution', '/var/lib/opencraft/execution', false], ['bind', '/srv/opencraft/workspaces', '/workspace', false],
     ['bind', '/srv/opencraft/logs', '/var/log/opencraft', false], ['bind', '/srv/opencraft/logs/gateway', '/var/log/opencraft/gateway', false],
   ]);
+  // Gateway, Brain and Hands mount the execution directory explicitly, so a separate
+  // OPENCRAFT_HOST_EXECUTION_DIR (root Hands client directory) is one directory for all three.
+  const separate = JSON.parse(compose(['-f', 'deploy/docker/compose.yaml', 'config', '--format', 'json'], {
+    cwd: new URL('../..', import.meta.url), encoding: 'utf8',
+    env: { ...process.env, OPENCRAFT_UID: '1234', OPENCRAFT_GID: '2345', OPENCRAFT_HOST_DATA_DIR: '/srv/opencraft/state',
+      OPENCRAFT_DATA_DIR: '/var/lib/opencraft', OPENCRAFT_HOST_WORKSPACE_DIR: '/srv/opencraft/workspaces', OPENCRAFT_WORKSPACE_DIR: '/workspace',
+      OPENCRAFT_HOST_EXECUTION_DIR: '/srv/opencraft/hands-ipc/client' },
+  }));
+  for (const role of ['gateway', 'brain', 'hands'])
+    assert.deepEqual(separate.services[role].volumes.filter(v => v.target === '/var/lib/opencraft/execution').map(v => v.source),
+      ['/srv/opencraft/hands-ipc/client'], role);
+  assert.equal(separate.services.proxy.volumes.some(v => v.target === '/var/lib/opencraft/execution'), false);
   const paths = deploymentPaths(service.environment);
   assert.equal(service.command[service.command.indexOf('--data-dir') + 1], paths.dataDirectory);
   assert.equal(service.command[service.command.indexOf('--engines') + 1], 'dsh,pi');

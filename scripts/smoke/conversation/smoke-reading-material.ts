@@ -19,7 +19,8 @@ const server = await createServer({ configFile: false, root: process.cwd(), cach
 await server.listen();
 const browser = process.env.OPENCRAFT_SMOKE_BROWSER === 'webkit'
  ? await webkit.launch()
- : await chromium.launch({ args: ['--no-sandbox', '--disable-dev-shm-usage'] });
+ : await chromium.launch({ args: ['--no-sandbox', '--disable-dev-shm-usage'], ignoreDefaultArgs: ['--hide-scrollbars'] });
+
 async function assertReadingContour(page: Page, selector: string, touch: boolean) {
  const scroll = page.locator(selector);
  await scroll.evaluate(node => {
@@ -64,8 +65,12 @@ async function assertReadingContour(page: Page, selector: string, touch: boolean
   }
   const corners=strengths.slice(10,14),interior=strengths[14]!;
   assert(corners.slice(0,2).every(value=>value>60),'upper real rounded corners retain transcript paint: '+corners);
-  assert(corners.slice(2).every(value=>value<2),'lower rounded corners must not leak transcript paint: '+corners);
-  assert(strengths[15]!<2,'the strip below the editor stays quiet, not a second reading line: '+strengths[15]);
+  if (touch) {
+   assert(strengths[15]!>60, 'touch keeps real transcript paint below the floating editor');
+  } else {
+   assert(corners.slice(2).every(value=>value<2),'lower rounded corners must not leak transcript paint: '+corners);
+   assert(strengths[15]!<2,'the strip below the editor stays quiet, not a second reading line: '+strengths[15]);
+  }
   assert(interior<12,'the actual editing surface stays substantially filled rather than using a glass-panel veil: '+interior);
   const crisp = await page.locator(selector.replace('.thread-scroll','.opencraft-composer-editor')).evaluate(node=>{
    const rows=[];
@@ -101,17 +106,38 @@ try {
    await page.waitForTimeout(250);
    const state = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>('.thread-scroll-plane')].map(plane => {
     const scroll = plane.querySelector<HTMLElement>('.thread-scroll')!, footer = plane.querySelector<HTMLElement>('.thread-scroll-footer')!;
-    return { scroll: scroll.getBoundingClientRect().toJSON(), footer: footer.getBoundingClientRect().toJSON(), height: parseFloat(scroll.style.getPropertyValue('--thread-footer-height')), clip: getComputedStyle(scroll).clipPath, mask: getComputedStyle(scroll).maskImage, overlay: !scroll.contains(footer), cover: getComputedStyle(footer, '::after').content };
+    const style = getComputedStyle(scroll);
+    return { scroll: scroll.getBoundingClientRect().toJSON(), footer: footer.getBoundingClientRect().toJSON(), height: parseFloat(scroll.style.getPropertyValue('--thread-footer-height')), inset: parseFloat(style.getPropertyValue('--thread-reading-viewport-inset')), clip: style.clipPath, mask: style.maskImage, overlay: !scroll.contains(footer), cover: getComputedStyle(footer, '::after').content };
    }));
    assert.equal(state.length, 2);
-   for (const s of state) { assert(s.overlay); assert.equal(s.cover, 'none'); if(s.scroll.height) { assert(Math.abs(s.height - s.footer.height) < 1); assert(Math.abs(s.scroll.bottom - s.footer.bottom) < 1); assert.ok(s.clip.startsWith('polygon('),'only the bottom strip is geometrically clipped'); assert.equal(s.mask, 'none', 'the transcript is never masked to fake a Composer contour'); } }
+   for (const s of state) {
+    assert(s.overlay); assert.equal(s.cover, 'none');
+    if (!s.scroll.height) continue;
+    assert(Math.abs(s.height - s.footer.height) < 1);
+    if (touch) assert.equal(s.inset, 0, 'touch keeps the floating reading gutter');
+    else assert(s.inset > 0, 'the desktop viewport ends at the lower editor arc');
+    assert(Math.abs(s.scroll.bottom + s.inset - s.footer.bottom) < 1);
+    assert.equal(s.clip, 'none', 'the rectangular native viewport needs no clip path');
+    assert.equal(s.mask, 'none', 'the transcript is never masked to fake a Composer contour');
+   }
    const backgrounds = await page.evaluate(() => ['.main-content-frame', '.right-panel-view'].map(selector => getComputedStyle(document.querySelector(selector)!).backgroundColor));
    assert.equal(backgrounds[0], backgrounds[1], 'main and side pane consume the same reading material');
    await page.screenshot({ path: `${output}/${mode}-${touch ? 'touch' : 'desktop'}.png` });
    results.push({mode,touch,state,backgrounds});
-   const fade = await assertReadingContour(page, '.side-chat-panel .thread-scroll', touch);
-   if(!touch) await assertReadingContour(page, '.main-content-frame .thread-scroll', false);
+   const fade = await assertReadingContour(page, '.main-content-frame .thread-scroll', touch);
+   if(!touch) await assertReadingContour(page, '.side-chat-panel .thread-scroll', false);
    results.push({mode,touch,fade});
+  }
+
+  if (!touch) {
+   const scroll = page.locator('.main-content-frame .thread-scroll');
+   await scroll.evaluate(node => node.scrollTop = -200);
+   const bounds = (await scroll.boundingBox())!;
+   await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 3);
+   await page.mouse.wheel(0, -220);
+   await page.waitForFunction(() => document.querySelector('.main-content-frame .thread-scroll')!.scrollTop < -340);
+   await page.mouse.wheel(0, 220);
+   await page.waitForFunction(() => document.querySelector('.main-content-frame .thread-scroll')!.scrollTop > -260);
   }
 
   if (!touch && !process.argv.includes('--composer-transition')) {
@@ -120,32 +146,60 @@ try {
    const gutterProbe = await page.addStyleTag({content: '/* native gutter probe */'});
    for (const width of [1600, 800, 430]) {
     await page.setViewportSize({width, height:900});
+    // At phone width the primary and side conversations are separate scenes.
+    const planes = width === 430 ? '.main-content-frame .thread-scroll-plane' : '.thread-scroll-plane';
     for (const gutter of ['auto', 'stable', 'stable both-edges']) {
      for (const direction of ['ltr']) {
       await gutterProbe.evaluate((node, css) => { node.textContent = css; },
-       `.thread-scroll { scrollbar-gutter:${gutter} !important; direction:${direction}; }`);
+       `.thread-scroll { scrollbar-gutter:${gutter} !important; scrollbar-width:auto; scrollbar-color:auto; direction:${direction}; }
+        .thread-scroll::-webkit-scrollbar { width:16px; }
+        .thread-scroll::-webkit-scrollbar-thumb { background:rgb(242,0,188); }`);
       await page.waitForTimeout(160);
-      await page.waitForFunction(() => [...document.querySelectorAll<HTMLElement>('.thread-scroll-plane')].every(plane=>{
+      await page.waitForFunction(selector => [...document.querySelectorAll<HTMLElement>(selector)].every(plane=>{
        const scroll=plane.querySelector<HTMLElement>('.thread-scroll')!;
        if(!scroll.clientWidth)return true;
        const content=plane.querySelector<HTMLElement>('.thread-content')!,shell=plane.querySelector<HTMLElement>('.opencraft-composer-shell')!;
        const c=content.getBoundingClientRect(),s=shell.getBoundingClientRect(),style=getComputedStyle(content);
        return Math.abs(s.left-c.left-parseFloat(style.paddingLeft))<1&&Math.abs(s.right-c.right+parseFloat(style.paddingRight))<1;
-      }),undefined,{timeout:5000});
-      const geometry = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>('.thread-scroll-plane')].map(plane => {
+      }),planes,{timeout:5000});
+      const geometry = await page.evaluate(selector => [...document.querySelectorAll<HTMLElement>(selector)].map(plane => {
        const scroll=plane.querySelector<HTMLElement>('.thread-scroll')!;
        const content=plane.querySelector<HTMLElement>('.thread-content')!;
        const shell=plane.querySelector<HTMLElement>('.opencraft-composer-shell')!;
        const c=content.getBoundingClientRect(),s=shell.getBoundingClientRect(),style=getComputedStyle(content);
        return {visible:scroll.clientWidth>0,scrollbar:scroll.offsetWidth-scroll.clientWidth,
         left:s.left-c.left-parseFloat(style.paddingLeft),right:s.right-c.right+parseFloat(style.paddingRight)};
-      }));
+      }), planes);
       for (const g of geometry) if(g.visible) {
        assert(Math.abs(g.left)<1 && Math.abs(g.right)<1,
         `reading and editing share client edges: ${JSON.stringify({width,gutter,direction,...g})}`);
-       if(gutter==='stable') assert(g.scrollbar>0,'test really reserves native scrollbar space');
+       if(gutter==='stable') assert(g.scrollbar>0, `test really reserves native scrollbar space at ${width}px`);
       }
       results.push({width,gutter,direction,geometry});
+      if (width === 1600 && gutter === 'stable' && process.env.OPENCRAFT_SMOKE_BROWSER !== 'webkit') {
+       const scroll = page.locator('.main-content-frame .thread-scroll');
+       const track = await scroll.evaluate(node => {
+        node.scrollTop = 0;
+        const box = node.getBoundingClientRect();
+        const width = node.offsetWidth - node.clientWidth - node.clientLeft;
+        return { x: Math.floor(box.right - width), y: Math.floor(box.bottom - 80), width, height: 80 };
+       });
+       const painted = PNG.sync.read(await page.screenshot({ clip: track }));
+       // The adjacent panel divider overlaps the outer half of the scrollbar.
+       const thumbColumn = Math.floor(track.width / 4);
+       const thumb = Array.from({ length: painted.height }, (_, y) => y).findLast(y => {
+        const offset = (y * painted.width + thumbColumn) * 4;
+        return painted.data[offset] === 242 && painted.data[offset + 1] === 0 && painted.data[offset + 2] === 188;
+       });
+       assert.ok(thumb !== undefined && thumb > track.height - 8, 'the latest-position scrollbar thumb paints through the end of the visible track');
+       const x = track.x + thumbColumn;
+       const y = track.y + thumb - 3;
+       await page.mouse.move(x, y);
+       await page.mouse.down();
+       await page.mouse.move(x, y - 100, { steps: 8 });
+       await page.mouse.up();
+       await page.waitForFunction(node => node.scrollTop < -30, await scroll.elementHandle(), { timeout: 2000 });
+      }
       if(width===800 && gutter==='stable') {
        await page.locator('.main-content-frame .thread-scroll').evaluate(node=>node.scrollTop=-300);
        await page.waitForTimeout(100);
@@ -176,11 +230,13 @@ try {
     const before=await footer.boundingBox();await scroll.evaluate(node=>node.scrollTop=-1200);await page.waitForTimeout(80);
     assert.deepEqual(await footer.boundingBox(),before,'dock does not travel with transcript');
     const measured = await scroll.evaluate(node => ({
-     clip: getComputedStyle(node).clipPath,
+     inset: parseFloat(getComputedStyle(node).getPropertyValue('--thread-reading-viewport-inset')),
      height: parseFloat((node as HTMLElement).style.getPropertyValue('--thread-composer-occlusion-height')),
     }));
     const surface=(await page.locator(selector.replace('.thread-scroll','.opencraft-composer-shell')).boundingBox())!;
-    assert.ok(measured.clip.startsWith('polygon('));
+    const viewport = (await scroll.boundingBox())!;
+    assert(Math.abs(viewport.y + viewport.height + measured.inset - (before!.y + before!.height)) < 1,
+      'the desktop viewport ends at the current reading cutoff after input grows');
     assert(Math.abs(measured.height-(before!.y+before!.height-surface.y))<1,'occlusion geometry follows the editing surface, including a multiline draft');
    }
    const anchor = () => page.locator('.main-content-frame .thread-scroll').evaluate(node => ({
