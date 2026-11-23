@@ -6,11 +6,19 @@ import { ActorStore } from "./actors.js";
 import { HumanAccounts, type HumanLogin } from "./human-accounts.js";
 import { MembershipStore, type MemberRole } from "./index.js";
 import { commitFence, serveCommitFence } from "./commit-fence.js";
-import type { LocalAccountPasswordExpectation, LocalAccountPasswordUpgrades } from "@opencraft/identity-core/local-account";
+import type {
+  LocalAccountPasswordExpectation,
+  LocalAccountPasswordUpgrades,
+} from "@opencraft/identity-core/local-account";
 
 /** Owner-connection writes the Worker entry supplies, so their SQL stays off network-thread imports. */
 export interface IdentityWriteOwnerOptions {
-  readonly upgradeLocalPassword?: (id: string, expected: LocalAccountPasswordExpectation, salt: string, passwordDigest: string) => boolean;
+  readonly upgradeLocalPassword?: (
+    id: string,
+    expected: LocalAccountPasswordExpectation,
+    salt: string,
+    passwordDigest: string,
+  ) => boolean;
 }
 
 /**
@@ -62,7 +70,12 @@ export class IdentityWriteOwner {
     this.#accounts.rememberLabel(principal, label);
   }
   /** Compare-and-set login upgrade of a local password record; not an authority change. */
-  upgradeLocalPassword(id: string, expected: LocalAccountPasswordExpectation, salt: string, passwordDigest: string): boolean {
+  upgradeLocalPassword(
+    id: string,
+    expected: LocalAccountPasswordExpectation,
+    salt: string,
+    passwordDigest: string,
+  ): boolean {
     const upgrade = this.#options.upgradeLocalPassword;
     if (!upgrade) throw new Error("Local password upgrade unavailable in this owner");
     return upgrade(id, expected, salt, passwordDigest);
@@ -155,10 +168,22 @@ export function identityWriteMethods(owner: IdentityWriteOwner): Record<string, 
  * it, then republishes this thread's permission projections and notifies
  * observers, so a read after the await sees the write. When this thread
  * registered registration hooks the owner cannot run, the write stays local.
+ *
+ * The owner runs these calls in the order they are issued, but a commit reaches
+ * this thread's projection only when its reply is delivered, and the commit
+ * fence can be asked about one write before the reply of an earlier one
+ * arrived. The fence therefore answers only after every call issued before the
+ * fenced one settled and updated the projection, so its recheck never reads
+ * authority older than what the owner committed before it.
  */
 export class IdentityWrites implements LocalAccountPasswordUpgrades {
   readonly #checks = new Map<number, () => boolean>();
+  /** Owner calls in issue order; an administration call's sequence is its fence token. */
   #sequence = 0;
+  /** Issued owner calls whose outcome this thread has not applied yet. */
+  readonly #unsettled = new Set<number>();
+  /** Deferred fence answers, by token, until the calls issued before it settled. */
+  readonly #waiting = new Map<number, (ready: boolean) => void>();
   readonly #stopFence: () => void;
   constructor(
     private readonly owner: OwnerCalls<IdentityWriteOwner>,
@@ -170,22 +195,65 @@ export class IdentityWrites implements LocalAccountPasswordUpgrades {
     /** Absent when this installation has no instance membership. */
     readonly members?: MembershipStore,
   ) {
-    this.#stopFence = serveCommitFence(fence, (token) => this.#checks.get(token)?.() === true);
+    this.#stopFence = serveCommitFence(fence, (token) => {
+      const check = () => this.#checks.get(token)?.() === true;
+      if (!this.#awaitsEarlier(token)) return check();
+      return new Promise<boolean>((resolve) => this.#waiting.set(token, resolve)).then((ready) => ready && check());
+    });
   }
   close(): void {
     this.#stopFence();
+    for (const resolve of this.#waiting.values()) resolve(false);
+    this.#waiting.clear();
+  }
+  #awaitsEarlier(token: number): boolean {
+    for (const sequence of this.#unsettled) if (sequence < token) return true;
+    return false;
+  }
+  /**
+   * Issues one owner call. `apply` brings this thread's projections up to the
+   * call's outcome (it also runs when the call failed) before the call counts
+   * as settled for the fence.
+   */
+  async #call<T>(issue: (sequence: number) => Promise<T>, apply?: (value: T | undefined) => void): Promise<T> {
+    const sequence = ++this.#sequence;
+    this.#unsettled.add(sequence);
+    let value: T | undefined;
+    try {
+      value = await issue(sequence);
+      return value;
+    } finally {
+      try {
+        apply?.(value);
+      } finally {
+        this.#unsettled.delete(sequence);
+        for (const [token, resolve] of this.#waiting)
+          if (!this.#awaitsEarlier(token)) {
+            this.#waiting.delete(token);
+            resolve(true);
+          }
+      }
+    }
   }
   /** Runs an administration write whose authority `authorize` rechecks under the owner's writer lock. */
-  async #administer<T>(authorize: () => boolean, write: (token: number) => Promise<T>): Promise<T> {
+  async #administer<T>(
+    authorize: () => boolean,
+    write: (token: number) => Promise<T>,
+    apply: () => void = () => this.actors.ownerCommitted(),
+  ): Promise<T> {
     if (!authorize()) throw new Error("Actor management denied");
-    const token = ++this.#sequence;
-    this.#checks.set(token, authorize);
-    try {
-      return await write(token);
-    } finally {
-      this.#checks.delete(token);
-      this.actors.ownerCommitted();
-    }
+    let fenced = 0;
+    return this.#call(
+      (token) => {
+        fenced = token;
+        this.#checks.set(token, authorize);
+        return write(token);
+      },
+      () => {
+        this.#checks.delete(fenced);
+        apply();
+      },
+    );
   }
 
   async issueLogin(principal: Principal): Promise<{ token: string; login: HumanLogin }> {
@@ -193,29 +261,57 @@ export class IdentityWrites implements LocalAccountPasswordUpgrades {
     const accountVersion = accounts.loginAccountVersion(principal);
     // A login may register a human; registration hooks live on this thread only.
     if (this.actors.hasLocalRegistrationHooks) return accounts.issue(principal, accountVersion);
-    const issued = await this.owner.issueLogin(principal, accountVersion);
-    this.committed();
-    return issued;
+    return this.#call(
+      () => this.owner.issueLogin(principal, accountVersion),
+      (issued) => {
+        if (issued) this.committed();
+      },
+    );
   }
   async revokeLogin(token: string): Promise<void> {
     const accounts = this.loginAccounts();
-    await this.owner.revokeLogin(token);
-    accounts.ownerCommitted();
+    let revoked = false;
+    await this.#call(
+      async () => {
+        await this.owner.revokeLogin(token);
+        revoked = true;
+      },
+      () => {
+        if (revoked) accounts.ownerCommitted();
+      },
+    );
   }
   async rememberLabel(principal: Principal, label: string): Promise<void> {
-    await this.owner.rememberLabel(principal, label);
+    await this.#call(() => this.owner.rememberLabel(principal, label));
   }
   /** Resolves after the owner committed (or refused) it; no projection or observer changes. */
-  async upgradeLocalPassword(id: string, expected: LocalAccountPasswordExpectation, salt: string, passwordDigest: string): Promise<boolean> {
-    return this.owner.upgradeLocalPassword(id, expected, salt, passwordDigest);
+  async upgradeLocalPassword(
+    id: string,
+    expected: LocalAccountPasswordExpectation,
+    salt: string,
+    passwordDigest: string,
+  ): Promise<boolean> {
+    return this.#call(() => this.owner.upgradeLocalPassword(id, expected, salt, passwordDigest));
   }
   async bindHuman(owner: ActorContext, principal: Principal): Promise<void> {
-    const changed = await this.owner.bindHuman(owner, principal);
-    this.actors.ownerCommitted(changed ? owner.actorId : undefined);
+    await this.#call(
+      () => this.owner.bindHuman(owner, principal),
+      (changed) => {
+        if (changed !== undefined) this.actors.ownerCommitted(changed ? owner.actorId : undefined);
+      },
+    );
   }
   async unbindHuman(owner: ActorContext, binding: Pick<Principal, "provider" | "subject">): Promise<void> {
-    await this.owner.unbindHuman(owner, binding);
-    this.actors.ownerCommitted(owner.actorId);
+    let unbound = false;
+    await this.#call(
+      async () => {
+        await this.owner.unbindHuman(owner, binding);
+        unbound = true;
+      },
+      () => {
+        if (unbound) this.actors.ownerCommitted(owner.actorId);
+      },
+    );
   }
   // Actor administration. `authorize` is the caller's current management
   // authority; it is checked now and again under the owner's writer lock.
@@ -258,13 +354,11 @@ export class IdentityWrites implements LocalAccountPasswordUpgrades {
     operator: string,
     actorId: string | null,
   ): Promise<void> {
-    try {
-      await this.#administer(authorize, (token) =>
-        this.owner.setMembership(token, binding, role, enabled, operator, actorId),
-      );
-    } finally {
-      this.members?.ownerCommitted();
-    }
+    await this.#administer(
+      authorize,
+      (token) => this.owner.setMembership(token, binding, role, enabled, operator, actorId),
+      () => this.membershipCommitted(),
+    );
   }
   async setActorMembership(
     authorize: () => boolean,
@@ -273,10 +367,15 @@ export class IdentityWrites implements LocalAccountPasswordUpgrades {
     enabled: boolean,
     operator: string,
   ): Promise<void> {
+    await this.#administer(
+      authorize,
+      (token) => this.owner.setActorMembership(token, actorId, role, enabled, operator),
+      () => this.membershipCommitted(),
+    );
+  }
+  private membershipCommitted() {
     try {
-      await this.#administer(authorize, (token) =>
-        this.owner.setActorMembership(token, actorId, role, enabled, operator),
-      );
+      this.actors.ownerCommitted();
     } finally {
       this.members?.ownerCommitted();
     }

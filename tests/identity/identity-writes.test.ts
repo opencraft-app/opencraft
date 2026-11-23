@@ -9,7 +9,8 @@ import { ActorStore } from "@opencraft/access-control/actors";
 import { HumanAccounts } from "@opencraft/access-control/human-accounts";
 import { MembershipStore } from "@opencraft/access-control";
 import { IdentityWrites, type IdentityWriteOwner } from "@opencraft/access-control/identity-writes";
-import { createCommitFenceBuffer } from "@opencraft/access-control/commit-fence";
+import { createCommitFenceBuffer, serveCommitFence } from "@opencraft/access-control/commit-fence";
+import type { OwnerCalls } from "@opencraft/worker-owner";
 
 const entry = new URL("../../apps/headless-server/src/server-core-worker.mjs", import.meta.url);
 const principal = (subject: string) => ({
@@ -19,14 +20,20 @@ const principal = (subject: string) => ({
   expiresAt: Date.now() + 3_600_000,
 });
 
-async function fixture(t: test.TestContext) {
+type Calls = OwnerCalls<IdentityWriteOwner>;
+
+/** `deliver` may wrap the owner calls, e.g. to hold a reply before this thread sees it. */
+async function fixture(
+  t: test.TestContext,
+  deliver: (calls: Calls, fence: SharedArrayBuffer) => Calls = (calls) => calls,
+) {
   const directory = await mkdtemp(join(tmpdir(), "identity-writes-"));
   const identityFence = createCommitFenceBuffer();
   const storage = await openServerCoreOwner<IdentityWriteOwner>(directory, { entry, data: { identityFence } });
   const actors = new ActorStore(storage);
   const accounts = new HumanAccounts(storage, actors);
   const members = new MembershipStore(storage);
-  const writes = new IdentityWrites(storage.call, actors, accounts, identityFence, members);
+  const writes = new IdentityWrites(deliver(storage.call, identityFence), actors, accounts, identityFence, members);
   t.after(async () => {
     writes.close();
     members.close();
@@ -200,6 +207,73 @@ test("membership administration commits in the owner and is fenced like Actor ad
     { role: "member", enabled: true },
     "no promotion committed",
   );
+});
+
+// The fence recheck reads this thread's projection, which a committed write
+// reaches only when its reply is delivered here. The Worker commits the first
+// write, posts that reply and asks the fence about the second one at once, so
+// the fence request can be served before the reply. Holding the reply until the
+// fence answered another request (or briefly, for a fence that waits for it)
+// makes that order certain; the recheck must still deny the second write.
+test("a fence recheck sees every write the owner committed before it", async (t) => {
+  const { actors, members, writes } = await fixture(t, (calls, fence) => {
+    const state = new Int32Array(fence);
+    return new Proxy(calls, {
+      get: (target, method, receiver) => {
+        const call = Reflect.get(target, method, receiver) as (...args: unknown[]) => Promise<unknown>;
+        if (method !== "setEnabled") return call;
+        return async (...args: unknown[]) => {
+          const value = await call(...args);
+          // Slot 3 holds the token the fence answered last: this write's own.
+          const answered = Atomics.load(state, 3);
+          const held = Date.now() + 250;
+          while (Atomics.load(state, 3) === answered && Date.now() < held)
+            await new Promise((resolve) => setImmediate(resolve));
+          return value;
+        };
+      },
+    });
+  });
+  const { login: admin } = await writes.issueLogin(principal("admin"));
+  const { login: member } = await writes.issueLogin(principal("member"));
+  const allowed = () => actors.isCurrent(admin.context);
+  const disable = writes.setEnabled(allowed, admin.context.actorId, false, admin.context.actorId);
+  const promote = writes.setActorMembership(allowed, member.context.actorId, "admin", true, admin.context.actorId);
+  await disable;
+  await assert.rejects(promote, /Authorization changed before the write committed/);
+  assert.equal(members.actorMembership(member.context.actorId), null, "no promotion committed");
+});
+
+// The Worker side is driven by hand here: [state, token, approval, answered],
+// with state 1 a request and 2 an answer.
+test("a deferred fence answer is never taken for a later request", async () => {
+  const buffer = createCommitFenceBuffer();
+  const state = new Int32Array(buffer);
+  const verdicts = new Map<number, (approved: boolean) => void>();
+  const stop = serveCommitFence(buffer, (token) => new Promise((resolve) => verdicts.set(token, resolve)));
+  const settled = async () => {
+    for (let turn = 0; turn < 20; turn++) await new Promise((resolve) => setImmediate(resolve));
+  };
+  try {
+    const request = (token: number) => {
+      Atomics.store(state, 1, token);
+      Atomics.store(state, 0, 1);
+      Atomics.notify(state, 0);
+    };
+    request(1);
+    await settled();
+    assert.ok(verdicts.has(1), "the check for token 1 is pending");
+    // The Worker gave up on token 1 and asks about token 2 before 1 is answered.
+    request(2);
+    verdicts.get(1)!(true);
+    await settled();
+    assert.equal(Atomics.load(state, 0), 1, "the late approval of token 1 did not answer token 2");
+    verdicts.get(2)!(false);
+    await settled();
+    assert.deepEqual([Atomics.load(state, 0), Atomics.load(state, 2), Atomics.load(state, 3)], [2, 0, 2]);
+  } finally {
+    stop();
+  }
 });
 
 // Authentication calls bindLegacyAlias on every request; without an enabled
