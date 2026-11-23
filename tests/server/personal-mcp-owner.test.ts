@@ -29,13 +29,6 @@ const flag = () => {
   Atomics.store(value, 0, 1);
   return value;
 };
-const waitFor = async (predicate: () => boolean) => {
-  const until = Date.now() + 5000;
-  while (!predicate()) {
-    assert.ok(Date.now() < until, "timed out");
-    await new Promise((r) => setTimeout(r, 5));
-  }
-};
 const rejectsWith = (code: string) => (error: unknown) =>
   error instanceof Error && (error as { code?: string }).code === code;
 
