@@ -2,7 +2,7 @@
 
 [Architecture index](../README.md) · [存储端口](storage-ports.md) · [执行沙盒](../execution/execution-sandbox.md) · [Docker 三角色部署](../../../deploy/docker/README.md)
 
-状态：目标设计。Cloudflare Containers 的平台能力已做真实探测（2026-11-23，结论见[工作区拆分 §3.6](workspace-host-split.md#36-部署形态统一建模)），`sandbox-cloudflare` provider 尚未实现。只有存储端口的 Cloudflare 适配器已在本地 workerd 中通过一致性测试（见[存储端口第 6 节](storage-ports.md#6-cloudflare-适配器第-5-阶段本地-workerd-验证)），`InstallationCore`（见第 5 节）与 `RelayHub`（见第 6 节）各有一个仅限测试的本地 workerd 原型；本页不代表任何 Cloudflare 组件已可部署。Node 自托管（Docker／systemd／Electron）始终是一等公民；Cloudflare 是部署装配选项之一，不替换 Node 路径。
+状态：目标设计。Cloudflare Containers 的平台能力已做真实探测（2026-11-23，结论见[工作区拆分 §3.6](workspace-host-split.md#36-部署形态统一建模)）；`sandbox-cloudflare` provider 已实现并在真实 Cloudflare 上预演通过（第 7.5 节），但还没有 WorkspaceHost DO 装配。只有存储端口的 Cloudflare 适配器已在本地 workerd 中通过一致性测试（见[存储端口第 6 节](storage-ports.md#6-cloudflare-适配器第-5-阶段本地-workerd-验证)），`InstallationCore`（见第 5 节）与 `RelayHub`（见第 6 节）各有一个仅限测试的本地 workerd 原型；本页不代表任何 Cloudflare 组件已可部署。Node 自托管（Docker／systemd／Electron）始终是一等公民；Cloudflare 是部署装配选项之一，不替换 Node 路径。
 
 ## 1. 现状约束
 
@@ -11,7 +11,7 @@
 - **Gateway 不是无状态的**：Codex Host 层状态（queue、schedules、中断恢复、tasks、token usage）由 Gateway 进程内的 `CodexEngineAdapter` 写入 `$DATA/codex/`。
 - 账号 Core（`apps/codex-core` 的 split core 与 `packages/account-pool-host`）持有账号池、OAuth 刷新、模型代理与计量，是部署级单写者。
 - 沙盒内的 Codex `exec-server`、文件、终端与浏览器 owner 全部经 stdio 传输，沙盒不需要入站端口。
-- Cloudflare Sandbox SDK **不兼容 E2B API**；接入方式是实现 `@opencraft/sandbox` 端口的新后端，而不是复用 E2B SDK。`sandbox-cloudflare` 作为 `@opencraft/sandbox/providers` 的一个 provider 注册，由 WorkspaceHost DO 持有容器，经 `ctx.container.exec` 启动并承载 `@opencraft/sandbox/broker`，命名端点优先容器原始 TCP；工作区内容以 Git 为真源，容器快照只是可选加速能力（[工作区拆分 §3.7](workspace-host-split.md#37-工作区持久化与空闲设计2026-11-23-用户决定未实现)）。该 provider 尚未实现，前置项见工作区拆分 §7。
+- Cloudflare Sandbox SDK **不兼容 E2B API**；接入方式是实现 `@opencraft/sandbox` 端口的新后端，而不是复用 E2B SDK。`sandbox-cloudflare` 作为 `@opencraft/sandbox/providers` 的一个 provider 注册，由 WorkspaceHost DO 持有容器，经 `ctx.container.exec` 启动并承载 `@opencraft/sandbox/broker`，命名端点优先容器原始 TCP；工作区内容以 Git 为真源，容器快照只是可选加速能力（[工作区拆分 §3.7](workspace-host-split.md#37-工作区持久化与空闲设计2026-11-23-用户决定未实现)）。该 provider 已实现（`@opencraft/sandbox-cloudflare`，命名端点经中继；原始 TCP、快照与 `sleep` 未做），现状与剩余项见工作区拆分 §3.6"实现现状"与 §7。
 
 ## 2. 目标拓扑
 
@@ -166,10 +166,10 @@ Hub 级联有两层：联邦模型（稳定节点身份、签名邀请、连接�
 
 ```sh
 CLOUDFLARE_ACCOUNT_ID=<32 位十六进制> CLOUDFLARE_API_TOKEN=<Workers Scripts + R2 编辑权限的 token；由代理注入时填任意占位> \
-  npm run cf:rehearsal -- [--only '<分组: 场景名正则>'] [--skip-miniflare] [--report out.json] [--stale-minutes 10] [--keep]
+  npm run cf:rehearsal -- [--only '<分组: 场景名正则>'] [--skip-miniflare] [--report out.json] [--stale-minutes 10] [--keep] [--containers]
 ```
 
-- **只碰自己的名字**：Worker 与 R2 bucket 名称为 `opencraft-rehearsal-<8 位随机运行 ID>-…`，创建、删除前都按精确名称和该正则核对，账号中运行前已存在的资源一律拒绝触碰。不创建容器、D1、KV。
+- **只碰自己的名字**：Worker 与 R2 bucket 名称为 `opencraft-rehearsal-<8 位随机运行 ID>-…`，创建、删除前都按精确名称和该正则核对，账号中运行前已存在的资源一律拒绝触碰。默认不创建容器、D1、KV；容器只在显式 `--containers` 时创建（第 7.5 节）。
 - **访问密钥**：每次运行生成 32 字节随机密钥，只存在于进程内存与 Worker 的 `secret_text` binding；`scripts/cloudflare/rehearsal-guard.ts` 包在每个原型外层，对所有路由先做 SHA-256 后常量时间比较，不匹配一律 404。场景使用的虚拟主机（如 `inst-a.relay.test`）经请求头还原后再交给原型。
 - **清理**：正常结束、异常、`SIGINT`／`SIGTERM`／`SIGHUP`、未捕获异常都会删除本次 Worker（`force=true` 同时删除 DO 命名空间与存储）和 bucket（先经仍在运行的绑定 Worker 清空对象，若绑定 Worker 已删除则临时部署一个只含清空入口的 `…-purge` Worker）。清理开始后不再部署新版本。结束时重新列出账号并与运行前比较。
 - **残留回收**：`SIGKILL` 或宕机无法清理，因此每次启动先列出 `opencraft-rehearsal-` 前缀资源，按运行 ID 分组；整组在 `--stale-minutes`（默认 10）内没有变化才视为过期并删除（bucket 同样先清空），避免误删另一个仍在运行的预演。`--stale-minutes 0` 立即回收全部前缀残留。`--keep` 仅供调试，保留资源由下一次运行回收。
@@ -206,3 +206,14 @@ Cloudflare 侧耗时主要是部署（首个版本约 3 s，`immediate` 重启�
 - **CPU 上限**：Workers Paid 默认每请求 30 s CPU，单次登录最多约 0.9 s，余量 30 倍以上，不需要提高 `limits.cpu_ms`；Workers Free 的 10 ms 则完全不可用。
 - **登录延迟**：约 0.3–0.9 s 的服务端计算加网络往返，交互式登录可以接受，但约为 Node 原生的 25–35 倍。
 - **代价与风险**：CPU 时长按毫秒计费，失败尝试同样消耗 0.6 s 级 CPU，且同一 installation 的登录集中在单线程 DO 上串行执行，并发登录会排队。正式实现必须在哈希之前做按来源与账号的速率限制和并发上限，并评估把哈希移到无状态 Worker（DO 只做记录读写）以避免阻塞同一对象的其他请求；如需降低成本再评估 WebAssembly 实现，参数仍须与 Node 记录互通。
+
+### 7.5 Cloudflare Containers 组（`--containers`）
+
+显式开关，默认 `npm run cf:rehearsal` 不运行，也不在 `test`、`gate`、CI 中；`--containers --only '^containers'` 只运行该组。需要本机 Docker 与 `registry.cloudflare.com`（推送凭据由 API `containers/registries/registry.cloudflare.com/credentials` 签发，只写入临时 `DOCKER_CONFIG`）。`scripts/cloudflare/rehearsal-containers.ts`：
+
+- **镜像**：`scripts/cloudflare/container-agent.Dockerfile`＝`python:3.12-alpine`＋Node 22 二进制＋esbuild 打包的真实 `workspace-agent --bare`（容器主进程，只发布 `control`）；不是产品镜像。推送后经 `containers/image-preparations` 等待就绪。
+- **部署**：Worker `opencraft-rehearsal-<run>-containers`（兼容日期 `2026-11-01`，版本元数据 `containers:[{class_name, images:{base}}]`，访问守卫同上）＋ DO `WorkspaceContainer`（tests/execution/workerd/sandbox-cloudflare-worker.ts，只经 provider registry → backend → pool → `WorkspaceRuntime` 驱动容器）＋ `durable_object` 调度的容器应用。预算 1/4 vCPU、512 MiB、2 GB 磁盘。不创建快照。
+- **步骤**：create（自定义实例、化身标签、身份 exec）→ spawn（exec 不继承 start env、argv 含空格、退出码 3、PTY `45 123`）→ 非 attached Python 回显服务＋attached 中继 4 MiB 往返 SHA 一致 → agent `probe` → `ctx.abort()` 重置 DO → 新 DO 中 `WorkspaceRuntime.observe()` 按 receipt `attached`（同一 agent 化身）→ `workspace://default/endpoints/control` 往返 → 另一 receipt 句柄 `kill -TERM 1`，`monitor()` 报告 `lost {exited, 0}`，runtime `released lost:exited` → 再次使用 `attach-failed`→`created`（新化身）→ close：`destroy()`＋`monitor()` 落定，`inspect()` 为 `null`。
+- **清理**：删除容器应用、Worker（`force=true`，含 DO 命名空间）、镜像 tag 与其 digest 清单；启动时回收 Worker 已不存在的前缀容器应用与镜像；结束时列出 Worker、容器应用、镜像。
+
+**2026-11-23 结果**（ewr 机房，单次运行，数字只作量级）：6／6 通过，总用时 65 s（构建 0.3 s、推送＋准备 11 s、部署 5.5 s）。create 3.9 s（冷启动＋身份 exec）；spawn 首个 exec 230 ms、PTY 56 ms；中继建立 62 ms，4 MiB 往返 264 ms；DO 重置后 attach＋probe 约 140 ms；agent 停止到 `lost` 138 ms；丢失后新建化身 1.2 s；close 275 ms。前几次运行暴露并修正了两处驱动问题：新建 Worker 后 DO 命名空间列表分页／滞后（改为分页轮询），以及一次 DO 调用时容器绑定尚未就绪（部署步骤改为等待 `status` 可用）。运行前后账号均为原有 8 个 Worker、0 个 R2 bucket、0 个容器应用；**残留**：每次推送后 Cloudflare 的镜像准备在同一仓库生成一个 `application/vnd.cloudchamber.btrfs-chain.v1` 清单，registry 以 409 `SINGLETON_ARTIFACT_EXISTS` 拒绝删除（探测时的 `opencraft-probe-cfc-probe-base` 仓库有同类残留）；本日 6 次运行留下 6 个此类清单（各约 6 MiB，仓库 `opencraft-rehearsal-<run>-agent`），脚本将其报告为平台保留而非清理失败。未验证：快照、`sleep`、原始 TCP、inactivity timeout 实际到期、长时间运行的费用。

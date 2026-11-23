@@ -318,7 +318,7 @@
     "test:cli": "node --import tsx --test tests/chat/conversation-cli-create.test.ts tests/chat/conversation-cli-read.test.ts tests/chat/conversation-cli-send.test.ts tests/chat/conversation-cli-input.test.ts tests/chat/conversation-cli-steer.test.ts",
     "generate:storage": "node --import tsx scripts/storage/storage-migrations.mjs generate",
     "check:storage": "node --import tsx scripts/storage/storage-migrations.mjs check && node --import tsx scripts/check/check-remote-browser-migrations.mjs",
-    "test:sandbox": "node --import tsx --test tests/execution/sandbox-primitive.test.ts tests/execution/sandbox-engine-runtime.test.ts tests/execution/sandbox-host-process.test.ts tests/execution/sandbox-broker.test.ts tests/execution/sandbox-endpoint-conformance.test.ts tests/execution/sandbox-endpoint-listener.test.ts tests/execution/sandbox-uri.test.ts",
+    "test:sandbox": "node --import tsx --test tests/execution/sandbox-primitive.test.ts tests/execution/sandbox-engine-runtime.test.ts tests/execution/sandbox-host-process.test.ts tests/execution/sandbox-broker.test.ts tests/execution/sandbox-endpoint-conformance.test.ts tests/execution/sandbox-endpoint-listener.test.ts tests/execution/sandbox-uri.test.ts tests/execution/sandbox-cloudflare.test.ts",
     "smoke:sandbox": "node --import tsx scripts/smoke/execution/smoke-sandbox.ts",
     "test:notification-destinations": "node --import tsx --test tests/server/notification-destinations.test.ts tests/extensions/im-notifications.test.ts tests/shell/notification-destinations.test.ts",
     "smoke:notification-destinations": "node --import tsx scripts/smoke/conversation/smoke-notification-destinations.ts",

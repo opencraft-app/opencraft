@@ -18,6 +18,11 @@
 //   --stale-minutes <n>     before deploying, delete leftovers of earlier runs
 //                           (opencraft-rehearsal-* only) unchanged for n minutes
 //                           (default 10; 0 cleans every earlier run's leftovers)
+//   --containers            also run the paid Cloudflare Containers group (the
+//                           `cloudflare` sandbox provider; needs Docker and
+//                           registry.cloudflare.com; see rehearsal-containers.ts).
+//                           Off by default. `--containers --only '^containers'`
+//                           runs only that group.
 // See docs/architecture/platform/cloudflare-deployment.md ("真实 Cloudflare 预演").
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -26,7 +31,9 @@ import { parseArgs } from "node:util";
 import { miniflareRuntime } from "../../tests/cloudflare/miniflare-runtime.ts";
 import { SCENARIO_GROUPS } from "../../tests/cloudflare/scenarios.ts";
 import type { WorkerRuntime, WorkerScenario } from "../../tests/cloudflare/worker-runtime.ts";
+import { randomBytes } from "node:crypto";
 import { cleanLeftovers } from "./rehearsal-leftovers.ts";
+import { runContainerRehearsal } from "./rehearsal-containers.ts";
 import {
   CloudflareApi,
   cloudflareRuntime,
@@ -55,6 +62,7 @@ const { values: args } = parseArgs({
     report: { type: "string" },
     keep: { type: "boolean", default: false },
     "stale-minutes": { type: "string", default: "10" },
+    containers: { type: "boolean", default: false },
   },
 });
 
@@ -196,6 +204,31 @@ try {
       for (const line of row.miniflare?.diagnostics ?? []) log(`    miniflare diagnostic: ${line}`);
       for (const line of row.cloudflare.diagnostics) log(`    cloudflare diagnostic: ${line}`);
     }
+  }
+  if (args.containers && (!only || only.test("containers: "))) {
+    log("== Cloudflare Containers: `cloudflare` sandbox provider (cloud only; Miniflare does not run containers)");
+    const result = await runContainerRehearsal({
+      api,
+      log,
+      prefix: cloud.run,
+      key: randomBytes(32).toString("base64url"),
+      subdomain: await api.subdomain(),
+      keep: args.keep,
+    });
+    for (const step of result.steps)
+      rows.push({
+        group: "containers",
+        name: step.name,
+        cloudflare: {
+          ok: step.ok,
+          ms: step.ms,
+          ...(step.ok ? {} : { error: String(step.detail) }),
+          diagnostics: step.ok ? [JSON.stringify(step.detail)] : [],
+        },
+      });
+    for (const failure of result.failures) log(`CONTAINERS CLEANUP FAILED ${failure}`);
+    if (result.failures.length) exitCode = 1;
+    if (!result.steps.length || result.steps.some((step) => !step.ok)) exitCode = 1;
   }
   await reportInvocationTimes().catch((error) => log(`invocation times unavailable: ${String(error)}`));
 } catch (error) {
