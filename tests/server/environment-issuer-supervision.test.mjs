@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { generateKeyPairSync } from "node:crypto";
-import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deploymentPaths } from "../../scripts/container-deployment/paths.mjs";
@@ -39,8 +39,14 @@ async function deployment(t, extra = {}) {
   await mkdir(paths.runDirectory, { recursive: true, mode: 0o700 });
   return { root, env, paths };
 }
-const publish = (path, issuer, mode = 0o600) =>
-  writeFile(path, JSON.stringify({ schemaVersion: 1, issuer }) + "\n", { mode }).then(() => chmod(path, mode));
+// Publishes like the owner does: a complete file with its final mode replaces the old one at once, so a polling
+// reader never sees new content under the previous mode.
+const publish = async (path, issuer, mode = 0o600) => {
+  const temporary = `${path}.${process.pid}.tmp`;
+  await writeFile(temporary, JSON.stringify({ schemaVersion: 1, issuer }) + "\n", { mode });
+  await chmod(temporary, mode);
+  await rename(temporary, path);
+};
 const readJson = async (path) => JSON.parse(await readFile(path, "utf8"));
 
 test("without ENV delivery Brain writes exactly the previous host configurations", async (t) => {
@@ -227,6 +233,7 @@ test("a rotated key relaunches DSH, Pi and the Codex AppServer with it; until th
   const events = [];
   let running = true;
   const controller = new AbortController();
+  t.after(() => controller.abort());
   let relaunched;
   const done = new Promise((accept) => {
     relaunched = accept;
