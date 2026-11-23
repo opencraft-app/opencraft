@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { execFileSync } from "node:child_process";
 import { generateKeyPairSync } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readFile, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -237,6 +238,8 @@ test("a missing or untrusted publication never supplies a key: hosts pin an unis
     ],
     ["other schema", () => writeFile(path, JSON.stringify({ schemaVersion: 2, issuer: forged }), { mode: 0o600 })],
     ["not JSON", () => writeFile(path, forged, { mode: 0o600 })],
+    // A FIFO must be refused without blocking the reader on open.
+    ["named pipe", async () => execFileSync("mkfifo", ["-m", "600", path])],
   ];
   for (const [name, plant] of cases) {
     await rm(path, { force: true });
