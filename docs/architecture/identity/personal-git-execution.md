@@ -51,6 +51,39 @@ owner fails startup instead of running Codex Turns without personal Git.
 Workers query vault/lease stores off the routing event loop. No private key is
 exported to command environment, files, responses or image layers.
 
+## Connection providers
+
+Settings bindings are written by `GitConnections` in the assets vault Worker
+(`plugins/assets/src/server/git-connections.ts`), one vault record per account
+and host. Each compiled `GitConnectionProvider` declares `auth`:
+
+- `token`: the provider verifies an account token with its service (GitHub is
+  the built-in one) and may register a signing key. Actions: `save`, `register`,
+  `clear`.
+- `ssh`: plain configuration `{ host, auth: "ssh", name }` for a Git host that
+  authenticates with a key generated here. Actions: `save` (commit identity only,
+  keeps the key), `generate-ssh`, `delete-ssh`, `clear`. `generate-ssh` creates an
+  ed25519 pair in the Worker, stores the private key in the credential's `sshAuth`
+  and stores the draft identity (or reuses the saved one); the response carries
+  only generation, public key and fingerprint. Regenerating replaces the key.
+  `delete-ssh` removes the key and keeps the identity; such a binding is reported
+  as not configured and opens with no transport. The user registers the public key
+  on the host; nothing is called remotely.
+
+Every action is admitted, pinned to the record revision and rechecked before the
+write; unknown fields, actions of the other auth kind and stale revisions are
+rejected. A downstream composes its own provider list into its compiled assets
+Worker entry (`createHeadlessAssetsStorage(directory, providers)`), never from
+Worker data or a request. The Worker advertises non-secret
+`gitProviders` (`{ host, auth }`, plus `name` for SSH hosts) beside `gitHosts` on
+`/__opencraft_assets/status`; the settings client renders GitHub's token form and
+the SSH-key form from that list, with the configured `name` as the host's entity
+name. The grant path needs no provider code: an execution grant opens the vault
+record for the host, and a record with `sshAuth` serves an in-memory SSH agent
+(`sshAuth: { socket, publicKey }`) for `push`, `fetch`, `pull`, `ls-remote` and
+`clone`; it has no HTTPS password. Deployments that require personal SSH for push
+list the host in `personalSshPushHosts`.
+
 ## Discovery and recovery
 
 Native Codex receives the sealed grant and locator through its existing per-thread
@@ -100,6 +133,8 @@ not an unreviewed permission change. This implementation uses same-host Unix
 sockets; isolated/remote E2B transport remains a separate adapter concern.
 
 Focused checks: `tests/identity/personal-git.test.mjs`,
+`tests/extensions/git-connections.test.ts` (provider actions),
+`tests/identity/assets-execution-git.test.ts` (SSH-key host through the grant),
 `tests/identity/git-identity-ipc.test.ts`, the execution-environment tests, and
 `tests/execution/codex-engine-adapter.test.ts`. Synthetic native-Git fixtures are
 not an assertion that production credentials or a remote Git host were exercised.

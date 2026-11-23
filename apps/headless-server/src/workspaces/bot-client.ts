@@ -1,8 +1,15 @@
 import { spawnAssistant, type AssistantEnvironmentProvider } from "@opencraft/personal-assistant/host";
-import type { WorkspaceBotPort } from "./bot-owner.js";
+import type { WorkspaceBotPort, WorkspaceBotSourcePort } from "./bot-owner.js";
+import type { WorkspaceActorAdmission } from "./actor-authority.js";
 const pause = () => new Promise<void>((resolve) => setTimeout(resolve, 10));
 type SpawnOptions = Parameters<AssistantEnvironmentProvider["spawn"]>[1];
 type Brain = ReturnType<typeof spawnAssistant>;
+type Environment = Parameters<AssistantEnvironmentProvider["spawn"]>[0];
+/** The Bot assignment owner the host resolves environments for. */
+export interface WorkspaceBotContext {
+  readonly actorId: string;
+  readonly generation: number;
+}
 interface Entry {
   request: SpawnOptions["request"];
   failed: boolean;
@@ -13,10 +20,17 @@ interface Entry {
 /** Main retains only the original brain and assignment callback. Cloud SDK,
  * template credentials, process handles and pool/journal live in Worker. */
 export function createWorkspaceBotProvider(options: {
-  port: WorkspaceBotPort;
+  port: WorkspaceBotPort & Partial<WorkspaceBotSourcePort>;
   spawnLocal?: typeof spawnAssistant;
   onCleanupUnconfirmed(): void;
-}): AssistantEnvironmentProvider & { close(): Promise<void> } {
+  /** Main's admission for a Bot owner, rechecked by the vault Worker. With it,
+   * `forContext` serves that Actor's personal, platform and installed sources. */
+  admission?(context: WorkspaceBotContext): WorkspaceActorAdmission;
+}): AssistantEnvironmentProvider & {
+  /** One Actor's environments by backend ID; none when it is not admitted. */
+  forContext(context: WorkspaceBotContext): Promise<Record<string, AssistantEnvironmentProvider>>;
+  close(): Promise<void>;
+} {
   const entries = new Map<string, Entry>(),
     callbacks = new Set<string>(),
     authorizing = new Map<string, Promise<unknown>>(),
@@ -51,7 +65,9 @@ export function createWorkspaceBotProvider(options: {
   async function pump() {
     const requests = await options.port.workspaceBotCallbacks();
     for (const request of requests) {
-      if (callbacks.has(request.token)) continue;
+      // Another client of the same Worker, or an entry whose open has not yet
+      // returned here, owns it; the Worker retires unanswered callbacks itself.
+      if (callbacks.has(request.token) || !entries.has(request.entry)) continue;
       if (pending.size >= 128) {
         await options.port.workspaceBotReply(request.token, { error: true });
         continue;
@@ -130,6 +146,48 @@ export function createWorkspaceBotProvider(options: {
       entries.delete(token);
     })());
   }
+  async function start(
+    environment: Environment,
+    source: SpawnOptions,
+    open: () => Promise<string>,
+  ): ReturnType<AssistantEnvironmentProvider["spawn"]> {
+    check();
+    const token = await open(),
+      e: Entry = { request: source.request, failed: false };
+    entries.set(token, e);
+    schedule();
+    try {
+      for (;;) {
+        check();
+        const state = await options.port.workspaceBotStatus(token);
+        if (state.state === "failed") throw Error("Bot workspace unavailable");
+        if (state.state === "starting") {
+          await pause();
+          continue;
+        }
+        check();
+        e.brain = (options.spawnLocal ?? spawnAssistant)({
+          ...source,
+          executionEnvironment: state.descriptor,
+          request: async (method, params) => {
+            if (!["environment/run", "environment/cancel"].includes(method)) return source.request(method, params);
+            check();
+            if (e.failed || e.closing) throw Error("Bot workspace retired");
+            const operation = await options.port.workspaceBotExecute(token, method, params);
+            return result(operation);
+          },
+        });
+        return {
+          ...e.brain,
+          failed: () => e.failed || stopped || e.brain!.failed(),
+          close: () => closeEntry(token, e),
+        };
+      }
+    } catch (cause) {
+      await closeEntry(token, e);
+      throw cause;
+    }
+  }
   return {
     async templates() {
       check();
@@ -142,44 +200,61 @@ export function createWorkspaceBotProvider(options: {
       check();
     },
     async spawn(environment, source) {
+      return start(environment, source, async () => {
+        const catalog = await options.port.workspaceBotCatalog();
+        check();
+        return options.port.workspaceBotOpen(catalog.revision, environment);
+      });
+    },
+    async forContext(context) {
       check();
-      const catalog = await options.port.workspaceBotCatalog();
-      check();
-      const token = await options.port.workspaceBotOpen(catalog.revision, environment),
-        e: Entry = { request: source.request, failed: false };
-      entries.set(token, e);
-      schedule();
+      const port = options.port;
+      const { workspaceBotSources, workspaceBotSourceValidate, workspaceBotSourceOpen } = port;
+      if (!options.admission || !workspaceBotSources || !workspaceBotSourceValidate || !workspaceBotSourceOpen)
+        throw Error("Bot environment sources unavailable");
+      const admit = () => {
+        check();
+        const value = options.admission!(context);
+        if (value.actorId !== context.actorId || value.generation !== context.generation)
+          throw Error("Bot environment owner changed");
+        return value;
+      };
+      const sources = async () => {
+        const value = await workspaceBotSources.call(port, admit());
+        check();
+        return value;
+      };
+      let catalog: Awaited<ReturnType<typeof sources>>;
       try {
-        for (;;) {
-          check();
-          const state = await options.port.workspaceBotStatus(token);
-          if (state.state === "failed") throw Error("Bot workspace unavailable");
-          if (state.state === "starting") {
-            await pause();
-            continue;
-          }
-          check();
-          e.brain = (options.spawnLocal ?? spawnAssistant)({
-            ...source,
-            executionEnvironment: state.descriptor,
-            request: async (method, params) => {
-              if (!["environment/run", "environment/cancel"].includes(method)) return source.request(method, params);
-              check();
-              if (e.failed || e.closing) throw Error("Bot workspace retired");
-              const operation = await options.port.workspaceBotExecute(token, method, params);
-              return result(operation);
-            },
-          });
-          return {
-            ...e.brain,
-            failed: () => e.failed || stopped || e.brain!.failed(),
-            close: () => closeEntry(token, e),
-          };
-        }
-      } catch (cause) {
-        await closeEntry(token, e);
-        throw cause;
+        catalog = await sources();
+      } catch {
+        // A disabled Actor or revoked membership has no environment at all.
+        return {};
       }
+      const owned = (backendId: string, environment: Environment) => {
+        if (environment?.backendId !== backendId) throw Error("Bot environment unavailable");
+      };
+      return Object.fromEntries(
+        catalog.providers.map(({ backendId }) => [
+          backendId,
+          {
+            templates: async () => (await sources()).providers.find((p) => p.backendId === backendId)?.templates ?? [],
+            validate: async (environment) => {
+              owned(backendId, environment);
+              const current = await sources();
+              await workspaceBotSourceValidate.call(port, admit(), current.revision, environment);
+              check();
+            },
+            spawn: (environment, source) => {
+              owned(backendId, environment);
+              return start(environment, source, async () => {
+                const current = await sources();
+                return workspaceBotSourceOpen.call(port, admit(), current.revision, environment);
+              });
+            },
+          } satisfies AssistantEnvironmentProvider,
+        ]),
+      );
     },
     close() {
       return (closing ??= (async () => {

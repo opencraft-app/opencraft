@@ -122,7 +122,7 @@ test('packaged /setup enables membership, claims one administrator and preserves
   const first = await (await browser.call('/__opencraft_account/status')).json() as any;
   assert.equal(first.administrator, true); assert.ok(first.actor.id);
   const assetsScope = `actor:${first.actor.id}`;
-  assert.deepEqual(await (await browser.call('/__opencraft_assets/status')).json(), { version: 1, scope: assetsScope, gitHosts: ["github.com"] });
+  assert.deepEqual(await (await browser.call('/__opencraft_assets/status')).json(), { version: 1, scope: assetsScope, gitHosts: ["github.com"], gitProviders: [{ host: "github.com", auth: "token" }] });
   const savedAssets = await browser.call('/__opencraft_assets/configurations', { action: 'save-credential', revision: 0,
     name: 'Bundled default assets', apiUrl: 'https://api.e2b.dev', sandboxUrl: 'https://e2b.dev', apiKey: 'bundled-default-fixture-key' },
     { 'x-opencraft-account-scope': assetsScope });

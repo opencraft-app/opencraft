@@ -60,3 +60,58 @@ export const gitMessages = {
   git_email_invalid: "Enter a valid commit email.",
 };
 export type GitMessage = keyof typeof gitMessages;
+/** Copy for providers that authenticate with a generated SSH key. `{name}` is the
+ * deployment's product name for the host, supplied by provider configuration. */
+export const sshGitMessages = {
+  about: {
+    id: "assets.git.ssh.about",
+    defaultMessage: "Work with repositories on a Git server using an SSH key generated for you.",
+  },
+  title: { id: "assets.git.ssh.title", defaultMessage: "{name} connection" },
+  description: {
+    id: "assets.git.ssh.description",
+    defaultMessage:
+      "Generate an SSH key for repository access on {name}. The private key stays encrypted on this server and is never shown.",
+  },
+  key: { id: "assets.git.ssh.key", defaultMessage: "SSH key" },
+  status: { id: "assets.git.ssh.status", defaultMessage: "Key status" },
+  noKey: { id: "assets.git.ssh.noKey", defaultMessage: "No SSH key yet" },
+  keyReady: {
+    id: "assets.git.ssh.keyReady",
+    defaultMessage: "Key generated. Add the public key to your account on {name}.",
+  },
+  publicKey: { id: "assets.git.ssh.publicKey", defaultMessage: "SSH public key" },
+  fingerprint: { id: "assets.git.ssh.fingerprint", defaultMessage: "Key fingerprint" },
+  copy: { id: "assets.git.ssh.copy", defaultMessage: "Copy public key" },
+  copied: { id: "assets.git.ssh.copied", defaultMessage: "Public key copied" },
+  generate: { id: "assets.git.ssh.generate", defaultMessage: "Generate SSH key" },
+  generating: { id: "assets.git.ssh.generating", defaultMessage: "Generating…" },
+  regenerate: { id: "assets.git.ssh.regenerate", defaultMessage: "Regenerate key" },
+  regenerateTitle: { id: "assets.git.ssh.regenerateTitle", defaultMessage: "Replace the SSH key?" },
+  regenerateAbout: {
+    id: "assets.git.ssh.regenerateAbout",
+    defaultMessage:
+      "A new key replaces the current one, which stops working here. Add the new public key on {name} and remove the old one there.",
+  },
+  confirmRegenerate: { id: "assets.git.ssh.confirmRegenerate", defaultMessage: "Regenerate" },
+  delete: { id: "assets.git.ssh.delete", defaultMessage: "Delete key" },
+  deleteTitle: { id: "assets.git.ssh.deleteTitle", defaultMessage: "Delete the SSH key?" },
+  deleteAbout: {
+    id: "assets.git.ssh.deleteAbout",
+    defaultMessage:
+      "Git commands on {name} stop authenticating until you generate a new key. The public key on {name} is not removed; remove it there if needed.",
+  },
+  confirmDelete: { id: "assets.git.ssh.confirmDelete", defaultMessage: "Confirm deletion" },
+  identityRequired: {
+    id: "assets.git.ssh.identityRequired",
+    defaultMessage: "Enter the account, commit name and commit email first.",
+  },
+  usernameRequired: { id: "assets.git.ssh.usernameRequired", defaultMessage: "Enter your account on {name}." },
+  clearAbout: {
+    id: "assets.git.ssh.clearAbout",
+    defaultMessage:
+      "This deletes the stored key and commit identity. Keys added on {name} are not revoked; remove them there if needed. Repositories are not deleted.",
+  },
+  invalid: { id: "assets.git.ssh.invalid", defaultMessage: "Check the account, commit name and commit email." },
+} as const;
+export type SshGitMessage = keyof typeof sshGitMessages;

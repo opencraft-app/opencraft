@@ -143,7 +143,12 @@ test("default Headless router: real account setup/cookie membership reaches impl
   const f = await fixture(t);
   const capability = await f.request("/__opencraft_assets/status");
   assert.equal(capability.status, 200);
-  assert.deepEqual(await capability.json(), { version: 1, scope: f.scope, gitHosts: ["github.com"] });
+  assert.deepEqual(await capability.json(), {
+    version: 1,
+    scope: f.scope,
+    gitHosts: ["github.com"],
+    gitProviders: [{ host: "github.com", auth: "token" }],
+  });
   const saved = await f.request("/__opencraft_assets/configurations", credential());
   assert.equal(saved.status, 200);
   const body = await saved.json();

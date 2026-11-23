@@ -54,6 +54,7 @@ export function githubConnectionProvider(fetcher: typeof fetch = fetch): GitConn
   }
   return {
     host: "github.com",
+    auth: "token",
     async save(input, previous, check) {
       const raw = await request("/user", input.token, check),
         user = raw as { login?: unknown; id?: unknown };

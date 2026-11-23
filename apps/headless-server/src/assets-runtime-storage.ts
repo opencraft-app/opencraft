@@ -1,4 +1,6 @@
-import { WorkspaceBotOwner } from "./workspaces/bot-owner.js";
+import { WorkspaceBotOwner, type BotBackendIdentity } from "./workspaces/bot-owner.js";
+import type { E2BSandboxOptions } from "@opencraft/sandbox-e2b";
+import type { SandboxBackend } from "@opencraft/sandbox";
 import { createWorkspaceExecutionOwner } from "./workspaces/execution-owner.js";
 import { createAssetsStorage } from "@opencraft/plugin-assets/server/storage";
 import type { GitConnectionProvider } from "@opencraft/plugin-assets/server/git-connections";
@@ -18,9 +20,15 @@ export function createHeadlessAssetsStorage(
     /** Where the vault owner publishes its stable issuer public key, and the
      * explicit rotation generation of that key. */
     environmentIssuer?: { publish?: string; generation?: string };
+    /** Compiled by a trusted composition: the identity partition personal Bot
+     * backend IDs are derived from, so Bots bound to IDs of an older account
+     * partition keep their backend. Default: the Actor's canonical partition. */
+    botBackendIdentity?: BotBackendIdentity;
+    /** Compiled E2B backend factory for every Bot source (tests, wrappers). */
+    botBackend?: (options: E2BSandboxOptions) => SandboxBackend;
   } = {},
 ) {
-  const { environmentAccount, ...storageOptions } = options;
+  const { environmentAccount, botBackendIdentity, botBackend, ...storageOptions } = options;
   const { execution, environmentRecords, environmentAccounts } = createHeadlessExecutionRecords({
     directory,
     ...(environmentAccount ? { environmentAccount } : {}),
@@ -30,7 +38,11 @@ export function createHeadlessAssetsStorage(
     providers,
     execution,
     async (context) => {
-      const bots = new WorkspaceBotOwner(context);
+      // Personal, platform and installed Bot environments per admitted Actor.
+      const bots = new WorkspaceBotOwner(context, {
+        ...(botBackendIdentity ? { backendIdentity: botBackendIdentity } : {}),
+        ...(botBackend ? { e2b: botBackend } : {}),
+      });
       let ordinary;
       try {
         ordinary = workspaces ? await createWorkspaceExecutionOwner(context, workspaces) : undefined;
