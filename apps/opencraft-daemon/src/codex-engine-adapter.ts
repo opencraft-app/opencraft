@@ -2325,7 +2325,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       await Promise.allSettled([...this.threadOperations.values()]);
       this.queue?.close();
       this.queue = null;
-      this.identity?.close();
+      await this.identity?.close().catch(() => undefined);
       this.identity = null;
       await this.tokenUsageClosing;this.tokenUsageClosing=null;
       await this.tokenUsageAttemptWriter?.close();this.tokenUsageAttemptWriter=null;
@@ -3835,7 +3835,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   private installThreadMetadata(): void {
     if (!this.hostState) return;
     this.identity = new ThreadIdentity(this.hostState.database, {
-      createMetadata: this.options.createThreadMetadata,
+      createMetadata: this.options.createThreadMetadata, databasePath: this.hostState.path,
       readMessageIds: (threadId, turnId, signal) => readThreadMessageIds(
         (method, params, signal) => this.requestPhysical(method, params, 30_000, signal), threadId, turnId, signal),
       notify: (method, params) => {

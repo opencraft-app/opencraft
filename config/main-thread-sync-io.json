@@ -19,7 +19,8 @@
     "scripts/server-deployment/dsh-host.mjs",
     "scripts/server-deployment/engine-host.mjs",
     "scripts/server-deployment/gateway.mjs",
-    "scripts/container-deployment/host.mjs"
+    "scripts/container-deployment/host.mjs",
+    "plugins/thread-participants/src/server.ts"
   ],
   "files": {
     "apps/claude-code-bridge/src/executable.ts": {

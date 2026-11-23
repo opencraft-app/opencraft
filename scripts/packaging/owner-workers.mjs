@@ -14,6 +14,7 @@ export const OWNER_WORKERS = Object.freeze([
   ["packages/storage-node/src/server/server-core-owner.worker.ts", "server-core-owner-worker.mjs"],
   ["apps/headless-server/src/server-core-worker.mjs", "server-core-worker.mjs"],
   ["plugins/im/src/switchboard.worker.ts", "switchboard-worker.mjs"],
+  ["plugins/thread-participants/src/thread-participants.worker.ts", "thread-participants-worker.mjs"],
 ]);
 
 export async function buildOwnerWorkers(directory, { target = "node24" } = {}) {

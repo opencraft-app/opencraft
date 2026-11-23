@@ -90,7 +90,9 @@ registers them with its reader and photo resolver instead of keeping a copy.
 
 Codex Host accepts an optional Thread metadata factory against its existing shared
 SQLite and native-history port. The provider observes native results/notifications,
-owns explicitly advertised metadata RPCs and releases before Host storage closes.
+owns explicitly advertised metadata RPCs and releases before Host storage closes
+(an asynchronous `close()` is awaited; `databasePath` lets a provider keep its
+storage in a Worker, as [Thread participants](thread-participants.md) does).
 It does not intercept model input, claim native execution ownership or add another
 message identity store. Headless composition installs the optional product factory
 alongside its configured identity presentation; other deployments remain unchanged.

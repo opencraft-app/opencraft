@@ -44,16 +44,48 @@ nor migrated. No schema change is involved.
   copied authors. `thread/delete` clears creator and presence and advances the
   revision so a reused ID never repeats one.
 - Participants are ordered least recently active first. The revision advances on
-  every visible change and is announced after the write commits.
-- The committed projection stays in memory (bounded LRU). Repeated observations
-  of known messages touch neither storage nor clients; storage is read on a cold
-  Thread and written only for unseen messages, creation and deletion. A failed
-  write rolls back, announces nothing and reloads the Thread on its next read.
+  every visible change.
 
-These are synchronous SQLite calls on the Host's existing connection, because
-`ThreadMetadataExtension` receives the owner's `DatabaseSync`. They replace the
-identical statements the downstream plugin ran on the same thread; moving the
-provider into a Worker needs that interface to become asynchronous first.
+### Storage Worker
+
+The provider never touches SQLite on the Host's network thread
+(AGENTS.md “网络主线程不得阻塞”).
+
+| Thread | Holds |
+|---|---|
+| Network (main) | A bounded projection of committed rows per Thread, the message IDs already committed, and the IDs in flight |
+| `thread-participants.worker.ts` (`@opencraft/worker-owner`) | The only SQLite connection this provider uses: a WAL connection borrowed from the Host's already migrated database (`context.databasePath`). It reads verified senders and inherited-message marks from the same file and never creates, migrates or recovers it. |
+
+- An observation of a message already in the projection costs no Worker call and
+  no notification. Anything else is posted to the Worker without waiting.
+- The Worker runs calls in FIFO order, each write in one `BEGIN IMMEDIATE`
+  transaction. The main thread updates its projection from the acknowledgement
+  and only then sends `changed`; announcements follow posting order.
+- A read answers from the projection; cold Threads are loaded by a Worker call
+  queued behind earlier writes.
+- A rolled-back write announces nothing and is retried at the next observation.
+  A Worker that crashes or reports a fatal error fences the provider: reads
+  reject, observations are ignored, and nothing falls back to this thread.
+- `close()` returns a Promise that resolves after every write posted before it
+  committed; the Host awaits it before closing its own database.
+- Bundled servers start `thread-participants-worker.mjs` beside the bundle
+  (`scripts/packaging/owner-workers.mjs`). `config/main-thread-sync-io.json`
+  lists `server.ts` as an entry, so any synchronous IO that reaches it fails the
+  guard.
+
+The Host's existing main-thread connection still records senders; with both
+connections in WAL a Host write can wait up to its `busy_timeout` while a
+participant transaction (a few statements) commits. That connection is
+recorded debt of the Host, not of this provider.
+
+### Interface change
+
+`ThreadMetadataExtension.close()` may return a Promise, and
+`ThreadMetadataContext.databasePath` names the database file so a provider can
+borrow it from its own Worker. `ThreadIdentity.close()` is now async and the
+Codex Host and the Headless identity overlay await it before closing storage.
+Synchronous providers are unchanged. Observation methods stay synchronous and
+must only enqueue.
 
 ## Wire contract
 
@@ -110,7 +142,10 @@ resolver; core never builds a photo URL.
 
 - `tests/identity/thread-participants-server.test.ts`: writes and reads in the
   published tables of both databases, restart, alias and notifications,
-  creation/fork/delete, validation, cache eviction and rollback.
+  creation/fork/delete, validation, cache eviction and rollback; no SQLite call
+  on the main thread (prototypes throw there while the provider runs), commit
+  before announcement in posting order, drain on close, and a crashing Worker
+  failing closed.
 - `tests/identity/thread-access.test.ts`: only readers can list or observe a
   Thread's participants, under both names.
 - `tests/extensions/thread-participants-client.test.ts`: wire parsing, method
