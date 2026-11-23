@@ -176,7 +176,7 @@ export async function scenario(database: SqlDatabase, store: WorkspaceHostStore)
       serialize: (_threadId, operation) => operation(),
       continue: async () => null,
       changed: () => {},
-    });
+    }, 500, () => true, () => 1_800_000_000_000, () => ({ arm() {}, cancel() {} }));
     recovery.started("t", "turn-1");
     recovery.started("u", "turn-u");
     recovery.lost("t");
@@ -200,6 +200,7 @@ export async function scenario(database: SqlDatabase, store: WorkspaceHostStore)
       () => now,
       () => 0.5,
       () => true,
+      () => ({ arm() {}, cancel() {} }),
     );
     retry.failed("t", "turn-1", { kind: "overloaded" });
     steps.waiting = { snapshot: retry.snapshot("t"), notice: retry.notice("t"), pending: retry.pendingThreadIds() };

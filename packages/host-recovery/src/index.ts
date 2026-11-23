@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { ScopedSqlDatabase } from "@opencraft/sql";
 import { openManagedDatabase, createSchemaValidator, nodeSqlDatabase, type DatabaseOutcome } from "@opencraft/sqlite-node";
 import type { TurnRecoveryNotice } from "@opencraft/appserver-protocol";
+import { boundedWakeTimer, timeoutWakeClock, type OwnerWakeTimer, type OwnerWakeTimerFactory } from "@opencraft/workspace-host";
 
 const schema = `CREATE TABLE interrupted_turns (thread_id TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;`;
 /** Published chain (`host-recovery`); the SQL text is checksummed and must never change. */
@@ -30,14 +31,27 @@ export interface TurnRecoveryPort {
 
 /** One writer under the engine owner's existing lease; survives process death.
  * Tracking is opt-in at a proven native start, never a scan of failed history.
- * Runtime-neutral domain over the SQL port; the opening owner lends the migrated connection. */
+ * Runtime-neutral domain over the SQL port; the opening owner lends the migrated connection.
+ *
+ * Owner-driven wake-up (workspace-host-split.md §4.3, as for schedules): a pass is requested by the engine owner
+ * (`wake()` after native initialize, reconnect or new evidence) or by a pass that could not settle a row (unknown
+ * inspection, failed preparation), which re-checks `delayMs` later on the owner clock. That request is in-memory
+ * only; whether a pass is armed at all is decided from durable state (pending rows), and when the single owner
+ * wake-up fires the pass again decides every row from durable state, so a stale, late or early wake-up only
+ * repeats an idempotent read. A settled pass, never a running one, re-arms. */
 export class SqlInterruptedTurnRecovery {
-  private timer: ReturnType<typeof setTimeout> | null = null;
+  private readonly timer: OwnerWakeTimer;
+  /** Owner-clock time of the requested pass; null when nothing asked for one. */
+  private requested: number | null = null;
   private closed = false;
   private flight: Promise<void> | null = null;
   private closing: Promise<void> | null = null;
   private readonly dispatching = new Set<string>();
-  constructor(private readonly storage: ScopedSqlDatabase, private readonly port: TurnRecoveryPort, private readonly delayMs = 500, private readonly admissionOpen: () => boolean = () => true) {}
+  constructor(private readonly storage: ScopedSqlDatabase, private readonly port: TurnRecoveryPort, private readonly delayMs = 500,
+    private readonly admissionOpen: () => boolean = () => true, private readonly now: () => number = Date.now,
+    wakeTimer: OwnerWakeTimerFactory = wake => boundedWakeTimer(timeoutWakeClock(now), wake)) {
+    this.timer = wakeTimer(() => this.woken());
+  }
   private get(threadId: string): RecoveryTurn | null {
     const row = this.storage.database.prepare("SELECT value FROM interrupted_turns WHERE thread_id=?").get(threadId) as { value: string } | undefined;
     return row ? JSON.parse(row.value) : null;
@@ -94,17 +108,33 @@ export class SqlInterruptedTurnRecovery {
     return (this.storage.database.prepare("SELECT value FROM interrupted_turns").all() as { value: string }[])
       .map(row => JSON.parse(row.value) as RecoveryTurn).filter(row => ["running", "interrupted", "preparing", "dispatching"].includes(row.state));
   }
+  /** Requests a pass `delayMs` from now. An earlier request is kept; a fenced owner ignores it (reopening wakes again). */
   wake(): void {
-    if (this.closed || this.timer || !this.admissionOpen()) return;
-    this.timer = setTimeout(() => {
-      this.timer = null;
-      void this.recover().catch(() => this.wake());
-    }, this.delayMs);
-    (this.timer as { unref?: () => void }).unref?.();
+    if (this.closed || !this.admissionOpen()) return;
+    const at = this.now() + this.delayMs;
+    // min() also corrects a request made before the owner clock was set back.
+    this.requested = this.requested === null ? at : Math.min(this.requested, at);
+    this.rearm();
   }
   recover(): Promise<void> {
     if (this.closed || !this.admissionOpen()) return Promise.resolve();
-    return this.flight ??= this.run().finally(() => { this.flight = null; });
+    return this.flight ??= this.run().catch(error => { this.wake(); throw error; })
+      .finally(() => { this.flight = null; this.rearm(); });
+  }
+  private woken(): void {
+    if (this.closed) return;
+    // A pass already running cannot see evidence that arrived after it read a row: run another once it settles.
+    if (this.flight) { this.requested = this.now(); return; }
+    this.requested = null;
+    void this.recover().catch(() => undefined);
+  }
+  /** The owner wake-up follows the request only while durable state still has rows a pass could act on. */
+  private rearm(): void {
+    if (this.closed || this.flight) return;
+    let next: number | null;
+    try { next = this.requested !== null && this.pending().length ? this.requested : null; }
+    catch { next = this.now() + this.delayMs; }
+    if (next === null) { this.requested = null; this.timer.cancel(); } else this.timer.arm(next);
   }
   private async run(): Promise<void> {
     for (const candidate of this.pending()) {
@@ -150,7 +180,7 @@ export class SqlInterruptedTurnRecovery {
     return this.closing ??= this.dispose();
   }
   private async dispose(): Promise<void> {
-    this.closed = true; if (this.timer) clearTimeout(this.timer);
+    this.closed = true; this.timer.cancel();
     await this.flight?.catch(() => undefined); this.storage.close();
   }
 }
@@ -158,10 +188,11 @@ export class SqlInterruptedTurnRecovery {
 /** Node owner: opens `interrupted-turn-recovery.sqlite` under the Host directory and lends it to the domain. */
 export class InterruptedTurnRecovery extends SqlInterruptedTurnRecovery {
   readonly outcome: DatabaseOutcome;
-  constructor(directory: string, port: TurnRecoveryPort, delayMs?: number, admissionOpen?: () => boolean) {
+  constructor(directory: string, port: TurnRecoveryPort, delayMs?: number, admissionOpen?: () => boolean, now?: () => number,
+    wakeTimer?: OwnerWakeTimerFactory) {
     const managed = openManagedDatabase({ schemaId: "host-recovery", path: join(directory, "interrupted-turn-recovery.sqlite"),
       migrations: INTERRUPTED_TURN_RECOVERY_MIGRATIONS, legacyPolicy: "reject-unknown", validateSchema: createSchemaValidator(schema) });
-    super({ database: nodeSqlDatabase(managed.database), close: () => managed.database.close() }, port, delayMs, admissionOpen);
+    super({ database: nodeSqlDatabase(managed.database), close: () => managed.database.close() }, port, delayMs, admissionOpen, now, wakeTimer);
     this.outcome = managed.outcome;
   }
 }

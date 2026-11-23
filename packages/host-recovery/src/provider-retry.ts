@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { ScopedSqlDatabase } from "@opencraft/sql";
 import { openManagedDatabase, createSchemaValidator, nodeSqlDatabase, type DatabaseOutcome } from "@opencraft/sqlite-node";
 import type { TurnRecoveryNotice } from "@opencraft/appserver-protocol";
+import { boundedWakeTimer, timeoutWakeClock, type OwnerWakeTimer, type OwnerWakeTimerFactory } from "@opencraft/workspace-host";
 import { PROVIDER_RETRY_LIMIT, providerRetryDecision, type ProviderFailure } from "./provider-retry-policy.js";
 
 const schema = "CREATE TABLE provider_retries (thread_id TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;";
@@ -19,14 +20,32 @@ export interface ProviderRetryPort {
   continue(turn: Readonly<ProviderRetry>, current: () => boolean, admit: () => boolean): Promise<string | null>;
   changed(threadId: string): void;
 }
+/** Shortest owner-clock gap between passes once a pass has settled; a fenced owner re-checks at this cadence. */
+const RECHECK_FLOOR_MS = 1000;
+/** Re-inspection cadence for an admitted retry whose native terminal receipt may have been missed. */
+const RECONCILE_MS = 30_000;
 /** Engine-owned durable queue. It continues accepted failed turns; it never owns user prompts.
- * Runtime-neutral domain over the SQL port; the opening owner lends the migrated connection. */
+ * Runtime-neutral domain over the SQL port; the opening owner lends the migrated connection.
+ *
+ * Owner-driven wake-up (workspace-host-split.md §4.3, as for schedules): once the engine owner first wakes it, every
+ * settled pass and every committed failure computes the next pass from durable state — a waiting row's `retryAt`,
+ * otherwise the reconcile cadence — and arms the single owner wake-up; an explicit `wake(delay)` can only bring it
+ * earlier. Due-ness is decided again from durable state when the pass runs (`retryAt` against the owner clock), so a
+ * stale, early or late wake-up never dispatches twice. While admission is fenced nothing announces its reopening,
+ * so pending work re-checks every {@link RECHECK_FLOOR_MS} without dispatching. */
 export class SqlProviderTurnRetry {
-  private timer: ReturnType<typeof setTimeout> | null = null;
+  private readonly timer: OwnerWakeTimer;
+  /** The engine owner has woken this owner (initialize); before that nothing is armed. */
+  private awake = false;
+  /** Owner-clock time of an explicitly requested pass; null when none. */
+  private requested: number | null = null;
   private flight: Promise<void> | null = null;
   private closed = false;
   private closing: Promise<void> | null = null;
-  constructor(private readonly storage: ScopedSqlDatabase, private readonly port: ProviderRetryPort, private readonly now = Date.now, private readonly random = Math.random, private readonly admissionOpen = () => true) {}
+  constructor(private readonly storage: ScopedSqlDatabase, private readonly port: ProviderRetryPort, private readonly now = Date.now, private readonly random = Math.random, private readonly admissionOpen = () => true,
+    wakeTimer: OwnerWakeTimerFactory = wake => boundedWakeTimer(timeoutWakeClock(now), wake)) {
+    this.timer = wakeTimer(() => this.woken());
+  }
   snapshot(threadId: string): ProviderRetry | null {
     const row = this.storage.database.prepare("SELECT value FROM provider_retries WHERE thread_id=?").get(threadId) as { value: string } | undefined;
     return row ? JSON.parse(row.value) : null;
@@ -78,25 +97,45 @@ export class SqlProviderTurnRetry {
     const row = this.snapshot(threadId);
     if (row && row.state !== "handled") this.put({ ...row, state: "handled" });
   }
+  /** Requests a pass `delay` ms from now on the owner clock (engine initialize, reconnect, new evidence). */
   wake(delay = 0): void {
     if (this.closed) return;
-    if (!this.admissionOpen()) delay = Math.max(1000, delay);
-    if (this.timer) clearTimeout(this.timer);
-    this.timer = setTimeout(() => { this.timer = null; void this.recover(); }, delay);
-    (this.timer as { unref?: () => void }).unref?.();
+    this.awake = true;
+    if (!this.admissionOpen()) delay = Math.max(RECHECK_FLOOR_MS, delay);
+    const at = this.now() + delay;
+    // min() also corrects a request made before the owner clock was set back.
+    this.requested = this.requested === null ? at : Math.min(this.requested, at);
+    this.rearm();
   }
   recover(): Promise<void> {
     if (this.closed) return Promise.resolve();
-    return this.flight ??= this.run().finally(() => { this.flight = null; this.schedule(); });
+    this.awake = true;
+    return this.flight ??= this.run().finally(() => { this.flight = null; this.rearm(); });
   }
-  private schedule(): void {
+  private woken(): void {
     if (this.closed) return;
-    const rows = this.pendingThreadIds().map(id => this.snapshot(id)!);
-    if (!rows.length) return;
-    if (!this.admissionOpen()) { this.wake(1000); return; }
-    // Native completions provide the normal path; polling reconciles a missed terminal receipt.
-    const waits = rows;
-    if (waits.length) this.wake(Math.max(1000, Math.min(...waits.map(row => row.state === "waiting" ? row.retryAt - this.now() : 30_000))));
+    // A running pass may already have read the rows this wake-up was for: run another once it settles.
+    if (this.flight) { this.requested = this.now(); return; }
+    this.requested = null;
+    void this.recover();
+  }
+  /** Earliest owner-clock time a pass could act, from durable rows plus any explicit request; null when idle. */
+  private nextWake(): number | null {
+    const rows = this.pendingThreadIds().map(id => this.snapshot(id)).filter(row => row !== null);
+    if (!rows.length) return null;
+    const now = this.now();
+    // Native completions provide the normal path; the reconcile cadence covers a missed terminal receipt.
+    const durable = Math.max(now + RECHECK_FLOOR_MS, Math.min(...rows.map(row => row.state === "waiting" ? row.retryAt : now + RECONCILE_MS)));
+    const next = this.requested === null ? durable : Math.min(this.requested, durable);
+    return this.admissionOpen() ? next : Math.max(next, now + RECHECK_FLOOR_MS);
+  }
+  /** Settled passes and committed changes re-arm; a running pass re-arms when it settles. */
+  private rearm(): void {
+    if (this.closed || !this.awake || this.flight) return;
+    let next: number | null;
+    try { next = this.nextWake(); }
+    catch { next = this.now() + RECONCILE_MS; }
+    if (next === null) { this.requested = null; this.timer.cancel(); } else this.timer.arm(next);
   }
   private async run(): Promise<void> {
     for (const id of this.pendingThreadIds()) {
@@ -143,8 +182,7 @@ export class SqlProviderTurnRetry {
   close(): Promise<void> {
     return this.closing ??= (async () => {
       this.closed = true;
-      if (this.timer) clearTimeout(this.timer);
-      this.timer = null;
+      this.timer.cancel();
       await this.flight;
       this.storage.close();
     })();
@@ -154,10 +192,11 @@ export class SqlProviderTurnRetry {
 /** Node owner: opens `provider-turn-retry.sqlite` under the Host directory and lends it to the domain. */
 export class ProviderTurnRetry extends SqlProviderTurnRetry {
   readonly outcome: DatabaseOutcome;
-  constructor(directory: string, port: ProviderRetryPort, now?: () => number, random?: () => number, admissionOpen?: () => boolean) {
+  constructor(directory: string, port: ProviderRetryPort, now?: () => number, random?: () => number, admissionOpen?: () => boolean,
+    wakeTimer?: OwnerWakeTimerFactory) {
     const managed = openManagedDatabase({ schemaId: "provider-retry", path: join(directory, "provider-turn-retry.sqlite"),
       migrations: PROVIDER_TURN_RETRY_MIGRATIONS, legacyPolicy: "reject-unknown", validateSchema: createSchemaValidator(schema) });
-    super({ database: nodeSqlDatabase(managed.database), close: () => managed.database.close() }, port, now, random, admissionOpen);
+    super({ database: nodeSqlDatabase(managed.database), close: () => managed.database.close() }, port, now, random, admissionOpen, wakeTimer);
     this.outcome = managed.outcome;
   }
 }

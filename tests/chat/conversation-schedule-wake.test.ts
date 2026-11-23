@@ -4,45 +4,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ConversationSchedules, type ScheduleExecutionPort } from "../../apps/opencraft-daemon/src/conversation-schedules";
-import { boundedWakeTimer, MAX_WAKE_DELAY_MS, type OwnerWakeTimerFactory, type WakeClock } from "@opencraft/workspace-host";
-
-const MINUTE = 60_000, HOUR = 60 * MINUTE, DAY = 24 * HOUR;
-const flush = async () => { for (let i = 0; i < 20; i++) await new Promise(resolve => setImmediate(resolve)); };
-
-/** Wall clock that can jump independently of the monotonic time pending delays run on. */
-function fakeClock(start = 1800000000000) {
-  let wall = start, monotonic = 0, sequence = 0;
-  const pending = new Map<number, { due: number; callback: () => void }>();
-  const delays: number[] = [];
-  const clock: WakeClock = {
-    now: () => wall,
-    after(delayMs, callback) {
-      delays.push(delayMs);
-      const id = ++sequence;
-      pending.set(id, { due: monotonic + delayMs, callback });
-      return () => { pending.delete(id); };
-    },
-  };
-  return {
-    clock, delays,
-    get now() { return wall; },
-    get pending() { return pending.size; },
-    /** Lets `ms` pass on both clocks, running delays that come due in order. */
-    elapse(ms: number) {
-      const end = monotonic + ms;
-      for (;;) {
-        const next = [...pending.entries()].filter(([, entry]) => entry.due <= end).sort((x, y) => x[1].due - y[1].due)[0];
-        if (!next) break;
-        pending.delete(next[0]);
-        wall += next[1].due - monotonic; monotonic = next[1].due;
-        next[1].callback();
-      }
-      wall += end - monotonic; monotonic = end;
-    },
-    /** Sets the wall clock without any monotonic time passing. */
-    jump(delta: number) { wall += delta; },
-  };
-}
+import { boundedWakeTimer, MAX_WAKE_DELAY_MS, type OwnerWakeTimerFactory } from "@opencraft/workspace-host";
+import { DAY, fakeWakeClock as fakeClock, flush, HOUR, MINUTE } from "../support/fake-wake-clock";
 
 async function fixture(options: { admission?: () => boolean } = {}) {
   const root = await mkdtemp(join(tmpdir(), "oc-schedule-wake-"));

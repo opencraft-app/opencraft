@@ -3,7 +3,9 @@
 // runtime-neutral ledger runner, give the same ledger and schema as on
 // node:sqlite, survive a restart without reapplying, upgrade from an older
 // build, refuse a tampered checksum, and the unchanged domain stores give the
-// same results as on nodeSqlDatabase. See workspace-host-split.md §4.1.
+// same results as on nodeSqlDatabase. Interrupted-turn recovery and provider
+// retry are also driven by an alarm-backed owner wake-up that survives the
+// instance being evicted. See workspace-host-split.md §4.1 and §4.3.
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
@@ -119,4 +121,47 @@ test("restart keeps every recorded ledger row, upgrades an older Host state obje
   }
   await assert.rejects(client(second, "tampered")("migrate", "conversation-schedules"), /Unsupported database migration history/);
   await stop(second);
+});
+
+async function until<T>(read: () => Promise<T>, done: (value: T) => boolean, timeoutMs = 5000): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const value = await read();
+    if (done(value) || Date.now() > deadline) return value;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
+test("interrupted-turn recovery: the owner arms the object alarm, which recovers on a fresh instance from durable rows", async () => {
+  const call = client(start());
+  const store = "interrupted-turn-recovery";
+  const seeded = await call("seed", store);
+  assert.equal(seeded.snapshot.state, "interrupted");
+  assert.equal(seeded.alarm, null, "nothing is armed before the engine wakes the owner");
+  const woken = await call("engineWake", store);
+  assert.equal(typeof woken.alarm, "number", "the engine wake arms the single alarm");
+  await call("evict", store).catch(() => undefined);
+  const settled = await until(() => call("observe", store), (value: any) => value.snapshot.state === "running");
+  assert.equal(settled.snapshot.attempts, 1);
+  assert.equal(settled.snapshot.turnId, "auto-1");
+  assert.notEqual(settled.instance, woken.instance, "eviction replaced the instance that armed the alarm");
+  assert.equal(settled.alarms, 1, "the alarm ran on the instance built after eviction");
+  assert.equal(settled.alarm, null, "a continued, live execution leaves no alarm");
+});
+
+test("provider retry: the durable retryAt arms the object alarm, which dispatches once on a fresh instance", async () => {
+  const call = client(start());
+  const store = "provider-turn-retry";
+  const seeded = await call("seed", store);
+  assert.equal(seeded.snapshot.state, "waiting");
+  assert.equal(typeof seeded.alarm, "number", "the committed failure arms the alarm");
+  await call("evict", store).catch(() => undefined);
+  const settled = await until(() => call("observe", store), (value: any) => value.snapshot.state === "running");
+  assert.equal(settled.snapshot.attempts, 1);
+  assert.equal(settled.snapshot.turnId, "auto-1");
+  assert.notEqual(settled.instance, seeded.instance, "eviction replaced the instance that armed the alarm");
+  assert.ok(settled.alarms >= 1, "the retry ran from an alarm on the instance built after eviction");
+  assert.ok(settled.alarm > seeded.snapshot.retryAt, "the admitted retry re-arms only the reconcile check");
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.equal((await call("observe", store)).snapshot.attempts, 1, "no late alarm dispatches again");
 });
