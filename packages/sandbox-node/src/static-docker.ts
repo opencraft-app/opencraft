@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { chmod, lstat, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { access, chmod, lstat, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { createConnection, createServer, type Server, type Socket } from "node:net";
 import { isAbsolute, join } from "node:path";
 import {
@@ -91,6 +92,10 @@ export async function serveSandboxLink(options: SandboxLinkServerOptions) {
   if (!isAbsolute(options.directory) || !isAbsolute(options.python) || !isAbsolute(options.endpointDirectory)
     || !["relay-only", "any"].includes(options.policy)) throw Error("Invalid sandbox link configuration");
   await privateDirectory(options.directory);
+  // Every open runs the broker under this interpreter: an image without it must fail the
+  // agent's start (unhealthy, logged), not accept attaches and then refuse every process.
+  try { await access(options.python, constants.X_OK); }
+  catch (error) { throw Error(`Sandbox link interpreter ${options.python} is not executable`, { cause: error }); }
   const socketPath = join(options.directory, SANDBOX_LINK_SOCKET), ticketPath = join(options.directory, SANDBOX_LINK_TICKET);
   if (Buffer.byteLength(socketPath) > 107) throw Error("Sandbox link path is too long");
   await rm(socketPath, { force: true }); await rm(ticketPath, { force: true });
@@ -152,11 +157,18 @@ export async function serveSandboxLink(options: SandboxLinkServerOptions) {
     socket.unshift(rest);
     // The next frame is the broker's own `start` frame (broker protocol, not a link frame).
     const { value: start, rest: input } = await firstLine(socket, 400_000, 15_000, false);
-    if (!allowed(start) || session !== current) { socket.destroy(); return; }
+    // Refusals answer with a broker-protocol error frame so the Host reports why.
+    const refuse = (reason: string) => socket.end(JSON.stringify({ type: "error", reason }) + "\n");
+    if (session !== current) { refuse("session"); return; }
+    if (!allowed(start)) { log({ type: "sandbox-link-open-refused", epoch: current.epoch, reason: "policy" }); refuse("policy"); return; }
     const broker = spawn(options.python, ["-u", "-c", brokerSource], { stdio: ["pipe", "pipe", "ignore"], cwd: "/", env: process.env });
     current.brokers.add(broker);
     broker.once("close", () => { current.brokers.delete(broker); socket.end(); });
-    broker.once("error", () => socket.destroy());
+    broker.once("error", error => {
+      current.brokers.delete(broker);
+      log({ type: "sandbox-link-broker-failed", epoch: current.epoch, code: (error as NodeJS.ErrnoException).code ?? "unknown" });
+      refuse("broker-unavailable");
+    });
     broker.stdin.on("error", () => {});
     broker.stdin.write(JSON.stringify(start) + "\n");
     if (input.length) broker.stdin.write(input);

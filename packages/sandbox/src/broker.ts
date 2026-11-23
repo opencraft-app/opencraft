@@ -5,7 +5,8 @@ import { SandboxFault, type SandboxCommand, type SandboxExit, type SandboxOutput
  * preserves arbitrary stdout/stderr/stdin bytes as base64 over text callbacks.
  *
  * Host → broker: `start` (once), `stdin`, `resize` (terminal), `eof` (pipes),
- * `terminate`. Broker → host: `started`, `output`, `exit`, `error`. Lines are at
+ * `terminate`. Broker → host: `started`, `output`, `exit`, `error` (optional `reason`
+ * from a fixed vocabulary, e.g. `start-failed`; never raw diagnostics). Lines are at
  * most 400000 bytes. A terminal is one output stream; termination kills the whole
  * process group. This process is transport only: no Bot identity, memory, model or
  * API credentials. */
@@ -83,7 +84,7 @@ try:
             raise ValueError()
     stop()
 except BaseException:
-    try: emit({'type':'error'})
+    try: emit({'type':'error','reason':'start-failed'} if child is None else {'type':'error'})
     finally: stop()
     os._exit(2)
 `;
@@ -112,7 +113,11 @@ export interface SandboxBrokerOptions {
   closeEnvironment(): Promise<void>;
 }
 
-const fault = (code: ConstructorParameters<typeof SandboxFault>[0], message: string) => new SandboxFault(code, message);
+const fault = (code: ConstructorParameters<typeof SandboxFault>[0], message: string, cause?: unknown) =>
+  new SandboxFault(code, message, cause === undefined ? undefined : { cause });
+/** A broker `error` frame may name why it refused or failed, from a fixed vocabulary
+ * (e.g. `policy`, `interpreter-unavailable`); anything else is reported without a reason. */
+const brokerReason = (value: unknown) => typeof value === "string" && /^[a-z][a-z-]{0,63}$/u.test(value) ? value : undefined;
 export const encodeBrokerFrame = (value: unknown) =>
   JSON.stringify(value).replaceAll("\u2028", "\\u2028").replaceAll("\u2029", "\\u2029") + "\n";
 const toBase64 = (data: Uint8Array) => {
@@ -142,7 +147,9 @@ export async function startBrokerProcess(options: SandboxBrokerOptions): Promise
     finished = false,
     broken = false,
     buffer = "",
-    stdinClosed = false;
+    stdinClosed = false,
+    // First observed reason the transport broke; carried as `cause` so callers can diagnose it.
+    cause: Error | undefined;
   const ready = new Promise<void>((resolve, reject) => {
     resolveStart = resolve;
     rejectStart = reject;
@@ -153,10 +160,11 @@ export async function startBrokerProcess(options: SandboxBrokerOptions): Promise
   });
   void ready.catch(() => {});
   void exited.catch(() => {});
-  const failure = () => {
+  const failure = (reason?: unknown) => {
     if (broken || finished) return;
     broken = true;
-    const error = fault("SANDBOX_START", label + " execution transport failed");
+    cause = reason instanceof Error ? reason : Error(reason === undefined ? label + " transport ended" : String(reason));
+    const error = fault("SANDBOX_START", label + " execution transport failed", cause);
     rejectStart(error);
     rejectExit(error);
     // Do not reconnect or replay process input. The caller still owns close()/capacity.
@@ -175,7 +183,7 @@ export async function startBrokerProcess(options: SandboxBrokerOptions): Promise
       const at = buffer.indexOf("\n");
       if (at < 0) break;
       if (at > 512 * 1024) {
-        failure();
+        failure(Error(label + " broker frame exceeds its budget"));
         return;
       }
       const line = buffer.slice(0, at);
@@ -196,13 +204,16 @@ export async function startBrokerProcess(options: SandboxBrokerOptions): Promise
         else if (value.type === "exit" && started && !finished && (value.code === null || Number.isSafeInteger(value.code))) {
           finished = true;
           resolveExit({ code: value.code, ...(value.signal ? { signal: String(value.signal) } : {}) });
-        } else throw Error();
-      } catch {
-        failure();
+        } else if (value.type === "error") {
+          const reason = brokerReason(value.reason);
+          throw Error(label + " broker reported an error" + (reason ? ": " + reason : ""));
+        } else throw Error(label + " broker sent an unexpected frame");
+      } catch (error) {
+        failure(error instanceof SyntaxError ? Error(label + " broker sent an invalid frame") : error);
         return;
       }
     }
-    if (buffer.length > 512 * 1024) failure();
+    if (buffer.length > 512 * 1024) failure(Error(label + " broker frame exceeds its budget"));
   };
   let channel: SandboxBrokerChannel;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -210,16 +221,16 @@ export async function startBrokerProcess(options: SandboxBrokerOptions): Promise
     // Broker receives argv/cwd/payload environment privately through stdin, not launcher argv.
     channel = await options.launch(accept);
     void channel.ended.then(() => {
-      if (!finished) failure();
+      if (!finished) failure(Error(started ? label + " broker transport ended" : label + " broker transport ended before the process started"));
     }, failure);
-    timer = setTimeout(failure, Math.min(requestTimeoutMs, 15000));
+    timer = setTimeout(() => failure(Error(label + " broker did not confirm the start in time")), Math.min(requestTimeoutMs, 15000));
     const input = encodeBrokerFrame({ type: "start", command: wireCommand });
-    if (encoder.encode(input).byteLength > 384 * 1024) throw Error();
+    if (encoder.encode(input).byteLength > 384 * 1024) throw Error(label + " start frame exceeds its budget");
     await channel.write(input);
     await ready;
-  } catch {
-    failure();
-    throw fault("SANDBOX_START", label + " process could not start");
+  } catch (error) {
+    failure(error);
+    throw fault("SANDBOX_START", label + " process could not start", cause);
   } finally {
     clearTimeout(timer);
   }
@@ -233,7 +244,7 @@ export async function startBrokerProcess(options: SandboxBrokerOptions): Promise
     if (broken || finished) throw fault("SANDBOX_CLOSED", label + " process is closed");
     try {
       await channel.write(encodeBrokerFrame(value));
-    } catch {
+    } catch (error) {
       // A transport can reject EOF after a short-lived broker has exited while
       // its final stdout frame is still in flight. Only that framed exit is
       // authoritative; transport absence alone cannot confirm completion. Never
@@ -252,8 +263,8 @@ export async function startBrokerProcess(options: SandboxBrokerOptions): Promise
         }
         if (finished && !broken) return;
       }
-      failure();
-      throw fault("SANDBOX_START", label + " input transport failed");
+      failure(error);
+      throw fault("SANDBOX_START", label + " input transport failed", cause);
     }
   };
   const process = {
@@ -294,7 +305,7 @@ export async function startBrokerProcess(options: SandboxBrokerOptions): Promise
         ]);
       } catch {
         if (attached) {
-          failure();
+          failure(Error(label + " attached process termination was not acknowledged"));
           throw fault("SANDBOX_CLEANUP", label + " attached process termination was not acknowledged; environment close reclaims it");
         }
         await closeEnvironment();

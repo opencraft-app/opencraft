@@ -195,6 +195,28 @@ test("malformed or out-of-order broker frames and oversized start fail closed", 
   assert.equal(t.frames.length, 0);
 });
 
+test("a start failure carries why the broker or its transport refused, never a raw diagnostic", async () => {
+  const cases: [string, (t: ReturnType<typeof fakeTransport>) => void, RegExp][] = [
+    ["error frame", (t) => t.emit({ type: "error", reason: "broker-unavailable" }), /^Fake broker reported an error: broker-unavailable$/u],
+    ["guest start failure", (t) => t.emit({ type: "error", reason: "start-failed" }), /^Fake broker reported an error: start-failed$/u],
+    ["unvetted reason", (t) => t.emit({ type: "error", reason: "/secret/path ENOENT" }), /^Fake broker reported an error$/u],
+    ["transport end", (t) => t.end(), /^Fake broker transport ended before the process started$/u],
+  ];
+  for (const [name, reply, cause] of cases) {
+    const t = fakeTransport();
+    t.on((frame) => {
+      if (frame.type === "start") queueMicrotask(() => reply(t));
+    });
+    await assert.rejects(startBrokerProcess(t.options(pipe, [])), (e) =>
+      e instanceof SandboxFault && e.code === "SANDBOX_START" && e.message === "Fake process could not start"
+      && e.cause instanceof Error && cause.test(e.cause.message), name);
+  }
+  // A launch the provider rejected keeps the provider's own error as the cause.
+  const refused = Error("link refused the process");
+  await assert.rejects(startBrokerProcess({ ...fakeTransport().options(pipe, []), launch: async () => { throw refused; } }),
+    (e) => e instanceof SandboxFault && e.cause === refused);
+});
+
 test("a rejected EOF is accepted only when the framed exit arrives; unacknowledged terminate tears down", async () => {
   const t = fakeTransport({ reject: (frame) => frame.type === "eof" || frame.type === "terminate" });
   t.on((frame) => {

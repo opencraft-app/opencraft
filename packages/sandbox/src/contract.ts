@@ -99,8 +99,8 @@ export interface SandboxBackend {
   close(): Promise<void>;
 }
 export class SandboxFault extends Error {
-  constructor(readonly code: "SANDBOX_UNAVAILABLE" | "SANDBOX_POLICY" | "SANDBOX_CAPACITY" | "SANDBOX_CLOSED" | "SANDBOX_START" | "SANDBOX_CLEANUP" | "SANDBOX_CREATION_UNCONFIRMED", message: string) {
-    super(message); this.name = "SandboxFault";
+  constructor(readonly code: "SANDBOX_UNAVAILABLE" | "SANDBOX_POLICY" | "SANDBOX_CAPACITY" | "SANDBOX_CLOSED" | "SANDBOX_START" | "SANDBOX_CLEANUP" | "SANDBOX_CREATION_UNCONFIRMED", message: string, options?: { readonly cause?: unknown }) {
+    super(message, options); this.name = "SandboxFault";
   }
 }
 export class SandboxCreationFault extends SandboxFault {

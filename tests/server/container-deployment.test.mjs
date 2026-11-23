@@ -354,6 +354,38 @@ test('custom container candidates carry pinned bases, source identity and a veri
   assert.ok(installIndex >= 0 && testIndex > installIndex, 'install dependencies before the container regressions');
 });
 
+test('every image stage that runs a workspace agent installs the static-docker link interpreter', async () => {
+  const root = new URL('../..', import.meta.url);
+  // The agent's link broker runs /usr/bin/python3 (OPENCRAFT_AGENT_PYTHON default); an image
+  // without it attaches the Gateway and then refuses every endpoint process.
+  const stages = text => {
+    const result = new Map();
+    let current;
+    for (const line of text.replace(/\\\n/gu, ' ').split('\n')) {
+      const from = /^FROM\s+(\S+)(?:\s+AS\s+(\S+))?/iu.exec(line);
+      if (from) { current = { base: from[1], body: '' }; if (from[2]) result.set(from[2], current); continue; }
+      if (current) current.body += line + '\n';
+    }
+    return result;
+  };
+  const installsPython = (all, name) => {
+    for (let stage = all.get(name); stage; stage = all.get(stage.base))
+      if (/apt-get install[^\n]*\spython3(\s|$)/u.test(stage.body)) return true;
+    return false;
+  };
+  for (const [file, agentStages] of [
+    ['deploy/docker/Dockerfile', ['runtime']],
+    // `runtime` is the image every Compose service runs (CI builds --target runtime).
+    ['deploy/docker/Dockerfile.owned-electron', ['runtime', 'brain', 'hands', 'full']],
+  ]) {
+    const all = stages(await readFile(new URL(file, root), 'utf8'));
+    for (const name of agentStages) {
+      assert.ok(all.has(name), `${file} declares ${name}`);
+      assert.ok(installsPython(all, name), `${file} stage ${name} must install python3 for the link broker`);
+    }
+  }
+});
+
 test('the local GitHub builder is portable, locked, revision-pinned and advances its moving tag only after success', async () => {
   const root = new URL('../..', import.meta.url);
   const [builder, environmentExample, service, timer] = await Promise.all([

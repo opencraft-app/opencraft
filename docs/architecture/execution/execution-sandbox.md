@@ -280,8 +280,13 @@ listens and rotated after every successful attach (one-time); a newer attach rev
 previous session and kills its processes. `open {session}` then carries one broker
 process; the agent checks the broker `start` frame against its policy: `relay-only`
 (default) admits only the fixed endpoint relay to an allow-listed name under its
-endpoint directory, `any` is for bare/dev images and conformance. `release {session}`
-closes. The effective budget is the container's cgroup limit as the agent reads it; the
+endpoint directory, `any` is for bare/dev images and conformance. A refused or
+unstartable broker answers with a broker `error` frame whose `reason` comes from a fixed
+vocabulary (`policy`, `broker-unavailable`, `start-failed`); the Host carries it as the
+`SANDBOX_START` fault's `cause`. The broker interpreter (`OPENCRAFT_AGENT_PYTHON`,
+default `/usr/bin/python3`) is an image requirement of every container that runs an
+agent: an agent whose interpreter is not executable fails its start instead of serving a
+link that refuses every process. `release {session}` closes. The effective budget is the container's cgroup limit as the agent reads it; the
 backend refuses a binding whose enforced limits differ from the requested budget.
 A newer attach revokes the previous session by ending each broker's control input:
 the broker then kills its process's own session (processes run in a new session, so

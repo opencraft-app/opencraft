@@ -209,7 +209,9 @@ test('the static-docker link serves only allow-listed endpoint relays behind a o
   assert.equal((await probeWorkspaceAgent(sandbox, location)).incarnation.id, agent.incarnation.id);
   assert.deepEqual(await describeWorkspaceEndpoint(sandbox, 'terminal', location), { token: 'x'.repeat(32) });
   // relay-only: arbitrary commands and relays outside the endpoint directory never start.
-  await assert.rejects(sandbox.spawn({ command: ['/bin/echo', 'escape'], cwd: '/', env: {}, attached: true }), e => e instanceof SandboxFault);
+  // The refusal reaches the Host as the fault's cause, not only as a generic start failure.
+  await assert.rejects(sandbox.spawn({ command: ['/bin/echo', 'escape'], cwd: '/', env: {}, attached: true }),
+    e => e instanceof SandboxFault && e.code === 'SANDBOX_START' && /broker reported an error: policy/u.test(e.cause?.message));
   const outside = await openSandboxEndpoint(sandbox, { target: { unix: join(run, 'control.sock') }, onData() {} }).catch(error => error);
   assert.ok(outside instanceof SandboxFault, 'a relay to a raw path is refused');
   // A copied (consumed) ticket no longer attaches.
@@ -217,6 +219,24 @@ test('the static-docker link serves only allow-listed endpoint relays behind a o
     .create({ id: 'x', owner: 'x', backend: 'static-docker' }, budget, new AbortController().signal), e => e?.outcome === 'not-created');
   await sandbox.close();
   await pool.close();
+});
+
+test('an agent whose image lacks the link interpreter fails its start instead of refusing every process', { timeout: 30_000 }, async t => {
+  const { serveAgentLink } = await import('../../scripts/container-deployment/workspace-agent-application.mjs');
+  const root = await mkdtemp(join(tmpdir(), 'oc-link-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const run = await prepareAgentRunDirectory(join(root, 'run')), link = join(root, 'link');
+  await mkdir(link, { mode: 0o700 });
+  const deferred = [];
+  const agent = { incarnation: await createAgentIncarnation(), defer: close => deferred.push(close) };
+  t.after(() => Promise.all(deferred.map(close => close())));
+  const missing = join(root, 'no-python3');
+  await assert.rejects(serveAgentLink(agent, { agentLinkDirectory: link, agentEndpointDirectory: join(run, 'endpoints') },
+    { OPENCRAFT_AGENT_PYTHON: missing }, { limits: async () => ({ cpuMillis: 1000, memoryBytes: 1024 ** 3, tasks: null }) }),
+  error => error.message === `Sandbox link interpreter ${missing} is not executable` && error.cause?.code === 'ENOENT');
+  // Nothing was published: a Gateway never attaches to a link that cannot run a broker.
+  await assert.rejects(lstat(join(link, 'ticket')), { code: 'ENOENT' });
+  await assert.rejects(lstat(join(link, 'link.sock')), { code: 'ENOENT' });
 });
 
 test('a superseding link attach ends the previous session\'s processes, not only their brokers', { timeout: 60_000 }, async t => {
