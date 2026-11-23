@@ -8,8 +8,10 @@ import { parseGitExecutionLocator, type GitExecutionResolver } from "@opencraft/
 import { EmployeeGitVaultStore, GitVaultError } from "@opencraft/execution-environment/employee-git-vault-store";
 import {
   EnvironmentLaunchOwner,
+  environmentTerminalRecords,
   type EnvironmentLaunchRecordReaders,
 } from "@opencraft/execution-environment/environment-launch-owner";
+import type { EnvironmentAccountResolver } from "@opencraft/execution-environment/environment-account";
 import { PersonalGitSealOwner } from "@opencraft/execution-environment/personal-git-seal";
 import type { GitGrantScope } from "@opencraft/execution-environment/personal-git-protocol";
 import {
@@ -19,7 +21,7 @@ import {
   type EnvironmentScopeRequest,
 } from "@opencraft/execution-environment/environment-metadata";
 import type {
-  EnvironmentLaunchContext,
+  AnyEnvironmentLaunchContext,
   EnvironmentLaunchTarget,
 } from "@opencraft/execution-environment/environment-delivery";
 import { PLATFORM_ASSET_SCOPE } from "../contract.js";
@@ -40,13 +42,23 @@ export async function createAssetsStorage(
    * current Actor epoch they are admitted under. */
   options: {
     environmentLaunch?: boolean;
-    environmentRecords?: EnvironmentLaunchRecordReaders & {
+    environmentRecords?: Pick<EnvironmentLaunchRecordReaders, "codexTurn" | "creation"> & {
       actorEpoch(actorId: string): { actorGeneration: number; membershipRevision: number } | null;
     };
+    /** Trusted composition only: the vault partition an admitted owner's ENV
+     * and creator provenance use. Without it, the canonical Actor partition. */
+    environmentAccounts?: EnvironmentAccountResolver;
   } = {},
 ) {
   // ENV for a launch needs the durable admission this owner reads itself.
   if (options.environmentLaunch && !execution) throw new Error("Environment delivery requires execution admission");
+  if (
+    options.environmentAccounts !== undefined &&
+    (!options.environmentLaunch ||
+      typeof options.environmentAccounts?.forActor !== "function" ||
+      typeof options.environmentAccounts.forLogin !== "function")
+  )
+    throw new Error("Environment account mapping requires the vault owner");
   const vault = new EmployeeGitVaultStore(directory);
   let workspaces: AssetWorkspaceExecutionOwner | undefined;
   let environment: EnvironmentLaunchOwner | undefined;
@@ -68,10 +80,20 @@ export async function createAssetsStorage(
   try {
     environment =
       options.environmentLaunch && execution
-        ? new EnvironmentLaunchOwner(vault, (input) => execution.resolve(input), {
-            ...(options.environmentRecords?.codexTurn ? { codexTurn: options.environmentRecords.codexTurn } : {}),
-            ...(options.environmentRecords?.creation ? { creation: options.environmentRecords.creation } : {}),
-          })
+        ? new EnvironmentLaunchOwner(
+            vault,
+            (input) => execution.resolve(input),
+            {
+              // Terminal launches are admitted under the current Actor epoch.
+              ...(execution.actor
+                ? { terminal: environmentTerminalRecords(vault, (account) => execution.actor!(account)) }
+                : {}),
+              // Codex pending inputs and creation reservations (slice 7).
+              ...(options.environmentRecords?.codexTurn ? { codexTurn: options.environmentRecords.codexTurn } : {}),
+              ...(options.environmentRecords?.creation ? { creation: options.environmentRecords.creation } : {}),
+            },
+            options.environmentAccounts ? { accounts: options.environmentAccounts } : {},
+          )
         : undefined;
     const records = environment ? options.environmentRecords : undefined;
     // The same owner serves `PersonalGitSealPort`: Main awaits a grant and never
@@ -90,7 +112,9 @@ export async function createAssetsStorage(
           return null;
         })
       : undefined;
-    const metadata = environment ? new EnvironmentMetadata(vault) : undefined;
+        // Issuer and metadata share one mapping, so a Thread's creator and its
+    // values name the same partition.
+    const metadata = environment ? new EnvironmentMetadata(vault, options.environmentAccounts) : undefined;
     // Metadata runs FIFO with every other vault write; nothing it returns is a value.
     const metadataCall = <T>(operation: (owner: EnvironmentMetadata) => T): T => {
       try {
@@ -187,6 +211,7 @@ export async function createAssetsStorage(
                   "personalGitSeal",
                   "environmentMetadataAdmit",
                   "environmentMetadataProject",
+                  ...(execution.actor ? ["executionEnvironmentActor"] : []),
                 ]
               : []),
           ]
@@ -198,6 +223,7 @@ export async function createAssetsStorage(
         gitHosts: providers.map((p) => p.host),
         gitAuthority: execution ? vault.personalGitAuthority("actor") : null,
         environmentIssuer: environment?.issuer ?? null,
+        environmentTerminal: !!environment && !!execution?.actor,
       },
       methods: {
         ...Object.fromEntries(
@@ -310,7 +336,7 @@ export async function createAssetsStorage(
         // method that returns decrypted ENV values to the caller of this Worker.
         ...(environment
           ? {
-              executionEnvironmentLaunch: (target: EnvironmentLaunchTarget, context: EnvironmentLaunchContext) => {
+              executionEnvironmentLaunch: (target: EnvironmentLaunchTarget, context: AnyEnvironmentLaunchContext) => {
                 try {
                   return environment!.seal(target, context);
                 } catch {
@@ -342,6 +368,18 @@ export async function createAssetsStorage(
                         return creationRecord(request, records.actorEpoch, (hostId, threadId) =>
                           environmentThreadProject(vault, hostId, threadId),
                         );
+                      } catch {
+                        throw new SandboxConfigurationError("execution_unavailable", 503);
+                      }
+                    },
+                  }
+                : {}),
+              // The epoch a terminal reservation records; no value, no Project.
+              ...(execution?.actor
+                ? {
+                    executionEnvironmentActor: (account: string) => {
+                      try {
+                        return execution!.actor!(account);
                       } catch {
                         throw new SandboxConfigurationError("execution_unavailable", 503);
                       }

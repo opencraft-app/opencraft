@@ -17,6 +17,9 @@ serveWorkerOwner<{ directory: string }>(async ({ directory }) => {
       reserve: store.reserve.bind(store),
       release: store.release.bind(store),
       destroyRemoteResource: store.destroyRemoteResource.bind(store),
+      held: store.held.bind(store),
+      launch: store.launch.bind(store),
+      abandon: store.abandon.bind(store),
     } as never,
     async close() {
       await store.close();

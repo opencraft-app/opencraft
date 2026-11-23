@@ -17,9 +17,21 @@ export function validateHeadlessIdentity(identity) {
     // Opaque ENV delivery replaces, never accompanies, the synchronous runtime.
     || (identity.environmentLaunch !== undefined && (!identity.environmentLaunch || typeof identity.environmentLaunch.seal !== 'function'
       || typeof identity.environmentLaunch.issuer !== 'string' || !/^[A-Za-z0-9_-]{1,256}$/u.test(identity.environmentLaunch.issuer)
-      || identity.executionEnvironment != null))) {
+      || identity.executionEnvironment != null || !validEnvironmentLaunchParts(identity.environmentLaunch)))) {
     throw new Error('Invalid Headless identity adapter');
   }
+}
+
+const METADATA_METHODS = ['admit', 'project', 'bind', 'bindCreator', 'rememberProjects'];
+/** A vault-owner port may also own the durable execution admission it seals
+ * against and the non-secret ENV metadata. An admission without metadata
+ * would leave new Threads without their Project, so it is refused. */
+function validEnvironmentLaunchParts(port) {
+  const { admission, metadata } = port;
+  if (admission !== undefined && typeof admission !== 'function') return false;
+  if (metadata !== undefined && (!metadata || typeof metadata !== 'object'
+    || METADATA_METHODS.some(method => typeof metadata[method] !== 'function'))) return false;
+  return admission === undefined || metadata !== undefined;
 }
 
 /** Opaque ENV delivery from the core vault Worker (`'vault-owner'`). It replaces,
