@@ -64,9 +64,9 @@ async function inventory(directory) {
     }
   }
 }
+await inventory(root);
 // Every file a container bundle starts from beside itself must have been built beside it.
 await verifySiblingFiles(join(root, 'runtime'), { nested: ['codex-bridge'], optional: SOURCE_FALLBACK_SIBLINGS });
-await inventory(root);
 await writeFile(join(root, 'manifest.json'), JSON.stringify({ ...manifest, delivery: 'docker-compose-owners',
   files: [...files, ...manifest.files.filter(file => file.link)].sort((a, b) => a.path.localeCompare(b.path)) }, null, 2) + '\n');
 console.log('Container owner payload ready');
