@@ -58,10 +58,12 @@ interface Env {
 }
 const json = (value: unknown, status = 200) =>
   new Response(JSON.stringify(value, null, 1), { status, headers: { "content-type": "application/json" } });
-const failure = (error: unknown) =>
-  error instanceof Error
-    ? `${error.name}: ${error.message}${"code" in error ? ` (${String(error.code)})` : ""}`
-    : String(error);
+/** The rehearsal report names a failure by its message and code only; other thrown values stay out of the body. */
+const failure = (error: unknown) => {
+  if (!(error instanceof Error)) return "Non-error fixture failure";
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" || typeof code === "number" ? `${error.message} (${code})` : error.message;
+};
 const sha = async (bytes: Uint8Array) =>
   [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))]
     .map((b) => b.toString(16).padStart(2, "0"))
