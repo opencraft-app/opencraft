@@ -1096,6 +1096,73 @@ test('workspace-host services: a startup failure after they opened hands them to
   assert.equal((await fetch(app.url)).status, 200);
 });
 
+test('workspace-host execution: the DSH engine receives its execution inputs, the lease store opens in the data directory, and engines close after the App Host and before the writers', { timeout: 60_000 }, async t => {
+  const f = await fixture(t), order = [], data = f.options.dataDirectory;
+  const record = name => { if (!order.includes(name)) order.push(name); };
+  const observe = (service, name) => { const close = service.close.bind(service); service.close = (...args) => { record(name); return close(...args); }; };
+  let services, inputs, starts = 0;
+  const options = { ...f.options,
+    // Configured Hands owners; neither is reached unless a resource asks for it.
+    fileSystemOwner: { endpoint: join(f.root, 'files.sock'), tokenFile: join(f.root, 'files.token') },
+    terminalOwner: { directory: join(f.root, 'terminal'), endpoint: join(f.root, 'terminal.sock'), tokenFile: join(f.root, 'terminal.token') },
+    startAgentHost: async received => { starts++; inputs = received; return { websocketUrl: 'ws://127.0.0.1:9/rpc', close: async () => { record('engine'); } }; },
+    createWebServer: async webOptions => {
+      services = webOptions;
+      observe(webOptions.appHostServer, 'app-host');
+      const web = await createWorkbenchWebServer(webOptions);
+      observe(web, 'web');
+      return web;
+    } };
+  const composition = { createIdentity: async () => ({ providers: [], close() { record('identity'); } }), close() { record('composition'); } };
+  let app = await startHeadlessServer(options, composition); f.own(() => app?.close());
+  const machineId = (await readFile(join(data, 'machine-id'), 'utf8')).trim();
+  // The default DSH engine starts once, eagerly, with the execution CLI, the policy, its scoped capabilities and the file owner.
+  assert.equal(starts, 1);
+  assert.equal(typeof inputs.executionCli?.close, 'function');
+  assert.equal(inputs.modelPolicyPath, join(data, 'model-usage-policy.sqlite'));
+  assert.equal(inputs.nativePi, true);
+  assert.equal(typeof inputs.sessionCapabilities, 'object');
+  assert.equal(typeof inputs.prepareArtifact, 'function', 'the Hands file owner prepares artifacts');
+  assert.deepEqual([inputs.dataDirectory, inputs.artifactDirectory, inputs.projectlessWorkspaceDirectory], [join(data, 'agent'), join(data, 'artifacts'), join(data, 'workspaces')]);
+  assert.deepEqual([inputs.executionContext, inputs.taskServerId, inputs.machineIdentity.machineId], ['assets', 'opencraft-server', machineId]);
+  assert.equal(inputs.gitExecution.directory, data);
+  assert.throws(() => inputs.taskConversationCatalog('opencraft-server', '', 10), /Task conversation server is unavailable/);
+  // Without a Thread metadata owner the lease store is the server's own Thread identity database.
+  assert.equal((await stat(join(data, 'thread-identities', 'opencraft-server', 'thread-identity.sqlite'))).isFile(), true);
+  assert.equal(services.appServerTarget, 'ws://127.0.0.1:9/rpc');
+  assert.equal(services.appServerIdentity, null);
+  assert.equal(services.getStorageOutcomes().some(row => row.name === 'thread-identity'), false);
+  // The Hands terminal and file owners reach Web as one session; the driver session routes through the execution.
+  assert.equal(typeof services.createTerminalSession, 'function');
+  assert.equal(typeof services.createAppServerDriverSession, 'function');
+  await app.close(); app = undefined;
+  assert.deepEqual(order, ['web', 'app-host', 'engine', 'identity', 'composition']);
+  // Every execution writer was released: the same data directory starts again.
+  app = await startHeadlessServer(options, composition);
+  assert.equal(starts, 2);
+});
+
+test('workspace-host execution: in-process Pi holds its owner lock beside lazy DSH, a Thread metadata owner wraps the lease store, and a restart reacquires both', { timeout: 60_000 }, async t => {
+  const f = await fixture(t), data = f.options.dataDirectory;
+  let services;
+  const options = { ...f.options, engines: ['dsh', 'pi'], defaultEngine: 'dsh',
+    createWebServer: async webOptions => { services = webOptions; return createWorkbenchWebServer(webOptions); } };
+  const composition = { createIdentity: async () => ({ providers: [], createThreadMetadata: async () => ({}), close() {} }) };
+  let app = await startHeadlessServer(options, composition); f.own(() => app?.close());
+  // DSH sits behind the Pi engine host and starts only when asked.
+  assert.equal(f.starts(), 0);
+  assert.match(services.appServerTarget ?? await services.resolveAppServerTarget(), /^ws:\/\/127\.0\.0\.1:/, 'the Pi engine host serves the opencraft-server App Server');
+  // The identity overlay owns the lease store and reports its database.
+  assert.notEqual(services.appServerIdentity, null);
+  assert.equal(services.getStorageOutcomes().some(row => row.name === 'thread-identity' && row.hostId === 'opencraft-server'), true);
+  // The in-process Pi owner holds its lock beside the data directory's writers while it runs.
+  await stat(join(data, 'pi-owner.lock'));
+  await assert.rejects(startHeadlessServer(options, composition));
+  await app.close(); app = undefined;
+  app = await startHeadlessServer(options, composition);
+  assert.equal((await fetch(app.url)).status, 200);
+});
+
 test('installation routes: the shared route table and admission gate keep their wire bytes on a real Headless server', { timeout: 60_000 }, async t => {
   // Raw HTTP/1.1 bytes (Date removed): the installation route definitions and the
   // admission refusals are shared with the InstallationCore front door, so the
