@@ -23,24 +23,34 @@ function createReadClient(environment) {
     const signature = sign("sha256", Buffer.from(input), { key, dsaEncoding: "ieee-p1363" });
     return `${input}.${signature.toString("base64url")}`;
   }
-  async function get(path, query = {}) {
+  async function request(method, path, query = {}, body) {
     const url = new URL(path, apple);
     if (url.origin !== apple || !url.pathname.startsWith("/v1/")) throw new Error("Unexpected App Store Connect API URL");
     for (const [name, value] of Object.entries(query)) url.searchParams.set(name, value);
-    for (let attempt = 0; attempt < 3; attempt++) {
+    // Writes are not retried: a lost response may already have been applied, and the caller re-reads state.
+    const attempts = method === "GET" ? 3 : 1;
+    for (let attempt = 0; attempt < attempts; attempt++) {
       const response = await fetch(url, {
-        headers: { authorization: `Bearer ${token()}` },
+        method,
+        headers: {
+          authorization: `Bearer ${token()}`,
+          ...(body === undefined ? {} : { "content-type": "application/json" }),
+        },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         redirect: "error",
         signal: AbortSignal.timeout(20_000),
       }).catch(() => undefined);
-      if (response?.ok) return response.json();
+      if (response?.ok) return response.status === 204 ? null : response.json();
       const status = response?.status;
-      if (attempt === 2 || (status && status !== 429 && status < 500)) {
-        throw new Error(`App Store Connect GET ${url.pathname} failed (${status ?? "network error"})`);
+      if (attempt === attempts - 1 || (status && status !== 429 && status < 500)) {
+        const detail = response ? (await response.json().catch(() => null))?.errors?.[0]?.detail : undefined;
+        throw new Error(`App Store Connect ${method} ${url.pathname} failed (${status ?? "network error"})${detail ? `: ${detail}` : ""}`);
       }
       await delay((attempt + 1) * 2_000);
     }
   }
+  const get = (path, query) => request("GET", path, query);
+  const post = (path, body) => request("POST", path, {}, body);
   async function list(path, query = {}) {
     const records = [];
     const seen = new Set();
@@ -55,7 +65,7 @@ function createReadClient(environment) {
       page = await get(next);
     }
   }
-  return { appId: APP_STORE_APP_ID, get, list };
+  return { appId: APP_STORE_APP_ID, get, list, post };
 }
 
 export function nextBuildNumber(numbers) {
@@ -89,6 +99,22 @@ export function testFlightStatus({ upload, build, externalState, group, listed }
   if (externalState === "READY_FOR_BETA_SUBMISSION") return "beta_review_submission_required";
   if (externalState === "READY_FOR_BETA_TESTING" || externalState === "BETA_APPROVED") return "testing_not_started";
   return "distribution_unavailable";
+}
+
+/**
+ * What an external TestFlight build still needs, in order: its "What to Test"
+ * text, a place in the external group, and a beta review submission. A build
+ * Apple is still processing, or one that needs a human decision (export
+ * compliance, a rejection), gets nothing.
+ */
+export function distributionActions({ status, externalState, listed, localized }) {
+  if (!["build_not_in_external_group", "beta_review_submission_required"].includes(status)
+    && !(status === "beta_review_pending" && !listed)) return [];
+  const actions = [];
+  if (externalState === "READY_FOR_BETA_SUBMISSION" && !localized) actions.push("describe");
+  if (!listed) actions.push("add_to_group");
+  if (externalState === "READY_FOR_BETA_SUBMISSION") actions.push("submit_for_review");
+  return actions;
 }
 
 const uploadQuery = (version) => ({
@@ -155,12 +181,15 @@ async function main(mode, environment) {
     return;
   }
   const number = environment.IOS_BUILD_NUMBER;
-  if (mode !== "status" || !buildNumberPattern.test(number ?? "")) throw new Error("Expected status mode and an iOS build number");
+  if (!["status", "distribute"].includes(mode) || !buildNumberPattern.test(number ?? "")) {
+    throw new Error("Expected status or distribute mode and an iOS build number");
+  }
   const groups = await client.list(`/v1/apps/${client.appId}/betaGroups`, {
     "fields[betaGroups]": "name,isInternalGroup",
   });
   const group = selectExternalGroup(groups, environment.OPENCRAFT_TESTFLIGHT_GROUP);
-  const deadline = Date.now() + 12 * 60_000;
+  // Apple usually finishes processing an upload within half an hour.
+  const deadline = Date.now() + (mode === "distribute" ? 35 : 12) * 60_000;
   let result;
   do {
     result = await readStatus(client, version, number, group);
@@ -168,6 +197,40 @@ async function main(mode, environment) {
     if (result.status !== "processing" || Date.now() >= deadline) break;
     await delay(20_000);
   } while (true);
+
+  if (mode === "distribute" && result.buildId && group) {
+    const localizations = await client.list(`/v1/builds/${encodeURIComponent(result.buildId)}/betaBuildLocalizations`, {
+      "fields[betaBuildLocalizations]": "locale,whatsNew",
+    });
+    const localized = localizations.some(record => (record.attributes.whatsNew ?? "").trim());
+    const actions = distributionActions({ ...result, localized });
+    for (const action of actions) {
+      console.log(`TestFlight ${version} (${number}): ${action}`);
+      if (action === "describe") {
+        const release = environment.RELEASE_TAG
+          ? ` Release notes: https://github.com/opencraft-app/opencraft/releases/tag/${environment.RELEASE_TAG}`
+          : "";
+        await client.post("/v1/betaBuildLocalizations", { data: {
+          type: "betaBuildLocalizations",
+          attributes: { locale: "en-US", whatsNew: `OpenCraft ${version} (${number}).${release}` },
+          relationships: { build: { data: { type: "builds", id: result.buildId } } },
+        } });
+      } else if (action === "add_to_group") {
+        await client.post(`/v1/betaGroups/${encodeURIComponent(group.id)}/relationships/builds`, {
+          data: [{ type: "builds", id: result.buildId }],
+        });
+      } else {
+        await client.post("/v1/betaAppReviewSubmissions", { data: {
+          type: "betaAppReviewSubmissions",
+          relationships: { build: { data: { type: "builds", id: result.buildId } } },
+        } });
+      }
+    }
+    if (actions.length) {
+      result = await readStatus(client, version, number, group);
+      console.log(JSON.stringify(result));
+    }
+  }
 
   await writeFile(environment.TESTFLIGHT_STATUS_FILE, JSON.stringify(result, null, 2) + "\n");
   await appendFile(environment.GITHUB_STEP_SUMMARY,
@@ -177,7 +240,11 @@ async function main(mode, environment) {
     + `- Apple processing: \`${result.processing ?? "not found"}\`\n`
     + `- External test state: \`${result.externalState ?? "not available"}\`\n`
     + `- Assigned to the target group: ${result.listed ? "yes" : "no"}\n`);
-  if (result.status !== "installable") process.exitCode = 1;
+  // Distribution succeeds once Apple has the build for review or already lets testers in.
+  const done = mode === "distribute"
+    ? ["beta_review_pending", "testing_not_started", "installable"].includes(result.status) && result.listed
+    : result.status === "installable";
+  if (!done) process.exitCode = 1;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

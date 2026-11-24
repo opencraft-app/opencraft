@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { nextBuildNumber, selectExternalGroup, testFlightStatus } from "../../scripts/release/testflight-ios.mjs";
+import {
+  distributionActions,
+  nextBuildNumber,
+  selectExternalGroup,
+  testFlightStatus,
+} from "../../scripts/release/testflight-ios.mjs";
 
 const external = { id: "external", attributes: { name: "Beta", isInternalGroup: false } };
 const internal = { id: "internal", attributes: { name: "Beta", isInternalGroup: true } };
@@ -40,4 +45,43 @@ test("reports availability only for a live build in external testing and assigne
   assert.equal(testFlightStatus({ ...ready, externalState: "IN_BETA_REVIEW" }), "beta_review_pending");
   assert.equal(testFlightStatus({ ...ready, externalState: "BETA_APPROVED" }), "testing_not_started");
   assert.equal(testFlightStatus({ upload: "FAILED" }), "processing_failed");
+});
+
+test("distribution describes, adds and submits a processed build only as far as it still needs", () => {
+  const ready = {
+    status: "build_not_in_external_group",
+    externalState: "READY_FOR_BETA_SUBMISSION",
+    listed: false,
+    localized: false,
+  };
+  assert.deepEqual(distributionActions(ready), ["describe", "add_to_group", "submit_for_review"]);
+  assert.deepEqual(distributionActions({ ...ready, localized: true }), ["add_to_group", "submit_for_review"]);
+  // Already listed (a rerun after adding): only the submission is left.
+  assert.deepEqual(
+    distributionActions({ ...ready, status: "beta_review_submission_required", listed: true, localized: true }),
+    ["submit_for_review"],
+  );
+  // Submitted but not yet in the group: add it, never submit twice.
+  assert.deepEqual(
+    distributionActions({
+      status: "beta_review_pending",
+      externalState: "WAITING_FOR_BETA_REVIEW",
+      listed: false,
+      localized: true,
+    }),
+    ["add_to_group"],
+  );
+  // Nothing to do, or a human decision is needed first.
+  for (const status of [
+    "installable",
+    "testing_not_started",
+    "processing",
+    "export_compliance_required",
+    "beta_review_rejected",
+  ])
+    assert.deepEqual(distributionActions({ ...ready, status }), [], status);
+  assert.deepEqual(
+    distributionActions({ status: "beta_review_pending", externalState: "IN_BETA_REVIEW", listed: true }),
+    [],
+  );
 });
