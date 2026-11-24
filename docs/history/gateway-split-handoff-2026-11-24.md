@@ -3,6 +3,24 @@
 > 会话：https://claude.ai/code/session_01Y38KYMhFhrudoc5yoCNC5r
 > 本文件未提交到 Git（放在主 checkout 根目录供阅读）。权威设计文档见 `docs/architecture/platform/gateway-split.md`、`cloudflare-deployment.md`、`storage-ports.md`、`workspace-host-split.md`。
 
+## 0. 接手清单（09:10 实时状态，以此为准）
+
+**后台没有任何正在运行的子任务／研发任务。** 本会话所有工作都已推送到下列远端分支（前缀 `claude/fervent-gates-idr8l5-`），每个都已开 PR、开启 auto-merge：
+
+| PR | 分支 | head | 内容 | 状态／接手动作 |
+|---|---|---|---|---|
+| #582 | `lockfile-rest` | `6fabeb1ad` | 剩余 proper-lockfile 迁到内核锁 | 合并队列内 **CI_FAILURE** 出队，原因未查：看失败检查（可能是同批他 PR），修复后重新 enable auto-merge |
+| #583 | `workspace-host-2` | `75082f749` | G1 workspace-host 第二部分 | 已合入最新 main，CI 中；无需动作 |
+| #584 | `due-wake-2` | `e0d9ad4e4` | 到期调度第二批 | **`gate-tests (platform)` 真实失败**（已重跑一次仍败，勿再重跑）。本地 platform 组已过：projects、actors、thread-lifecycle、tasks、codex-core；`agent-bridge` 偶发 1 败未复现；未跑 `test:cloud-desktop`、`test:hub-network`、`check:startup:cache` → 看 CI 完整日志定位 |
+| #585 | `account-core-2` | `c64f5ab44` | AccountCore 第二部分 | **MERGE_CONFLICT** 出队：merge origin/main；与 #581 squash 的重复冲突用 #581 尖端 `dedd50c` 为基准 `git merge-file` 三方合并 |
+| #587 | `account-core-3` | `28be51a53` | AccountCore 第三部分：模型网关 | **`secrets`(gitleaks) 仍报 1 处**（已改两处疑似：checksum 拆行、`CONTRIBUTED_KEY` 改 `sentinel-key`，仍失败）。在该分支运行 `gitleaks dir . --config .gitleaks.toml --report-format json` 定位后修字面量，勿放宽白名单。另与 #589 迁移族冲突（后合并方把网关链改为 `accountPoolSqlSchemas()` 中一个族） |
+| #589 | `workspace-host-do` | `578ed5bd5` | WorkspaceHost DO＋迁移族收敛 | 依赖 #583/#585 先合；CI 中 |
+| #590 | `client-session-edge` | `ab1758ee9` | G1 client-session＋edge，G1 完成 | 依赖 #583；CI 中 |
+| — | `handoff` | 本文件 | 本 handoff | 不需要 PR |
+
+建议合并顺序：#583 → #582 → #585 → #589 → #590 → #587（处理迁移族冲突）→ #584。全部合并后统一更新 `gateway-split.md` §5.1 状态表。
+另有 #588（`codex/gateway-composition-preflight`）不是本会话创建，未触碰。
+
 ## 1. 目标与原则
 
 - 同一套领域代码装配到多种部署形态：Node 自托管（Docker／systemd／Electron，一等公民）与 Cloudflare（Workers＋DO＋Containers，可选）。
