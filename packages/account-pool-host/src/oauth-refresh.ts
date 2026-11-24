@@ -1,5 +1,5 @@
 import { accountFailure, classifyAccountFailure, logAccountFailure } from "./account-diagnostics.js";
-import type { AccountPoolAccount, AccountPoolSecret, AccountPoolStore } from "./store.js";
+import type { AccountPool, AccountPoolAccount, AccountPoolSecret } from "./account-pool.js";
 
 export type AccountCredentialRefreshReason = "expired" | "unauthorized";
 
@@ -7,7 +7,7 @@ export type AccountCredentialRefreshReason = "expired" | "unauthorized";
 export class AccountCredentialRefreshManager {
   activeCount(): number { return this.flights.size; }
   private readonly flights = new Map<string, Promise<AccountPoolSecret>>();
-  private readonly store: AccountPoolStore;
+  private readonly store: AccountPool;
   private readonly now: () => number;
   private readonly refresh: (
     account: AccountPoolAccount,
@@ -17,7 +17,7 @@ export class AccountCredentialRefreshManager {
   private readonly refreshSkewMs: number;
 
   constructor(options: {
-    readonly store: AccountPoolStore;
+    readonly store: AccountPool;
     readonly now?: () => number;
     readonly refreshSkewMs?: number;
     readonly refresh: (

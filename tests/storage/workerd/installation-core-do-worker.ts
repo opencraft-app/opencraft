@@ -4,7 +4,7 @@
 // rehearsal. The subclass adds routes under `/__test/` and changes nothing
 // else: every other request reaches the production object unchanged.
 import entry, { InstallationCore } from "../../../apps/headless-server/src/cloudflare/worker.ts";
-import type { InstallationCoreEnv } from "../../../apps/headless-server/src/cloudflare/bindings.ts";
+import type { DeploymentEnv } from "../../../apps/headless-server/src/cloudflare/bindings.ts";
 import { fetchRequestView } from "@opencraft/http-exchange/fetch";
 
 const REVOKED = "test/watch-revoked";
@@ -52,7 +52,8 @@ export class TestInstallationCore extends InstallationCore {
 }
 
 export default {
-  async fetch(request: Request, env: InstallationCoreEnv): Promise<Response> {
+  // This worker binds only the installation object; it never sends an account route to the entry.
+  async fetch(request: Request, env: DeploymentEnv): Promise<Response> {
     if (new URL(request.url).pathname.startsWith("/__test/"))
       return env.INSTALLATION_CORE.get(env.INSTALLATION_CORE.idFromName("installation")).fetch(request);
     return entry.fetch(request, env);

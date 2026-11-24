@@ -7,7 +7,8 @@
     ".": "./src/index.ts",
     "./conformance": "./src/conformance.ts",
     "./migrations": "./src/migrations.ts",
-    "./families": "./src/families.ts"
+    "./families": "./src/families.ts",
+    "./schema-ledgers": "./src/schema-ledgers.ts"
   },
   "scripts": { "typecheck": "tsc --noEmit" }
 }

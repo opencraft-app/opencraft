@@ -5,6 +5,7 @@ import type { WorkerScenario } from "./worker-runtime.ts";
 import { STORAGE_PORTS_SCENARIOS } from "../storage/workerd/storage-ports.scenarios.ts";
 import { INSTALLATION_CORE_SCENARIOS } from "../storage/workerd/installation-core.scenarios.ts";
 import { INSTALLATION_CORE_DO_SCENARIOS } from "../storage/workerd/installation-core-do.scenarios.ts";
+import { ACCOUNT_CORE_DO_SCENARIOS } from "../storage/workerd/account-core-do.scenarios.ts";
 import { WORKSPACE_HOST_SCENARIOS } from "../storage/workerd/workspace-host.scenarios.ts";
 import { DEPLOYMENT_STORE_SCENARIOS } from "../storage/workerd/deployment-stores.scenarios.ts";
 import { INSTALLATION_STORE_SCENARIOS } from "../storage/workerd/installation-stores.scenarios.ts";
@@ -32,6 +33,11 @@ export const SCENARIO_GROUPS: readonly ScenarioGroup[] = [
     id: "installation-core-do",
     label: "InstallationCore Durable Object (installation module, front door, Node parity, eviction, alarm watches)",
     scenarios: INSTALLATION_CORE_DO_SCENARIOS,
+  },
+  {
+    id: "account-core-do",
+    label: "AccountCore Durable Object (account module, policy front door behind the installation gate, sealed credentials, leases, Node parity)",
+    scenarios: ACCOUNT_CORE_DO_SCENARIOS,
   },
   {
     id: "workspace-host",

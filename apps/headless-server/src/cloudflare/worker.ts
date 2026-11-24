@@ -1,14 +1,17 @@
 // Entry Worker of the installation's Cloudflare deployment assembly
 // (deploy/cloudflare/wrangler.installation-core.jsonc). It forwards the
 // installation's own routes (the shared route table and membership
-// administration) to the deployment's single InstallationCore object, and a
+// administration) to the deployment's single InstallationCore object, the
+// account's routes (account-routes.ts) to its single AccountCore object, and a
 // workspace's operator operations (workspace-host-routes.ts) to that
 // workspace's WorkspaceHost object, addressed by its id, once the installation
 // confirms an administrator. It answers nothing else: static assets, the Client
 // DO and client sessions to a workspace belong to the edge Worker, which is not
-// assembled yet (cloudflare-deployment §5.4, §5.7). Object-to-object paths are
+// assembled yet (cloudflare-deployment §5.4, §5.7). Internal object-to-object
+// paths (the account authority exchange, a workspace's owner operations) are
 // never forwarded.
 import { fetchResponse } from "@opencraft/http-exchange/fetch";
+import { accountRoute } from "../account-routes.js";
 import {
   INSTANCE_ACCESS_PREFIX,
   MISSING,
@@ -22,10 +25,12 @@ import {
   workspaceHostObjectName,
   workspaceHostRoute,
 } from "../workspace-host-routes.js";
-import type { DeploymentRoutingEnv, InstallationCoreEnv } from "./bindings.js";
+import type { DeploymentEnv, DeploymentRoutingEnv, InstallationCoreEnv } from "./bindings.js";
+import { ACCOUNT_CORE_OBJECT } from "./account-core.js";
 import { INSTALLATION_CORE_OBJECT } from "./installation-core.js";
 
 export { InstallationCore } from "./installation-core.js";
+export { AccountCore } from "./account-core.js";
 export { WorkspaceHost } from "./workspace-host.js";
 
 /** Whether the installation's object owns `pathname`. */
@@ -33,8 +38,15 @@ export function installationCoreOwns(pathname: string): boolean {
   return installationRoute(pathname) !== null || pathname.startsWith(INSTANCE_ACCESS_PREFIX);
 }
 
-/** A deployment without the workspace binding routes no workspace. */
-type EntryEnv = InstallationCoreEnv & Partial<Pick<DeploymentRoutingEnv, "WORKSPACE_HOST">>;
+/** Whether the account's object owns `pathname`. */
+export function accountCoreOwns(pathname: string): boolean {
+  return accountRoute(pathname) !== null;
+}
+
+/** A deployment without the account or workspace binding routes none of their paths. */
+type EntryEnv = InstallationCoreEnv &
+  Partial<Pick<DeploymentEnv, "ACCOUNT_CORE">> &
+  Partial<Pick<DeploymentRoutingEnv, "WORKSPACE_HOST">>;
 
 const installation = (env: InstallationCoreEnv) =>
   env.INSTALLATION_CORE.get(env.INSTALLATION_CORE.idFromName(INSTALLATION_CORE_OBJECT));
@@ -68,6 +80,8 @@ export default {
   async fetch(request: Request, env: EntryEnv): Promise<Response> {
     const pathname = new URL(request.url).pathname;
     if (installationCoreOwns(pathname)) return installation(env).fetch(request);
+    const account = env.ACCOUNT_CORE;
+    if (account && accountCoreOwns(pathname)) return account.get(account.idFromName(ACCOUNT_CORE_OBJECT)).fetch(request);
     const route = workspaceHostRoute(pathname);
     const workspaces = env.WORKSPACE_HOST;
     if (route && workspaces && request.method === WORKSPACE_HOST_OPERATIONS[route.operation]) {

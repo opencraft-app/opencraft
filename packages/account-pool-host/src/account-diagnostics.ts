@@ -1,4 +1,4 @@
-import { EXTERNAL_CODEX_REAUTH_MESSAGE } from "./codex-auth-file.js";
+import { EXTERNAL_CODEX_REAUTH_MESSAGE } from "./codex-auth-file-format.js";
 import { createHash, randomUUID } from "node:crypto";
 import type { CodexAccountFailure, CodexAccountFailureCode, CodexAccountMaintenanceView } from "@opencraft/appserver-protocol";
 

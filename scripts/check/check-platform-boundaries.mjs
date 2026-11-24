@@ -187,6 +187,22 @@ for (const file of [
   "packages/hub-network/src/state-port.ts",
   "packages/hub-network/src/state-port-document.ts",
   "apps/local-agent-host/src/machine-identity-document.ts",
+  // The account module and the ports the AccountCore Durable Object feeds it
+  // through (cloudflare-deployment §5.6): the shared account routes, the policy
+  // store and rules, credential leases, their exchange, egress and provider source,
+  // sealed secrets, and the shared-database schema ledgers.
+  "apps/headless-server/src/assembly/account.mjs",
+  "apps/headless-server/src/account-routes.ts",
+  "packages/model-usage-policy/src/store.ts",
+  "packages/model-usage-policy/src/rules.mjs",
+  "packages/account-pool-host/src/credential-leases.ts",
+  "packages/account-pool-host/src/credential-lease-exchange.ts",
+  "packages/account-pool-host/src/credential-egress.ts",
+  "packages/sql/src/schema-ledgers.ts",
+  "packages/secret-storage/src/sealed.ts",
+  "apps/local-agent-host/src/model-config/provider-route.ts",
+  "apps/local-agent-host/src/model-config/provider-credentials.ts",
+  "apps/local-agent-host/src/model-config/repository.ts",
 ]) {
   checkFiles("installation root input port", file, [{
     pattern: /(?:from\s*|import\s*|require\(\s*)["'](?:node:|ws["']|@opencraft\/sqlite-node|@opencraft\/worker-owner|@opencraft\/hub-network\/(?:controller|open|node|state-port-node|store-file)["']|@opencraft\/access-control\/commit-fence\/shared-memory|@opencraft\/opencraft-daemon\/machine-identity|@opencraft\/local-agent-host\/machine-identity["'])|\bBuffer\b|\bprocess\./m,

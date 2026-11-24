@@ -36,6 +36,13 @@ import {
   isHealthPath,
   serveInstallationRoute,
 } from "../installation-routes.js";
+import {
+  ACCOUNT_AUTHORITY_PATH,
+  accountAuthorityRequestView,
+  installationAccountAuthorities,
+  parseAccountAuthorityQuery,
+  type AccountAuthorityAnswer,
+} from "../account-routes.js";
 import type { InstallationCoreEnv, InstallationCoreState } from "./bindings.js";
 
 type Admission = Awaited<ReturnType<InstallationAssembly["openAdmission"]>>;
@@ -48,6 +55,7 @@ export interface InstallationCoreServices {
   readonly admission: Admission;
   readonly instanceAccess: NonNullable<Admission["instanceAccess"]>;
   readonly actorAccess: ReturnType<InstallationAssembly["openActorAccess"]>;
+  readonly actorStore: Awaited<ReturnType<InstallationAssembly["openIdentity"]>>["actorStore"];
 }
 
 /** The deployment's single object name. */
@@ -153,7 +161,7 @@ export class InstallationCore {
       relayConfiguration,
     });
     const machineIdentity = await rootInputs.machineIdentity();
-    await installation.openIdentity({
+    const { actorStore } = await installation.openIdentity({
       createIdentity: undefined,
       hub: null,
       machineIdentity,
@@ -183,7 +191,7 @@ export class InstallationCore {
     });
     const actorAccess = installation.openActorAccess();
     if (!admission.instanceAccess) throw new Error("InstallationCore requires instance access");
-    return { installation, core, admission, instanceAccess: admission.instanceAccess, actorAccess };
+    return { installation, core, admission, instanceAccess: admission.instanceAccess, actorAccess, actorStore };
   }
 
   /** The opened services; throws when the open failed. */
@@ -225,6 +233,9 @@ export class InstallationCore {
         installationExchangeReply({ kind: "json", status: 503, value: { error: "installation_unavailable" } }),
       );
     const services = this.#services;
+    // Internal: the account's object asks about a request it serves; the entry Worker never forwards this path.
+    if (new URL(request.url).pathname === ACCOUNT_AUTHORITY_PATH && request.method === "POST")
+      return this.#accountAuthority(services, request);
     // The deployment's edge sets CF-Connecting-IP; the composition, not the adapter, chooses to trust it.
     const response = await serveFetchHttpExchange(request, (exchange) => this.#route(services, exchange), {
       clientAddress: request.headers.get("cf-connecting-ip"),
@@ -232,10 +243,52 @@ export class InstallationCore {
     return response ?? fetchResponse(installationExchangeReply(MISSING));
   }
 
+  /** The installation's admission gate over its services, for every front door it decides for. */
+  #gate({ admission, instanceAccess, actorAccess }: InstallationCoreServices) {
+    const auth = admission.humanAuth;
+    return {
+      sessionRequest: (value: IdentityRequestView) => actorAccess.isSessionRequest(value),
+      admission: (value: IdentityRequestView) =>
+        auth?.invalidSession(value) ? (401 as const) : instanceAccess.admissionStatus(value),
+      legacyAdmission: (value: IdentityRequestView) => actorAccess.legacyAdmissionStatus(value),
+      login: !!auth,
+    };
+  }
+
+  /**
+   * The account authority exchange (account-routes.ts): the installation's
+   * gate, or the account authority, for a request the account's object is
+   * serving, decided by the same functions the Node gateway calls beside its services.
+   */
+  async #accountAuthority(services: InstallationCoreServices, request: Request): Promise<Response> {
+    let query;
+    try {
+      query = parseAccountAuthorityQuery(await request.json());
+    } catch {
+      return Response.json({ error: "invalid_account_authority_query" }, { status: 400 });
+    }
+    const view = accountAuthorityRequestView(query) as unknown as IdentityRequestView;
+    let answer: AccountAuthorityAnswer;
+    if (query.scope === "gate") {
+      const pathname = new URL(query.path, "http://installation.invalid").pathname;
+      if (!isHealthPath(pathname)) await services.instanceAccess.prepare(view);
+      answer = { scope: "gate", refusal: installationGate(view, pathname, query.headers.accept, this.#gate(services)) };
+    } else {
+      const authorities = installationAccountAuthorities<IdentityRequestView>({
+        actorAccess: services.actorAccess,
+        actorStore: services.actorStore,
+        instanceAccess: services.instanceAccess,
+      });
+      answer = { scope: query.scope, authority: authorities[query.scope](view) };
+    }
+    return Response.json(answer, { headers: { "cache-control": "no-store" } });
+  }
+
   async #route(
-    { admission, instanceAccess, actorAccess }: InstallationCoreServices,
+    services: InstallationCoreServices,
     exchange: HttpExchangeRequest<FetchRequestView>,
   ): Promise<HttpExchangeResponse | null> {
+    const { admission, instanceAccess, actorAccess } = services;
     const pathname = new URL(exchange.path, "http://installation.invalid").pathname;
     const request = exchange.identity as unknown as IdentityRequestView;
     const auth = admission.humanAuth;
@@ -251,12 +304,7 @@ export class InstallationCore {
       pathname,
     );
     if (routed) return routed;
-    const refusal = installationGate(request, pathname, exchange.headers.accept, {
-      sessionRequest: (value) => actorAccess.isSessionRequest(value),
-      admission: (value) => (auth?.invalidSession(value) ? 401 : instanceAccess.admissionStatus(value)),
-      legacyAdmission: (value) => actorAccess.legacyAdmissionStatus(value),
-      login: !!auth,
-    });
+    const refusal = installationGate(request, pathname, exchange.headers.accept, this.#gate(services));
     if (refusal) return installationExchangeReply(refusal);
     if (pathname.startsWith(INSTANCE_ACCESS_PREFIX)) return instanceAccess.handle(identityExchange);
     return null;

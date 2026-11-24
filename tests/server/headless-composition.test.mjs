@@ -1252,3 +1252,51 @@ test('installation routes: the shared route table and admission gate keep their 
   assert.match(await raw(app.url, '/__opencraft_auth/session'), /^HTTP\/1\.1 200 OK\r\n/u);
   assert.equal(await raw(app.url, '/__opencraft_access/session'), `HTTP/1.1 401 Unauthorized\r\n${json(unauthenticated)}`);
 });
+
+test('account inputs: the policy database, model configuration and credentials stay in their data directory files, bytes and modes unchanged', { timeout: 60_000 }, async t => {
+  // The account module receives its storage through runtime-neutral inputs; the
+  // Node root must keep opening the same files, at the same moments, with the
+  // same bytes and modes, and its routes must answer with the same wire bytes.
+  const { fileStateDocumentStore } = await import('@opencraft/document-storage/state-file');
+  const { fileSecretStore } = await import('@opencraft/secret-storage/file');
+  const { ModelConfigurationRepository, ModelCredentialRepository } = await import('../../apps/local-agent-host/src/model-config/repository.ts');
+  const { migrateSpeechEnvironment } = await import('../../apps/local-agent-host/src/model-config/migrate-speech.ts');
+  const f = await fixture(t);
+  const models = join(f.options.dataDirectory, 'models');
+  await migrateSpeechEnvironment(new ModelConfigurationRepository(fileStateDocumentStore(models)), new ModelCredentialRepository(fileSecretStore(models)),
+    { OPENCRAFT_SPEECH_API_KEY: 'synthetic-account-speech-key' });
+  const snapshot = async () => Object.fromEntries(await Promise.all(['models.json', 'credentials.json'].map(async name => {
+    const path = join(models, name);
+    return [name, { bytes: await readFile(path, 'utf8'), mode: (await stat(path)).mode & 0o777 }];
+  })));
+  const before = await snapshot();
+  assert.deepEqual(Object.values(before).map(file => file.mode), [0o600, 0o600]);
+  const raw = async (url, path) => {
+    const { hostname, port } = new URL(url);
+    const socket = connect(Number(port), hostname);
+    await once(socket, 'connect');
+    socket.end(`GET ${path} HTTP/1.1\r\nHost: ${hostname}:${port}\r\nConnection: close\r\n\r\n`);
+    const chunks = [];
+    for await (const chunk of socket) chunks.push(chunk);
+    return Buffer.concat(chunks).toString('utf8').replace(/\r\nDate: [^\r]+/u, '');
+  };
+  let app = await startHeadlessServer(f.options); f.own(() => app?.close());
+  // Speech reads the same model configuration and credential files.
+  const speech = await fetch(app.url + '/__opencraft_speech/capabilities').then(r => r.json());
+  assert.equal(speech.available, true);
+  assert.deepEqual(speech.selection, { providerId: 'speech-hunyuan', modelId: 'ep-hyasr3' });
+  // Without instance membership nobody holds policy authority; the refusal keeps its bytes.
+  const refusal = '{"error":"administrator_required"}';
+  assert.equal(await raw(app.url, '/__opencraft_model_policy'),
+    `HTTP/1.1 403 Forbidden\r\ncontent-type: application/json\r\ncache-control: private, no-store\r\nConnection: close\r\nTransfer-Encoding: chunked\r\n\r\n${Buffer.byteLength(refusal).toString(16)}\r\n${refusal}\r\n0\r\n\r\n`);
+  // The policy writer opens its database at the data directory root, private to the owner.
+  const policy = join(f.options.dataDirectory, 'model-usage-policy.sqlite');
+  assert.equal((await stat(policy)).isFile(), true);
+  assert.equal((await stat(policy)).mode & 0o077, 0);
+  await app.close(); app = undefined;
+  assert.deepEqual(await snapshot(), before, 'reading never rewrites model configuration or credentials');
+  app = await startHeadlessServer(f.options);
+  assert.equal((await fetch(app.url + '/__opencraft_speech/capabilities').then(r => r.json())).available, true);
+  await app.close(); app = undefined;
+  assert.deepEqual(await snapshot(), before);
+});

@@ -38,8 +38,21 @@ const NODE_OWNERS = [
   "packages/storage-node/src/server/owner-serve.ts",
   "packages/storage-node/src/server/index.ts",
   "packages/storage-node/src/server/conversation-resource-journal.ts",
-  "packages/model-usage-policy/",
-  "packages/account-pool-host/",
+  // The entry also exports AccountCore: the account's neutral modules are reached, its Node owners are not.
+  "packages/model-usage-policy/src/index.ts",
+  "packages/model-usage-policy/src/native.mjs",
+  "packages/model-usage-policy/src/transport.ts",
+  "packages/account-pool-host/src/index.ts",
+  "packages/account-pool-host/src/store.ts",
+  "packages/account-pool-host/src/model-gateway-store.ts",
+  "packages/account-pool-host/src/codex-core-control.ts",
+  "packages/account-pool-host/src/codex-auth-file.ts",
+  "packages/account-pool-host/src/codex-account-service.ts",
+  "packages/account-pool-host/src/codex-proxy.ts",
+  "packages/account-pool-host/src/server.ts",
+  "packages/document-storage/src/state-file.ts",
+  "packages/secret-storage/src/file.ts",
+  "apps/headless-server/src/assembly/account-node.mjs",
   "plugins/local-account/src/password-hash-node.ts",
   "plugins/login-admission/",
   "apps/local-agent-host/src/machine-identity.ts",
@@ -65,7 +78,11 @@ test(`${OBJECT} reaches no Node owner implementation`, async () => {
   });
   const inputs = Object.keys(result.metafile.inputs);
   assert.deepEqual(
-    inputs.filter((input) => NODE_OWNERS.some((owner) => input.includes(owner))),
+    // The generated migration registry is pure data the account pool reads its published chain from.
+    inputs.filter(
+      (input) =>
+        NODE_OWNERS.some((owner) => input.includes(owner)) && input !== "packages/sqlite-node/src/store-migrations.generated.ts",
+    ),
     [],
   );
   // The same composition as the Node root: the installation module, the shared routes and owner domains.
@@ -108,9 +125,16 @@ test("the Wrangler template names the entry, class, bindings and runtime the tes
   assert.equal(resolve(dirname(template), config.main), resolve(root, ENTRY));
   assert.equal(config.compatibility_date, COMPATIBILITY_DATE);
   assert.deepEqual(config.compatibility_flags, INSTALLATION_CORE_DO_SPEC.compatibilityFlags);
-  assert.deepEqual(config.durable_objects.bindings[0], { name: "INSTALLATION_CORE", class_name: "InstallationCore" });
-  assert.deepEqual(config.migrations[0], { tag: "v1", new_sqlite_classes: ["InstallationCore"] });
-  // Configuration only; the setup proof is a secret and never a var.
+  assert.deepEqual(config.durable_objects.bindings.slice(0, 2), [
+    { name: "INSTALLATION_CORE", class_name: "InstallationCore" },
+    { name: "ACCOUNT_CORE", class_name: "AccountCore" },
+  ]);
+  // Each class arrives in its own migration, so a deployment of an earlier template only adds it.
+  assert.deepEqual(config.migrations.slice(0, 2), [
+    { tag: "v1", new_sqlite_classes: ["InstallationCore"] },
+    { tag: "v2", new_sqlite_classes: ["AccountCore"] },
+  ]);
+  // Configuration only; the setup proof and the account's sealing key are secrets and never vars.
   assert.deepEqual(
     Object.keys(config.vars)
       .filter((name) => !name.startsWith("OPENCRAFT_WORKSPACE_"))
@@ -120,6 +144,7 @@ test("the Wrangler template names the entry, class, bindings and runtime the tes
   parseHumanAuthConfiguration(JSON.parse(config.vars.OPENCRAFT_HUMAN_AUTH));
   const entry = await import(resolve(root, ENTRY));
   assert.equal(typeof entry.InstallationCore, "function");
+  assert.equal(typeof entry.AccountCore, "function");
   assert.equal(typeof entry.default.fetch, "function");
 });
 

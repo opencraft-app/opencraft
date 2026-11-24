@@ -20,10 +20,45 @@ export interface InstallationCoreState {
   abort(reason?: string): void;
 }
 
-/** A Durable Object namespace binding, as the entry Worker addresses the installation's object. */
+/** A Durable Object namespace binding, as the entry Worker (and one object another) addresses an object. */
 export interface InstallationCoreNamespace {
   idFromName(name: string): unknown;
   get(id: unknown): { fetch(request: Request): Promise<Response> };
+}
+/** The account's object namespace; the same structural binding. */
+export type AccountCoreNamespace = InstallationCoreNamespace;
+
+/** `ctx` of the AccountCore object; its alarm wakes the account pool's renewal schedule. */
+export interface AccountCoreState {
+  readonly storage: InstallationCoreStorage;
+  blockConcurrencyWhile<T>(callback: () => Promise<T>): Promise<T>;
+  /** Resets the object: its memory is dropped and the next event constructs it again. */
+  abort(reason?: string): void;
+}
+
+/** The bindings the AccountCore object reads (deploy/cloudflare/wrangler.installation-core.jsonc). */
+export interface AccountCoreEnv {
+  /** The installation's object: the account asks it who may use an account route. */
+  readonly INSTALLATION_CORE: InstallationCoreNamespace;
+  /**
+   * The key that seals model credentials in the object's storage (a secret,
+   * `<id>.<base64url of 32 random bytes>`). Without a valid key the object
+   * stays closed; it never stores a credential unsealed.
+   */
+  readonly OPENCRAFT_ACCOUNT_SEALING_KEY?: string;
+  /**
+   * The account maintenance executor (a service binding to the maintenance
+   * container's front door), which runs a provider's OAuth renewal for the
+   * account pool (`@opencraft/account-pool-host/renewal`). Absent: renewals
+   * fail as unavailable and are retried; selection still serves valid credentials.
+   */
+  readonly ACCOUNT_MAINTENANCE?: { fetch(request: Request): Promise<Response> };
+}
+
+/** Everything the deployment's entry Worker is bound to. */
+export interface DeploymentEnv extends InstallationCoreEnv, AccountCoreEnv {
+  /** The installation's single AccountCore object. */
+  readonly ACCOUNT_CORE: AccountCoreNamespace;
 }
 
 /**

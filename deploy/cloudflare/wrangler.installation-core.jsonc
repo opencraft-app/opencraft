@@ -1,36 +1,46 @@
-// Template: the installation's deployment assembly on Cloudflare Workers
-// (docs/architecture/platform/cloudflare-deployment.md §5, §5.7). Copy it,
+// Template: the installation's Cloudflare Workers deployment assembly
+// (docs/architecture/platform/cloudflare-deployment.md §5, §5.6, §5.7). Copy it,
 // choose the Worker name and origin, set the workspace image digest, and deploy
 // with Wrangler from this directory. Nothing in this repository deploys it;
 // validation and builds never touch an account.
 //
 // It serves the installation's identity and admission (setup, local login,
 // sessions, Actors, instance membership) from one SQLite-backed Durable Object,
-// and one WorkspaceHost Durable Object per workspace that holds the workspace's
-// Host state and its container. Static assets, the Client DO and AccountCore
-// are not assembled yet; see §5.4 and §5.7 for what a production deployment
-// still lacks.
+// InstallationCore; the account's model usage policy, model configuration,
+// sealed model credentials and credential leases from a second one,
+// AccountCore; and one WorkspaceHost object per workspace that holds the
+// workspace's Host state and its container. Static assets and the Client DO
+// are not assembled yet; see §5.4, §5.6 and §5.7 for what a production
+// deployment still lacks.
 //
-// The setup proof is a secret, never a var:
+// Secrets, never vars:
 //   wrangler secret put OPENCRAFT_SETUP_TOKEN --config wrangler.installation-core.jsonc
-// (43 characters of [A-Za-z0-9_-]; remove it once the first administrator exists).
+//   (43 characters of [A-Za-z0-9_-]; remove it once the first administrator exists)
+//   wrangler secret put OPENCRAFT_ACCOUNT_SEALING_KEY --config wrangler.installation-core.jsonc
+//   (`<id>.<base64url of 32 random bytes>`, for example the output of
+//   node -e "console.log('k1.'+require('crypto').randomBytes(32).toString('base64url'))"
+//   It seals every model credential AccountCore stores, so losing it loses
+//   them; without a valid key AccountCore stays closed)
 // The workspace container receives no secret and holds no credential.
 {
   "name": "opencraft-installation-core",
   "main": "../../apps/headless-server/src/cloudflare/worker.ts",
   // The same runtime the local workerd tests and the rehearsal use.
   "compatibility_date": "2026-07-30",
-  // node:crypto and the other built-ins the installation and workspace-host modules import.
+  // node:crypto and the other built-ins the installation, account and workspace-host modules import.
   "compatibility_flags": ["nodejs_compat"],
   "durable_objects": {
     "bindings": [
       { "name": "INSTALLATION_CORE", "class_name": "InstallationCore" },
+      { "name": "ACCOUNT_CORE", "class_name": "AccountCore" },
       { "name": "WORKSPACE_HOST", "class_name": "WorkspaceHost" }
     ]
   },
+  // Each class arrives in its own migration, so a deployment of an earlier template only adds it.
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["InstallationCore"] },
-    { "tag": "v2", "new_sqlite_classes": ["WorkspaceHost"] }
+    { "tag": "v2", "new_sqlite_classes": ["AccountCore"] },
+    { "tag": "v3", "new_sqlite_classes": ["WorkspaceHost"] }
   ],
   // One container per WorkspaceHost object (`cloudflare://WorkspaceHost`): the workspace
   // image (Brain and Hands, `workspace-agent` as its main process), pinned by digest. The
