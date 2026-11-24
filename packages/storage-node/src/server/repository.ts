@@ -1,7 +1,8 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { nodeSqlDatabase, openManagedDatabase, SqliteLifecycleError } from "@opencraft/sqlite-node";
-import { serverLegacyOptions, type ServerStoreId } from "./legacy.js";
+import type { ServerStoreId } from "./legacy.js";
+import { serverLegacyOptions } from "./legacy-options.js";
 import { borrowServerRepository, type ServerDatabaseSource, type ServerRepository } from "./repository-handle.js";
 
 export { borrowServerRepository, type ServerDatabaseHandle, type ServerDatabaseSource, type ServerRepository } from "./repository-handle.js";

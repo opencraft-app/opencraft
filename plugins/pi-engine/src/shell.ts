@@ -27,15 +27,22 @@ export class PiShellWorker {
   private pending = new Map<number, { resolve(result: ShellResult): void; reject(error: Error): void }>();
   private stopping?: Promise<void>;
   private intentional = false;
+  private stops = 0;
+  private closed = false;
   constructor(private readonly options: { cwd: string; directory: string; threadId: string; environment?: ExecutionEnvironmentSnapshot;
     onNotification(message: Record<string, any>): void; onLost(generation: string): void }) {}
   get pid() { return this.child?.pid; }
   async start(): Promise<{ parameters: Record<string, any> }> {
+    if (this.closed) throw new Error("Pi shell worker is closed");
+    const stops = this.stops;
     const configuration = await engineSandboxConfiguration();
     const bundled = new URL("./pi-shell-worker.mjs", import.meta.url);
     const entry = await sandboxFileExists(bundled) ? bundled : new URL("./shell-worker.ts", import.meta.url);
     const bundledRunner = new URL("./sandbox-command.mjs", import.meta.url);
     const runner = fileURLToPath(await sandboxFileExists(bundledRunner) ? bundledRunner : new URL("../../../scripts/server-deployment/sandbox-command.mjs", import.meta.url));
+    // A stop that ran before this start could spawn found no child to stop; spawning
+    // now would leave a worker (and its IPC handle) that no owner will ever stop.
+    if (!this.starting && (this.closed || this.stops !== stops)) throw new Error("Pi shell worker was stopped while starting");
     return this.starting ??= new Promise((resolve, reject) => {
       this.intentional = false; this.stopping = undefined; this.generation = randomUUID();
       const workerArgs = [JSON.stringify({ cwd: this.options.cwd, directory: this.options.directory })];
@@ -94,7 +101,10 @@ export class PiShellWorker {
     else if (child.stdin?.writable) child.stdin.write(sandboxMessage(message), error => callback(error ?? null));
     else callback(new Error("Pi shell transport unavailable"));
   }
+  /** Final stop: the worker never starts again, so a call still in flight cannot respawn it. */
+  close(): Promise<void> { this.closed = true; return this.stop(); }
   stop(): Promise<void> {
+    this.stops++;
     if (this.stopping) return this.stopping;
     this.intentional = true;
     const child = this.child;

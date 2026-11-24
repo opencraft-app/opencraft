@@ -1,6 +1,6 @@
 import { readChannelMentions } from './channel-mentions.js';
 import { communicationExtension } from './communication-extension.js';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID, sha256Hex } from './portable-crypto.js';
 import type { SqlDatabase } from '@opencraft/sql';
 import type { Collaboration } from './collaboration.js';
 import type { NativeChannelChange } from './native-channels.js';
@@ -13,7 +13,7 @@ export interface ChannelArrival { source: string; id: string; author: string; se
 export interface ChannelSyncCommand { method: string; params: Record<string, any> }
 export interface ChannelSyncResult { result: any; changes: NativeChannelChange[] }
 const text=(v:unknown,max=512):string=>{if(typeof v!=='string'||!v.trim()||v.length>max||/[\0]/u.test(v))throw Error('invalid_input');return v;};
-const digest=(v:unknown)=>createHash('sha256').update(JSON.stringify(v)).digest('hex');
+const digest=(v:unknown)=>sha256Hex(JSON.stringify(v));
 const conflict=()=>Object.assign(Error('idempotency_conflict'),{code:'idempotency_conflict'});
 
 /** Native message owner. Called only by trusted transport composition through the

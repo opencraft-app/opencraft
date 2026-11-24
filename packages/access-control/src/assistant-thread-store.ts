@@ -1,5 +1,5 @@
 import { parseConversationRef } from "@opencraft/appserver-protocol/collaboration";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID, sha256Hex } from "./portable-crypto.js";
 import type { SqlDatabase } from '@opencraft/sql';
 import type { ActorContext } from "@opencraft/identity-core/actors";
 import { PersonalAssistants } from "./personal-assistants.js";
@@ -281,11 +281,9 @@ export class AssistantThreadStore {
     if (op === "accept") {
       const a = this.authority(c),
         key = threadText(p.key, 128),
-        fingerprint = createHash("sha256")
-          .update(
-            JSON.stringify(canonical([p.command, p.args, p.workId ?? null])),
-          )
-          .digest("hex");
+        fingerprint = sha256Hex(
+          JSON.stringify(canonical([p.command, p.args, p.workId ?? null])),
+        );
       const prior = this.db
         .prepare(
           "SELECT * FROM assistant_thread_operations WHERE bot_id=? AND epoch=? AND request_key=?",

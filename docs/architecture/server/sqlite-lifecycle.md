@@ -71,7 +71,7 @@ OpenCraft 自有 SQLite 共两类，全部经 `openManagedDatabase` 打开并在
 - `ordinary-workspaces.sqlite`（`apps/local-agent-host/src/ordinary-workspace-store.ts`）：直接用 `DatabaseSync` 与 `CREATE TABLE IF NOT EXISTS`，违反“运行时建表只由迁移执行”的规则，是待迁移的存量。
 - `assistant.sqlite`（`apps/personal-assistant`）：自管 `user_version`，升级前另存 `schema<N>-before-coordination.sqlite`。
 - 引擎私有库（Pi 的 `pi_<id>.sqlite`、Codex 原生 `queue_1.sqlite`、`CODEX_HOME` 与 DSH 目录下的原生库）由引擎自己升级；OpenCraft 只读或按既有搬运语义访问。
-- 锁文件（`.codex-writer.sqlite`、`.codex-runtime.sqlite`、`.codex-routing-owner.sqlite`、`schema-lock.sqlite`、`.opencraft-owned-storage-lock.sqlite`、`*.writer`、`server.lock`）只用于互斥，没有业务表。
+- 锁文件（`.codex-writer.sqlite`、`.codex-runtime.sqlite`、`.codex-routing-owner.sqlite`、`schema-lock.sqlite`、`.opencraft-owned-storage-lock.sqlite`、`*.writer`、`server.lock`、Pi 的 `pi_<id>.sqlite.lock`）只用于互斥，没有业务表。Pi 会话库的唯一写者经 `acquireProcessWriter` 持有 `pi_<id>.sqlite.lock`：进程存活期间（即使事件循环长时间停顿）从不过期，进程退出即释放，没有可被判定为 stale 的刷新计时器；旧版 proper-lockfile 目录租约只在 mtime 远超其刷新周期（60s）后才被转换。
 
 客户端 IndexedDB 另有独立版本号，不走 SQLite 账本：`opencraft-host-connections` v2，`opencraft-sidebar-layout`、`opencraft-appserver-replica`、UI 偏好、扩展文档、客户端资源与 blob 库均为 v1。
 

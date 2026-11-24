@@ -1,5 +1,5 @@
 import { readChannelMentions } from './channel-mentions.js';
-import { createHash, randomUUID } from 'node:crypto';
+import { encodeBase64, randomUUID, sha256Hex } from './portable-crypto.js';
 import type { SqlDatabase } from '@opencraft/sql';
 import { CHANNEL_AVATAR_PARTICIPANT_LIMIT, type ChannelActor, type ChannelSearchPage, type ChannelHistoryPage, type ChannelInviteCandidate, type ChannelMember, type ChannelMessage, type ChannelSummary, type ChannelSyncPage } from '@opencraft/appserver-protocol';
 import type { Actor, ActorContext } from '@opencraft/identity-core/actors';
@@ -324,7 +324,7 @@ export class NativeChannels {
       const external = this.db.prepare('SELECT source,sender_id FROM actor_channel_external_messages WHERE message_id=?').get(messageId);
       // Only an unresolved raw identity may borrow its verified human's current
       // display name. A provider-resolved label remains immutable history.
-      if (external && external.sender_id === 'external:' + createHash('sha256').update(JSON.stringify([String(external.source), name])).digest('hex')) {
+      if (external && external.sender_id === 'external:' + sha256Hex(JSON.stringify([String(external.source), name]))) {
         const id = this.linkedHuman({source: String(external.source), senderId: String(external.sender_id)}, new Map());
         const actor = id ? this.actors.get(id) : null;
         if (actor) return actor.displayName;
@@ -423,8 +423,8 @@ export class NativeChannels {
       ?? this.db.prepare("SELECT 'image' AS name,i.mime,length(i.bytes) AS size,substr(i.bytes,?,65536) AS bytes FROM actor_channel_images i JOIN actor_messages m ON m.id=i.message_id WHERE m.channel_id=? AND m.seq=? AND i.state='ready'").get(offset+1,id,sequence);
     if(!row)return null;
     if(offset>Number(row.size))throw Error('invalid_input');
-    const bytes=Buffer.from(row.bytes as Uint8Array);
-    return {name:String(row.name),type:String(row.mime),size:Number(row.size),base64:bytes.toString('base64'),nextOffset:offset+bytes.length};
+    const bytes=row.bytes as Uint8Array;
+    return {name:String(row.name),type:String(row.mime),size:Number(row.size),base64:encodeBase64(bytes),nextOffset:offset+bytes.length};
   }
 
   attachment(context:ActorContext,id:string,sequence:number){
@@ -497,7 +497,7 @@ export class NativeChannels {
     const epoch = this.db.prepare('SELECT epoch FROM actor_channel_identity').get()!.epoch;
     // Viewer identity links affect self presentation even when no message changed.
     const bindings = this.actors.bindings(context.actorId).map(b => [b.provider,b.subject]).sort();
-    const scope = createHash('sha256').update(JSON.stringify([epoch,id,context.actorId,context.generation,memberEpoch,bindings])).digest('hex');
+    const scope = sha256Hex(JSON.stringify([epoch,id,context.actorId,context.generation,memberEpoch,bindings]));
     const latest = Number(this.db.prepare('SELECT MAX(revision) AS latest FROM actor_channel_changes WHERE channel_id=?').get(id)!.latest ?? 0);
     const parsed = cursor?.match(/^([a-f0-9]{64})\.(0|[1-9]\d{0,15})$/u);
     if (cursor !== undefined && !parsed) throw Error('invalid_input');

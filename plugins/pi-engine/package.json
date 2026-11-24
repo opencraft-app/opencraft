@@ -21,9 +21,9 @@
     "@opencraft/native-history-node": "0.1.0",
     "@opencraft/session-capabilities": "0.1.0",
     "pi-interactive-shell": "0.18.0",
-    "proper-lockfile": "^4.1.2",
     "@opencraft/model-usage-policy": "0.1.0",
     "@opencraft/sandbox-node": "0.1.0",
+    "@opencraft/sqlite-node": "0.1.0",
     "@opencraft/observability-contract": "0.1.0",
     "@opencraft/execution-environment": "0.1.0"
   },
