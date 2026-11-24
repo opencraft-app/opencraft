@@ -88,6 +88,18 @@ try {
   };
   const ready = () => waitFor(health, value => value.status === 200 && value.body.ok && value.body.hosts?.['local-codex']?.state === 'ready', `${services.length}-service readiness`);
   const first = await ready();
+  // No service shares another's PID namespace: the AppServer attests its native child in Brain
+  // and the Gateway (which cannot see Brain's processes) only carries that report.
+  for (const service of services)
+    assert.equal(docker(['inspect', '-f', '{{.HostConfig.PidMode}}', compose(['ps', '-q', service])]), '', `${service} keeps its own PID namespace`);
+  const processes = service => compose(['exec', '-T', service, '/opt/opencraft/bin/node', '-e',
+    "const fs=require('node:fs');for(const p of fs.readdirSync('/proc').filter(n=>/^\\d+$/.test(n)))try{console.log(p,fs.readFileSync('/proc/'+p+'/cmdline','utf8').split('\\0').join(' '))}catch{}"]);
+  const gatewayView = processes('gateway');
+  // (The Gateway's own Codex bridge runs runtime/codex-bridge/engine-host.mjs.)
+  assert.ok(!/codex-app-server|runtime\/engine-host\.mjs|dsh-host\.mjs|workspace-agent/u.test(gatewayView), `the Gateway sees no Brain process:\n${gatewayView}`);
+  const attested = compose(['exec', '-T', 'brain', '/opt/opencraft/bin/node', '-e',
+    `const fs=require('node:fs'),s=fs.readFileSync('/proc/${first.body.core.codexPid}/stat','utf8');console.log(JSON.stringify(['process',fs.readFileSync('/proc/sys/kernel/random/boot_id','utf8').trim(),${first.body.core.codexPid},s.slice(s.lastIndexOf(')')+1).trim().split(/\\s+/)[19]]))`]);
+  assert.equal(first.body.core.executionIncarnation, attested, 'the reported incarnation is Brain\'s own attestation of its native child');
   // Brain and Hands each run one workspace agent with a container-private run directory.
   const agent = service => JSON.parse(docker(['exec', compose(['ps', '-q', service]), '/opt/opencraft/bin/opencraft-health', 'agent']));
   const agents = { brain: agent('brain'), hands: agent('hands') };
@@ -157,7 +169,10 @@ try {
   await waitFor(health, value => value.status === 503 && !value.body.ok, 'Brain loss reported');
   compose(['start', 'brain']);
   const recovered = await ready();
-  assert.notEqual(recovered.body.core.appServerPid, brain.core);
+  // A restarted Brain is a new PID namespace: its PIDs routinely repeat (they are namespace-local),
+  // so replacement is proven by the reported incarnation, never by a PID.
+  assert.equal(typeof recovered.body.core.executionIncarnation, 'string');
+  assert.notEqual(recovered.body.core.executionIncarnation, first.body.core.executionIncarnation);
   assert.equal(recovered.body.core.pid, proxyCore, 'Brain restart must not restart the model proxy');
   assert.equal(topPid('proxy', 'codex-core.cjs'), proxy, 'Brain restart must keep the proxy');
   assert.deepEqual({ owner: topPid('hands', 'owner.cjs'), worker: topPid('hands', 'worker.cjs') },

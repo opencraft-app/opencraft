@@ -14,7 +14,7 @@ import { startOrchestrationCallbackRelay } from "./orchestration-callback-lane.j
 import { ExecutionLifecycleObserver } from "./execution-lifecycle-observer.js";
 import { sandboxLifecycleLogger } from "@opencraft/sandbox-node/lifecycle";
 import { openExecutionAdmission, type ExecutionAdmissionReader } from "@opencraft/execution-environment/execution-admission";
-import { observeNativeExecutionProcess } from "@opencraft/execution-environment/native-execution-origin";
+import { observeNativeExecutionProcess, observeOwnedChildExecution } from "@opencraft/execution-environment/native-execution-origin";
 import { createCodexEnvironmentLaunch, type CodexEnvironmentLaunch } from "./environment-launch.js";
 
 export interface CodexAppServerOptions {
@@ -146,11 +146,18 @@ export async function startCodexAppServer(options: CodexAppServerOptions) {
     // startControlServer validates the private parent before spawning the native listener.
     control = await startControlServer(options.endpoint, options.controlToken ?? options.authToken, async request => {
       const nativeOnly = request.url === "/native-health";
-      const healthy = request.method === "GET" && (request.url === "/health" || nativeOnly) && !failed && ready && (nativeOnly || await executable());
+      let healthy = request.method === "GET" && (request.url === "/health" || nativeOnly) && !failed && ready && (nativeOnly || await executable());
+      // The native child's incarnation is attested here, in this owner's PID namespace, and
+      // reported over the endpoint; consumers never read this owner's /proc themselves.
+      let executionIncarnation: string | undefined;
+      if (healthy && process.platform === "linux") {
+        try { executionIncarnation = (await observeOwnedChildExecution({ ownerPid: process.pid, childPid: child!.pid! })).incarnation; }
+        catch { healthy = false; }
+      }
       return { status: healthy ? 200 : 503,
       value: healthy
         ? { environmentVariablesVersion: 1, ...(environment ? { environmentLaunchVersion: 1 as const } : {}), ...(options.workspaceAuthoritySocket ? { workspaceExecutionVersion: 1 as const } : {}), protocolVersion: CODEX_CORE_PROTOCOL_VERSION, pid: process.pid, codexPid: child!.pid!, nativeSocket,
-          dataDirectory, runtimeDataDirectory: runtimeOwnerRoot, codexHome: runtimeRoot, proxyBaseUrl,
+          ...(executionIncarnation ? { executionIncarnation } : {}), dataDirectory, runtimeDataDirectory: runtimeOwnerRoot, codexHome: runtimeRoot, proxyBaseUrl,
           callbackProtocolVersion: 1, threadTitleToolVersion: 1, callbackIncarnation: relay?.incarnation, pendingCallbacks: relay?.pendingCallbacks ?? 0, pendingOrchestrationMutations: relay?.pendingMutations ?? 0 } satisfies CodexAppServerHealth
         : { error: ready && !failed && options.executionSandbox ? "Execution environment unavailable" : "Codex AppServer unavailable",
           ...(ready && !failed && options.executionSandbox ? {code: "EXECUTION_ENVIRONMENT_UNAVAILABLE", executionStatus} : {}) },

@@ -1,5 +1,6 @@
 import { ModelPolicyStore } from '@opencraft/model-usage-policy';
 import { ExecutionEnvironmentRuntime } from "@opencraft/execution-environment";
+import { observeNativeExecutionProcess } from "@opencraft/execution-environment/native-execution-origin";
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
@@ -74,13 +75,15 @@ export async function startIndependentAcpHost(options) {
       }
       if (request.headers.origin !== undefined || request.headers.authorization !== `Bearer ${token}`) { response.writeHead(403); response.end(); return; }
       if (url.pathname === '/execution-origin' && request.method === 'GET') {
-        try {
+        void (async () => {
           const threadId = url.searchParams.get('threadId');
           if (!threadId || threadId.length > 512) throw new Error('Invalid Thread');
           const observation = provider.executionObservation(threadId);
+          // The ACP agent is this Host's child: its incarnation is attested here, in this PID namespace.
+          const incarnation = observation.pid ? (await observeNativeExecutionProcess(observation.pid)).incarnation : null;
           response.writeHead(200, {'content-type':'application/json','cache-control':'no-store'});
-          response.end(JSON.stringify({threadId,...observation}));
-        } catch { response.writeHead(404); response.end('{}'); }
+          response.end(JSON.stringify({threadId,...observation,incarnation}));
+        })().catch(() => { response.writeHead(404); response.end('{}'); });
         return;
       }
       if (url.pathname === '/owner-handoff' && request.method === 'POST') {

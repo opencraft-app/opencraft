@@ -541,6 +541,8 @@ async function adapterCreation(t: test.TestContext, mode: "split" | "accounts-on
       protocolVersion: 1,
       pid: process.pid,
       codexPid: child.pid,
+      // The runtime owner reports the incarnation it attests for its native child.
+      executionIncarnation: incarnation,
       nativeSocket: proxy,
       environmentVariablesVersion: 1,
       environmentLaunchVersion: 1,
@@ -785,6 +787,7 @@ test(
         protocolVersion: 1,
         pid: process.pid,
         codexPid: child.pid,
+        executionIncarnation: incarnation,
         nativeSocket: proxy,
         environmentVariablesVersion: 1,
         environmentLaunchVersion: 1,

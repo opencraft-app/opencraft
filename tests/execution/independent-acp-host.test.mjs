@@ -9,6 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { WebSocket } from 'ws';
 import { startIndependentAcpHost } from '../../scripts/server-deployment/acp-host.mjs';
 import { attachEngineHost } from '../../apps/headless-server/src/server-deployment/engine-host-client.mjs';
+import { observeNativeExecutionProcess } from '../../packages/execution-environment/src/native-execution-origin.ts';
 
 async function connect(url) {
   const socket = new WebSocket(url), calls = new Map(); let sequence = 0;
@@ -38,6 +39,8 @@ test('independent Claude ACP Host retains native PID and turn when a gateway att
   assert.ok(Number.isInteger(observed.pid) && observed.pid > 0);
   const prompts=(await readFile(join(root,'native-trace.jsonl'),'utf8')).trim().split('\n').map(line=>JSON.parse(line)).filter(frame=>frame.method==='session/prompt');
   assert.equal(prompts.length,1);assert.equal(observed.pid,prompts[0].pid,'observe the actual session process, not the generation catalog process');
+  // The ACP Host attests its own child; the client takes the report, never its own /proc.
+  assert.equal(observed.incarnation,(await observeNativeExecutionProcess(observed.pid)).incarnation);
   assert.equal(observed.turn.id,started.turn.id);assert.equal(observed.turn.status,"inProgress");
   assert.notEqual(before.pid,process.pid);
   await assert.rejects(attachment.getExecutionIdentity("claude_unknown"));

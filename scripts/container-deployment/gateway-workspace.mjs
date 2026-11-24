@@ -401,14 +401,23 @@ export async function openGatewayWorkspace({
     };
     await refreshTokens();
     // Engine descriptors: the in-environment socket is replaced by this Gateway's listener.
-    const engineDescriptor = (name) => async () => {
-      const descriptor = await describe(name);
-      return { ...descriptor, websocketUrl: websocketOnSocket(descriptor.websocketUrl, sockets[name]) };
-    };
+    // Execution identity comes only from what the owner reports through its endpoint (PIDs
+    // stay in the environment's namespace); `fence` attributes each report to the agent
+    // incarnation that was bound around it (workspace-host-split §3.4).
+    const fence = (name) => (operation) => runtime.fenced(uri(name), operation);
+    const engineDescriptor = (name) =>
+      Object.assign(
+        async () => {
+          const descriptor = await describe(name);
+          return { ...descriptor, websocketUrl: websocketOnSocket(descriptor.websocketUrl, sockets[name]) };
+        },
+        { fence: fence(name) },
+      );
     const codexRuntime = {
       endpoint: sockets["codex-control"],
       nativeSocket: sockets["codex-native"],
       token: () => token("codex-control"),
+      fence: fence("codex-control"),
     };
     /** Workspaces resolved by id through configuration (§3.6): `default` here, others provisioned. */
     const workspaces = {

@@ -189,19 +189,24 @@ export async function startIndependentEngineHost(options) {
         void (async () => {
           const threadId = url.searchParams.get('threadId');
           if (!threadId || threadId.length > 512) throw new Error('Invalid Thread');
-          let pid, turn;
-          if (piBridge?.ownsThread(threadId) || dshBridge?.ownsThread(threadId)) pid = process.pid;
-          else if (pi.ownsThread(threadId)) pid = process.pid;
+          // Every answer carries the incarnation its owner attested in its own PID namespace:
+          // this process for its own engines, the DSH/ACP Host for theirs. The caller compares
+          // that and never resolves the PID against its own /proc.
+          let pid, incarnation = null, turn;
+          if (piBridge?.ownsThread(threadId) || dshBridge?.ownsThread(threadId) || pi.ownsThread(threadId))
+            ({ pid, incarnation } = await observeNativeExecutionProcess(process.pid));
           else {
             const id = threadId.startsWith('dsh_acp_') ? 'dsh-acp' : threadId.startsWith('claude_') ? 'claude-code' : threadId.startsWith('acp_') ? 'acp' : 'dsh';
-            if (id === 'dsh' && engines.includes(id)) pid = (await (await attachDshHost(dshDescriptorPath, join(dataDirectory,'agent'), machine.machineId)).getIdentity()).enginePid;
-            else {
+            if (id === 'dsh' && engines.includes(id)) {
+              const identity = await (await attachDshHost(dshDescriptorPath, join(dataDirectory,'agent'), machine.machineId)).engineExecutionIdentity();
+              pid = identity?.pid ?? null; incarnation = identity?.incarnation ?? null;
+            } else {
               const origin = remoteOrigins.get(id); if (!origin) throw new Error('Origin unavailable');
-              const observation = await origin(threadId); pid = observation.pid; turn = observation.turn;
+              const observation = await origin(threadId); pid = observation.pid; incarnation = observation.incarnation; turn = observation.turn;
             }
           }
           response.writeHead(200, {'content-type':'application/json','cache-control':'no-store'});
-          response.end(JSON.stringify({threadId,pid,...(turn === undefined ? {} : {turn})}));
+          response.end(JSON.stringify({threadId,pid,incarnation,...(turn === undefined ? {} : {turn})}));
         })().catch(() => { response.writeHead(404); response.end('{}'); });
         return;
       }

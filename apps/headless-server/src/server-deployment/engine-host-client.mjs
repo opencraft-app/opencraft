@@ -1,5 +1,5 @@
 import { isAbsolute, resolve } from 'node:path';
-import { descriptorReader, hostRequest, privateHostWebsocket } from './dsh-host-client.mjs';
+import { descriptorReader, fencedRead, hostRequest, privateHostWebsocket } from './dsh-host-client.mjs';
 
 /** The Host's control routes: a separate loopback URL, or (Unix socket mode) the same
  * private socket as its websocket. */
@@ -79,16 +79,23 @@ export async function attachEngineHost(source, dataDirectory, machineId, engines
         (await canAdmit()) ? input('submit', threadId, inputId, text) : null,
     },
     resolveWebsocketUrl: async () => (await read()).descriptor.websocketUrl,
+    /** The process holding the Thread's execution as the owner reports it: its PID (the
+     * owner's namespace) and incarnation (attested by the owner). Never resolved locally. */
     getExecutionIdentity: async threadId => {
       if (typeof threadId !== 'string' || !threadId || threadId.length > 512) throw new Error('Execution Thread required');
-      const { descriptor: d, base } = await read();
-      const response = await hostRequest(base, `/execution-origin?threadId=${encodeURIComponent(threadId)}`, { headers: {authorization: `Bearer ${d.token}`} });
-      const result = await response.json();
-      if (!response.ok || result.threadId !== threadId || result.pid !== null && (!Number.isSafeInteger(result.pid) || result.pid < 1))
+      const result = await fencedRead(source, async () => {
+        const { descriptor: d, base } = await read();
+        const response = await hostRequest(base, `/execution-origin?threadId=${encodeURIComponent(threadId)}`, { headers: {authorization: `Bearer ${d.token}`} });
+        if (!response.ok) throw new Error('Execution process unavailable');
+        return response.json();
+      });
+      if (result.threadId !== threadId || result.pid !== null && (!Number.isSafeInteger(result.pid) || result.pid < 1)
+        || (result.pid === null ? result.incarnation !== undefined && result.incarnation !== null
+          : typeof result.incarnation !== 'string' || !result.incarnation || result.incarnation.length > 512))
         throw new Error('Execution process unavailable');
       if (result.turn !== undefined && result.turn !== null && (typeof result.turn.id !== 'string'
         || typeof result.turn.status !== 'string' || result.turn.inputId !== null && typeof result.turn.inputId !== 'string')) throw new Error('Invalid execution observation');
-      return {pid:result.pid,...(result.turn === undefined ? {} : {turn:result.turn})};
+      return {pid:result.pid,incarnation:result.pid === null ? null : result.incarnation,...(result.turn === undefined ? {} : {turn:result.turn})};
     },
     getIdentity: async () => {
       const { health } = await read();

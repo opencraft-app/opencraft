@@ -127,11 +127,11 @@ services:
     stop_grace_period: 150s
 
   # Brain owns task and engine lifetime. Recreating Gateway must not stop it. Its
-  # workspace agent ends the container when any critical child fails.
+  # workspace agent ends the container when any critical child fails. Its own PID
+  # namespace: owners report execution identity over their workspace endpoints.
   brain:
     <<: *runtime
     build: *build
-    pid: host
     tmpfs: *agent-run
     # The workspace budget the Gateway requests through static-docker; Compose enforces it.
     cpus: ${OPENCRAFT_BRAIN_CPUS:-4.0}
@@ -220,11 +220,11 @@ services:
       retries: 6
     stop_grace_period: 30s
 
-  # Gateway owns admission and protocol translation, never task or tab lifetime.
+  # Gateway owns admission and protocol translation, never task or tab lifetime. It
+  # never reads another container's /proc; execution leases use reported incarnations.
   gateway:
     <<: *runtime
     build: *build
-    pid: host
     # Private local sockets for workspace endpoints (codex-control, pi, terminal, ...)
     # and copies of their credentials; never shared with another container.
     tmpfs:

@@ -804,14 +804,25 @@ last human sender are never credential fallbacks.
 
 Independent Host descriptors expose authenticated, origin-free
 `GET /execution-origin?threadId=...`. The engine owner resolves the physical
-native generation and returns its PID. ACP also returns the admitted public
-Turn ID, status and original input ID from its live runtime; its native history
-Turn numbering is a different identity and cannot validate a public lease.
-`readEngineExecutionIdentity` revalidates the descriptor and live Host before
-reading this port. `observeNativeExecutionProcess` adds the process start ticks
-and boot fence. The broker must verify peer ancestry and birth time against the
-same native root and immutable lease, including after asynchronous inspection.
-An unavailable observer is unknown, never unowned.
+native generation and returns its PID and its `incarnation`, which the owner
+attests in its own PID namespace (`observeNativeExecutionProcess`: process
+start ticks and boot fence; the Engine Host for itself, the DSH Host for its
+engine child through `/health` `engineIncarnation`, the ACP Host for its ACP
+child). ACP also returns the admitted public Turn ID, status and original input
+ID from its live runtime; its native history Turn numbering is a different
+identity and cannot validate a public lease. `readEngineExecutionIdentity`
+revalidates the descriptor and live Host before reading this port. The client
+validates the report (`reportedExecutionProcess`) and never resolves the PID
+against its own `/proc`: the PID is meaningful only inside the owner's
+namespace (a container, a VM or this machine). A Gateway that reaches the owner
+through a workspace endpoint accepts a report only through
+`WorkspaceRuntime.fenced`, which requires the same workspace-agent incarnation
+on the agent's `control` probe before and after it, so an answer that spans an
+agent restart is attributed to neither incarnation ([workspace split
+§3.4](../platform/workspace-host-split.md#34-去除-pid-host)). The broker must
+verify peer ancestry and birth time against the same native root and immutable
+lease, including after asynchronous inspection. An unavailable or missing
+report is unknown, never unowned.
 
 `createHostExecutionTurnInspector` uses the ACP owner observation, and falls
 back to the bounded raw WebSocket Turn reader only for providers without an
@@ -876,7 +887,7 @@ Codex native 连接失败/关闭、单代 lost 和 DSH runtime unavailable 会�
 
 ## Standalone Core execution origin
 
-A standalone Core has no generation envelope. Its authenticated health identifies the Core and its direct native child. On Linux the Host verifies their UID, parent relationship, boot ID and process start ticks, then records that native process incarnation before sending a Turn. Replies and Host reconciliation use the same incarnation. A disconnected transport cannot provide it. Routed deployments continue using the generation registry and never fall back to standalone process identity.
+A standalone Core has no generation envelope. Its authenticated health identifies the Core and its direct native child and reports `executionIncarnation`: the runtime owner (the Codex AppServer or the combined Core) verifies, in its own PID namespace, the child's UID, its parent relationship, boot ID and process start ticks (`observeOwnedChildExecution`); on Linux an AppServer that cannot attest its child answers unhealthy. The Host records that reported native process incarnation before sending a Turn and never reads the owner's process tree; a health without it leaves the incarnation unknown. Replies and Host reconciliation use the same incarnation. A disconnected transport cannot provide it. Routed deployments continue using the generation registry and never fall back to standalone process identity.
 
 ### Bounded execution lease reconciliation
 

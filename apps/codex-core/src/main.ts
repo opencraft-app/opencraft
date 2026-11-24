@@ -12,6 +12,7 @@ import {
   type CodexAccountServiceOptions, type CodexCoreHealth,
 } from "@opencraft/account-pool-host";
 
+import { observeOwnedChildExecution } from "@opencraft/execution-environment/native-execution-origin";
 import { nativeReady, removeStaleSocket } from "./native-process.js";
 import { startSplitCodexCore } from "./split-core.js";
 
@@ -138,7 +139,14 @@ export async function startCodexCore(options: CodexCoreOptions) {
     authSocket = await nativeReady(nativeSocket, child, launch.auth);
     if (startupError) throw startupError;
     await chmod(nativeSocket, 0o600);
-    health = { environmentVariablesVersion: 1, protocolVersion: CODEX_CORE_PROTOCOL_VERSION, pid: process.pid, codexPid: child.pid!, nativeSocket };
+    // This owner attests its native child in its own PID namespace; clients use the
+    // reported incarnation and never read this process tree themselves.
+    const executionIncarnation = process.platform === "linux"
+      ? await observeOwnedChildExecution({ ownerPid: process.pid, childPid: child.pid! }).then(value => value.incarnation, () => undefined)
+      : undefined;
+    if (startupError) throw startupError;
+    health = { environmentVariablesVersion: 1, protocolVersion: CODEX_CORE_PROTOCOL_VERSION, pid: process.pid, codexPid: child.pid!, nativeSocket,
+      ...(executionIncarnation ? { executionIncarnation } : {}) };
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
       server.listen(options.endpoint, () => { server.off("error", reject); ownsControl = true; resolve(); });

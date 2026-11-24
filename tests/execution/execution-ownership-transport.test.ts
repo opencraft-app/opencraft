@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { ExecutionLeaseStore } from "../../apps/opencraft-daemon/src/execution-lease-store.js";
 import { ExecutionLeaseTracker } from "../../apps/opencraft-daemon/src/execution-ownership-transport.js";
 import { ThreadIdentityDatabase, THREAD_IDENTITY_SCHEMA } from "../../apps/opencraft-daemon/src/thread-identity-database.js";
-import { observeNativeExecutionProcess, observeStandaloneCodexExecution } from "../../apps/opencraft-daemon/src/native-execution-origin.js";
+import { observeNativeExecutionProcess, observeOwnedChildExecution, reportedExecutionProcess } from "../../apps/opencraft-daemon/src/native-execution-origin.js";
 import { spawn } from "node:child_process";
 import { openManagedDatabase } from "../../packages/sqlite-node/src/index.js";
 const native = { pid: 1, startTicks: "1", incarnation: "native-1" };
@@ -217,15 +217,24 @@ test('a historical queue receipt cannot acquire a new principal through a plausi
   assert.equal(f.store().resolve({threadId:'t',executionId:String(row.execution_id)}).status,'unknown');
 });
 
-test("standalone Codex rejects unrelated processes", async () => {
-  await assert.rejects(observeStandaloneCodexExecution({pid:process.pid,codexPid:process.pid}));
+test("a runtime owner rejects a native child it does not parent", async () => {
+  await assert.rejects(observeOwnedChildExecution({ownerPid:process.pid,childPid:process.pid}));
 });
 
-test("split Core attests the independent runtime's direct native child", { skip: process.platform !== "linux" ? "Requires Linux /proc process incarnation evidence" : false }, async () => {
+test("a runtime owner attests its direct native child in its own PID namespace", { skip: process.platform !== "linux" ? "Requires Linux /proc process incarnation evidence" : false }, async () => {
   const child = spawn(process.execPath, ["-e", "setInterval(()=>{},1000)"], { stdio: "ignore" });
   try {
-    const native = await observeStandaloneCodexExecution({ pid: process.ppid, appServerPid: process.pid, codexPid: child.pid! });
+    const native = await observeOwnedChildExecution({ ownerPid: process.pid, childPid: child.pid! });
     assert.equal(native.incarnation, (await observeNativeExecutionProcess(child.pid!)).incarnation);
-    await assert.rejects(observeStandaloneCodexExecution({ pid: process.pid, appServerPid: process.ppid, codexPid: child.pid! }));
+    await assert.rejects(observeOwnedChildExecution({ ownerPid: process.ppid, childPid: child.pid! }));
   } finally { child.kill(); }
+});
+
+test("a reported execution identity is validated, never resolved against this process's /proc", () => {
+  // A PID from another namespace (a container) need not exist here; only the incarnation is compared.
+  const incarnation = JSON.stringify(["process", "elsewhere", 7, "123"]);
+  assert.deepEqual(reportedExecutionProcess({ pid: 2 ** 22, incarnation }), { pid: 2 ** 22, incarnation });
+  for (const value of [null, {}, { pid: 0, incarnation: "x" }, { pid: 1.5, incarnation: "x" }, { pid: 3 }, { pid: 3, incarnation: "" },
+    { pid: 3, incarnation: "x".repeat(513) }, { pid: 3, incarnation: 7 }])
+    assert.throws(() => reportedExecutionProcess(value), /Execution process identity unavailable/u);
 });

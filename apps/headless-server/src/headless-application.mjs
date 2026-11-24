@@ -81,7 +81,7 @@ import { MachineIdentityTransport } from "@opencraft/opencraft-daemon/machine-tr
 import { ExecutionOwnershipTransport } from "@opencraft/opencraft-daemon/execution-ownership-transport";
 import { ExecutionLeaseStore } from "@opencraft/opencraft-daemon/execution-lease-store";
 import { ThreadIdentityDatabase } from "@opencraft/opencraft-daemon/thread-identity-database";
-import { observeNativeExecutionProcess } from "@opencraft/opencraft-daemon/native-execution-origin";
+import { observeNativeExecutionProcess, reportedExecutionProcess } from "@opencraft/opencraft-daemon/native-execution-origin";
 import { createWebSocketExecutionTurnInspector } from "@opencraft/opencraft-daemon/native-execution-inspector";
 import { AgentDriverTransport, AgentDriverSession } from "@opencraft/opencraft-daemon/agent-driver-transport";
 import { WebSocketTransport } from "@opencraft/appserver-transport-websocket";
@@ -1065,16 +1065,16 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       executionStore = new ExecutionLeaseStore(executionDatabase.database);
     }
     executionStore.suspend();
+    // The owner reports the execution's process identity over its endpoint (workspace-host-split
+    // §3.4); only the in-process Pi engine is observed here, in its own process.
     const resolveExecutionNative = async threadId => {
       try {
-        let pid;
-        if (agent.getExecutionIdentity) pid = (await agent.getExecutionIdentity(threadId)).pid;
-        else if (threadId.startsWith('pi_') && piEngine) pid = process.pid;
-        else {
-          const dsh = await startDsh();
-          pid = dsh.getIdentity ? (await dsh.getIdentity()).enginePid : dsh.engineProcessId;
+        if (agent.getExecutionIdentity) {
+          const { pid, incarnation } = await agent.getExecutionIdentity(threadId);
+          return pid === null ? null : reportedExecutionProcess({ pid, incarnation });
         }
-        return pid ? await observeNativeExecutionProcess(pid) : null;
+        if (threadId.startsWith('pi_') && piEngine) return await observeNativeExecutionProcess(process.pid);
+        return await (await startDsh()).engineExecutionIdentity();
       } catch { return null; }
     };
     lateExecutionObservation.bind({ store: executionStore, resolveNative: resolveExecutionNative });

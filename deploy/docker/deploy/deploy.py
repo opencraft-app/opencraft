@@ -115,6 +115,9 @@ def validate(config, release):
             raise ValueError('Image must match release registry digest: ' + role)
         if service.get('build') or service.get('privileged') or service['network_mode'] != 'host':
             raise ValueError('Build/privileged/non-host-network not permitted')
+        # Execution identity is reported over each workspace endpoint; no role may read another's /proc.
+        if service.get('pid') is not None:
+            raise ValueError('Shared PID namespace not permitted: ' + role)
         root_hands = role == 'hands' and service['user'] == '0:0'
         if (service['user'] != identity and not root_hands) or service['platform'] != 'linux/amd64':
             raise ValueError('Only Hands may use root; all clients retain the common numeric identity')

@@ -167,6 +167,19 @@ test('Brain and Hands render the same non-default execution budget', t => {
   assert.equal(hands.mem_limit, '4294967296');
 });
 
+test('no Compose file shares a PID namespace; the Gateway reads no execution PID itself', async () => {
+  const root = new URL('../../deploy/docker/', import.meta.url);
+  const { readdir } = await import('node:fs/promises');
+  for (const name of (await readdir(root)).filter(name => /^compose.*\.ya?ml$/u.test(name)))
+    assert.doesNotMatch(await readFile(new URL(name, root), 'utf8'), /^\s*pid\s*:/mu, name);
+  // Gateway-side clients take the owner's reported incarnation; only owners observe their own namespace.
+  for (const path of ['../../apps/headless-server/src/server-deployment/engine-host-client.mjs',
+    '../../apps/headless-server/src/server-deployment/dsh-host-client.mjs',
+    '../../apps/opencraft-daemon/src/codex-native-core-transport.ts',
+    '../../scripts/container-deployment/gateway-workspace.mjs'])
+    assert.doesNotMatch(await readFile(new URL(path, import.meta.url), 'utf8'), /\/proc|observe(Native|OwnedChild)Execution|observeStandaloneCodexExecution/u, path);
+});
+
 test('rendered Compose separates gateway, brain and hands while preserving path identity', t => {
   if (!composeAvailable())
     return t.skip('Docker Compose CLI is unavailable');
@@ -186,9 +199,9 @@ test('rendered Compose separates gateway, brain and hands while preserving path 
     assert.equal(value.ports, undefined);
     assert.deepEqual(value.logging, { driver: 'local', options: { 'max-size': '10m', 'max-file': '3' } });
   }
-  assert.equal(service.pid, 'host');
-  assert.equal(brain.pid, 'host');
-  assert.equal(hands.pid, undefined);
+  // Execution identity is reported over workspace endpoints (workspace-host-split §3.4):
+  // no role shares another's PID namespace.
+  for (const value of [service, brain, hands, proxy]) assert.equal(value.pid, undefined);
   assert.deepEqual(hands.cap_drop, ['ALL']);
   assert.deepEqual([...hands.cap_add].sort(), ['SETGID', 'SETUID', 'SYS_ADMIN', 'SYS_CHROOT']);
   assert.equal(hands.environment.HOME, '/var/lib/opencraft/execution');

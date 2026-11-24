@@ -5,6 +5,8 @@ import {join,resolve} from 'node:path';
 import {startIndependentDshHost} from '../../scripts/server-deployment/dsh-host.mjs';
 import WebSocket from 'ws';
 import {DshClient} from '../../apps/local-agent-host/src/dsh-client.ts';
+import {attachDshHost} from '../../apps/headless-server/src/server-deployment/dsh-host-client.mjs';
+import {observeNativeExecutionProcess} from '../../packages/execution-environment/src/native-execution-origin.ts';
 
 const expected=(host:any)=>({expectedOwner:host.handoff.authority.owner,expectedEpoch:host.handoff.authority.snapshot().epoch,operationId:'test',fence:'test'});
 test('real native direct RPC fence, consumer custody and cold successor', { skip: process.platform !== 'linux' ? 'Independent DSH writer requires Linux flock' : false }, async t=>{
@@ -17,6 +19,9 @@ test('real native direct RPC fence, consumer custody and cold successor', { skip
  // Isolate protocol assertions from the separate Linux/systemd OS contract.
  host.handoff.inspectOsWork=()=>({coverage:'complete',activeCount:0});
  await assert.rejects(startIndependentDshHost(options));
+ // The Host attests its engine child in its own PID namespace; a client takes that report.
+ const reported=await (await attachDshHost(options.descriptorPath,options.dataDirectory)).engineExecutionIdentity();
+ assert.deepEqual(reported,{pid:host.engineProcessId,incarnation:(await observeNativeExecutionProcess(host.engineProcessId)).incarnation});
  const socket=new WebSocket(host.websocketUrl);
  await new Promise<void>((done,fail)=>{socket.once('open',done);socket.once('error',fail);});
  const response:any=await new Promise(done=>{socket.once('message',data=>done(JSON.parse(data.toString())));socket.send(JSON.stringify({id:1,method:'initialize',params:{}}));});

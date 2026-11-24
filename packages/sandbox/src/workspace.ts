@@ -194,6 +194,12 @@ export interface WorkspaceRuntime {
   /** Cached per bound agent incarnation and endpoint generation; a rebind (restart,
    * re-attach) or an observed in-place owner replacement reads it again. */
   describe(endpoint: WorkspaceEndpointAddress): Promise<WorkspaceEndpointDescriptor>;
+  /** Runs one read against the owner behind `endpoint` (an execution-identity report) and
+   * returns its result only when the environment's agent, probed over `control` before and
+   * after, is the bound incarnation. A changed agent releases the binding (the next use
+   * re-binds) and rejects SANDBOX_UNAVAILABLE: an answer is never attributed to an agent
+   * incarnation other than the one that was live around it. */
+  fenced<T>(endpoint: WorkspaceEndpointAddress, operation: () => Promise<T>): Promise<T>;
   /** Probes every environment's agent now; a changed incarnation is re-bound, a changed
    * endpoint generation drops the cached descriptors. */
   observe(): Promise<
@@ -371,6 +377,24 @@ export function createWorkspaceRuntime(options: {
         }
         return cached;
       });
+    },
+    async fenced(endpoint, operation) {
+      check(endpoint);
+      const { slot, value } = await resolve(endpoint.name);
+      const expected = value.agent.incarnation.id;
+      const confirm = async () => {
+        let observed: string | undefined;
+        try {
+          observed = (await probeWorkspaceAgent(value.sandbox, location(slot))).incarnation.id;
+        } catch {}
+        if (observed === expected && slot.current?.agent.incarnation.id === expected) return;
+        await release(slot, value, observed ? "incarnation-changed" : "SANDBOX_UNAVAILABLE");
+        throw fault("SANDBOX_UNAVAILABLE", "Workspace agent incarnation changed");
+      };
+      await confirm();
+      const result = await operation();
+      await confirm();
+      return result;
     },
     async observe() {
       if (closed) throw fault("SANDBOX_CLOSED", "Workspace runtime is closed");

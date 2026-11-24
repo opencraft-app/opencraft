@@ -19,7 +19,7 @@ import { SHARED_INTERACTIONS_EXTENSION, SHARED_INTERACTIONS_CHANGED, SHARED_INTE
 import { projectThreadTopologyResult } from "./thread-orchestration-projection.js";
 import type { HumanGitExecutionPort } from '@opencraft/execution-environment/human-git-execution';
 import type { GitExecutionHandoff, GitExecutionReservation } from '@opencraft/execution-environment/git-execution';
-import { observeNativeExecutionProcess, observeStandaloneCodexExecution } from './native-execution-origin.js';
+import { observeNativeExecutionProcess } from './native-execution-origin.js';
 import { ExecutionLeaseStore, type ExecutionSubmission, originalExecutionInputIds, snapshotExecutionSubmission } from "./execution-lease-store.js";
 // Only the request policy and snapshot helpers load here; the synchronous
 // runtime is a type: the composition that owns the vault passes it in.
@@ -88,7 +88,7 @@ import { OpenCraftMessageAttachments } from "./opencraft-message-attachments.js"
 import { CodexThreadPins } from "./codex-thread-pins.js";
 import { CodexCoreBridge } from "./codex-core-bridge.js";
 import { CODEX_MAINTENANCE_READ, CODEX_MAINTENANCE_EXTENSION, CODEX_MAINTENANCE_CAPABILITY, codexAdmissionKey, codexAdmissionPaused, codexMaintenanceError, isCodexAdmission, type CodexMaintenanceSnapshot } from "./codex-maintenance.js";
-import { CodexNativeCoreTransport, type CodexRuntimeEndpoints } from "./codex-native-core-transport.js";
+import { CodexNativeCoreTransport, reportedCodexExecution, type CodexRuntimeEndpoints } from "./codex-native-core-transport.js";
 import { TasksService, TasksFault } from "@opencraft/plugin-tasks/server";
 import { CODEX_NATIVE_SHARED_METHODS, discoverNativeCodexGoalCapability, projectSharedNativeCodexInitialize } from "./codex-native-surface.js";
 import { projectThreadAttachmentNotification, projectThreadAttachmentResult } from "./thread-message-attachment-projection.js";
@@ -596,9 +596,10 @@ export class CodexEngineAdapter implements DuplexTransport {
   private async gitNativeIncarnation(threadId: string): Promise<string | undefined> {
     if (this.closeOperation || !this.physicalAvailable || !this.physicalInitialized) return undefined;
     if (this.nativeCore) {
-      const health = await this.nativeCore.health(AbortSignal.timeout(1500), 'native');
-      return (await observeStandaloneCodexExecution(health)).incarnation;
+      // The runtime owner attests its native child; never this Host's view of its PIDs.
+      return reportedCodexExecution(await this.nativeCore.health(AbortSignal.timeout(1500), 'native'));
     }
+    // A native child this adapter spawned itself lives in this PID namespace.
     const child = this.child;
     if (!child?.pid || child.exitCode !== null || child.signalCode !== null) return undefined;
     const value = (await observeNativeExecutionProcess(child.pid)).incarnation;
