@@ -13,6 +13,7 @@ import { egressHandler } from "../../../apps/headless-server/src/cloudflare/egre
 import { CREDENTIAL_EGRESS_PREFIX } from "@opencraft/account-pool-host/credential-egress";
 import { credentialLeaseExchangeClient } from "@opencraft/account-pool-host/credential-lease-exchange";
 import { CredentialLeaseError, type CredentialLeaseHolder } from "@opencraft/account-pool-host/credential-leases";
+import type { PersonalSubscriptionRoute } from "@opencraft/account-pool-host/personal-subscriptions";
 import { runAccountOperation, type AccountOperation } from "./account-core-operations.ts";
 import {
   fixtureRenewalExecutor,
@@ -22,6 +23,14 @@ import {
 } from "./account-pool-operations.ts";
 
 export { TestInstallationCore } from "./installation-core-do-worker.ts";
+
+/** The Human's subscription route for tests (the Codex selection egress is not deployed): a fixed catalog. */
+function fixtureSubscriptionRoute(base: string): PersonalSubscriptionRoute {
+  return {
+    baseUrl: (namespace) => `${base}/personal/${namespace}/v1`,
+    models: async () => [{ id: "subscription-fixture", name: "Subscription fixture", enabled: true }],
+  };
+}
 
 export class TestAccountCore extends AccountCore {
   // The maintenance executor does not exist yet: its binding is the fixture (per object instance).
@@ -33,6 +42,11 @@ export class TestAccountCore extends AccountCore {
     this.#executor = executor;
   }
 
+  protected override personalSubscriptionRoute(env: AccountCoreEnv): PersonalSubscriptionRoute | null {
+    const base = (env as AccountCoreEnv & { OPENCRAFT_TEST_SUBSCRIPTION_ROUTE?: string }).OPENCRAFT_TEST_SUBSCRIPTION_ROUTE;
+    return base ? fixtureSubscriptionRoute(base) : null;
+  }
+
   override async fetch(request: Request): Promise<Response> {
     const path = new URL(request.url).pathname;
     if (!path.startsWith("/__test/account/")) return super.fetch(request);
@@ -42,6 +56,25 @@ export class TestAccountCore extends AccountCore {
         return Response.json(
           await runAccountPoolOperation(this.services().pool, (await request.json()) as AccountPoolOperation),
         );
+      // One Human's accounts in the object's pool: add one, or authenticate a Host token of that Human's pool.
+      case "/__test/account/personal": {
+        const body = (await request.json()) as { actor: string; op: "add" | "authenticate"; ref?: string };
+        const services = this.services();
+        const pool = services.personalPool(body.actor);
+        if (body.op === "authenticate") {
+          // The credential stored under a provider reference, and which Host of this Human's pool it authenticates.
+          const credential = (await services.account.modelCredentials.resolve(body.ref!)) ?? "";
+          return Response.json({ host: pool.authenticateHostToken(credential), credential });
+        }
+        pool.addAccount(
+          { id: "personal-a", provider: "codex", label: "Mine", upstreamAccountId: "acct-personal", priority: 1, enabled: true },
+          { accessToken: "personal-access", refreshToken: "personal-refresh", idToken: null, expiresAt: Date.now() + 36e6 },
+        );
+        return Response.json({
+          personal: pool.listAccounts().length,
+          installation: services.pool.pool.listAccounts().length,
+        });
+      }
       // Accounts the maintenance executor was asked to renew by this object instance.
       case "/__test/account/renewals":
         return Response.json(this.#executor.calls);
@@ -79,6 +112,9 @@ export class TestAccountCore extends AccountCore {
             "pool_quota",
             "pool_affinity",
             "account_credential_records",
+            "gateway_contributions",
+            "gateway_limits",
+            "gateway_audit",
           ].map((table) => storage.sql.exec(`SELECT * FROM ${table}`).toArray()),
         });
       }

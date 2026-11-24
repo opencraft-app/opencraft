@@ -34,7 +34,8 @@
     "./sandbox-conversation-binding": "./src/sandbox-conversation-binding.ts",
     "./sandbox-browser-owner": "./src/sandbox-browser-owner.ts",
     "./sandbox-process-service": "./src/sandbox-process-service.ts",
-    "./ordinary-workspace-selection": "./src/ordinary-workspace-selection.ts"
+    "./ordinary-workspace-selection": "./src/ordinary-workspace-selection.ts",
+    "./model-config/gateway-contributions": "./src/model-config/gateway-contributions.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

@@ -6,6 +6,8 @@ import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {createServer} from 'vite';
 import {ModelGatewayStore,modelGatewayHttp} from '../../../packages/account-pool-host/src/index';
+import {ModelCredentialRepository as SmokeCredentials} from '../../../apps/local-agent-host/src/model-config/repository';
+import {fileSecretStore} from '@opencraft/secret-storage/file';
 import {gatewayContributions} from '../../../apps/local-agent-host/src/model-config/gateway-contributions';
 import {ModelConfigurationRepository} from '../../../apps/local-agent-host/src/model-config/repository';
 const {chromium}=await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE??'playwright');
@@ -15,9 +17,9 @@ const path=join(scratch,'gateway.sqlite'),models=join(scratch,'models'),ledger=n
 ledger.configure('alice',{monthlyTokens:2_000_000,requestTokens:1000,concurrency:4},0,'admin');
 const repository=new ModelConfigurationRepository(fileStateDocumentStore(models));
 await repository.initialize({schemaVersion:1,revision:0,providers:[{id:'approved',name:'编程模型服务',protocol:'openai-responses',baseUrl:'https://model.invalid/v1',credentialRef:null,enabled:false,models:[{id:'coding-model',name:'编程模型',enabled:true}]}],defaultModel:null});
-const contributions=gatewayContributions(models,path);
+const contributions=gatewayContributions({models:repository,credentials:new SmokeCredentials(fileSecretStore(models)),store:()=>ledger});
 let origin='',identity='alice',failSave=false;
-const http=modelGatewayHttp({path,...contributions,subscription:async(actor,input,assertCurrent)=>{
+const http=modelGatewayHttp({store:()=>ledger,...contributions,subscription:async(actor,input,assertCurrent)=>{
  if(input.operation==='start')return {status:'pending',login:{sessionId:'fixture-login',verificationUrl:'https://auth.example.test/device',userCode:'ABCD-1234',expiresAt:Date.now()+60000}};
  if(input.operation==='cancel')return {cancelled:true};
  const hash=createHash('sha256').update(actor).digest('hex');

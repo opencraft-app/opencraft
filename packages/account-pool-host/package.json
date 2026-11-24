@@ -13,7 +13,10 @@
     "./renewal": "./src/account-renewal.ts",
     "./pool-core": "./src/account-pool-core.ts",
     "./credential-lease-exchange": "./src/credential-lease-exchange.ts",
-    "./credential-egress": "./src/credential-egress.ts"
+    "./credential-egress": "./src/credential-egress.ts",
+    "./model-gateway": "./src/model-gateway.ts",
+    "./model-gateway-http": "./src/model-gateway-http.ts",
+    "./personal-subscriptions": "./src/personal-subscriptions.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

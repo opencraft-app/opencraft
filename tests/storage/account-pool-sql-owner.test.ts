@@ -224,6 +224,7 @@ test("the account pool's shared-SQL chains apply the Node owner's published chai
     [
       ["account-pool-host", "fresh", 4],
       ["account-credential-records", "fresh", 1],
+      ["model-gateway", "fresh", 4],
     ],
   );
   const root = await mkdtemp(join(tmpdir(), "opencraft-shared-pool-"));
@@ -248,7 +249,7 @@ test("the account pool's shared-SQL chains apply the Node owner's published chai
     openAccountPoolSqlStorage(database, recordSealer(KEY)).outcomes.every((o) => o.status === "up-to-date"),
     true,
   );
-  assert.equal(accountPoolSqlSchemas().length, 2);
+  assert.equal(accountPoolSqlSchemas().length, 3);
 });
 
 test("credential records are sealed in the pool's own SQL rows and join the pool's transaction", () => {

@@ -5,11 +5,13 @@
 // (tests/storage/workerd/account-core-do.scenarios.ts, shared with
 // `npm run cf:rehearsal`). See docs/architecture/platform/cloudflare-deployment.md §5.6.
 //
-// Runtime-neutral packaging: the account object reaches the account module,
+// Runtime-neutral packaging: the account object reaches the account module, the
+// model gateway's domain, route, contributions, shared-SQL owner and personal
+// subscriptions over the account pool,
 // the account pool's domain, renewal and shared-SQL owner, their neutral ports
 // and the Durable Object adapters, and no Node owner implementation (the
 // policy file owner and native readers, the account pool's file owner, the
-// model gateway store, the Codex Core client and maintenance processes, the
+// model gateway's file owner, the Codex Core client and maintenance processes, the
 // proxy, file stores, the Node account inputs). The only file of the Node
 // SQLite package it reaches is the generated migration registry, pure data
 // that both owners of the account pool read the published SQL from.
@@ -32,7 +34,6 @@ const NODE_OWNERS = [
   "packages/document-storage/src/state-file.ts",
   "packages/secret-storage/src/file.ts",
   "apps/local-agent-host/src/model-config/service.ts",
-  "apps/local-agent-host/src/model-config/gateway-contributions.ts",
   "apps/local-agent-host/src/model-config/index.ts",
   "apps/headless-server/src/assembly/account-node.mjs",
   "apps/headless-server/src/headless-application.mjs",
@@ -53,6 +54,10 @@ const ACCOUNT_POOL_NEUTRAL = new Set(
     "account-diagnostics.ts",
     "codex-auth-file-format.ts",
     "codex-launch.ts",
+    "model-gateway.ts",
+    "model-gateway-http.ts",
+    "model-gateway-sql-owner.ts",
+    "personal-subscriptions.ts",
   ].map((file) => `packages/account-pool-host/src/${file}`),
 );
 /** Pure data: the published SQL the Node owner's registry appends, read by both account pool owners. */
@@ -102,6 +107,11 @@ test(`${ENTRY} reaches no Node owner implementation`, async () => {
     "packages/owner-wake/src/index.ts",
     "apps/local-agent-host/src/model-config/repository.ts",
     "apps/local-agent-host/src/model-config/provider-credentials.ts",
+    "apps/local-agent-host/src/model-config/gateway-contributions.ts",
+    "packages/account-pool-host/src/model-gateway.ts",
+    "packages/account-pool-host/src/model-gateway-http.ts",
+    "packages/account-pool-host/src/model-gateway-sql-owner.ts",
+    "packages/account-pool-host/src/personal-subscriptions.ts",
   ])
     assert.ok(inputs.includes(shared), shared);
   const builtins = new Set(

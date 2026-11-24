@@ -4,7 +4,7 @@
 // node:crypto (Node, and workerd under nodejs_compat), which the Node owner
 // uses for the same checksums.
 //
-// Two migration families share the database beside its main chain (the model
+// Three migration families share the database beside its main chain (the model
 // usage policy keeps `schema_migrations`), each with its rows in the family
 // ledger `schema_family_migrations` (`@opencraft/sql/families`):
 //   account-pool-host           the published account pool chain, exactly as
@@ -15,6 +15,7 @@
 //                               database, so "reserve affinity + read the
 //                               credential" and "write the row + write the
 //                               credential" are one storage transaction
+//   model-gateway               the published model gateway chain
 // The Node owner (store.ts) keeps its file, its private credential files and
 // its `openManagedDatabase` lifecycle; nothing here changes them.
 import { createHash } from "node:crypto";
@@ -30,6 +31,8 @@ import { STORE_MIGRATIONS } from "@opencraft/sqlite-node/store-migrations-data";
 import type { RecordSealer } from "@opencraft/secret-storage/sealed-records";
 import { ACCOUNT_POOL_MIGRATIONS } from "./account-pool-schema.js";
 import type { AccountCredentialRecords, AccountPoolStorage } from "./account-pool.js";
+import { MODEL_GATEWAY_SCHEMA, type ModelGatewayDatabase } from "./model-gateway.js";
+import { modelGatewaySqlSchema } from "./model-gateway-sql-owner.js";
 
 const sha256Hex = (text: string) => createHash("sha256").update(text).digest("hex");
 
@@ -47,7 +50,7 @@ export const ACCOUNT_CREDENTIAL_RECORD_MIGRATIONS: readonly SqlMigration[] = [
   },
 ];
 
-/** The two families, as a shared database hosts them. Every object of either carries its family's prefix. */
+/** The shared database families. Each family owns the objects with its prefix. */
 export function accountPoolSqlSchemas(): readonly SqlMigrationFamily[] {
   return [
     {
@@ -63,6 +66,7 @@ export function accountPoolSqlSchemas(): readonly SqlMigrationFamily[] {
       migrations: hashSqlMigrations(ACCOUNT_CREDENTIAL_RECORD_MIGRATIONS, sha256Hex),
       owns: (name) => name.startsWith("account_credential_"),
     },
+    modelGatewaySqlSchema(),
   ];
 }
 
@@ -135,10 +139,11 @@ export function sqlAccountCredentialRecords(database: SqlDatabase, sealer: Recor
 
 export interface AccountPoolSqlStorage extends AccountPoolStorage {
   readonly outcomes: readonly SqlMigrationFamilyOutcome[];
+  readonly gateway: ModelGatewayDatabase;
 }
 
 /**
- * Migrates both families beside the database's main chain and returns the
+ * Migrates the account families beside the database's main chain and returns the
  * pool's storage. A changed, newer, undeclared or unledgered history refuses
  * the open. The returned `close` releases nothing: the database belongs to its owner.
  */
@@ -147,5 +152,16 @@ export function openAccountPoolSqlStorage(database: SqlDatabase, sealer: RecordS
     table: MIGRATION_FAMILY_LEDGER_TABLE,
     composition: "beside-main",
   });
-  return { database, credentials: sqlAccountCredentialRecords(database, sealer), outcomes, close() {} };
+  const gatewayOutcome = outcomes.find(({ id }) => id === MODEL_GATEWAY_SCHEMA)!;
+  return {
+    database,
+    credentials: sqlAccountCredentialRecords(database, sealer),
+    outcomes,
+    gateway: {
+      database,
+      outcome: { status: gatewayOutcome.status, appliedVersion: gatewayOutcome.version, movedAsidePaths: [] },
+      close() {},
+    },
+    close() {},
+  };
 }
