@@ -1252,3 +1252,104 @@ test('installation routes: the shared route table and admission gate keep their 
   assert.match(await raw(app.url, '/__opencraft_auth/session'), /^HTTP\/1\.1 200 OK\r\n/u);
   assert.equal(await raw(app.url, '/__opencraft_access/session'), `HTTP/1.1 401 Unauthorized\r\n${json(unauthenticated)}`);
 });
+
+test('client-session: the App Host dispatches each Host to its transport and Web receives the access, driver, query and Hands sessions', { timeout: 60_000 }, async t => {
+  const { CHANNELS_HOST_ID } = await import('@opencraft/appserver-protocol/channels');
+  for (const owners of [false, true]) {
+    await t.test(owners ? 'Hands terminal and file owners' : 'no Hands owners', async t => {
+      const f = await fixture(t);
+      const backend = new WebSocketServer({ host: '127.0.0.1', port: 0 }); await once(backend, 'listening');
+      backend.on('connection', socket => socket.on('message', raw => {
+        const message = JSON.parse(String(raw));
+        const client = message.__opencraftClient === undefined ? {} : { __opencraftClient: message.__opencraftClient };
+        if (message.id !== undefined) socket.send(JSON.stringify({ id: message.id, ...client, result: {} }));
+      }));
+      let services;
+      const app = await startHeadlessServer({ ...f.options,
+        ...(owners ? { fileSystemOwner: { endpoint: join(f.root, 'files.sock'), tokenFile: join(f.root, 'files.token') },
+          terminalOwner: { directory: join(f.root, 'terminal'), endpoint: join(f.root, 'terminal.sock'), tokenFile: join(f.root, 'terminal.token') } } : {}),
+        startAgentHost: async () => ({ websocketUrl: `ws://127.0.0.1:${backend.address().port}`, close: async () => {} }),
+        createWebServer: async webOptions => { services = webOptions; return createWorkbenchWebServer(webOptions); } });
+      f.own(() => new Promise(resolve => backend.close(resolve))); f.own(() => app.close());
+      const appHost = services.appHostServer;
+      assert.equal(appHost.constructor.name, 'AppHostServer');
+      // Each Host id selects its transport; an unknown one is refused when the Host starts.
+      await assert.rejects(appHost.ensureHostConnected('no-such-host'), /Unknown server Host no-such-host/);
+      await appHost.ensureHostConnected('opencraft-server');
+      assert.equal(appHost.hostState('opencraft-server'), 'open');
+      await appHost.ensureHostConnected(CHANNELS_HOST_ID);
+      assert.equal(appHost.hostState(CHANNELS_HOST_ID), 'open');
+      // A saved SSH Host is resolved from the SSH connections when it starts; a missing one fails.
+      await assert.rejects(appHost.ensureHostConnected('ssh:missing'));
+      // Web's App Server access session: the Thread policy without an Actor, the Server spaces session with one.
+      const anonymous = services.createAppServerAccessSession({}, () => {});
+      assert.equal(anonymous.constructor.name, 'ThreadAccessSession');
+      const signedIn = services.createAppServerAccessSession({ actorContext: { actorId: 'actor-fixture', generation: 1 } }, () => {});
+      assert.deepEqual(Object.keys(signedIn), ['receive', 'rewrite', 'prepare', 'project', 'close']);
+      signedIn.close(); anonymous.close();
+      assert.equal(services.createAppServerDriverSession(() => {}).constructor.name, 'AgentDriverSession');
+      assert.equal(services.createAppServerQuerySession(() => {}).constructor.name, 'TokenUsageQuerySession');
+      if (owners) {
+        // The Hands terminal and file owners reach Web as one session, unconnected until a client asks.
+        const session = services.createTerminalSession(() => {});
+        assert.deepEqual(Object.keys(session), ['connect', 'close', 'project', 'receive']);
+        const frame = JSON.stringify({ method: 'fixture/unrelated' });
+        assert.equal(session.project(frame), frame);
+        session.close();
+      } else assert.equal(services.createTerminalSession, null);
+    });
+  }
+});
+
+test('edge: the Web release, runtime plugins and service table reach the Web server, the listener follows its host, and Web and plugins close at their shutdown positions', { timeout: 60_000 }, async t => {
+  const f = await fixture(t), order = [], data = f.options.dataDirectory;
+  const record = name => { if (!order.includes(name)) order.push(name); };
+  const observe = (service, name) => { const close = service.close.bind(service); service.close = (...args) => { record(name); return close(...args); }; };
+  // The Web root is verified before the data directory is created.
+  const bare = join(f.root, 'bare-web'); await mkdir(bare);
+  await assert.rejects(startHeadlessServer({ ...f.options, webRoot: bare }), { code: 'ENOENT' });
+  await assert.rejects(stat(data), { code: 'ENOENT' });
+  let services;
+  const options = { ...f.options, isolateBrowserStorage: true, createWebServer: async webOptions => {
+    services = webOptions;
+    observe(webOptions.runtimePluginService, 'runtime-plugins');
+    const web = await createWorkbenchWebServer(webOptions);
+    observe(web, 'web');
+    return web;
+  } };
+  const composition = { runtimePlugins: { directory: join(f.root, 'runtime-plugins') }, close() { record('composition'); } };
+  let app = await startHeadlessServer(options, composition); f.own(() => app?.close());
+  const machineId = (await readFile(join(data, 'machine-id'), 'utf8')).trim();
+  // Release and browser storage isolation.
+  assert.equal(services.root, f.options.webRoot);
+  assert.equal(services.userPluginDirectory, join(data, 'user-plugins'));
+  assert.ok('productPluginAssets' in services);
+  assert.deepEqual([services.instanceId, services.assetVersion], [machineId, 'composition-test']);
+  // The service table of an anonymous loopback installation.
+  assert.deepEqual([services.loopbackOnly, services.allowSessionChannels, services.desktopService, services.desktopAccess], [true, true, null, 'loopback']);
+  assert.deepEqual([services.identityService, services.accessService, services.authService, services.accountService], [null, null, null, null]);
+  assert.deepEqual(services.sshServerDescriptors, []);
+  for (const key of ['modelPolicyService', 'speechService', 'hubService', 'turnPushService', 'serverInformationService', 'actorService', 'mcpAppsService', 'connectorService', 'sshManagement'])
+    assert.ok(services[key], key);
+  // Health and storage outcomes span every module.
+  assert.deepEqual(Object.keys(services.getPluginHealth()).sort(), ['opencraft.im', 'opencraft.push', 'opencraft.runtime-plugins']);
+  assert.deepEqual(services.getPluginHealth()['opencraft.runtime-plugins'], { role: 'gateway', selected: [], skipped: [{ reason: 'admission_unavailable' }] });
+  const outcomes = services.getStorageOutcomes().map(row => row.name);
+  for (const name of ['server-core', 'web-push', 'mcp-apps', 'ssh-connections']) assert.ok(outcomes.includes(name), name);
+  // The loopback listener serves the workbench.
+  assert.equal(app.listenHost, '127.0.0.1');
+  assert.equal(app.url, `http://127.0.0.1:${app.listenPort}`);
+  assert.equal((await fetch(app.url)).status, 200);
+  await app.close(); app = undefined;
+  // Web closes first, the runtime plugins after the entry phase, the composition among the writers.
+  assert.deepEqual(order, ['web', 'runtime-plugins', 'composition']);
+  // Every writer was released: the same data directory starts again.
+  app = await startHeadlessServer(f.options);
+  assert.equal((await fetch(app.url)).status, 200);
+  await app.close(); app = undefined;
+  // An invalid listener host fails only after Web was created; rollback still runs every disposer in order.
+  const g = await fixture(t);
+  order.length = 0;
+  await assert.rejects(startHeadlessServer({ ...options, ...g.options, isolateBrowserStorage: true, createWebServer: options.createWebServer, listenHost: '10.0.0.1' }, composition), /Invalid listener host/);
+  assert.deepEqual(order, ['web', 'runtime-plugins', 'composition']);
+});
