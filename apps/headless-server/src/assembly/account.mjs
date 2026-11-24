@@ -1,87 +1,59 @@
-import { join } from "node:path";
-import { configuredModelGatewayPath, modelGatewayHttp, CodexCoreControlClient } from "@opencraft/account-pool-host";
-import { gatewayContributions } from "@opencraft/local-agent-host/model-config";
+import { ModelPolicyStore } from "@opencraft/model-usage-policy/store";
+import { modelPolicyHttp } from "@opencraft/model-usage-policy/http";
 import {
   ModelConfigurationRepository,
   ModelCredentialRepository,
 } from "@opencraft/local-agent-host/model-config/repository";
+import { modelProviderCredentials } from "@opencraft/local-agent-host/model-config/provider-credentials";
 import { SpeechModelConfiguration } from "@opencraft/local-agent-host/model-config/speech";
-import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
-import { fileSecretStore } from "@opencraft/secret-storage/file";
-import { ModelPolicyStore } from "@opencraft/model-usage-policy";
-import { modelPolicyHttp } from "@opencraft/model-usage-policy/http";
+import { documentCredentialLeases } from "@opencraft/account-pool-host/credential-leases";
 import { SpeechTranscriptionService } from "../speech-transcription-service.mjs";
+import { accountRoute, installationAccountAuthorities } from "../account-routes.ts";
 
 /**
- * Account assembly: the deployment's model usage policy, the model gateway
- * settings with personal subscriptions, and speech transcription. It opens the
- * policy database when called; the composition root calls `close` at the
- * policy writer's position in its shutdown order.
+ * Account assembly: the deployment's model usage policy, model configuration
+ * and credentials, short-lived credential leases, the model gateway settings
+ * with personal subscriptions, and speech transcription.
+ *
+ * Runtime-neutral: every store arrives as a port. The Node root passes the
+ * data directory's files (account-node.mjs); the AccountCore Durable Object
+ * passes its own storage (cloudflare/account-core.ts). The policy database is
+ * opened when this is called; the composition root calls `close` at the policy
+ * writer's position in its shutdown order.
  */
-export function assembleAccount({ dataDirectory, codexCoreEndpoint, codexCoreAuthToken }) {
-  const modelPolicyPath = join(dataDirectory, "model-usage-policy.sqlite");
-  const modelPolicy = new ModelPolicyStore(modelPolicyPath);
+export function assembleAccount({ openModelPolicy, modelDocuments, modelSecrets, modelGateway }) {
+  const modelConfiguration = new ModelConfigurationRepository(modelDocuments);
+  const modelCredentials = new ModelCredentialRepository(modelSecrets);
+  const modelPolicy = new ModelPolicyStore(openModelPolicy());
+  const credentialLeases = documentCredentialLeases(
+    modelDocuments,
+    modelProviderCredentials(modelConfiguration, modelCredentials),
+  );
+  /** The account's routes over the given authorities; dispatched by the shared route table. */
+  function createAccountHttpService(authorities) {
+    const gateway = modelGateway?.(authorities.gateway) ?? null;
+    const policy = modelPolicyHttp(modelPolicy, authorities.policy);
+    return async (exchange) => {
+      const service = accountRoute(new URL(exchange.path, "http://account.invalid").pathname);
+      if (service === "gateway") return gateway ? await gateway(exchange) : null;
+      if (service === "policy") return await policy(exchange);
+      return null;
+    };
+  }
   return {
-    modelPolicyPath,
     modelPolicy,
-    /** The gateway path and subscription client are read once, when the Web server is built. */
-    createHttpService({ actorAccess, actorStore, instanceAccess }) {
-      const gatewayPath = configuredModelGatewayPath();
-      const contributions = gatewayPath ? gatewayContributions(join(dataDirectory, "models"), gatewayPath) : null;
-      const subscriptionCore =
-        codexCoreEndpoint && codexCoreAuthToken
-          ? new CodexCoreControlClient(codexCoreEndpoint, codexCoreAuthToken)
-          : null;
-      const gateway = gatewayPath
-        ? modelGatewayHttp({
-            path: gatewayPath,
-            ...contributions,
-            subscription: subscriptionCore
-              ? async (actor, input, assertCurrent) => {
-                  assertCurrent();
-                  const result = await subscriptionCore.accountRequest(
-                    "opencraft/codex/accounts/personal/" + input.operation,
-                    { actor, sessionId: input.sessionId },
-                  );
-                  assertCurrent();
-                  if (result.status === "complete")
-                    return {
-                      status: "complete",
-                      ...(await contributions.connectSubscription(actor, result.connection, assertCurrent)),
-                    };
-                  return result;
-                }
-              : undefined,
-            authority: (request) => {
-              const context = actorAccess.authenticate(request);
-              if (!context || actorStore.get(context.actorId)?.kind !== "human") return null;
-              const principal = instanceAccess?.authenticate(request);
-              return {
-                actor: context.actorId,
-                administrator: !!principal && instanceAccess.role(principal) === "admin",
-                origin: actorAccess.options.trustedOrigin?.(request) ?? null,
-              };
-            },
-          })
-        : null;
-      const policy = modelPolicyHttp(modelPolicy, (request) => {
-        const principal = instanceAccess?.authenticate(request);
-        if (!principal || !instanceAccess.role(principal)) return null;
-        return {
-          actor: JSON.stringify([principal.provider, principal.subject]),
-          administrator: instanceAccess.role(principal) === "admin",
-          origin: instanceAccess.trustedOrigin(request),
-        };
-      });
-      return async (exchange) => (gateway ? await gateway(exchange) : null) ?? (await policy(exchange));
+    modelConfiguration,
+    modelCredentials,
+    credentialLeases,
+    createAccountHttpService,
+    /** The Node gateway's form: authorities from the installation's services beside it. */
+    createHttpService(services) {
+      return createAccountHttpService(installationAccountAuthorities(services));
     },
     /** The Web server owns the returned service and closes it with itself. */
     createSpeechService() {
       return new SpeechTranscriptionService({
-        configuration: new SpeechModelConfiguration(
-          new ModelConfigurationRepository(fileStateDocumentStore(join(dataDirectory, "models"))),
-          new ModelCredentialRepository(fileSecretStore(join(dataDirectory, "models"))),
-        ),
+        configuration: new SpeechModelConfiguration(modelConfiguration, modelCredentials),
       });
     },
     close() {

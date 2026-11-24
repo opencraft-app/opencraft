@@ -273,12 +273,12 @@
     "packages/mcp-apps/src/store.ts": {
       "SQL statement": 13
     },
-    "packages/model-usage-policy/src/index.ts": {
-      "SQL statement": 5
-    },
     "packages/model-usage-policy/src/native.mjs": {
       "DatabaseSync": 2,
       "SQL statement": 4
+    },
+    "packages/model-usage-policy/src/store.ts": {
+      "SQL statement": 5
     },
     "packages/sql/src/migrations.ts": {
       "SQL statement": 3

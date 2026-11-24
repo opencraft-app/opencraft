@@ -4,7 +4,7 @@ export { nodeSqlDatabase, type NodeSqliteConnection } from "./sql-database.js";
 export { SqliteLifecycleError, type SqliteLifecycleErrorKind } from "./errors.js";
 export { durableJson, assertRecoveryState } from "./recovery.js";
 export { createBackup as createSqliteBackup, pruneBackups as pruneSqliteBackups } from "./backup.js";
-export { acquireProcessWriter } from './writer-lock.js';
+export { acquireProcessWriter, acquireOwnerLock } from './writer-lock.js';
 export { retireManagedDatabase, retiredInto, type BorrowedDatabase } from "./retire.js";
 
 export { resolveStoreMigrations, resolveMigrationContract, type StorageMigrationContract, type StorageSchemaId } from "./store-migrations.js";

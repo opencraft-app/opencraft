@@ -3,7 +3,13 @@ import { constants } from "node:fs";
 import { mkdir, open, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import lockfile from "proper-lockfile";
-import { stateChangeOutcome, StateDocumentCorruptError, validateStateKey, type StateDocumentStore } from "./state.js";
+import {
+  stateChangeOutcome,
+  StateDocumentCorruptError,
+  StateDocumentNotPrivateError,
+  validateStateKey,
+  type StateDocumentStore,
+} from "./state.js";
 
 /** Directory handles cannot be fsynced on Windows; rename/link durability there is the file system's. */
 async function syncDirectory(directory: string) {
@@ -52,12 +58,8 @@ export interface FileStateDocumentOptions {
   private?: { readonly maxBytes: number };
 }
 
-export class StateDocumentNotPrivateError extends Error {
-  constructor() {
-    super("State document is not a private file");
-    this.name = "StateDocumentNotPrivateError";
-  }
-}
+// Defined with the neutral port so repositories can recognize it without importing this file adapter.
+export { StateDocumentNotPrivateError } from "./state.js";
 
 async function readPrivate(file: string, maxBytes: number): Promise<string> {
   const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW);

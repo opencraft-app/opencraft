@@ -27,6 +27,7 @@ import { openServerCoreOwner } from "@opencraft/storage-node/server-owner";
 import { ownerEntry } from '@opencraft/worker-owner';
 import { ModelPolicyTransport } from '@opencraft/model-usage-policy/transport';
 import { assembleAccount } from './assembly/account.mjs';
+import { nodeAccountInputs } from './assembly/account-node.mjs';
 import { assembleNodeLocal } from './assembly/node-local.mjs';
 import { assembleInstallation } from './assembly/installation.mjs';
 import { assembleWorkspaceHost } from './assembly/workspace-host.mjs';
@@ -52,8 +53,8 @@ import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { acquireOwnerLock } from "@opencraft/sqlite-node/writer-lock";
 
-import lockfile from "proper-lockfile";
 import { loadSshIngressConfiguration } from "@opencraft/ssh-http-ingress/server";
 
 import { openMcpAppsService } from "@opencraft/mcp-apps/node";
@@ -483,8 +484,10 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     const membership = installation.openMembership({ hub: hubController.node, accessControl: options.accessControl,
       accessMemberProviders: options.accessMemberProviders, humanConfiguration, relayConfiguration });
     const machineIdentity = await rootInputs.machineIdentity();
-    account = assembleAccount({ dataDirectory, codexCoreEndpoint: options.codexCoreEndpoint, codexCoreAuthToken: options.codexCoreAuthToken });
-    const { modelPolicyPath } = account;
+    // The account takes its storage as ports; the Node inputs are the data directory's files (account-node.mjs).
+    const accountInputs = nodeAccountInputs({ dataDirectory, codexCoreEndpoint: options.codexCoreEndpoint, codexCoreAuthToken: options.codexCoreAuthToken });
+    account = assembleAccount(accountInputs);
+    const { modelPolicyPath } = accountInputs;
     const { actorStore, identity, environmentDelivered } = await installation.openIdentity({
       // The Node data directory reaches only the identity composition, first as before.
       createIdentity: composition.createIdentity && (input => composition.createIdentity({ dataDirectory, ...input })),
@@ -689,7 +692,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         engines, options.defaultEngine ?? (engines.includes("dsh") ? "dsh" : "pi"));
       agent = independentEngine;
     } else if (engines.includes("pi")) {
-      releasePiOwner = await lockfile.lock(join(dataDirectory, "pi-owner"), {realpath:false,retries:0});
+      // Shared with the independent engine host: one in-process or independent Pi owner per data directory.
+      releasePiOwner = await acquireOwnerLock(join(dataDirectory, "pi-owner.lock"));
       const piModels = await createPiModelConfiguration(new ModelConfigurationRepository(fileStateDocumentStore(join(dataDirectory, "models"))), new ModelCredentialRepository(fileSecretStore(join(dataDirectory, "models"))), fileStateDocumentStore(join(dataDirectory, "pi")));
       const piAttachments=new LocalAttachmentStagingService(join(dataDirectory,"agent","attachments"),join(dataDirectory,"artifacts"));
       const piPrepareInput=(threadId,input)=>piAttachments.prepareInput(input,threadId,fileSystem?(artifact,owner,signal)=>fileSystem.prepareArtifact(artifact,owner,signal):undefined);
