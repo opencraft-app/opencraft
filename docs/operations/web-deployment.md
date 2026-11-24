@@ -45,7 +45,7 @@ npm exec --registry=https://registry.npmjs.org/ \
   -- opencraft-web
 ```
 
-`opencraft-web` 是网站入口；源码中的 `opencraft` 命令已用于会话 CLI。不要依赖裸包名的默认可执行文件选择。GitHub main 的修复不等于 registry 已发布：需要最新源码能力时先使用 [源码快速开始](../../README.md#快速开始)，部署时仍固定经验证的精确版本，不复用旧版本号。
+`opencraft-web` 是网站入口；源码中的 `opencraft` 命令已用于会话 CLI。不要依赖裸包名的默认可执行文件选择。GitHub main 的修复不等于 registry 已发布：需要最新源码能力时先使用 [源码快速开始](../../README.zh-CN.md#快速开始)，部署时仍固定经验证的精确版本，不复用旧版本号。
 
 长期运行时固定安装启动包，避免每次服务启动重新解析 `latest`：
 
