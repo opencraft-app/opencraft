@@ -252,8 +252,7 @@
       "SQL statement": 12
     },
     "packages/document-storage/src/sqlite.ts": {
-      "DatabaseSync": 1,
-      "SQL statement": 7
+      "SQL statement": 3
     },
     "packages/execution-environment/src/employee-git-vault-store.ts": {
       "closeSync": 2,
@@ -372,8 +371,7 @@
       "DatabaseSync": 1
     },
     "plugins/tasks/src/sqlite.ts": {
-      "DatabaseSync": 1,
-      "SQL statement": 39
+      "SQL statement": 35
     },
     "scripts/server-deployment/acp-host.mjs": {
       "readFileSync": 1

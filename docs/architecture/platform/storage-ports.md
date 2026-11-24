@@ -128,6 +128,26 @@ Git vault key 由 `EmployeeGitVaultStore.open()` 异步解析：新库经 `KeyMa
 
 Unix socket、锁文件、`/proc` 读取、Git 与 `/workspace` 工作目录、Electron profile、Codex 原生 home 与 rollout、主机文件 RPC。它们是容器或本机内部资源，由执行环境 owner 管理。Codex、Pi、DSH 引擎自身的 SQLite 随引擎运行在 Node 容器内，不迁移到 SQL 端口。
 
+### 3.7 插件与扩展存储
+
+状态：2026-11-24 实施（[gateway-split §4.2](gateway-split.md) 存储行）。领域模块只依赖 `SqlDatabase`；Node 外壳保留原导出、构造签名、库文件、迁移与 checksum；网络主线程同步 IO 只减少。
+
+| 存储 | 唯一写者与线程 | 跨进程／线程读者 | 迁移与账本 | 领域（中立） | Node 外壳 |
+| --- | --- | --- | --- | --- | --- |
+| 登录准入：`login-admission.sqlite` | Headless 网络进程的登录准入存储 Worker（`login-admission.worker.ts`，经 `@opencraft/worker-owner`）；网络线程的 `LoginAdmissionPolicy` 只发消息，`history` 走并发读通道 | 无 | 归该 owner（schema `login-admission`，`stores.json` 的 owner 仍是 `store.ts`） | `SqlLoginAdmissionStore`（`sql-store.ts`，导出 `./sql-store`）：发布 CAS、版本与审计、已验证身份、按来源一次性导入；写入经 `transaction()`（原手写 `BEGIN IMMEDIATE`） | `store.ts`：`LoginAdmissionStore(path)` 为 `openManagedDatabase`＋`nodeSqlDatabase`，`openLoginAdmissionStore` 与 Worker 协议不变 |
+| thread participants：`ioa_message_presence`、`ioa_participant_state`、`ioa_thread_creators`、`ioa_presence_sync` | 参与者存储 Worker（`thread-participants.worker.ts`）是这四张表唯一写者；它借用连接 owner 已迁移的 WAL 文件（Hub 的 `thread-identity.sqlite` 或 Daemon 的 `opencraft-host-state.sqlite`），与在主线程写 `message_senders` 的 `ThreadIdentity` 由 SQLite 写事务与 `busy_timeout` 串行 | 连接 owner 读同一文件；Worker 只读 `message_senders`／`message_sender_origins` | 归连接 owner（`thread-identity-database`／`opencraft-host-state-database`），插件不迁移 | `SqlParticipantStore`（`sql-participant-store.ts`，导出 `./sql-participant-store`）：投影、修订号、首个创建者；写入经 `transaction()`；回滚失败（失败后事务仍开）经注入的 `unrecoverable` 报出 | `participant-store.ts`：只读探测 WAL 与表、`DatabaseSync`＋`busy_timeout`、`nodeSqlDatabase`，回滚失败映射为 `WorkerOwnerFatal`。DO 上这些表与 thread identity 同属一个 owner 对象，直接在它的 SQL 上执行，不另开连接 |
+| tasks：`tasks.sqlite` | 每个数据目录一个 owner：Local Agent Host 启动时打开（`openLocalAgentStorage`）或 Codex 功能私有 owner（`TasksService` 惰性打开），均在各自进程主线程（已登记） | 无 | schema `tasks`；`stores.json` 的 owner 改指 `node-store.ts` | `SqlTasksStore`（`sqlite.ts`，导出 `./sql-store`）：任务、会话关联、事件、成员目录；事件 id 用全局 Web Crypto `crypto.randomUUID()`；外键由连接强制（node:sqlite 默认 `enableForeignKeyConstraints`，DO 始终强制），冗余的 `PRAGMA foreign_keys=ON` 删除 | `node-store.ts`（导出 `./sqlite` 不变：`TasksSqliteStore(path, now)` 并再导出领域）：`openManagedDatabase`（`legacyPolicy: "reject"`，schema 校验 SQL 由 `TASKS_MIGRATIONS` 依次拼接，与原五段相同） |
+| 扩展文档：`extension_records`（Host 的 `opencraft-host-documents.sqlite`） | Local Agent Host 主线程的 `HostDocumentService`（已登记）；借用连接时归出借方 | 无 | schema `document-storage`；`stores.json` 的 owner 改指 `node-store.ts` | `SqlDocumentStore`（`sqlite.ts`，导出 `./sql-store`）：revision CAS、格式降级拒绝；revision 不符时原为 `ROLLBACK`，现为不写入的事务提交 | `node-store.ts`（导出 `./sqlite` 不变：`openDocumentDatabase`、`SqliteDocumentStore(path \| BorrowedDatabase)`） |
+
+tasks 与扩展文档的领域留在原文件（SQL 语句的主线程登记随文件保留并减少），Node 外壳是新文件；登录准入与 thread participants 只在 Worker 中运行，领域是新文件。
+
+不迁到 SQL 端口：
+
+- `document-storage/client-resources-sqlite.ts`：已退休的桌面独立文件，只由 Electron Main 的客户端存储导入读取，是客户端本机数据，不是部署级存储。
+- `native-history-node` 转录缓存（`transcript-index.sqlite`）：属于 §3.5 的容器内部资源。它是 Codex 原生 rollout 在执行容器内的可丢弃投影，SQLite 只是 `cache/transcripts/*.turns.jsonl` 与 blob 文件的偏移索引，与文件追加、按偏移读取、inode 校验以及损坏即删除重建一体；Cloudflare 上原生 rollout 本身在工作区容器内，缓存随容器运行。它已在专属 Worker（`transcript-cache-storage.worker.ts`）内，不占网络主线程。
+
+验证：`tests/storage/extension-stores-workerd.test.ts`（`test:storage-ports:workerd` 与 Cloudflare 演练组 `extension-stores`）对四个领域模块做中立平台打包检查（无 `node:*`、`Buffer`、`sqlite-node`、`worker-owner` 与 Node 外壳）；各 owner 的已发布迁移链经中立账本运行，与 Node owner 打开的文件账本和 schema 相同（thread participants 用 thread identity 链）；同一操作序列（含 CAS 冲突、错误码、外层事务回滚、外键拒绝）在 DO SQL 与 `nodeSqlDatabase` 上逐项相同；写入的行与账本跨对象重启保留且不重放迁移。
+
 ## 4. 分阶段
 
 1. **SQL 端口与 Node 适配器（服务器核心数据）。** 新增 `@opencraft/sql` 与一致性测试；`@opencraft/sqlite-node` 提供 `nodeSqlDatabase()`；`ServerDatabaseSource`／`openServerRepository()` 改为交付 `SqlDatabase`；`access-control` 的领域类、函数与 `CommunicationExtension` 插件契约不再依赖 `DatabaseSync`；手写事务改为 `transaction()`；`Collaboration` 不再从连接推导文件路径。

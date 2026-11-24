@@ -91,7 +91,7 @@ Node 上 `opencraft-server.sqlite` 的编排运行时与 Server space 已在核�
 
 ### 5.4 生产 InstallationCore 仍缺
 
-部署装配（wrangler 配置、绑定、边缘 Worker 路由）；认证前门（OIDC／本地账号经 `fetch`，替代 Node HTTP 的 `IdentityProvider`）；投影发布给边缘 Worker 与 Client DO；`Collaboration`、编排、空间、自动化等其余领域的 DO 装配；`AccountCore` 与 `WorkspaceHost` 的协作；DO 版迁移后 schema 校验（DO 内不能另开 `:memory:` 库）；备份与恢复改用 PITR 的运维流程；`SecretStore` 的信封加密；真实 Cloudflare 上的 SQL 语义、CPU 与冷启动复核。
+部署装配（wrangler 配置、绑定、边缘 Worker 路由）；认证前门（OIDC／本地账号经 `fetch`，替代 Node HTTP 的 `IdentityProvider`）；投影发布给边缘 Worker 与 Client DO；`Collaboration`、编排、空间、自动化等其余领域的 DO 装配；登录准入的 DO 装配（其存储 `SqlLoginAdmissionStore` 已在 SQL 端口上，IC 可在自身 SQL 上装配，见[存储端口 §3.7](storage-ports.md)；管理员 `admit` 函数的求值仍经 `@opencraft/javascript-runtime` 的 `node:worker_threads` 隔离，DO 上的执行方式待定）；`AccountCore` 与 `WorkspaceHost` 的协作；DO 版迁移后 schema 校验（DO 内不能另开 `:memory:` 库）；备份与恢复改用 PITR 的运维流程；`SecretStore` 的信封加密；真实 Cloudflare 上的 SQL 语义、CPU 与冷启动复核。
 
 ## 6. RelayHub 原型结果
 

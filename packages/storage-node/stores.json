@@ -11,7 +11,7 @@
   },
   {
     "id": "tasks",
-    "owner": "plugins/tasks/src/sqlite.ts",
+    "owner": "plugins/tasks/src/node-store.ts",
     "index": 0
   },
   {
@@ -106,7 +106,7 @@
   },
   {
     "id": "document-storage",
-    "owner": "packages/document-storage/src/sqlite.ts",
+    "owner": "packages/document-storage/src/node-store.ts",
     "index": 0
   },
   {
