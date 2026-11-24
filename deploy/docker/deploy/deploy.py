@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Docker + Compose v2 + Python 3 only. No host Node or checkout required."""
+import csv
+from io import StringIO
 import json
 import os
 import re
@@ -8,6 +10,7 @@ import stat
 import subprocess
 import sys
 from pathlib import Path
+from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parent
 ROLES = ('gateway', 'brain', 'hands', 'proxy')
@@ -26,6 +29,11 @@ AGENT_RUN = '/run/opencraft-agent'
 AGENT_LINK = '/run/opencraft-link'
 GATEWAY_LINKS = '/run/opencraft-links'
 GATEWAY_RUN = '/run/opencraft-gateway'
+COMPOSITION_TARGET = '/run/opencraft-composition'
+COMPOSITION_DIRECTORY = 'OPENCRAFT_GATEWAY_COMPOSITION_DIRECTORY'
+COMPOSITION_SHA256 = 'OPENCRAFT_GATEWAY_COMPOSITION_SHA256'
+WEB_DIRECTORY = 'OPENCRAFT_GATEWAY_WEB_RELEASE_DIRECTORY'
+WEB_SHA256 = 'OPENCRAFT_GATEWAY_WEB_RELEASE_SHA256'
 WORKSPACE_ENVIRONMENTS = 'static-docker://brain static-docker://hands'
 LINK_VOLUMES = {'brain': 'brain-link', 'hands': 'hands-link'}
 # Shared host directories each role mounts at its OPENCRAFT_<KEY>_DIR.
@@ -57,6 +65,11 @@ def site_settings():
 
 def compose_files(settings):
     files = list(COMPOSE_FILES) + [file for key, file in PROFILES if settings.get(key) == '1']
+    artifacts = json.loads((ROOT / 'release.json').read_text()).get('gatewayArtifacts', {})
+    if 'compositionSha256' in artifacts:
+        files.append('compose.gateway-composition.yaml')
+    if 'webSha256' in artifacts:
+        files.append('compose.gateway-web-release.yaml')
     return [arg for file in files for arg in ('-f', str(ROOT / file))]
 
 
@@ -89,6 +102,61 @@ def absolute(value):
     if not path.is_absolute() or str(path) == '/' or '..' in path.parts:
         raise ValueError('Expected absolute non-root path: ' + value)
     return path
+
+
+def gateway_composition_mount(services):
+    gateway = services['gateway']
+    env = gateway['environment']
+    for role, service in services.items():
+        if role != 'gateway' and (COMPOSITION_DIRECTORY in service['environment'] or
+                COMPOSITION_SHA256 in service['environment'] or
+                any(volume['target'] == COMPOSITION_TARGET for volume in service['volumes'])):
+            raise ValueError('Only Gateway may receive the Gateway composition directory')
+    mounts = [volume for volume in gateway['volumes'] if volume['target'] == COMPOSITION_TARGET]
+    if not mounts and COMPOSITION_DIRECTORY not in env and COMPOSITION_SHA256 not in env:
+        return None
+    if env.get(COMPOSITION_DIRECTORY) != COMPOSITION_TARGET or not re.fullmatch(r'[a-f0-9]{64}', env.get(COMPOSITION_SHA256) or ''):
+        raise ValueError('Gateway composition requires the directory mount and a lowercase SHA-256')
+    if len(mounts) != 1 or mounts[0]['type'] != 'bind' or not mounts[0].get('read_only'):
+        raise ValueError('Gateway composition directory requires a read-only bind')
+    selected = mounts[0]
+    check_artifact_source(services, selected, 'Gateway composition directory')
+    return selected
+
+
+def check_artifact_source(services, selected, label):
+    directory = absolute(selected['source'])
+    if directory != directory.resolve():
+        raise ValueError(label + ' must use a canonical host path')
+    for service in services.values():
+        for mount in service['volumes']:
+            if mount is selected:
+                continue
+            if mount['type'] == 'bind':
+                other = Path(mount['source']).resolve()
+                if directory == other or other in directory.parents or directory in other.parents:
+                    raise ValueError(label + ' must be outside shared deployment mounts')
+
+
+def gateway_artifacts(services, release):
+    env = services['gateway']['environment']
+    artifacts = {key: env[variable] for key, variable in
+                 (('compositionSha256', COMPOSITION_SHA256), ('webSha256', WEB_SHA256)) if variable in env}
+    if 'gatewayArtifacts' in release and release['gatewayArtifacts'] != artifacts:
+        raise ValueError('Rendered Gateway artifact digests differ from release.json')
+    directory = env.get(WEB_DIRECTORY)
+    if directory is None and WEB_SHA256 not in env:
+        return artifacts
+    if not directory or str(absolute(directory)) != directory or 'compositionSha256' not in artifacts or not (
+            re.fullmatch(r'[a-f0-9]{64}', artifacts.get('webSha256') or '')):
+        raise ValueError('Gateway Web release requires a directory, SHA-256 and Gateway composition')
+    matches = [(role, m) for role, service in services.items() for m in service['volumes']
+               if m['target'] == directory]
+    if len(matches) != 1 or matches[0][0] != 'gateway' or (
+            matches[0][1]['type'] != 'bind' or not matches[0][1].get('read_only')):
+        raise ValueError('Gateway Web release requires a Gateway-only read-only bind')
+    check_artifact_source(services, matches[0][1], 'Gateway Web release')
+    return artifacts
 
 
 def validate(config, release):
@@ -148,6 +216,9 @@ def validate(config, release):
     budget_check(services)
     personal_git_check(services)
     environment_delivery_check(services)
+    gateway_composition_mount(services)
+    gateway_artifacts(services, release)
+    authority_socket_paths(services)
     command = services['gateway']['command']
     if '--access-control' not in command:
         raise ValueError('Gateway authentication must remain enabled')
@@ -348,12 +419,34 @@ def mounted_path(service, target):
     return str(Path(mount['source']) / path.relative_to(mount['target']))
 
 
+def authority_socket_paths(services):
+    variable = 'OPENCRAFT_WORKSPACE_AUTHORITY_SOCKET'
+    paths = {role: services[role]['environment'].get(variable) for role in ('gateway', 'brain')}
+    if all(path is None for path in paths.values()):
+        return {}
+    for role, path in paths.items():
+        if not path or str(absolute(path)) != path or '\0' in path or len(path.encode()) > 103:
+            raise ValueError('Invalid ' + variable + ' for ' + role)
+        matching = [v for v in services[role]['volumes']
+                    if Path(path) == Path(v['target']) or Path(v['target']) in Path(path).parents]
+        volume = max(matching, key=lambda v: len(Path(v['target']).parts), default=None)
+        if not volume or volume['type'] != 'bind' or volume['target'] == path or (
+                role == 'gateway' and volume.get('read_only')):
+            raise ValueError(variable + ' must be inside a shared bind, writable by Gateway: ' + role)
+    if Path(paths['gateway']).name != Path(paths['brain']).name:
+        raise ValueError('Gateway and Brain must use the same workspace authority socket name')
+    return paths
+
+
 def directory_plan(services, identity):
     plan = {}
     def add(path, owner):
         if path is None: return
         if path in plan and plan[path] != owner: raise ValueError('Conflicting private directory ownership: ' + path)
         plan[path] = owner
+    paths = authority_socket_paths(services)
+    if paths:
+        add(mounted_path(services['gateway'], str(Path(paths['gateway']).parent)), identity)
     for role, service in services.items():
         env = service['environment']; owner = tuple(map(int, service['user'].split(':')))
         for key in SHARED[role] + ('LOG',):
@@ -382,6 +475,59 @@ def probe_args(service):
     # read-only preflight SYS_ADMIN/SETUID/CHOWN or the running service's whole set.
     if service['user'] == '0:0': args += ['--cap-add', 'DAC_OVERRIDE']
     return args
+
+
+def bind_probe_args(service):
+    args = []
+    for mount in service['volumes']:
+        if mount['type'] != 'bind':
+            continue
+        options = ['type=bind', 'source=' + mount['source'], 'target=' + mount['target']]
+        propagation = mount.get('bind', {}).get('propagation')
+        if propagation:
+            options.append('bind-propagation=' + propagation)
+        if mount.get('read_only'):
+            options.append('readonly')
+        # Docker parses --mount as CSV, so a comma in a site's path is literal.
+        argument = StringIO()
+        csv.writer(argument, lineterminator='\n').writerow(options)
+        args += ['--mount', argument.getvalue().rstrip('\n')]
+    return args
+
+
+def authority_socket_check(services):
+    paths = authority_socket_paths(services)
+    if not paths:
+        return
+    token = uuid4().hex
+    name = 'opencraft-socket-check-' + token
+    code = (ROOT / 'workspace-preflight.mjs').read_text()
+
+    def command(role, options, mode):
+        service = services[role]
+        return probe_args(service) + options + bind_probe_args(service) + [
+            '--entrypoint', '/opt/opencraft/bin/node', service['image'], '--input-type=module', '-e', code,
+            '--', mode, role, paths[role], token,
+        ]
+
+    for role in paths:
+        try:
+            run(command(role, [], '--authority-path-probe'))
+        except subprocess.CalledProcessError as error:
+            raise ValueError('Workspace authority socket path preflight failed for ' + role) from error
+    # A private sibling lets us test the actual mount while an old Gateway owns its socket.
+    gateway = command('gateway', ['--detach', '--name', name], '--authority-socket-probe')
+    gateway.remove('--rm')
+    run(gateway, capture=True)
+    try:
+        run(command('brain', [], '--authority-socket-probe'))
+        run(['docker', 'logs', name])
+    except subprocess.CalledProcessError as error:
+        run(['docker', 'logs', name])
+        raise ValueError('Gateway and Brain workspace authority socket preflight failed') from error
+    finally:
+        run(['docker', 'stop', '--time', '2', name], capture=True)
+        run(['docker', 'rm', name], capture=True)
 
 
 def ensure_directory(path, identity, create=False):
@@ -413,6 +559,20 @@ def image_check(services, identity):
             raise ValueError('Runtime UID:GID must match the built image: ' + role)
         if metadata['Os'] != 'linux' or metadata['Architecture'] != 'amd64':
             raise ValueError('Image platform mismatch: ' + role)
+    mount = gateway_composition_mount(services)
+    if mount:
+        gateway = services['gateway']
+        env = gateway['environment']
+        directories = [COMPOSITION_DIRECTORY] + ([WEB_DIRECTORY] if WEB_DIRECTORY in env else [])
+        targets = {env[key] for key in directories}
+        args = probe_args(gateway) + ['--tmpfs', '/tmp:rw,nosuid,nodev,mode=1777,size=64m']
+        args += bind_probe_args({'volumes': [v for v in gateway['volumes'] if v['target'] in targets]})
+        for key in directories + [COMPOSITION_SHA256] + ([WEB_SHA256] if WEB_DIRECTORY in env else []):
+            args += ['--env', key + '=' + env[key]]
+        run(args + [
+            '--entrypoint', '/opt/opencraft/bin/node', gateway['image'],
+            '/opt/opencraft/runtime/container-gateway.mjs', '--check-gateway-composition',
+        ])
     code = '''const fs=require('node:fs'),a=require('node:assert/strict');
 for(const f of ['native-hands.mjs','hands-files-owner.mjs','hands-terminal-owner.mjs','container-health.mjs']) fs.accessSync('/opt/opencraft/runtime/'+f);
 a.match(fs.readFileSync('/opt/opencraft/runtime/native-hands.mjs','utf8'), /hands-files-owner\\.mjs/);
@@ -452,9 +612,7 @@ def retained_workspace_check(services):
         service = services[role]
         args = probe_args(service) + ['-i', '--entrypoint', '/opt/opencraft/bin/node']
         # Exact rendered mounts include retained paths and ancestor configuration.
-        for mount in [v for v in service['volumes'] if v['type'] == 'bind']:
-            args += ['--mount', 'type=bind,source=' + mount['source'] + ',target=' + mount['target']
-                     + (',readonly' if mount.get('read_only') else '')]
+        args += bind_probe_args(service)
         args += [service['image'], '--input-type=module', '-e', code, '--', '--retained-workspace-probe']
         try:
             run(args, input=json.dumps(rows))
@@ -468,6 +626,7 @@ def verify():
         raise ValueError('Expected exactly four deployment containers')
     containers = json.loads(run(['docker', 'inspect'] + ids, capture=True).stdout)
     expected_config = json.loads(compose('config', '--format', 'json', capture=True).stdout)
+    artifacts = gateway_artifacts(expected_config['services'], json.loads((ROOT / 'release.json').read_text()))
     for container in containers:
         role = container['Config']['Labels']['com.docker.compose.service']
         if container['Config'].get('User') != expected_config['services'][role]['user']:
@@ -497,12 +656,18 @@ def verify():
                 'hands', '/opt/opencraft/bin/node', '--input-type=module', input=code)
     compose('exec', '-T', 'gateway', '/opt/opencraft/bin/node', '--input-type=module', '-e', '''
 import { statSync } from 'node:fs';
-const port=process.argv[1];
+const [port, artifactJson] = process.argv.slice(1);
+const artifacts = JSON.parse(artifactJson);
 for (const name of ['brain','hands']) if (!statSync('/run/opencraft-links/'+name+'/link.sock').isSocket()) throw Error('No static-docker link: '+name);
 const h=await fetch('http://127.0.0.1:'+port+'/health'); const body=await h.json();
 if(!h.ok||!body.ok||body.hosts?.['local-codex']?.state!=='ready')throw Error('Gateway health is not ready: '+JSON.stringify(body.hosts?.['local-codex']));
+const { webBuildId, ...reported } = body.gatewayArtifacts ?? {};
+if (Object.keys(artifacts).length !== Object.keys(reported).length ||
+    Object.entries(artifacts).some(([key, digest]) => reported[key] !== digest) ||
+    (artifacts.webSha256 && (typeof webBuildId !== 'string' || !webBuildId)))
+  throw Error('Running Gateway composition or Web release differs from release.json');
 const r=await fetch('http://127.0.0.1:'+port+'/'); if(r.status!==401)throw Error('Unauthenticated access must be rejected: '+r.status);
-console.log('Gateway health OK (local-codex ready through the Brain/Hands links); unauthenticated root returns 401');''', str(PORTS[0]))
+console.log('Gateway health OK (local-codex ready through the Brain/Hands links); unauthenticated root returns 401');''', str(PORTS[0]), json.dumps(artifacts))
     print('Verified four immutable images, health, files RPC from Hands/Brain/Gateway endpoint and authentication.')
 
 
@@ -532,6 +697,7 @@ def main():
     if action == 'init':
         print('Initialized private deployment directories; existing ownership preserved.'); return
     image_check(config['services'], identity)
+    authority_socket_check(config['services'])
     retained_workspace_check(config['services'])
     if action == 'check':
         print('Deployment preflight passed.'); return

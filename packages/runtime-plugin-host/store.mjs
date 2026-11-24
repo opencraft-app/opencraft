@@ -2,6 +2,9 @@ import { constants } from "node:fs";
 import { open, lstat, mkdir, rename, rm, readdir, chown, chmod } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { isAbsolute, join, dirname, resolve } from "node:path";
+import { safePath } from "./package-path.mjs";
+
+export { safePath };
 
 export const RUNTIME_PLUGIN_API = 1;
 export const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -12,16 +15,6 @@ const reserved =
   /^\/(?:health|__opencraft_(?:access|actors|auth|account|connectors|push|notifications|hub|files|preview|observe|im|speech|plugins|plugin_catalog))(?:\/|$)/u;
 const plain = (value) => !!value && typeof value === "object" && !Array.isArray(value);
 const keys = (value, allowed) => plain(value) && Object.keys(value).every((key) => allowed.includes(key));
-export function safePath(value) {
-  if (
-    typeof value !== "string" ||
-    value.length > 256 ||
-    !/^[A-Za-z0-9_./-]+$/u.test(value) ||
-    value.split("/").some((part) => !part || part === "." || part === ".." || part.startsWith("."))
-  )
-    throw Error("Invalid plugin path");
-  return value;
-}
 export function parseManifest(value) {
   if (
     !keys(value, ["schemaVersion", "id", "version", "hostApi", "nodeMajor", "sourceRevision", "roles", "files"]) ||

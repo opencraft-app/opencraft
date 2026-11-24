@@ -537,6 +537,62 @@ plugins in the `execution` role and can read their bytes through the Hands file 
 Hands itself never loads plugins. See
 [runtime-plugin-host](../../packages/runtime-plugin-host/README.md#hands-file-source-and-container-utility-modes).
 
+## Gateway composition from a mounted directory
+
+An operator can supply a server composition to the standard Gateway image. Build
+a self-contained Node 26 ESM package with `composition.mjs` at the directory root,
+plus any relative modules or worker files it uses. Export API version 1 and a
+factory that returns the existing Headless composition. The factory prepares
+configuration. Open owned services through the existing startup hooks.
+
+```js
+export const gatewayCompositionApi = 1;
+export function createGatewayComposition() {
+  return { isHuman: principal => principal.provider === "example" };
+}
+```
+
+Generate the file inventory and pin its digest. The manifest covers up to 512
+files, 8 MiB per file and 32 MiB total.
+
+```sh
+node scripts/container-deployment/gateway-composition-manifest.mjs package > package/manifest.json
+shasum -a 256 package/manifest.json
+```
+
+Set the absolute host directory in `OPENCRAFT_GATEWAY_COMPOSITION_HOST_DIRECTORY`
+and the lowercase manifest digest in `OPENCRAFT_GATEWAY_COMPOSITION_SHA256` when
+adding `-f compose.gateway-composition.yaml` to the source Compose files.
+[Portable bundles](deploy/README.md#optional-gateway-composition) get their
+artifact digests from the release selection. Only Gateway mounts this directory,
+read-only. The directory and its files must be owned by root or the Gateway UID,
+readable by that UID and writable only by their owner.
+
+Only operator-reviewed code belongs in this directory. It runs with Gateway
+privileges and can use its existing authentication and resource hooks. Gateway
+imports from a private snapshot that contains only verified files. A configured
+package that fails validation prevents startup. With both settings omitted, the
+standard image uses its built-in composition. The image's
+`--check-gateway-composition` mode verifies the package, imports declared
+extension modules and applies extension SQL to an in-memory core schema. It
+does not open the deployment database or start services.
+
+For private Server tables, the factory may return
+`serverMigrations: { extensions, lineages }`. Both fields are optional.
+`extensions` declares the product's own migration families. Each `lineages`
+entry describes a published historical ledger and its adoption map. Gateway
+resolves these declarations against its own core migrations and passes them to
+the existing Server storage worker. The product owns its declarations and
+compatibility tests. See [Server product migration families](../../docs/architecture/server/sqlite-lifecycle.md#server-产品扩展迁移族).
+
+Products that ship their own Web build can mount a separate release directory
+with `OPENCRAFT_GATEWAY_WEB_RELEASE_DIRECTORY` and
+`OPENCRAFT_GATEWAY_WEB_RELEASE_SHA256`. The digest selects its `manifest.json`,
+which lists the SHA-256s of the files under `web/` and any
+`runtime/product-plugins/` inventory. Gateway verifies these artifacts with
+the same preflight and serves the selected Web build with the standard runtime.
+The optional `compose.gateway-web-release.yaml` layer configures this mount.
+
 ## Multiple workspaces (docker-provisioner, opt-in)
 
 The `default` workspace always runs on the declared `brain` and `hands` containers.

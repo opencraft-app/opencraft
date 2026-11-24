@@ -1093,6 +1093,8 @@ Server 的 `migration-lineages.json` 只声明源码中已审查的有限历史�
 
 下游产品若需要在 Server 核心库里保存自己的表（与核心表同事务读写），不再维护一条把公开迁移逐个重编号进去的私有线性账本，而是登记**扩展迁移族**。入口是 `createServerMigrationComposition({ canonical, alternates, extensions })`，由产品启动与离线工具在打开存储前用 `installServerMigrationComposition` 安装，Worker 经现有 composition 交接继承；不从数据库或请求推导。
 
+容器 Gateway 的可信 VFS 装配可声明 `serverMigrations: { extensions, lineages }`。Headless 用运行镜像的 core canonical 链与公开历史解析声明，再显式交给同一个 Server owner Worker。预检命令在独立进程内校验扩展 SQL，实际数据库的账本和数据仍由 Worker 持锁检查及迁移。见 [Gateway 装配部署](../../../deploy/docker/README.md#gateway-composition-from-a-mounted-directory)。
+
 ```ts
 createServerMigrationComposition({
   canonical: SERVER_MIGRATIONS,                 // 核心链，原样使用

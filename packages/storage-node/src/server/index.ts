@@ -8,6 +8,7 @@ import { planServerOpen } from "./history.js";
 import { adoptServerLineage, applyExtensionFamilies, coreSchemaValidator, verifyExtensionFamilies } from "./extension-families.js";
 import {DEFAULT_SERVER_MIGRATION_COMPOSITION,serverMigrationComposition,type ServerDataContract} from "./migration-composition.js";
 export {createServerMigrationComposition,installServerMigrationComposition,installedServerMigrationComposition} from "./migration-composition.js";
+export { verifyExtensionFamilies } from "./extension-families.js";
 export type {ServerAlternateHistory,ServerDataContract,ServerLedgerIdentity,ServerMigrationComposition,ServerMigrationCompositionInput,ServerMigrationFamily} from "./migration-composition.js";
 export { SERVER_MIGRATIONS } from "./migrations.generated.js";
 

@@ -8,8 +8,9 @@ import { readEngineHostIdentity } from '../../apps/headless-server/src/server-de
 import { codexBridgePrograms, observeExecutionHealth } from '../server-deployment/headless-gateway-application.mjs';
 import { deploymentPaths, readPrivateToken } from './paths.mjs';
 import { openGatewayWorkspace } from './gateway-workspace.mjs';
+import { loadGatewayWebRelease } from './gateway-web-release.mjs';
 
-export async function startContainerGateway(composition = {}) {
+export async function startContainerGateway(composition = {}, compositionSha256) {
   // Malformed composition fails before any deployment owner is contacted.
   validateHeadlessExtensions(composition.extensions);
   // This delivery attaches existing owners. It never starts an execution engine.
@@ -18,6 +19,7 @@ export async function startContainerGateway(composition = {}) {
   const token = await readPrivateToken(paths.tokenPath);
   const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
   const manifest = JSON.parse(await readFile(join(root, 'manifest.json'), 'utf8'));
+  const web = await loadGatewayWebRelease();
   const options = parseHeadlessArguments(process.argv.slice(2));
   if (options.help) throw new Error('Configure this deployment through deploy/docker/compose.yaml; see deploy/docker/README.md');
   if (options.dataDirectory !== paths.dataDirectory || (options.engines ?? ['dsh']).join() !== 'dsh,pi')
@@ -37,7 +39,8 @@ export async function startContainerGateway(composition = {}) {
   try {
     await Promise.all([workspace.codexHealth(), readEngineHostIdentity(workspace.piDescriptor), readDshHostIdentity(workspace.dshDescriptor)]);
     app = await startHeadlessServer({
-      ...options, root, webRoot: join(root, 'web'),
+      ...options, root, webRoot: web?.webRoot ?? join(root, 'web'),
+      ...(web ? { productPluginRelease: { root: web.root, metadata: web.productPlugins } } : {}),
       // The vault owner publishes its issuer where Brain pins it into DSH, Pi and the Codex AppServer.
       ...(paths.environmentDelivery ? { environmentIssuer: { ...options.environmentIssuer, publish: paths.environmentIssuerFile } } : {}),
       runtimeDirectory: paths.runtimeDirectory,
@@ -51,12 +54,15 @@ export async function startContainerGateway(composition = {}) {
       codexCoreAuthToken: token,
       codexRuntime: workspace.codexRuntime,
       ...(bridgePrograms ? { codexBridgePrograms: bridgePrograms } : {}),
-      getExecutionHealth: () => observeExecutionHealth({
+      getExecutionHealth: async () => ({ ...await observeExecutionHealth({
         version: manifest.version, buildId: manifest.buildId,
         core: async () => { await workspace.observe(); return workspace.executionHealth(paths.coreEndpoint, paths.tokenPath); },
         dsh: () => readDshHostIdentity(workspace.dshDescriptor),
         engineHost: () => readEngineHostIdentity(workspace.piDescriptor),
-      }),
+      }), ...(compositionSha256 ? { gatewayArtifacts: {
+        compositionSha256,
+        ...(web ? { webSha256: web.sha256, webBuildId: web.buildId } : {}),
+      } } : {}) }),
     }, composition);
   } catch (error) {
     await workspace.close().catch(() => {});
