@@ -2,7 +2,7 @@
 // Cloudflare account). The scenarios are shared with the real-Cloudflare
 // rehearsal (`npm run cf:rehearsal`); see
 // tests/storage/workerd/installation-core.scenarios.ts and
-// docs/architecture/platform/cloudflare-deployment.md ("InstallationCore prototype status").
+// docs/architecture/platform/cloudflare-deployment.md ("InstallationCore 状态").
 //
 // The installation's root input ports (gateway-split §4.1.1) must also bundle
 // for a runtime without a file system: the port contracts reach no node:*

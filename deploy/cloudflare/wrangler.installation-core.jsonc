@@ -1,0 +1,31 @@
+// Template: the InstallationCore deployment assembly on Cloudflare Workers
+// (docs/architecture/platform/cloudflare-deployment.md §5). Copy it, choose the
+// Worker name and origin, and deploy with Wrangler from this directory. Nothing
+// in this repository deploys it; validation and builds never touch an account.
+//
+// It serves the installation's identity and admission (setup, local login,
+// sessions, Actors, instance membership) from one SQLite-backed Durable Object.
+// Static assets, the Client DO, WorkspaceHost and AccountCore are not
+// assembled yet; see §5.4 for what a production deployment still lacks.
+//
+// The setup proof is a secret, never a var:
+//   wrangler secret put OPENCRAFT_SETUP_TOKEN --config wrangler.installation-core.jsonc
+// (43 characters of [A-Za-z0-9_-]; remove it once the first administrator exists).
+{
+  "name": "opencraft-installation-core",
+  "main": "../../apps/headless-server/src/cloudflare/worker.ts",
+  // The same runtime the local workerd tests and the rehearsal use.
+  "compatibility_date": "2026-07-30",
+  // node:crypto and the other built-ins the installation module imports.
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": {
+    "bindings": [{ "name": "INSTALLATION_CORE", "class_name": "InstallationCore" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["InstallationCore"] }],
+  "vars": {
+    // Validated like the Node Human login configuration file; `origin` is this deployment's HTTPS origin.
+    "OPENCRAFT_HUMAN_AUTH": "{\"origin\":\"https://opencraft.example\",\"local\":true,\"oidc\":[]}",
+    "OPENCRAFT_MACHINE_NAME": "OpenCraft"
+  },
+  "observability": { "enabled": true }
+}
