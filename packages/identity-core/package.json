@@ -13,6 +13,9 @@
     "./http-exchange-node": "./src/http-exchange-node.ts",
     "./http-exchange-fetch": "./src/http-exchange-fetch.ts"
   },
+  "dependencies": {
+    "@opencraft/http-exchange": "0.1.0"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit"
   }

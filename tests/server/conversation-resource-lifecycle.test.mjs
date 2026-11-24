@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { openServerCoreOwner } from '@opencraft/storage-node/server-owner';
 import { ConversationResourceLifecycle } from '../../apps/headless-server/src/conversation-resource-lifecycle.mjs';
+import { fakeOwnerWake, fakeWakeClock, flush } from '../support/fake-wake-clock.ts';
 const deferred = () => { let resolve; const promise = new Promise(r => resolve = r); return { promise, resolve }; };
 /** A Server core owner Worker in a fresh data directory; `restart` replaces the process-level owner. */
 async function serverCore(prefix) {
@@ -383,4 +384,29 @@ test('a closed or lost Server core owner fences bound conversations and refuses 
     assert.throws(() => service.assertActive('h', 'other'), /unavailable/);
     service.assertActive('h', undefined);
   } finally { await service.close(); await rm(core.dir, { recursive: true, force: true }); }
+});
+
+test('cleanup retries run on the owner wake-up every retry period and stop on close after draining', async () => {
+  const fake = fakeWakeClock(0), attempts = [];
+  let gate = null;
+  const service = new ConversationResourceLifecycle(null, {
+    owner: async () => { attempts.push(fake.now); if (gate) await gate.promise; throw Error('unavailable'); },
+  }, { wake: fakeOwnerWake(fake) });
+  await service.observe('h', 't', 'archived');
+  assert.deepEqual(attempts, [0]);
+  for (let i = 0; i < 3; i++) { fake.elapse(5000); await flush(); }
+  assert.deepEqual(attempts, [0, 5000, 10000, 15000], 'first retry one period after opening, as setInterval');
+  fake.elapse(4999); await flush();
+  assert.equal(attempts.length, 4);
+  gate = deferred();
+  fake.elapse(1); await flush();
+  assert.equal(attempts.length, 5);
+  let closed = false;
+  const closing = service.close().then(() => { closed = true; });
+  await flush();
+  assert.equal(closed, false, 'close drains the retry in flight');
+  assert.equal(fake.pending, 0, 'no wake-up remains armed after close');
+  gate.resolve(); await closing;
+  fake.elapse(60_000); await flush();
+  assert.equal(attempts.length, 5);
 });

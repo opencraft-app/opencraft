@@ -12,6 +12,7 @@ import { accountModelDefaultsHttp } from "../../apps/headless-server/src/account
 import { PlatformAccountContributionRegistry } from "../../apps/workbench-web/src/runtime/platform-account-contributions";
 import { ServerAccountModelDefaults } from "../../apps/workbench-web/src/runtime/server-account-model-defaults";
 import { useAccountModelDefaults } from "../../apps/workbench-web/src/runtime/use-account-model-defaults";
+import { serveNodeHttpExchange } from "@opencraft/http-exchange/node";
 
 /** The real route over an in-memory owner; the signed-in Actor comes from a fixture header. */
 async function server(t: test.TestContext) {
@@ -36,7 +37,7 @@ async function server(t: test.TestContext) {
     },
   );
   const http = createServer((request, response) => {
-    void handler(request, response);
+    void serveNodeHttpExchange(request, response, handler);
   });
   http.listen(0, "127.0.0.1");
   await once(http, "listening");

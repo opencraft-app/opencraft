@@ -13,6 +13,7 @@ import { Collaboration, CollaborationHttpApi, type ConversationExecutionPort, ty
 import { OrchestrationRuntimeWorker } from '../../packages/access-control/src/orchestration-runtime-store';
 import { parsePrincipal } from '../../packages/identity-core/src/index';
 import { createConversationExecution } from '../../apps/headless-server/src/conversation-execution.mjs';
+import { serveNodeHttpExchange } from '@opencraft/http-exchange/node';
 
 async function fixture(t: any, now = Date.now, hostId = 'fixture-host') {
   const root = await mkdtemp(join(tmpdir(), 'actor-collaboration-'));
@@ -226,7 +227,7 @@ test('HTTP authenticates the source, rejects anonymous/forged fields/CSRF, and a
   const f = await fixture(t);
   const access = new ActorAccess(f.actors, { authenticateHuman: request => request.headers.cookie === 'human=test' ? f.principal : null, admitted: () => true, administrator: () => false });
   const api = new CollaborationHttpApi(f.service, access);
-  const server = createServer((req, res) => { void api.handle(req, res).then(handled => { if (!handled) { res.writeHead(404); res.end(); } }); });
+  const server = createServer((req, res) => { void serveNodeHttpExchange(req, res, exchange => api.handle(exchange)).then(handled => { if (!handled) { res.writeHead(404); res.end(); } }); });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => { server.closeAllConnections(); return new Promise<void>(resolve => server.close(() => resolve())); });
   const url = `http://127.0.0.1:${(server.address() as any).port}/__opencraft_actors/collaboration/`;
@@ -320,7 +321,7 @@ test('one HTTP Server keeps concurrent Human authors, receipts and revocation in
     admitted: () => true, administrator: () => false,
   });
   const api = new CollaborationHttpApi(f.service, access);
-  const server = createServer((req, res) => { void api.handle(req, res).then(handled => { if (!handled) { res.writeHead(404); res.end(); } }); });
+  const server = createServer((req, res) => { void serveNodeHttpExchange(req, res, exchange => api.handle(exchange)).then(handled => { if (!handled) { res.writeHead(404); res.end(); } }); });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => { server.closeAllConnections(); return new Promise<void>(resolve => server.close(() => resolve())); });
   const origin = `http://127.0.0.1:${(server.address() as any).port}`;

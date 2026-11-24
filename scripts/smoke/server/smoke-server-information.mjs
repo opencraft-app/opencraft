@@ -6,6 +6,7 @@ import { createServer } from 'vite';
 import { chromium } from 'playwright';
 import { fileStateDocumentStore } from '@opencraft/document-storage/state-file';
 import { ServerInformationStore, serverInformationHttp } from '../../../apps/headless-server/src/server-information.mjs';
+import { serveNodeHttpExchange } from '@opencraft/http-exchange/node';
 
 // Real React Settings primitives, locale, server-scoped fetch, HTTP API and durable
 // configuration. Authentication roles are synthetic; no production data or sends.
@@ -18,7 +19,7 @@ const server = await createServer({ configFile: false, root: process.cwd(), logL
     if (req.url?.startsWith('/servers/fixture/__opencraft_server_information')) {
       req.url = req.url.slice('/servers/fixture'.length);
       if (failRead && req.method === 'GET') { res.writeHead(503, { 'content-type': 'application/json' }); res.end('{}'); return; }
-      const handle = () => void serverInformationHttp(store, () => expired ? null : ({ actorId, administrator, origin: publicOrigin }))(req, res);
+      const handle = () => void serveNodeHttpExchange(req, res, serverInformationHttp(store, () => expired ? null : ({ actorId, administrator, origin: publicOrigin })));
       if (delayRead && req.method === 'GET') setTimeout(handle, delayRead); else handle(); return;
     }
     if (req.url?.split('?')[0] !== '/') return next();

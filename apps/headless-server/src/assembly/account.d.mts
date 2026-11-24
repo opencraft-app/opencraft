@@ -1,4 +1,5 @@
-import type { IncomingMessage, ServerResponse } from "node:http";
+import type { IncomingMessage } from "node:http";
+import type { HttpExchangeHandler } from "@opencraft/http-exchange";
 import type { ModelPolicyStore } from "@opencraft/model-usage-policy";
 
 export interface AccountHttpAuthorities {
@@ -20,10 +21,8 @@ export interface AccountAssembly {
   readonly modelPolicyPath: string;
   /** The only writer of `model-usage-policy.sqlite`. */
   readonly modelPolicy: ModelPolicyStore;
-  /** Model gateway and model policy routes; resolves false when the request is for neither. */
-  createHttpService(
-    authorities: AccountHttpAuthorities,
-  ): (request: IncomingMessage, response: ServerResponse) => Promise<boolean>;
+  /** Model gateway and model policy routes as an exchange handler; resolves null when the request is for neither. */
+  createHttpService(authorities: AccountHttpAuthorities): HttpExchangeHandler<IncomingMessage>;
   /** A new speech transcription service; the Web server closes it with itself. */
   createSpeechService(): { close(): void };
   /** Closes the policy writer; the composition root calls it before releasing its writer lock. */

@@ -19,7 +19,8 @@ import { updateExecutionRequest } from './execution-request-state.js';
 import { conversationRef, encodeConversationRef, parseConversationRef, type ConversationRef, type ConversationMetadata, type ConversationDiscovery, type ConversationServer, type ConversationReceipt, type ConversationLookup } from '@opencraft/appserver-protocol/collaboration';
 import { validChannelAttachment, CREW_OPERATION_TOOLS, type ChannelAttachment, type CrewOperation } from '@opencraft/appserver-protocol';
 import { randomUUID, createHash } from 'node:crypto';
-import type { IncomingMessage, ServerResponse } from 'node:http';
+import { HttpBodyTooLarge, jsonResponse, requestUrl, type HttpExchangeRequest, type HttpExchangeResponse } from '@opencraft/http-exchange';
+import type { IdentityRequest } from '@opencraft/identity-core/node';
 import type { SqlDatabase } from '@opencraft/sql';
 import type { DatabaseOutcome } from "@opencraft/sqlite-node";
 import { openServerRepository, type ServerDatabaseSource } from "@opencraft/storage-node/server-repository";
@@ -1669,16 +1670,19 @@ export class CollaborationHttpApi {
   private personalAssistantResponse(context: ActorContext, operation: string, params: Record<string,unknown>) {
     return this.service.personalAssistant(context,'opencraft/personal-assistant/'+operation,params);
   }
-  async handle(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
-    const url = new URL(request.url ?? '/', 'http://actors.invalid'), prefix = '/__opencraft_actors/collaboration/';
-    if (!url.pathname.startsWith(prefix)) return false;
-    const send = (status: number, value: unknown) => { response.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'private, no-store', 'x-content-type-options': 'nosniff' }); response.end(JSON.stringify(value)); };
+  /** Runtime-neutral exchange handler; resolves null for routes it does not own. */
+  async handle(exchange: HttpExchangeRequest<IdentityRequest>): Promise<HttpExchangeResponse | null> {
+    const url = requestUrl(exchange), prefix = '/__opencraft_actors/collaboration/';
+    if (!url.pathname.startsWith(prefix)) return null;
+    const request = exchange.identity;
+    let reply: HttpExchangeResponse | undefined;
+    const send = (status: number, value: unknown) => { reply = jsonResponse(status, value, [['content-type', 'application/json'], ['cache-control', 'private, no-store'], ['x-content-type-options', 'nosniff']]); };
     try {
       const context = this.access.authenticate(request);
       if (!context) throw new CollaborationError(401, 'actor_authentication_required');
       const current = () => { const next = this.access.authenticate(request); if (!next || next.actorId !== context.actorId || next.generation !== context.generation) throw new CollaborationError(401, 'actor_authentication_required'); };
       const path = url.pathname.slice(prefix.length);
-      if (request.method === 'GET') {
+      if (exchange.method === 'GET') {
         const after = Number(url.searchParams.get('after') ?? 0), limit = Number(url.searchParams.get('limit') ?? 50);
         if (!Number.isSafeInteger(after) || after < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new CollaborationError(400, 'invalid_pagination');
         if (path === 'personal-assistant') { const result=await this.personalAssistantResponse(context,'get',{}); current(); send(200,result); }
@@ -1691,15 +1695,16 @@ export class CollaborationHttpApi {
           if (actorId !== context.actorId && !this.access.manages(request, context)) throw new CollaborationError(403, 'actor_management_denied');
           send(200, { binding: this.service.binding(actorId) });
         } else throw new CollaborationError(404, 'missing');
-        return true;
+        return reply!;
       }
-      if (request.method !== 'POST') throw new CollaborationError(405, 'method_not_allowed');
-      const origin = request.headers.origin, trusted = this.access.options.trustedOrigin?.(request);
-      if (request.headers['content-type']?.split(';')[0] !== 'application/json' || (context.credentialId === null && (typeof origin !== 'string' || (origin !== trusted && !['http:', 'https:'].some(s => origin === s + '//' + request.headers.host))))) throw new CollaborationError(403, 'matching_origin_required');
-      const chunks: Buffer[] = []; let size = 0;
-      for await (const chunk of request) { size += Buffer.byteLength(chunk); if (size > 65_536) throw new CollaborationError(413, 'body_too_large'); chunks.push(Buffer.from(chunk)); }
+      if (exchange.method !== 'POST') throw new CollaborationError(405, 'method_not_allowed');
+      const origin = exchange.headers.origin, trusted = this.access.options.trustedOrigin?.(request);
+      if (exchange.headers['content-type']?.split(';')[0] !== 'application/json' || (context.credentialId === null && (typeof origin !== 'string' || (origin !== trusted && !['http:', 'https:'].some(s => origin === s + '//' + exchange.headers.host))))) throw new CollaborationError(403, 'matching_origin_required');
+      let bytes: Uint8Array;
+      try { bytes = await exchange.readBody(65_536); }
+      catch (error) { if (error instanceof HttpBodyTooLarge) throw new CollaborationError(413, 'body_too_large'); throw error; }
       let body: Record<string, unknown>;
-      try { body = record(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)))); }
+      try { body = record(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))); }
       catch { throw new CollaborationError(400, 'invalid_body'); }
       current();
       if (path.startsWith('personal-assistant/')) { const result=await this.personalAssistantResponse(context,path.slice('personal-assistant/'.length),body); current(); send(200,result); }
@@ -1724,6 +1729,6 @@ export class CollaborationHttpApi {
       } else throw new CollaborationError(404, 'missing');
       void this.service.pump().catch(() => {});
     } catch (error) { send(error instanceof CollaborationError || error instanceof AutomationError ? error.status : 503, { error: error instanceof CollaborationError || error instanceof AutomationError ? error.code : 'collaboration_unavailable' }); }
-    return true;
+    return reply!;
   }
 }

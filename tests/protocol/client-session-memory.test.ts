@@ -7,6 +7,7 @@ import { AppHostServer } from "@opencraft/app-host-server";
 import { MemoryTransport, type InMemoryAppServerPeer } from "@opencraft/appserver-transport-memory";
 import { acceptAppHostClientSession, type AppHostSessionAuthority } from "@opencraft/client-session/app-host";
 import { createMemorySessionSocket, type MemorySessionPeer } from "@opencraft/client-session/memory";
+import { fakeOwnerWake, fakeWakeClock } from "../support/fake-wake-clock.ts";
 
 // The session layer runs on the runtime-neutral socket contract alone: a real
 // App Host session (hello, Host lease, sequenced frames, detach, resume, end)
@@ -235,7 +236,8 @@ test("server-initiated and normal closes end the session; only abnormal loss det
 });
 
 test("heartbeat frames follow the opt-in and skip a congested socket", async (t) => {
-  t.mock.timers.enable({ apis: ["setInterval", "setTimeout"] });
+  // The session reads no global timer: its wake-ups run on the injected owner wake-up port.
+  const clock = fakeWakeClock();
   const registry = new ResumeRegistry();
   let buffered = 0;
   const memory = createMemorySessionSocket({ bufferedAmount: () => buffered });
@@ -251,6 +253,7 @@ test("heartbeat frames follow the opt-in and skip a congested socket", async (t)
       },
       diagnostic: () => {},
       resume: { registry, identity: "owner", route: null, authority: { hold: () => true, release() {} } },
+      wake: fakeOwnerWake(clock),
     }),
   );
   t.after(() => registry.close());
@@ -260,12 +263,19 @@ test("heartbeat frames follow the opt-in and skip a congested socket", async (t)
   ports[0]!.postMessage({ type: "ready", protocolVersion: APP_HOST_PROTOCOL_VERSION, capabilities: {} });
   const heartbeats = () =>
     memory.peer.received.filter((frame) => frame === JSON.stringify({ type: "connection/heartbeat" })).length;
-  t.mock.timers.tick(10_000);
+  clock.elapse(9_999);
+  assert.equal(heartbeats(), 0);
+  clock.elapse(1);
   assert.equal(heartbeats(), 1);
   buffered = 2 * 1024 * 1024;
-  t.mock.timers.tick(10_000);
+  clock.elapse(10_000);
   assert.equal(heartbeats(), 1, "a congested socket gets no extra heartbeat");
   buffered = 0;
-  t.mock.timers.tick(10_000);
+  clock.elapse(10_000);
+  assert.equal(heartbeats(), 2);
+  memory.peer.close(1000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(clock.pending, 0, "closing the socket disarms its wake-ups");
+  clock.elapse(60_000);
   assert.equal(heartbeats(), 2);
 });

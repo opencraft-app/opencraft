@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createObservabilityIngress } from '../../apps/headless-server/src/observability-ingress.mjs';
 import { startObserve } from '../../apps/observability-service/service.mjs';
+import { fakeOwnerWake, fakeWakeClock, flush } from '../support/fake-wake-clock.ts';
 
 test('host identity wins over forged Grafana headers/cookies; member cannot use deployment queries; content never persists',async()=>{
   const directory=await mkdtemp(join(tmpdir(),'opencraft-ingress-'));
@@ -51,4 +52,23 @@ test('named-server Grafana path maps HTML/assets/queries and retains authority',
     }
     role='member';assert.equal((await fetch(origin+'/__opencraft_observe/grafana/d/overview')).status,403);assert.equal(seen.length,3);
   }finally{ingress.close();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));grafana.closeAllConnections();await new Promise(resolve=>grafana.close(resolve));await rm(directory,{recursive:true,force:true});}
+});
+
+test('dependency sampling runs at startup and every 30 s on the owner wake-up, and stops on close',async()=>{
+  const directory=await mkdtemp(join(tmpdir(),'opencraft-ingress-wake-'));
+  const config=join(directory,'ingress.json');
+  await writeFile(config,JSON.stringify({socketPath:join(directory,'missing-observe.sock'),grafanaSocket:join(directory,'missing.sock'),pseudonymKey:'1'.repeat(64)}),{mode:0o600});
+  const fake=fakeWakeClock(0),samples=[];
+  const ingress=await createObservabilityIngress(config,{wake:fakeOwnerWake(fake),executionHealth:async()=>{samples.push(fake.now);return {};}});
+  try{
+    await flush();assert.deepEqual(samples,[0]);
+    fake.elapse(29_999);await flush();assert.deepEqual(samples,[0]);
+    fake.elapse(1);await flush();
+    fake.elapse(30_000);await flush();
+    assert.deepEqual(samples,[0,30_000,60_000]);
+  }finally{ingress.close();}
+  assert.equal(fake.pending,0);
+  fake.elapse(120_000);await flush();
+  assert.deepEqual(samples,[0,30_000,60_000]);
+  await rm(directory,{recursive:true,force:true});
 });

@@ -325,6 +325,9 @@ jobs:
       - run: npm run test:workspace-host:workerd
         if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'tests'
         timeout-minutes: 10
+      - run: npm run test:http-exchange:workerd
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'tests'
+        timeout-minutes: 10
       - run: npm run test:sqlite-node
         if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'tests'
         timeout-minutes: 10

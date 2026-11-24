@@ -19,6 +19,7 @@ import { createAssistantModelGateway } from "../../apps/local-agent-host/src/mod
 import { assertModelPolicy } from "../../packages/model-usage-policy/src/native.mjs";
 import { ModelConfigurationRepository } from "../../apps/local-agent-host/src/model-config/repository.js";
 import { ModelPolicyStore } from "../../packages/model-usage-policy/src/index.js";
+import {serveNodeHttpExchange} from '@opencraft/http-exchange/node';
 
 function environment(t: test.TestContext, path: string) {
   const previous = process.env.OPENCRAFT_MODEL_GATEWAY_DATABASE;
@@ -135,7 +136,7 @@ test("Codex proxy authenticates, requires trusted sponsor, meters configured mod
 test("HTTP rejects forged payer, cross-origin changes and non-admin configuration", async t => {
   const {path}=await fixture(t);let admin=false;let origin='';
   const handler=modelGatewayHttp({path,authority:req=>req.headers.authorization==='Bearer human'?{actor:'human-a',administrator:admin,origin}:null});
-  const server=createServer((req,res)=>{void handler(req,res);});await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));
+  const server=createServer((req,res)=>{void serveNodeHttpExchange(req,res,handler);});await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));
   origin=`http://127.0.0.1:${(server.address() as {port:number}).port}`;
   t.after(()=>new Promise<void>(r=>{server.closeAllConnections();server.close(()=>r());}));
   const send=(body:unknown,requestOrigin=origin)=>fetch(origin+MODEL_GATEWAY_PATH,{method:'POST',headers:{authorization:'Bearer human',origin:requestOrigin,'content-type':'application/json'},body:JSON.stringify(body)});
@@ -210,7 +211,7 @@ test("personal keys default to owner-only across Codex, descendants and assistan
   await repository.update(0,d=>d.providers.push({id:'approved',name:'Approved',baseUrl:input.baseUrl,protocol:input.protocol,credentialRef:null,enabled:false,models:[{id:'model',enabled:false}]}));
   let origin='';
   const handler=modelGatewayHttp({path,authority:()=>({actor:'human-a',administrator:false,origin}),...contributions});
-  const server=createServer((req,res)=>{void handler(req,res);});await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));
+  const server=createServer((req,res)=>{void serveNodeHttpExchange(req,res,handler);});await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));
   origin='http://127.0.0.1:'+(server.address() as {port:number}).port;
   t.after(()=>new Promise<void>(r=>{server.closeAllConnections();server.close(()=>r());}));
   const create=(extra:Record<string,unknown>={})=>fetch(origin+MODEL_GATEWAY_PATH,{method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify({action:'contribute',...input,...extra})});

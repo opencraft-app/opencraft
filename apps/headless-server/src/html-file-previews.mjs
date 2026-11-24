@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { posix } from 'node:path';
 import { parse, serialize } from 'parse5';
+import { periodicOwnerWork, timeoutOwnerWake } from '@opencraft/owner-wake';
 
 const PREFIX = '/__opencraft_preview';
 const MAX_REPORT = 25 * 1024 * 1024;
@@ -96,12 +97,12 @@ export class HtmlFilePreviews {
   records = new Map();
   active = new Set();
   closed = false;
-  constructor(read, { now = Date.now, ticketMs = 60_000, sessionMs = 15 * 60_000 } = {}) {
+  constructor(read, { now = Date.now, ticketMs = 60_000, sessionMs = 15 * 60_000, wake = timeoutOwnerWake() } = {}) {
     this.read = read; this.now = now; this.ticketMs = ticketMs; this.sessionMs = sessionMs;
-    this.timer = setInterval(() => this.prune(), 30_000); this.timer.unref();
+    this.pruning = periodicOwnerWork(wake, 30_000, () => this.prune());
   }
   prune() { for (const [id, record] of this.records) if (record.expiresAt <= this.now() || !record.authorize()) this.records.delete(id); }
-  close() { this.closed = true; clearInterval(this.timer); this.records.clear(); for (const c of this.active) c.abort(); }
+  close() { this.closed = true; this.pruning.close(); this.records.clear(); for (const c of this.active) c.abort(); }
   async issue(request, response, authorize) {
     headers(response);
     if (request.method !== 'POST') { json(response, 405, { error:'method_not_allowed' }); return; }

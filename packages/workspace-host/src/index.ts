@@ -167,90 +167,13 @@ export class WorkspaceOwner<Stores> {
   }
 }
 
-/**
- * The single wake-up a WorkspaceHost dispatch owner holds (workspace-host-split.md §4.3). The owner arms it for the
- * next due time it computed from durable state; the wake-up only prompts the owner to re-read that state, so it
- * never decides due-ness itself. Node arms a bounded timeout ({@link boundedWakeTimer}); a Durable Object arms its
- * alarm.
- */
-export interface OwnerWakeTimer {
-  /** Replaces any armed wake-up with one at owner-clock time `at`. The callback never runs while the owner clock
-   * still reads earlier than `at`; it may run late. */
-  arm(at: number): void;
-  /** Disarms. Idempotent; no callback runs after it returns. */
-  cancel(): void;
-}
-
-export type OwnerWakeTimerFactory = (wake: () => void) => OwnerWakeTimer;
-
-/** Host primitives for {@link boundedWakeTimer}: the owner's wall clock and a relative one-shot delay. */
-export interface WakeClock {
-  now(): number;
-  /** Runs `callback` once after about `delayMs`; the returned function cancels it. */
-  after(delayMs: number, callback: () => void): () => void;
-}
-
-/** Longest single delay a bounded timer waits before re-reading the wall clock. Limits how late a forward clock
- * jump is noticed and keeps far-future targets below platform timer limits. */
-export const MAX_WAKE_DELAY_MS = 60_000;
-
-/**
- * An owner wake-up built from relative delays. Each delay is at most `maxDelayMs`; when one elapses the wall clock
- * is read again, so a clock set back re-arms for the remainder instead of waking early, and a clock set forward
- * is noticed within one bounded delay.
- */
-export function boundedWakeTimer(clock: WakeClock, wake: () => void, maxDelayMs = MAX_WAKE_DELAY_MS): OwnerWakeTimer {
-  if (!(maxDelayMs > 0)) throw new RangeError("Wake delay bound must be positive");
-  let target: number | null = null;
-  let generation = 0;
-  let cancelDelay: (() => void) | null = null;
-  const disarm = () => {
-    generation++;
-    cancelDelay?.();
-    cancelDelay = null;
-  };
-  const schedule = () => {
-    disarm();
-    if (target === null) return;
-    const current = ++generation;
-    cancelDelay = clock.after(Math.min(Math.max(0, target - clock.now()), maxDelayMs), () => {
-      if (current !== generation || target === null) return;
-      cancelDelay = null;
-      if (clock.now() < target) {
-        schedule();
-        return;
-      }
-      target = null;
-      wake();
-    });
-  };
-  return {
-    arm(at) {
-      if (!Number.isFinite(at)) throw new RangeError("Wake time must be finite");
-      target = at;
-      schedule();
-    },
-    cancel() {
-      target = null;
-      disarm();
-    },
-  };
-}
-
-interface TimeoutHost {
-  setTimeout(callback: () => void, delayMs: number): unknown;
-  clearTimeout(handle: unknown): void;
-}
-
-/** {@link WakeClock} over the runtime's `setTimeout`. A pending delay never keeps a Node process alive. */
-export function timeoutWakeClock(now: () => number = Date.now): WakeClock {
-  const host = globalThis as unknown as TimeoutHost;
-  return {
-    now,
-    after(delayMs, callback) {
-      const handle = host.setTimeout(callback, delayMs);
-      (handle as { unref?: () => void } | null)?.unref?.();
-      return () => host.clearTimeout(handle);
-    },
-  };
-}
+// The wake-up of a dispatch owner (§4.3) is the runtime-neutral port shared with deployment-level owners
+// (gateway-split.md §4.2). It lives in `@opencraft/owner-wake` and is re-exported here for existing consumers.
+export {
+  boundedWakeTimer,
+  MAX_WAKE_DELAY_MS,
+  timeoutWakeClock,
+  type OwnerWakeTimer,
+  type OwnerWakeTimerFactory,
+  type WakeClock,
+} from "@opencraft/owner-wake";

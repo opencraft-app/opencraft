@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@opencraft/app-host-protocol": "0.1.0",
-    "@opencraft/app-host-resume": "0.1.0"
+    "@opencraft/app-host-resume": "0.1.0",
+    "@opencraft/owner-wake": "0.1.0"
   }
 }

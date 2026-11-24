@@ -13,6 +13,7 @@ import { ModelPolicyTransport, projectModelCatalog } from '@opencraft/model-usag
 import { PiEngine,piModel } from '../../plugins/pi-engine/src/index.js';
 import { createModels } from '@earendil-works/pi-ai';
 import { fauxAssistantMessage, fauxToolCall, fauxProvider } from '@earendil-works/pi-ai/providers/faux';
+import {serveNodeHttpExchange} from '@opencraft/http-exchange/node';
 const client={notify(){},async request(){throw Error('Unexpected tool');}};
 async function fixture(t:test.TestContext){const root=await mkdtemp(join(tmpdir(),'model-policy-'));const path=join(root,'policy.sqlite');const store=new ModelPolicyStore(path);t.after(async()=>{store.close();await rm(root,{recursive:true,force:true});});return {root,path,store};}
 test('policy CAS and audit survive reopening; malformed rules and stale writes leave no audit',async t=>{
@@ -26,7 +27,7 @@ test('policy CAS and audit survive reopening; malformed rules and stale writes l
 });
 test('admin HTTP rejects members and revoked identity; audit records authenticated actor',async t=>{
  const f=await fixture(t);let role='member';const handle=modelPolicyHttp(f.store,()=>({actor:'server-actor',administrator:role==='admin',origin:null}));
- const server=createServer((req,res)=>void handle(req,res));await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));t.after(()=>new Promise<void>(r=>server.close(()=>r())));
+ const server=createServer((req,res)=>void serveNodeHttpExchange(req,res,handle));await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));t.after(()=>new Promise<void>(r=>server.close(()=>r())));
  const url=`http://127.0.0.1:${(server.address() as any).port}`;
  const write=()=>fetch(url+'/__opencraft_model_policy',{method:'POST',headers:{origin:url,'content-type':'application/json'},body:JSON.stringify({revision:0,rules:[{engine:'pi',model:'pi:faux:faux-1'}]})});
  assert.deepEqual(await (await fetch(url+'/__opencraft_model_policy')).json(),{canManage:false});assert.equal((await write()).status,403);

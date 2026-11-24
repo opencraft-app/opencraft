@@ -23,6 +23,7 @@ import { ownedCleanup } from '../support/owned-cleanup.mjs';
 import { ActorSshKeys } from '../../apps/headless-server/src/actor-ssh-keys.ts';
 import { createHeadlessLifecycle, createLateBinding } from '../../apps/headless-server/src/assembly/lifecycle.mjs';
 import { startObserve } from '../../apps/observability-service/service.mjs';
+import { fakeOwnerWake, fakeWakeClock } from '../support/fake-wake-clock.ts';
 
 async function fixture(t) {
   const runtime = fileURLToPath(new URL('../../.runtime/', import.meta.url));
@@ -511,6 +512,20 @@ test('anonymous handoff is selected by deployment configuration on both real RPC
       }
     });
   }
+});
+
+test('deployment-level periodic owners run on the injected owner wake-up and shutdown disarms all of them', async t => {
+  const f = await fixture(t), clock = fakeWakeClock(0), periods = [];
+  const wake = fakeOwnerWake(clock);
+  const ownerWake = { now: wake.now, timer: callback => { const timer = wake.timer(callback); return { arm(at) { periods.push(at - clock.now); timer.arm(at); }, cancel: () => timer.cancel() }; } };
+  const app = await startHeadlessServer({ ...f.options, ownerWake }); f.own(() => app.close());
+  // Conversation resource retries (5 s) and resource reconciliation (60 s) are armed; nothing runs on a global interval.
+  assert.ok(periods.includes(5_000) && periods.includes(60_000), JSON.stringify(periods));
+  assert.ok(clock.pending >= 2);
+  clock.elapse(60_000);
+  assert.ok(periods.filter(period => period === 60_000).length >= 2, 'reconciliation re-arms one period after it ran');
+  await app.close();
+  assert.equal(clock.pending, 0, 'closing the deployment leaves no owner wake-up armed');
 });
 
 test('anonymous installation can subsequently initialize its first real administrator', async t => {

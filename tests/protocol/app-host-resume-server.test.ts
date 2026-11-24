@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import WebSocket from 'ws';
 import { APP_HOST_PROTOCOL_VERSION } from '@opencraft/app-host-protocol/version';
 import { createWorkbenchWebServer } from '../../apps/headless-server/src/serve-workbench-web.mjs';
+import { fakeOwnerWake, fakeWakeClock } from '../support/fake-wake-clock.ts';
 
 const until = async (ready: () => boolean, label = 'condition') => {
   const deadline = Date.now() + 3_000;
@@ -183,10 +184,13 @@ test('explicitly disabled resumption preserves legacy framing even when a client
 });
 
 test('opt-in heartbeat frames stay outside the sequenced application stream', async t => {
-  t.mock.timers.enable({ apis: ['setInterval'] });
-  const f = await fixture(t), peer = await f.connect({ v: 1 }, 'renderer-one', undefined, { heartbeat: true });
+  // Heartbeats run on the gateway's owner wake-up port.
+  const clock = fakeWakeClock();
+  const f = await fixture(t, { ownerWake: fakeOwnerWake(clock) }), peer = await f.connect({ v: 1 }, 'renderer-one', undefined, { heartbeat: true });
   assert.equal(peer.messages[0].capabilities.heartbeatMs, 10_000);
-  t.mock.timers.tick(10_000);
+  clock.elapse(9_999);
+  assert.ok(!peer.messages.some(message => message.type === 'connection/heartbeat'));
+  clock.elapse(1);
   await until(() => peer.messages.some(message => message.type === 'connection/heartbeat'));
   assert.equal(peer.messages.find(message => message.type === 'connection/heartbeat').seq, undefined);
   peer.send(request('first', 1));

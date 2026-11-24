@@ -23,6 +23,7 @@ import {
   CollaborationHttpApi,
 } from "../../../packages/access-control/src/collaboration";
 import { parsePrincipal } from "@opencraft/identity-core";
+import { serveNodeHttpExchange } from "@opencraft/http-exchange/node";
 
 // Actual Workbench extension, native transport, communication authority and DB.
 // Identity admission and worker execution are explicit fixtures. Model selection uses the real repository and RPC.
@@ -289,7 +290,7 @@ const server = await createServer({
           } else if (req.url?.startsWith("/__opencraft_im")) {
             void im.handle(req, res, () => true).catch(next);
           } else if (req.url?.startsWith("/__opencraft_actors/collaboration/"))
-            void api.handle(req, res);
+            void serveNodeHttpExchange(req, res, (exchange) => api.handle(exchange));
           else next();
         });
       },

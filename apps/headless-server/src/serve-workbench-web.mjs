@@ -18,7 +18,7 @@ import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import WebSocket, { WebSocketServer } from "ws";
-import { serveNodeHttpExchange } from "@opencraft/identity-core/http-exchange-node";
+import { serveNodeHttpExchange } from "@opencraft/http-exchange/node";
 import { ResumeRegistry } from "@opencraft/app-host-resume/server";
 import { acceptAppHostClientSession } from "@opencraft/client-session/app-host";
 import { trackSocketHeartbeat } from "./websocket-heartbeat.mjs";
@@ -458,6 +458,8 @@ export async function createWorkbenchWebServer({
   hubService = null,
   speechPublicAccess = process.env.OPENCRAFT_SPEECH_PUBLIC_ACCESS === "1",
   webSocketHeartbeatIntervalMs = 15_000,
+  // Owner wake-up port for gateway-owned periodic work and client-session wake-ups (gateway-split.md §4.2).
+  ownerWake = undefined,
   onAppHostDiagnostic = diagnostic => console.info("[opencraft apphost connection]", JSON.stringify(diagnostic)),
   ...unknownOptions
 } = {}) {
@@ -480,7 +482,7 @@ export async function createWorkbenchWebServer({
   };
   const runtimeReports = [];
   const htmlPreviews = typeof fileDownloads?.readPreview === 'function'
-    ? new HtmlFilePreviews((...args) => fileDownloads.readPreview(...args)) : null;
+    ? new HtmlFilePreviews((...args) => fileDownloads.readPreview(...args), { wake: ownerWake }) : null;
   let lastImRejection = {key: "", at: 0};
   const imRejectionCodes = new Set([
     "authentication_required", "instance_access_denied", "actor_access_denied",
@@ -557,7 +559,7 @@ export async function createWorkbenchWebServer({
         sendJson(response, 404, { error: 'missing' }); return;
       }
       if (url.pathname.startsWith('/__opencraft_actors/collaboration/')) {
-        if (actorCollaborationService && await actorCollaborationService.handle(request, response)) return;
+        if (actorCollaborationService && await serveNodeHttpExchange(request, response, exchange => actorCollaborationService.handle(exchange))) return;
         sendJson(response, 404, { error: 'missing' }); return;
       }
       // Actor API has its own verified admission. A Session credential is never a
@@ -571,17 +573,17 @@ export async function createWorkbenchWebServer({
         sendJson(response, 404, { error: "missing" }); return;
       }
       if (url.pathname === '/__opencraft_server_information') {
-        if (serverInformationService && await serverInformationService(request, response)) return;
+        if (serverInformationService && await serveNodeHttpExchange(request, response, serverInformationService)) return;
         sendJson(response, 404, { error: 'missing' }); return;
       }
       // Personal model defaults verify the signed-in human Actor and its admission themselves.
       if (url.pathname === '/__opencraft_model_defaults') {
-        if (accountModelDefaultsService && await accountModelDefaultsService(request, response)) return;
+        if (accountModelDefaultsService && await serveNodeHttpExchange(request, response, accountModelDefaultsService)) return;
         sendJson(response, 404, { error: 'missing' }); return;
       }
       // Personal SSH keys verify the signed-in human Actor and its admission themselves.
       if (url.pathname === '/__opencraft_ssh_keys' || url.pathname.startsWith('/__opencraft_ssh_keys/')) {
-        if (actorSshKeysService && await actorSshKeysService(request, response)) return;
+        if (actorSshKeysService && await serveNodeHttpExchange(request, response, actorSshKeysService)) return;
         sendJson(response, 404, { error: 'missing' }); return;
       }
       if ((url.pathname === '/__opencraft_push' || url.pathname === '/__opencraft_notifications')) {
@@ -652,7 +654,7 @@ export async function createWorkbenchWebServer({
         if (request.method !== "GET") { sendJson(response, 405, { error: "method_not_allowed" }); return; }
         response.writeHead(204, { "cache-control": "private, no-store" }); response.end(); return;
       }
-      if (modelPolicyService && await modelPolicyService(request, response)) return;
+      if (modelPolicyService && await serveNodeHttpExchange(request, response, modelPolicyService)) return;
       if (identityService && await identityService.handle(request, response)) return;
       if (url.pathname.startsWith("/__opencraft_speech/")) {
         if (speechService === null) {
@@ -1032,7 +1034,7 @@ export async function createWorkbenchWebServer({
           privateSockets.delete(client);
           logAppHost("closed", { code, active: activeAppHostSockets.size });
         });
-        acceptWsSessionSocket(client, socket => acceptAppHostClientSession(socket, { appHostServer, diagnostic: logAppHost, authorize: message => {
+        acceptWsSessionSocket(client, socket => acceptAppHostClientSession(socket, { appHostServer, diagnostic: logAppHost, wake: ownerWake, authorize: message => {
           // The anonymous channel cannot guess a remote ID. Private sockets
           // bind the server-validated cookie, never the renderer-supplied ID.
           if (closing || !actorAllowed() || admissionDeadline <= Date.now() || (principal && !accessService.role(principal))) return false;

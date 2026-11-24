@@ -11,6 +11,7 @@ import { ActorSshKeys, installationSshKeyAuthority } from "../../../apps/headles
 import { actorSshKeysHttp } from "../../../apps/headless-server/src/actor-ssh-keys-http.ts";
 import { humanActorAccess } from "../../../apps/headless-server/src/account-model-defaults-http.ts";
 import { generateEd25519KeyPair } from "../../../tests/support/ssh-ed25519.mjs";
+import { serveNodeHttpExchange } from "@opencraft/http-exchange/node";
 
 // The real Settings page, locale, server-scoped fetch, HTTP route, network-thread
 // projection and Server owner Worker. Only the sign-in is synthetic: every request
@@ -66,7 +67,7 @@ const server = await createServer({
         vite.middlewares.use((req, res, next) => {
           if (req.url?.startsWith("/servers/fixture/__opencraft_ssh_keys")) {
             req.url = req.url.slice("/servers/fixture".length);
-            void handler()(req, res);
+            void serveNodeHttpExchange(req, res, handler());
             return;
           }
           if (req.url?.split("?")[0] !== "/") return next();

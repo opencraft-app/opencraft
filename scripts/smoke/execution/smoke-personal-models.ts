@@ -29,6 +29,7 @@ import '/apps/workbench-web/src/styles/settings-page.scss';import '/apps/workben
 import {initializeAppearanceTheme,setThemePreference} from '/apps/workbench-web/src/appearance-theme.ts';
 import {SettingsNavigation} from '/apps/workbench-web/src/components/settings-page.tsx';
 import {createPersonalModelServicesView} from '/plugins/builtin-agents/src/model-services/personal.tsx';
+import {serveNodeHttpExchange} from '@opencraft/http-exchange/node';
 initializeAppearanceTheme();setThemePreference('light');window.setTheme=setThemePreference;
 const View=createPersonalModelServicesView();
 const snapshot={settingsPages:[{extensionId:'personal-models',contribution:{id:'models',title:'模型服务',viewId:'models',group:'Server',icon:'brain'}}]};const store={getSnapshot:()=>snapshot,subscribe:()=>()=>{}};
@@ -37,7 +38,7 @@ let vite:any,browser:any;
 const errors:string[]=[];
 try {
  vite=await createServer({root,configFile:false,logLevel:'error',server:{host:'127.0.0.1',port:0},plugins:[{name:'personal-model-smoke',resolveId(id){if(id==='/personal-smoke.tsx')return id;},load(id){if(id==='/personal-smoke.tsx')return entry;},configureServer(server){server.middlewares.use((request,response,next)=>{
-  if(request.url?.startsWith('/__opencraft_model_gateway')){if(failSave&&request.method==='POST'){response.writeHead(409,{'content-type':'application/json'});response.end(JSON.stringify({error:'gateway_revision_conflict'}));return;}void http(request,response);return;}
+  if(request.url?.startsWith('/__opencraft_model_gateway')){if(failSave&&request.method==='POST'){response.writeHead(409,{'content-type':'application/json'});response.end(JSON.stringify({error:'gateway_revision_conflict'}));return;}void serveNodeHttpExchange(request,response,http);return;}
   if(request.url?.split('?')[0]!=='/settings/models')return next();
   response.setHeader('content-type','text/html');response.end('<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body,#root{height:100%;margin:0}.personal-smoke-shell{height:100%;display:grid;grid-template-columns:210px minmax(0,1fr)}.personal-smoke-navigation{border-right:1px solid var(--color-border-subtle);overflow:auto}@media(max-width:650px){.personal-smoke-shell{grid-template-columns:minmax(0,1fr)}.personal-smoke-navigation{display:none}}</style><div id="root"></div><script type="module" src="/personal-smoke.tsx"></script></html>');
  });}}]});await vite.listen();origin='http://127.0.0.1:'+vite.httpServer.address().port;

@@ -1,7 +1,7 @@
 // Shared conformance suite for the runtime-neutral HTTP exchange port
-// (@opencraft/identity-core/http-exchange): the same cases run against the
-// node:http adapter (a real listener) and the Fetch Request/Response adapter.
-// See docs/architecture/platform/gateway-split.md §3.4.
+// (@opencraft/http-exchange): the same cases run against the node:http adapter
+// (a real listener) and the Fetch Request/Response adapter.
+// See docs/architecture/platform/gateway-split.md §3.4 and §4.2.
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { createServer, request as nodeRequest } from "node:http";
@@ -12,9 +12,9 @@ import {
   decodeUtf8,
   type HttpExchangeHandler,
   type HttpExchangeRequest,
-} from "@opencraft/identity-core/http-exchange";
-import { serveNodeHttpExchange } from "@opencraft/identity-core/http-exchange-node";
-import { serveFetchHttpExchange } from "@opencraft/identity-core/http-exchange-fetch";
+} from "@opencraft/http-exchange";
+import { serveNodeHttpExchange } from "@opencraft/http-exchange/node";
+import { serveFetchHttpExchange } from "@opencraft/http-exchange/fetch";
 
 interface Call {
   readonly method?: string;
@@ -354,3 +354,150 @@ for (const adapter of [nodeAdapter, fetchAdapter]) {
     });
   });
 }
+
+// Streamed response bodies (web streams), per adapter: the transport side differs
+// (a socket for node:http, a Response body for Fetch), the contract does not.
+function chunked(parts: readonly string[], options: { fail?: boolean; endless?: boolean; cancelled?: () => void } = {}) {
+  let index = 0;
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      await new Promise((done) => setTimeout(done, 5));
+      if (index < parts.length) return controller.enqueue(encoder.encode(parts[index++]!));
+      if (options.fail) return controller.error(new Error("source failed"));
+      if (!options.endless) controller.close();
+    },
+    cancel() {
+      options.cancelled?.();
+    },
+  });
+}
+
+async function nodeListener(handler: HttpExchangeHandler) {
+  const server = createServer((req, res) => void serveNodeHttpExchange(req, res, handler).catch(() => res.destroy()));
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  return {
+    port: (server.address() as { port: number }).port,
+    async close() {
+      server.closeAllConnections();
+      await new Promise<void>((done) => server.close(() => done()));
+    },
+  };
+}
+
+/** Status, body text so far, and whether the body ended cleanly. */
+function nodeGet(port: number, onFirstChunk?: (destroy: () => void) => void) {
+  return new Promise<{ status: number; body: string; complete: boolean; type?: string }>((resolve) => {
+    const request = nodeRequest({ host: "127.0.0.1", port, path: "/" });
+    request.on("response", (response) => {
+      let body = "";
+      let first = true;
+      response.on("data", (chunk: Buffer) => {
+        body += chunk.toString("utf8");
+        if (first) onFirstChunk?.(() => request.destroy());
+        first = false;
+      });
+      const finish = (complete: boolean) =>
+        resolve({ status: response.statusCode!, body, complete, type: response.headers["content-type"] });
+      response.on("end", () => finish(true));
+      response.on("error", () => finish(false));
+      response.on("close", () => finish(response.complete));
+    });
+    request.on("error", () => undefined);
+    request.end();
+  });
+}
+
+describe("HTTP exchange conformance: streamed response body", () => {
+  const ok: HttpExchangeHandler = async () => ({
+    status: 200,
+    headers: [["content-type", "text/event-stream"]],
+    body: chunked(["one ", "two ", "three"]),
+  });
+
+  test("node:http forwards every chunk in order", async () => {
+    const listener = await nodeListener(ok);
+    try {
+      assert.deepEqual(await nodeGet(listener.port), {
+        status: 200,
+        body: "one two three",
+        complete: true,
+        type: "text/event-stream",
+      });
+    } finally {
+      await listener.close();
+    }
+  });
+
+  test("fetch forwards every chunk in order", async () => {
+    const response = (await serveFetchHttpExchange(new Request("http://entry.test/"), ok))!;
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("content-type"), "text/event-stream");
+    assert.equal(await response.text(), "one two three");
+  });
+
+  test("node:http client disconnect cancels the source stream", async () => {
+    let cancelled!: () => void;
+    const wasCancelled = new Promise<void>((resolve) => {
+      cancelled = resolve;
+    });
+    const listener = await nodeListener(async () => ({
+      status: 200,
+      headers: [],
+      body: chunked(["first"], { endless: true, cancelled }),
+    }));
+    try {
+      const outcome = await nodeGet(listener.port, (destroy) => destroy());
+      assert.equal(outcome.body, "first");
+      assert.equal(outcome.complete, false);
+      await wasCancelled;
+    } finally {
+      await listener.close();
+    }
+  });
+
+  test("fetch client cancel reaches the source stream", async () => {
+    let cancelled = false;
+    const response = (await serveFetchHttpExchange(new Request("http://entry.test/"), async () => ({
+      status: 200,
+      headers: [],
+      body: chunked(["first"], { endless: true, cancelled: () => (cancelled = true) }),
+    })))!;
+    const reader = response.body!.getReader();
+    assert.equal(new TextDecoder().decode((await reader.read()).value), "first");
+    await reader.cancel();
+    assert.equal(cancelled, true);
+  });
+
+  test("a source error after the status was sent drops the exchange", async () => {
+    const failing: HttpExchangeHandler = async () => ({
+      status: 200,
+      headers: [],
+      body: chunked(["partial"], { fail: true }),
+    });
+    const listener = await nodeListener(failing);
+    try {
+      const outcome = await nodeGet(listener.port);
+      assert.equal(outcome.status, 200);
+      assert.equal(outcome.body, "partial");
+      assert.equal(outcome.complete, false);
+    } finally {
+      await listener.close();
+    }
+    const response = (await serveFetchHttpExchange(new Request("http://entry.test/"), failing))!;
+    await assert.rejects(response.text());
+  });
+
+  test("null-body statuses send no body and cancel a supplied stream", async () => {
+    let cancelled = false;
+    const response = (await serveFetchHttpExchange(new Request("http://entry.test/"), async () => ({
+      status: 204,
+      headers: [],
+      body: chunked(["ignored"], { cancelled: () => (cancelled = true) }),
+    })))!;
+    assert.equal(response.status, 204);
+    assert.equal(response.body, null);
+    await new Promise((done) => setTimeout(done, 0));
+    assert.equal(cancelled, true);
+  });
+});
