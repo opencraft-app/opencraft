@@ -42,6 +42,7 @@ const NODE_OWNERS = [
 const ACCOUNT_POOL_NEUTRAL = new Set(
   [
     "credential-leases.ts",
+    "credential-lease-exchange.ts",
     "account-pool.ts",
     "account-pool-schema.ts",
     "account-pool-sql-owner.ts",
@@ -114,6 +115,42 @@ test(`${ENTRY} reaches no Node owner implementation`, async () => {
   // pool's digests and the speech service's binding; node:path: the shared auth file reference's absolute-path
   // rule (pure computation). Both are provided by workerd under nodejs_compat.
   assert.deepEqual([...builtins].sort(), ["node:crypto", "node:path"]);
+});
+
+// The egress holds nothing: its bundle is the lease exchange client, the forwarding rule and the shared reply
+// shape, with no storage adapter, no ledger, no SQL and no Node module.
+test("apps/headless-server/src/cloudflare/egress.ts reaches no storage and no Node module", async () => {
+  const result = await build({
+    absWorkingDir: root,
+    entryPoints: ["apps/headless-server/src/cloudflare/egress.ts"],
+    bundle: true,
+    write: false,
+    metafile: true,
+    format: "esm",
+    platform: "neutral",
+    mainFields: ["module", "main"],
+    conditions: ["workerd", "worker", "import"],
+    external: ["cloudflare:*", "node:*"],
+    logLevel: "silent",
+  });
+  const inputs = Object.keys(result.metafile.inputs);
+  assert.deepEqual(
+    inputs.filter((input) =>
+      /packages\/(?:storage-cloudflare|document-storage|secret-storage|sql|sqlite-node)\//u.test(input),
+    ),
+    [],
+  );
+  assert.deepEqual(inputs.filter((input) => input.includes("packages/account-pool-host/")).sort(), [
+    "packages/account-pool-host/src/credential-egress.ts",
+    "packages/account-pool-host/src/credential-lease-exchange.ts",
+    "packages/account-pool-host/src/credential-leases.ts",
+  ]);
+  assert.deepEqual(
+    Object.values(result.metafile.inputs).flatMap((input) =>
+      input.imports.filter((imported) => imported.external).map((imported) => imported.path),
+    ),
+    [],
+  );
 });
 
 testScenariosOnMiniflare("account-core-do-workerd", ACCOUNT_CORE_DO_SCENARIOS);

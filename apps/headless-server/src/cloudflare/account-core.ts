@@ -32,6 +32,7 @@ import { openAccountPoolSqlStorage, ownedByAccountPoolSchemas } from "@opencraft
 import { assembleAccountPoolCore, type AccountPoolCore } from "@opencraft/account-pool-host/pool-core";
 import { AccountPool } from "@opencraft/account-pool-host/account-pool";
 import { fetchAccountRenewal } from "@opencraft/account-pool-host/renewal";
+import { serveCredentialLeaseExchange } from "@opencraft/account-pool-host/credential-lease-exchange";
 import { mergedOwnerWake, type OwnerWake } from "@opencraft/owner-wake";
 import {
   fetchRequestView,
@@ -62,6 +63,8 @@ export interface AccountCoreServices {
   readonly account: AccountAssembly;
   /** The account pool: selection, affinity and renewal; this object is their only writer. */
   readonly pool: AccountPoolCore;
+  /** The credential lease exchange for bound callers; resolves null for any other path. */
+  readonly leaseExchange: (request: Request) => Promise<Response | null>;
   readonly http: HttpExchangeHandler<FetchRequestView>;
   /** Asks the installation about one request; resolves its answer or the installation's own refusal. */
   ask(scope: AccountAuthorityScope, request: FetchRequestView): Promise<AccountAuthorityAnswer | Response>;
@@ -169,7 +172,7 @@ export class AccountCore {
       // The model gateway is not assembled in this object; its route answers `missing`.
       gateway: () => null,
     });
-    return { account, pool, http, ask };
+    return { account, pool, http, ask, leaseExchange: serveCredentialLeaseExchange(account.credentialLeases) };
   }
 
   /** The object's alarm: wakes whichever owner work is due (account renewals); each re-derives from state. */
@@ -210,6 +213,10 @@ export class AccountCore {
         installationExchangeReply({ kind: "json", status: 503, value: { error: "account_unavailable" } }),
       );
     const services = this.#services;
+    // Internal: the lease exchange for bound callers (WorkspaceHost grants, the egress redeems); the entry Worker
+    // never forwards `/__opencraft_internal/`.
+    const leaseReply = await services.leaseExchange(request);
+    if (leaseReply) return leaseReply;
     const pathname = new URL(request.url).pathname;
     if (!accountRoute(pathname)) return fetchResponse(installationExchangeReply(MISSING));
     const gate = await services.ask("gate", fetchRequestView(request));

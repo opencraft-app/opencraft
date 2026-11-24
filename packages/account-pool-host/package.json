@@ -11,7 +11,9 @@
     "./refresh": "./src/oauth-refresh.ts",
     "./refresh-schedule": "./src/account-refresh-schedule.ts",
     "./renewal": "./src/account-renewal.ts",
-    "./pool-core": "./src/account-pool-core.ts"
+    "./pool-core": "./src/account-pool-core.ts",
+    "./credential-lease-exchange": "./src/credential-lease-exchange.ts",
+    "./credential-egress": "./src/credential-egress.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

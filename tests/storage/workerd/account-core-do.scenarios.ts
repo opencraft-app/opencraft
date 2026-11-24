@@ -11,6 +11,8 @@
 // rehearsal (`npm run cf:rehearsal`).
 import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { join, resolve } from "node:path";
 import { assembleAccount } from "../../../apps/headless-server/src/assembly/account.mjs";
 import { nodeAccountInputs } from "../../../apps/headless-server/src/assembly/account-node.mjs";
@@ -366,6 +368,64 @@ async function sqlCall(backend: Backend, statements: string[]): Promise<Record<s
   const response = await backend.fetch("/__test/account/sql", { method: "POST", body: JSON.stringify({ statements }) });
   assert.equal(response.status, 200, await response.clone().text());
   return (await response.json()) as Record<string, unknown>[][];
+}
+
+/** What the provider fixture received for one request. */
+interface ProviderHit {
+  readonly method: string;
+  readonly path: string;
+  readonly headers: Record<string, string | string[] | undefined>;
+  readonly body: string;
+}
+
+/**
+ * A provider on this machine's loopback (a configured provider may be loopback HTTP): it records every request
+ * and answers with two chunks, sending the second only once `release()` is called, so a reader that sees the
+ * first chunk before the release proves the egress streams instead of buffering.
+ */
+async function providerFixture() {
+  const hits: ProviderHit[] = [];
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  const server = createServer(async (request, response) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of request) chunks.push(chunk as Buffer);
+    hits.push({
+      method: request.method!,
+      path: request.url!,
+      headers: request.headers,
+      body: Buffer.concat(chunks).toString(),
+    });
+    response.writeHead(200, { "content-type": "text/event-stream", "set-cookie": "provider=1" });
+    response.write("data: first\n\n");
+    // Only a streamed request is held; others answer at once.
+    if (request.url?.includes("stream=true")) await released;
+    response.end("data: second\n\n");
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  return {
+    hits,
+    baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`,
+    release() {
+      release();
+    },
+    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+  };
+}
+
+type WorkspaceHostLeaseOperation =
+  | { op: "grant"; holder: { workspace: string; engine: string; incarnation: string }; ttlMs: number }
+  | { op: "renew"; id: string; ttlMs: number }
+  | { op: "revoke"; id: string }
+  | { op: "revokeHolder"; match: { workspace: string; engine?: string; keepIncarnation?: string } };
+
+async function workspaceHostCall(backend: Backend, operation: WorkspaceHostLeaseOperation) {
+  const response = await backend.fetch("/__test/workspace-host/leases", {
+    method: "POST",
+    body: JSON.stringify(operation),
+  });
+  assert.equal(response.status, 200, await response.clone().text());
+  return (await response.json()) as AccountOperationResult;
 }
 
 export const ACCOUNT_CORE_DO_SCENARIOS: readonly WorkerScenario[] = [
@@ -726,6 +786,147 @@ export const ACCOUNT_CORE_DO_SCENARIOS: readonly WorkerScenario[] = [
         assert.equal((await owner.call(POLICY)).status, 503);
       } finally {
         await object.close();
+      }
+    },
+  },
+  {
+    name: "a workspace's owner grants a lease over the exchange; the egress redeems it, streams the request to the provider with the credential and refuses once the lease is revoked or expired",
+    async run({ runtime, diagnostic }) {
+      // The provider is on this machine's loopback, which a deployed Worker cannot reach.
+      if (runtime.kind !== "miniflare") return diagnostic("skipped: needs a loopback provider");
+      const upstream = await providerFixture();
+      const object = await deploymentBackend(runtime);
+      try {
+        value(
+          await opCall(object, {
+            op: "config.update",
+            revision: 0,
+            providers: [
+              provider("openai", { baseUrl: upstream.baseUrl, credentialRef: "OPENAI_KEY" }),
+              provider("anthropic", {
+                protocol: "anthropic-messages",
+                baseUrl: upstream.baseUrl,
+                credentialRef: "ANTHROPIC_KEY",
+              }),
+            ],
+          }),
+        );
+        value(await opCall(object, { op: "credentials.set", ref: "OPENAI_KEY", value: PROVIDER_KEY }));
+        value(await opCall(object, { op: "credentials.set", ref: "ANTHROPIC_KEY", value: ROTATED_KEY }));
+        // The workspace's owner, as a bound caller of the exchange.
+        const lease = value<{ id: string; token: string }>(
+          await workspaceHostCall(object, { op: "grant", holder: holder("i1"), ttlMs: 60_000 }),
+        );
+        assert.deepEqual(await workspaceHostCall(object, { op: "grant", holder: holder("i1"), ttlMs: 5 }), {
+          error: "invalid_lease_request",
+        });
+        value(await workspaceHostCall(object, { op: "renew", id: lease.id, ttlMs: 60_000 }));
+        const egress = (path: string, init: RequestInit = {}) => object.fetch(`/__opencraft_egress/${path}`, init);
+
+        // OpenAI protocol: the lease token in Authorization; the provider sees only the credential.
+        const response = await egress("openai/responses?stream=true", {
+          method: "POST",
+          headers: { authorization: `Bearer ${lease.token}`, "content-type": "application/json", cookie: "session=x" },
+          body: JSON.stringify({ model: "m", input: "hello" }),
+        });
+        assert.equal(response.status, 200);
+        assert.equal(response.headers.get("content-type"), "text/event-stream");
+        assert.equal(response.headers.get("set-cookie"), null);
+        // Streaming: the first event arrives while the provider still holds the second.
+        const reader = response.body!.getReader();
+        assert.equal(new TextDecoder().decode((await reader.read()).value), "data: first\n\n");
+        upstream.release();
+        let rest = "";
+        for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read())
+          rest += new TextDecoder().decode(chunk.value);
+        assert.equal(rest, "data: second\n\n");
+        const openaiHit = upstream.hits.at(-1)!;
+        assert.deepEqual(
+          [openaiHit.method, openaiHit.path, openaiHit.headers.authorization, openaiHit.headers.cookie, openaiHit.body],
+          [
+            "POST",
+            "/v1/responses?stream=true",
+            `Bearer ${PROVIDER_KEY}`,
+            undefined,
+            JSON.stringify({ model: "m", input: "hello" }),
+          ],
+        );
+        assert.ok(!JSON.stringify(openaiHit.headers).includes(lease.token));
+
+        // Anthropic protocol: the lease token where the SDK puts its key; the provider gets x-api-key.
+        const anthropic = await egress("anthropic/messages", {
+          method: "POST",
+          headers: { "x-api-key": lease.token, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+          body: "{}",
+        });
+        assert.equal(anthropic.status, 200);
+        await anthropic.text();
+        const anthropicHit = upstream.hits.at(-1)!;
+        assert.deepEqual(
+          [
+            anthropicHit.path,
+            anthropicHit.headers["x-api-key"],
+            anthropicHit.headers.authorization,
+            anthropicHit.headers["anthropic-version"],
+          ],
+          ["/v1/messages", ROTATED_KEY, undefined, "2023-06-01"],
+        );
+
+        // Refusals reach no provider.
+        const before = upstream.hits.length;
+        const refused = async (path: string, init: RequestInit, status: number, error: string) => {
+          const reply = await egress(path, init);
+          assert.equal(reply.status, status, path);
+          assert.deepEqual(await reply.json(), { error });
+        };
+        const bearer = (token: string) => ({ headers: { authorization: `Bearer ${token}` } });
+        await refused("openai/responses", {}, 401, "lease_required");
+        await refused("openai/responses", bearer(`oc_lease_${"C".repeat(43)}`), 401, "lease_invalid");
+        await refused("unknown/responses", bearer(lease.token), 404, "provider_unavailable");
+        await refused("openai/%2e%2e/admin", bearer(lease.token), 404, "provider_unavailable");
+        // Revoked by the workspace's owner (a new incarnation replaced the container): refused at once.
+        assert.deepEqual(
+          await workspaceHostCall(object, {
+            op: "revokeHolder",
+            match: { workspace: "default", keepIncarnation: "i2" },
+          }),
+          { ok: 1 },
+        );
+        await refused("openai/responses", bearer(lease.token), 401, "lease_invalid");
+        // Expired: a short lease is refused once its time has passed.
+        const short = value<{ id: string; token: string }>(
+          await workspaceHostCall(object, { op: "grant", holder: holder("i2"), ttlMs: 1_000 }),
+        );
+        await sleep(1_300);
+        await refused("openai/responses", bearer(short.token), 401, "lease_invalid");
+        // A single revocation.
+        const third = value<{ id: string; token: string }>(
+          await workspaceHostCall(object, { op: "grant", holder: holder("i2"), ttlMs: 60_000 }),
+        );
+        assert.deepEqual(await workspaceHostCall(object, { op: "revoke", id: third.id }), { ok: true });
+        await refused("openai/responses", bearer(third.token), 401, "lease_invalid");
+        assert.equal(upstream.hits.length, before);
+
+        // Neither the exchange nor the egress is on the public entry.
+        for (const path of [
+          "/__opencraft_internal/credential-leases/redeem",
+          "/__opencraft_internal/credential-leases/holder",
+        ]) {
+          const reply = await object.fetch(path, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ token: lease.token, providerId: "openai" }),
+          });
+          assert.equal(reply.status, 404, path);
+        }
+        // The object stores no lease token or credential in plaintext; the egress has no storage at all.
+        const stored = JSON.stringify(await (await object.fetch("/__test/account/storage")).json());
+        for (const secret of [lease.token, short.token, third.token, PROVIDER_KEY, ROTATED_KEY])
+          assert.ok(!stored.includes(secret));
+      } finally {
+        await object.close();
+        upstream.release();
+        await upstream.close();
       }
     },
   },

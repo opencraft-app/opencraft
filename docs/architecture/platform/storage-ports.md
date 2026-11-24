@@ -234,4 +234,4 @@ Unix socket、锁文件、`/proc` 读取、Git 与 `/workspace` 工作目录、E
 | `node:crypto`、`Buffer`、`node:zlib`（`configured-forward.ts` 解压） | 多处 | `nodejs_compat` 预期可用，待在 workerd 中核实 |
 | `@opencraft/sqlite-node` 值导入 | `store.ts`、`model-gateway-store.ts`、`model-usage-policy/src/index.ts` | `AccountPool` 已与 Node owner 分文件；网关与策略的 owner 打开仍与领域类同文件，DO 装配前需拆分或加 `workerd` 导出条件 |
 
-DO 已有（第二部分）：按 schema id 区分的账本（`schema_ledgers`，策略继续用默认账本）、同步密封的 SQL 凭据记录适配器、续期的 `fetch` 交换契约与 owner 唤醒上的续期调度。DO 仍缺：维护容器本身（续期、设备登录与用量查询的执行方），模型网关的 owner 拆分与装配，租约的对外接口（契约已在 `@opencraft/account-pool-host/credential-leases`）。
+DO 已有（第二部分）：按 schema id 区分的账本（`schema_ledgers`，策略继续用默认账本）、同步密封的 SQL 凭据记录适配器、续期的 `fetch` 交换契约与 owner 唤醒上的续期调度。DO 仍缺：维护容器本身（续期、设备登录与用量查询的执行方），模型网关的 owner 拆分与装配；租约的对外接口已有部署内部交换与最小出口（`credential-lease-exchange`、`credential-egress`），签发方 WorkspaceHost 与出口的计量尚无。

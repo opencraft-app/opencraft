@@ -9,6 +9,10 @@ import type {
   AccountCoreState,
   DeploymentEnv,
 } from "../../../apps/headless-server/src/cloudflare/bindings.ts";
+import { egressHandler } from "../../../apps/headless-server/src/cloudflare/egress.ts";
+import { CREDENTIAL_EGRESS_PREFIX } from "@opencraft/account-pool-host/credential-egress";
+import { credentialLeaseExchangeClient } from "@opencraft/account-pool-host/credential-lease-exchange";
+import { CredentialLeaseError, type CredentialLeaseHolder } from "@opencraft/account-pool-host/credential-leases";
 import { runAccountOperation, type AccountOperation } from "./account-core-operations.ts";
 import {
   fixtureRenewalExecutor,
@@ -83,9 +87,40 @@ export class TestAccountCore extends AccountCore {
   }
 }
 
+/**
+ * The workspace's owner as the lease exchange sees it (WorkspaceHost does not exist yet): grants, renewals and
+ * revocations for `{workspace, engine, incarnation}` through the exchange client, as a bound caller.
+ */
+async function workspaceHostLeases(request: Request, env: DeploymentEnv): Promise<Response> {
+  const leases = credentialLeaseExchangeClient(() => env.ACCOUNT_CORE.get(env.ACCOUNT_CORE.idFromName("account")));
+  const operation = (await request.json()) as
+    | { op: "grant"; holder: CredentialLeaseHolder; ttlMs: number }
+    | { op: "renew"; id: string; ttlMs: number }
+    | { op: "revoke"; id: string }
+    | { op: "revokeHolder"; match: { workspace: string; engine?: string; keepIncarnation?: string } };
+  try {
+    switch (operation.op) {
+      case "grant":
+        return Response.json({ ok: await leases.grant(operation.holder, operation.ttlMs) });
+      case "renew":
+        return Response.json({ ok: await leases.renew(operation.id, operation.ttlMs) });
+      case "revoke":
+        return Response.json({ ok: await leases.revoke(operation.id) });
+      case "revokeHolder":
+        return Response.json({ ok: await leases.revokeHolder(operation.match) });
+    }
+  } catch (error) {
+    if (error instanceof CredentialLeaseError) return Response.json({ error: error.code });
+    throw error;
+  }
+}
+
 export default {
   async fetch(request: Request, env: DeploymentEnv): Promise<Response> {
     const path = new URL(request.url).pathname;
+    if (path === "/__test/workspace-host/leases") return workspaceHostLeases(request, env);
+    // The egress Worker's handler, bound to the same AccountCore namespace (production: its own Worker).
+    if (path.startsWith(CREDENTIAL_EGRESS_PREFIX)) return egressHandler({ ACCOUNT_CORE: env.ACCOUNT_CORE })(request);
     if (path.startsWith("/__test/account/"))
       return env.ACCOUNT_CORE.get(env.ACCOUNT_CORE.idFromName("account")).fetch(request);
     if (path.startsWith("/__test/"))
