@@ -5,6 +5,7 @@ import { AccountManagementError, type HumanAccountManagement } from '@opencraft/
 import type { IdentityRequest } from '@opencraft/identity-core/node';
 import type { Principal } from '@opencraft/identity-core';
 import type { ActorContext } from '@opencraft/identity-core/actors';
+import { loginRequestKeys, memoryLoginAttemptLimiter, type LoginAttemptLimiter } from '@opencraft/identity-core/login-attempts';
 import { accountPage } from './page.js';
 import { remoteServerOrigin } from './connections.js';
 import { serverDocumentStyles } from '@opencraft/design-system/document.web';
@@ -20,14 +21,16 @@ export interface AccountApplicationOptions {
   /** Set only by a compiled native host using a private browser-session proof. */
   readonly nativeOwner?: (request: IdentityRequest) => boolean;
   readonly openRemote?: (origin: string) => Promise<void>;
+  /** Where setup and invitation attempts are counted; defaults to this process's memory. */
+  readonly attempts?: LoginAttemptLimiter;
 }
 /** First-party trusted server entry; the same plugin supplies the client Settings entry. */
 export class LocalAccountApplication {
-  readonly #attempts = new Map<string, { until: number; count: number }>();
-  #attemptWindow = { until: 0, count: 0 };
+  readonly #attempts: LoginAttemptLimiter;
   #closed = false;
   constructor(readonly options: AccountApplicationOptions) {
     if (options.setupToken !== undefined && !/^[A-Za-z0-9_-]{43}$/u.test(options.setupToken)) throw new Error('Invalid private setup proof');
+    this.#attempts = options.attempts ?? memoryLoginAttemptLimiter();
   }
   get origin() { return this.options.auth.configuration.origin; }
   authenticate(request: IdentityRequest): Principal | null { return this.options.auth.authenticate(request); }
@@ -40,14 +43,11 @@ export class LocalAccountApplication {
     if (!login || (recent && login.createdAt < Date.now() - 600_000)) error('recent_login_required', 401);
     return login.context;
   }
-  #rateLimit(request: HttpExchangeRequest) {
-    const now = Date.now();
-    for (const [key, value] of this.#attempts) if (value.until <= now) this.#attempts.delete(key);
-    if (this.#attemptWindow.until <= now) this.#attemptWindow = { until: now + 60_000, count: 0 };
-    const address = request.clientAddress ?? 'unknown';
-    const state = this.#attempts.get(address) ?? { until: now + 60_000, count: 0 };
-    if (++this.#attemptWindow.count > 60 || ++state.count > 12 || (!this.#attempts.has(address) && this.#attempts.size >= 1024)) error('try_later', 429);
-    this.#attempts.set(address, state);
+  /** Setup and invitation acceptance derive a password; refused before the body is read. Fails closed. */
+  async #rateLimit(request: HttpExchangeRequest) {
+    let admitted = false;
+    try { admitted = await this.#attempts.take(loginRequestKeys('account', request.clientAddress), Date.now()); } catch { /* refuse */ }
+    if (!admitted) error('try_later', 429);
   }
   async #body(request: HttpExchangeRequest): Promise<Record<string, unknown>> {
     if (request.headers.authorization !== undefined || request.headers.origin !== this.origin
@@ -105,7 +105,7 @@ export class LocalAccountApplication {
       };
       const suffix = path.slice(ACCOUNT_BASE.length), allowed = fields[suffix];
       if (!allowed) return send(404, { error: 'missing' });
-      if (['/setup', '/accept'].includes(suffix)) this.#rateLimit(request);
+      if (['/setup', '/accept'].includes(suffix)) await this.#rateLimit(request);
       const body = await this.#body(request);
       if (Object.keys(body).some(key => !allowed.includes(key))) error('invalid_request_fields');
       if (suffix === '/setup') {
@@ -151,5 +151,5 @@ export class LocalAccountApplication {
       return send(known ? cause.status : 400, { error: known ? cause.code : 'invalid_request' });
     }
   }
-  close() { this.#closed = true; this.#attempts.clear(); }
+  close() { this.#closed = true; }
 }

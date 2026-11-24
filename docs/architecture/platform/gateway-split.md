@@ -166,7 +166,7 @@
 
 - 本地账号（`plugins/local-account/src/server.ts`）：原型时为 `scrypt(password, salt, 32, {N: 131072, r: 8, p: 1, maxmem: 192 MiB})`，salt 为 64 位 hex 文本，摘要存 hex。现已改为 Argon2id PHC 记录（见下文“密码哈希结论”与[服务器登录](../identity/server-authentication.md)）；无 pepper。未知用户名也对固定占位记录计算一次，之后复读账号确认 `enabled` 与 `version` 未变。单进程最多 2 个并发哈希，超出直接拒绝。
 - 登录态（`HumanAccounts`）：`randomBytes(32)` base64url（43 字符）作为 token，库中只存 `sha256(token)` hex（`human_logins`，带 Actor 代次、本地账号 `version`、`expires_at`＝最多 8 小时）。验证时要求 Actor 当前、绑定未变，本地账号版本与登录时一致——禁用、改密都会使旧登录失效；登出删除该行。
-- 浏览器载体（`HumanAuth`）：Cookie `oc_human`（`Path=/; HttpOnly; SameSite=Lax; Max-Age`，HTTPS origin 加 `Secure`）；OIDC 事务 Cookie `oc_human_flow`（`Path=/__opencraft_auth`）。CSRF 依赖：`Host` 等于配置 origin、POST 要求 `Origin` 精确同源且 `content-type: application/json`、拒绝带 `Authorization` 的请求、字段白名单、16 KiB 正文上限；登录尝试全局 60 次／分钟、每地址 12 次／分钟（内存计数）。
+- 浏览器载体（`HumanAuth`）：Cookie `oc_human`（`Path=/; HttpOnly; SameSite=Lax; Max-Age`，HTTPS origin 加 `Secure`）；OIDC 事务 Cookie `oc_human_flow`（`Path=/__opencraft_auth`）。CSRF 依赖：`Host` 等于配置 origin、POST 要求 `Origin` 精确同源且 `content-type: application/json`、拒绝带 `Authorization` 的请求、字段白名单、16 KiB 正文上限；登录尝试全局 60 次／分钟、每地址 12 次／分钟（读正文前），以及每个归一化登录名 12 次／分钟（解析后、任何派生前），经下文“登录尝试预算”端口计数。
 - 受保护请求走 `InstanceAccess.authenticate`／`admissionStatus`（204／401／403），`HumanAuth` 是其中一个 `IdentityProvider`。
 
 **密码哈希结论（2026-11-23 改为 Argon2id）。** 原型首先确认了 scrypt 可在 workerd `nodejs_compat` 中互通（本地 workerd 约 250 ms、Node 约 280 ms），但 N=2^17、r=8 的工作区为 `128·N·r` = 128 MiB，恰等于 isolate 128 MB 上限，原生分配是否计入未见文档；WebCrypto 没有 scrypt，纯 JS／Wasm scrypt 必然计入 JS 堆而超限（纯 JS 约 1.16 s）。该风险以更换算法解决：
@@ -205,7 +205,16 @@
 - 适配器：`http-exchange-node`（Headless `serve-workbench-web.mjs` 与桌面 `createDesktopAccountHost` 使用）按列表顺序 `setHeader`、再 `writeHead`／`end`，超限请求流在应答写出后释放；`http-exchange-fetch`（workerd 登录入口使用）把字符串正文按字节发送，避免 `Response` 隐式加 `content-type`。Fetch `Headers` 保持 `set-cookie` 顺序，其他头名按其规范顺序迭代。
 - 等价证据：迁移前后对 Headless 网关同一 77 个请求序列（登录页、session、跨源／非 JSON／`Authorization`／多余字段／超长正文／坏 JSON、账号页与 `/setup`、初始化、邀请与接受、改密、成员与审计、Actor 管理、登出、两类尝试上限）抓取原始应答字节，归一化日期、token、nonce 与 UUID 后逐字节相同。共享一致性测试 `tests/server/http-exchange-conformance.test.ts`（原 `tests/identity/`）对两个适配器各跑 8 项（方法／路径／头／host／地址、头顺序与多条 `set-cookie`、空正文与 303、正文上限内读取与重复读取、跨块 UTF-8、超限 413、客户端断开触发 `signal`、`HttpExchangeAborted`），另有 6 项流式正文用例（逐块按序、客户端断开取消源流、源流出错断开、无正文状态取消流）。唯一有意差异：`InstanceAccess` 原先逐块 `toString()` 拼接正文，跨块的多字节 UTF-8 会被拆坏，现在整体解码。
 
-**放置建议。** 登录写入（`human_logins`、账号版本）必须在 IC。若 Argon2id 也在 IC 中计算，全局 60 次／分钟的尝试上限下最坏约占 IC 每分钟 10 s CPU（旧 scrypt 估算为 15 s），且 IC 是全部部署级授权的单点。可选的拆分：EW 向 IC 取 PHC 参数与 salt（未知用户返回由 IC 密钥派生的稳定占位 salt，避免枚举），在 EW 计算摘要，再交给 IC 常量时间比较、复核版本并签发登录；密码明文不进 IC，摘要不出 IC。这需要把 `LocalAccountServerPlugin.verify` 拆成"派生"与"比较＋复核"两步，属于后续工作，原型未实现。尝试计数目前是进程内存，在 IC 内可沿用；放在无状态 EW 时需改用 IC 计数或 Workers Rate Limiting 绑定。
+**登录尝试预算（2026-11-24 已实现）。** 端口 `@opencraft/identity-core/login-attempts`（`LoginAttemptLimiter.take(keys, now)`，运行时中立）在任何 Argon2id 派生之前计数，包括未知用户名的占位派生；`HumanAuth` 先按 `auth/global`（60）与 `auth/address/<clientAddress>`（12）计数，字段校验后再按 `auth/account/<小写去空白的登录名>`（12）计数，窗口 60 s，账本最多 1024 个活动键（新键在满时拒绝）。键只取提交的登录名、不查账号是否存在，被拒请求一律 429 `try_later`＋`retry-after: 60`（沿用原有限流应答），不派生，已知与未知用户不可区分；未被限流时未知用户仍付一次占位派生。账本不可读写时拒绝（fail closed）。`LocalAccountApplication` 的 `/setup`、`/accept` 用同一端口的 `account/` 作用域（全局＋地址）。
+
+| 运行时 | 计数位置 | 理由 |
+| --- | --- | --- |
+| Node Headless／桌面 | `memoryLoginAttemptLimiter`（进程内，默认值，组合根无改动） | 单进程是唯一派生者（libuv 线程池，另有每进程 2 个并发派生上限），进程内计数已约束全部工作；重启由运维触发、攻击者不可控，持久化会让每次尝试多一次 owner Worker 往返并新增 Server 迁移而不减少可派生次数 |
+| Cloudflare（`LoginCore` DO） | `stateLoginAttemptLimiter(durableObjectStateDocumentStore(ctx.storage))`：DO KV 中一个状态文档，`transactionSync` 原子更新并 `sync()` 后返回 | DO 内存计数在驱逐、部署或重启后清零，未来若把派生移到无状态 EW 更会按 isolate 分散；状态文档端口已有 DO 适配器且不需要新表，因此无 N+1 迁移。键以截断 SHA-256 存储，不落地客户端地址与登录名 |
+
+证据：`tests/identity/login-attempts.test.ts`（两种适配器的预算、顺序计数、窗口与键上限；注入计数 hasher 证明达到预算后派生次数不再增加，已知／未知用户名应答相同，跨地址的登录名预算，全局上限，账本故障时拒绝，两入口共享一个持久账本）；`npm run test:login-entry:workerd` 新场景在 DO 中用存于 DO storage 的派生计数证明 12 次后拒绝且不派生，以同一 persist 键重启运行时（新 isolate、空内存）后仍拒绝，Miniflare 下再证明换地址后登录名预算仍成立。把 worker 中的持久账本换回默认内存账本时，该场景在“重启后仍拒绝”处失败（401）。
+
+**放置建议。** 登录写入（`human_logins`、账号版本）必须在 IC。若 Argon2id 也在 IC 中计算，全局 60 次／分钟的尝试上限下最坏约占 IC 每分钟 10 s CPU（旧 scrypt 估算为 15 s），且 IC 是全部部署级授权的单点。可选的拆分：EW 向 IC 取 PHC 参数与 salt（未知用户返回由 IC 密钥派生的稳定占位 salt，避免枚举），在 EW 计算摘要，再交给 IC 常量时间比较、复核版本并签发登录；密码明文不进 IC，摘要不出 IC。这需要把 `LocalAccountServerPlugin.verify` 拆成"派生"与"比较＋复核"两步，属于后续工作，原型未实现。尝试计数已在 IC 的持久状态中（见上文“登录尝试预算”）；派生移到无状态 EW 时，EW 先经 IC 的同一账本取得许可再派生，不能在 isolate 内存计数。
 
 **OIDC（未实现，Worker 需要的条件）。**
 
@@ -215,7 +224,7 @@
 - 回调中 `response.destroyed` 判断已改用交换请求的 `signal`；`claims.exp` 与流程过期依赖 `Date.now()`，Workers 在请求内冻结时钟（I/O 后推进），对分钟级窗口无影响。
 - 客户端密钥来自 Worker secret，而非 `readPrivateJson` 私有文件。
 
-**需在真实 Cloudflare 上确认。** 线上纯 JS Argon2id 单次验证 CPU 时间（本地约 0.17 s）；IC 在并发登录下的排队延迟；`CF-Connecting-IP` 作为限流键；OIDC 对真实 issuer 的 discovery、出站超时与 JWKS 轮换。
+**需在真实 Cloudflare 上确认。** 线上纯 JS Argon2id 单次验证 CPU 时间（本地约 0.17 s）；IC 在并发登录下的排队延迟；`CF-Connecting-IP` 作为限流键（尝试预算场景在真实 Cloudflare 上只验证单地址与重启，换地址部分只在 Miniflare 运行）；OIDC 对真实 issuer 的 discovery、出站超时与 JWKS 轮换。
 
 ## 4. 拆分方式
 
@@ -335,7 +344,7 @@
 
 1. **account**（理由见下）。
 2. **组合根前置（不移动服务，已完成，见上）**：引入 `lifecycle.closing()` 与迟绑定端口（AppHost、`executionStore`／`resolveExecutionNative`、`capabilityKey`、`startDsh`、`codexAgentBridge`、第 3 部分第 8 项的槽），把直接读 `let` 改为读端口；行为不变。之后各模块只接收端口。
-3. **node-local**：347、376–384、796–807、866–876、1447–1460、1610–1625 中的 SSH 入口与 relay、1628–1649。依赖 AppHost 端口与 installation 的 `instanceAccess`／`actorStore`；其 disposer 分布在关闭第 3、6、7、11 步。
+3. **node-local**：347、376–384、796–807、866–876、1447–1460、1610–1625 中的 SSH 入口与 relay、1628–1649。依赖 AppHost 端口与 installation 的 `instanceAccess`／`actorStore`；其 disposer 分布在关闭第 3、6、7、11 步。第一部分已抽取，见下文"node-local 第一部分"。
 4. **installation**：段落多，建议分两个 PR 落到同一模块：先身份与准入（394–407、547–761 中除 account 外的部分），再协作与部署级服务（792–795、808–809、843–865、877–882、913–933 的绑定投影、1109、1397–1446）。
 5. **workspace-host**：762–791、883–1191、1196–1394 中的 transport 链、1461–1467、1583–1606、1627。依赖 installation 的全部输出；P4-2 已把 overlays 移入 `packages/workspace-host`，这里只是装配。
 6. **client-session**：810–842、`AppHostServer` 外壳（1192–1196）与 `createWebServer` 中的会话工厂（1482–1503）；与 G6 一并考虑。
@@ -361,6 +370,14 @@
 
   组合根在原 551 位置调用 `assembleAccount`（仍在 `machineIdentity` 之后、`ActorStore` 之前），打开顺序与启动失败回滚路径不变。
 - **现有测试。** 领域与 HTTP：`tests/execution/model-usage-policy.test.ts`（`ModelPolicyStore`、`modelPolicyHttp`、`ModelPolicyTransport`）、`tests/usage/model-gateway.test.ts`（`modelGatewayHttp` 与 contributions）、`tests/execution/personal-subscription.test.ts`（个人订阅经 Core）、`tests/composer/speech-model-configuration.test.ts` 与 `tests/composer/hunyuan-speech.test.ts`（语音服务）。组合根：`tests/server/headless-composition.test.mjs` 的"a disposal failure settles other resources but retains the writer until process exit"（403 行：`close` 幂等、失败不释放写锁）与 `tests/server/headless-server.test.mjs` 的启动与服务用例。**缺口**：没有测试在真实 `startHeadlessServer` 上请求 `/__opencraft_model_policy` 或 `/__opencraft_model_gateway`；该 PR 应补一个组合测试（匿名、成员、管理员三种响应，以及关闭后同一数据目录可再次启动，证明策略库写入者在写锁释放前关闭）。
+
+**node-local 第一部分（2026-11-24）。** `apps/headless-server/src/assembly/node-local.mjs` 的 `assembleNodeLocal({ dataDirectory })` 在组合根定义 `close` 之前创建，创建时不打开任何资源；组合根在原位置逐步调用，行为、路由、错误处理与关闭顺序不变（各步骤多出的只是一次 `await` 的微任务）。
+
+- **移入的服务与调用位置。** `startDesktop`（原 866–876，`threadOrchestration.start()` 之后）；`openSshManagement`（原 1447–1455，Push 初始化之后，结果仍由组合根绑定到 `lateSshManagement`）与 `startObservability`（原 1456–1460，含"配置不可用时写 stderr 并继续"）；`listenSshIngress`（原 1610–1621 中 `createSshNativeRpcGateway`、`composeSshAccess`、`createSshHttpIngress` 与 `ingress.listen`；私有回环 `web.listen` 仍在组合根，属 edge）；`connectRelay`（原 1622）；`startAvailabilityNotification`（原 1648–1649，经 `lateImPlugins` 读取 IM 服务，失败时照旧 `console.warn`）。
+- **具名 disposer 与位置。** 第 3 步 `closeEntry` 的并行列表中原位替换：`closeRelay`、`closeSshIngress`、`closeSshNativeRpc`、`closeDesktop`、`closeAvailabilityNotification`；第 6 步 `closeObservability`；第 11 步串行写入者中 `mcpApps` 之后的 `closeSshManagement`。未启动的服务对应的 disposer 直接返回。
+- **仍留在组合根。** 选项校验与配置读取（`loadLocalMachineAccess`、桌面访问策略、`loadSshIngressConfiguration`、`loadRelayConnection`）：它们在任何资源创建前执行，且结果也被 installation（身份、成员、外部 provider）消费。匿名部署（796–807）：`operator` 被 installation 的 `Collaboration`、浏览器授权与 AppHost driver 链共用，`anonymousDriver` 读取尚未构造的 `actorCollaboration`，移动需要一个属于 installation 的新迟绑定，随 installation 抽取处理。SSH 远端 Codex transport（1175–1191）：属于 AppHost transport 链，并写入 workspace-host 浏览器能力读取的 `remoteExecutionAuthorities`，随 workspace-host 抽取。文件下载的 `"local"` 模式：在 `HostFileDownloads` 内部，随 workspace-host。
+- **IM 与个人助理不移入。** IM（§6 问题 3）不在 §4.2 的 Node-only 清单中：webhook 型渠道可能在 Cloudflare 上提供；`lateImPlugins` 被 installation 的 `TurnPushService`、edge 的健康与存储 outcome、AppHost 的频道 Host 读取，它自身是部署级存储 owner（`im-switchboard`、`im-posts`）。个人助理（§6 问题 5）同样不在 §4.2 清单中，其输入全部来自 installation（Assets Bot provider 与准入、`Collaboration`）与 account 的模型来源，其 `codex` 子进程的目标载体（工作区容器或不提供）尚未决定，关闭位于第 7 步 `threadOrchestration` 与 AppHost 之间。两者待问题决定后再归属。
+- **测试。** `tests/server/headless-composition.test.mjs` 新增三个在真实 `startHeadlessServer` 上的用例（在抽取前的 main 上先通过）：观测 ingress 由私有配置挂载、非私有配置降级为 Web 回退、计划重启的部署回执经仍未关闭的 ingress 送达；可用性通知 socket 鉴权、经 IM 迟绑定端口应答、关闭后删除 socket；本机桌面在无验证 observer 时启动失败并释放数据锁。SSH 入口与 relay 由 `tests/server/headless-ingress-shutdown.test.mjs`、`tests/server/ssh-http-ingress.test.mjs` 与 `headless-composition` 的个人 SSH key 用例覆盖，SSH 管理由 `tests/server/headless-server.test.mjs` 的公共监听用例覆盖。
 
 ### 4.2 需要成为端口的部分
 
@@ -425,7 +442,7 @@ Headless 网关路由表在 `serve-workbench-web.mjs`（`createWorkbenchWebServe
 
 | 步 | 内容 | Node 价值 | 依赖 | 状态（2026-11-23） |
 | --- | --- | --- | --- | --- |
-| G1 | 把 `HA` 按 §4.1 拆成装配模块，行为与关闭顺序不变 | 组合根可测、可读；嵌入方（Docker gateway）复用模块 | 无 | **进行中**：account 已抽到 `apps/headless-server/src/assembly/account.mjs`（#552）；组合根前置的生命周期与迟绑定端口在 `assembly/lifecycle.mjs`；其余段仍在 `startHeadlessServer`，现状映射与抽取顺序见 §4.1.1 |
+| G1 | 把 `HA` 按 §4.1 拆成装配模块，行为与关闭顺序不变 | 组合根可测、可读；嵌入方（Docker gateway）复用模块 | 无 | **进行中**：account 已抽到 `apps/headless-server/src/assembly/account.mjs`（#552）；组合根前置的生命周期与迟绑定端口在 `assembly/lifecycle.mjs`（#555）；node-local 第一部分（本机桌面、SSH 管理与入口、relay、观测、可用性通知）在 `assembly/node-local.mjs`，匿名部署、IM 与个人助理仍在组合根（§4.1.1）；其余段仍在 `startHeadlessServer`，现状映射与抽取顺序见 §4.1.1 |
 | G2 | 合并 `opencraft-server.sqlite` 的编排与空间连接到核心 owner（已实施，见 [server-core-owner §4](../server/server-core-owner.md#4-分阶段实施)）；网络线程过渡连接随 server-core-owner 第 2–6 阶段移除 | 消除同库多 Worker 写入者；减少主线程同步 IO 登记 | G1 | **部分**：合并已完成（`orchestration-runtime-domain`、`server-spaces-domain` 注册在 `apps/headless-server/src/server-core-worker.mjs`，#511；身份写入 #463）；过渡连接仍在（`ThreadAccessStore` 的 `permissionOwner: serverStorage.database`，`headless-application.mjs:794`），server-core-owner 第 2–6 阶段未完成 |
 | G3 | 剩余直接 `node:sqlite` 的部署级库（模型策略、MCP apps、push、connectors）迁到 `SqlDatabase` 端口 | 统一迁移与 outcome 报告 | 存储端口第 1–2 阶段（已实施） | **部分**：模型策略已在 `SqlDatabase` 上（`packages/model-usage-policy/src/index.ts:1-12`，Node 打开仍经 `openManagedDatabase`＋`nodeSqlDatabase`，#511）；MCP apps（`packages/mcp-apps/src/store.ts:38`）、push（`packages/web-push-node/src/store.ts:2`）、connectors（`packages/connector-host/src/store.ts:1`）仍直接使用 `DatabaseSync` |
 | G4 | HTTP 处理改为 `Request`→`Response` 端口，Node 包装（身份与准入处理器已完成，§3.4；第一批服务已迁，§4.2.1） | 服务单测不需要真实监听 | G1 | **部分**：端口移到中立包 `@opencraft/http-exchange{,/node,/fetch}`，加入 Web 流应答（identity-core 路径保留为再导出）；身份、准入处理器（#511）与第一批 `Collaboration`、服务器信息、个人模型默认值、个人 SSH 公钥、模型策略、模型网关已迁，workerd 证明为 `test:http-exchange:workerd`（2026-11-24）；push、connectors、Assets、语音、IM 现可迁，Hub 需流式代理，身份产品与运行时插件端口待决，其余 Node-only 或属 G6（§4.2.1） |
@@ -435,7 +452,7 @@ Headless 网关路由表在 `serve-workbench-web.mjs`（`createWorkbenchWebServe
 | P4-3 | 定时任务 owner 驱动 | 见原文 | G5 | **完成（Node）**：`packages/host-schedules/src/index.ts` 经 `OwnerWakeTimer`（#511）；唤醒仍在 Gateway 主线程，DO alarm 未做 |
 | P4-4 | `WorkspaceLink` 与 `workspace-agent` | 见原文 | P4-2 | **部分**：第 4a–4c 步已实现（`packages/sandbox/src/endpoint.ts`、`scripts/container-deployment/workspace-agent*.mjs`、`packages/sandbox-node/src/static-docker.ts`、`scripts/container-deployment/gateway-workspace.mjs`，#511；7b `docker-provisioner` #532）；第 4d 步（反向 RPC 进程）未做（workspace-host-split §7"第 4d 步"） |
 | P4-5 | 化身经通道上报，去除 `/proc` 与 `pid: host` | 见原文 | P4-4 | **未开始**：执行租约仍经 `/proc` 观察化身（`headless-application.mjs:1090`）；`deploy/docker/compose.yaml:134、227` 仍有 `pid: host` |
-| G7 | Node 组合根声明能力清单；Cloudflare 不提供的服务集中在 `node-local` | 能力声明与实现一致 | G1 | **未开始**：没有能力清单；Node-only 服务仍散在组合根（§4.1.1 第 1 部分中标 node-local 的段） |
+| G7 | Node 组合根声明能力清单；Cloudflare 不提供的服务集中在 `node-local` | 能力声明与实现一致 | G1 | **未开始**：没有能力清单；Node-only 服务部分集中到 `assembly/node-local.mjs`，匿名部署与 SSH 远端 transport 仍在组合根（§4.1.1"node-local 第一部分"） |
 | C1 | DO／Container 适配器（storage-ports 第 5 阶段剩余：`sandbox-cloudflare`、Secrets 信封加密） | — | P4-4 | **部分**：`packages/sandbox-cloudflare` provider 已实现（#531）；`@opencraft/storage-cloudflare` 适配器在本地 workerd 通过一致性测试但未接入装配（#511）；Secrets 信封加密未做（`packages/storage-cloudflare/src/secrets.ts:11-15`） |
 | C2 | 第一个 Cloudflare 里程碑（§5.2） | — | G1–G7、P4-2–P4-5、C1 | **未开始** |
 

@@ -8,6 +8,7 @@
     "./node": "./src/node.ts",
     "./actors": "./src/actors.ts",
     "./local-account": "./src/local-account.ts",
+    "./login-attempts": "./src/login-attempts.ts",
     "./http-exchange": "./src/http-exchange.ts",
     "./http-exchange-node": "./src/http-exchange-node.ts",
     "./http-exchange-fetch": "./src/http-exchange-fetch.ts"

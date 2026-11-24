@@ -4,6 +4,7 @@ import * as oidc from 'openid-client';
 import { parsePrincipal, principalKey, type Principal } from '@opencraft/identity-core';
 import { readPrivateJson, type IdentityProvider, type IdentityRequest } from '@opencraft/identity-core/node';
 import type { ActorContext } from '@opencraft/identity-core/actors';
+import { loginAccountKeys, loginRequestKeys, memoryLoginAttemptLimiter, type LoginAttemptKey, type LoginAttemptLimiter } from '@opencraft/identity-core/login-attempts';
 import { HumanAccounts, type HumanLogin } from './human-accounts.js';
 import type { ActorStore } from './actors.js';
 import type { IdentityWrites } from './identity-writes.js';
@@ -74,9 +75,13 @@ export class HumanAuth implements IdentityProvider {
   readonly #proofs = new WeakMap<Principal, HumanLogin>();
   readonly #flows = new Map<string, Flow>();
   readonly #clients = new Map<string, Promise<oidc.Configuration>>();
-  readonly #attempts = new Map<string, { until: number; count: number }>();
-  #globalAttempts = { until: 0, count: 0 };
+  #attempts: LoginAttemptLimiter = memoryLoginAttemptLimiter();
   #writes: IdentityWrites | null = null;
+  /**
+   * Where login attempts are counted. The default is this process's memory (Node, one deriving process);
+   * a runtime with many isolates passes its single-writer owner's durable ledger.
+   */
+  useAttemptLimiter(limiter: LoginAttemptLimiter): void { this.#attempts = limiter; }
   /** Login, logout and identity binding writes go to the Server owner from now on. */
   useOwnerWrites(writes: IdentityWrites): void { this.#writes = writes; }
   constructor(readonly accounts: HumanAccounts, readonly actors: ActorStore, readonly configuration: HumanAuthConfiguration,
@@ -134,15 +139,9 @@ export class HumanAuth implements IdentityProvider {
     const browser = cookie(request, TRANSACTION);
     if (browser) for (const [state, flow] of this.#flows) if (flow.browser === digest(browser)) this.#flows.delete(state);
   }
-  #limit(request: HttpExchangeRequest): boolean {
-    const now = this.now();
-    if (this.#globalAttempts.until <= now) this.#globalAttempts = { until: now + 60_000, count: 0 };
-    if (++this.#globalAttempts.count > 60) return false;
-    for (const [key, value] of this.#attempts) if (value.until <= now) this.#attempts.delete(key);
-    const address = request.clientAddress ?? 'unknown';
-    const entry = this.#attempts.get(address) ?? { until: now + 60_000, count: 0 };
-    if (!this.#attempts.has(address) && this.#attempts.size >= 1024) return false;
-    this.#attempts.set(address, entry); return ++entry.count <= 12;
+  /** Fails closed: a ledger that cannot be read or written refuses the attempt. */
+  async #admit(keys: readonly LoginAttemptKey[]): Promise<boolean> {
+    try { return await this.#attempts.take(keys, this.now()); } catch { return false; }
   }
   async #client(provider: OidcProviderConfiguration): Promise<oidc.Configuration> {
     let pending = this.#clients.get(provider.id);
@@ -229,8 +228,9 @@ export class HumanAuth implements IdentityProvider {
     }
     if (request.method !== 'POST') return send(404, { error: 'missing' });
     if (request.headers.origin !== this.configuration.origin || request.headers['content-type']?.split(';')[0] !== 'application/json') return send(403, { error: 'same_origin_json_required' });
-    if (['/local', '/local/create', '/oidc/start'].some(suffix => path === BASE + suffix) && !this.#limit(request))
-      return send(429, { error: 'try_later' }, [['retry-after', '60']]);
+    const throttled = () => send(429, { error: 'try_later' }, [['retry-after', '60']]);
+    if (['/local', '/local/create', '/oidc/start'].some(suffix => path === BASE + suffix)
+      && !await this.#admit(loginRequestKeys('auth', request.clientAddress))) return throttled();
     try {
       const body = JSON.parse(decodeUtf8(await request.readBody(16_384)));
       if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('Invalid request');
@@ -254,6 +254,8 @@ export class HumanAuth implements IdentityProvider {
           || typeof body.username !== 'string' || typeof body.password !== 'string') throw new Error('Invalid local login');
         const owner = linking ? this.#owner(identity) : null;
         if (linking && !owner) return send(401, { error: 'recent_login_required' });
+        // Keyed by the submitted identifier, never by whether it names an account; nothing is derived once refused.
+        if (!await this.#admit(loginAccountKeys('auth', body.username))) return throttled();
         const principal = path.endsWith('/create')
           ? await localAccounts.create(body.username, body.username, body.password) : await localAccounts.verify(body.username, body.password);
         if (!principal) return send(401, { error: 'invalid_credentials' });

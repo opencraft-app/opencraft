@@ -12,7 +12,7 @@ import { HostWorkspaceCatalogTransport } from './host-workspace-catalog-transpor
 import { createCodexWorkspaceHooks, validateCodexWorkspaceHooks, hasCodexWorkspaceHooks, configuredWorkspaceExecution, workspaceLifecycleRouting } from './codex-workspace-hooks.mjs';
 import { ServerInformationStore, serverInformationHttp } from './server-information.mjs';
 import { accountModelDefaultsHttp, humanActorAccess } from './account-model-defaults-http.ts';
-import { ActorSshKeys, composeSshAccess, installationSshKeyAuthority } from './actor-ssh-keys.ts';
+import { ActorSshKeys, installationSshKeyAuthority } from './actor-ssh-keys.ts';
 import { actorSshKeysHttp } from './actor-ssh-keys-http.ts';
 import { configuredModelGatewayPath, CodexCoreControlClient } from "@opencraft/account-pool-host";
 import { createAssistantModelSource } from '@opencraft/local-agent-host/model-config/assistant';
@@ -36,8 +36,8 @@ import { openServerCoreOwner } from "@opencraft/storage-node/server-owner";
 import { ownerEntry } from '@opencraft/worker-owner';
 import { ModelPolicyTransport } from '@opencraft/model-usage-policy/transport';
 import { assembleAccount } from './assembly/account.mjs';
+import { assembleNodeLocal } from './assembly/node-local.mjs';
 import { createHeadlessLifecycle, createLateBinding } from './assembly/lifecycle.mjs';
-import { startAvailabilityNotification } from './availability-notification.mjs';
 import { ExecutionEnvironmentTransport } from './execution-environment-transport.ts';
 import { EnvironmentMetadataTransport } from './environment-metadata-transport.ts';
 import { createHostEnvironmentLaunch } from './host-environment-launch.ts';
@@ -60,8 +60,6 @@ import { createGitStatusCapability } from './git-status-capability.ts';
 import { createBrowserGrantResolver } from './remote-browser/execution-grant.ts';
 import { connectBrowserOwner } from './remote-browser-owner.mjs';
 
-import { createObservabilityIngress } from "./observability-ingress.mjs";
-
 import { access, chmod, mkdir, mkdtemp, stat, readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
@@ -69,9 +67,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import lockfile from "proper-lockfile";
-import { createSshHttpIngress, loadSshIngressConfiguration } from "@opencraft/ssh-http-ingress/server";
-import { createSshNativeRpcGateway } from "./ssh-native-rpc-gateway.mjs";
-import { createSshCodexControl } from "./ssh-codex-control.mjs";
+import { loadSshIngressConfiguration } from "@opencraft/ssh-http-ingress/server";
 
 import { McpAppsService } from "@opencraft/mcp-apps/server";
 import { McpAppsTransport } from "@opencraft/mcp-apps/transport";
@@ -92,7 +88,6 @@ import { WebSocketTransport } from "@opencraft/appserver-transport-websocket";
 import { WebSocket } from 'ws';
 import { readDaemonMachineIdentity } from "@opencraft/opencraft-daemon/machine-identity";
 import { readSshCodexServerBindings, createSshCodexEngineAdapter } from "@opencraft/opencraft-daemon/ssh-codex-connections";
-import { SshManagement } from "@opencraft/opencraft-daemon/ssh-management";
 import { HostFileDownloads } from "@opencraft/opencraft-daemon/host-file-downloads";
 import { startLocalAgentHost } from "@opencraft/local-agent-host";
 import { startEngineHost } from "@opencraft/local-agent-host/engine-host";
@@ -109,9 +104,6 @@ import { loadLocalMachineAccess } from './local-machine-access.mjs';
 import { maintainHeadlessCodexHost } from "./headless-host-readiness.mjs";
 import { readTaskCodexConversations } from "./tasks-conversation-catalog.mjs";
 import { assertHeadlessWebRelease } from "./headless-web-release.mjs";
-import { LocalDesktopService } from "@opencraft/local-agent-host/desktop";
-import { createNativeObserver, localDesktopMachineIdentity } from "@opencraft/local-agent-host/desktop-native";
-import { createNativeDesktopControl } from "@opencraft/local-agent-host/desktop/native-control";
 import { ModelConfigurationRepository, ModelCredentialRepository } from "@opencraft/local-agent-host/model-config/repository";
 import { MembershipStore, InstanceAccess } from '@opencraft/access-control';
 import { ActorStore } from '@opencraft/access-control/actors';
@@ -139,7 +131,7 @@ import { HumanAuth, readHumanAuthConfiguration } from '@opencraft/access-control
 import { IdentityWrites } from '@opencraft/access-control/identity-writes';
 import { createCommitFenceBuffer } from '@opencraft/access-control/commit-fence';
 import { humanLoginPage } from './human-login-page.ts';
-import { connectRelay, loadRelayConnection } from '@opencraft/plugin-relay-connect/server';
+import { loadRelayConnection } from '@opencraft/plugin-relay-connect/server';
 import { validateHeadlessIdentity, validateLoginAdmission, environmentLaunchOwner, environmentDeliveryOptions } from "./headless-identity.mjs";
 import { openLoginAdmissionPolicy } from '@opencraft/plugin-login-admission/server';
 import { startHeadlessRuntimePlugins, validateRuntimePluginOptions } from "./runtime-plugins.mjs";
@@ -408,12 +400,10 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let web;
   let personalSshKeys;
   let fileDownloads;
-  let desktop;
   let identity;
   let agentIdentity;
   let executionDatabase, executionRecovery;
   let mcpApps;
-  let ingress;
   let instanceAccess;
   let loginAdmission;
   let account;
@@ -450,7 +440,6 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let identityWrites;
   let humanAccounts;
   let localAccountPlugin;
-  let availabilityNotification;
   let connectorService;
   const capabilities = new SessionCapabilities();
   let capabilityMcp;
@@ -460,16 +449,13 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let humanAuth;
   let accountManagement;
   let accountApplication;
-  let relay;
   let hubController;
-  let sshNativeRpc;
   let codexReadiness;
   let usageQueries;
   let remoteBrowser;
   let resourceReconciliationTimer;
   let browserCapabilities;
   const remoteExecutionAuthorities = new Map();
-  let observability;
   let connectedExecutionCli;
   let runtimePlugins;
   // Explicit ports for shutdown state and for values constructed after the
@@ -489,6 +475,9 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   const lateTurnPush = createLateBinding('Turn push');
   const lateSshManagement = createLateBinding('SSH management');
   const lateImPlugins = createLateBinding('IM plugins');
+  // Node-only services; creating the module opens nothing, each step runs at
+  // its original position and each disposer at its original shutdown step.
+  const nodeLocal = assembleNodeLocal({ dataDirectory });
   // The lifecycle publishes the shared promise before invoking any disposer
   // (including a synchronous failure or reentrant close). Retire listeners before stores.
   const close = (update = null) => lifecycle.shutdown(async () => {
@@ -501,10 +490,10 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     await settle([() => lateConversationResources.current()?.close()]);
     let entryClosing;
     const closeEntry = () => entryClosing ??= settle([
-      () => hubController?.close(), () => relay?.close(), () => ingress?.close(), () => sshNativeRpc?.close(),
+      () => hubController?.close(), nodeLocal.closeRelay, nodeLocal.closeSshIngress, nodeLocal.closeSshNativeRpc,
       () => codexReadiness?.close(), () => usageQueries?.close(), async () => { withdrawGitStatus?.(); await browserCapabilities?.close(); await remoteBrowser?.close(); },
-      () => fileDownloads?.close(), () => desktop?.close(), () => lateTurnPush.current()?.close(),
-      () => availabilityNotification?.close(), () => lateImPlugins.current()?.close(),
+      () => fileDownloads?.close(), nodeLocal.closeDesktop, () => lateTurnPush.current()?.close(),
+      nodeLocal.closeAvailabilityNotification, () => lateImPlugins.current()?.close(),
     ]);
     await settle([() => web?.close(update, closeEntry)]);
     // Custom Web adapters need not implement the optional carrier phase.
@@ -513,7 +502,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     // their authority or handlers may still call (admission, identity, stores).
     await settle([() => runtimePlugins?.close()]);
     await settle([() => personalSshKeys?.close()]);
-    await settle([() => observability?.close()]);
+    await settle([nodeLocal.closeObservability]);
     await settle([() => projectAutomations?.close()]);
     await settle([() => threadOrchestration?.close()]);
     await settle([() => personalAssistantHost?.close()]);
@@ -530,7 +519,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     // Each writer finishes before the root kernel lock is released. A failed
     // disposer is reported, but must not skip the remaining flushes.
     for (const dispose of [() => executionDatabase?.close(),
-      () => account?.close(), () => mcpApps?.close(), () => lateSshManagement.current()?.close(), () => identity?.executionEnvironment?.close(), () => identity?.close?.(), () => loginAdmission?.close(),
+      () => account?.close(), () => mcpApps?.close(), nodeLocal.closeSshManagement, () => identity?.executionEnvironment?.close(), () => identity?.close?.(), () => loginAdmission?.close(),
 
       () => ownedWorkspaceRouting?.close(), () => installedBotProvider?.close(), () => botAdmission?.close(), () => humanGitExecution?.close(), () => assetsService?.close(), () => assetsStorage?.close(), () => composition.close?.(), () => accountApplication?.close(), () => accountManagement?.close(), () => humanAuth?.close(), () => humanAccounts?.close(),
       () => identityWrites?.close(), () => capabilityBindings?.close(), () => actorStore?.close(), () => membership?.close()]) {
@@ -869,17 +858,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     await projectAutomations.start();
     actorCollaboration.start();
     threadOrchestration.start();
-    if (options.localDesktop === true) {
-      const observer = createNativeObserver();
-      const incarnation = await observer.inspect(AbortSignal.timeout(5_000));
-      const control = options.desktopControl ? createNativeDesktopControl() : undefined;
-      if (control && await control.inspect(AbortSignal.timeout(5_000)) !== incarnation) throw new Error("Desktop control incarnation mismatch");
-      const environmentId = await localDesktopMachineIdentity();
-      const principalId = `local-owner:${process.getuid()}`;
-      const serverId = `local-codex:${createHash("sha256").update(JSON.stringify([dataDirectory, principalId])).digest("hex")}`;
-      desktop = new LocalDesktopService({ serverId, environmentId, principalId, observer, control,
-        transport: desktopAccess === "trusted-internal" ? "same-origin-trusted-internal" : "same-origin-loopback" });
-    }
+    const desktop = await nodeLocal.startDesktop({ enabled: options.localDesktop, control: options.desktopControl, access: desktopAccess });
     connectorService = new HeadlessConnectors(join(dataDirectory, "connectors"), actorAccess,
       { "local-codex": `server:${machineIdentity.machineId}:codex`, "opencraft-server": `server:${machineIdentity.machineId}:${options.defaultEngine ?? (engines.includes("dsh") ? "dsh" : "pi")}` },
       capabilities, actorId => !instanceAccess || instanceAccess.admitsActor(actorId), undefined,
@@ -1455,20 +1434,12 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       read: (hostId, method, params) => callConversationHost(appHostServer, {hostId, threadId:params.threadId}, 'push-history', method, params, undefined, 10_000),
     }));
     await turnPush.initialize();
-    // Local anonymous features remain usable. Public remote access is enabled
-    // only with explicit operator opt-in; all remote sockets require a session.
-    const sshManagement = lateSshManagement.bind(host === "127.0.0.1" || options.sshPublicAccess ? await SshManagement.open({
-      directory: join(dataDirectory, "ssh"), publicAccess: options.sshPublicAccess, accessFile: options.sshAccessFile,
-      accessMode: options.sshRequireAccessKey || options.sshAccessFile ? "access-key" : "shared",
-      resetConnection: id => appHostServer.resetHost(id), connectionState: id => appHostServer.hostState(id),
-      connectConnection: (id, assertAdmission) => appHostServer.ensureHostConnected(id, assertAdmission),
-      legacyServers: sshServers.map(binding => binding.descriptor),
-    }) : undefined);
-    try {
-      observability = await createObservabilityIngress(process.env.OPENCRAFT_OBSERVE_INGRESS_CONFIG, { access: instanceAccess, actors: actorStore, executionHealth: options.getExecutionHealth });
-    } catch {
-      process.stderr.write('Observability configuration unavailable; workbench continues without observation ingress.\n');
-    }
+    const sshManagement = lateSshManagement.bind(await nodeLocal.openSshManagement({
+      enabled: host === "127.0.0.1" || options.sshPublicAccess, publicAccess: options.sshPublicAccess, accessFile: options.sshAccessFile,
+      requireAccessKey: options.sshRequireAccessKey, appHost: appHostServer, sshServers,
+    }));
+    const observability = await nodeLocal.startObservability({ configFile: process.env.OPENCRAFT_OBSERVE_INGRESS_CONFIG,
+      access: instanceAccess, actors: actorStore, executionHealth: options.getExecutionHealth });
     fileDownloads = new HostFileDownloads(hostId => {
       if (hostId === "local-codex" && ownedWorkspaceRouting && !fileSystem) throw Error('Local Hands file downloads unavailable');
       if (hostId === "opencraft-server" || hostId === "local-codex") return fileSystem ?? "local";
@@ -1596,20 +1567,11 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     let address;
     if (ingressConfiguration) {
       const privateAddress = await web.listen({ host: "127.0.0.1", port: 0 });
-      sshNativeRpc = await createSshNativeRpcGateway(appHostServer);
-      const sshAccess = composeSshAccess(identity?.sshAccess, personalSshKeys);
-      ingress = createSshHttpIngress({ ...ingressConfiguration, httpPort: privateAddress.port,
-        // An identity composition's own keys first, then each person's registered keys.
-        ...(sshAccess ? {
-          resolveAuthorizedKeys: (username, key) => sshAccess.publicKeys(username, key),
-          authorizeSession: (username, key) => sshAccess.authorize(username, key),
-          createNativeSession: authorization => createSshNativeRpcGateway(appHostServer, authorization),
-        } : {}),
-        codexPort: sshNativeRpc.port, codexControl: createSshCodexControl(appHostServer,
-          options.codexExecutable ?? join(root, "runtime/codex/bin/codex")) });
-      address = await ingress.listen({ host: listenHost, port });
+      address = await nodeLocal.listenSshIngress({ configuration: ingressConfiguration, httpPort: privateAddress.port,
+        appHost: appHostServer, identitySshAccess: identity?.sshAccess, personalSshKeys,
+        codexExecutable: options.codexExecutable ?? join(root, "runtime/codex/bin/codex"), host: listenHost, port });
     } else address = await web.listen({ host: listenHost, port });
-    if (relayConfiguration) relay = connectRelay({ ...relayConfiguration.options, targetPort: relayConfiguration.options.targetPort ?? address.port });
+    nodeLocal.connectRelay(relayConfiguration, address.port);
     hubController.node?.start(hubTargetPort ?? address.port);
     if (options.codexCoreEndpoint) codexReadiness = maintainHeadlessCodexHost(appHostServer);
     // Per-Actor sources replace the installation-wide provider; an identity
@@ -1632,8 +1594,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       // Explicit local preview composition only (scripts/dev/preview-crew.ts); the CLI never sets it.
       ...(composition.personalAssistantHost ?? {})});
     lateImPlugins.bind(await startImPlugins(imConfiguration,{dataDirectory,capabilities,prepareCapabilities: tools => capabilityMcp.prepare(tools),actors:actorStore,collaboration:actorCollaboration,actorAccess,getAppHost:() => appHostServer,admittedActor:actorId => !instanceAccess || instanceAccess.admitsActor(actorId),...await createChannelSyncDependencies(composition,channelSyncContext({collaboration:actorCollaboration,relayConnectFile:relayConfiguration ? options.relayConnectFile : undefined}))}));
-    try { availabilityNotification = await startAvailabilityNotification(process.env.OPENCRAFT_AVAILABILITY_NOTIFICATION_CONFIG, () => lateImPlugins.current()); }
-    catch { console.warn('[availability-notification] startup-unavailable'); }
+    await nodeLocal.startAvailabilityNotification({ configFile: process.env.OPENCRAFT_AVAILABILITY_NOTIFICATION_CONFIG,
+      getImService: () => lateImPlugins.current() });
     capabilitiesReadyResolve();
     return { url: `http://127.0.0.1:${address.port}`, listenHost, listenPort: address.port, close };
   } catch (error) {

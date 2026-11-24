@@ -9,9 +9,15 @@
 // on the runtime-neutral HTTP exchange port through the production Fetch
 // adapter (@opencraft/identity-core/http-exchange-fetch). Bundled with esbuild and
 // driven through Miniflare by tests/identity/login-entry-workerd.test.ts.
-// Test-only: no deployment assembly, rate-limit store, OIDC or setup page.
+// Login attempts are counted in the object's own storage (a state document via
+// @opencraft/storage-cloudflare/state), so the budget holds across requests,
+// restarts and isolates and is checked before any Argon2id derivation.
+// Test-only: no deployment assembly, OIDC or setup page.
 import { DurableObject } from "cloudflare:workers";
 import { durableObjectSqlDatabase } from "@opencraft/storage-cloudflare/sql";
+import { durableObjectStateDocumentStore } from "@opencraft/storage-cloudflare/state";
+import { stateLoginAttemptLimiter } from "@opencraft/identity-core/login-attempts";
+import type { PasswordHasher } from "@opencraft/plugin-local-account/password-hash";
 import type { DurableObjectStorage } from "@opencraft/storage-cloudflare/bindings";
 import { migrateServerSqlDatabase } from "@opencraft/storage-node/server-sql";
 import { ActorStore } from "@opencraft/access-control/actors";
@@ -28,6 +34,16 @@ interface Env {
   readonly CORE: {
     idFromName(name: string): unknown;
     get(id: unknown): LoginCore;
+  };
+}
+
+const DERIVATIONS = "test/derivations";
+/** Test instrumentation: counts every hasher call in storage, so the count survives a restart. */
+function countingHasher(storage: DurableObjectStorage, hasher: PasswordHasher): PasswordHasher {
+  const count = () => storage.kv.put(DERIVATIONS, Number(storage.kv.get(DERIVATIONS) ?? 0) + 1);
+  return {
+    hash: (password) => (count(), hasher.hash(password)),
+    verify: (password, record) => (count(), hasher.verify(password, record)),
   };
 }
 
@@ -52,8 +68,9 @@ export class LoginCore extends DurableObject<Env> {
     super(ctx, env);
     void ctx.blockConcurrencyWhile(async () => {
       try {
+        const storage = ctx.storage as unknown as DurableObjectStorage;
         const handle = migrateServerSqlDatabase(
-          durableObjectSqlDatabase(ctx.storage as unknown as DurableObjectStorage),
+          durableObjectSqlDatabase(storage),
           {
             ownedByRuntime: (name) => name.startsWith("_cf_"),
           },
@@ -63,7 +80,7 @@ export class LoginCore extends DurableObject<Env> {
         const accounts = new HumanAccounts(handle, actors, now);
         const local = new LocalAccountServerPlugin(
           accounts.localAccountRepository,
-          createPortablePasswordHasher(),
+          countingHasher(storage, createPortablePasswordHasher()),
           now,
         );
         accounts.registerLocalAccounts(local);
@@ -75,6 +92,9 @@ export class LoginCore extends DurableObject<Env> {
           () => "<!doctype html>",
           () => null,
           now,
+        );
+        auth.useAttemptLimiter(
+          stateLoginAttemptLimiter(durableObjectStateDocumentStore(storage, { prefix: "login-attempts/" })),
         );
         const access = new InstanceAccess(members, [auth], actors);
         this.#graph = { actors, accounts, local, members, auth, access };
@@ -145,6 +165,10 @@ export class LoginCore extends DurableObject<Env> {
   }
   advance(milliseconds: number): void {
     this.#skew += milliseconds;
+  }
+  derivations(): number {
+    this.#open();
+    return Number(this.ctx.storage.kv.get(DERIVATIONS) ?? 0);
   }
   loginRows(): number {
     this.#open();

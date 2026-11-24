@@ -205,7 +205,7 @@ Cloudflare 侧耗时主要是部署（首个版本约 3 s，`immediate` 重启�
 
 - **CPU 上限**：Workers Paid 默认每请求 30 s CPU，单次登录最多约 0.9 s，余量 30 倍以上，不需要提高 `limits.cpu_ms`；Workers Free 的 10 ms 则完全不可用。
 - **登录延迟**：约 0.3–0.9 s 的服务端计算加网络往返，交互式登录可以接受，但约为 Node 原生的 25–35 倍。
-- **代价与风险**：CPU 时长按毫秒计费，失败尝试同样消耗 0.6 s 级 CPU，且同一 installation 的登录集中在单线程 DO 上串行执行，并发登录会排队。正式实现必须在哈希之前做按来源与账号的速率限制和并发上限，并评估把哈希移到无状态 Worker（DO 只做记录读写）以避免阻塞同一对象的其他请求；如需降低成本再评估 WebAssembly 实现，参数仍须与 Node 记录互通。
+- **代价与风险**：CPU 时长按毫秒计费，失败尝试同样消耗 0.6 s 级 CPU，且同一 installation 的登录集中在单线程 DO 上串行执行，并发登录会排队。哈希之前的按来源、账号与全局的尝试预算已在登录 DO 的持久存储中实现（[登录尝试预算](gateway-split.md#34-登录入口原型结果)，每分钟全局 60 次，即单个 installation 最坏约 54 s CPU／分钟）；仍需评估把哈希移到无状态 Worker（DO 只做记录读写）以避免阻塞同一对象的其他请求；如需降低成本再评估 WebAssembly 实现，参数仍须与 Node 记录互通。
 
 ### 7.5 Cloudflare Containers 组（`--containers`）
 

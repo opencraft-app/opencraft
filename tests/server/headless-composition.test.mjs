@@ -10,7 +10,8 @@ import { createWorkbenchWebServer } from '../../apps/headless-server/src/serve-w
 import { buildHeadlessBundle } from '../../scripts/packaging/package-headless-linux.mjs';
 import { loadLocalMachineAccess } from '../../apps/headless-server/src/local-machine-access.mjs';
 import { randomBytes } from 'node:crypto';
-import { networkInterfaces } from 'node:os';
+import { networkInterfaces, tmpdir } from 'node:os';
+import { request as httpRequest } from 'node:http';
 import { WebSocket, WebSocketServer } from 'ws';
 import { once } from 'node:events';
 import { Worker } from 'node:worker_threads';
@@ -21,6 +22,7 @@ import { executionHostIssuer } from '../../scripts/container-deployment/executio
 import { ownedCleanup } from '../support/owned-cleanup.mjs';
 import { ActorSshKeys } from '../../apps/headless-server/src/actor-ssh-keys.ts';
 import { createHeadlessLifecycle, createLateBinding } from '../../apps/headless-server/src/assembly/lifecycle.mjs';
+import { startObserve } from '../../apps/observability-service/service.mjs';
 
 async function fixture(t) {
   const runtime = fileURLToPath(new URL('../../.runtime/', import.meta.url));
@@ -706,4 +708,88 @@ test('model policy and model gateway routes follow instance admission on a real 
   const persisted = await read(reopened.url + '/__opencraft_model_policy', { cookie: owner });
   assert.equal(persisted.status, 200, JSON.stringify(persisted.body));
   assert.deepEqual({ revision: persisted.body.revision, rules: persisted.body.rules }, { revision: 1, rules });
+});
+
+// Node-local services (gateway-split §4.1.1): each is wired from its deployment
+// configuration on a real Headless server and released by `close`.
+async function withEnvironment(name, value, operation) {
+  const previous = process.env[name];
+  process.env[name] = value;
+  try { return await operation(); } finally { if (previous === undefined) delete process.env[name]; else process.env[name] = previous; }
+}
+
+test('node-local observation ingress is mounted from its private configuration and reports a planned restart', { timeout: 30_000 }, async t => {
+  const f = await fixture(t);
+  // Unix socket paths stay short; the private directory closes after the server.
+  const sockets = await mkdtemp(join(tmpdir(), 'oc-node-local-observe-')), cleanup = ownedCleanup(t);
+  cleanup.last(() => rm(sockets, { recursive: true, force: true }));
+  const observe = await startObserve({ directory: sockets, deploymentId: 'node-local', metricsPort: 0 }); cleanup.own(() => observe.close());
+  const capabilities = url => fetch(url + '/__opencraft_observe/capabilities').then(response => response.json());
+
+  // A configuration that is not owner-only is refused; the workbench starts without the ingress.
+  const shared = join(sockets, 'shared.json');
+  await writeFile(shared, JSON.stringify({ socketPath: observe.socketPath, grafanaSocket: join(sockets, 'grafana.sock'), pseudonymKey: '1'.repeat(64) }), { mode: 0o644 });
+  const written = [], write = process.stderr.write;
+  process.stderr.write = function (chunk, ...rest) { written.push(String(chunk)); return write.call(this, chunk, ...rest); };
+  let degraded;
+  try { degraded = await withEnvironment('OPENCRAFT_OBSERVE_INGRESS_CONFIG', shared, () => startHeadlessServer(f.options)); }
+  finally { process.stderr.write = write; }
+  assert.ok(written.some(line => line.includes('Observability configuration unavailable')));
+  assert.deepEqual(await capabilities(degraded.url), { available: false, telemetry: false }, 'the Web fallback answers without the ingress');
+  await degraded.close();
+
+  const config = join(sockets, 'observe.json');
+  await writeFile(config, JSON.stringify({ socketPath: observe.socketPath, grafanaSocket: join(sockets, 'grafana.sock'), pseudonymKey: '1'.repeat(64) }), { mode: 0o600 });
+  const app = await withEnvironment('OPENCRAFT_OBSERVE_INGRESS_CONFIG', config, () => startHeadlessServer(f.options));
+  f.own(() => app.close());
+  assert.deepEqual(await capabilities(app.url), { available: false, telemetry: false, entry: null }, 'the configured ingress answers anonymous requests');
+  const since = Date.now();
+  // The Web close reports the update through the still-open ingress before it is retired.
+  await app.close({ updateId: 'node-local-update', buildId: 'node-local-build' });
+  const receipt = observe.store.events(since - 1, Date.now() + 1, Date.now()).find(row => row.kind === 'lifecycle' && row.producerId === 'node-local-update');
+  assert.equal(receipt?.lifecycle, 'deployment');
+  // Closing released the data directory.
+  const reopened = await startHeadlessServer(f.options); f.own(() => reopened.close());
+});
+
+test('node-local availability notification listens on its private socket and close removes it', { timeout: 30_000 }, async t => {
+  const f = await fixture(t);
+  const sockets = await mkdtemp(join(tmpdir(), 'oc-node-local-notify-')), cleanup = ownedCleanup(t);
+  cleanup.last(() => rm(sockets, { recursive: true, force: true }));
+  const token = 'n'.repeat(40), tokenFile = join(sockets, 'token');
+  await writeFile(tokenFile, token, { mode: 0o600 });
+  const settings = { socketPath: join(sockets, 'notify.sock'), tokenFile, receiptsFile: join(sockets, 'receipts'), channelId: 'wecom', senderId: 'operator', actorId: 'human' };
+  const notify = authorization => new Promise((resolve, reject) => {
+    const outgoing = httpRequest({ socketPath: settings.socketPath, path: '/notify', method: 'POST', headers: { authorization } }, response => {
+      let text = ''; response.on('data', chunk => { text += chunk; }); response.on('end', () => resolve({ status: response.statusCode, body: JSON.parse(text) }));
+    });
+    outgoing.on('error', reject);
+    outgoing.end(JSON.stringify({ incidentId: 'incident', kind: 'alert', site: 'local', hostId: 'local-codex', engine: 'codex', errorCode: 'initialize' }));
+  });
+
+  // An unreadable configuration is reported and the server starts without the listener.
+  const warnings = [], warn = console.warn;
+  console.warn = (...args) => { warnings.push(args.join(' ')); };
+  let degraded;
+  try { degraded = await withEnvironment('OPENCRAFT_AVAILABILITY_NOTIFICATION_CONFIG', join(sockets, 'missing.json'), () => startHeadlessServer(f.options)); }
+  finally { console.warn = warn; }
+  assert.ok(warnings.includes('[availability-notification] startup-unavailable'));
+  await degraded.close();
+
+  const config = join(sockets, 'notify.json');
+  await writeFile(config, JSON.stringify(settings), { mode: 0o600 });
+  const app = await withEnvironment('OPENCRAFT_AVAILABILITY_NOTIFICATION_CONFIG', config, () => startHeadlessServer(f.options));
+  f.own(() => app.close());
+  assert.equal((await notify('Bearer wrong')).status, 401);
+  // The IM service is read through its late port: without a bound operator channel nothing is sent.
+  assert.deepEqual(await notify('Bearer ' + token), { status: 503, body: { error: 'notification_unavailable' } });
+  await app.close();
+  await assert.rejects(stat(settings.socketPath), { code: 'ENOENT' }, 'close retires the notification socket');
+});
+
+test('local desktop without a verified observer fails startup and rollback releases the data lock', { timeout: 30_000 }, async t => {
+  const f = await fixture(t);
+  await assert.rejects(startHeadlessServer({ ...f.options, localDesktop: true }));
+  const app = await startHeadlessServer(f.options); f.own(() => app.close());
+  assert.equal((await fetch(app.url + '/')).status, 200);
 });
