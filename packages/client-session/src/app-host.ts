@@ -12,6 +12,13 @@ import {
   type ResumeLink,
 } from "@opencraft/app-host-resume";
 import type { SessionFrame, SessionSocket, SessionSocketHandler } from "@opencraft/client-session";
+import {
+  periodicOwnerWork,
+  timeoutOwnerWake,
+  type OwnerWake,
+  type OwnerWakeTimer,
+  type PeriodicOwnerWork,
+} from "@opencraft/owner-wake";
 
 /**
  * App Host client session over the runtime-neutral session socket: frame
@@ -143,12 +150,12 @@ export interface AppHostClientSessionOptions<C extends AppHostSubmissionContext>
   readonly submissionContext?: C;
   /** Without it, or for a client that does not ask, the connection ends with its socket. */
   readonly resume?: AppHostSessionResume | null;
+  /** Wake-ups of this connection (heartbeat frames, delayed acknowledgements) on the owner wake-up port; they
+   * live only as long as the connection. Defaults to the runtime's timeouts. */
+  readonly wake?: OwnerWake;
 }
 
-type Timer = ReturnType<typeof setTimeout>;
-const unref = (timer: Timer) => {
-  (timer as unknown as { unref?: () => void }).unref?.();
-};
+const defaultWake = timeoutOwnerWake();
 
 interface Probe {
   readonly sequence: number;
@@ -160,7 +167,7 @@ interface Wire {
   readonly authorize: (message: Message) => boolean;
   readonly logDiagnostic: AppHostSessionDiagnostic;
   heartbeatRequested: boolean;
-  heartbeatTimer: Timer | null;
+  heartbeatTimer: PeriodicOwnerWork | null;
   frameSequence: number;
   probeSequence: number;
   lastProbeObservedAt: number;
@@ -182,7 +189,7 @@ interface SessionState {
   resumable: AppHostResumeSession<SessionState> | null;
   sequencing: boolean;
   heartbeat: boolean;
-  ackTimer: Timer | null;
+  ackTimer: OwnerWakeTimer | null;
   readonly route: object | null;
   port: AppHostSessionPort;
   authority: AppHostSessionAuthority | null;
@@ -217,6 +224,7 @@ export function acceptAppHostClientSession<C extends AppHostSubmissionContext>(
   const submissionContext = options.submissionContext ?? ({ sender: null } as unknown as C);
   const resume = options.resume ?? null;
   const registry = resume?.registry as AppHostResumeStore<SessionState> | undefined;
+  const wake = options.wake ?? defaultWake;
 
   const wire: Wire = {
     socket,
@@ -245,14 +253,14 @@ export function acceptAppHostClientSession<C extends AppHostSubmissionContext>(
     phase: wire.session === null ? "awaiting-hello" : "ready",
   });
   const stopHeartbeat = () => {
-    if (wire.heartbeatTimer !== null) clearInterval(wire.heartbeatTimer);
+    wire.heartbeatTimer?.close();
     wire.heartbeatTimer = null;
   };
   // Opt-in liveness: a client that asks for heartbeats judges the route by the
   // age of its last received frame instead of a slow, foreground-only probe.
   const startHeartbeat = () => {
     if (wire.heartbeatTimer !== null) return;
-    wire.heartbeatTimer = setInterval(() => {
+    wire.heartbeatTimer = periodicOwnerWork(wake, APP_HOST_HEARTBEAT_MS, () => {
       if (socket.readyState !== OPEN) {
         stopHeartbeat();
         return;
@@ -260,8 +268,7 @@ export function acceptAppHostClientSession<C extends AppHostSubmissionContext>(
       // A congested socket already proves nothing new; do not grow its queue.
       if (socket.bufferedAmount > APP_HOST_HEARTBEAT_MAX_BUFFERED) return;
       wire.send(APP_HOST_HEARTBEAT_FRAME);
-    }, APP_HOST_HEARTBEAT_MS);
-    unref(wire.heartbeatTimer);
+    });
   };
   const protocolError = (reason: string) => {
     logDiagnostic("invalid-frame", { code: 1008, ...frameContext(), reason });
@@ -373,11 +380,11 @@ export function acceptAppHostClientSession<C extends AppHostSubmissionContext>(
         active.send(JSON.stringify({ type: "connection/ack", received: session.resumable!.link.acknowledged() }));
       };
       if (due === "now") {
-        if (session.ackTimer !== null) clearTimeout(session.ackTimer);
+        session.ackTimer?.cancel();
         flush();
       } else if (session.ackTimer === null) {
-        session.ackTimer = setTimeout(flush, RESUME_ACK_DELAY_MS);
-        unref(session.ackTimer);
+        session.ackTimer = wake.timer(flush);
+        session.ackTimer.arm(wake.now() + RESUME_ACK_DELAY_MS);
       }
     };
     return session;
@@ -556,7 +563,7 @@ export function acceptAppHostClientSession<C extends AppHostSubmissionContext>(
             JSON.stringify([resume.identity, message.rendererId]),
             session,
             (reason) => {
-              if (session.ackTimer !== null) clearTimeout(session.ackTimer);
+              session.ackTimer?.cancel();
               session.ackTimer = null;
               session.authority?.release();
               session.authority = null;

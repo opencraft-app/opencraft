@@ -4,9 +4,11 @@ import { readFile, stat } from 'node:fs/promises';
 import { socketRequest, nodeObserver, observationGrafanaBasePath } from '@opencraft/observability-contract/node';
 import { backgroundRefreshLog } from '@opencraft/observability-query/rpc-work';
 import { sanitizeEvent } from '@opencraft/observability-contract';
+import { periodicOwnerWork, timeoutOwnerWake } from '@opencraft/owner-wake';
 
 function send(res,status,value){res.writeHead(status,{'content-type':'application/json','cache-control':'no-store'});res.end(JSON.stringify(value));}
-export async function createObservabilityIngress(path,{access,actors,executionHealth,identity}={}) {
+/** `wake` is the owner wake-up port (gateway-split.md §4.2) the dependency sampling runs on. */
+export async function createObservabilityIngress(path,{access,actors,executionHealth,identity,wake=timeoutOwnerWake()}={}) {
   if(!path)return null;
   const info=await stat(path);if(!info.isFile()||(info.mode&0o077)!==0||info.uid!==process.getuid())throw Error('Observation configuration must be private');
   const config=JSON.parse(await readFile(path,'utf8'));
@@ -46,7 +48,7 @@ export async function createObservabilityIngress(path,{access,actors,executionHe
       }
     }catch{/* Independent dependency failure remains missing/stale in coverage. */}finally{healthBusy=false;}
   }
-  void observeDependencies();const healthTimer=setInterval(()=>void observeDependencies(),30000);healthTimer.unref();
+  void observeDependencies();const healthSampling=periodicOwnerWork(wake,30000,()=>void observeDependencies());
   const rates=new Map();let ingressActive=0;
   return {readTiming: event => {
     // Background refreshes are not foreground latency. Emit one compact slow/
@@ -56,7 +58,7 @@ export async function createObservabilityIngress(path,{access,actors,executionHe
       if (record) console.info('[opencraft background-refresh]', JSON.stringify(record));
     } catch { /* Logging cannot affect a read or its original telemetry. */ }
     return observer.emit({ ...event, sourceRevision: identity?.sourceRevision ?? null, buildId: identity?.buildId ?? null });
-  },close:()=>{closed=true;clearInterval(healthTimer);observer.close();},
+  },close:()=>{closed=true;healthSampling.close();observer.close();},
     async gatewayShutdown(count, update) {
       if (!update) return;
       // Flush this one receipt directly before shutdown; the periodic queue is

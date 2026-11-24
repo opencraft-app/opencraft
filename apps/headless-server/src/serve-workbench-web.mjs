@@ -458,6 +458,8 @@ export async function createWorkbenchWebServer({
   hubService = null,
   speechPublicAccess = process.env.OPENCRAFT_SPEECH_PUBLIC_ACCESS === "1",
   webSocketHeartbeatIntervalMs = 15_000,
+  // Owner wake-up port for gateway-owned periodic work and client-session wake-ups (gateway-split.md §4.2).
+  ownerWake = undefined,
   onAppHostDiagnostic = diagnostic => console.info("[opencraft apphost connection]", JSON.stringify(diagnostic)),
   ...unknownOptions
 } = {}) {
@@ -480,7 +482,7 @@ export async function createWorkbenchWebServer({
   };
   const runtimeReports = [];
   const htmlPreviews = typeof fileDownloads?.readPreview === 'function'
-    ? new HtmlFilePreviews((...args) => fileDownloads.readPreview(...args)) : null;
+    ? new HtmlFilePreviews((...args) => fileDownloads.readPreview(...args), { wake: ownerWake }) : null;
   let lastImRejection = {key: "", at: 0};
   const imRejectionCodes = new Set([
     "authentication_required", "instance_access_denied", "actor_access_denied",
@@ -1032,7 +1034,7 @@ export async function createWorkbenchWebServer({
           privateSockets.delete(client);
           logAppHost("closed", { code, active: activeAppHostSockets.size });
         });
-        acceptWsSessionSocket(client, socket => acceptAppHostClientSession(socket, { appHostServer, diagnostic: logAppHost, authorize: message => {
+        acceptWsSessionSocket(client, socket => acceptAppHostClientSession(socket, { appHostServer, diagnostic: logAppHost, wake: ownerWake, authorize: message => {
           // The anonymous channel cannot guess a remote ID. Private sockets
           // bind the server-validated cookie, never the renderer-supplied ID.
           if (closing || !actorAllowed() || admissionDeadline <= Date.now() || (principal && !accessService.role(principal))) return false;

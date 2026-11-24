@@ -70,9 +70,9 @@ export function assembleNodeLocal({ dataDirectory }) {
       return sshManagement;
     },
     /** The observation ingress; an unusable configuration leaves it absent and the workbench continues. */
-    async startObservability({ configFile, access, actors, executionHealth }) {
+    async startObservability({ configFile, access, actors, executionHealth, wake }) {
       try {
-        observability = await createObservabilityIngress(configFile, { access, actors, executionHealth });
+        observability = await createObservabilityIngress(configFile, { access, actors, executionHealth, wake });
       } catch {
         process.stderr.write(
           "Observability configuration unavailable; workbench continues without observation ingress.\n",

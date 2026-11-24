@@ -72,6 +72,7 @@
     "@opencraft/observability-contract": "0.1.0",
     "@opencraft/observability-query": "0.1.0",
     "@opencraft/opencraft-daemon": "0.1.0",
+    "@opencraft/owner-wake": "0.1.0",
     "@opencraft/personal-assistant": "0.17.0",
     "@opencraft/plugin-assets": "0.1.0",
     "@opencraft/plugin-im": "0.1.0",
