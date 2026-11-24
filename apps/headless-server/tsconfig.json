@@ -36,6 +36,7 @@
     "src/assembly/node-local.d.mts",
     "src/assembly/root-inputs.ts",
     "src/assembly/root-inputs-node.d.mts",
+    "src/assembly/workspace-host.d.mts",
     "src/assembly/server-core-same-thread.ts",
     "src/server-core-domains.d.mts",
     "src/installation-routes.ts",
