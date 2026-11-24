@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { constants, openSync, closeSync, fstatSync, lstatSync, readFileSync, writeFileSync, renameSync, unlinkSync, fsyncSync } from 'node:fs';
+import { lstat, rmdir } from 'node:fs/promises';
 import { dirname, isAbsolute } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
@@ -85,5 +86,33 @@ export function acquireProcessWriter(path: string): () => void {
   } catch (cause) {
     database?.close();
     throw Object.assign(new Error('Writer lock is already being held or ownership cannot be verified', { cause }), { code: 'ELOCKED', file: path });
+  }
+}
+
+/** Earlier releases leased an owner path as a proper-lockfile directory that a live
+ * holder refreshed every 5s and any contender reclaimed once its mtime was 10s old. */
+export const LEGACY_OWNER_LEASE_EXPIRED_MS = 60_000;
+
+/** A process-lifetime owner lock at a pathname older releases leased with proper-lockfile.
+ * The kernel writer never expires while the owner process is alive, however long its
+ * event loop stalls, and process death releases it; there is no refresh timer whose
+ * failure could surface as an uncaught `ECOMPROMISED`. The pathname becomes a regular
+ * file, so older mkdir lockers can neither acquire nor remove it. A legacy lease
+ * directory is converted only once its mtime is far older than any refresh a live
+ * holder would make; a fresh one is refused like any live writer (`ELOCKED`).
+ * `retries` counts further attempts against a live writer, one second apart. */
+export async function acquireOwnerLock(path: string, { retries = 0 }: { retries?: number } = {}): Promise<() => void> {
+  for (let attempt = 0; ; attempt++) {
+    try { return acquireProcessWriter(path); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ELOCKED') throw error;
+      const legacy = await lstat(path).catch(() => undefined);
+      // rmdir never removes a regular-file lock; a legacy locker that recreates the
+      // directory first keeps it, and the next attempt refuses again.
+      if (legacy?.isDirectory() && legacy.mtimeMs < Date.now() - LEGACY_OWNER_LEASE_EXPIRED_MS
+        && await rmdir(path).then(() => true, () => false)) continue;
+      if (attempt >= retries) throw error;
+    }
+    await new Promise(resolve => setTimeout(resolve, 1000));
   }
 }
