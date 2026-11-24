@@ -12,6 +12,7 @@ import React from 'react';
 import {createIntlTestRoot} from '/tests/fixtures/intl-root.tsx';
 import {createAssetsView} from '/plugins/assets/src/view.tsx';
 import {e2bAssetProvider} from '/plugins/assets/src/providers.ts';
+import {gitAssetProviders} from '/plugins/assets/src/git/client.tsx';
 import {AssetsEntry} from '/plugins/assets/src/entry.tsx';
 import {WorkbenchPresentationRootProvider} from '/apps/workbench-web/src/components/workbench-presentation-root.tsx';
 import {initializeAppearanceTheme,setThemePreference} from '/apps/workbench-web/src/appearance-theme.ts';
@@ -39,7 +40,7 @@ const fetcher=async(url,options)=>{
 };
 window.assets={writes:()=>writes,scope:v=>{scope=v;for(const fn of listeners)fn()},snapshot:()=>documentFor(),
  lost:()=>lost=true,delay:()=>delayed=true,finish:()=>finishDelayed?.(),theme:setThemePreference};
-const View=createAssetsView({account,fetcher,endpoint:'/fixture-assets',providers:[e2bAssetProvider]});
+const View=createAssetsView({account,fetcher,endpoint:'/fixture-assets',providers:[e2bAssetProvider,...gitAssetProviders([{host:'github.com',auth:'token'},{host:'git.example.test',auth:'ssh',name:'Example Git'}])]});
 const host={platform:'electron',activeHostId:'local-codex',profiles:[],activeView:{viewId:'opencraft.assets',resourceUri:null},
  openView:()=>{},openSettings:()=>{},pushViewResource:()=>{},replaceViewResource:()=>{},
  provisionHost:async()=>{throw Error('Not used')},removeHost:async()=>false};
@@ -161,6 +162,58 @@ try {
       });
       await page.close();
     }
+  // Narrow touch sheets: every provider row wraps its copy inside the sheet and
+  // keeps its chevron fully visible, in both a CJK and a Latin catalog.
+  for (const width of [320, 390])
+    for (const [locale, add, choose] of [
+      ["zh-CN", "添加连接", "选择"],
+      ["en-US", "Add connection", "Choose"],
+    ] as const)
+      for (const theme of ["light", "dark"]) {
+        const context = await browser.newContext({
+          viewport: { width, height: 800 },
+          hasTouch: true,
+          deviceScaleFactor: 1,
+        });
+        const page = await context.newPage();
+        page.setDefaultTimeout(15000);
+        await page.addInitScript(() => {
+          (window as any).__name = (value: unknown) => value;
+        });
+        await page.goto(server.resolvedUrls!.local[0] + "?locale=" + locale);
+        await page.getByRole("radio", { name: locale === "zh-CN" ? "连接" : "Connections", exact: true }).tap();
+        await page.evaluate((theme) => (window as any).assets.theme(theme), theme);
+        await page.getByRole("button", { name: add, exact: true }).tap();
+        const sheet = page.getByRole("dialog");
+        await sheet.getByRole("button", { name: choose + " Example Git", exact: true }).waitFor();
+        const rows = await sheet.evaluate((dialog) => {
+          const box = dialog.getBoundingClientRect();
+          return [...dialog.querySelectorAll<HTMLElement>(".settings-collection-row")].map((row) => {
+            const r = row.getBoundingClientRect(),
+              chevron = row.querySelector(".settings-navigation-row__chevron")!.getBoundingClientRect();
+            return {
+              label: row.getAttribute("aria-label"),
+              rowInside: r.left >= box.left - 0.5 && r.right <= box.right + 0.5,
+              contentFits: row.scrollWidth <= row.clientWidth + 1,
+              chevronVisible:
+                chevron.width > 0 &&
+                chevron.left >= r.left - 0.5 &&
+                chevron.right <= Math.min(r.right, box.right) + 0.5,
+            };
+          });
+        });
+        assert.equal(rows.length, 3);
+        for (const row of rows)
+          assert.deepEqual(
+            row,
+            { label: row.label, rowInside: true, contentFits: true, chevronVisible: true },
+            `${width} ${locale}`,
+          );
+        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+        await page.screenshot({ path: resolve(output, `provider-picker-${width}-${locale}-${theme}.png`) });
+        evidence.push({ width, locale, theme, touch: true, providerRowsWrapInsideSheet: true });
+        await context.close();
+      }
   await writeFile(resolve(output, "evidence.json"), JSON.stringify(evidence, null, 2));
   console.log(JSON.stringify({ passed: evidence.length, output }));
 } finally {

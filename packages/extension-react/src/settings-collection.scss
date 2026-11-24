@@ -27,7 +27,11 @@
   font: var(--typography-metadata-font); letter-spacing: var(--typography-metadata-tracking);
   color: var(--color-text-secondary); overflow-wrap: anywhere;
 }
-.settings-control-row.settings-collection-row > .settings-control-row__label {
+// A collection row is a navigation row whose label holds icon, name and
+// description; unlike a plain navigation label it must shrink and wrap so the
+// chevron stays inside narrow sheets. Qualified by both row classes so the
+// result does not depend on which stylesheet loads first.
+.settings-control-row.settings-navigation-row.settings-collection-row > .settings-control-row__label {
   display: flex; align-items: center; gap: calc(3 * var(--spacing)); flex: 1 1 auto; min-inline-size: 0;
 }
 .settings-collection-row__icon { display: grid; place-items: center; flex-shrink: 0;
