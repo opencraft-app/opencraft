@@ -18,33 +18,70 @@ configuration, cookie handling, rollout and the shared-origin trust boundary.
 
 ### Account read receipt authority
 
-Read state is account data, not an installation UI preference. `ThreadAttention`
-tracks exact Host/Thread/Turn receipts: reading an old Turn never reads a newer
-result. `PlatformAccountContribution.readReceipts` optionally binds the verified
-account to an append/union persistence port. The fixed installation backend owns
-the database independently of selected execution Host, engine and browser.
+Read state is account data of the verified human Actor, not an installation UI
+preference, a login method or a device. `ThreadAttention` tracks exact
+Host/Thread/Turn receipts: reading an old Turn never reads a newer result. The
+client contract is `ThreadReadReceiptPort` (`@opencraft/workbench-runtime`):
+`read` returns receipts to merge and `merge` appends receipts and returns the
+confirmed ones; nothing removes or replaces a receipt, so read state only moves
+forward. A registered `PlatformAccountContribution.readReceipts` is the authority
+for its product account. Unless an account contribution provides its own
+`readReceipts` port, Headless Web builds use the core authority of the server's
+own logins (`ThreadReadReceiptSource`, `ServerThreadReadReceipts`), so local
+accounts, OIDC and other verified identity sources share read state across
+devices without a product plugin.
 
-For enterprise identity, each read/write request verifies the gateway identity; the server derives
-the account key. `x-opencraft-read-scope` only rejects account-switch races and
-cannot select another account. JSON-only same-origin writes reject foreign
-origins, cross-site requests, malformed tuples and oversized bodies. The service
-stores bounded exact receipts with existing managed SQLite document migrations
-and CAS union, never client whole-document replacement. Future formats fail closed.
+Headless serves that core authority at `/__opencraft_thread_reads`:
+
+- `GET` returns `{actorId}` of the signed-in human. `GET ?expectedActorId&after`
+  returns `{actorId, cursor, receipts}` with the receipts recorded after the
+  cursor, oldest first (`after=0` reads all; a cursor beyond the latest change
+  reads all again). A same-origin JSON `POST {receipts, expectedActorId}` adds at
+  most 128 receipts and returns `{actorId, cursor, receipts}`.
+- Receipts are keyed by the verified human Actor. Every login bound to the same
+  person shares them; `expectedActorId` only fences an account change (409
+  `account_changed`) and never selects another person's receipts.
+- No login returns 401 (also on servers without human logins). Session
+  credentials, non-human Actors and people without current instance admission
+  return 403. Admission and the signed-in Actor are rechecked after each storage
+  await. Foreign origins, cross-site requests and non-JSON bodies return 403;
+  malformed receipts, more than 128 per merge or a malformed cursor return 400.
+- Receipts live in the `thread_read_receipts` table of `opencraft-server.sqlite`
+  (Server migration v27, `0026_thread_read_receipts`), with a per-Actor change
+  `sequence` as the read cursor. They are read and written only in the Server
+  owner Worker through `@opencraft/worker-owner`; the network thread never opens
+  SQLite for them, and a failed or closed owner returns 503 without another read
+  or write path. Each Thread keeps its 8 newest receipts and each Actor its 4096
+  newest (the client's bound); eviction removes the oldest and never rewinds the
+  cursor.
 
 `BrowserThreadAttention` owns hydration, optimistic acknowledgements, legacy local
-receipt union import and a scoped cache/outbox. Browser persistence is not the
-account authority. Unchanged receipt unions neither write storage nor publish a
-new snapshot; failed storage writes remain retryable. Visible 15-second remote
-synchronization is retained for cross-device read-state freshness, not presented
-as eliminated network work. Confirmed remote receipts merge without clearing concurrent
-local reads. Failed/unknown writes remain retryable across browser reload; a later
-read recognizes already-committed writes. Account/provider replacement and disposal
-abort/fence late results. Initial hydration avoids flashing cached unread dots;
-a failed first read retains local/offline behavior and subsequent retries.
-Foreground accounts synchronize every15 seconds and immediately on focus, online
-and visible recovery; background pages catch up on return. This is bounded polling,
-not server Push. Clients without an account persistence contribution retain their
-local adapter; no remote capability is implied for those products.
+receipt import and a scoped cache/outbox. Browser persistence is not the account
+authority. With the core authority its public scope stays the local one (other
+local caches keep their partitions), while receipts are cached in one slot that
+holds only the signed-in person: another person's slot is replaced, and a
+verified sign-out (401/403) removes the slot and the remembered Actor. A product
+account that turns anonymous removes its scope's cache. Reads made in the
+browser before the server held them go to the first signed-in person once. A
+device that starts offline keeps the remembered person's cached reads and queues
+new ones; the server rechecks the person on reconnect and fences a different one.
+Unchanged receipt unions neither write storage nor publish a new snapshot; failed
+storage writes remain retryable. Confirmed remote receipts merge without clearing
+concurrent local reads, and failed or unknown writes remain retryable across
+reload. Account/provider replacement and disposal abort/fence late results.
+Initial hydration avoids flashing cached unread dots; a failed first read retains
+local/offline behavior. Foreground devices synchronize every 15 seconds,
+backing off up to 5 minutes while the authority keeps failing, and immediately
+on focus, online and visible recovery; the core authority reads only changes
+after its cursor. This is bounded polling, not server Push: no notification
+channel to other devices exists. Servers without the route, signed-out visitors,
+desktop Electron and clients without an account persistence contribution keep
+their local adapter.
+
+The former standalone `scripts/thread-read-receipt-store.ts` document store had no
+runtime caller and was removed. A product that served its own read receipt route
+keeps its `readReceipts` port, or drops it to use the core route; core performs
+no import of product-side records.
 
 ### Authentication ownership
 

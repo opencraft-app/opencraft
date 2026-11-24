@@ -147,6 +147,13 @@ and instance admission, validates the Host and selection, then calls
 commits only at the expected revision and refuses an unknown stored format.
 Failures never fall back to main-thread SQLite.
 
+Cross-device thread read receipts (`thread_read_receipts`, migration v27) also use
+the Server Worker connection. The network thread verifies the signed-in human
+Actor and instance admission and validates the receipts, then calls
+`readThreadReadReceipts` or `mergeThreadReadReceipts`. The Worker only adds
+receipts, assigns the per-Actor cursor and evicts the oldest beyond the bounds in
+one transaction. Failures never fall back to main-thread SQLite.
+
 Execution ENV creation reservations (`environment_creation_reservations`,
 migration v24) are written only by the Server Worker
 (`reserveEnvironmentCreation`, `settleEnvironmentCreation`) before a native

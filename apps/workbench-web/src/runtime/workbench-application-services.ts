@@ -531,6 +531,8 @@ export interface WebWorkbenchSupervisorOptions {
   readonly clientProduct?: import("@opencraft/client-product").ClientWorkbenchProduct;
   /** Server-backed personal model defaults of core's own logins; an account contribution takes precedence. */
   readonly accountModelDefaults?: import("@opencraft/workbench-runtime").AccountModelDefaultsSource;
+  /** Server-backed read receipts of core's own logins; an account contribution's `readReceipts` takes precedence. */
+  readonly threadReadReceipts?: import("@opencraft/workbench-runtime").ThreadReadReceiptSource;
 }
 
 export function readLocalPreference(key: string): string | null {

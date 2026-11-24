@@ -129,6 +129,11 @@ export const SERVER_MIGRATIONS = [
     "version": 26,
     "name": "0025_actor_ssh_keys",
     "sql": "CREATE TABLE `actor_ssh_key_audit` (\n\t`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,\n\t`at` integer NOT NULL,\n\t`operator` text NOT NULL,\n\t`actor_id` text,\n\t`key_id` text,\n\t`fingerprint` text,\n\t`action` text NOT NULL,\n\t`result` text NOT NULL\n) STRICT;\n--> statement-breakpoint\nCREATE INDEX `actor_ssh_key_audit_actor` ON `actor_ssh_key_audit` (`actor_id`,`id`);--> statement-breakpoint\nCREATE TABLE `actor_ssh_keys` (\n\t`id` text PRIMARY KEY NOT NULL,\n\t`actor_id` text NOT NULL,\n\t`actor_generation` integer NOT NULL,\n\t`name` text NOT NULL,\n\t`algorithm` text NOT NULL,\n\t`public_key` text NOT NULL,\n\t`fingerprint` text NOT NULL,\n\t`created_at` integer NOT NULL,\n\t`created_by` text NOT NULL,\n\t`revoked_at` integer,\n\t`revoked_by` text,\n\t`revoked_reason` text,\n\tCONSTRAINT \"actor_ssh_key_row\" CHECK(length(id) BETWEEN 1 AND 128\n    AND length(actor_id) BETWEEN 1 AND 512\n    AND length(name) BETWEEN 1 AND 128\n    AND length(public_key) BETWEEN 1 AND 16384\n    AND fingerprint LIKE 'SHA256:%'\n    AND (revoked_at IS NULL) = (revoked_by IS NULL))\n) STRICT;\n--> statement-breakpoint\nCREATE INDEX `actor_ssh_keys_actor` ON `actor_ssh_keys` (`actor_id`);--> statement-breakpoint\nCREATE UNIQUE INDEX `actor_ssh_keys_active_fingerprint` ON `actor_ssh_keys` (`fingerprint`) WHERE \"actor_ssh_keys\".\"revoked_at\" IS NULL;"
+  },
+  {
+    "version": 27,
+    "name": "0026_thread_read_receipts",
+    "sql": "CREATE TABLE `thread_read_receipts` (\n\t`actor_id` text NOT NULL,\n\t`host_id` text NOT NULL,\n\t`thread_id` text NOT NULL,\n\t`turn_id` text NOT NULL,\n\t`sequence` integer NOT NULL,\n\t`read_at` integer NOT NULL,\n\tPRIMARY KEY(`actor_id`, `host_id`, `thread_id`, `turn_id`),\n\tCONSTRAINT \"thread_read_receipts_sequence\" CHECK(sequence > 0)\n) STRICT;\n--> statement-breakpoint\nCREATE UNIQUE INDEX `thread_read_receipts_actor_sequence` ON `thread_read_receipts` (`actor_id`,`sequence`);"
   }
 ] as const;
 export const SERVER_ALTERNATE_MIGRATIONS = [
@@ -264,9 +269,14 @@ export const SERVER_ALTERNATE_MIGRATIONS = [
         "version": 26,
         "name": "converge_0025_actor_ssh_keys",
         "sql": SERVER_MIGRATIONS[25].sql
+      },
+      {
+        "version": 27,
+        "name": "converge_0026_thread_read_receipts",
+        "sql": SERVER_MIGRATIONS[26].sql
       }
     ]
   }
 ] as const;
-export const SERVER_MIGRATION_CONTRACT_HASH = "c3b3fa085fd6403c6317be64cbb32433e5664af77d674237841741953994cc87" as const;
+export const SERVER_MIGRATION_CONTRACT_HASH = "23ef362dc25c50d2a262a8ad3c0b931d29adb831ea7a9418bd945bd2c0755771" as const;
 export const OPENCRAFT_VERSION = "0.3.0" as const;

@@ -575,6 +575,52 @@ test('personal model defaults follow the signed-in Actor and instance admission 
   assert.equal((await fetch(path, { headers: { cookie: member } })).status, 403);
 });
 
+test('thread read receipts follow the signed-in Actor and instance admission on a real Headless server', { timeout: 60_000 }, async t => {
+  const f = await fixture(t);
+  const probe = await startHeadlessServer(f.options);
+  // Without human logins nobody is signed in; the Web keeps this browser's own read state.
+  const anonymous = await fetch(probe.url + '/__opencraft_thread_reads');
+  await probe.close();
+  assert.equal(anonymous.status, 401);
+  const proof = randomBytes(32).toString('base64url');
+  const proofPath = join(f.root, 'setup-token'), configPath = join(f.root, 'human-auth.json');
+  await writeFile(proofPath, JSON.stringify({ token: proof }), { mode: 0o600 });
+  await writeFile(configPath, JSON.stringify({ origin: probe.url, local: true, oidc: [], setupTokenFile: proofPath }), { mode: 0o600 });
+  const app = await startHeadlessServer({ ...f.options, port: Number(new URL(probe.url).port), humanAuthConfig: configPath }); f.own(() => app.close());
+  const path = app.url + '/__opencraft_thread_reads';
+  const json = { origin: app.url, 'content-type': 'application/json' };
+  assert.equal((await fetch(path)).status, 401);
+  const setup = await fetch(app.url + '/__opencraft_account/setup', { method: 'POST', headers: json,
+    body: JSON.stringify({ proof, mode: 'web', username: 'owner', password: 'Fixture-account-password-42' }) });
+  assert.equal(setup.status, 200, await setup.text());
+  const owner = setup.headers.get('set-cookie')?.split(';')[0];
+  const ownerId = (await fetch(app.url + '/__opencraft_account/status', { headers: { cookie: owner } }).then(r => r.json())).actor.id;
+  assert.deepEqual(await fetch(path, { headers: { cookie: owner } }).then(r => r.json()), { actorId: ownerId });
+  const receipt = JSON.stringify(['opencraft-server', 'thread', 'turn']);
+  const saved = await fetch(path, { method: 'POST', headers: { ...json, cookie: owner }, body: JSON.stringify({ receipts: [receipt], expectedActorId: ownerId }) });
+  assert.equal(saved.status, 200, await saved.clone().text());
+  assert.equal((await fetch(path, { method: 'POST', headers: { ...json, origin: 'https://elsewhere.example', cookie: owner },
+    body: JSON.stringify({ receipts: [receipt], expectedActorId: ownerId }) })).status, 403);
+  const query = new URLSearchParams({ expectedActorId: ownerId, after: '0' });
+  assert.deepEqual(await fetch(path + '?' + query, { headers: { cookie: owner } }).then(r => r.json()), { actorId: ownerId, cursor: 1, receipts: [receipt] });
+
+  // An invited member reads only their own receipts; revoking membership refuses them.
+  const invitation = await fetch(app.url + '/__opencraft_account/invitations', { method: 'POST', headers: { ...json, cookie: owner }, body: '{}' }).then(r => r.json());
+  const accepted = await fetch(app.url + '/__opencraft_account/accept', { method: 'POST', headers: json,
+    body: JSON.stringify({ code: invitation.code, username: 'member', password: 'Fixture-member-password-42' }) });
+  assert.equal(accepted.status, 201, await accepted.clone().text());
+  const member = accepted.headers.get('set-cookie')?.split(';')[0];
+  const memberId = (await fetch(path, { headers: { cookie: member } }).then(r => r.json())).actorId;
+  assert.notEqual(memberId, ownerId);
+  assert.equal((await fetch(path + '?' + query, { headers: { cookie: member } })).status, 409);
+  assert.deepEqual(await fetch(path + '?' + new URLSearchParams({ expectedActorId: memberId }), { headers: { cookie: member } }).then(r => r.json()),
+    { actorId: memberId, cursor: 0, receipts: [] });
+  const revoked = await fetch(app.url + '/__opencraft_account/members', { method: 'POST', headers: { ...json, cookie: owner },
+    body: JSON.stringify({ actorId: memberId, role: 'member', enabled: false }) });
+  assert.equal(revoked.status, 200, await revoked.clone().text());
+  assert.equal((await fetch(path, { headers: { cookie: member } })).status, 403);
+});
+
 test('personal SSH keys sign people in over the real SSH ingress and follow membership revocation', { timeout: 60_000 }, async t => {
   const { default: ssh2 } = await import('ssh2');
   const { generateEd25519KeyPair } = await import('../support/ssh-ed25519.mjs');

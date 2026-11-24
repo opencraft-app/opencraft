@@ -29,6 +29,7 @@ import { accountModelDefaultsMethods } from "../../packages/storage-node/src/ser
 import { conversationCreationReceiptMethods } from "../../packages/storage-node/src/server/conversation-creation-receipts.js";
 import { environmentCreationReservationMethods, readEnvironmentCreationReservation } from "../../packages/storage-node/src/server/environment-creation-reservations.js";
 import { actorSshKeyMethods, sshKeyFingerprint } from "../../packages/storage-node/src/server/actor-ssh-keys.js";
+import { threadReadReceiptMethods } from "../../packages/storage-node/src/server/thread-read-receipts.js";
 const serverSource = (managed: { database: import('node:sqlite').DatabaseSync; outcome: import('@opencraft/sqlite-node').DatabaseOutcome }) => ({ database: nodeSqlDatabase(managed.database), outcome: managed.outcome });
 
 function fixture(t: test.TestContext) {
@@ -575,6 +576,44 @@ test("personal SSH keys upgrade the preceding Server contract, keep its data and
       publicKey: "ssh-ed25519 " + blob.toString("base64"), fingerprint: sshKeyFingerprint(blob), operator: "test" });
     assert.equal(keys.actorSshKeysSnapshot()[0]?.id, added.id);
     assert.equal(keys.actorSshKeyAudit(person.actorId, 10)[0]?.action, "add");
+  } finally { await owner.close(); }
+
+  const changed = new DatabaseSync(path);
+  changed.prepare("UPDATE schema_migrations SET checksum=? WHERE version=?").run("0".repeat(64), priorVersion + 1);
+  changed.close();
+  await assert.rejects(openServerDatabase(root), { kind: "history-mismatch" });
+});
+
+test("thread read receipts upgrade the preceding Server contract, keep its data and reject a tampered checksum", async t => {
+  const root = fixture(t), path = join(root, "opencraft-server.sqlite");
+  const priorVersion = 26;
+  assert.equal(SERVER_MIGRATIONS[priorVersion]?.name, "0026_thread_read_receipts");
+  const prior = openManagedDatabase({ path, migrations: SERVER_MIGRATIONS.slice(0, priorVersion) });
+  importServerData(prior.database, root, { productVersion: "0.2.0", hash: "previous-actor-ssh-keys-contract" });
+  const actors = new ActorStore(serverSource(prior));
+  const person = actors.resolveHuman({ provider: "local", subject: "retained-reader", displayName: "Retained", expiresAt: Date.now() + 60_000 });
+  actors.close();
+  assert.ok(person);
+  const defaults = accountModelDefaultsMethods(nodeSqlDatabase(prior.database));
+  assert.equal(defaults.compareAndSetAccountModelDefaults(person.actorId, "host", 0, { model: "kept", effort: null }).updated, true);
+  assert.equal(prior.database.prepare("SELECT count(*) n FROM sqlite_master WHERE name='thread_read_receipts'").get()?.n, 0);
+  const ledger = prior.database.prepare("SELECT * FROM schema_migrations ORDER BY version").all();
+  prior.database.close();
+
+  const owner = await openServerDatabase(root);
+  try {
+    assert.equal(owner.outcome.status, "migrated");
+    assert.equal(owner.outcome.appliedVersion, SERVER_MIGRATIONS.length);
+    assert.deepEqual(owner.database.prepare("SELECT * FROM schema_migrations WHERE version<=? ORDER BY version").all(priorVersion), ledger);
+    const restored = new ActorStore(owner);
+    assert.equal(restored.findHuman({ provider: "local", subject: "retained-reader" })?.id, person.actorId);
+    restored.close();
+    assert.equal((accountModelDefaultsMethods(owner.database).readAccountModelDefaults(person.actorId, "host").selection as { model: string }).model, "kept");
+    const receipts = threadReadReceiptMethods(owner.database);
+    assert.deepEqual(receipts.readThreadReadReceipts(person.actorId, 0), { cursor: 0, receipts: [] });
+    assert.deepEqual(receipts.mergeThreadReadReceipts(person.actorId, [["host", "thread", "turn"]]), { cursor: 1 });
+    assert.deepEqual(receipts.readThreadReadReceipts(person.actorId, 0).receipts, [["host", "thread", "turn"]]);
+    assert.throws(() => owner.database.prepare("INSERT INTO thread_read_receipts VALUES('a', 'h', 't', 'u', 0, 1)").run(), /CHECK/);
   } finally { await owner.close(); }
 
   const changed = new DatabaseSync(path);

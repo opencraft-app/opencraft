@@ -51,6 +51,18 @@ export function humanActorAccess<C extends AuthenticatedContext>(authority: {
   };
 }
 
+/** A browser write from this server's own origin with a JSON body; cross-site forms and fetches are refused. */
+export function sameOriginJsonRequest(request: IncomingMessage, trustedOrigin: string | null): boolean {
+  const origin = request.headers.origin;
+  return (
+    typeof origin === "string" &&
+    (origin === trustedOrigin ||
+      ["http:", "https:"].some((protocol) => origin === protocol + "//" + request.headers.host)) &&
+    request.headers["sec-fetch-site"] !== "cross-site" &&
+    request.headers["content-type"]?.split(";")[0] === "application/json"
+  );
+}
+
 class RequestError extends Error {
   constructor(
     readonly status: number,
@@ -154,16 +166,7 @@ export function accountModelDefaultsHttp(
         send(405, { error: "method_not_allowed" });
         return true;
       }
-      const origin = request.headers.origin;
-      if (
-        typeof origin !== "string" ||
-        !(
-          origin === initial.origin ||
-          ["http:", "https:"].some((protocol) => origin === protocol + "//" + request.headers.host)
-        ) ||
-        request.headers["sec-fetch-site"] === "cross-site" ||
-        request.headers["content-type"]?.split(";")[0] !== "application/json"
-      ) {
+      if (!sameOriginJsonRequest(request, initial.origin)) {
         send(403, { error: "same_origin_required" });
         return true;
       }

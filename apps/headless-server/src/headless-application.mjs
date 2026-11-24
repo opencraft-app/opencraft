@@ -12,6 +12,7 @@ import { HostWorkspaceCatalogTransport } from './host-workspace-catalog-transpor
 import { createCodexWorkspaceHooks, validateCodexWorkspaceHooks, hasCodexWorkspaceHooks, configuredWorkspaceExecution, workspaceLifecycleRouting } from './codex-workspace-hooks.mjs';
 import { ServerInformationStore, serverInformationHttp } from './server-information.mjs';
 import { accountModelDefaultsHttp, humanActorAccess } from './account-model-defaults-http.ts';
+import { threadReadReceiptsHttp } from './thread-read-receipts-http.ts';
 import { ActorSshKeys, composeSshAccess, installationSshKeyAuthority } from './actor-ssh-keys.ts';
 import { actorSshKeysHttp } from './actor-ssh-keys-http.ts';
 import { configuredModelGatewayPath, CodexCoreControlClient } from "@opencraft/account-pool-host";
@@ -1421,6 +1422,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       trustedOrigin: request => actorAccess.options.trustedOrigin?.(request) ?? null,
     });
     const accountModelDefaultsService = accountModelDefaultsHttp(serverStorage.call, signedInHuman);
+    const threadReadReceiptsService = threadReadReceiptsHttp(serverStorage.call, signedInHuman);
     // Personal SSH keys: committed by the owner Worker, read from this thread's projection.
     const sshKeyAuthority = installationSshKeyAuthority({ actors: actorStore, access: instanceAccess });
     personalSshKeys = await ActorSshKeys.open(serverStorage.call, sshKeyAuthority);
@@ -1560,6 +1562,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       turnPushService: turnPush,
       serverInformationService,
       accountModelDefaultsService,
+      threadReadReceiptsService,
       actorSshKeysService,
       authService: humanAuth ?? null,
       accountService: accountApplication ?? null,

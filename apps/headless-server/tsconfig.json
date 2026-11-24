@@ -23,6 +23,7 @@
     "src/git-status-capability.ts",
     "src/execution-admission.worker.ts",
     "src/account-model-defaults-http.ts",
+    "src/thread-read-receipts-http.ts",
     "src/actor-ssh-keys.ts",
     "src/actor-ssh-keys-http.ts",
     "src/actor-ssh-key-import.ts",

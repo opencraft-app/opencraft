@@ -156,6 +156,12 @@
       "name": "0025_actor_ssh_keys",
       "checksum": "c51413da869af1f4c0412979c2274db3ef6e0288d4d86c9a541e4da06565f024",
       "snapshotChecksum": "f85c87a7a3d79cc28e328dd6c615dab27e3aa2517235ddf42fe16eb7c31e723c"
+    },
+    {
+      "version": 27,
+      "name": "0026_thread_read_receipts",
+      "checksum": "e36df6ad603bb44bb2f524fb3922d145d8535a8f263f91fd0ff4ee8922850fd7",
+      "snapshotChecksum": "2ae5edf7ce60c2431bf21340d3c31cd33cffcce59b560785cc49ebd8f964359c"
     }
   ],
   "alternates": [
@@ -358,6 +364,11 @@
           "version": 26,
           "name": "converge_0025_actor_ssh_keys",
           "checksum": "c51413da869af1f4c0412979c2274db3ef6e0288d4d86c9a541e4da06565f024"
+        },
+        {
+          "version": 27,
+          "name": "converge_0026_thread_read_receipts",
+          "checksum": "e36df6ad603bb44bb2f524fb3922d145d8535a8f263f91fd0ff4ee8922850fd7"
         }
       ]
     }

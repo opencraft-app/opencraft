@@ -877,3 +877,25 @@ export const actorSshKeyAudit = sqliteTable("actor_ssh_key_audit", {
 }, table => [
   index("actor_ssh_key_audit_actor").on(table.actorId, table.id),
 ]);
+
+/**
+ * Cross-device thread read receipts of one human Actor. A receipt is the exact
+ * Host/Thread/Turn identity the person has read; it is keyed by the Actor, never by a
+ * login binding or device, so every verified login of the same person shares it.
+ * `sequence` is a per-Actor change counter: it orders receipts for eviction and lets a
+ * device read only what changed after its cursor. Receipts are only ever added; the
+ * owner bounds each Thread and each Actor by evicting the oldest. Written only by the
+ * thread read receipt methods of the owner Worker.
+ */
+export const threadReadReceipts = sqliteTable("thread_read_receipts", {
+  actorId: text("actor_id").notNull(),
+  hostId: text("host_id").notNull(),
+  threadId: text("thread_id").notNull(),
+  turnId: text("turn_id").notNull(),
+  sequence: integer("sequence").notNull(),
+  readAt: integer("read_at").notNull(),
+}, table => [
+  primaryKey({ columns: [table.actorId, table.hostId, table.threadId, table.turnId] }),
+  uniqueIndex("thread_read_receipts_actor_sequence").on(table.actorId, table.sequence),
+  check("thread_read_receipts_sequence", sql.raw("sequence > 0")),
+]);

@@ -183,6 +183,13 @@
       "when": 1795444949057,
       "tag": "0025_actor_ssh_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1795484739416,
+      "tag": "0026_thread_read_receipts",
+      "breakpoints": true
     }
   ]
 }

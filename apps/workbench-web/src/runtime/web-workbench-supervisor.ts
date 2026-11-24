@@ -198,7 +198,7 @@ export async function createWebWorkbenchApplicationSupervisor(
     const platformAccounts = new PlatformAccountContributionRegistry();
     const threadAttention = new BrowserThreadAttention(appServerRegistry.clients, turnCompletions,
       platformAccounts, window.localStorage, currentProductStorageKey("opencraft.thread-read.v1"),
-      Number(import.meta.env.VITE_THREAD_UNREAD_RESET_BEFORE) || 0);
+      Number(import.meta.env.VITE_THREAD_UNREAD_RESET_BEFORE) || 0, options.threadReadReceipts ?? null);
     startupRollback.push(() => threadAttention.dispose());
     const applicationBranding = new ApplicationBrandingRegistry();
     const channelSearch = new ChannelSearchRegistry();

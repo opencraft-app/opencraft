@@ -9,6 +9,7 @@ import type { ConversationResourceMethods } from "./conversation-resources.js";
 import type { AccountModelDefaultsMethods } from "./account-model-defaults.js";
 import type { EnvironmentCreationReservationMethods } from "./environment-creation-reservations.js";
 import type { ActorSshKeyMethods } from "./actor-ssh-keys.js";
+import type { ThreadReadReceiptMethods } from "./thread-read-receipts.js";
 export type { CreationReceipt, CreationReceiptMethods } from "./conversation-creation-receipts.js";
 export type { ConversationResourceMethods, ConversationResourceRow } from "./conversation-resources.js";
 export type { AccountModelDefaultsMethods, StoredAccountModelDefaults } from "./account-model-defaults.js";
@@ -24,12 +25,14 @@ export type {
   StoredActorSshKey,
   StoredActorSshKeyHistory,
 } from "./actor-ssh-keys.js";
+export type { ThreadReadReceiptIdentity, ThreadReadReceiptMethods, ThreadReadReceiptPage } from "./thread-read-receipts.js";
 
 type CoreMethods = CreationReceiptMethods &
   ConversationResourceMethods &
   AccountModelDefaultsMethods &
   EnvironmentCreationReservationMethods &
-  ActorSshKeyMethods;
+  ActorSshKeyMethods &
+  ThreadReadReceiptMethods;
 
 /** The Server installation as a network process holds it. */
 export interface ServerCoreStorage<T = object> extends ServerDatabase {
