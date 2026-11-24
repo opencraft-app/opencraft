@@ -16,6 +16,8 @@ import { loadGatewayComposition } from "../../scripts/container-deployment/gatew
 import { loadGatewayWebRelease, webReleaseFiles } from "../../scripts/container-deployment/gateway-web-release.mjs";
 import { startHeadlessServer } from "../../apps/headless-server/src/headless-application.mjs";
 
+import { createWorkbenchWebServer } from "../../apps/headless-server/src/serve-workbench-web.mjs";
+
 const run = promisify(execFile);
 const script = (name) => fileURLToPath(new URL("../../scripts/container-deployment/" + name, import.meta.url));
 const gateway = script("gateway.mjs");
@@ -36,6 +38,7 @@ async function fixture(t, api = 1, extra = {}) {
   };
   await mkdir(join(directory, "sidecar"));
   await mkdir(join(directory, "worker"));
+  if (Object.keys(files).some(name => name.startsWith("workbench/"))) await mkdir(join(directory, "workbench"));
   for (const [name, content] of Object.entries(files)) await writeFile(join(directory, name), content);
   const { stdout: manifest } = await run(process.execPath, [script("gateway-composition-manifest.mjs"), directory]);
   files["manifest.json"] = manifest;
@@ -65,6 +68,45 @@ test("optional Gateway configuration loads a verified entry and relative sidecar
     });
     assert.deepEqual(JSON.parse(result.stdout), { gatewayCompositionSha256: pack.sha256 });
   }
+});
+
+test("a locked VFS can add a Workbench Assets plugin without replacing Web or bypassing admission", async (t) => {
+  const entry = "workbench/assets-plugin.mjs";
+  const code = "export default { apiVersion: 1, create: () => ({}) };";
+  const pack = await fixture(t, 1, { [entry]: code });
+  const selected = await loadGatewayComposition(pack.env);
+  t.after(() => selected.composition.close());
+  const digest = await packageDigest(Buffer.from(code));
+  assert.equal(selected.workbenchAssetsPlugin.sha256, digest);
+  const root = await mkdtemp(join(tmpdir(), "workbench-assets-vfs-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await writeFile(join(root, "index.html"), "<!doctype html><html><head></head><body>Core shell</body></html>");
+  const server = await createWorkbenchWebServer({
+    root, appServerTarget: null, workbenchAssetsPlugin: selected.workbenchAssetsPlugin,
+    identityService: {
+      admissionStatus: request => request.headers["x-fixture-admitted"] ? 204 : 403,
+      connectionContext: () => ({ sender: null }),
+      async handle() { return false; },
+    },
+  });
+  t.after(() => server.close());
+  const address = await server.listen({ host: "127.0.0.1", port: 0 });
+  const origin = `http://127.0.0.1:${address.port}`;
+  const path = `/__opencraft_workbench_assets_plugin/${digest}.mjs`;
+  const headers = { "x-fixture-admitted": "1" };
+  assert.equal((await fetch(origin + path)).status, 403);
+  const html = await (await fetch(origin + "/", { headers })).text();
+  assert.match(html, /Core shell/u);
+  assert.match(html, new RegExp(`"apiVersion":1,"sha256":"${digest}"`));
+  const module = await fetch(origin + path, { headers });
+  assert.equal(module.headers.get("content-type"), "text/javascript; charset=utf-8");
+  assert.equal(await module.text(), code);
+  assert.equal((await fetch(origin + path, { headers, method: "HEAD" })).status, 200);
+  assert.equal((await fetch(origin + path, { headers, method: "POST" })).status, 405);
+  assert.equal((await fetch(origin + path + "?stale", { headers })).status, 404);
+  assert.equal((await fetch(origin + "/__opencraft_workbench_assets_plugin/composition.mjs", { headers })).status, 404);
+  await writeFile(join(pack.directory, entry), code.replace("apiVersion: 1", "apiVersion: 2"));
+  await assert.rejects(loadGatewayComposition(pack.env), /VFS package SHA-256 mismatch/u);
 });
 
 test("configured Gateway refuses a missing digest, mismatched manifest or incompatible API", async (t) => {

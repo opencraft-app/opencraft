@@ -10,7 +10,7 @@ import { deploymentPaths, readPrivateToken } from './paths.mjs';
 import { openGatewayWorkspace } from './gateway-workspace.mjs';
 import { loadGatewayWebRelease } from './gateway-web-release.mjs';
 
-export async function startContainerGateway(composition = {}, compositionSha256) {
+export async function startContainerGateway(composition = {}, compositionSha256, workbenchAssetsPlugin) {
   // Malformed composition fails before any deployment owner is contacted.
   validateHeadlessExtensions(composition.extensions);
   // This delivery attaches existing owners. It never starts an execution engine.
@@ -39,7 +39,7 @@ export async function startContainerGateway(composition = {}, compositionSha256)
   try {
     await Promise.all([workspace.codexHealth(), readEngineHostIdentity(workspace.piDescriptor), readDshHostIdentity(workspace.dshDescriptor)]);
     app = await startHeadlessServer({
-      ...options, root, webRoot: web?.webRoot ?? join(root, 'web'),
+      ...options, root, workbenchAssetsPlugin, webRoot: web?.webRoot ?? join(root, 'web'),
       ...(web ? { productPluginRelease: { root: web.root, metadata: web.productPlugins } } : {}),
       // The vault owner publishes its issuer where Brain pins it into DSH, Pi and the Codex AppServer.
       ...(paths.environmentDelivery ? { environmentIssuer: { ...options.environmentIssuer, publish: paths.environmentIssuerFile } } : {}),

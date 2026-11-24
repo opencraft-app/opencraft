@@ -14,7 +14,7 @@ export interface ServerAssetsContribution {
     load(fetcher: typeof fetch): Promise<{
       readonly provider: Omit<AssetProvider, "host" | "editor">;
       useConnections(git: AssetConnections, scope: string, onUnauthorized: () => void): AssetConnections;
-    }>;
+    } | undefined>;
   };
 }
 

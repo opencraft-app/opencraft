@@ -4,6 +4,7 @@ import { McpAppsRpcSession } from "@opencraft/mcp-apps/transport";
 import { serveNotModified } from "./web-asset-cache.mjs";
 import { selectAssetEncoding } from "./web-asset-encoding.mjs";
 import { injectUserPluginBootstrap, loadUserPlugins, userPluginAsset } from './web-deployment/user-plugins.mjs';
+import { injectWorkbenchAssetsPlugin, serveWorkbenchAssetsPlugin } from "./web-deployment/workbench-assets-plugin.mjs";
 import { createUserPluginCatalog } from './web-deployment/craft-plugins.mjs';
 import { resourceRecoveryHtml, resourceRecoveryPath } from './web-resource-recovery.mjs';
 import { HtmlFilePreviews } from "./html-file-previews.mjs";
@@ -365,7 +366,7 @@ function isWorkbenchApplicationRoute(pathname) {
   return /^\/(?:local|settings|threads|views)\/[^/]+\/?$/u.test(pathname);
 }
 
-async function serveFile(request, response, path, pathname, instanceId = null, assetVersion = null, userPlugins = null, browserBackend = null) {
+async function serveFile(request, response, path, pathname, instanceId = null, assetVersion = null, userPlugins = null, browserBackend = null, workbenchAssetsPlugin = null) {
   let metadata = await stat(path);
   if (!metadata.isFile()) return false;
   let selectedPath = path;
@@ -386,6 +387,7 @@ async function serveFile(request, response, path, pathname, instanceId = null, a
   const shell = pathname === '/' || pathname === '/index.html';
   let html = extname(path) === '.html' ? await readFile(path, 'utf8') : null;
   if (html !== null && shell && userPlugins?.length) html = injectUserPluginBootstrap(html,userPlugins);
+  if (html !== null && shell && workbenchAssetsPlugin) html = injectWorkbenchAssetsPlugin(html, workbenchAssetsPlugin);
   if (html !== null && shell && browserBackend !== null) html = html.replace(/<head(?:\s[^>]*)?>/iu,
     head => head + '<meta name="opencraft-browser-backend" content="' + (browserBackend ? 'remote' : 'iframe') + '">');
   if (html !== null) {
@@ -420,6 +422,7 @@ export async function createWorkbenchWebServer({
   root,
   userPluginDirectory = null,
   productPluginAssets = null,
+  workbenchAssetsPlugin = null,
   instanceId = null,
   assetVersion = null,
   appServerTarget = "ws://127.0.0.1:9988/rpc",
@@ -766,6 +769,7 @@ export async function createWorkbenchWebServer({
       }
       // Operator-selected runtime plugins only see requests that passed instance
       // admission above and no core handler claimed; the host re-checks admission.
+      if (workbenchAssetsPlugin && serveWorkbenchAssetsPlugin(request, response, url, workbenchAssetsPlugin)) return;
       if (runtimePluginService?.handle(request, response)) return;
       // Unregistered API routes cannot fall through to the SPA or a static file.
       const refreshPlugins = url.pathname === '/__opencraft_plugin_catalog' || url.pathname === '/' || url.pathname === '/index.html'
@@ -810,7 +814,7 @@ export async function createWorkbenchWebServer({
         return;
       }
       try {
-        if (await serveFile(request, response, requestedPath, resourcePath, instanceId, assetVersion, userPlugins, !!remoteBrowserService)) return;
+        if (await serveFile(request, response, requestedPath, resourcePath, instanceId, assetVersion, userPlugins, !!remoteBrowserService, workbenchAssetsPlugin)) return;
         // Product-owned standalone documents can share the static origin without
         // booting the Workbench SPA. Admission and reserved API routing stay above.
         if (extname(url.pathname) === "" && await serveFile(request, response, join(requestedPath, "index.html"), url.pathname, instanceId, assetVersion)) return;
@@ -830,7 +834,7 @@ export async function createWorkbenchWebServer({
         acceptsHtml &&
         (extname(url.pathname) === "" || isWorkbenchApplicationRoute(url.pathname))
       ) {
-        await serveFile(request, response, join(staticRoot, "index.html"), "/index.html", instanceId, assetVersion, userPlugins, !!remoteBrowserService);
+        await serveFile(request, response, join(staticRoot, "index.html"), "/index.html", instanceId, assetVersion, userPlugins, !!remoteBrowserService, workbenchAssetsPlugin);
         return;
       }
       sendJson(response, 404, { ok: false, error: "Not found" });

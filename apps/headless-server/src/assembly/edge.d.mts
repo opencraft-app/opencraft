@@ -34,6 +34,7 @@ export interface EdgeAssembly {
     webRoot: string;
     userPluginDirectory: string | null;
     productPluginAssets: unknown;
+    workbenchAssetsPlugin?: import("../web-deployment/workbench-assets-plugin.mjs").WorkbenchAssetsPlugin;
     webRelease: { readonly buildId: string };
     isolateBrowserStorage: boolean | undefined;
     machineIdentity: { readonly machineId: string };

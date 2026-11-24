@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { openPackageVfs } from "@opencraft/runtime-plugin-host/package-vfs";
 import { boundedFile, checkedDirectory } from "@opencraft/runtime-plugin-host/store";
 import { prepareProductServerMigrations } from "@opencraft/storage-node/server-composition";
+import { readWorkbenchAssetsPlugin } from "../../apps/headless-server/src/web-deployment/workbench-assets-plugin.mjs";
 import { verifyExtensionFamilies } from "@opencraft/storage-node/server";
 import {
   loadHeadlessExtensions,
@@ -56,6 +57,7 @@ export async function loadGatewayComposition(env = process.env) {
     },
   });
   const names = vfs.listFiles();
+  const workbenchAssetsPlugin = await readWorkbenchAssetsPlugin(vfs);
   if (!names.includes(entry)) throw Error("Gateway composition package requires " + entry);
   // Only verified package bytes are imported. Sidecars stay available for the
   // existing Headless extensions and their Workers throughout the server lifetime.
@@ -98,6 +100,7 @@ export async function loadGatewayComposition(env = process.env) {
     let closing;
     return {
       sha256,
+      workbenchAssetsPlugin,
       composition: {
         ...composition,
         close() {

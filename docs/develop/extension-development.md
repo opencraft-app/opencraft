@@ -208,3 +208,25 @@ credential-description methods may also declare `modelReadiness: true` alongside
 `modelConfiguration: true` and its fixed `targetHostId`. The new-conversation setup
 uses this explicit capability to check configuration without probing a model or
 reading credential values. OAuth-only account pages should omit this declaration.
+
+## Deployment-selected Workbench Assets contribution
+
+A portable Gateway deployment can use the official Workbench and add one
+trusted Git provider presentation at startup. Include a self-contained UTF-8
+ES module (up to 512 KiB) at `workbench/assets-plugin.mjs` in the Gateway
+composition VFS. The deployment's existing `gatewayArtifacts.compositionSha256`
+pins the inventory and all package bytes. The Workbench verifies the selected
+module digest before importing it and passes shared React, Intl and Assets
+controls through the versioned `WorkbenchAssetsPluginV1` factory contract
+(`@opencraft/workbench-web/runtime/workbench-assets-plugin`).
+
+Compile the downstream implementation ahead of time. The module exports a
+default `{ apiVersion: 1, create(modules) }` factory with no external imports.
+Return one `assets.git` contribution and optional locale catalogs. The Git
+capability and credentials are still owned by the server. The shared Assets
+page activates the contribution only for a matching Git host that the server
+advertises. Built-in GitHub and other advertised Git connections keep their
+existing flows. An existing build-selected Assets contribution takes precedence.
+
+A release preflight reports the selected module digest. Reload the Workbench to
+select the new VFS. The current deployment adapter is the Node Gateway.

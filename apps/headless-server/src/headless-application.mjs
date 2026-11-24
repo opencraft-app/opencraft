@@ -888,7 +888,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     // The Web server: the route table and its socket are Node constructions; the
     // edge module assembles their options from every module's services.
     await edge.openWeb({ createWebServer: options.createWebServer ?? createWorkbenchWebServer,
-      webRoot, userPluginDirectory, productPluginAssets, webRelease, isolateBrowserStorage: options.isolateBrowserStorage, machineIdentity,
+      webRoot, userPluginDirectory, productPluginAssets, workbenchAssetsPlugin: options.workbenchAssetsPlugin,
+      webRelease, isolateBrowserStorage: options.isolateBrowserStorage, machineIdentity,
       observability, ownerWake, getExecutionHealth: options.getExecutionHealth, hostReadiness: workspaceHost.hostReadiness,
       // The App Server, driver, query and Hands sessions for the server's own Host.
       sessions: clientSession.openWebSessions({ actorCollaboration, conversationExecution, signExecutionCli, operator, usageQueries, actorStore,

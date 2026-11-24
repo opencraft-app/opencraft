@@ -14,12 +14,15 @@ if (args[0] === CHECK_GATEWAY_COMPOSITION) {
   } finally {
     await selected.composition.close();
   }
-  console.log(JSON.stringify({ gatewayCompositionSha256: selected.sha256 }));
+  console.log(JSON.stringify({
+    gatewayCompositionSha256: selected.sha256,
+    ...(selected.workbenchAssetsPlugin ? { workbenchAssetsPluginSha256: selected.workbenchAssetsPlugin.sha256 } : {}),
+  }));
 } else if (!(await runGatewayUtilityMode(args))) {
   const selected = await loadGatewayComposition();
   try {
     const { startContainerGateway } = await import('./gateway-application.mjs');
-    await startContainerGateway(selected?.composition, selected?.sha256);
+    await startContainerGateway(selected?.composition, selected?.sha256, selected?.workbenchAssetsPlugin);
     if (selected) console.log(JSON.stringify({ gatewayCompositionSha256: selected.sha256 }));
   } catch (error) {
     await selected?.composition.close().catch(() => {});

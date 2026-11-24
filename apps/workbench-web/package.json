@@ -124,6 +124,7 @@
     "./runtime/server-installed-extensions": "./src/runtime/server-installed-extensions.ts",
     "./runtime/server-product-extensions": "./src/runtime/server-product-extensions.ts",
     "./runtime/thread-catalog-updates": "./src/runtime/thread-catalog-updates.ts",
+    "./runtime/workbench-assets-plugin": "./src/runtime/workbench-assets-plugin.ts",
     "./runtime/trusted-renderer-host": "./src/runtime/trusted-renderer-host.ts",
     "./runtime/workbench-navigation": "./src/runtime/workbench-navigation.ts",
     "./runtime/workbench-navigation-transaction": "./src/runtime/workbench-navigation-transaction.ts"

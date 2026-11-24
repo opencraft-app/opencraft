@@ -517,7 +517,8 @@ export async function createWebWorkbenchApplicationSupervisor(
         (await import('@opencraft/plugin-local-account/client')).createLocalAccountExtension(globalThis.fetch.bind(globalThis)));
     }
     if (headlessAppHost !== null || electronAppHost !== null) {
-      const assets = serverExtensions.find(extension => extension.assets)?.assets;
+      const assets = serverExtensions.find(extension => extension.assets)?.assets
+        ?? (headlessAppHost !== null ? options.serverAssetsContribution : undefined);
       await extensions.loadOptional("opencraft.assets", async () =>
         (await import('@opencraft/plugin-assets/client')).createServerAssetsExtension(serverFetch, undefined, {
           contribution: assets,

@@ -1,7 +1,7 @@
 import * as React from 'react';
 import {TASKS, TASK_STATUSES, TASK_PRIORITIES, TASK_KINDS, TASK_AI_RESEARCH} from '@opencraft/appserver-protocol';
 import * as jsx from 'react/jsx-runtime';
-import { createDeferredView, SettingsActions, SettingsButton, SettingsGroup, SettingsNotice, SettingsPanel, SegmentedControl, SettingsSelect, SettingsTextInput, SettingsControlPair, SettingsChoiceSelect, SettingsCopyButton, AvatarImage, IdentityAvatarContext } from '@opencraft/extension-react';
+import { createDeferredView, SettingsActions, SettingsButton, SettingsGroup, SettingsNotice, SettingsPanel, SegmentedControl, SettingsSelect, SettingsTextInput, SettingsRow, SettingsControlPair, SettingsChoiceSelect, SettingsCopyButton, AvatarImage, IdentityAvatarContext } from '@opencraft/extension-react';
 import {Button, IconButton, ObjectTitleButton, ObjectActionSurface} from '@opencraft/design-system-web/button';
 import * as modalContent from '@opencraft/design-system-web/modal-content';
 import * as dropdownMenu from '@opencraft/design-system-web/dropdown-menu';
@@ -19,15 +19,11 @@ import { serverUrl } from './server-context';
 /** Explicit versioned bridge for administrator-approved native renderer data.
  * No second React/context runtime, global module registry, or arbitrary import map.
  * This is trusted renderer code, NOT a sandbox or a public craft capability. */
-export async function loadTrustedRenderer(value: unknown, configuration: Readonly<Record<string, unknown>>,
-  getClient: (hostId: string) => AppServerClient | undefined = () => undefined, tasks?: () => import("@opencraft/plugin-tasks").TasksExtensionPorts): Promise<TrustedExtensionDefinition> {
-  const pack = value as { hostApi?: unknown; css?: unknown; create?: unknown } | null;
-  if (pack?.hostApi !== 'trusted-react-v1' || typeof pack.create !== 'function'
-    || (pack.css !== undefined && (typeof pack.css !== 'string' || pack.css.length > 256 * 1024))) throw new Error('Unsupported trusted renderer package');
-  const modules = Object.freeze({
+export function trustedRendererModules() {
+  return Object.freeze({
     react: React, 'react/jsx-runtime': jsx,
     '@opencraft/appserver-protocol': Object.freeze({TASKS, TASK_STATUSES, TASK_PRIORITIES, TASK_KINDS, TASK_AI_RESEARCH}),
-    '@opencraft/extension-react': Object.freeze({createDeferredView, SettingsActions, SettingsButton, SettingsGroup, SettingsNotice, SettingsPanel, SegmentedControl, SettingsSelect, SettingsTextInput, SettingsControlPair, SettingsChoiceSelect, SettingsCopyButton, AvatarImage, IdentityAvatarContext}),
+    '@opencraft/extension-react': Object.freeze({createDeferredView, SettingsActions, SettingsButton, SettingsGroup, SettingsNotice, SettingsPanel, SegmentedControl, SettingsSelect, SettingsTextInput, SettingsRow, SettingsControlPair, SettingsChoiceSelect, SettingsCopyButton, AvatarImage, IdentityAvatarContext}),
     '@opencraft/design-system-web/button': Object.freeze({Button, IconButton, ObjectTitleButton, ObjectActionSurface}),
     '@opencraft/design-system-web/modal-content': modalContent,
     '@opencraft/design-system-web/dropdown-menu': dropdownMenu,
@@ -37,7 +33,14 @@ export async function loadTrustedRenderer(value: unknown, configuration: Readonl
     '@opencraft/appserver-client/transport': Object.freeze({ combineAbortSignals }),
     '@opencraft/workbench-runtime': Object.freeze({ legacyDirectServerProjectionFromHost }),
   });
-  const definition = await pack.create(Object.freeze({ hostApi:'trusted-react-v1', modules, configuration:structuredClone(configuration),
+}
+
+export async function loadTrustedRenderer(value: unknown, configuration: Readonly<Record<string, unknown>>,
+  getClient: (hostId: string) => AppServerClient | undefined = () => undefined, tasks?: () => import("@opencraft/plugin-tasks").TasksExtensionPorts): Promise<TrustedExtensionDefinition> {
+  const pack = value as { hostApi?: unknown; css?: unknown; create?: unknown } | null;
+  if (pack?.hostApi !== 'trusted-react-v1' || typeof pack.create !== 'function'
+    || (pack.css !== undefined && (typeof pack.css !== 'string' || pack.css.length > 256 * 1024))) throw new Error('Unsupported trusted renderer package');
+  const definition = await pack.create(Object.freeze({ hostApi:'trusted-react-v1', modules: trustedRendererModules(), configuration:structuredClone(configuration),
     services:Object.freeze({ ...(tasks ? { tasks: tasks() } : {}) }),
     fetcher:(url: string, init?: RequestInit) => fetch(serverUrl(url), init), getClient }));
   if (!definition || typeof definition.activate !== 'function') throw new Error('Invalid trusted renderer definition');

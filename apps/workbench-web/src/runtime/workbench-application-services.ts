@@ -513,6 +513,7 @@ export interface WebWorkbenchSupervisorOptions {
   readonly pushDevice?: import("./push-device").PushDevicePort;
   /** Trusted product assembly; active only for a server-backed Web workbench. */
   readonly serverExtensions?: readonly import("./server-product-extensions").ServerWorkbenchExtension[];
+  readonly serverAssetsContribution?: import("@opencraft/plugin-assets/client").ServerAssetsContribution;
   readonly isPresentationActive?: () => boolean;
   readonly presentation?: WorkbenchPresentationPolicy;
   /** Product-supplied provider; embedded credentials never enter the generic voice extension. */

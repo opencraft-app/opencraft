@@ -61,6 +61,15 @@ async function readModule(response: Response): Promise<string> {
   }
 }
 
+/** Import one digest-selected, self-contained Web module. */
+export async function readPinnedExtensionModule(response: Response, sha256: string): Promise<ExternalExtensionModule> {
+  if (!response.ok) throw new Error("Installed plugin is unavailable");
+  const code = await readModule(response);
+  if (await digest(code) !== sha256) throw new Error("Installed plugin integrity mismatch");
+  await assertSelfContained(code);
+  return importArtifact(code);
+}
+
 function externalDefinition(value: unknown): {
   readonly manifest: unknown;
   readonly activate: (api: OpenCraftExtensionApiV1) => unknown;

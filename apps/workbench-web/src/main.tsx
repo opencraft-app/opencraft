@@ -27,6 +27,8 @@ import {
 } from "./runtime/ui-preferences-runtime";
 import type { UiPreferencesRuntime } from "@opencraft/ui-preferences";
 import { WorkbenchLocaleController, WorkbenchIntlProvider } from "./i18n/workbench-locale";
+import { localeCatalogs } from "./i18n/catalogs";
+import { withProductCatalogs } from "./i18n/product-catalogs";
 import "./fonts";
 import "./styles/app.scss";
 
@@ -112,9 +114,23 @@ function ApplicationBootstrap() {
     // @ts-expect-error Vite resource query
     void import("./workbench-entry?opencraft-entry=1")
       .then(async (module) => {
+        const assetsPlugin = clientRuntime.kind === "web"
+          && import.meta.env.VITE_INCLUDE_HEADLESS_APPHOST === "true"
+          && !mobileContainer()
+          && !serverWorkbenchExtensions.some(extension => extension.assets)
+          && document.getElementById("opencraft-workbench-assets-plugin")
+          ? await import("./runtime/workbench-assets-plugin")
+            .then(({ loadWorkbenchAssetsPlugin }) => loadWorkbenchAssetsPlugin(document, preparation.signal))
+            .catch(error => {
+              if (!preparation.signal.aborted) reportRuntimeError(error, "workbench-assets-plugin");
+              return undefined;
+            })
+          : undefined;
+        if (disposed) return;
         preferences = await openWorkbenchUiPreferences();
         if (!disposed) disposeDensity = bindInteractionDensity(document, preferences, isMobileWorkbenchPreview() ? { touchFriendly: "on" } : undefined);
-        locale = new WorkbenchLocaleController(preferences);
+        locale = new WorkbenchLocaleController(preferences, {},
+          assetsPlugin?.localeCatalogs ? withProductCatalogs(localeCatalogs, assetsPlugin.localeCatalogs) : localeCatalogs);
         await locale.initialize();
         if (disposed) {
           locale.dispose();
@@ -127,6 +143,7 @@ function ApplicationBootstrap() {
           ...productOptions,
           ...(mobileContainer() ? { navigationMode: "memory", hostProfileMode: "configured", isPresentationActive: () => mobileBinding?.active() ?? true } : {}),
           serverExtensions: serverWorkbenchExtensions,
+          serverAssetsContribution: assetsPlugin?.assets,
           pushDevice: clientRuntime.pushDevice ?? undefined,
           deferOptionalFeatures: true,
         });

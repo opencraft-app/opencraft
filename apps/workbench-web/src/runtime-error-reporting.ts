@@ -17,6 +17,7 @@ export interface RuntimeErrorReport {
     | "unhandled-rejection"
     | "panel-runtime-bootstrap"
     | "application-bootstrap"
+    | "workbench-assets-plugin"
     | "host-profile-storage-recovery"
     | "application-disposal"
     | "sidebar-layout-persist"
