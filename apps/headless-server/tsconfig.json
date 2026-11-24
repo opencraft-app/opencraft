@@ -30,6 +30,7 @@
     "src/codex-environment-launch.ts",
     "src/personal-mcp-provider.ts",
     "src/assembly/account.d.mts",
-    "src/assembly/lifecycle.d.mts"
+    "src/assembly/lifecycle.d.mts",
+    "src/assembly/node-local.d.mts"
   ]
 }

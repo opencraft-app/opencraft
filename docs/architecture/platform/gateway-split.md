@@ -335,7 +335,7 @@
 
 1. **account**（理由见下）。
 2. **组合根前置（不移动服务，已完成，见上）**：引入 `lifecycle.closing()` 与迟绑定端口（AppHost、`executionStore`／`resolveExecutionNative`、`capabilityKey`、`startDsh`、`codexAgentBridge`、第 3 部分第 8 项的槽），把直接读 `let` 改为读端口；行为不变。之后各模块只接收端口。
-3. **node-local**：347、376–384、796–807、866–876、1447–1460、1610–1625 中的 SSH 入口与 relay、1628–1649。依赖 AppHost 端口与 installation 的 `instanceAccess`／`actorStore`；其 disposer 分布在关闭第 3、6、7、11 步。
+3. **node-local**：347、376–384、796–807、866–876、1447–1460、1610–1625 中的 SSH 入口与 relay、1628–1649。依赖 AppHost 端口与 installation 的 `instanceAccess`／`actorStore`；其 disposer 分布在关闭第 3、6、7、11 步。第一部分已抽取，见下文"node-local 第一部分"。
 4. **installation**：段落多，建议分两个 PR 落到同一模块：先身份与准入（394–407、547–761 中除 account 外的部分），再协作与部署级服务（792–795、808–809、843–865、877–882、913–933 的绑定投影、1109、1397–1446）。
 5. **workspace-host**：762–791、883–1191、1196–1394 中的 transport 链、1461–1467、1583–1606、1627。依赖 installation 的全部输出；P4-2 已把 overlays 移入 `packages/workspace-host`，这里只是装配。
 6. **client-session**：810–842、`AppHostServer` 外壳（1192–1196）与 `createWebServer` 中的会话工厂（1482–1503）；与 G6 一并考虑。
@@ -362,6 +362,14 @@
   组合根在原 551 位置调用 `assembleAccount`（仍在 `machineIdentity` 之后、`ActorStore` 之前），打开顺序与启动失败回滚路径不变。
 - **现有测试。** 领域与 HTTP：`tests/execution/model-usage-policy.test.ts`（`ModelPolicyStore`、`modelPolicyHttp`、`ModelPolicyTransport`）、`tests/usage/model-gateway.test.ts`（`modelGatewayHttp` 与 contributions）、`tests/execution/personal-subscription.test.ts`（个人订阅经 Core）、`tests/composer/speech-model-configuration.test.ts` 与 `tests/composer/hunyuan-speech.test.ts`（语音服务）。组合根：`tests/server/headless-composition.test.mjs` 的"a disposal failure settles other resources but retains the writer until process exit"（403 行：`close` 幂等、失败不释放写锁）与 `tests/server/headless-server.test.mjs` 的启动与服务用例。**缺口**：没有测试在真实 `startHeadlessServer` 上请求 `/__opencraft_model_policy` 或 `/__opencraft_model_gateway`；该 PR 应补一个组合测试（匿名、成员、管理员三种响应，以及关闭后同一数据目录可再次启动，证明策略库写入者在写锁释放前关闭）。
 
+**node-local 第一部分（2026-11-24）。** `apps/headless-server/src/assembly/node-local.mjs` 的 `assembleNodeLocal({ dataDirectory })` 在组合根定义 `close` 之前创建，创建时不打开任何资源；组合根在原位置逐步调用，行为、路由、错误处理与关闭顺序不变（各步骤多出的只是一次 `await` 的微任务）。
+
+- **移入的服务与调用位置。** `startDesktop`（原 866–876，`threadOrchestration.start()` 之后）；`openSshManagement`（原 1447–1455，Push 初始化之后，结果仍由组合根绑定到 `lateSshManagement`）与 `startObservability`（原 1456–1460，含"配置不可用时写 stderr 并继续"）；`listenSshIngress`（原 1610–1621 中 `createSshNativeRpcGateway`、`composeSshAccess`、`createSshHttpIngress` 与 `ingress.listen`；私有回环 `web.listen` 仍在组合根，属 edge）；`connectRelay`（原 1622）；`startAvailabilityNotification`（原 1648–1649，经 `lateImPlugins` 读取 IM 服务，失败时照旧 `console.warn`）。
+- **具名 disposer 与位置。** 第 3 步 `closeEntry` 的并行列表中原位替换：`closeRelay`、`closeSshIngress`、`closeSshNativeRpc`、`closeDesktop`、`closeAvailabilityNotification`；第 6 步 `closeObservability`；第 11 步串行写入者中 `mcpApps` 之后的 `closeSshManagement`。未启动的服务对应的 disposer 直接返回。
+- **仍留在组合根。** 选项校验与配置读取（`loadLocalMachineAccess`、桌面访问策略、`loadSshIngressConfiguration`、`loadRelayConnection`）：它们在任何资源创建前执行，且结果也被 installation（身份、成员、外部 provider）消费。匿名部署（796–807）：`operator` 被 installation 的 `Collaboration`、浏览器授权与 AppHost driver 链共用，`anonymousDriver` 读取尚未构造的 `actorCollaboration`，移动需要一个属于 installation 的新迟绑定，随 installation 抽取处理。SSH 远端 Codex transport（1175–1191）：属于 AppHost transport 链，并写入 workspace-host 浏览器能力读取的 `remoteExecutionAuthorities`，随 workspace-host 抽取。文件下载的 `"local"` 模式：在 `HostFileDownloads` 内部，随 workspace-host。
+- **IM 与个人助理不移入。** IM（§6 问题 3）不在 §4.2 的 Node-only 清单中：webhook 型渠道可能在 Cloudflare 上提供；`lateImPlugins` 被 installation 的 `TurnPushService`、edge 的健康与存储 outcome、AppHost 的频道 Host 读取，它自身是部署级存储 owner（`im-switchboard`、`im-posts`）。个人助理（§6 问题 5）同样不在 §4.2 清单中，其输入全部来自 installation（Assets Bot provider 与准入、`Collaboration`）与 account 的模型来源，其 `codex` 子进程的目标载体（工作区容器或不提供）尚未决定，关闭位于第 7 步 `threadOrchestration` 与 AppHost 之间。两者待问题决定后再归属。
+- **测试。** `tests/server/headless-composition.test.mjs` 新增三个在真实 `startHeadlessServer` 上的用例（在抽取前的 main 上先通过）：观测 ingress 由私有配置挂载、非私有配置降级为 Web 回退、计划重启的部署回执经仍未关闭的 ingress 送达；可用性通知 socket 鉴权、经 IM 迟绑定端口应答、关闭后删除 socket；本机桌面在无验证 observer 时启动失败并释放数据锁。SSH 入口与 relay 由 `tests/server/headless-ingress-shutdown.test.mjs`、`tests/server/ssh-http-ingress.test.mjs` 与 `headless-composition` 的个人 SSH key 用例覆盖，SSH 管理由 `tests/server/headless-server.test.mjs` 的公共监听用例覆盖。
+
 ### 4.2 需要成为端口的部分
 
 | 端口 | 现状 | Node 适配器 | Cloudflare 适配器 |
@@ -387,7 +395,7 @@
 
 | 步 | 内容 | Node 价值 | 依赖 | 状态（2026-11-23） |
 | --- | --- | --- | --- | --- |
-| G1 | 把 `HA` 按 §4.1 拆成装配模块，行为与关闭顺序不变 | 组合根可测、可读；嵌入方（Docker gateway）复用模块 | 无 | **进行中**：account 已抽到 `apps/headless-server/src/assembly/account.mjs`（#552）；组合根前置的生命周期与迟绑定端口在 `assembly/lifecycle.mjs`；其余段仍在 `startHeadlessServer`，现状映射与抽取顺序见 §4.1.1 |
+| G1 | 把 `HA` 按 §4.1 拆成装配模块，行为与关闭顺序不变 | 组合根可测、可读；嵌入方（Docker gateway）复用模块 | 无 | **进行中**：account 已抽到 `apps/headless-server/src/assembly/account.mjs`（#552）；组合根前置的生命周期与迟绑定端口在 `assembly/lifecycle.mjs`（#555）；node-local 第一部分（本机桌面、SSH 管理与入口、relay、观测、可用性通知）在 `assembly/node-local.mjs`，匿名部署、IM 与个人助理仍在组合根（§4.1.1）；其余段仍在 `startHeadlessServer`，现状映射与抽取顺序见 §4.1.1 |
 | G2 | 合并 `opencraft-server.sqlite` 的编排与空间连接到核心 owner（已实施，见 [server-core-owner §4](../server/server-core-owner.md#4-分阶段实施)）；网络线程过渡连接随 server-core-owner 第 2–6 阶段移除 | 消除同库多 Worker 写入者；减少主线程同步 IO 登记 | G1 | **部分**：合并已完成（`orchestration-runtime-domain`、`server-spaces-domain` 注册在 `apps/headless-server/src/server-core-worker.mjs`，#511；身份写入 #463）；过渡连接仍在（`ThreadAccessStore` 的 `permissionOwner: serverStorage.database`，`headless-application.mjs:794`），server-core-owner 第 2–6 阶段未完成 |
 | G3 | 剩余直接 `node:sqlite` 的部署级库（模型策略、MCP apps、push、connectors）迁到 `SqlDatabase` 端口 | 统一迁移与 outcome 报告 | 存储端口第 1–2 阶段（已实施） | **部分**：模型策略已在 `SqlDatabase` 上（`packages/model-usage-policy/src/index.ts:1-12`，Node 打开仍经 `openManagedDatabase`＋`nodeSqlDatabase`，#511）；MCP apps（`packages/mcp-apps/src/store.ts:38`）、push（`packages/web-push-node/src/store.ts:2`）、connectors（`packages/connector-host/src/store.ts:1`）仍直接使用 `DatabaseSync` |
 | G4 | HTTP 处理改为 `Request`→`Response` 端口，Node 包装（身份与准入处理器已完成，§3.4；其余服务待迁） | 服务单测不需要真实监听 | G1 | **部分**：`@opencraft/identity-core/http-exchange{,-node,-fetch}` 与身份、准入处理器已迁（#511；Web 入口经 `serveNodeHttpExchange`，`serve-workbench-web.mjs:22`）；协作、AppHost、Hub、模型策略／网关等仍是 `(request, response)` 处理器 |
@@ -397,7 +405,7 @@
 | P4-3 | 定时任务 owner 驱动 | 见原文 | G5 | **完成（Node）**：`packages/host-schedules/src/index.ts` 经 `OwnerWakeTimer`（#511）；唤醒仍在 Gateway 主线程，DO alarm 未做 |
 | P4-4 | `WorkspaceLink` 与 `workspace-agent` | 见原文 | P4-2 | **部分**：第 4a–4c 步已实现（`packages/sandbox/src/endpoint.ts`、`scripts/container-deployment/workspace-agent*.mjs`、`packages/sandbox-node/src/static-docker.ts`、`scripts/container-deployment/gateway-workspace.mjs`，#511；7b `docker-provisioner` #532）；第 4d 步（反向 RPC 进程）未做（workspace-host-split §7"第 4d 步"） |
 | P4-5 | 化身经通道上报，去除 `/proc` 与 `pid: host` | 见原文 | P4-4 | **未开始**：执行租约仍经 `/proc` 观察化身（`headless-application.mjs:1090`）；`deploy/docker/compose.yaml:134、227` 仍有 `pid: host` |
-| G7 | Node 组合根声明能力清单；Cloudflare 不提供的服务集中在 `node-local` | 能力声明与实现一致 | G1 | **未开始**：没有能力清单；Node-only 服务仍散在组合根（§4.1.1 第 1 部分中标 node-local 的段） |
+| G7 | Node 组合根声明能力清单；Cloudflare 不提供的服务集中在 `node-local` | 能力声明与实现一致 | G1 | **未开始**：没有能力清单；Node-only 服务部分集中到 `assembly/node-local.mjs`，匿名部署与 SSH 远端 transport 仍在组合根（§4.1.1"node-local 第一部分"） |
 | C1 | DO／Container 适配器（storage-ports 第 5 阶段剩余：`sandbox-cloudflare`、Secrets 信封加密） | — | P4-4 | **部分**：`packages/sandbox-cloudflare` provider 已实现（#531）；`@opencraft/storage-cloudflare` 适配器在本地 workerd 通过一致性测试但未接入装配（#511）；Secrets 信封加密未做（`packages/storage-cloudflare/src/secrets.ts:11-15`） |
 | C2 | 第一个 Cloudflare 里程碑（§5.2） | — | G1–G7、P4-2–P4-5、C1 | **未开始** |
 
