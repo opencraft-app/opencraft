@@ -7,8 +7,8 @@
 // The installation's root input ports (gateway-split §4.1.1) must also bundle
 // for a runtime without a file system: the port contracts reach no node:*
 // module at all, and the document adapters reach no Node-only owner (files,
-// Workers, node:sqlite); only the Hub and identity domains' node:crypto, which
-// nodejs_compat provides.
+// Workers, node:sqlite); only the Hub domain's node:crypto (Ed25519 PEM keys),
+// which nodejs_compat provides.
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import { test } from "node:test";
@@ -22,11 +22,12 @@ const NEUTRAL_PORTS = [
   "packages/access-control/src/human-auth-configuration.ts",
   "packages/hub-network/src/state-port.ts",
   "apps/local-agent-host/src/machine-identity-document.ts",
+  // Identity writes through the commit fence port (its domain stores are neutral since G3b).
+  "packages/access-control/src/identity-writes.ts",
 ];
 const DOCUMENT_ADAPTERS = [
   "apps/headless-server/src/assembly/root-inputs.ts",
   "packages/hub-network/src/state-port-document.ts",
-  "packages/access-control/src/identity-writes.ts",
 ];
 const NODE_ONLY = [
   "packages/sqlite-node/",
@@ -69,12 +70,12 @@ for (const entry of NEUTRAL_PORTS)
   });
 
 for (const entry of DOCUMENT_ADAPTERS)
-  test(`${entry} reaches no Node-only owner, only node:crypto`, async () => {
+  test(`${entry} reaches no Node-only owner, only the Hub domain node:crypto`, async () => {
     const reached = await inputs(entry, ["node:*"]);
     assert.deepEqual(reached.filter((input) => NODE_ONLY.some((owner) => input.includes(owner))), []);
     assert.deepEqual(
       [...new Set(reached.filter((input) => input.startsWith("node:")))].sort(),
-      entry.includes("identity-writes") ? ["node:crypto"] : ["node:crypto", "node:util"],
+      ["node:crypto", "node:util"],
     );
   });
 
