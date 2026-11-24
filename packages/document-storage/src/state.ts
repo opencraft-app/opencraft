@@ -30,6 +30,18 @@ export class StateDocumentCorruptError extends Error {
   }
 }
 
+/**
+ * A private adapter refused a document that is not a private file (a symlink,
+ * foreign owner, group or other permission bits, or oversized). Declared with
+ * the port so repositories recognize it without importing a file adapter.
+ */
+export class StateDocumentNotPrivateError extends Error {
+  constructor() {
+    super("State document is not a private file");
+    this.name = "StateDocumentNotPrivateError";
+  }
+}
+
 export class StateAsyncChangeError extends Error {
   constructor() {
     super("State document changes must be synchronous");

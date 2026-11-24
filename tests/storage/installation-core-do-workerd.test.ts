@@ -36,8 +36,17 @@ const NODE_OWNERS = [
   "packages/storage-node/src/server/owner-serve.ts",
   "packages/storage-node/src/server/index.ts",
   "packages/storage-node/src/server/conversation-resource-journal.ts",
-  "packages/model-usage-policy/",
-  "packages/account-pool-host/",
+  // The entry also exports AccountCore: the account's neutral modules are reached, its Node owners are not.
+  "packages/model-usage-policy/src/index.ts",
+  "packages/model-usage-policy/src/native.mjs",
+  "packages/model-usage-policy/src/transport.ts",
+  "packages/account-pool-host/src/index.ts",
+  "packages/account-pool-host/src/store.ts",
+  "packages/account-pool-host/src/model-gateway-store.ts",
+  "packages/account-pool-host/src/codex-core-control.ts",
+  "packages/document-storage/src/state-file.ts",
+  "packages/secret-storage/src/file.ts",
+  "apps/headless-server/src/assembly/account-node.mjs",
   "plugins/local-account/src/password-hash-node.ts",
   "plugins/login-admission/",
   "apps/local-agent-host/src/machine-identity.ts",
@@ -106,13 +115,21 @@ test("the Wrangler template names the entry, class, bindings and runtime the tes
   assert.equal(resolve(dirname(template), config.main), resolve(root, ENTRY));
   assert.equal(config.compatibility_date, COMPATIBILITY_DATE);
   assert.deepEqual(config.compatibility_flags, INSTALLATION_CORE_DO_SPEC.compatibilityFlags);
-  assert.deepEqual(config.durable_objects.bindings, [{ name: "INSTALLATION_CORE", class_name: "InstallationCore" }]);
-  assert.deepEqual(config.migrations, [{ tag: "v1", new_sqlite_classes: ["InstallationCore"] }]);
-  // Configuration only; the setup proof is a secret and never a var.
+  assert.deepEqual(config.durable_objects.bindings, [
+    { name: "INSTALLATION_CORE", class_name: "InstallationCore" },
+    { name: "ACCOUNT_CORE", class_name: "AccountCore" },
+  ]);
+  // AccountCore arrives in its own migration, so a deployment of the first template only adds it.
+  assert.deepEqual(config.migrations, [
+    { tag: "v1", new_sqlite_classes: ["InstallationCore"] },
+    { tag: "v2", new_sqlite_classes: ["AccountCore"] },
+  ]);
+  // Configuration only; the setup proof and the account's sealing key are secrets and never vars.
   assert.deepEqual(Object.keys(config.vars).sort(), ["OPENCRAFT_HUMAN_AUTH", "OPENCRAFT_MACHINE_NAME"]);
   parseHumanAuthConfiguration(JSON.parse(config.vars.OPENCRAFT_HUMAN_AUTH));
   const entry = await import(resolve(root, ENTRY));
   assert.equal(typeof entry.InstallationCore, "function");
+  assert.equal(typeof entry.AccountCore, "function");
   assert.equal(typeof entry.default.fetch, "function");
 });
 

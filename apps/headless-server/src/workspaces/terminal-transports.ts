@@ -1,7 +1,9 @@
 import { randomBytes } from "node:crypto";
 import type { ProcessSnapshot } from "@opencraft/appserver-protocol";
 import type { OrdinaryExecutionBinding } from "@opencraft/local-agent-host/ordinary-conversation-owner";
+import { periodicOwnerWork, timeoutOwnerWake, type OwnerWake, type PeriodicOwnerWork } from "@opencraft/owner-wake";
 import type { WorkspaceActorAdmission } from "./actor-authority.js";
+import { receiptRetention, type ReceiptRetention } from "./receipt-retention.js";
 export interface WorkspaceTerminalLease {
   workspaceId: string;
   generation: number;
@@ -54,21 +56,35 @@ export class WorkspaceTerminalTransfers {
   private readonly watches = new Map<string, Watch>();
   private readonly operations = new Map<string, Operation>();
   private closed = false;
-  private readonly timer: ReturnType<typeof setInterval>;
+  private readonly wake: OwnerWake;
+  /** Settled operations are forgotten when they expire; nothing wakes while none has settled. */
+  private readonly retention: ReceiptRetention;
+  /** Authority and binding currency have no change notification, so open watches are re-checked every 500 ms; the
+   * check is armed only while a watch is open. */
+  private watchCheck: PeriodicOwnerWork | null = null;
   constructor(
     private readonly options: {
       current(access: WorkspaceActorAdmission, pending: boolean): boolean;
       binding(access: WorkspaceActorAdmission, threadId: string, resource: boolean): Promise<OrdinaryExecutionBinding>;
+      /** Owner wake-up for watch checks and receipt expiry; the default Node timeout one. */
+      wake?: OwnerWake;
     },
   ) {
-    this.timer = setInterval(() => {
-      for (const [token, watch] of this.watches)
-        if (!this.options.current(watch.access, false) || watch.binding.isCurrent?.() !== true)
-          this.watches.delete(token);
-      for (const [token, operation] of this.operations)
-        if (operation.settledAt && Date.now() - operation.settledAt > 300000) this.operations.delete(token);
-    }, 500);
-    this.timer.unref();
+    this.wake = options.wake ?? timeoutOwnerWake();
+    this.retention = receiptRetention(this.operations, (operation) => operation.settledAt, this.wake);
+  }
+  private watched() {
+    if (this.watches.size && !this.closed) {
+      this.watchCheck ??= periodicOwnerWork(this.wake, 500, () => {
+        for (const [token, watch] of this.watches)
+          if (!this.options.current(watch.access, false) || watch.binding.isCurrent?.() !== true)
+            this.watches.delete(token);
+        this.watched();
+      });
+    } else {
+      this.watchCheck?.close();
+      this.watchCheck = null;
+    }
   }
   private async get(token: string): Promise<Watch> {
     if (this.closed || !shape(token)) throw invalid();
@@ -107,12 +123,14 @@ export class WorkspaceTerminalTransfers {
     if (!binding.processes) throw invalid();
     const token = randomBytes(32).toString("hex");
     this.watches.set(token, { access, threadId, lease: { ...lease }, binding });
+    this.watched();
     try {
       await this.get(token);
       if (!this.options.current(access, true)) throw invalid();
       return token;
     } catch (cause) {
       this.watches.delete(token);
+      this.watched();
       throw cause;
     }
   }
@@ -153,7 +171,8 @@ export class WorkspaceTerminalTransfers {
       } catch {
         value.status = { state: "failed" };
       } finally {
-        value.settledAt = Date.now();
+        value.settledAt = this.retention.now();
+        this.retention.settled();
       }
     })();
     return operationToken;
@@ -170,6 +189,7 @@ export class WorkspaceTerminalTransfers {
     if (!value) return;
     if (value.status.state === "pending") throw invalid();
     this.operations.delete(token);
+    this.retention.settled();
   }
   async snapshot(token: string, handle: string, afterSequence: number): Promise<ProcessSnapshot> {
     const watch = await this.get(token);
@@ -188,11 +208,13 @@ export class WorkspaceTerminalTransfers {
   unwatch(token: string) {
     if (!shape(token)) throw invalid();
     this.watches.delete(token);
+    this.watched();
   }
   async close() {
     this.closed = true;
-    clearInterval(this.timer);
+    this.retention.close();
     this.watches.clear();
+    this.watched();
     for (const value of this.operations.values()) Atomics.store(value.access.requestPermit, 0, 0);
     await Promise.all([...this.operations.values()].map((value) => value.work));
     this.operations.clear();

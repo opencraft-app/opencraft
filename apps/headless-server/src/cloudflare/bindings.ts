@@ -19,10 +19,38 @@ export interface InstallationCoreState {
   abort(reason?: string): void;
 }
 
-/** A Durable Object namespace binding, as the entry Worker addresses the installation's object. */
+/** A Durable Object namespace binding, as the entry Worker (and one object another) addresses an object. */
 export interface InstallationCoreNamespace {
   idFromName(name: string): unknown;
   get(id: unknown): { fetch(request: Request): Promise<Response> };
+}
+/** The account's object namespace; the same structural binding. */
+export type AccountCoreNamespace = InstallationCoreNamespace;
+
+/** `ctx` of the AccountCore object (no alarm: none of its owners waits on time yet). */
+export interface AccountCoreState {
+  readonly storage: DurableObjectStorage;
+  blockConcurrencyWhile<T>(callback: () => Promise<T>): Promise<T>;
+  /** Resets the object: its memory is dropped and the next event constructs it again. */
+  abort(reason?: string): void;
+}
+
+/** The bindings the AccountCore object reads (deploy/cloudflare/wrangler.installation-core.jsonc). */
+export interface AccountCoreEnv {
+  /** The installation's object: the account asks it who may use an account route. */
+  readonly INSTALLATION_CORE: InstallationCoreNamespace;
+  /**
+   * The key that seals model credentials in the object's storage (a secret,
+   * `<id>.<base64url of 32 random bytes>`). Without a valid key the object
+   * stays closed; it never stores a credential unsealed.
+   */
+  readonly OPENCRAFT_ACCOUNT_SEALING_KEY?: string;
+}
+
+/** Everything the deployment's entry Worker is bound to. */
+export interface DeploymentEnv extends InstallationCoreEnv, AccountCoreEnv {
+  /** The installation's single AccountCore object. */
+  readonly ACCOUNT_CORE: AccountCoreNamespace;
 }
 
 /**
