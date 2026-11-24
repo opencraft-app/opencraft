@@ -15,11 +15,7 @@ import { SecretStoreCorruptError, memoryKeyMaterial } from "@opencraft/secret-st
 import { documentSecretStore } from "@opencraft/secret-storage/documents";
 import { fileSecretStore } from "@opencraft/secret-storage/file";
 import { SECRET_CONFORMANCE_CASES } from "@opencraft/secret-storage/conformance";
-import {
-  SecretSealingKeyError,
-  importSecretSealingKey,
-  sealedSecretStore,
-} from "@opencraft/secret-storage/sealed";
+import { SecretSealingKeyError, importSecretSealingKey, sealedSecretStore } from "@opencraft/secret-storage/sealed";
 import {
   CredentialLeaseError,
   documentCredentialLeases,
@@ -35,13 +31,20 @@ import {
   ModelCredentialRepository,
 } from "../../apps/local-agent-host/src/model-config/repository.ts";
 import { modelProviderCredentials } from "../../apps/local-agent-host/src/model-config/provider-credentials.ts";
-import { MODEL_GATEWAY_ROUTE, MODEL_POLICY_ROUTE, accountRoute } from "../../apps/headless-server/src/account-routes.ts";
+import {
+  MODEL_GATEWAY_ROUTE,
+  MODEL_POLICY_ROUTE,
+  accountRoute,
+} from "../../apps/headless-server/src/account-routes.ts";
 
 const KEY = (id: string, fill: number) => `${id}.${Buffer.alloc(32, fill).toString("base64url")}`;
 
 for (const conformance of SECRET_CONFORMANCE_CASES)
   test(`sealed secrets pass the secret store conformance: ${conformance.name}`, async () => {
-    const secrets = sealedSecretStore(documentSecretStore(memoryStateDocumentStore()), await importSecretSealingKey(KEY("k1", 7)));
+    const secrets = sealedSecretStore(
+      documentSecretStore(memoryStateDocumentStore()),
+      await importSecretSealingKey(KEY("k1", 7)),
+    );
     await conformance.run({ secrets, keys: memoryKeyMaterial() });
   });
 
@@ -74,7 +77,14 @@ test("sealed secrets never reach the inner store in plaintext, are bound to thei
   // A plaintext value written beneath the sealing layer is refused, not returned.
   await inner.set("PLAIN_KEY", "synthetic-plaintext");
   await assert.rejects(secrets.get("PLAIN_KEY"), SecretStoreCorruptError);
-  for (const configured of [undefined, "", "k1", "k1.short", "bad id.x", `k1.${Buffer.alloc(16).toString("base64url")}`])
+  for (const configured of [
+    undefined,
+    "",
+    "k1",
+    "k1.short",
+    "bad id.x",
+    `k1.${Buffer.alloc(16).toString("base64url")}`,
+  ])
     await assert.rejects(importSecretSealingKey(configured), SecretSealingKeyError, String(configured));
 });
 
@@ -83,7 +93,12 @@ function leaseFixture() {
   const source: ProviderCredentialSource = {
     async resolve(providerId) {
       return providerId === "p1"
-        ? { providerId, protocol: "openai-responses", baseUrl: "https://api.example/v1", credential: "synthetic-credential" }
+        ? {
+            providerId,
+            protocol: "openai-responses",
+            baseUrl: "https://api.example/v1",
+            credential: "synthetic-credential",
+          }
         : null;
     },
   };
@@ -123,7 +138,11 @@ test("a credential lease is granted, redeemed for one provider's credential, ren
   await assert.rejects(f.leases.renew(grant.id, 60_000), code("lease_invalid"), "an expired lease cannot be renewed");
   for (const ttl of [0, 999, 3_600_001, 1.5])
     await assert.rejects(f.leases.grant(holder(), ttl), code("invalid_lease_request"), String(ttl));
-  for (const bad of [{ ...holder(), extra: "x" }, { ...holder(), workspace: "" }, { ...holder(), engine: "a b" }])
+  for (const bad of [
+    { ...holder(), extra: "x" },
+    { ...holder(), workspace: "" },
+    { ...holder(), engine: "a b" },
+  ])
     await assert.rejects(f.leases.grant(bad as never, 60_000), code("invalid_lease_request"));
 });
 
@@ -162,7 +181,16 @@ test("the provider credential source leases only an enabled provider the account
     await credentials.set("P1_KEY", "synthetic-provider-key");
     await configuration.update(0, (doc) => {
       const provider = (id: string, extra: Record<string, unknown>) =>
-        ({ id, name: id, enabled: true, protocol: "openai-responses", baseUrl: "https://api.example/v1", credentialRef: "P1_KEY", models: [{ id: "m", enabled: true }], ...extra }) as never;
+        ({
+          id,
+          name: id,
+          enabled: true,
+          protocol: "openai-responses",
+          baseUrl: "https://api.example/v1",
+          credentialRef: "P1_KEY",
+          models: [{ id: "m", enabled: true }],
+          ...extra,
+        }) as never;
       doc.providers.push(
         provider("p1", {}),
         provider("disabled", { enabled: false }),

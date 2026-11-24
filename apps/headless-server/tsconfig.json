@@ -31,6 +31,7 @@
     "src/codex-environment-launch.ts",
     "src/personal-mcp-provider.ts",
     "src/assembly/account.d.mts",
+    "src/assembly/account-node.d.mts",
     "src/assembly/installation.d.mts",
     "src/assembly/lifecycle.d.mts",
     "src/assembly/node-local.d.mts",
@@ -39,8 +40,10 @@
     "src/assembly/server-core-same-thread.ts",
     "src/server-core-domains.d.mts",
     "src/installation-routes.ts",
+    "src/account-routes.ts",
     "src/cloudflare/bindings.ts",
     "src/cloudflare/installation-core.ts",
+    "src/cloudflare/account-core.ts",
     "src/cloudflare/worker.ts"
   ]
 }

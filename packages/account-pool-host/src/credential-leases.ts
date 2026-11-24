@@ -48,10 +48,7 @@ export interface ProviderCredentialSource {
 }
 
 export type CredentialLeaseErrorCode =
-  | "invalid_lease_request"
-  | "lease_invalid"
-  | "lease_capacity"
-  | "provider_unavailable";
+  "invalid_lease_request" | "lease_invalid" | "lease_capacity" | "provider_unavailable";
 
 /** A refused lease operation. `lease_invalid` covers unknown, expired and revoked leases alike. */
 export class CredentialLeaseError extends Error {
@@ -140,9 +137,9 @@ function parse(value: unknown): LeaseDocument {
   return { schemaVersion: 1, leases: { ...doc.leases } };
 }
 
-const hex = (bytes: ArrayBuffer) => [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-const digest = async (token: string) =>
-  hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token)));
+const hex = (bytes: ArrayBuffer) =>
+  [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+const digest = async (token: string) => hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token)));
 function newToken(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   let binary = "";
@@ -219,7 +216,8 @@ export function documentCredentialLeases(
       if (!provider) throw new CredentialLeaseError("provider_unavailable");
       // A revocation or expiry while the credential was resolved wins.
       const still = parse(await documents.read(CREDENTIAL_LEASE_DOCUMENT)).leases[leaseId];
-      if (!still || still.tokenHash !== tokenHash || still.expiresAt <= now()) throw new CredentialLeaseError("lease_invalid");
+      if (!still || still.tokenHash !== tokenHash || still.expiresAt <= now())
+        throw new CredentialLeaseError("lease_invalid");
       return { ...provider, leaseId, holder: record.holder, expiresAt: still.expiresAt };
     },
     async revoke(id) {

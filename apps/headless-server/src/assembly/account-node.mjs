@@ -30,17 +30,22 @@ export function nodeAccountInputs({ dataDirectory, codexCoreEndpoint, codexCoreA
       if (!gatewayPath) return null;
       const contributions = gatewayContributions(models, gatewayPath);
       const subscriptionCore =
-        codexCoreEndpoint && codexCoreAuthToken ? new CodexCoreControlClient(codexCoreEndpoint, codexCoreAuthToken) : null;
+        codexCoreEndpoint && codexCoreAuthToken
+          ? new CodexCoreControlClient(codexCoreEndpoint, codexCoreAuthToken)
+          : null;
       return modelGatewayHttp({
         path: gatewayPath,
         ...contributions,
         subscription: subscriptionCore
           ? async (actor, input, assertCurrent) => {
               assertCurrent();
-              const result = await subscriptionCore.accountRequest("opencraft/codex/accounts/personal/" + input.operation, {
-                actor,
-                sessionId: input.sessionId,
-              });
+              const result = await subscriptionCore.accountRequest(
+                "opencraft/codex/accounts/personal/" + input.operation,
+                {
+                  actor,
+                  sessionId: input.sessionId,
+                },
+              );
               assertCurrent();
               if (result.status === "complete")
                 return {
