@@ -26,7 +26,7 @@
 ## 3. PR 状态
 
 ### 已合并（本次会话）
-#545 #546 #548 #552 #555 #559 #561 #562 #565 #566 #567 #568 #569 #570 #571 #572 #573 #575 #576 #577 #578 #579 #580 #581
+#545 #546 #548 #552 #555 #559 #561 #562 #565 #566 #567 #568 #569 #570 #571 #572 #573 #575 #576 #577 #578 #579 #580 #581 #586
 
 ### 在合并队列／CI 中（auto-merge 已开，已订阅）
 | PR | 分支（前缀 `claude/fervent-gates-idr8l5-`） | 内容 |
@@ -35,7 +35,6 @@
 | #583 | `workspace-host-2` | G1 workspace-host 第二部分（已合入 #577 的 `acquireOwnerLock`） |
 | #584 | `due-wake-2` | 到期调度第二批（协作泵、编排清扫、自动化、准入、IM、传输） |
 | #585 | `account-core-2` | AccountCore 第二部分：账号池、租约兑换、出口 |
-| #586 | `relay-workers` | Relay 只打包会启动的 owner Worker；web-server runtime 同级检查 |
 
 | #587 | `account-core-3` | AccountCore 第三部分：模型网关进 AC、个人订阅端口（**`secrets`（gitleaks）仍失败**：拆开 "personal-keys" 与 checksum 同行后在 `71fb7d0` 仍报 1 处；日志脱敏、本会话无法本地运行 gitleaks。下一步：在该分支运行 `gitleaks dir . --config .gitleaks.toml --report-format json` 定位后修正该字面量，不放宽白名单；已在 PR 留言） |
 | #589 | `workspace-host-do` | WorkspaceHost DO＋**迁移族收敛**（`@opencraft/sql/families` 唯一原语；Server 扩展族委托且不变；AC 切到 `schema_family_migrations`；删除 `schema-ledgers`） |
@@ -43,6 +42,8 @@
 | #590 | `client-session-edge` | G1 最后两个模块 client-session 与 edge；**G1 完成**（HA 1064→961 行） |
 
 所有子任务均已结束，没有仍在运行的研发任务。
+
+**08:53 状态**：#582、#583、#585、#589、#590 在合并队列／CI 中（#583 已再次合入 main 解决定时器行冲突）；**#584**（platform 真实失败）与 **#587**（gitleaks 仍报 1 处）需人工接手，均已在 PR 留言。
 
 ## 4. 已知问题与必须跟进
 
