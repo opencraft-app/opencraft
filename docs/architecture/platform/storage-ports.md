@@ -177,7 +177,7 @@ Unix socket、锁文件、`/proc` 读取、Git 与 `/workspace` 工作目录、E
 
 ## 7. AccountCore 存储
 
-状态：**Node 侧准备已实施，DO 未实现。** 目标是让[可选 Cloudflare 部署](cloudflare-deployment.md#2-目标拓扑)中每部署一个的 `AccountCore` DO 直接持有现有领域代码；Node 行为、文件名、格式、权限、迁移与 checksum 均不变，写者锁与 owner 进程拓扑保持原样。行号以 2026-11-22 源码为准。
+状态：**Node 侧准备已实施；DO 部分实现（2026-11-24）：模型策略、模型配置、密封凭据与凭据租约已在 `AccountCore` DO 中装配（[可选 Cloudflare 部署 §5.6](cloudflare-deployment.md#56-accountcore-状态2026-11-24)），账号池与模型网关未进入。** 目标是让[可选 Cloudflare 部署](cloudflare-deployment.md#2-目标拓扑)中每部署一个的 `AccountCore` DO 直接持有现有领域代码；Node 行为、文件名、格式、权限、迁移与 checksum 均不变，写者锁与 owner 进程拓扑保持原样。行号以 2026-11-22 源码为准。
 
 ### 7.1 持久化清单
 
@@ -213,4 +213,4 @@ Unix socket、锁文件、`/proc` 读取、Git 与 `/workspace` 工作目录、E
 | `node:crypto`、`Buffer`、`node:zlib`（`configured-forward.ts` 解压） | 多处 | `nodejs_compat` 预期可用，待在 workerd 中核实 |
 | `@opencraft/sqlite-node` 值导入 | `store.ts`、`model-gateway-store.ts`、`model-usage-policy/src/index.ts` | `AccountPool` 已与 Node owner 分文件；网关与策略的 owner 打开仍与领域类同文件，DO 装配前需拆分或加 `workerd` 导出条件 |
 
-DO 仍缺：账本迁移的 DO 包装（沿用 `InstallationCore` 原型的精简生命周期）、加密凭据记录适配器、刷新执行方式的决定、边缘 Worker 凭据租约协议与 RPC 面。
+DO 仍缺：账号池与网关在同一对象 SQL 中的按 schema 账本（策略库已用 `migrateModelPolicySqlDatabase` 的精简生命周期占用默认账本）、同步的加密凭据记录适配器（`sealedSecretStore` 是异步的，不能在选号事务内使用）、刷新执行方式（维护容器）的实现、租约的对外接口（契约已在 `@opencraft/account-pool-host/credential-leases`）。

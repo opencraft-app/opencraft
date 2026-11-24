@@ -2,7 +2,7 @@
 
 [Architecture index](../README.md) · [存储端口](storage-ports.md) · [执行沙盒](../execution/execution-sandbox.md) · [Docker 三角色部署](../../../deploy/docker/README.md)
 
-状态：目标设计。Cloudflare Containers 的平台能力已做真实探测（2026-11-23，结论见[工作区拆分 §3.6](workspace-host-split.md#36-部署形态统一建模)）；`sandbox-cloudflare` provider 已实现并在真实 Cloudflare 上预演通过（第 7.5 节），但还没有 WorkspaceHost DO 装配。存储端口的 Cloudflare 适配器已在本地 workerd 中通过一致性测试（见[存储端口第 6 节](storage-ports.md#6-cloudflare-适配器第-5-阶段本地-workerd-验证)）；`InstallationCore` 已有正式 DO 装配（身份与准入部分，本地 workerd 验证，Wrangler 模板未部署，见第 5 节），`RelayHub` 仍是仅限测试的本地 workerd 原型（见第 6 节）；本页不代表任何 Cloudflare 组件已在真实账号上部署或可用于生产。Node 自托管（Docker／systemd／Electron）始终是一等公民；Cloudflare 是部署装配选项之一，不替换 Node 路径。
+状态：目标设计。Cloudflare Containers 的平台能力已做真实探测（2026-11-23，结论见[工作区拆分 §3.6](workspace-host-split.md#36-部署形态统一建模)）；`sandbox-cloudflare` provider 已实现并在真实 Cloudflare 上预演通过（第 7.5 节），但还没有 WorkspaceHost DO 装配。存储端口的 Cloudflare 适配器已在本地 workerd 中通过一致性测试（见[存储端口第 6 节](storage-ports.md#6-cloudflare-适配器第-5-阶段本地-workerd-验证)）；`InstallationCore` 已有正式 DO 装配（身份与准入部分，本地 workerd 验证，Wrangler 模板未部署，见第 5 节），`AccountCore` 已有正式 DO 装配（模型策略、模型配置、密封凭据与凭据租约，同一模板，见 5.6），`RelayHub` 仍是仅限测试的本地 workerd 原型（见第 6 节）；本页不代表任何 Cloudflare 组件已在真实账号上部署或可用于生产。Node 自托管（Docker／systemd／Electron）始终是一等公民；Cloudflare 是部署装配选项之一，不替换 Node 路径。
 
 ## 1. 现状约束
 
@@ -30,7 +30,7 @@
 
 协议转换（例如 Anthropic）代码需确认能在 workerd 中运行后才可迁移到 Worker。
 
-`AccountCore` 的存储准备（SQL 端口、凭据记录端口、持久化清单与 Node 专属阻碍）见[存储端口第 7 节](storage-ports.md#7-accountcore-存储)。
+`AccountCore` 的存储准备（SQL 端口、凭据记录端口、持久化清单与 Node 专属阻碍）见[存储端口第 7 节](storage-ports.md#7-accountcore-存储)；租约契约与 DO 装配现状见 5.6。
 
 ### 2.2 工作区容器
 
@@ -105,8 +105,8 @@ Node 上 `opencraft-server.sqlite` 的编排运行时与 Server space 已在核�
 - **其余 installation 步骤的 DO 装配**：`openServerInformation`（只需 DO 状态文档，可作为下一步）、`openPersonalServices`、`openCapabilityBindings`／`openCapabilitySigningKey`（`KeyMaterial` 已有 DO 适配器）、`openSpaces`、`openCollaboration`（需要 workspace-host 的 `conversationExecution` 与 App Host 迟绑定）、`openConnectors`、`openMcpApps`、`openTurnPush`。同线程核心 owner 已提供这些步骤需要的全部 owner 方法，`Collaboration` HTTP API 随 `openCollaboration` 接入，共享路由表中它们的路由在对象未装配时与 Node 缺席服务一样回答 404 `missing`。
 - **OIDC**：流程状态在 `HumanAuth` 内存中，需写入 DO storage 并保持一次性消费（[登录入口原型结果](gateway-split.md#34-登录入口原型结果)）；discovery 与 ID Token 验签未在 workerd 中跑通。
 - **登录准入**（`plugins/login-admission`）仍是 Node Worker＋SQLite owner，需 SQL 端口版本；Hub 节点身份（`HubNodeIdentity`）与 RelayHub 未装配；身份组合（下游产品）未装配。
-- **投影发布**给边缘 Worker 与 Client DO；`AccountCore` 与 `WorkspaceHost` 的协作。
-- DO 版迁移后 schema 校验（DO 内不能另开 `:memory:` 库）；备份与恢复改用 PITR 的运维流程；`SecretStore` 的信封加密；`ActorStore` 显式策略。
+- **投影发布**给边缘 Worker 与 Client DO；`WorkspaceHost` 的协作。`AccountCore` 的账号路由授权已经由 IC 回答（内部账号授权交换，5.6）。
+- DO 版迁移后 schema 校验（DO 内不能另开 `:memory:` 库）；备份与恢复改用 PITR 的运维流程；IC 自己的 `SecretStore` 用途（若有）同样需经 `sealedSecretStore` 密封（AC 已这样做，见 5.6）；`ActorStore` 显式策略。
 - **真实 Cloudflare 复核**：正式 DO 场景已加入 `cf:rehearsal` 的 `installation-core-do` 分组，尚未在真实账号上运行；SQL 语义、CPU 与冷启动、alarm 精度、并发登录下的排队（Argon2id 每次 0.3–0.9 s CPU，§7.4）以及把哈希移到无状态 Worker 的评估。Workers Free 计划不可用。
 
 ### 5.5 正式装配（2026-11-24）
@@ -131,6 +131,47 @@ Node 上 `opencraft-server.sqlite` 的编排运行时与 Server space 已在核�
 **关闭与驱逐。** 具名 disposer 按 Node 关闭第 11 步的顺序（身份组合、登录准入、账号应用、账号管理、`HumanAuth`、Human 账号、身份写入、Actors、成员），最后排空并关闭同线程核心 owner；打开失败时与 `close()` 时执行，逐个结算、汇总失败。平台驱逐不产生事件：DO 内存被丢弃，持久状态已按事务提交，下一事件重新构造并重新打开（驱逐场景见 5.1）。
 
 **部署装配。** `deploy/cloudflare/wrangler.installation-core.jsonc` 是模板：入口 `apps/headless-server/src/cloudflare/worker.ts`（Wrangler 以 `workerd` 条件打包），`nodejs_compat`，兼容日期与测试相同，DO 绑定 `INSTALLATION_CORE`（类 `InstallationCore`，`new_sqlite_classes` 迁移），var 只有登录配置与机器名，setup 凭证经 `wrangler secret put`。仓库内任何校验或构建都不部署它。
+
+### 5.6 AccountCore 状态（2026-11-24）
+
+状态：**正式 DO 装配（模型策略、模型配置、密封凭据与凭据租约），本地 workerd 验证，未部署到真实 Cloudflare**。`AccountCore` 类在 `apps/headless-server/src/cloudflare/account-core.ts`，与 `InstallationCore` 同一部署入口 `worker.ts`、同一 Wrangler 模板（`ACCOUNT_CORE` 绑定，`v2` 迁移）；位置理由与 5.5 相同（Headless 组合下的部署装配层，调用 `src/assembly/` 的同一模块，不进 `packages/`）。验证：`npm run test:account-core:workerd`（`tests/storage/account-core-do-workerd.test.ts`），已在 `npm test`、`gate`、CI `core-tests` 与 `cf:rehearsal` 的 `account-core-do` 分组（尚未在真实账号上运行）。
+
+**前提 P4-1 的核对。** [网关拆分 §5.1](gateway-split.md#51-步骤) 把 P4-1（`proxy` 默认、全部 provider 经代理）列为 AC 的前提。源码现状：Docker 的 `proxy` 服务与 Brain 的 `OPENCRAFT_PROXY_MODE=external` 默认值自 #511 起已是默认拓扑（`deploy/docker/compose.yaml`）；代理模式下引擎侧每个 provider 要么经账号 Core 转发、要么无需凭据、要么在配置时被拒绝（`proxyRouting`／`assertProxyRoutable`，`tests/execution/model-proxy-mode.test.ts`），不再保留直连。未完成：真实 Docker 上"Brain 读不到 `models/credentials.json` 时 Pi／DSH／Codex 仍能调用模型"的验收（Brain 仍挂载整个数据卷）；调用方令牌仍按调用方类型签发且不过期（`run/proxy-callers/`）。这两项约束的是 C2（容器流量真正改走边缘出口）而不是 AC 自身的存储与接口，所以不阻塞本节；短期租约契约正是后一项的替代设计（见下）。
+
+**打开顺序。** 构造函数在 `blockConcurrencyWhile` 内：从 secret `OPENCRAFT_ACCOUNT_SEALING_KEY` 导入密封密钥；`migrateModelPolicySqlDatabase(durableObjectSqlDatabase(ctx.storage))`（`@opencraft/model-usage-policy/sql-owner`：账本校验、checksum 拒绝、按序迁移，无账本的非空库拒绝采纳，与 IC 的精简生命周期同形）；`assembleAccount` 以下表的中立输入装配。任何一步失败对象保持关闭，所有请求 503 `account_unavailable`，重启后仍然如此；不存在"无密钥时明文落库"的退路。
+
+| 账号模块输入（`assembly/account.mjs`） | Node 根（`assembly/account-node.mjs`） | AccountCore |
+| --- | --- | --- |
+| `openModelPolicy` | `openModelPolicyDatabase($DATA/model-usage-policy.sqlite)`：`openManagedDatabase`、写者锁、备份、`:memory:` schema 校验 | 对象 SQL 上的精简生命周期；同一迁移链（`modelPolicyMigrations`；测试断言生成注册表未追加迁移） |
+| `modelDocuments`（`models.json` 与租约账本） | `fileStateDocumentStore($DATA/models)` | `durableObjectStateDocumentStore(storage, { prefix: "models/" })` |
+| `modelSecrets` | `fileSecretStore($DATA/models)`（私有 0600 `credentials.json`） | `sealedSecretStore(durableObjectSecretStore(storage), key)` |
+| `modelGateway` | 读取 `OPENCRAFT_MODEL_GATEWAY_DATABASE`、Node `ModelGatewayStore`、Codex Core 控制 socket 的个人订阅 | 不装配；其路由回答 404 `missing` |
+| 路由授权 | 同进程的 `instanceAccess`／`actorAccess`／`actorStore` | 每请求向 IC 询问（见"前门"） |
+
+**前门与授权。** 账号拥有的路由是共享定义 `apps/headless-server/src/account-routes.ts`（`/__opencraft_model_policy`、`/__opencraft_model_gateway`）；账号模块的 HTTP 服务按它分派，Node 网关仍在原位置调用该服务，线上字节不变（`headless-composition` 的 "account inputs" 与 "model policy and model gateway" 用例）。入口 Worker 把这些路径转发给名为 `account` 的唯一对象。授权仍归 installation：对象对每个请求先经内部"账号授权交换"（`/__opencraft_internal/account-authority`，只经对象绑定可达，入口不转发）向 IC 询问准入闸门——IC 执行与 Node 相同的 `instanceAccess.prepare` 与 `installationGate`，拒绝原样返回；通过后，策略处理器的两次授权询问（处理前与读完写入正文后）同样问 IC，由 Node 网关使用的同一函数 `installationAccountAuthorities` 回答。`modelPolicyHttp` 为此接受异步授权，Node 行为不变。对 IC 的询问每次取新 stub：被重置（带错误驱逐、重新部署）的对象，其旧 stub 一直失效（驱逐场景发现）。
+
+**凭据密封（信封加密缺口的处理）。** `@opencraft/secret-storage/sealed` 的 `sealedSecretStore` 在值进入内层存储前以 AES-256-GCM（WebCrypto，随机 96 位 IV）加密，附加数据绑定 secret 名（密文不能挪给另一个名字），存储格式 `ocs1.<keyId>.<iv>.<密文>`；密钥是 secret 绑定中的 `<id>.<32 字节 base64url>`，不可导出、不写入对象存储。读取时明文或格式不符的值以 `SecretStoreCorruptError` 拒绝，另一密钥 id 的值以 `SecretSealingKeyError` 拒绝，从不当作明文返回；以相同值重写保留原密文，所以 `stamp` 仍只在值变化时变化。这不是完整的信封加密：没有每记录数据密钥层与密钥轮换流程（换钥需要重新密封全部值），密钥丢失即凭据丢失；它们列为后续。
+
+**短期凭据租约契约。** `@opencraft/account-pool-host/credential-leases`（中立）：`grant({workspace, engine, incarnation}, ttlMs)`（1 s–1 h）签发租约与一次性返回的令牌；`renew`；`redeem(token, providerId)` 只为当前租约返回一个 provider 的 `{protocol, baseUrl, credential}`；`revoke(id)`、`revokeHolder({workspace, engine?, keepIncarnation?})`（化身更换或工作区停用）。未知、过期与撤销一律 `lease_invalid`，不可转发的 provider 为 `provider_unavailable`。账本是一个状态文档（`credential-leases.json`），只存令牌的 SHA-256，每次写入顺带清除过期租约，当前租约上限 4096。provider 来源 `model-config/provider-credentials.ts` 与 Node 代理投影共用同一路由规则（`provider-route.ts`：启用、协议可转发、显式 HTTPS 地址、有凭据引用），并像语音配置一样以 stamp／revision 双读避免撕裂。两边都能用：AC 装配它；Node 账号模块也装配它（同一 `models/` 目录，未被调用时不产生文件），现有 Node 代理路径不改走租约。AC 尚未对外暴露租约：签发方（WorkspaceHost）与兑现方（边缘出口 Worker）都还不存在，届时再定 RPC 或内部 fetch 接口。
+
+**已证明**（`tests/storage/workerd/account-core-do.scenarios.ts`，另见 Node 侧 `tests/storage/account-core-ports.test.ts`）：
+
+- **策略与 Node 同一请求序列**：经入口 Worker、IC 闸门与授权，同一组 16 个请求在对象与 Node `startHeadlessServer` 上归一化后状态码、关键响应头与正文逐项相同：匿名 401（JSON 与拒绝页）、Actor Session bearer 403、管理员读写、过期 revision 409、非法规则与多余字段 400、跨源 403、PUT 405、成员只读与写入 403、撤销成员后闸门 403、重启后修订与审计保留。
+- **配置、凭据与租约与 Node 账号装配同一调用序列**（31 步，含重启）：配置 CAS 与冲突消息、凭据格式错误消息、签发／兑现／续期、无需凭据与明文 HTTP provider 不可兑现、过期、按化身撤销、单个撤销、凭据轮换后兑现新值、重启后租约仍有效、删除凭据后不可兑现；对象存储（KV 全部条目与策略表）中不出现任何凭据明文。
+- **驱逐**：AC 被驱逐后策略、凭据与租约不变；IC 被驱逐后，AC 的授权询问到达重建的 IC。
+- **打开被拒绝**：缺失或畸形的密封密钥使 AC 保持关闭（503），重启后仍然；IC 照常服务。
+- **入口**：内部授权路径经入口为 404；对象未装配的网关路由为 404 `missing`。
+- **中立打包**：对象入口不触及策略的 Node owner 与原生读取、账号池与网关存储、Codex Core 客户端、文件存储与 Node 账号输入；只触及 `node:crypto`（迁移 checksum 与语音绑定）。
+
+**仍缺（生产 AccountCore）：**
+
+- **账号池**（选号、亲和、刷新的唯一写者）：`AccountPool` 已在 SQL 端口上，但 ① 它与策略库各有一条 `schema_migrations` 账本，同一对象 SQL 里需要按 schema 区分账本（与 WorkspaceHost "合库"同一设计，[工作区拆分 §7](workspace-host-split.md#7-分步计划)），② `AccountCredentialRecords` 是同步端口（选号事务内读凭据），而 WebCrypto 密封是异步的，需要同步 AEAD 或把凭据读取移出事务的设计，③ OAuth 刷新、设备登录与用量查询已决定交给维护容器（[存储端口 §7.3](storage-ports.md#73-阻碍-do-的-node-依赖)），尚无该容器。
+- **模型网关**（准入、限额、贡献、计量）：`ModelGatewayStore` 的 owner 打开仍与领域类同文件，且同样需要第二条账本；个人订阅依赖 Codex Core。
+- **语音**：HTTP 处理器仍是 `node:http` 形状（G4 "现可迁"）；Cloudflare 上应为边缘流式转发＋租约。
+- **租约的对外接口**：WorkspaceHost 签发／续期／撤销、边缘出口 Worker 兑现与计量；Node 账号 Core 改用租约代替按类型的不过期调用方令牌（P4-1 的剩余项）。
+- **密封**：每记录数据密钥、密钥轮换与重新密封流程；密钥备份的运维说明。
+- 引擎跨进程读取策略（`native.mjs`）在 Cloudflare 上的替代（AC 投影或 RPC）；容器内引擎拿到的策略快照与版本。
+- 真实 Cloudflare 复核（`cf:rehearsal` 的 `account-core-do` 分组）。
 
 ## 6. RelayHub 原型结果
 
