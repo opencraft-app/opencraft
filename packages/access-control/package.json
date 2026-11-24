@@ -46,7 +46,7 @@
     "@opencraft/owner-wake": "0.1.0",
     "@opencraft/sqlite-node": "*",
     "@opencraft/sql": "0.1.0",
-    "openid-client": "6.9.0",
+    "openid-client": "6.9.1",
     "@opencraft/appserver-protocol": "0.1.0",
     "@opencraft/appserver-client": "0.1.0",
     "@opencraft/storage-node": "0.1.0",
