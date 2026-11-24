@@ -19,7 +19,7 @@ import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, resolve, join } from 'node:path';
-import lockfile from 'proper-lockfile';
+import { acquireOwnerLock } from '@opencraft/sqlite-node/writer-lock';
 import { startEngineHost } from '../../apps/local-agent-host/src/engine-host.ts';
 import { RemoteEngineProvider } from '../../apps/local-agent-host/src/remote-engine-provider.ts';
 import { attachEngineHost } from '../../apps/headless-server/src/server-deployment/engine-host-client.mjs';
@@ -74,7 +74,8 @@ export async function startIndependentEngineHost(options) {
   // Acquired before loading catalogs, schedules or sessions. Never share the Pi writer.
   const releaseKernel = await acquireLock(join(dataDirectory, 'pi-writer.lock')).catch(error => { throw new Error('Pi writer already being held or unavailable', { cause: error }); });
   let release;
-  try { release = await lockfile.lock(join(dataDirectory, 'pi-owner'), { realpath: false, retries: 0 }); }
+  // The same Pi owner lock an in-process Headless Pi engine takes on this data directory.
+  try { release = await acquireOwnerLock(join(dataDirectory, 'pi-owner.lock')); }
   catch (error) { await releaseKernel(); throw error; }
   const runtime = { entrySha256: createHash('sha256').update(readFileSync(fileURLToPath(import.meta.url))).digest('hex'), node: process.version, nodeAbi: process.versions.modules, sourceRevision:process.env.OPENCRAFT_OBSERVE_SOURCE_REVISION ?? null, buildId:process.env.OPENCRAFT_OBSERVE_BUILD_ID ?? null, configSha256:createHash('sha256').update(JSON.stringify(options)).digest('hex') };
   const bootId = await bootIdentity();

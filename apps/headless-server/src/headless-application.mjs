@@ -53,8 +53,8 @@ import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { acquireOwnerLock } from "@opencraft/sqlite-node/writer-lock";
 
-import lockfile from "proper-lockfile";
 import { loadSshIngressConfiguration } from "@opencraft/ssh-http-ingress/server";
 
 import { openMcpAppsService } from "@opencraft/mcp-apps/node";
@@ -620,7 +620,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     const desktop = await nodeLocal.startDesktop({ enabled: options.localDesktop, control: options.desktopControl, access: desktopAccess });
     const connectorService = installation.openConnectors({
       createConnectors: ({ access, hosts, admitted, resolveServer }) => new HeadlessConnectors(join(dataDirectory, "connectors"), access,
-        hosts, capabilities, admitted, undefined, resolveServer),
+        hosts, capabilities, admitted, undefined, resolveServer, ownerWake),
       machineId: machineIdentity.machineId, defaultEngine: options.defaultEngine ?? (engines.includes("dsh") ? "dsh" : "pi"), conversationExecution });
     const { remoteBrowser, browserCapabilities } = workspaceHost.openBrowser({
       createRemoteBrowser: browserOptions => new RemoteBrowserService({ root, dataDirectory,
@@ -692,7 +692,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         engines, options.defaultEngine ?? (engines.includes("dsh") ? "dsh" : "pi"));
       agent = independentEngine;
     } else if (engines.includes("pi")) {
-      releasePiOwner = await lockfile.lock(join(dataDirectory, "pi-owner"), {realpath:false,retries:0});
+      // Shared with the independent engine host: one in-process or independent Pi owner per data directory.
+      releasePiOwner = await acquireOwnerLock(join(dataDirectory, "pi-owner.lock"));
       const piModels = await createPiModelConfiguration(new ModelConfigurationRepository(fileStateDocumentStore(join(dataDirectory, "models"))), new ModelCredentialRepository(fileSecretStore(join(dataDirectory, "models"))), fileStateDocumentStore(join(dataDirectory, "pi")));
       const piAttachments=new LocalAttachmentStagingService(join(dataDirectory,"agent","attachments"),join(dataDirectory,"artifacts"));
       const piPrepareInput=(threadId,input)=>piAttachments.prepareInput(input,threadId,fileSystem?(artifact,owner,signal)=>fileSystem.prepareArtifact(artifact,owner,signal):undefined);
@@ -1046,7 +1047,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     const { accountModelDefaultsService, threadReadReceiptsService, personalSshKeys, actorSshKeysService } = await installation.openPersonalServices({ sshLogin: !!ingressConfiguration });
     const turnPush = lateTurnPush.bind(await installation.openTurnPush({
       openStore: () => openPushStore(join(dataDirectory, 'web-push.sqlite')),
-      createService: (store, pushOptions) => new TurnPushService(store, pushOptions),
+      createService: (store, pushOptions) => new TurnPushService(store, { ...pushOptions, wake: ownerWake }),
       appHost: lateAppHost, imPlugins: lateImPlugins, conversationExecution }));
     await turnPush.initialize();
     const sshManagement = lateSshManagement.bind(await nodeLocal.openSshManagement({
