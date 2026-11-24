@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/contract.ts",
-    "./sqlite": "./src/sqlite.ts",
+    "./sqlite": "./src/node-store.ts",
+    "./sql-store": "./src/sqlite.ts",
     "./client-resources": "./src/client-resources.ts",
     "./client-local-documents": "./src/client-local-documents.ts",
     "./client-resources-sqlite": "./src/client-resources-sqlite.ts",
@@ -17,6 +18,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@opencraft/sql": "0.1.0",
     "@opencraft/sqlite-node": "0.1.0"
   }
 }

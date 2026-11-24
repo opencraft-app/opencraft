@@ -10,7 +10,7 @@ import { OpenCraftHostStateDatabase } from "../../apps/opencraft-daemon/src/open
 import { OpenCraftHostQueue } from "../../apps/opencraft-daemon/src/opencraft-host-queue";
 import { OpenCraftMessageSenders } from "../../apps/opencraft-daemon/src/opencraft-message-senders";
 import { OpenCraftMessageAttachments } from "../../apps/opencraft-daemon/src/opencraft-message-attachments";
-import { TasksSqliteStore } from "../../plugins/tasks/src/sqlite";
+import { TasksSqliteStore } from "../../plugins/tasks/src/node-store";
 import { SshConnectionStore } from "../../apps/opencraft-daemon/src/ssh-connection-store";
 import { openLocalAgentStorage } from "../../apps/local-agent-host/src/storage/local-agent-storage";
 import { SqliteLifecycleError } from "@opencraft/sqlite-node";

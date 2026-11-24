@@ -7,6 +7,7 @@
     "./contract": "./src/contract.ts",
     "./server": "./src/server.ts",
     "./adoption": "./src/adoption.ts",
+    "./sql-store": "./src/sql-store.ts",
     "./client": "./src/client.tsx"
   },
   "scripts": {
@@ -20,6 +21,7 @@
     "@opencraft/i18n": "*",
     "@opencraft/identity-core": "*",
     "@opencraft/javascript-runtime": "0.1.0",
+    "@opencraft/sql": "0.1.0",
     "@opencraft/sqlite-node": "*",
     "@opencraft/worker-owner": "0.1.0",
     "react": "19.3.1"
