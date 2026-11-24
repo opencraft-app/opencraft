@@ -28,6 +28,9 @@ export interface CloudflareProviderOptions {
   readonly container: DurableObjectContainer;
   /** `this.ctx.waitUntil`, so a pending `monitor()` keeps the object resident. */
   waitUntil?(promise: Promise<unknown>): void;
+  /** Main-process environment of every container this object starts: the workspace's
+   * identity for its agent (never credentials: the container holds none). */
+  readonly env?: Readonly<Record<string, string>>;
 }
 
 /** Provider definition for the WorkspaceHost Durable Object's composition root: it
@@ -60,6 +63,7 @@ export function cloudflareSandboxProvider(
         ...(installation.user === undefined ? {} : { user: installation.user }),
         requestTimeoutMs: request.requestTimeoutMs,
         ...(options.waitUntil ? { waitUntil: options.waitUntil } : {}),
+        ...(options.env ? { env: options.env } : {}),
       });
     },
   };

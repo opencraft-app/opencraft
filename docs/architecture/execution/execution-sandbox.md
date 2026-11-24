@@ -344,7 +344,10 @@ Host session, `docker stop`, volume kept; waking is `create` = start the same co
 a new incarnation) and `discard(identity, receipt)` (remove container, volume and link
 directory); `Sandbox.sleep()`, `SandboxPool.discardSandbox()` and
 `WorkspaceRuntime.sleep()`/`discard()` expose them provider-neutrally; a provider
-without them stays resident and cannot be discarded. Environment `close()` ends only
+without them stays resident and cannot be discarded. The `cloudflare` backend also implements `sleep`: a
+stopped Cloudflare container keeps no disk, so sleeping is the confirmed destruction `close()` performs and
+waking is a `create` (a new incarnation); the WorkspaceHost Durable Object drives it from its idle policy
+([cloudflare-deployment §5.7](../platform/cloudflare-deployment.md#57-workspacehost-状态)). Environment `close()` ends only
 the Host's link session (the container stays for a re-attach), like `static-docker`.
 
 ### Provider lifecycle obligations (from the Cloudflare Containers probe)
@@ -364,7 +367,7 @@ but each one applies to every provider. Status after step 7a (the `cloudflare` p
 | The container main process handles SIGTERM | implemented: `container-service.mjs` forwards SIGTERM/SIGINT to `workspace-agent`, which drains and stops its children (the probe container without a handler did not stop for 30 s) |
 | Environment loss reported by the provider (crash without restart, provider-initiated stop, idle backstop) | implemented: optional `SandboxEnvironment.lost`; Cloudflare drives it from `monitor()` (verified on real Cloudflare: agent stop → `exited` in ~140 ms, runtime released and re-created). Docker container exit: follow-up (`docker-provisioner` does not yet subscribe to Docker events) |
 | Native endpoint connection (`connectEndpoint(target)`, for example a container TCP port with the agent routing each connection by its first line to the endpoint socket) preferred over the relay | follow-up, optional (not in the contract yet; the Cloudflare backend uses the relay): same semantics as the relay (backpressure, half-close, no replay); the relay stays the fallback |
-| Provider idle timers are re-armed by the owner | Cloudflare: set after start, on attach and on backend initialization; `armCloudflareContainerTimeout` for the DO constructor (implemented). Only a backstop for the WorkspaceHost idle policy |
+| Provider idle timers are re-armed by the owner | Cloudflare: set after start, on attach and on backend initialization; `armCloudflareContainerTimeout` for the DO constructor (implemented; the WorkspaceHost object calls it on every construction). Only a backstop for the WorkspaceHost idle policy |
 | Resource limits the provider does not enforce | Cloudflare containers report `cpu.max`/`pids.max` as `max` and nofile 1048576: the default 4096 tasks and 65536 FD per process must be applied by `workspace-agent`; CPU and memory (custom 4 vCPU / 8 GiB accepted) are reported by the provider |
 
 ### Optional persistence and sleep capabilities (`sleep`/`discard` implemented for docker-provisioner; snapshots design)

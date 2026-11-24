@@ -67,6 +67,7 @@
     "./thread-identity-database": "./src/thread-identity-database.ts",
     "./native-execution-origin": "./src/native-execution-origin.ts",
     "./native-execution-inspector": "./src/native-execution-inspector.ts",
+    "./native-execution-turn-inspector": "./src/native-execution-turn-inspector.ts",
     "./agent-driver-transport": "./src/agent-driver-transport.ts",
     "./machine-identity": "./src/machine-identity.ts",
     "./ssh-codex-connections": "./src/ssh-codex-connections.ts",
@@ -75,6 +76,7 @@
     "./owned-database-path": "./src/owned-database-path.ts",
     "./codex-native-core-transport": "./src/codex-native-core-transport.ts",
     "./workspace-execution-transport": "./src/workspace-execution-transport.ts",
-    "./opencraft-host-state-database": "./src/opencraft-host-state-database.ts"
+    "./opencraft-host-state-database": "./src/opencraft-host-state-database.ts",
+    "./provisional-threads": "./src/provisional-threads.ts"
   }
 }

@@ -2,7 +2,7 @@
 
 [Architecture index](../README.md) · [存储端口](storage-ports.md) · [执行沙盒](../execution/execution-sandbox.md) · [Docker 三角色部署](../../../deploy/docker/README.md)
 
-状态：目标设计。Cloudflare Containers 的平台能力已做真实探测（2026-11-23，结论见[工作区拆分 §3.6](workspace-host-split.md#36-部署形态统一建模)）；`sandbox-cloudflare` provider 已实现并在真实 Cloudflare 上预演通过（第 7.5 节），但还没有 WorkspaceHost DO 装配。存储端口的 Cloudflare 适配器已在本地 workerd 中通过一致性测试（见[存储端口第 6 节](storage-ports.md#6-cloudflare-适配器第-5-阶段本地-workerd-验证)）；`InstallationCore` 已有正式 DO 装配（身份与准入部分，本地 workerd 验证，Wrangler 模板未部署，见第 5 节），`RelayHub` 仍是仅限测试的本地 workerd 原型（见第 6 节）；本页不代表任何 Cloudflare 组件已在真实账号上部署或可用于生产。Node 自托管（Docker／systemd／Electron）始终是一等公民；Cloudflare 是部署装配选项之一，不替换 Node 路径。
+状态：目标设计。Cloudflare Containers 的平台能力已做真实探测（2026-11-23，结论见[工作区拆分 §3.6](workspace-host-split.md#36-部署形态统一建模)）；`sandbox-cloudflare` provider 已实现并在真实 Cloudflare 上预演通过（第 7.5 节），`WorkspaceHost` 已有正式 DO 装配的第一部分（Host SQL、容器生命周期、Engine Host 输入、空闲、中断恢复与凭据租约调用点，本地 workerd 以容器替身验证，见第 5.7 节）。存储端口的 Cloudflare 适配器已在本地 workerd 中通过一致性测试（见[存储端口第 6 节](storage-ports.md#6-cloudflare-适配器第-5-阶段本地-workerd-验证)）；`InstallationCore` 已有正式 DO 装配（身份与准入部分，本地 workerd 验证，Wrangler 模板未部署，见第 5 节），`RelayHub` 仍是仅限测试的本地 workerd 原型（见第 6 节）；本页不代表任何 Cloudflare 组件已在真实账号上部署或可用于生产。Node 自托管（Docker／systemd／Electron）始终是一等公民；Cloudflare 是部署装配选项之一，不替换 Node 路径。
 
 ## 1. 现状约束
 
@@ -21,7 +21,7 @@
 | `InstallationCore` | 每部署一个 DO | 服务器核心 SQL（现由多条连接共同打开的库合并为单一 owner）、成员与授权投影、Hub 节点状态 |
 | `RelayHub` | 每 installation 一个 DO | 隧道与流预算，替代 Redis 租约与节点间转发（本地原型见第 6 节） |
 | `AccountCore` | 每部署一个 DO | 账号池、加密凭据、OAuth 刷新单写者、选号与亲和、计量与策略 |
-| `WorkspaceHost` | 每工作区一个 DO | Codex Host 状态（queue、schedules 以 DO alarm 实现、中断恢复、tasks、token usage）；工作区容器生命周期与连接 |
+| `WorkspaceHost` | 每工作区一个 DO | Codex Host 状态（queue、schedules 以 DO alarm 实现、中断恢复、tasks、token usage）；工作区容器生命周期与连接（第一部分已装配，见 5.7） |
 | 工作区容器 | 每工作区一个 Container，由 `WorkspaceHost` 持有 | Brain 与 Hands 同处：`codex app-server`、Pi、DSH、`exec-server`、终端、文件、浏览器；独立 `CODEX_HOME`；容器磁盘是缓存，工作区内容以 Git 为真源，可选容器快照加速恢复；默认空闲 15 分钟休眠 |
 
 ### 2.1 模型请求与凭据
@@ -38,7 +38,7 @@
 - Brain 与执行用户使用不同 UID；凭据不进入容器文件系统。
 - 容器回收或重启时，引擎进程终止；恢复沿用[中断 Turn 恢复](../execution/interrupted-turn-recovery.md)，由 `WorkspaceHost` 持有的 Host 状态驱动，不重放未确认输入。
 - 持久化语义已决定（2026-11-23）且与 provider 无关：Git 是工作区内容的真源，容器磁盘（含 `CODEX_HOME`）随 `destroy()`／崩溃丢失，是可重建缓存；`snapshotContainer` 作为 `captured` 快照能力只用于加速恢复（平台 beta、30 天 TTL、Worker API 不可删），不作兜底；未提交改动可能随化身丢失。契约与对账规则见[工作区拆分 §3.7](workspace-host-split.md#37-工作区持久化与空闲设计2026-11-23-用户决定未实现)。
-- 空闲：WorkspaceHost 判定空闲后停止容器（默认 15 分钟，可配置常驻）；容器 inactivity timeout 只作兜底，且每次 DO 构造都要重设。
+- 空闲：WorkspaceHost 判定空闲后停止容器（默认 15 分钟，可配置常驻）；容器 inactivity timeout 只作兜底，且每次 DO 构造都要重设（已实现，见 5.7）。
 
 ## 3. 前置工作
 
@@ -101,7 +101,7 @@ Node 上 `opencraft-server.sqlite` 的编排运行时与 Server space 已在核�
 
 已完成（2026-11-24）：IC 的 DO 装配中身份与准入部分（成员、Actors、Human 登录与本地账号、实例准入、Actor 访问与身份写入）；认证前门（本地账号登录与 setup、邀请与接受、会话、Actor API、实例准入与成员管理）；Wrangler 模板（未部署）。仍缺：
 
-- **边缘 Worker**：静态资源与发布清单、Client DO 与 WorkspaceHost 路由、模型出口；现有入口只把 IC 自有路由转发给对象，其余一律 404。
+- **边缘 Worker**：静态资源与发布清单、Client DO、Client 会话到 WorkspaceHost 的路由、模型出口；现有入口只把 IC 自有路由转发给 IC 对象，把工作区运维操作（管理员）转发给按 id 寻址的 WorkspaceHost 对象（5.7），其余一律 404。
 - **其余 installation 步骤的 DO 装配**：`openServerInformation`（只需 DO 状态文档，可作为下一步）、`openPersonalServices`、`openCapabilityBindings`／`openCapabilitySigningKey`（`KeyMaterial` 已有 DO 适配器）、`openSpaces`、`openCollaboration`（需要 workspace-host 的 `conversationExecution` 与 App Host 迟绑定）、`openConnectors`、`openMcpApps`、`openTurnPush`。同线程核心 owner 已提供这些步骤需要的全部 owner 方法，`Collaboration` HTTP API 随 `openCollaboration` 接入，共享路由表中它们的路由在对象未装配时与 Node 缺席服务一样回答 404 `missing`。
 - **OIDC**：流程状态在 `HumanAuth` 内存中，需写入 DO storage 并保持一次性消费（[登录入口原型结果](gateway-split.md#34-登录入口原型结果)）；discovery 与 ID Token 验签未在 workerd 中跑通。
 - **登录准入**（`plugins/login-admission`）仍是 Node Worker＋SQLite owner，需 SQL 端口版本；Hub 节点身份（`HubNodeIdentity`）与 RelayHub 未装配；身份组合（下游产品）未装配。
@@ -130,7 +130,50 @@ Node 上 `opencraft-server.sqlite` 的编排运行时与 Server space 已在核�
 
 **关闭与驱逐。** 具名 disposer 按 Node 关闭第 11 步的顺序（身份组合、登录准入、账号应用、账号管理、`HumanAuth`、Human 账号、身份写入、Actors、成员），最后排空并关闭同线程核心 owner；打开失败时与 `close()` 时执行，逐个结算、汇总失败。平台驱逐不产生事件：DO 内存被丢弃，持久状态已按事务提交，下一事件重新构造并重新打开（驱逐场景见 5.1）。
 
-**部署装配。** `deploy/cloudflare/wrangler.installation-core.jsonc` 是模板：入口 `apps/headless-server/src/cloudflare/worker.ts`（Wrangler 以 `workerd` 条件打包），`nodejs_compat`，兼容日期与测试相同，DO 绑定 `INSTALLATION_CORE`（类 `InstallationCore`，`new_sqlite_classes` 迁移），var 只有登录配置与机器名，setup 凭证经 `wrangler secret put`。仓库内任何校验或构建都不部署它。
+**部署装配。** `deploy/cloudflare/wrangler.installation-core.jsonc` 是模板：入口 `apps/headless-server/src/cloudflare/worker.ts`（Wrangler 以 `workerd` 条件打包），`nodejs_compat`，兼容日期与测试相同，DO 绑定 `INSTALLATION_CORE`（类 `InstallationCore`，`new_sqlite_classes` 迁移 v1）与 `WORKSPACE_HOST`（类 `WorkspaceHost`，迁移 v2，`containers` 以 digest 固定工作区镜像，见 5.7），IC 的 var 只有登录配置与机器名（另有非机密的 `OPENCRAFT_WORKSPACE_*`），setup 凭证经 `wrangler secret put`。仓库内任何校验或构建都不部署它。
+
+### 5.7 WorkspaceHost 状态
+
+状态（2026-11-24）：**正式 DO 装配第一部分（Host SQL、容器生命周期、Engine Host 输入与执行观察、空闲、中断恢复、化身围栏、凭据租约调用点、运维路由），本地 workerd 验证（容器替身，无真实 Containers），未部署到真实 Cloudflare**。编号接在 AccountCore（§5.6，PR #581）之后。
+
+**位置与理由。** DO 类在 `apps/headless-server/src/cloudflare/workspace-host.ts`，理由与 §5.5 相同：它是小组合根，调用 Node 根也调用的 workspace-host 模块（`src/assembly/workspace-host.mjs`），不能放进 `packages/`。同目录的 `workspace-link.ts`（端点字节流上的 HTTP/1.1 与 RFC 6455 客户端）与 `workspace-engine.ts`（容器 Engine Host 与执行历史读取）是模块既有工厂端口的 DO 侧适配器，不是新端口。Host SQL 的族组合在 `src/assembly/workspace-host-sql.ts`（不按平台命名：将来 Node 合库用同一份），运维与对象路由在 `src/workspace-host-routes.ts`（入口 Worker 与对象共用）。`check:boundaries` 对 `cloudflare/`、路由表与 `@opencraft/sql/families` 施加 §5.5 的同一中立规则。
+
+**打开顺序。** 构造函数在 `blockConcurrencyWhile` 内：解析配置（var，非机密）；容器在运行时重设 inactivity timeout（`armCloudflareContainerTimeout`，平台不跨 DO 重启保留，兜底而非正确性依据）；读对象状态文档 `workspace-host/identity`。未绑定的对象不迁移、不启动任何东西（`status` 答 `unbound`）。已绑定（内部 `open` 写入 `{workspace, machine}`，同一身份再次调用为空操作，不同身份 409）时依次：迁移 Host SQL 族；对象唯一 alarm 经 `mergedOwnerWake` 供空闲、租约续期与中断恢复共用；provider 注册表 → backend → `createSandboxPool`（默认 4 vCPU／8 GiB，容量一个环境）→ `createWorkspaceRuntime`（placement 记录在状态文档）；同一 SQL 上的 `ExecutionLeaseStore` 与 `SqlInterruptedTurnRecovery`；`assembleWorkspaceHost(...)` 后按 Node 根顺序调用 `openConversationExecution`、`openEngines`（`attachIndependentEngine`＝容器 Engine Host 适配器，其余引擎工厂明确拒绝）、`openExecutionObservation`（`openExecutionLeases`＝DO SQL 上的租约库，`createExecutionRecovery`＝端点上的历史读取，`reportedExecutionProcess` 只收所有者上报）。打开期间任何会启动容器的使用都被拒绝（启动时的未定租约对账因此保持未知，不为它启动容器）；打开失败按具名 disposer 回滚并保持关闭（503），重启后仍是。
+
+**多库共存（Host SQL 族）。** WH 拥有的每个库保留各自已发布的迁移链（发布前缀＋存储注册表追加的生成 SQL，与 Node owner 应用的完全相同），作为同一数据库内的一个**族**，记在 `schema_family_migrations(family, version, name, checksum, applied_at)`：与 Server 扩展族账本同形（[sqlite-lifecycle "Server 产品扩展迁移族"](../server/sqlite-lifecycle.md)），但这里没有核心链，全部是对等族。运行器 `@opencraft/sql/families`（运行时中立）：每族版本连续、SHA-256 逐行核对，篡改为 `history-mismatch`，超出声明或账本中有本构建未声明的族为 `newer-schema`；已有单链 `schema_migrations` 的库与无账本却有对象的库都拒绝、不采纳；每个迁移一个 `transaction()`，事务内重新校验。族与理由：
+
+| 族（注册表 schema id） | Node 上的文件 | 内容 |
+| --- | --- | --- |
+| `opencraft-host-state-database` | `opencraft-host-state.sqlite` | queue、投递、执行租约（v15）、thread directory（`durable-thread-catalog`）、senders／Bot／IOA、token usage 表 |
+| `provisional-threads` | `thread-creations.sqlite` | 暂定线程 |
+| `host-schedules` | `conversation-schedules.sqlite` | 会话定时任务 |
+| `host-recovery` | `interrupted-turn-recovery.sqlite` | 中断 Turn 恢复 |
+| `provider-retry` | `provider-turn-retry.sqlite` | provider 重试 |
+| `employee-git-vault-store` | `employee-git-vault.sqlite` | 员工 Git vault |
+
+不作为族：`thread-identity-database`（其执行租约迁移与 Host 状态 v15 是同一 SQL，WH 用 Host 状态的租约表）与 DSH 的 `thread-catalog`（引擎在容器内的库；WH 的 thread directory 是 Host 状态的表）——二者会重复创建 Host 状态已有的对象。各链对象互不相交由 Node 测试证明：族迁移后的库与六个 Node owner 各自文件的对象逐项相同。Node 仍按文件打开（`openManagedDatabase`），合库（workspace-host-split §4.1）时用同一运行器加 Node 的备份与校验。
+
+**容器只经沙盒 provider。** 对象从不直接调用 `ctx.container.start`：`cloudflare://WorkspaceHost` 经 provider 注册表选择，创建经池准入、自定义实例、化身标签与身份 exec 校验（§7.5）；没有容器绑定时打开失败、对象关闭，不回退任何本机执行。provider 新增可选 `env`：容器主进程环境只带工作区 id 与 machine id（非机密，容器内无凭据）。backend 新增 `sleep`：Cloudflare 容器停止后不保留磁盘（`captured` 快照未做），所以休眠＝确认销毁（与 `close` 同一路径），唤醒＝`create`、新化身。
+
+**WorkspaceLink 适配（模块 transport 工厂的 DO 侧）。** 容器内 owner 不变；对象持有 `WorkspaceRuntime.connect` 的端点连接（每连接一个 attached 中继进程），在字节流上说与 Node 客户端相同的协议：Engine Host 的描述符来自 agent `control` 的 `describe`（不读文件），与 `/health` 逐项一致（schema、pid、machine id、引擎集合、默认引擎），`/host-inputs` 提交与回执，`/execution-origin` 经 `WorkspaceRuntime.fenced` 只在前后两次 `probe` 都是已绑定 agent 化身时才采纳；执行历史读取（`thread/turns/list`、`thread/read`）每次一条新端点 WebSocket，忽略服务器请求，复用抽到中立模块的 `createNativeExecutionTurnInspector`。连接断开即失败，不重放；未知保持未知。
+
+**空闲（§3.7.2）。** 判定在对象内：没有对外端点连接、没有恢复中的行、引擎报告的进行中 Turn 为零（已结束的租约顺带对账结算），且距上次使用超过空闲时长（默认 15 分钟，`OPENCRAFT_WORKSPACE_IDLE`，`resident` 为常驻），然后 `WorkspaceRuntime.sleep()`。判定本身的引擎读取不算使用。唤醒都在 alarm 上，容器休眠不影响到期。
+
+**中断恢复与化身围栏。** 新化身是旧执行进程结束的证据：`created`（带 previous）、`incarnation-changed`，或 provider 报告丢失（`released lost:*`，来自 `monitor()`）时，在新绑定被使用**之前**同步：执行租约 `suspend()`、恢复行 `lost()`、请求一次恢复。恢复由 Host 状态驱动：`inspect` 只用所有者经围栏上报的当前 Turn（同一 Turn 仍在进行为 live，已结束或有更新的 Turn 为 finished，只有带丢失证据且当前化身没有它才是 lost，读取失败为 unknown）；`continue` 以 Host 自有的 `restart-recovery:` 输入 id 提交系统续写提示，原输入从不重放；最多 3 次、`dispatching` 中断为 unconfirmed，规则与 Node 相同（`@opencraft/host-recovery`）。被接受的 Host 输入在引擎给出 Turn 时登记为恢复行。对象持久化化身纪元（状态文档 `epoch`，每个新 agent 化身加一）并在 `status` 中报告。注意：`fenced` 发现化身变化会释放绑定，而 Cloudflare 环境的 `close` 就是销毁容器，所以容器内 agent 重启后的下一次使用是新容器。
+
+**凭据租约（调用点）。** 端口 `WorkspaceCredentialLeases` 是 #581 `CredentialLeases` 的结构子集；持有者 `{workspace, engine, incarnation}`。新化身绑定时先撤销该引擎旧租约再申请，休眠、丢失与化身变化时 `revokeHolder({workspace})`，到半寿命时经 alarm 续期（失效则为同一化身重新申请）。令牌只在对象内存，不进容器、不进持久存储，供将来边缘出口取用（`modelLease`）。生产对象的 `credentialLeases()` 在 AccountCore 的租约兑换接口（AC 第二部分）装配前返回 `undefined`：不申请租约，容器也就到达不了任何模型；测试以替身证明调用点。
+
+**路由。** 入口 Worker 把 `/__opencraft_workspaces/<工作区 id>/{status,wake,sleep}`（与 Node `workspace-admin.mjs` 的运维操作对应）按 `idFromName("workspace:<id>")` 转给该工作区对象，转发前把请求的 cookie／authorization 交给 InstallationCore 的 `/__opencraft_access/session`，只有管理员才转发（401／403 原样）；非法 id 与其他方法 404。`open`、`inputs`、`execution` 是 owner 之间的内部操作，入口从不转发；Client 会话到工作区的路由依赖尚未抽出的 client-session（gateway-split §4.1.1"G1 剩余"），本步不做。
+
+**证明。** `npm run test:workspace-host:workerd` 新增 `tests/storage/workspace-host-do-workerd.test.ts`（场景 `workspace-host-do.scenarios.ts`，替身 `workspace-container-double.ts`：在 isolate 内逐帧扮演共享 broker、固定中继、`workspace-agent` 的 `control` 与 Engine Host 的 HTTP／WebSocket，`monitor()`／`destroy()`／崩溃／DO 重置语义同 Node 夹具）：未绑定不迁移不启动、六族账本与表；容器只经 provider 启动（4 vCPU／8 GiB 自定义实例、无 Internet、化身标签、启动环境只含工作区 id 与 machine id）；Host 输入经模块到 Engine Host，租约库记录、恢复行登记、围栏上报；进行中 Turn 不空闲、结束后 alarm 停止容器并结算租约、撤销租约、唤醒为新化身、驱逐后构造函数重设兜底并按 receipt 重连同一容器；崩溃后新化身只收到一次系统续写（无原文重放）、旧化身租约撤销、新化身获租约；agent 化身变化时上报被拒、绑定释放、唤醒后恢复；篡改族账本后对象 503；运维路由无会话 401、管理员 200。另有 `tests/storage/sql-migration-families.test.ts`（族账本规则、升级保数据、与 Node 文件对象相同，进入 `test:storage-ports`）、`tests/server/workspace-link.test.ts`（适配器对真实 `node:http`／`ws`）、`tests/execution/sandbox-cloudflare.test.ts` 的 `sleep` 用例。中立打包：部署入口不触及 `worker-owner`、`sandbox-node`、`personal-assistant`、`ws`、`proper-lockfile`、Node 引擎客户端与 Node 根；触及的 `sqlite-node` 文件逐一列出（来自与领域类、迁移常量同模块的 Node owner 子类与存储注册表，对象不调用），不得增长。为此 `bot-client.ts` 不再静态导入 Node 的 Bot 进程启动器，改由根注入（`openExecutionDelivery({ spawnAssistant })`，Node 行为不变）。InstallationCore 自身的中立检查改为打包 `installation-core.ts`，结论不变。
+
+**仍缺（剩余缺口）。**
+
+- 真实 Cloudflare：WH DO 尚未进入 `cf:rehearsal`；产品镜像（`workspace-agent`＋Engine Host＋Brain）未做；Wrangler 模板中 `containers[].image` 与对象读取的 `ctx.container.images.<名>` 的映射未在真实部署核对（预演用 API 的 `images` 映射）。
+- machine id 由调用 `open` 的 owner 给出；IC 尚未发布它，放置（Thread→工作区）与 client-session 未装配，所以生产中还没有调用 `open` 的一方。
+- 模块其余步骤未装配：执行交付（Assets vault、个人 Git、ENV）、浏览器、capability MCP、终端与文件 owner、会话资源、AppHost transport 层、readiness、token usage。Codex AppServer 路径（`CodexEngineAdapter` 是 Node transport）与 DSH 端点未接，只接了 Engine Host（Pi）。
+- 定时任务、provider 重试 owner 与 thread directory 同步未在对象中打开（表已迁移）；恢复通知没有客户端会话可推送；执行租约启动时钟为 `null`（应由容器 `control` 提供，workspace-host-split §3.4）；容器拒绝 epoch 落后连接需 agent 支持。
+- AccountCore 租约兑换与边缘出站处理（`interceptAllOutboundHttp`、HTTPS 拦截）未做；`captured` 快照、原始 TCP `connectEndpoint` 未做；DO 版迁移后 schema 校验（同 §5.4）。
 
 ## 6. RelayHub 原型结果
 

@@ -94,6 +94,7 @@ export function assembleWorkspaceHost({ lifecycle, capabilities, appHost, codexB
       serverStorage,
       codexCoreEndpoint,
       readAssistantSandboxConfig,
+      spawnAssistant,
       openAssetsStorage,
       openWorkspaceExecution,
       openHumanAssets,
@@ -132,6 +133,7 @@ export function assembleWorkspaceHost({ lifecycle, capabilities, appHost, codexB
         if (instanceAccess) botAdmission = new WorkspaceNativeAdmission({ actors: actorStore, access: instanceAccess });
         installedBotProvider = createWorkspaceBotProvider({
           port: assetsStorage.store,
+          spawnLocal: spawnAssistant,
           onCleanupUnconfirmed: () => console.warn("assistant_environment_reconciliation_required"),
           ...(botAdmission ? { admission: (context) => botAdmission.admitResource(context.actorId) } : {}),
         });

@@ -1,4 +1,4 @@
-import { spawnAssistant, type AssistantEnvironmentProvider } from "@opencraft/personal-assistant/host";
+import type { AssistantEnvironmentProvider, spawnAssistant } from "@opencraft/personal-assistant/host";
 import type { WorkspaceBotPort, WorkspaceBotSourcePort } from "./bot-owner.js";
 import type { WorkspaceActorAdmission } from "./actor-authority.js";
 const pause = () => new Promise<void>((resolve) => setTimeout(resolve, 10));
@@ -21,7 +21,8 @@ interface Entry {
  * template credentials, process handles and pool/journal live in Worker. */
 export function createWorkspaceBotProvider(options: {
   port: WorkspaceBotPort & Partial<WorkspaceBotSourcePort>;
-  spawnLocal?: typeof spawnAssistant;
+  /** The local Bot process launcher; a composition root supplies it (Node: `spawnAssistant`). */
+  spawnLocal: typeof spawnAssistant;
   onCleanupUnconfirmed(): void;
   /** Main's admission for a Bot owner, rechecked by the vault Worker. With it,
    * `forContext` serves that Actor's personal, platform and installed sources. */
@@ -166,7 +167,7 @@ export function createWorkspaceBotProvider(options: {
           continue;
         }
         check();
-        e.brain = (options.spawnLocal ?? spawnAssistant)({
+        e.brain = options.spawnLocal({
           ...source,
           executionEnvironment: state.descriptor,
           request: async (method, params) => {

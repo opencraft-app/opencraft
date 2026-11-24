@@ -177,7 +177,11 @@ for (const file of [
   "apps/headless-server/src/server-core-domains.mjs",
   "packages/storage-node/src/server/core-methods.ts",
   "apps/headless-server/src/installation-routes.ts",
+  // The WorkspaceHost object (cloudflare-deployment §5.7) and its shared routes.
+  "apps/headless-server/src/workspace-host-routes.ts",
   "apps/headless-server/src/cloudflare",
+  // The multi-chain migration ledger every runtime shares.
+  "packages/sql/src/families.ts",
   "packages/access-control/src/commit-fence.ts",
   "packages/access-control/src/human-auth-configuration.ts",
   "packages/hub-network/src/state-port.ts",

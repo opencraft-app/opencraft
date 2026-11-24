@@ -163,6 +163,24 @@ test("a container that stops by itself is reported lost; an owner close is not",
   await destroyed.close();
 });
 
+test("sleep stops the container like close, is not a loss, and waking is a new incarnation", async (t) => {
+  const { container, pool } = await setup();
+  t.after(() => pool.close());
+  const sandbox = await pool.createSandbox({ owner: "cloudflare-test" });
+  assert.equal(typeof sandbox.sleep, "function");
+  await sandbox.sleep!();
+  assert.equal(container.running, false);
+  assert.equal(container.destroys, 1);
+  assert.equal(await settledWithin(sandbox.lost!, 100), false, "sleep is the owner's stop, not a loss");
+  await assert.rejects(
+    pool.attachSandbox({ owner: "cloudflare-test", receipt: sandbox.receipt! }),
+    fault("SANDBOX_UNAVAILABLE"),
+  );
+  const woken = await pool.createSandbox({ owner: "cloudflare-test" });
+  assert.notEqual(woken.receipt!.instanceId, sandbox.receipt!.instanceId);
+  await woken.close();
+});
+
 test("attach binds the same incarnation after a Durable Object reset and nothing else", async () => {
   const { container, pool, backend } = await setup();
   const first = await pool.createSandbox({ owner: "cloudflare-test" });

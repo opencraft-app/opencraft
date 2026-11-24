@@ -419,6 +419,13 @@ export function cloudflareSandboxBackend(options: CloudflareSandboxOptions): San
       await armCloudflareContainerTimeout(container, timeout).catch(() => {});
       return environmentFor(incarnation, identity, effective(resources, identity), stopped);
     },
+    /** Idle sleep (workspace-host-split §3.7.2): the WorkspaceHost stops its container. A
+     * stopped Cloudflare container keeps no disk (captured snapshots are not implemented),
+     * so sleeping is the confirmed stop `close()` performs; waking is a `create`, a new
+     * incarnation, and the WorkspaceHost recovers interrupted Turns from its own state. */
+    async sleep(environment) {
+      await environment.close();
+    },
     async close() {
       closed = true;
     },

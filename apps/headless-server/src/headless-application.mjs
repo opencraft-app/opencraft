@@ -11,7 +11,7 @@ import { HostWorkspaceCatalogTransport } from './host-workspace-catalog-transpor
 import { createCodexWorkspaceHooks, validateCodexWorkspaceHooks, hasCodexWorkspaceHooks, configuredWorkspaceExecution } from './codex-workspace-hooks.mjs';
 import { configuredModelGatewayPath, CodexCoreControlClient } from "@opencraft/account-pool-host";
 import { createAssistantModelSource } from '@opencraft/local-agent-host/model-config/assistant';
-import { createPersonalAssistantHost } from '@opencraft/personal-assistant/host';
+import { createPersonalAssistantHost, spawnAssistant } from '@opencraft/personal-assistant/host';
 import { LocalAttachmentStagingService } from '@opencraft/local-agent-host/attachments/local-staging';
 import { deploymentOperator } from "@opencraft/access-control/deployment-operator";
 import { localExecutionCli } from "@opencraft/session-capabilities/execution-cli";
@@ -509,7 +509,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       terminalOwner: options.terminalOwner, machineIdentity, actorStore, instanceAccess, humanAuth, serverStorage,
       codexCoreEndpoint: options.codexCoreEndpoint, readAssistantSandboxConfig: () => process.env.OPENCRAFT_ASSISTANT_SANDBOX_CONFIG,
       openAssetsStorage: assetsOptions => openHeadlessAssetsStorage(dataDirectory, assetsOptions),
-      openWorkspaceExecution: openWorkspaceExecutionService,
+      openWorkspaceExecution: openWorkspaceExecutionService, spawnAssistant,
       openHumanAssets: assetsOptions => openHumanAssets({ directory: dataDirectory, ...assetsOptions }),
       createHumanGitExecution: gitOptions => createHumanGitExecution({directory:dataDirectory,
         runtimeDirectory:humanGitRuntimeDirectory(join(dataDirectory,'git-runtime'),'gateway'),workerFile:options.gitWorkerFile??fileURLToPath(new URL('./personal-git-worker.mjs',import.meta.url)),
