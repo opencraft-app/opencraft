@@ -467,7 +467,7 @@ const APPROVED = {
   credentialRef: null,
   models: [{ id: "model", enabled: false }],
 };
-const CONTRIBUTED_KEY = "synthetic-contributed-key-1";
+const CONTRIBUTED_KEY = "sentinel-key";
 
 /** The deployment's gateway file for the Node server; the route exists only when it is named. */
 async function withGatewayEnvironment<T>(path: string, run: () => Promise<T>): Promise<T> {
