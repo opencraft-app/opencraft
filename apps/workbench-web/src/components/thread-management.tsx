@@ -176,7 +176,7 @@ function ThreadRowMenuBase({ activityLabelId, target, capabilities, disabled = f
   const menuItems: RowMenuItem[] = [
     access ? { key: "access", icon: PermissionShieldIcon, label: access.label, onSelect: access.invoke } : null,
     capabilities.reference && owner.callbacks.onCopyReference ? { key: "reference", icon: Link2, label: intl.formatMessage({ id: "conversation.reference.copy", defaultMessage: "Copy conversation reference" }), onSelect: () => { run(() => owner.callbacks.onCopyReference!(target), "copy"); } } : null,
-    onSetPinned && (capabilities.pin || hasAnyCapability)
+    onSetPinned && capabilities.pin !== undefined && (capabilities.pin || hasAnyCapability)
       ? { key: "pin", icon: target.pinned ? PinOff : Pin, label: intl.formatMessage(target.pinned ? { id: "sidebar.thread.unpin", defaultMessage: "Unpin" } : { id: "sidebar.thread.pin", defaultMessage: "Pin" }), unsupported: !capabilities.pin, onSelect: capabilities.pin ? () => { run(() => onSetPinned(target, target.pinned !== true), "pin"); } : noop }
       : null,
     capabilities.rename || hasAnyCapability

@@ -198,7 +198,7 @@ const SidebarThreadPresentation = memo(function SidebarThreadPresentation(props:
   const labels = recentRowLabels(useIntl(), props.recentPinned ?? false);
   const target = { hostId: thread.connectionHostId, threadId: thread.id, title, pinned: thread.pinned };
   const capabilities = { rename: props.rename, archive: props.archive, fork: props.fork,
-    delete: props.delete, pin: props.recent ? false : props.pin, reference: props.reference };
+    delete: props.delete, pin: props.recent ? undefined : props.pin, reference: props.reference };
   const changeOverlay = (kind: OpenSidebarThreadMenu["kind"], open: boolean) => {
     if (open && disabled && !(kind === "dropdown" || kind === "context")) return;
     menus.update({ hostId: target.hostId, threadId: target.threadId, rowId: activityId, kind }, open);

@@ -6,7 +6,7 @@ const externalScheme = /^https?:/iu;
 const mailScheme = /^mailto:/iu;
 const contactScheme = /^(?:sms|tel):/iu;
 const fileScheme = /^file:/iu;
-const appScheme = /^(?:app|agent|navigation):/iu;
+const appScheme = /^(?:app|agent|navigation|opencraft):/iu;
 // Legacy URI input compatibility; hosts still decide whether to open the target.
 const legacyCodexAppScheme = /^codex:/iu;
 const resourceScheme = /^(?:sandbox|attachment|resource|plugin|mcp):/iu;

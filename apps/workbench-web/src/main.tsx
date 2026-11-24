@@ -104,12 +104,14 @@ function ApplicationBootstrap() {
         }
         const productOptions = await clientProductOptions(import.meta.env, clientRuntime.kind === "electron" ? "electron" : undefined);
         if (disposed) return;
+        const activePreferences = preferences;
         const created = await module.a({
           ...productOptions,
           ...(mobileContainer() ? { navigationMode: "memory", hostProfileMode: "configured", isPresentationActive: () => mobileBinding?.active() ?? true } : {}),
           serverExtensions: serverWorkbenchExtensions,
           pushDevice: clientRuntime.pushDevice ?? undefined,
           deferOptionalFeatures: true,
+          shouldAutoPresentBrowserPanel: () => activePreferences.get("chat.openPagesInRightPanel"),
         });
         application = created;
         if (disposed) {

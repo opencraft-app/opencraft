@@ -40,6 +40,7 @@ export class WebBrowserDynamicToolHost implements BrowserDynamicToolHost {
   constructor(
     private readonly pages: WebBrowserPageRuntime,
     private readonly workbench: BrowserWorkbenchCoordinator,
+    private readonly shouldAutoPresentPanel: () => boolean = () => true,
   ) {}
 
   private threadScope(context: BrowserDynamicToolContext): string {
@@ -59,8 +60,9 @@ export class WebBrowserDynamicToolHost implements BrowserDynamicToolHost {
       const url = stringArgument(args, "url");
       if (requestedId === null && url === null)
         throw new BrowserToolError("INVALID_ARGUMENT", "url or tab_id is required");
+      const requestedVisible = args["visible"] !== false && this.shouldAutoPresentPanel();
       const opened = this.workbench.open(this.threadScope(context), {
-        visible: args["visible"] !== false,
+        visible: requestedVisible,
         ...(requestedId === null ? {} : { tabId: asTabId(requestedId) }),
         ...(url === null ? {} : { initialUrl: url }),
       });
@@ -71,7 +73,7 @@ export class WebBrowserDynamicToolHost implements BrowserDynamicToolHost {
         tabId: opened.tabId,
         panelTabId: opened.tab?.id ?? null,
         placement,
-        visible: args["visible"] !== false,
+        visible: requestedVisible,
         url: page?.navigation.currentUrl ?? url,
       };
     });

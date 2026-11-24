@@ -1193,9 +1193,9 @@ export async function startLocalAgentHost(options: {
         }
         const dispatchThread = async (method: string, params: Record<string, unknown>) => {
           if (connectedAgents.owns(method, params)) {
-            // Native forks inherit native settings. Catalog configuration is
-            // advisory and must not inject a different engine's saved default.
-            if (method === "thread/fork" && String(params.threadId).startsWith("codex_") && (request.params as {model?: unknown} | undefined)?.model == null) {
+            // Connected-agent forks inherit their own settings. Catalog
+            // configuration is advisory and must not inject DSH's default model.
+            if (method === "thread/fork" && (request.params as {model?: unknown} | undefined)?.model == null) {
               const { model: inheritedModel, ...nativeParams } = params;
               return connectedAgents.dispatch(method, nativeParams);
             }
@@ -1259,6 +1259,23 @@ export async function startLocalAgentHost(options: {
           ? await processes.dispatch(request.method, request.params)
           : request.method.startsWith("fs/")
           ? await fileRequest(request.method, request.params)
+          : request.method === "opencraft/thread-pins/set"
+            && connectedAgents.owns("thread/read", (request.params ?? {}) as Record<string, unknown>)
+          ? await connectedAgents.dispatch("opencraft/thread-pins/set", (request.params ?? {}) as Record<string, unknown>)
+          : request.method === "opencraft/thread-pins/list"
+          ? await (async () => {
+              const base = await adapter.dispatchOwned("opencraft/thread-pins/list", request.params, owner, request.id as string | number) as { supported?: boolean; data?: unknown[] };
+              const connectedPins = await connectedAgents.pinnedThreads();
+              const seen = new Set<string>();
+              const combined: unknown[] = [];
+              for (const row of [...(Array.isArray(base?.data) ? base.data : []), ...connectedPins]) {
+                const id = typeof (row as { id?: unknown })?.id === "string" ? String((row as { id: string }).id) : null;
+                if (!id || seen.has(id)) continue;
+                seen.add(id);
+                combined.push(row);
+              }
+              return { supported: true, data: combined };
+            })()
           : (request.method === "turn/interrupt" || request.method === "turn/steer")
             && connectedAgents.owns(request.method, (request.params ?? {}) as Record<string, unknown>)
           ? await connectedAgents.dispatch(request.method, (request.params ?? {}) as Record<string, unknown>)

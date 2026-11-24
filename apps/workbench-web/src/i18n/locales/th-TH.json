@@ -187,6 +187,8 @@
   "settings.chat.immediateFollowUp": "ติดตามทันทีในขณะที่ตอบกลับ",
   "settings.chat": "แชท",
   "settings.chat.immediateFollowUp.description": "ข้อความใหม่จะเป็นตัวนำในการตอบสนองปัจจุบัน ปิดสิ่งนี้เพื่อจัดคิวไว้สำหรับการตอบครั้งถัดไป การสนทนาข้างเคียงชั่วคราวจะตามมาทันทีเสมอ",
+  "settings.chat.openPagesInRightPanel": "เปิดหน้าเว็บในแผงด้านขวา",
+  "settings.chat.openPagesInRightPanel.description": "เปิดลิงก์ที่คลิกและหน้าเว็บที่ Agent เปิดในแผงเบราว์เซอร์ด้านขวา ปิดตัวเลือกนี้เพื่อเปิดลิงก์ในเบราว์เซอร์ภายนอกและให้หน้าเว็บของ Agent ทำงานอยู่เบื้องหลัง",
   "settings.chat.saveError": "ไม่สามารถบันทึกการตั้งค่าของคุณได้ โปรดลองอีกครั้ง",
   "connector.status.cancel": "ยกเลิก",
   "connector.status.openAuthorization": "เปิดการอนุญาต",

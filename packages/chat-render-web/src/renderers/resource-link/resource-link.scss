@@ -6,14 +6,24 @@
 .opencraft-chat-document a[data-chat-resource-kind="app-route"]:not(.chat-file-citation) {
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
-  padding: 1px 4px;
-  border-radius: 5px;
+  padding: 1px 6px;
+  border-radius: 6px;
   background: color-mix(in srgb, var(--color-background-primary-ghost-hover, var(--alpha-06)) 68%, transparent);
   color: inherit;
   font-family: var(--font-family-mono);
   font-size: var(--typography-inline-code-size);
   text-decoration: none;
+  cursor: pointer;
   overflow-wrap: anywhere;
+  transition: background-color var(--transition-duration-basic, 120ms) var(--ease-standard, ease-out);
+
+  @include controls.hover-capable {
+    &:hover:not([aria-disabled="true"]) {
+      background: color-mix(in srgb, var(--color-text, currentColor) 12%, transparent);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+  }
 }
 
 .opencraft-chat-document a[aria-disabled="true"] {

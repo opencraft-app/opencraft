@@ -212,6 +212,8 @@
   "settings.chat": "聊天",
   "settings.chat.immediateFollowUp": "回复时立即跟进",
   "settings.chat.immediateFollowUp.description": "新消息会跟进当前回复；关闭后将排队等待下一轮。临时侧聊始终立即跟进。",
+  "settings.chat.openPagesInRightPanel": "在右侧面板中打开网页",
+  "settings.chat.openPagesInRightPanel.description": "在右侧网页视图中打开点击的链接和 Agent 打开的网页；关闭后点击链接将在系统浏览器中打开，Agent 打开的网页保持在后台运行而不自动弹出右侧栏。",
   "settings.chat.saveError": "无法保存偏好，请重试。",
   "settings.appearance": "外观",
   "settings.appearance.description": "选择 OpenCraft 工作台的显示风格。",

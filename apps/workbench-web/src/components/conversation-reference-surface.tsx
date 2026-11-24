@@ -33,9 +33,14 @@ export function ConversationReferenceSurface({catalog,hostId,children}:{catalog:
     finally{if(mounted.current&&generation===epoch.current)setLoading(false);}
   };
   const open=useCallback((reference:string)=>{
-    if(!parseConversationRef(reference))return;
+    const ref=parseConversationRef(reference);
+    if(!ref)return;
+    if(catalog.hosts.some(h=>h.hostId===ref.serverId)){
+      void catalog.selectConversation(createWorkbenchThreadLocation(ref.serverId,ref.threadId)).catch(failure);
+      return;
+    }
     const t={reference,hostId};activeTarget.current=t;setTarget(t);setDraft("");setHistory(null);setRequestId(null);setDelivery(null);sendKey.current=crypto.randomUUID();void load(t);
-  },[hostId,command,intl,notices]);
+  },[hostId,catalog,command,intl,notices]);
   const port=useMemo<ConversationReferencePort>(()=>({open,async search(query,signal){
     const source=query.target.type==="new-thread"?query.target.execution.hostId:query.target.key.hostId;
     if(!catalog.threadManagement.capabilities(source).reference)return [];

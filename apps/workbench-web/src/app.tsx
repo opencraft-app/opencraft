@@ -21,6 +21,8 @@ import { displayTimingCounts } from "./runtime/display-timing-diagnostics";
 import { canReportDisplayEvent } from "./runtime/recovery-diagnostics";
 import { reportDisplayPaint } from "./runtime/display-paint-diagnostics";
 import { serverFetch } from "./runtime/server-context";
+import { useOpenPagesInRightPanel } from "./runtime/use-open-pages-in-right-panel";
+import { encodeConversationRef, parseConversationRef } from "@opencraft/appserver-protocol/collaboration";
 import { ConversationReferenceSurface } from "./components/conversation-reference-surface";
 import { copyConversationReference } from "./runtime/conversation-reference-actions";
 import { ExecutionRecoveryNotice } from "./components/execution-recovery-notice";
@@ -1243,6 +1245,8 @@ export function App({
     browserWorkbench.bindView(conversationResourceOwnerId, panelPresentationId);
   }, [browserWorkbench, conversationResourceOwnerId, panelPresentationId]);
 
+  const openPagesInRightPanel = useOpenPagesInRightPanel();
+
   const openChatResource = useCallback(
     (target: string, decision: ChatResourceDecision, intent?: ChatResourceOpenIntent) => {
       if (decision.kind === "mail") {
@@ -1250,7 +1254,9 @@ export function App({
         return;
       }
       if (decision.kind === "external") {
-        if (intent?.target === "external-browser") {
+        const useExternalBrowser = intent?.target === "external-browser"
+          || (intent?.target !== "in-app-browser" && !openPagesInRightPanel);
+        if (useExternalBrowser) {
           window.open(target, "_blank", "noopener,noreferrer");
           return;
         }
@@ -1267,9 +1273,27 @@ export function App({
           ?.scrollIntoView({ behavior: "smooth", block: "center" });
         return;
       }
+      const conversationRef = parseConversationRef(target);
+      if (conversationRef && hostCatalog.hosts.some(host => host.hostId === conversationRef.serverId)) {
+        void hostCatalog.selectConversation(createWorkbenchThreadLocation(conversationRef.serverId, conversationRef.threadId)).catch(() => undefined);
+        return;
+      }
       panelRuntime.panels.open(panelOwnerId, "resource", { resource: target });
     },
-    [openBrowserTab, panelRuntime.panels, panelOwnerId],
+    [openBrowserTab, openPagesInRightPanel, hostCatalog, panelRuntime.panels, panelOwnerId],
+  );
+  const resolveHandoffSourceHref = useCallback(
+    (title: string): string | null => {
+      const normalized = title.trim();
+      if (!normalized) return null;
+      const candidates = multiHostCatalog.threads.filter(
+        thread => thread.id !== activeThreadId && thread.title.trim() === normalized,
+      );
+      if (candidates.length === 0) return null;
+      const match = candidates.find(thread => thread.connectionHostId === snapshot.hostId) ?? candidates[0]!;
+      return encodeConversationRef({ serverId: match.connectionHostId, threadId: match.id });
+    },
+    [multiHostCatalog.threads, activeThreadId, snapshot.hostId],
   );
   const loadItemDetails = useStableEvent((ids: readonly string[], signal: AbortSignal) => activeThreadLease?.loadItemDetails(ids, signal) ?? Promise.resolve());
   const loadOlderConversation = useStableEvent(
@@ -2943,7 +2967,7 @@ export function App({
                       conversation={draft}
                       documentContext={{ conversationId: null, cwd: draft.target.execution.workspace.cwd,
                         hostId: draft.target.execution.hostId, theme: appearanceTheme.resolvedTheme,
-                        loadMediaSource, onOpenResource: openChatResource }}
+                        loadMediaSource, onOpenResource: openChatResource, resolveHandoffSourceHref }}
                       onRetry={(intent) => hostCatalog.submit(intent).then(() => undefined)}
                     /> : recoveryPresentation === "cold-loading" || recoveryPresentation === "cold-error"
                     ? <ConversationRecoveryEmptyState
@@ -2959,6 +2983,7 @@ export function App({
                     hostId: snapshot.hostId,
                     loadMediaSource,
                     onOpenResource: openChatResource,
+                    resolveHandoffSourceHref,
                     onReviewTurnDiff: openTurnDiffReview,
                     composerChangeSummaryTurnId: snapshot.conversation?.activeTurn?.turnId ?? null,
                     onForkConversation: !showingDisplayCache && nativeSession.data?.fork ? conversationToolbarProps.onFork : undefined,

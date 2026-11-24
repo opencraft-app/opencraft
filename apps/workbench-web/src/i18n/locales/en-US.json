@@ -445,6 +445,8 @@
   "settings.chat": "Chat",
   "settings.chat.immediateFollowUp": "Follow up immediately while responding",
   "settings.chat.immediateFollowUp.description": "New messages guide the current response. Turn this off to queue them for the next response. Temporary side chats always follow up immediately.",
+  "settings.chat.openPagesInRightPanel": "Open web pages in right panel",
+  "settings.chat.openPagesInRightPanel.description": "Open clicked links and agent-launched web pages in the right-side browser panel. Turn this off to open links in your external browser and keep agent pages in the background.",
   "settings.chat.saveError": "Could not save your preference. Please try again.",
   "settings.chat.turnNotifications": "Notify when a response ends",
   "settings.chat.turnNotifications.denied": "Notifications are blocked. Allow them in your browser's site settings, then return here.",

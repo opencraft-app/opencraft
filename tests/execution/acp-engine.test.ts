@@ -1268,3 +1268,66 @@ test("Codex ACP streams autonomous multi-turn goal continuations, observes updat
     await cold.close();
   }
 });
+
+test("ACP engines support Host-owned thread pinning and context-export branching without native session/fork", async t => {
+  const f = await fixture(t, {
+    id: "claude-code",
+    env: { ACP_TEST_IMAGES: "1" },
+    history: {
+      read: async () => ({ data: [], nextCursor: null }),
+      export: async (_nativeId, params) => ({
+        id: "ctx-1",
+        sourceThreadId: String(params.threadId),
+        sourceAgent: "claude-code",
+        title: typeof params.title === "string" ? params.title : null,
+        cwd: String(params.cwd),
+        turnCount: 3,
+        transcriptPath: "/tmp/exported-transcript.md",
+        archivePath: "/tmp/exported-archive.jsonl",
+        uri: "file:///tmp/exported-transcript.md",
+        collaborationSpaceId: null,
+        createdAt: Math.floor(Date.now() / 1000),
+      }),
+    },
+  });
+  const client = { notify() {}, async request() { return {}; } };
+
+  // Advertises both pin and fork (via context export) even before native session/fork exists.
+  const lifecycle = f.engine.extensions["opencraft/thread-lifecycle"] as Record<string, unknown>;
+  assert.equal(lifecycle.pin, true);
+  assert.equal(lifecycle.fork, true);
+
+  const started = await f.engine.request("thread/start", {}, client);
+  const threadId = started.thread.id as string;
+
+  // Pinning is stored locally by Host metadata and survives list/unpin cycles.
+  assert.deepEqual(await f.engine.request("opencraft/thread-pins/list", {}, client), { supported: true, data: [] });
+  assert.deepEqual(await f.engine.request("opencraft/thread-pins/set", { threadId, pinned: true }, client), { pinned: true });
+  const pinnedList = await f.engine.request("opencraft/thread-pins/list", {}, client);
+  assert.equal(pinnedList.supported, true);
+  assert.deepEqual(pinnedList.data.map((row: any) => row.id), [threadId]);
+  assert.deepEqual(await f.engine.request("opencraft/thread-pins/set", { threadId, pinned: false }, client), { pinned: false });
+  assert.deepEqual(await f.engine.request("opencraft/thread-pins/list", {}, client), { supported: true, data: [] });
+
+  // Branching without native session/fork exports context, creates a fresh native session,
+  // and injects the branch reference once on the child's first turn.
+  const forked = await f.engine.request("thread/fork", { threadId }, client);
+  const childId = forked.thread.id as string;
+  assert.notEqual(childId, threadId);
+  assert.equal(forked.thread.forkedFromId, threadId);
+
+  await f.engine.request("turn/start", { threadId: childId, input: [{ type: "text", text: "First branch turn" }] }, client);
+  await until(() => (f.engine as any).state(childId).active?.status === "completed");
+  await f.engine.request("turn/start", { threadId: childId, input: [{ type: "text", text: "Second branch turn" }] }, client);
+  await until(() => (f.engine as any).state(childId).active?.status === "completed");
+
+  const prompts = (await f.calls()).filter((entry: any) => entry.method === "session/prompt");
+  assert.equal(prompts.length, 2);
+  const firstPromptTexts = prompts[0].prompt.map((block: any) => block.text).join("\n");
+  const secondPromptTexts = prompts[1].prompt.map((block: any) => block.text).join("\n");
+  assert.match(firstPromptTexts, /Continue from the branched conversation/);
+  assert.match(firstPromptTexts, /\/tmp\/exported-transcript\.md/);
+  assert.match(firstPromptTexts, /First branch turn/);
+  assert.doesNotMatch(secondPromptTexts, /Continue from the branched conversation/);
+  assert.match(secondPromptTexts, /Second branch turn/);
+});

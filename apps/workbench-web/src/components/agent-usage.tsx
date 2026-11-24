@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import * as Popover from "@radix-ui/react-popover";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useIntl } from "@opencraft/i18n/react";
 import { Button, IconButton } from "@opencraft/design-system-web/button";
@@ -6,6 +7,7 @@ import { AgentBrandIcon, DownloadIcon, GaugeIcon, LaptopIcon, RefreshIcon, Chevr
 import type { AgentUsageSnapshot, AgentProviderUsage, AgentUsageWindow, OnboardingSnapshot } from "@opencraft/appserver-protocol";
 import { useAppServerHosts } from "../runtime/appserver-runtime-context";
 import { formatAgentVersionShort, isNewerSemver } from "./remote-machine-upgrades";
+import { useWorkbenchPresentationRoot } from "./workbench-presentation-root";
 import "./agent-usage.scss";
 
 export interface UsageMachineOption {
@@ -32,9 +34,7 @@ export function AgentUsage({ hostId, threadId, busy }: { hostId: string; threadI
       const online = !remote || profile?.machinePresence !== "offline";
       if (remote && !online && host.hostId !== hostId) continue;
       const label = host.kind === "local"
-        ? (profile?.machineIdentity?.name
-          ? `${intl.formatMessage({ id: "agentUsage.localMachine", defaultMessage: "Local" })} · ${profile.machineIdentity.name}`
-          : intl.formatMessage({ id: "agentUsage.localMachine", defaultMessage: "Local" }))
+        ? (profile?.machineIdentity?.name || intl.formatMessage({ id: "agentUsage.localMachine", defaultMessage: "Local" }))
         : (profile?.machineIdentity?.name || profile?.displayName || host.label);
       items.push({ hostId: host.hostId, label, remote, online });
     }
@@ -132,6 +132,7 @@ export function AgentUsageView({
   request(params: { threadId?: string; force?: boolean }): Promise<AgentUsageSnapshot>;
 }) {
   const intl = useIntl(), [open, setOpen] = useState(false), [provider, setProvider] = useState(() => threadId?.startsWith("cursor_") ? "cursor" : "codex");
+  const portal = useWorkbenchPresentationRoot();
   const [upgradingId, setUpgradingId] = useState<string | null>(null);
   const manualProvider = useRef(false);
   const trigger = useRef<HTMLButtonElement>(null), panelId = useId();
@@ -173,53 +174,105 @@ export function AgentUsageView({
     : value.status === "expired" ? { id: "agentUsage.expired", defaultMessage: "The Agent sign-in has expired. Sign in again." }
       : { id: "agentUsage.unavailable", defaultMessage: "Could not refresh. Previously reported usage is shown when available." });
   if (query.error && (query.error as { code?: unknown }).code === -32601) return null;
-  return <section className="agent-usage" aria-label={title} data-agent-usage="" onKeyDown={event => {
-    if (open && event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setOpen(false); trigger.current?.focus(); }
-  }}>
-    <Button ref={trigger} variant="ghost" size="accessory" className="agent-usage__disclosure" contentLayout="row" aria-expanded={open} onClick={() => setOpen(value => !value)}>
-      <GaugeIcon size={16} aria-hidden="true" /><span>{title}</span>
-      <span className="agent-usage__summary" title={context ? intl.formatMessage({ id: "agentUsage.context", defaultMessage: "Context window" }) : label}>{context ? `${count(context.usedTokens)} / ${count(context.limitTokens)}` : current?.total ? count(current.total.totalTokens) : "—"}</span>
-      {open ? <ChevronDownIcon size={14} aria-hidden="true" /> : <ChevronUpIcon size={14} aria-hidden="true" />}
-    </Button>
-    {open ? <div className="agent-usage__content">
-      {machines && machines.length > 1 && onSelectMachine ? (
-        <div className="agent-usage__machines" role="group" aria-label={intl.formatMessage({ id: "agentUsage.machineSelector", defaultMessage: "Machine" })}>
-          {machines.map(machine => (
-            <Button
-              key={machine.hostId}
-              size="sm"
-              density="compact"
-              contentLayout="row"
-              variant={selectedMachineHostId === machine.hostId ? "outline" : "ghost"}
-              aria-pressed={selectedMachineHostId === machine.hostId}
-              onClick={() => onSelectMachine(machine.hostId)}
-            >
-              {machine.remote ? <ServerIcon size={12} aria-hidden="true" /> : <LaptopIcon size={12} aria-hidden="true" />}
-              <span>{machine.label}</span>
-            </Button>
-          ))}
+  const showMachineTabs = Boolean(machines && machines.length > 1 && onSelectMachine);
+  const moveMachineFocus = (currentHostId: string, key: string, tablist: HTMLElement | null) => {
+    if (!machines || !onSelectMachine || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(key)) return false;
+    const index = machines.findIndex(entry => entry.hostId === currentHostId);
+    if (index < 0) return false;
+    const next = key === "Home" ? 0 : key === "End" ? machines.length - 1
+      : (index + (key === "ArrowLeft" ? -1 : 1) + machines.length) % machines.length;
+    onSelectMachine(machines[next]!.hostId);
+    tablist?.querySelectorAll<HTMLButtonElement>('[data-machine-tab]')[next]?.focus();
+    return true;
+  };
+  const popoverBody = (
+    <div className="agent-usage__browser" data-multi-machine={showMachineTabs ? "true" : undefined}>
+      {showMachineTabs ? (
+        <div className="agent-usage__machine-well">
+          <div className="agent-usage__machine-tabs" role="tablist" aria-label={intl.formatMessage({ id: "agentUsage.machineSelector", defaultMessage: "Machine" })}>
+            {machines!.map(machine => {
+              const selected = selectedMachineHostId === machine.hostId;
+              const badgeTone = selected ? "current" : "neutral";
+              return (
+                <button
+                  key={machine.hostId}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  data-machine-tab={machine.hostId}
+                  tabIndex={selected ? 0 : -1}
+                  title={machine.label}
+                  className="agent-usage__machine-tab"
+                  onMouseDown={event => { if (event.button === 0) event.preventDefault(); }}
+                  onClick={() => onSelectMachine!(machine.hostId)}
+                  onKeyDown={event => {
+                    if (!moveMachineFocus(machine.hostId, event.key, event.currentTarget.parentElement)) return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
+                >
+                  <span className="agent-usage__machine-icon" aria-hidden="true">
+                    {machine.remote ? <ServerIcon size={14} aria-hidden="true" /> : <LaptopIcon size={14} aria-hidden="true" />}
+                  </span>
+                  <span className="agent-usage__machine-name">{machine.label}</span>
+                  <span className="agent-usage__machine-badge" data-tone={badgeTone}>
+                    {machine.remote
+                      ? intl.formatMessage({ id: "settings.agents.remote", defaultMessage: "Remote" })
+                      : intl.formatMessage({ id: "composer.model.localMachine", defaultMessage: "Local" })}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       ) : null}
-      <div className="agent-usage__header">
-        <div role="tablist" aria-label={intl.formatMessage({ id: "agentUsage.providers", defaultMessage: "Usage provider" })}>
-          {(data?.providers ?? [{ id: "codex" }, { id: "cursor" }]).map((item, index, list) => <IconButton key={item.id} size="accessory" variant={provider === item.id ? "outline" : "ghost"}
-            role="tab" id={`${panelId}-${item.id}`} aria-controls={panelId} aria-selected={provider === item.id} title={providerName(item.id)} aria-label={providerName(item.id)} tabIndex={provider === item.id ? 0 : -1}
-            onClick={() => { manualProvider.current = true; setProvider(item.id); }} onKeyDown={event => {
-              if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-              event.preventDefault(); const next = event.key === "Home" ? 0 : event.key === "End" ? list.length - 1 : (index + (event.key === "ArrowLeft" ? -1 : 1) + list.length) % list.length;
-              manualProvider.current = true; setProvider(list[next]!.id); (event.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[role="tab"]')[next])?.focus();
-            }}><AgentBrandIcon agent={item.id === "codex" ? "codex" : "cursor"} /></IconButton>)}
+      <div className="agent-usage__sources-section">
+        <div className="agent-usage__tabs" role="tablist" aria-label={intl.formatMessage({ id: "agentUsage.providers", defaultMessage: "Usage provider" })}>
+          {(data?.providers ?? [{ id: "codex" }, { id: "cursor" }]).map((item, index, list) => {
+            const selected = provider === item.id;
+            return (
+              <Button
+                key={item.id}
+                size="sm"
+                variant={selected ? "secondary" : "ghost"}
+                className="agent-usage__provider-tab"
+                data-selected={selected ? "true" : undefined}
+                role="tab"
+                id={`${panelId}-${item.id}`}
+                aria-controls={panelId}
+                aria-selected={selected}
+                title={providerName(item.id)}
+                aria-label={providerName(item.id)}
+                tabIndex={selected ? 0 : -1}
+                onMouseDown={event => { if (event.button === 0) event.preventDefault(); }}
+                onClick={() => { manualProvider.current = true; setProvider(item.id); }}
+                onKeyDown={event => {
+                  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+                  event.preventDefault(); const next = event.key === "Home" ? 0 : event.key === "End" ? list.length - 1 : (index + (event.key === "ArrowLeft" ? -1 : 1) + list.length) % list.length;
+                  manualProvider.current = true; setProvider(list[next]!.id); (event.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[role="tab"]')[next])?.focus();
+                }}
+              >
+                <AgentBrandIcon agent={item.id === "codex" ? "codex" : "cursor"} />
+                <span>{providerName(item.id)}</span>
+              </Button>
+            );
+          })}
         </div>
-        <span>{active?.plan}</span>
         <IconButton size="accessory" variant="ghost" disabled={!connected || query.isFetching} aria-label={intl.formatMessage({ id: "agentUsage.refresh", defaultMessage: "Refresh usage" })}
           aria-busy={query.isFetching} onClick={refresh}><RefreshIcon size={15} aria-hidden="true" /></IconButton>
       </div>
-      {(accountEmail || cliVersion || (remoteHost && active?.status === "ok" && !accountEmail) || (cliHasUpdate && onUpgradeAgent)) ? (
+      <div className="agent-usage__content">
+      {(accountEmail || active?.plan || cliVersion || (remoteHost && active?.status === "ok" && !accountEmail) || (cliHasUpdate && onUpgradeAgent)) ? (
         <div className="agent-usage__identity">
-          {accountEmail ? (
-            <div className="agent-usage__account" title={accountEmail}>{accountEmail}</div>
-          ) : remoteHost && active?.status === "ok" ? (
-            <div className="agent-usage__account">{intl.formatMessage({ id: "agentUsage.accountAfterPluginUpdate", defaultMessage: "Update OpenCraft service to show account" })}</div>
+          {(accountEmail || active?.plan || (remoteHost && active?.status === "ok")) ? (
+            <div className="agent-usage__account-row">
+              {accountEmail ? (
+                <div className="agent-usage__account" title={accountEmail}>{accountEmail}</div>
+              ) : remoteHost && active?.status === "ok" ? (
+                <div className="agent-usage__account agent-usage__account--muted">{intl.formatMessage({ id: "agentUsage.accountAfterPluginUpdate", defaultMessage: "Update OpenCraft service to show account" })}</div>
+              ) : <div className="agent-usage__account" />}
+              {active?.plan ? <span className="agent-usage__plan-badge">{active.plan}</span> : null}
+            </div>
           ) : null}
           {(cliVersion || ((cliHasUpdate || (remoteHost && onboardingEntry?.installed && onboardingEntry.canInstallPackage)) && onUpgradeAgent)) ? (
             <div className="agent-usage__version-row">
@@ -275,6 +328,34 @@ export function AgentUsageView({
         ] as const).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{count(value)}</dd></div>)}</dl> : null}
         {observedAt ? <small>{intl.formatMessage({ id: "agentUsage.readAt", defaultMessage: "Read at {time}" }, { time: intl.formatTime(observedAt, { hour: "numeric", minute: "2-digit" }) })}</small> : null}
       </div>
-    </div> : null}
+      </div>
+    </div>
+  );
+  return <section className="agent-usage" aria-label={title} data-agent-usage="">
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger asChild>
+        <Button ref={trigger} variant="ghost" size="accessory" className="agent-usage__disclosure" contentLayout="row" aria-expanded={open}>
+          <GaugeIcon size={16} aria-hidden="true" /><span>{title}</span>
+          <span className="agent-usage__summary" title={context ? intl.formatMessage({ id: "agentUsage.context", defaultMessage: "Context window" }) : label}>{context ? `${count(context.usedTokens)} / ${count(context.limitTokens)}` : current?.total ? count(current.total.totalTokens) : "—"}</span>
+          {open ? <ChevronDownIcon size={14} aria-hidden="true" /> : <ChevronUpIcon size={14} aria-hidden="true" />}
+        </Button>
+      </Popover.Trigger>
+      <Popover.Portal container={portal}>
+        <Popover.Content
+          className="agent-usage__popover"
+          side="top"
+          align="start"
+          sideOffset={8}
+          collisionPadding={12}
+          aria-label={title}
+          onCloseAutoFocus={event => {
+            event.preventDefault();
+            trigger.current?.focus();
+          }}
+        >
+          {popoverBody}
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   </section>;
 }

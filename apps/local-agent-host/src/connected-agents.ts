@@ -330,6 +330,27 @@ export class ConnectedAgentHost {
     return [...results.flatMap(result => result.status === "fulfilled" ? result.value : []), ...bridgeThreads];
   }
 
+  async pinnedThreads(): Promise<Record<string, any>[]> {
+    await this.readSavedModels();
+    const results = await Promise.allSettled([...this.engines.values()].map(async engine => {
+      const page = await engine.request("opencraft/thread-pins/list", {}, {
+        request: () => Promise.reject(new Error("Pin catalog read has no tool owner")),
+        notify: () => undefined,
+      });
+      return page?.supported === true && Array.isArray(page.data) ? page.data as Record<string, any>[] : [];
+    }));
+    const seen = new Set<string>(), rows: Record<string, any>[] = [];
+    for (const result of results) {
+      if (result.status !== "fulfilled") continue;
+      for (const row of result.value) {
+        if (typeof row?.id !== "string" || seen.has(row.id)) continue;
+        seen.add(row.id);
+        rows.push(row);
+      }
+    }
+    return rows;
+  }
+
   private readonly historyCandidates = new Map<string, { id: string; title: string | null; cwd: string; updatedAt: string | null; seenAt: number }>();
 
   async localConversations(agentId: HistoryAgent, cursor?: string, isCommitted?: (threadId: string) => boolean, archived = false, sourceId?:string) {

@@ -12426,9 +12426,9 @@ html[data-window-host="browser"] body {
 .workbench-context-menu :is([role="menuitemradio"], [role="menuitemcheckbox"]) { position: relative; padding-inline-start: 28px; }
 .workbench-context-menu :is([role="menuitemradio"], [role="menuitemcheckbox"]) > span[data-state] { position: absolute; inset-inline-start: 8px; }
 .workbench-menu-item__hint {
+  @include typography.role(metadata, tertiary);
   margin-inline-start: auto;
   padding-inline-start: 12px;
-  font-size: 11px;
   color: var(--color-text-muted);
   white-space: nowrap;
 }

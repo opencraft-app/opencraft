@@ -1,24 +1,33 @@
 @use '@opencraft/design-system/typography-mixins.web' as typography;
 
 .remote-machine-upgrades {
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
-  gap: calc(var(--spacing) * 1.5);
-  padding: calc(var(--spacing) * 2) calc(var(--spacing) * 2) 0;
-  border-top: .5px solid var(--color-border-default);
+  gap: var(--spacing);
+  padding: calc(var(--spacing) * 1.5) calc(var(--spacing) * 2) calc(var(--spacing) * 1);
+  border-top: .5px solid var(--color-border-subtle);
 
-  &__machine {
+  &__strip {
     display: flex;
-    flex-direction: column;
-    gap: var(--spacing);
+    align-items: center;
+    justify-content: space-between;
+    gap: calc(var(--spacing) * 1.5);
+    min-width: 0;
   }
 
-  &__machine-header {
+  &__machine-tag {
     @include typography.role(metadata, tertiary);
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: var(--spacing);
     min-width: 0;
+    flex: 1 1 auto;
+    color: var(--color-text-tertiary);
+
+    > svg {
+      flex: 0 0 auto;
+    }
 
     > span {
       overflow: hidden;
@@ -27,10 +36,16 @@
     }
   }
 
-  &__actions {
+  &__pills {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: calc(var(--spacing) * 1.5);
+  }
+
+  &__agent-icons {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
   }
 }

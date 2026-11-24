@@ -21,6 +21,7 @@ test("UI preference defaults keep Applications unpinned", async () => {
   const runtime = await UiPreferencesRuntime.open({ installation: new MemoryUiPreferenceStore() });
   assert.equal(runtime.get("shell.applicationsPinned"), false);
   assert.equal(runtime.get("chat.defaultFollowUpAction"), "queue");
+  assert.equal(runtime.get("chat.openPagesInRightPanel"), true);
   assert.equal(runtime.get("chat.turnNotifications"), false);
   assert.equal(runtime.get("interface.touchFriendly"), "auto");
   assert.equal(runtime.get("shell.accountPinned"), false);

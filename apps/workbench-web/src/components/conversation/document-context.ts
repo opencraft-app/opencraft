@@ -49,6 +49,8 @@ export interface ConversationDocumentContextValue {
   readonly resolveGeneratedImageSource?: (block: Extract<TimelineBlock, { type: "image" }>) => string | null;
   /** The image editor belongs to the product host; ChatUI owns only its entry point. */
   readonly onEditGeneratedImage?: (block: Extract<TimelineBlock, { type: "image" }>) => void;
+  /** Resolves a display-only handoff inline-code title to aconversation:// URI when matching a known thread. */
+  readonly resolveHandoffSourceHref?: (title: string) => string | null;
 }
 
 export const ConversationDocumentContext = createContext<ConversationDocumentContextValue>({

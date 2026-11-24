@@ -1018,6 +1018,7 @@ export function createWebWorkbenchCommands(input: {
         }
       }
       if (!isCurrent()) return;
+      const handoffHref = referenceUri ?? encodeConversationRef({ serverId: target.sourceHostId, threadId: target.sourceThreadId });
       const headerInlines: ComposerInline[] = referenceUri
         ? [
             { type: "text", text: `${target.continueFromPrefix} ` },
@@ -1025,7 +1026,7 @@ export function createWebWorkbenchCommands(input: {
           ]
         : [
             { type: "text", text: `${target.continueFromPrefix} ` },
-            { type: "text", text: sourceTitle, marks: ["code"] },
+            { type: "link", href: handoffHref, children: [{ type: "text", text: sourceTitle }] },
           ];
       const userBlocks = isComposerDocumentEmpty(latest.document) ? [] : latest.document.blocks;
       const handoffDocument: ComposerDocument = {

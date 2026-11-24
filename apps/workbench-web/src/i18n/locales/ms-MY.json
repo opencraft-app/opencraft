@@ -186,6 +186,8 @@
   "settings.chat.immediateFollowUp": "Susuli segera semasa membalas",
   "settings.chat": "Sembang",
   "settings.chat.immediateFollowUp.description": "Mesej baru membimbing respons semasa. Matikan ini untuk menyusunnya bagi respons seterusnya. Sembang sampingan sementara sentiasa disusuli segera.",
+  "settings.chat.openPagesInRightPanel": "Buka halaman web pada panel kanan",
+  "settings.chat.openPagesInRightPanel.description": "Buka pautan yang diklik dan halaman web yang dilancarkan oleh Agent pada panel pelayar sebelah kanan. Matikan untuk membuka pautan dalam pelayar luaran dan kekalkan halaman Agent di latar belakang.",
   "settings.chat.saveError": "Tidak dapat menyimpan pilihan anda. Sila cuba semula.",
   "connector.status.cancel": "Batal",
   "connector.status.openAuthorization": "Buka kebenaran",

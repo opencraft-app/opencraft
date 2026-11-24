@@ -88,6 +88,19 @@ function CollapsibleUserMessageText({ block }: { readonly block: UserMessageTime
     };
   }, [collapsed]);
 
+  const handoffSource = (() => {
+    const resolver = documentContext.resolveHandoffSourceHref;
+    if (!resolver) return block.message;
+    const match = /^((?:继续自|Continue from|Teruskan daripada|ทำต่อจาก)\s+)(`+)([^`\r\n]+)\2(?=\r?\n|$)/u.exec(block.message);
+    if (!match) return block.message;
+    const title = match[3]!.trim();
+    if (!title) return block.message;
+    const href = resolver(title);
+    if (!href) return block.message;
+    const escapedLabel = title.replace(/\\/gu, "\\\\").replace(/\]/gu, "\\]");
+    return `${match[1]}[${escapedLabel}](${href})${block.message.slice(match[0].length)}`;
+  })();
+
   return (
     <div className="thread-user-message__collapsible" data-collapse-state={collapseState}>
       <div
@@ -103,7 +116,7 @@ function CollapsibleUserMessageText({ block }: { readonly block: UserMessageTime
             hostId={documentContext.hostId}
             onMeasurementRequest={documentContext.onMeasurementRequest}
             onOpenResource={documentContext.onOpenResource}
-            source={block.message}
+            source={handoffSource}
             theme={documentContext.theme}
           />
         </div>

@@ -122,42 +122,53 @@ export function RemoteMachineUpgrades({ activeHostId }: { readonly activeHostId:
     }
   };
 
-  const upgradeSingleAgent = async (machineId: string, machineName: string, agent: OnboardingAgentSnapshot) => {
-    const key = `agent:${machineId}:${agent.id}`;
-    if (pendingAgentKeys.has(key)) return;
-    const remoteHostId = `personal:${machineId}`;
+  const upgradeMachineAgents = async (machineId: string, machineName: string, agents: readonly OnboardingAgentSnapshot[]) => {
+    const key = `agents:${machineId}`;
+    if (pendingAgentKeys.has(key) || agents.length === 0) return;
     setPendingAgentKeys(prev => new Set(prev).add(key));
+    const remoteHostId = `personal:${machineId}`;
+    let failed = false;
+    let latestSnapshot;
     try {
-      let latestSnapshot;
-      try {
-        latestSnapshot = await agentRuntimes.request(remoteHostId, "opencraft/agents/onboarding/act", {
-          id: agent.id,
-          action: "upgrade",
-        });
-      } catch {
-        latestSnapshot = await agentRuntimes.request(remoteHostId, "opencraft/agents/onboarding/act", {
-          id: agent.id,
-          action: "install",
-        });
+      for (const agent of agents) {
+        try {
+          try {
+            latestSnapshot = await agentRuntimes.request(remoteHostId, "opencraft/agents/onboarding/act", {
+              id: agent.id,
+              action: "upgrade",
+            });
+          } catch {
+            latestSnapshot = await agentRuntimes.request(remoteHostId, "opencraft/agents/onboarding/act", {
+              id: agent.id,
+              action: "install",
+            });
+          }
+        } catch {
+          failed = true;
+        }
       }
       if (latestSnapshot) {
         queryClient.setQueryData(["remote-machine-agents", scope, machineId], latestSnapshot);
+      } else {
+        await queryClient.invalidateQueries({ queryKey: ["remote-machine-agents", scope, machineId] });
       }
-      notices.info({
-        key: `remote-agent-update:${machineId}:${agent.id}`,
-        message: intl.formatMessage(
-          { id: "remoteUpgrade.agentsStarted", defaultMessage: "Updating {agents} on {machine}…" },
-          { agents: agent.displayName ?? agent.id, machine: machineName },
-        ),
-      });
-    } catch {
-      notices.error({
-        key: `remote-agent-update:${machineId}:${agent.id}`,
-        message: intl.formatMessage(
-          { id: "remoteUpgrade.agentsFailed", defaultMessage: "Could not update agents on {machine}." },
-          { machine: machineName },
-        ),
-      });
+      if (failed) {
+        notices.error({
+          key: `remote-agent-update:${machineId}`,
+          message: intl.formatMessage(
+            { id: "remoteUpgrade.agentsFailed", defaultMessage: "Could not update agents on {machine}." },
+            { machine: machineName },
+          ),
+        });
+      } else {
+        notices.info({
+          key: `remote-agent-update:${machineId}`,
+          message: intl.formatMessage(
+            { id: "remoteUpgrade.agentsStarted", defaultMessage: "Updating {agents} on {machine}…" },
+            { agents: agents.map(agent => agent.displayName ?? agent.id).join(", "), machine: machineName },
+          ),
+        });
+      }
     } finally {
       setPendingAgentKeys(prev => {
         const next = new Set(prev);
@@ -167,7 +178,7 @@ export function RemoteMachineUpgrades({ activeHostId }: { readonly activeHostId:
     }
   };
 
-  const machineBlocks = targetMachines.flatMap((machine, index) => {
+  const machineEntries = targetMachines.flatMap((machine, index) => {
     const machineName = machine.name || machine.id.slice(0, 8);
     const companionUpdating = Boolean(machine.updating || pendingMachineIds.has(machine.id));
     const showCompanionPill = Boolean(machine.updateAvailable || companionUpdating);
@@ -181,90 +192,12 @@ export function RemoteMachineUpgrades({ activeHostId }: { readonly activeHostId:
     });
 
     if (!showCompanionPill && upgradableAgents.length === 0) return [];
-
-    const companionTooltip = intl.formatMessage(
-      companionUpdating
-        ? { id: "remoteUpgrade.companionBusyLabel", defaultMessage: "Updating OpenCraft on {machine}…" }
-        : { id: "remoteUpgrade.companionLabel", defaultMessage: "Update OpenCraft on {machine}" },
-      { machine: machineName },
-    );
-
-    return [
-      <div key={machine.id} className="remote-machine-upgrades__machine" data-machine-id={machine.id}>
-        <div className="remote-machine-upgrades__machine-header" title={machineName}>
-          <ServerIcon size={12} aria-hidden="true" />
-          <span>{machineName}</span>
-        </div>
-        <div className="remote-machine-upgrades__actions">
-          {showCompanionPill ? (
-            <Button
-              variant="outline"
-              size="sm"
-              density="compact"
-              contentLayout="row"
-              loading={companionUpdating}
-              disabled={!machine.connected}
-              aria-label={companionTooltip}
-              title={companionTooltip}
-              data-remote-upgrade="companion"
-              data-machine-id={machine.id}
-              onClick={() => { void upgradeMachine(machine.id, machineName); }}
-            >
-              {companionUpdating ? null : <DownloadIcon size={13} aria-hidden="true" />}
-              <span>
-                {intl.formatMessage(
-                  companionUpdating
-                    ? { id: "remoteUpgrade.companionButtonBusy", defaultMessage: "Updating OpenCraft…" }
-                    : { id: "remoteUpgrade.companionButton", defaultMessage: "Update OpenCraft service" },
-                )}
-              </span>
-            </Button>
-          ) : null}
-          {upgradableAgents.map(agent => {
-            const agentName = agent.displayName ?? agent.id;
-            const nextVer = latestVersions[agent.id];
-            const agentUpdating = pendingAgentKeys.has(`agent:${machine.id}:${agent.id}`)
-              || (agent.activity?.phase === "running" && (agent.activity.kind === "install" || agent.activity.kind === "upgrade"));
-            const tooltip = intl.formatMessage(
-              agentUpdating
-                ? { id: "remoteUpgrade.agentsBusyLabel", defaultMessage: "Updating {agents} on {machine}…" }
-                : { id: "remoteUpgrade.agentsLabel", defaultMessage: "Update {agents} on {machine}" },
-              { agents: nextVer ? `${agentName} (v${nextVer})` : agentName, machine: machineName },
-            );
-            return (
-              <Button
-                key={agent.id}
-                variant="outline"
-                size="sm"
-                density="compact"
-                contentLayout="row"
-                loading={agentUpdating}
-                disabled={!machine.connected}
-                aria-label={tooltip}
-                title={tooltip}
-                data-remote-upgrade="agents"
-                data-agent-id={agent.id}
-                data-machine-id={machine.id}
-                onClick={() => { void upgradeSingleAgent(machine.id, machineName, agent); }}
-              >
-                {agentUpdating ? null : <DownloadIcon size={13} aria-hidden="true" />}
-                <AgentIdentityIcon id={agent.engineId ?? agent.id} size={13} />
-                <span>
-                  {agentUpdating
-                    ? intl.formatMessage({ id: "remoteUpgrade.agentButtonBusy", defaultMessage: "Updating {agent}…" }, { agent: agentName })
-                    : nextVer
-                      ? intl.formatMessage({ id: "remoteUpgrade.agentButtonVersion", defaultMessage: "Update {agent} → v{version}" }, { agent: agentName, version: nextVer })
-                      : intl.formatMessage({ id: "remoteUpgrade.agentButton", defaultMessage: "Update {agent}" }, { agent: agentName })}
-                </span>
-              </Button>
-            );
-          })}
-        </div>
-      </div>,
-    ];
+    return [{ machine, machineName, companionUpdating, showCompanionPill, upgradableAgents }];
   });
 
-  if (machineBlocks.length === 0) return null;
+  if (machineEntries.length === 0) return null;
+
+  const showMachineTag = machineEntries.length > 1;
 
   return (
     <div
@@ -272,7 +205,85 @@ export function RemoteMachineUpgrades({ activeHostId }: { readonly activeHostId:
       role="group"
       aria-label={intl.formatMessage({ id: "remoteUpgrade.groupLabel", defaultMessage: "Remote upgrades" })}
     >
-      {machineBlocks}
+      {machineEntries.map(({ machine, machineName, companionUpdating, showCompanionPill, upgradableAgents }) => {
+        const companionTooltip = intl.formatMessage(
+          companionUpdating
+            ? { id: "remoteUpgrade.companionBusyLabel", defaultMessage: "Updating OpenCraft on {machine}…" }
+            : { id: "remoteUpgrade.companionLabel", defaultMessage: "Update OpenCraft on {machine}" },
+          { machine: machineName },
+        );
+        const agentsUpdating = pendingAgentKeys.has(`agents:${machine.id}`)
+          || upgradableAgents.some(agent => agent.activity?.phase === "running" && (agent.activity.kind === "install" || agent.activity.kind === "upgrade"));
+        const agentSummary = upgradableAgents
+          .map(agent => {
+            const name = agent.displayName ?? agent.id;
+            const currentVer = formatAgentVersionShort(agent.version);
+            const nextVer = latestVersions[agent.id];
+            if (currentVer && nextVer) return `${name} (${currentVer} → v${nextVer})`;
+            if (nextVer) return `${name} (v${nextVer})`;
+            return name;
+          })
+          .join(", ");
+        const agentsTooltip = intl.formatMessage(
+          agentsUpdating
+            ? { id: "remoteUpgrade.agentsBusyLabel", defaultMessage: "Updating {agents} on {machine}…" }
+            : { id: "remoteUpgrade.agentsLabel", defaultMessage: "Update {agents} on {machine}" },
+          { agents: agentSummary, machine: machineName },
+        );
+
+        return (
+          <div key={machine.id} className="remote-machine-upgrades__strip" data-machine-id={machine.id}>
+            {showMachineTag ? (
+              <span className="remote-machine-upgrades__machine-tag" title={machineName}>
+                <ServerIcon size={12} aria-hidden="true" />
+                <span>{machineName}</span>
+              </span>
+            ) : null}
+            <div className="remote-machine-upgrades__pills">
+              {showCompanionPill ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  density="compact"
+                  contentLayout="row"
+                  loading={companionUpdating}
+                  disabled={!machine.connected}
+                  aria-label={companionTooltip}
+                  title={companionTooltip}
+                  data-remote-upgrade="companion"
+                  data-machine-id={machine.id}
+                  onClick={() => { void upgradeMachine(machine.id, machineName); }}
+                >
+                  {companionUpdating ? null : <DownloadIcon size={13} aria-hidden="true" />}
+                  <span>{intl.formatMessage({ id: "mobile.brand", defaultMessage: "OpenCraft" })}</span>
+                </Button>
+              ) : null}
+              {upgradableAgents.length > 0 ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  density="compact"
+                  contentLayout="row"
+                  loading={agentsUpdating}
+                  disabled={!machine.connected}
+                  aria-label={agentsTooltip}
+                  title={agentsTooltip}
+                  data-remote-upgrade="agents"
+                  data-machine-id={machine.id}
+                  onClick={() => { void upgradeMachineAgents(machine.id, machineName, upgradableAgents); }}
+                >
+                  {agentsUpdating ? null : <DownloadIcon size={13} aria-hidden="true" />}
+                  <span className="remote-machine-upgrades__agent-icons">
+                    {upgradableAgents.map(agent => (
+                      <AgentIdentityIcon key={agent.id} id={agent.engineId ?? agent.id} size={14} />
+                    ))}
+                  </span>
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
