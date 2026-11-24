@@ -8,7 +8,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import lockfile from 'proper-lockfile';
+import { acquireOwnerLock } from '@opencraft/sqlite-node/writer-lock';
 import { acquireLock, bootIdentity } from '../full-upgrade/durable.mjs';
 import { startEngineHost } from '../../apps/local-agent-host/src/engine-host.ts';
 import { handleHostInput } from '../../apps/local-agent-host/src/host-input-http.ts';
@@ -31,7 +31,7 @@ export async function startIndependentAcpHost(options) {
   await mkdir(dataDirectory, { recursive: true, mode: 0o700 });
   const releaseKernel = await acquireLock(join(dataDirectory, 'acp-writer.lock'));
   let release;
-  try { release = await lockfile.lock(join(dataDirectory, 'acp-owner'), { realpath: false, retries: 0 }); } catch (error) { await releaseKernel(); throw error; }
+  try { release = await acquireOwnerLock(join(dataDirectory, 'acp-owner.lock')); } catch (error) { await releaseKernel(); throw error; }
   const bootId = await bootIdentity();
   const runtime = { entrySha256: createHash('sha256').update(readFileSync(fileURLToPath(import.meta.url))).digest('hex'),
     sourceRevision: process.env.OPENCRAFT_OBSERVE_SOURCE_REVISION ?? null, buildId: process.env.OPENCRAFT_OBSERVE_BUILD_ID ?? null,
