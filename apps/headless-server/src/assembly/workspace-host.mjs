@@ -8,7 +8,17 @@ import { createCapabilityContextResolver } from "../capability-execution-context
 import { createBrowserGrantResolver } from "../remote-browser/execution-grant.ts";
 import { createHostEnvironmentLaunch } from "../host-environment-launch.ts";
 import { NativeExecutionAuthority } from "../native-execution-authority.ts";
-import { readConversationCurrentTurn } from "../conversation-execution.mjs";
+import {
+  callConversationHost,
+  createRoutedConversationExecution,
+  readConversationCurrentTurn,
+} from "../conversation-execution.mjs";
+import { workspaceLifecycleRouting } from "../codex-workspace-hooks.mjs";
+import { ConversationResourceLifecycle } from "../conversation-resource-lifecycle.mjs";
+import { terminalResourceOwnerId } from "../host-resource-identity.ts";
+import { periodicOwnerWork } from "@opencraft/owner-wake";
+import { THREAD_ORCHESTRATION_TOOLS } from "@opencraft/appserver-protocol/collaboration";
+import { createLateBinding } from "./lifecycle.mjs";
 import { maintainHeadlessCodexHost } from "../headless-host-readiness.mjs";
 import { CollaborationError } from "@opencraft/access-control/collaboration";
 import { waitForExecutionCliBinding } from "@opencraft/session-capabilities/execution-cli";
@@ -23,7 +33,11 @@ import { createBridgeSessionMcp } from "@opencraft/opencraft-daemon/bridge-execu
  * native execution authorities of remote Codex Hosts; the session capability
  * listener, the execution CLI, the server's own Codex Engine Host and the
  * bridge session MCP; token usage queries; file downloads; and Codex Host
- * readiness.
+ * readiness. Second part: the routed conversation execution, the execution
+ * engines (DSH, in-process Pi behind its owner lock, an independent Engine
+ * Host), execution observation with the lease store and its bounded startup
+ * reconciliation, the Hands terminal services and file owner, and the
+ * conversation resource lifecycle with its periodic reconciliation.
  *
  * It receives the composition root's shutdown state, the shared capability
  * registry and the late-bound ports for values constructed after the
@@ -37,15 +51,19 @@ import { createBridgeSessionMcp } from "@opencraft/opencraft-daemon/bridge-execu
  * order; a disposer for something that was never opened resolves without
  * effect.
  */
-export function assembleWorkspaceHost({
-  lifecycle,
-  capabilities,
-  appHost,
-  codexBridge,
-  conversationResources,
-  executionObservation,
-  executionRecovery,
-}) {
+export function assembleWorkspaceHost({ lifecycle, capabilities, appHost, codexBridge, fileSystem }) {
+  // Values constructed after the closures that read them, all within this module now.
+  const conversationResources = createLateBinding("Conversation resource lifecycle");
+  // The execution lease store and the native process observer, bound together.
+  const executionObservation = createLateBinding("Execution observation");
+  // The execution turn inspector, read by the ENV/Git handoff before it exists.
+  const executionRecovery = createLateBinding("Execution recovery");
+  const dshStart = createLateBinding("DSH engine start");
+  let conversationExecution;
+  let agent, dshAgent, piEngine, independentEngine, releasePiOwner;
+  let agentIdentity, executionDatabase;
+  let createTerminalService, terminalService, workspaceLifecycle, resourceReconciliationTimer;
+  const terminalServices = new Map();
   let assetsStorage, botAdmission, installedBotProvider, ownedWorkspaceRouting, workspaceRouting;
   let assetsService, gitExecutionOwner, humanGitExecution, withdrawGitStatus, environmentLaunch, environmentHandoff;
   let remoteBrowser, browserCapabilities, authorizeBrowserExecution;
@@ -258,6 +276,62 @@ export function assembleWorkspaceHost({
         environmentMetadata,
         codexEnvironmentLaunch,
       };
+    },
+    /**
+     * The routed conversation execution: Thread to Host and server routing, and
+     * explicit Host input submission recorded in the execution lease store.
+     * Refuses engines this process cannot run before any engine starts.
+     */
+    openConversationExecution({ engines, engineHostDescriptor, machineIdentity }) {
+      if (engines.some((engine) => !["dsh", "pi"].includes(engine)) && !engineHostDescriptor)
+        throw new Error("ACP and Claude execution require an independent Engine Host descriptor");
+      // Pi inside Main cannot host a receiver: delivered ENV must not reach this
+      // process; with delivery, Pi runs only in the independent Engine Host.
+      if (environmentLaunch && engines.includes("pi") && !engineHostDescriptor)
+        throw new Error("Environment delivery requires the independent Pi engine host");
+      conversationExecution = createRoutedConversationExecution(() => appHost.current(), {
+        machineId: machineIdentity.machineId,
+        engines,
+        modelCatalog: true,
+        connectedAgentsOwner: engines.includes("dsh") ? "dsh" : undefined,
+        getInputs: async (engine) => {
+          const inputs =
+            engine !== "dsh"
+              ? (independentEngine?.inputs ?? (engine === "pi" ? piEngine?.inputs : undefined))
+              : (await dshStart.get()()).inputs;
+          if (!inputs) return undefined;
+          return {
+            receipt: (...args) => inputs.receipt(...args),
+            submit: async (threadId, inputId, text, canAdmit) => {
+              const observation = executionObservation.current();
+              if (!observation) throw new Error("Execution ownership unavailable");
+              const { store: executionStore } = observation;
+              const native = await observation.resolveNative(threadId);
+              return inputs
+                .submit(threadId, inputId, text, async () => {
+                  if (!(await canAdmit())) return false;
+                  // This explicit Host input is an agent, schedule or goal, not the
+                  // person currently viewing the Thread.
+                  executionStore.capture(
+                    threadId,
+                    inputId,
+                    { principal: null, ownership: "unowned" },
+                    "accepted",
+                    "system",
+                  );
+                  executionStore.begin(threadId, inputId, native?.incarnation);
+                  return true;
+                })
+                .then((receipt) => {
+                  if (receipt?.state === "delivered" && receipt.turnId)
+                    executionStore.started(threadId, receipt.turnId, inputId, native?.incarnation);
+                  return receipt;
+                });
+            },
+          };
+        },
+      });
+      return conversationExecution;
     },
     /**
      * Opaque ENV delivery needs the same live Actor/lease handoff as Git; a
@@ -516,16 +590,267 @@ export function assembleWorkspaceHost({
       );
       return { capabilityMcp, connectedExecutionCli, codexEngineHost, bridgeSessionMcp };
     },
+    /**
+     * The execution engines: an independent Engine Host, or in-process Pi
+     * behind its owner lock with DSH as its legacy engine, or DSH alone. DSH
+     * starts once, on first use (eagerly when it is the only engine); a failed
+     * start is retried on the next use.
+     */
+    async openEngines({
+      engines,
+      machineIdentity,
+      actorCollaboration,
+      threadOrchestration,
+      readTaskConversations,
+      startDsh: startDshAgent,
+      attachIndependentEngine,
+      acquirePiOwner,
+      createPiEngine,
+      startPiEngineHost,
+    }) {
+      const startDsh = dshStart.bind(
+        () =>
+          (dshAgent ??= startDshAgent({
+            executionCli: connectedExecutionCli,
+            sessionCapabilities: () => capabilities.scoped(`server:${machineIdentity.machineId}:dsh`),
+            prepareArtifact: fileSystem
+              ? (artifact, owner, signal) => fileSystem.prepareArtifact(artifact, owner, signal)
+              : undefined,
+            taskConversationCatalog: (serverId, search, limit, cursor) => {
+              const appHostServer = appHost.current();
+              if (serverId !== "local-codex" || !appHostServer)
+                throw new Error("Task conversation server is unavailable");
+              return readTaskConversations(appHostServer, search, limit, cursor);
+            },
+          }).catch((error) => {
+            dshAgent = undefined;
+            throw error;
+          })),
+      );
+      if (attachIndependentEngine) {
+        independentEngine = await attachIndependentEngine();
+        agent = independentEngine;
+      } else if (engines.includes("pi")) {
+        releasePiOwner = await acquirePiOwner();
+        piEngine = await createPiEngine({
+          executionCli: connectedExecutionCli,
+          executionGit: humanGitExecution,
+          sessionCapabilities: () => capabilities.scoped(`server:${machineIdentity.machineId}:pi`),
+        });
+        // The in-process standalone mode has the same trusted port. Shared-server
+        // deployments attach the independent owner through its descriptor instead.
+        piEngine.setOrchestration({
+          tools: THREAD_ORCHESTRATION_TOOLS,
+          call: async (threadId, turnId, callId, name, args, _signal, inputId) => {
+            if (inputId) actorCollaboration.executionStarted(threadId, inputId, turnId);
+            const result = await threadOrchestration.invoke(
+              threadId,
+              turnId,
+              JSON.stringify(["pi", piEngine.orchestrationIncarnation, threadId, turnId, callId]),
+              name,
+              args,
+              undefined,
+              piEngine.orchestrationIncarnation,
+            );
+            return { success: true, contentItems: [{ type: "inputText", text: JSON.stringify(result) }] };
+          },
+        });
+        agent = await startPiEngineHost({ piEngine, startDsh });
+      } else agent = await startDsh();
+      return agent;
+    },
+    /**
+     * Execution observation: the lease store (inside the Thread metadata
+     * overlay when an identity owns Thread metadata, else the server's own
+     * Thread identity database), the native process resolver and the turn
+     * inspector; then a finite read-only reconciliation of unsettled leases.
+     */
+    async openExecutionObservation({
+      createThreadMetadata,
+      createIdentityOverlay,
+      openExecutionLeases,
+      reportedExecutionProcess,
+      observeOwnProcess,
+      createExecutionRecovery,
+    }) {
+      if (createThreadMetadata)
+        agentIdentity = createIdentityOverlay({
+          resolveTarget: async () =>
+            agent.resolveWebsocketUrl ? await agent.resolveWebsocketUrl() : agent.websocketUrl,
+          createMetadata: createThreadMetadata,
+          resolveExecutionNative: async (threadId) => executionObservation.current()?.resolveNative(threadId) ?? null,
+        });
+      let executionStore;
+      if (agentIdentity) executionStore = agentIdentity.executions;
+      else ({ database: executionDatabase, store: executionStore } = openExecutionLeases());
+      executionStore.suspend();
+      // The owner reports the execution's process identity over its endpoint (workspace-host-split
+      // §3.4); only the in-process Pi engine is observed here, inside the Gateway itself.
+      const resolveExecutionNative = async (threadId) => {
+        try {
+          if (agent.getExecutionIdentity) {
+            const { pid, incarnation } = await agent.getExecutionIdentity(threadId);
+            return pid === null ? null : reportedExecutionProcess({ pid, incarnation });
+          }
+          if (threadId.startsWith("pi_") && piEngine) return await observeOwnProcess();
+          return await (await dshStart.get()()).engineExecutionIdentity();
+        } catch {
+          return null;
+        }
+      };
+      executionObservation.bind({ store: executionStore, resolveNative: resolveExecutionNative });
+      const recovery = executionRecovery.bind(
+        await createExecutionRecovery(async () =>
+          agent.resolveWebsocketUrl ? agent.resolveWebsocketUrl() : agent.websocketUrl,
+        ),
+      );
+      // A finite read-only reconciliation restores the original pre-send lease,
+      // including tools born before Gateway loss; failure stays unknown.
+      for (const threadId of executionStore.unsettledThreads().slice(0, 256)) {
+        try {
+          const native = await resolveExecutionNative(threadId);
+          const observation = agent.getExecutionIdentity ? await agent.getExecutionIdentity(threadId) : null;
+          if (native && observation?.turn && observation.pid === native.pid) {
+            const turn = observation.turn;
+            executionStore.reconcile(
+              threadId,
+              [
+                {
+                  id: turn.id,
+                  status: turn.status,
+                  items: turn.inputId ? [{ type: "userMessage", clientId: turn.inputId }] : [],
+                },
+              ],
+              native.incarnation,
+            );
+          } else {
+            const result = await recovery.readThread(threadId);
+            if (native && Array.isArray(result?.thread?.turns))
+              executionStore.reconcile(threadId, result.thread.turns, native.incarnation);
+          }
+        } catch {
+          /* Authority cannot be inferred from a failed recovery read. */
+        }
+      }
+      return { agentIdentity, executionStore, resolveExecutionNative };
+    },
     /** Token usage queries over the deployment's existing Codex ledger. */
     openUsageQueries(createUsageQueries) {
       usageQueries = createUsageQueries();
       return usageQueries;
     },
     /**
+     * The Hands terminal service per Host (created on first use), the one
+     * workspace lifecycle owner, the conversation resource lifecycle that
+     * releases terminals, browsers and workspaces, and the live authority
+     * checks Host resources and terminal scopes run.
+     */
+    async openConversationResources({
+      createTerminalService: terminalServiceFactory,
+      identity,
+      actorStore,
+      instanceAccess,
+      serverStorage,
+      ownerWake,
+    }) {
+      createTerminalService = terminalServiceFactory;
+      const unavailableTerminal = {
+        probe: async () => {
+          throw Error("Local Hands terminal unavailable");
+        },
+        subscribe: () => () => {},
+        dispatch: async () => {
+          throw Error("Local Hands terminal unavailable");
+        },
+        close() {},
+      };
+      terminalService = (hostId) => {
+        if (!createTerminalService) return unavailableTerminal;
+        let service = terminalServices.get(hostId);
+        if (!service) {
+          // A vault owner that admits terminal launches delivers ENV to the Hands
+          // terminal owner as capsules; otherwise the synchronous path is unchanged.
+          service = createTerminalService({
+            environment: identity?.executionEnvironment,
+            ...(typeof environmentLaunch?.terminalActor === "function" ? { environmentLaunch } : {}),
+          });
+          terminalServices.set(hostId, service);
+        }
+        return service;
+      };
+      // One workspace lifecycle owner: core's own routing, or identity routing
+      // that carries the lifecycle members. Without them, no workspace owner.
+      workspaceLifecycle = workspaceLifecycleRouting(ownedWorkspaceRouting, identity?.codexWorkspaceRouting);
+      const resources = conversationResources.bind(
+        await ConversationResourceLifecycle.open(
+          serverStorage,
+          {
+            terminal: async (row) => {
+              if (createTerminalService) {
+                if (!remoteBrowser) throw Error("Resource bindings are starting");
+                const aliases = (await remoteBrowser.threadAliases(row.hostId, row.threadId)).map((value) => ({
+                  owner: terminalResourceOwnerId(value.actorId, row.hostId),
+                  resourceOwnerId: value.resourceOwnerId,
+                }));
+                await terminalService(row.hostId).releaseThread(
+                  row.hostId,
+                  row.threadId,
+                  row.state === "active",
+                  aliases,
+                );
+              }
+            },
+            browser: async (row) => {
+              if (!remoteBrowser) throw Error("Browser owner is starting");
+              await remoteBrowser.releaseThread(row.hostId, row.threadId);
+            },
+            ...(workspaceLifecycle ? { workspace: (row) => workspaceLifecycle.releaseConversation(row) } : {}),
+          },
+          {
+            diagnose: (value) => console.warn("[conversation-resources]", JSON.stringify(value)),
+            wake: ownerWake,
+            ...(workspaceLifecycle
+              ? { dependencies: { workspace: ["browser"] }, replayOwners: ["browser", "workspace"] }
+              : {}),
+          },
+        ),
+      );
+      if (remoteBrowser) remoteBrowser.conversationLifecycle = resources;
+      const resourceAuthority = (context) => {
+        context.resourceOwner?.assertCurrent();
+        const actor = context.actorContext;
+        if (
+          !actor ||
+          !actorStore.isCurrent(actor) ||
+          actorStore.get(actor.actorId)?.kind !== "human" ||
+          (instanceAccess && !instanceAccess.admitsActor(actor.actorId)) ||
+          (context.executionPrincipal && (!Number.isFinite(context.validUntil) || context.validUntil <= Date.now()))
+        )
+          throw new Error("Host resource authority expired");
+      };
+      const terminalScope = (hostId) => (context, params) => {
+        resourceAuthority(context);
+        const actor = context.actorContext;
+        resources.assertActive(hostId, params.threadId);
+        const scope = identity?.executionEnvironment?.scope(context, hostId, params);
+        for (const name of ["threadId", "projectId"])
+          if (params[name] != null && (typeof params[name] !== "string" || !params[name] || params[name].length > 512))
+            throw new Error("Invalid terminal scope");
+        return {
+          account: scope?.account ?? `actor:${actor.actorId}`,
+          actorId: actor.actorId,
+          hostId,
+          threadId: params.threadId ?? null,
+          projectId: scope?.projectId ?? params.projectId ?? null,
+        };
+      };
+      return { conversationResources: resources, terminalService, resourceAuthority, terminalScope };
+    },
+    /**
      * File downloads for each Host: the local file owner, the server's own
      * files, or a configured or saved SSH connection.
      */
-    openFileDownloads({ createFileDownloads, fileSystem, remoteServers, sshManagement }) {
+    openFileDownloads({ createFileDownloads, remoteServers, sshManagement }) {
       fileDownloads = createFileDownloads((hostId) => {
         if (hostId === "local-codex" && ownedWorkspaceRouting && !fileSystem)
           throw Error("Local Hands file downloads unavailable");
@@ -537,12 +862,66 @@ export function assembleWorkspaceHost({
       });
       return fileDownloads;
     },
+    /**
+     * Retries pending resource releases, then reconciles archived Threads'
+     * resources now and on each period of the owner wake-up; a pass is skipped
+     * while shutting down or while the previous one is still running.
+     */
+    startResourceReconciliation({ appHostServer, ownerWake }) {
+      const resources = conversationResources.get();
+      resources.retry();
+      const reconciledResourceHosts = new Map();
+      let resourceInventoryRunning = false;
+      const reconcileResources = async () => {
+        if (lifecycle.closing() || resourceInventoryRunning) return;
+        resourceInventoryRunning = true;
+        try {
+          const scopes = [
+            ...(await remoteBrowser.threadScopes()),
+            ...(workspaceLifecycle?.conversationScopes() ?? []),
+            ...(createTerminalService ? await terminalService("local-codex").threadScopes() : []),
+          ];
+          const hosts = new Set(
+            scopes.map((scope) => scope.hostId).filter((id) => ["local-codex", "opencraft-server"].includes(id)),
+          );
+          // No resources means no reason to cold-start an execution engine merely
+          // to inspect its archive catalog. Read metadata only for actual owners.
+          for (const hostId of hosts)
+            if (reconciledResourceHosts.get(hostId) !== resources.hostRevision(hostId)) {
+              const revision = resources.hostRevision(hostId);
+              const ok = await resources.reconcileArchived(hostId, (cursor) =>
+                callConversationHost(
+                  appHostServer,
+                  { hostId, threadId: "" },
+                  "resource-archive-reconciliation",
+                  "thread/list",
+                  { archived: true, cursor, limit: 200 },
+                  undefined,
+                  10_000,
+                ),
+              );
+              if (ok) reconciledResourceHosts.set(hostId, revision);
+            }
+        } catch {
+          if (!lifecycle.closing()) console.warn("[conversation-resources] inventory unavailable; will retry");
+        } finally {
+          resourceInventoryRunning = false;
+        }
+      };
+      void reconcileResources();
+      resourceReconciliationTimer = periodicOwnerWork(ownerWake, 60_000, () => {
+        void reconcileResources();
+      });
+    },
     /** Keeps the local Codex Host initialized once the listener is up. */
     maintainReadiness(appHostServer) {
       codexReadiness = maintainHeadlessCodexHost(appHostServer);
     },
     /** Readiness by Host for the Web health report; empty without a readiness owner. */
     hostReadiness: () => (codexReadiness ? { "local-codex": codexReadiness.snapshot() } : {}),
+    // Shutdown step 1, before the entry phase: the reconciliation wake-up (synchronous), then the lifecycle.
+    closeResourceReconciliation: () => resourceReconciliationTimer?.close(),
+    closeConversationResources: () => conversationResources.current()?.close(),
     // Shutdown step 3 (entry phase, in parallel with the other entry owners);
     // the Git status withdrawal, browser capabilities and browser close in series.
     closeReadiness: () => codexReadiness?.close(),
@@ -553,9 +932,25 @@ export function assembleWorkspaceHost({
     closeFileDownloads: () => fileDownloads?.close(),
     // Shutdown step 7, after the App Host.
     closeCodexEngineHost: () => codexEngineHost?.close(),
-    // Shutdown step 10, in parallel with the execution engines.
+    // Shutdown step 8, synchronous: every Hands terminal service, then the file owner.
+    closeTerminals: () => {
+      for (const service of terminalServices.values()) service.close();
+      terminalServices.clear();
+    },
+    closeFileSystem: () => fileSystem?.close(),
+    // Shutdown step 10: the engines, the execution CLI and the capability listener in
+    // parallel; then the Pi owner lock; then the turn inspector and the metadata overlay.
+    closeEngine: () => agent?.close(),
+    closeDsh: async () => (await dshAgent?.catch(() => undefined))?.close(),
     closeExecutionCli: () => connectedExecutionCli?.close(),
     closeCapabilityMcp: () => capabilityMcp?.close(),
+    /** Whether an in-process Pi owner lock is held; the root releases it only then. */
+    holdsPiOwner: () => !!releasePiOwner,
+    releasePiOwner: () => releasePiOwner(),
+    closeExecutionRecovery: () => executionRecovery.current()?.close(),
+    closeIdentityOverlay: () => agentIdentity?.close(),
+    // Shutdown step 11, the first serial writer.
+    closeExecutionDatabase: () => executionDatabase?.close(),
     // Shutdown step 11, among the serial writers, after the identity's login admission.
     closeWorkspaceRouting: () => ownedWorkspaceRouting?.close(),
     closeBotProvider: () => installedBotProvider?.close(),

@@ -77,6 +77,73 @@ export interface WorkspaceHostConversationExecution {
   hostForServer(serverId: string): string | undefined;
 }
 
+/** An execution engine as the module drives it: the DSH agent, the Pi engine host or an independent Engine Host. */
+export interface WorkspaceHostEngine extends WorkspaceHostClosable {
+  readonly websocketUrl?: string;
+  resolveWebsocketUrl?(): Promise<string>;
+  getExecutionIdentity?(threadId: string): Promise<{
+    pid: number | null;
+    incarnation?: string;
+    turn?: { id: string; status: unknown; inputId?: string };
+  }>;
+  readonly inputs?: WorkspaceHostEngineInputs;
+}
+
+/** An engine's explicit Host input port. */
+export interface WorkspaceHostEngineInputs {
+  receipt(...args: unknown[]): unknown;
+  submit(
+    threadId: string,
+    inputId: string,
+    text: string,
+    admit: () => Promise<boolean>,
+  ): Promise<{ state?: string; turnId?: string } | null | undefined>;
+}
+
+/** The DSH agent, which also reports its execution process identity. */
+export interface WorkspaceHostDshAgent extends WorkspaceHostEngine {
+  engineExecutionIdentity(): Promise<unknown>;
+}
+
+/** What the module passes the DSH start factory; the root adds its paths and configuration in their original order. */
+export interface WorkspaceHostDshInputs {
+  executionCli: WorkspaceHostClosable | undefined;
+  /** Evaluated by the root at its original position in the engine options. */
+  sessionCapabilities(): unknown;
+  /** Present with a Hands file owner. */
+  prepareArtifact: ((artifact: unknown, owner: string, signal?: AbortSignal) => Promise<unknown>) | undefined;
+  taskConversationCatalog(serverId: string, search: unknown, limit: unknown, cursor: unknown): unknown;
+}
+
+/** The in-process Pi engine; the root wraps its close to release its attachment staging. */
+export interface WorkspaceHostPiEngine extends WorkspaceHostClosable {
+  readonly inputs?: WorkspaceHostEngineInputs;
+  readonly orchestrationIncarnation: string;
+  setOrchestration(port: { tools: unknown; call(...args: never[]): Promise<unknown> }): void;
+}
+
+/** The execution lease store as the module drives it. */
+export interface WorkspaceHostExecutionStore {
+  suspend(): void;
+  unsettledThreads(): string[];
+  reconcile(threadId: string, turns: unknown[], incarnation: string | undefined): void;
+  capture(threadId: string, inputId: string, principal: unknown, state: string, source: string): void;
+  begin(threadId: string, inputId: string, incarnation: string | undefined): void;
+  started(threadId: string, turnId: string, inputId: string, incarnation: string | undefined): void;
+}
+
+/** A native execution process identity (reported by an owner or observed in this process). */
+export interface WorkspaceHostNativeExecution {
+  readonly pid: number;
+  readonly incarnation: string;
+}
+
+/** A Hands terminal service, one per Host. */
+export interface WorkspaceHostTerminalService extends WorkspaceHostClosable {
+  releaseThread(hostId: string, threadId: string, active: boolean, aliases: unknown[]): Promise<unknown>;
+  threadScopes(): Promise<Array<{ hostId: string }>>;
+}
+
 export interface WorkspaceHostAssembly {
   openExecutionDelivery(options: {
     identity: Record<string, unknown> | null | undefined;
@@ -107,6 +174,12 @@ export interface WorkspaceHostAssembly {
       options: WorkspaceHostGitExecutionInputs,
     ): WorkspaceHostClosable & { handoff(locator: unknown): Promise<unknown> };
   }): Promise<WorkspaceHostExecutionDelivery>;
+  /** Refuses engines this process cannot run, then creates the routed conversation execution. */
+  openConversationExecution(options: {
+    engines: readonly string[];
+    engineHostDescriptor: string | undefined;
+    machineIdentity: { machineId: string };
+  }): WorkspaceHostConversationExecution & Record<string, unknown>;
   /** Refuses a configured vault owner without an Actor/lease handoff. */
   assertEnvironmentAdmission(): void;
   openBrowser(options: {
@@ -153,15 +226,80 @@ export interface WorkspaceHostAssembly {
     codexEngineHost: WorkspaceHostClosable | undefined;
     bridgeSessionMcp: Record<string, unknown>;
   }>;
+  openEngines(options: {
+    engines: readonly string[];
+    machineIdentity: { machineId: string };
+    actorCollaboration: { executionStarted(threadId: string, inputId: string, turnId: string): unknown };
+    threadOrchestration: { invoke(...args: unknown[]): Promise<unknown> };
+    readTaskConversations(appHostServer: unknown, search: unknown, limit: unknown, cursor: unknown): unknown;
+    startDsh(inputs: WorkspaceHostDshInputs): Promise<WorkspaceHostDshAgent>;
+    /** Present only with an independent Engine Host descriptor. */
+    attachIndependentEngine: (() => Promise<WorkspaceHostEngine>) | undefined;
+    /** The in-process Pi owner lock; resolves to its release. */
+    acquirePiOwner(): Promise<() => unknown>;
+    createPiEngine(options: {
+      executionCli: WorkspaceHostClosable | undefined;
+      executionGit: unknown;
+      sessionCapabilities(): unknown;
+    }): Promise<WorkspaceHostPiEngine>;
+    startPiEngineHost(options: {
+      piEngine: WorkspaceHostPiEngine;
+      startDsh: () => Promise<WorkspaceHostDshAgent>;
+    }): Promise<WorkspaceHostEngine>;
+  }): Promise<WorkspaceHostEngine>;
+  openExecutionObservation(options: {
+    /** The identity's Thread metadata owner; with it the overlay owns the lease store. */
+    createThreadMetadata: unknown;
+    createIdentityOverlay(options: {
+      resolveTarget(): Promise<string | undefined>;
+      createMetadata: unknown;
+      resolveExecutionNative(threadId: string): Promise<WorkspaceHostNativeExecution | null>;
+    }): WorkspaceHostClosable & { readonly executions: WorkspaceHostExecutionStore };
+    openExecutionLeases(): { database: WorkspaceHostClosable; store: WorkspaceHostExecutionStore };
+    reportedExecutionProcess(value: { pid: number; incarnation: string | undefined }): WorkspaceHostNativeExecution;
+    /** This process's own native execution identity (the in-process Pi engine). */
+    observeOwnProcess(): Promise<WorkspaceHostNativeExecution>;
+    createExecutionRecovery(resolveTarget: () => Promise<string | undefined>): Promise<
+      WorkspaceHostClosable & {
+        inspect(state: Record<string, unknown>): Promise<string>;
+        readThread(threadId: string): Promise<{ thread?: { turns?: unknown[] } } | null | undefined>;
+      }
+    >;
+  }): Promise<{
+    agentIdentity: (WorkspaceHostClosable & { readonly executions: WorkspaceHostExecutionStore }) | undefined;
+    executionStore: WorkspaceHostExecutionStore;
+    resolveExecutionNative(threadId: string): Promise<WorkspaceHostNativeExecution | null>;
+  }>;
   openUsageQueries<T extends WorkspaceHostClosable>(createUsageQueries: () => T): T;
+  openConversationResources(options: {
+    /** Present only with a configured Hands terminal owner; the root adds its endpoint and paths first. */
+    createTerminalService:
+      ((options: { environment: unknown; environmentLaunch?: unknown }) => WorkspaceHostTerminalService) | undefined;
+    identity: Record<string, unknown> | null | undefined;
+    actorStore: unknown;
+    instanceAccess: unknown;
+    /** The core SQL owner holding the conversation resource rows. */
+    serverStorage: unknown;
+    ownerWake: unknown;
+  }): Promise<{
+    conversationResources: { assertActive(hostId: string, threadId: string): void } & Record<string, unknown>;
+    terminalService(hostId: string): unknown;
+    resourceAuthority(context: unknown): void;
+    terminalScope(hostId: string): (context: unknown, params: Record<string, unknown>) => Record<string, unknown>;
+  }>;
   openFileDownloads<T extends WorkspaceHostClosable>(options: {
     createFileDownloads(resolve: (hostId: string) => unknown): T;
-    fileSystem: unknown;
     remoteServers: ReadonlyMap<string, { connection: unknown }>;
     sshManagement: { store: { binding(hostId: string): { connection: unknown } | null | undefined } } | undefined;
   }): T;
+  /** Retries pending releases and starts the periodic archived-resource reconciliation. */
+  startResourceReconciliation(options: { appHostServer: unknown; ownerWake: unknown }): void;
   maintainReadiness(appHostServer: unknown): void;
   hostReadiness(): Record<string, unknown>;
+  // Shutdown step 1.
+  /** Synchronous: disarms the reconciliation wake-up. */
+  closeResourceReconciliation: WorkspaceHostDisposer;
+  closeConversationResources: WorkspaceHostDisposer;
   // Shutdown step 3.
   closeReadiness: WorkspaceHostDisposer;
   closeUsageQueries: WorkspaceHostDisposer;
@@ -172,10 +310,20 @@ export interface WorkspaceHostAssembly {
   closeFileDownloads: WorkspaceHostDisposer;
   // Shutdown step 7.
   closeCodexEngineHost: WorkspaceHostDisposer;
+  // Shutdown step 8, synchronous.
+  closeTerminals: WorkspaceHostDisposer;
+  closeFileSystem: WorkspaceHostDisposer;
   // Shutdown step 10.
+  closeEngine: WorkspaceHostDisposer;
+  closeDsh: WorkspaceHostDisposer;
   closeExecutionCli: WorkspaceHostDisposer;
   closeCapabilityMcp: WorkspaceHostDisposer;
+  holdsPiOwner(): boolean;
+  releasePiOwner: WorkspaceHostDisposer;
+  closeExecutionRecovery: WorkspaceHostDisposer;
+  closeIdentityOverlay: WorkspaceHostDisposer;
   // Shutdown step 11.
+  closeExecutionDatabase: WorkspaceHostDisposer;
   closeWorkspaceRouting: WorkspaceHostDisposer;
   closeBotProvider: WorkspaceHostDisposer;
   closeBotAdmission: WorkspaceHostDisposer;
@@ -190,7 +338,10 @@ export function assembleWorkspaceHost(options: {
   capabilities: SessionCapabilities;
   appHost: LateBinding<unknown>;
   codexBridge: LateBinding<unknown>;
-  conversationResources: LateBinding<{ assertActive(hostId: string, threadId: string): void }>;
-  executionObservation: LateBinding<{ resolveNative(threadId: string): Promise<{ incarnation: string } | null> }>;
-  executionRecovery: LateBinding<{ inspect(state: Record<string, unknown>): Promise<string> }>;
+  /** The Hands file owner the root constructed (Node), or null; the module closes it at step 8. */
+  fileSystem:
+    | (WorkspaceHostClosable & {
+        prepareArtifact(artifact: unknown, owner: string, signal?: AbortSignal): Promise<unknown>;
+      })
+    | null;
 }): WorkspaceHostAssembly;
