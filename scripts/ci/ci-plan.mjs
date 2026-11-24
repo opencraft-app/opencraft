@@ -5,6 +5,17 @@ import { appendFileSync, readFileSync } from 'node:fs';
 
 export const portableTargets = ['web-browser', 'electron-renderer', 'electron-host', 'expo-web', 'expo-ios-bundle'];
 const auditDirectories = ['.', 'runtime/dsh', 'apps/bridges/hermes'];
+/**
+ * Release and workflow tooling that builds no product. Every PR validates it
+ * without the Web/server matrix: ci-plan.yml runs these tooling tests, and
+ * workflow-lint checks every workflow change. build-matrix.yml and ci-plan.yml
+ * themselves still run the matrix they define.
+ */
+export function releaseToolingOnly(path) {
+  return /^\.github\/workflows\/(?!build-matrix\.yml$|ci-plan\.yml$)[^/]+\.ya?ml$/.test(path)
+    || /^scripts\/release\/(?!publish-workbench-web\.mjs$)[^/]+\.(?:mjs|sh)$/.test(path)
+    || /^tests\/tooling\/(?:android-release|ios-release|ios-testflight|app-release|container-release|product-version|dev-build)\.test\.mjs$/.test(path);
+}
 /** Automatic checks stay on Linux/Web. Other platforms require an explicit manual request. */
 export function planChanges(paths, { event = 'pull_request', unknownDiff = false, fullMatrix = false } = {}) {
   const builds = new Set();
@@ -45,6 +56,7 @@ export function planChanges(paths, { event = 'pull_request', unknownDiff = false
       headlessTests = true;
       headlessPackage = true;
     }
+    if (releaseToolingOnly(path)) continue;
     if (/^\.github\//.test(path) || /^(package(?:-lock)?\.json|\.npmrc|\.nvmrc|tsconfig[^/]*|config\/build-matrix\.json)$/.test(path)
       || path === 'scripts/ci/ci-plan.mjs' || path === 'tests/tooling/ci-plan.test.mjs') { automaticChecks(); continue; }
     if (path === '.gitleaks.toml') continue; // Secrets scan always runs.
