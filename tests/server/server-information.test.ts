@@ -10,6 +10,7 @@ import { isHeadlessBackendPath } from '../../apps/headless-server/src/web-deploy
 import { TurnPushService, type PushBinding } from '@opencraft/web-push-node';
 import { PushStore } from '@opencraft/web-push-node/store';
 import { fileStateDocumentStore } from '@opencraft/document-storage/state-file';
+import { serveNodeHttpExchange } from '@opencraft/http-exchange/node';
 const informationStore = (root: string) => new ServerInformationStore(fileStateDocumentStore(root));
 const binding: PushBinding = { context: { actorId: 'admin-a', credentialId: null, generation: 1, expiresAt: Date.now() + 86400000 } };
 const messages = { completed: 'Done', failed: 'Failed', interrupted: 'Stopped', body: 'Return to conversation', test: 'Test' };
@@ -45,7 +46,7 @@ test('corrupt/unsupported configuration is visible as unavailable, never overwri
 });
 test('HTTP settings preserve human/admin authority, same-origin writes, account/revision fencing and no-store reads', async t => {
   const f = await fixture(t), store = informationStore(f.root); let authority: any = null;
-  const handle = serverInformationHttp(store, () => authority), server = createServer((req, res) => void handle(req, res)); server.listen(0, '127.0.0.1'); await once(server, 'listening'); t.after(() => new Promise<void>(resolve => { server.close(() => resolve()); server.closeAllConnections(); }));
+  const handle = serverInformationHttp(store, () => authority), server = createServer((req, res) => void serveNodeHttpExchange(req, res, handle)); server.listen(0, '127.0.0.1'); await once(server, 'listening'); t.after(() => new Promise<void>(resolve => { server.close(() => resolve()); server.closeAllConnections(); }));
   const url = 'http://127.0.0.1:' + (server.address() as any).port + SERVER_INFORMATION_PATH;
   const post = (body: any, headers: any = {}) => fetch(url, { method: 'POST', headers: { origin: 'https://public.example', 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
   assert.equal((await fetch(url)).status, 401);
@@ -68,7 +69,7 @@ test('HTTP settings preserve human/admin authority, same-origin writes, account/
 test('revocation after asynchronous settings read cannot disclose authenticated information', async t => {
   const f = await fixture(t); let authority: any = { actorId: 'admin', administrator: true, origin: 'https://public.example' };
   const store = informationStore(f.root), read = store.read.bind(store); store.read = async () => { const value = await read(); authority = null; return value; };
-  const handle = serverInformationHttp(store, () => authority), server = createServer((req, res) => void handle(req, res)); server.listen(0, '127.0.0.1'); await once(server, 'listening'); t.after(() => new Promise<void>(r => { server.close(() => r()); server.closeAllConnections(); }));
+  const handle = serverInformationHttp(store, () => authority), server = createServer((req, res) => void serveNodeHttpExchange(req, res, handle)); server.listen(0, '127.0.0.1'); await once(server, 'listening'); t.after(() => new Promise<void>(r => { server.close(() => r()); server.closeAllConnections(); }));
   const response = await fetch('http://127.0.0.1:' + (server.address() as any).port + SERVER_INFORMATION_PATH); assert.equal(response.status, 409); assert.deepEqual(await response.json(), { error: 'account_changed' });
 });
 test('existing external destinations use the current canonical entry without re-enrollment; pending turns retain host/thread identity', async t => {

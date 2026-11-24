@@ -134,6 +134,7 @@ for (const directory of [
   "packages/sandbox/src",
   "packages/document-storage/src/contract.ts",
   "packages/identity-core/src",
+  "packages/http-exchange/src",
   "packages/access-control/src",
   "packages/relay-protocol/src",
   "packages/hub-network/src",
@@ -150,6 +151,15 @@ for (const directory of [
   "plugins/cloud-desktop/src/contract.ts",
 ]) {
   checkFiles("shared package", directory, purePackageRules);
+}
+
+// The HTTP exchange contract is shaped by the weakest deployment runtime (a fetch-handler
+// isolate); only the node:http adapter may reach Node built-ins.
+for (const file of ["packages/http-exchange/src/index.ts", "packages/http-exchange/src/fetch.ts"]) {
+  checkFiles("runtime-neutral HTTP exchange port", file, [{
+    pattern: /(?:from\s*|import\s*|require\(\s*)["'](?:node:|ws["'])|\bBuffer\b|\bprocess\./m,
+    message: "must use Fetch/web-stream semantics only; Node specifics belong in the node adapter",
+  }]);
 }
 
 for (const directory of ['packages/identity-core/src', 'packages/access-control/src', 'packages/relay-protocol/src', 'packages/hub-network/src']) {

@@ -1,4 +1,4 @@
-import type { IncomingMessage, ServerResponse } from "node:http";
+import { HttpBodyTooLarge, decodeUtf8, jsonResponse, requestUrl, type HttpExchangeRequest, type HttpExchangeResponse, type HttpRequestView } from "@opencraft/http-exchange";
 import { ModelGatewayError, ModelGatewayStore } from "./model-gateway-store.js";
 
 export const MODEL_GATEWAY_PATH = "/__opencraft_model_gateway";
@@ -6,38 +6,41 @@ export interface GatewayHuman { actor: string; administrator: boolean; origin: s
 
 /** Human identity and current administrator status come exclusively from the
  * product's existing identity authority. No body/header can select a payer. */
-export function modelGatewayHttp(options: {
+export function modelGatewayHttp<R = HttpRequestView>(options: {
   path: string;
-  authority(request: IncomingMessage): GatewayHuman | null;
+  authority(request: R): GatewayHuman | null;
   contribute?(actor: string, input: Record<string, unknown>, assertCurrent?:()=>void): Promise<unknown>;
   withdraw?(actor: string, provider: string): Promise<unknown>;
   directory?(actor: string): Promise<unknown>;
   subscription?(actor:string, input:Record<string,unknown>, assertCurrent:()=>void):Promise<unknown>;
 }) {
-  return async (request: IncomingMessage, response: ServerResponse): Promise<boolean> => {
-    const url = new URL(request.url ?? "/", "http://gateway.invalid");
-    if (url.pathname !== MODEL_GATEWAY_PATH) return false;
-    const send = (status: number, value: unknown) => { response.writeHead(status, { "content-type": "application/json", "cache-control": "private, no-store" }); response.end(JSON.stringify(value)); };
+  return async (exchange: HttpExchangeRequest<R>): Promise<HttpExchangeResponse | null> => {
+    const url = requestUrl(exchange);
+    if (url.pathname !== MODEL_GATEWAY_PATH) return null;
+    const request = exchange.identity;
+    let reply: HttpExchangeResponse | undefined;
+    const send = (status: number, value: unknown) => { reply = jsonResponse(status, value, [["content-type", "application/json"], ["cache-control", "private, no-store"]]); };
     let store: ModelGatewayStore | undefined;
     try {
       const identity = options.authority(request);
       if (!identity) throw new ModelGatewayError("gateway_human_required", 403);
       store = new ModelGatewayStore(options.path);
-      if (request.method === "GET") {
+      if (exchange.method === "GET") {
         const actor = url.searchParams.get("actor") ?? identity.actor;
         if (actor !== identity.actor && !identity.administrator) throw new ModelGatewayError("gateway_forbidden", 403);
         const directory=options.directory ? await options.directory(actor):undefined;
         const current=options.authority(request);
         if(!current || current.actor!==identity.actor || current.administrator!==identity.administrator)throw new ModelGatewayError("gateway_identity_changed",403);
         send(200, { ...store.summary(actor), subscriptionAvailable: !!options.subscription, canManage: identity.administrator, requests: store.requests(actor), contributions: store.contributions(actor), directory });
-        return true;
+        return reply!;
       }
-      if (request.method !== "POST") throw new ModelGatewayError("method_not_allowed", 405);
-      if (!identity.origin || request.headers.origin !== identity.origin || request.headers["sec-fetch-site"] === "cross-site"
-        || request.headers["content-type"]?.split(";")[0] !== "application/json") throw new ModelGatewayError("same_origin_required", 403);
-      const chunks: Buffer[] = []; let size = 0;
-      for await (const chunk of request) { size += Buffer.byteLength(chunk); if (size > 32768) throw new ModelGatewayError("gateway_request_too_large", 413); chunks.push(Buffer.from(chunk)); }
-      const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      if (exchange.method !== "POST") throw new ModelGatewayError("method_not_allowed", 405);
+      if (!identity.origin || exchange.headers.origin !== identity.origin || exchange.headers["sec-fetch-site"] === "cross-site"
+        || exchange.headers["content-type"]?.split(";")[0] !== "application/json") throw new ModelGatewayError("same_origin_required", 403);
+      let bytes: Uint8Array;
+      try { bytes = await exchange.readBody(32768); }
+      catch (error) { if (error instanceof HttpBodyTooLarge) throw new ModelGatewayError("gateway_request_too_large", 413); throw error; }
+      const body = JSON.parse(decodeUtf8(bytes));
       if (!body || typeof body !== "object" || Array.isArray(body)) throw new ModelGatewayError("invalid_gateway_request", 400);
       const latest = options.authority(request);
       if (!latest || latest.actor !== identity.actor || latest.administrator !== identity.administrator) throw new ModelGatewayError("gateway_identity_changed", 403);
@@ -78,6 +81,6 @@ export function modelGatewayHttp(options: {
       send(known ? error.status : error instanceof SyntaxError ? 400 : 503,
         { error: known ? error.kind : error instanceof SyntaxError ? "invalid_gateway_request" : "gateway_unavailable" });
     } finally { store?.close(); }
-    return true;
+    return reply!;
   };
 }

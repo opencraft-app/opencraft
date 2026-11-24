@@ -44,6 +44,7 @@ import {CHANNELS_HOST_ID} from '/packages/appserver-protocol/src/channels.ts';
 import '/apps/workbench-web/src/styles/app.scss';
 import {bindInteractionDensity} from '/apps/workbench-web/src/runtime/interaction-density.ts';
 import {openWorkbenchUiPreferences} from '/apps/workbench-web/src/runtime/ui-preferences-runtime.tsx';
+import {serveNodeHttpExchange} from '@opencraft/http-exchange/node';
 bindInteractionDensity(document, await openWorkbenchUiPreferences());
 initializeAppearanceTheme();
 const application=await createWebWorkbenchApplication({hostProfileMode:'configured',navigationMode:'browser',clientProduct:createSmokeClientProduct()});
@@ -64,7 +65,7 @@ const server=await createServer({configFile:false,root:process.cwd(),cacheDir:'.
   if(req.url==='/fixture-avatar.svg'){res.setHeader('content-type','image/svg+xml');res.end('<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="#257c62"/><circle cx="16" cy="12" r="6" fill="white"/><path d="M6 30a10 10 0 0 1 20 0" fill="white"/></svg>');}
   else if(req.headers.accept?.includes('text/html')){res.setHeader('content-type','text/html');res.end('<html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="app"></div><script type="module" src="/native-channel-proof.tsx"></script></body></html>');}
   else if(req.url?.startsWith('/__opencraft_im')){void im.handle(req,res,()=>true).catch(next);}
-  else if(req.url?.startsWith('/__opencraft_actors/collaboration/'))void api.handle(req,res);
+  else if(req.url?.startsWith('/__opencraft_actors/collaboration/'))void serveNodeHttpExchange(req,res,exchange=>api.handle(exchange));
   else next();
  });}
  }]});

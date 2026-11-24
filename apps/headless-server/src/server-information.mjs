@@ -1,3 +1,5 @@
+import { HttpBodyTooLarge, decodeUtf8, jsonResponse, requestUrl } from "@opencraft/http-exchange";
+
 /** Document key; the Node composition keeps it as `server-information.json` in the data directory. */
 export const SERVER_INFORMATION_DOCUMENT = 'server-information.json';
 export const SERVER_INFORMATION_PATH = '/__opencraft_server_information';
@@ -59,46 +61,51 @@ export class ServerInformationStore {
   }
 }
 
+/**
+ * Runtime-neutral exchange handler (`@opencraft/http-exchange`); resolves null
+ * for other routes. `authority` receives the transport's request view.
+ */
 export function serverInformationHttp(store, authority) {
-  return async (request, response) => {
-    if (new URL(request.url ?? '/', 'http://information.invalid').pathname !== SERVER_INFORMATION_PATH) return false;
-    const send = (status, value) => { response.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'private, no-store', 'x-content-type-options': 'nosniff' }); response.end(JSON.stringify(value)); };
+  return async (exchange) => {
+    if (requestUrl(exchange).pathname !== SERVER_INFORMATION_PATH) return null;
+    const request = exchange.identity;
+    const send = (status, value) => jsonResponse(status, value, [['content-type', 'application/json'], ['cache-control', 'private, no-store'], ['x-content-type-options', 'nosniff']]);
     try {
       const access = authority(request);
-      if (!access) { send(401, { error: 'human_authentication_required' }); return true; }
+      if (!access) return send(401, { error: 'human_authentication_required' });
       const current = () => {
         const latest = authority(request);
         if (!latest || latest.actorId !== access.actorId) throw Error('account_changed');
         return latest;
       };
-      if (request.method === 'GET') {
+      if (exchange.method === 'GET') {
         const value = await store.read(), latest = current();
-        send(200, { ...value, actorId: latest.actorId, canManage: latest.administrator }); return true;
+        return send(200, { ...value, actorId: latest.actorId, canManage: latest.administrator });
       }
-      if (request.method !== 'POST') { send(405, { error: 'method_not_allowed' }); return true; }
-      if (!access.administrator) { send(403, { error: 'administrator_required' }); return true; }
-      const origin = request.headers.origin;
-      if (typeof origin !== 'string' || !(origin === access.origin || ['http:', 'https:'].some(p => origin === p + '//' + request.headers.host))
-        || request.headers['sec-fetch-site'] === 'cross-site' || request.headers['content-type']?.split(';')[0] !== 'application/json') {
-        send(403, { error: 'same_origin_required' }); return true;
+      if (exchange.method !== 'POST') return send(405, { error: 'method_not_allowed' });
+      if (!access.administrator) return send(403, { error: 'administrator_required' });
+      const origin = exchange.headers.origin;
+      if (typeof origin !== 'string' || !(origin === access.origin || ['http:', 'https:'].some(p => origin === p + '//' + exchange.headers.host))
+        || exchange.headers['sec-fetch-site'] === 'cross-site' || exchange.headers['content-type']?.split(';')[0] !== 'application/json') {
+        return send(403, { error: 'same_origin_required' });
       }
-      let size = 0; const chunks = [];
-      for await (const chunk of request) { size += Buffer.byteLength(chunk); if (size > 4096) { send(413, { error: 'too_large' }); return true; } chunks.push(Buffer.from(chunk)); }
+      let bytes;
+      try { bytes = await exchange.readBody(4096); }
+      catch (error) { if (error instanceof HttpBodyTooLarge) return send(413, { error: 'too_large' }); throw error; }
       let input;
-      try { input = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw Error('invalid_server_information'); }
+      try { input = JSON.parse(decodeUtf8(bytes)); } catch { throw Error('invalid_server_information'); }
       if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(k => !['revision', 'publicUrl', 'expectedActorId'].includes(k))) throw Error('invalid_server_information');
       if (input.expectedActorId !== access.actorId) throw Error('account_changed');
       const value = await store.write(input.revision, input.publicUrl, access.actorId, () => {
         if (!current().administrator) throw Error('administrator_required');
       });
       const latest = current();
-      send(200, { ...value, actorId: latest.actorId, canManage: latest.administrator });
+      return send(200, { ...value, actorId: latest.actorId, canManage: latest.administrator });
     } catch (error) {
       const code = error?.message;
       const status = code === 'revision_conflict' || code === 'account_changed' ? 409 : code === 'administrator_required' ? 403
         : code === 'invalid_public_url' || code === 'invalid_server_information' ? 400 : 503;
-      send(status, { error: status === 503 ? 'server_information_unavailable' : code });
+      return send(status, { error: status === 503 ? 'server_information_unavailable' : code });
     }
-    return true;
   };
 }

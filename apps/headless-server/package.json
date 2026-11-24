@@ -64,6 +64,7 @@
     "@opencraft/secret-storage": "0.1.0",
     "@opencraft/execution-environment": "0.1.0",
     "@opencraft/hub-network": "0.1.0",
+    "@opencraft/http-exchange": "0.1.0",
     "@opencraft/identity-core": "0.1.0",
     "@opencraft/local-agent-host": "0.1.0",
     "@opencraft/mcp-apps": "0.1.0",

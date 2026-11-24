@@ -38,6 +38,7 @@
   },
   "dependencies": {
     "@opencraft/identity-core": "*",
+    "@opencraft/http-exchange": "0.1.0",
     "@opencraft/sqlite-node": "*",
     "@opencraft/sql": "0.1.0",
     "openid-client": "6.9.0",

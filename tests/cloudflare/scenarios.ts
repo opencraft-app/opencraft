@@ -6,6 +6,7 @@ import { STORAGE_PORTS_SCENARIOS } from "../storage/workerd/storage-ports.scenar
 import { INSTALLATION_CORE_SCENARIOS } from "../storage/workerd/installation-core.scenarios.ts";
 import { WORKSPACE_HOST_SCENARIOS } from "../storage/workerd/workspace-host.scenarios.ts";
 import { LOGIN_ENTRY_SCENARIOS } from "../identity/workerd/login-entry.scenarios.ts";
+import { HTTP_EXCHANGE_SCENARIOS } from "../server/workerd/http-exchange.scenarios.ts";
 import { CLIENT_DO_SCENARIOS } from "../protocol/workerd/client-do.scenarios.ts";
 import { RELAY_HUB_SCENARIOS } from "../protocol/workerd/relay-hub.scenarios.ts";
 
@@ -28,6 +29,11 @@ export const SCENARIO_GROUPS: readonly ScenarioGroup[] = [
     scenarios: WORKSPACE_HOST_SCENARIOS,
   },
   { id: "login-entry", label: "Login entry (Argon2id, HumanAuth on DO SQL)", scenarios: LOGIN_ENTRY_SCENARIOS },
+  {
+    id: "http-exchange",
+    label: "HTTP exchange services (server information on DO state, streamed bodies)",
+    scenarios: HTTP_EXCHANGE_SCENARIOS,
+  },
   {
     id: "client-do",
     label: "Client DO (hibernatable sockets, resume cursors, alarms)",

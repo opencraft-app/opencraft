@@ -1,28 +1,27 @@
-import type { IncomingMessage, ServerResponse } from 'node:http';
+import { HttpBodyTooLarge, decodeUtf8, jsonResponse, requestUrl, type HttpExchangeRequest, type HttpExchangeResponse, type HttpRequestView } from '@opencraft/http-exchange';
 import { POLICY_PATH, ModelPolicyStore, parseRules } from './index.js';
-export function modelPolicyHttp(store:ModelPolicyStore, authority:(request:IncomingMessage)=>{actor:string;administrator:boolean;origin:string|null}|null) {
-  return async (request:IncomingMessage,response:ServerResponse) => {
-    const url=new URL(request.url ?? '/', 'http://policy.invalid');
-    if(url.pathname!==POLICY_PATH) return false;
-    const send=(status:number,value:unknown)=>{response.writeHead(status,{'content-type':'application/json','cache-control':'private, no-store'});response.end(JSON.stringify(value));};
+/** Runtime-neutral exchange handler; `authority` receives the transport's request view. */
+export function modelPolicyHttp<R = HttpRequestView>(store:ModelPolicyStore, authority:(request:R)=>{actor:string;administrator:boolean;origin:string|null}|null) {
+  return async (exchange:HttpExchangeRequest<R>):Promise<HttpExchangeResponse|null> => {
+    const url=requestUrl(exchange);
+    if(url.pathname!==POLICY_PATH) return null;
+    const request=exchange.identity;
+    const send=(status:number,value:unknown)=>jsonResponse(status,value,[['content-type','application/json'],['cache-control','private, no-store']]);
     let access=authority(request);
-    if(!access) {send(403,{error:'administrator_required'});return true;}
-    if(request.method==='GET') {
-      send(200,access.administrator ? {canManage:true,...store.read(),audit:store.audit()} : {canManage:false});return true;
-    }
-    if(!access.administrator){send(403,{error:'administrator_required'});return true;}
-    if(request.method!=='POST'){send(405,{error:'method_not_allowed'});return true;}
+    if(!access) return send(403,{error:'administrator_required'});
+    if(exchange.method==='GET') return send(200,access.administrator ? {canManage:true,...store.read(),audit:store.audit()} : {canManage:false});
+    if(!access.administrator) return send(403,{error:'administrator_required'});
+    if(exchange.method!=='POST') return send(405,{error:'method_not_allowed'});
     try {
-      const origin=request.headers.origin;
-      if(typeof origin!=='string'||!(origin===access.origin||['http:','https:'].some(s=>origin===s+'//'+request.headers.host))||request.headers['sec-fetch-site']==='cross-site'||request.headers['content-type']?.split(';')[0]!=='application/json') throw Error('same_origin_required');
-      let size=0;const chunks:Buffer[]=[];
-      for await(const chunk of request){size+=Buffer.byteLength(chunk);if(size>131072)throw Error('invalid_model_policy');chunks.push(Buffer.from(chunk));}
-      const body=JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      const origin=exchange.headers.origin;
+      if(typeof origin!=='string'||!(origin===access.origin||['http:','https:'].some(s=>origin===s+'//'+exchange.headers.host))||exchange.headers['sec-fetch-site']==='cross-site'||exchange.headers['content-type']?.split(';')[0]!=='application/json') throw Error('same_origin_required');
+      let bytes:Uint8Array;
+      try{bytes=await exchange.readBody(131072);}catch(error){if(error instanceof HttpBodyTooLarge)throw Error('invalid_model_policy');throw error;}
+      const body=JSON.parse(decodeUtf8(bytes));
       if(!body||Object.keys(body).some(k=>!['revision','rules'].includes(k)))throw Error('invalid_model_policy');
       const rules=parseRules(body.rules); const latest=authority(request);
       if(!latest?.administrator||latest.actor!==access.actor)throw Error('administrator_required');
-      send(200,{canManage:true,...store.write(body.revision,rules,latest.actor),audit:store.audit()});
-    }catch(error){const code=error instanceof Error ? error.message:'invalid_model_policy';send(code==='revision_conflict'?409:code==='administrator_required'||code==='same_origin_required'?403:400,{error:code});}
-    return true;
+      return send(200,{canManage:true,...store.write(body.revision,rules,latest.actor),audit:store.audit()});
+    }catch(error){const code=error instanceof Error ? error.message:'invalid_model_policy';return send(code==='revision_conflict'?409:code==='administrator_required'||code==='same_origin_required'?403:400,{error:code});}
   };
 }

@@ -197,13 +197,13 @@
 | `local-account/src/server.ts`、`human-accounts.ts`、`account-management.ts` | `node:crypto`（`randomUUID`、`randomBytes`、`createHash`）与 `Buffer`；密码哈希经 `PasswordHasher` 端口 | 未变：`nodejs_compat` 提供前者；哈希由组合根换成纯 JS `password-hash-portable` |
 | `app-host-server` `WorkbenchRequestIdentity.handle` | 下游身份产品的 `node:http` 装配端口 | 未迁移：属于下游 ABI，随 G4 另行决定 |
 
-端口在 `@opencraft/identity-core/http-exchange`（无运行时导入）。放在 identity-core 而非新包：它的消费者都是身份／准入处理器，且请求必须携带交给 `IdentityProvider` 的 `identity` 视图，而这些类型已由 identity-core 持有；新 workspace 包会改动锁文件却没有第二类消费者。G4 把其他 HTTP 服务迁过来时若出现非身份消费者，再把与身份无关的部分拆成独立包。
+端口最初放在 `@opencraft/identity-core/http-exchange`；G4 第一批（2026-11-24，§4.2.1）出现了非身份消费者后，它移到中立平台包 `@opencraft/http-exchange`（`.`＝契约，`./node`＝`node:http` 适配器，`./fetch`＝Fetch 适配器）。请求视图改为类型参数 `HttpExchangeRequest<View>`（默认 `HttpRequestView`，Node 适配器给出 `IncomingMessage`，Fetch 适配器给出 `FetchRequestView`）；`@opencraft/identity-core/http-exchange{,-node,-fetch}` 只保留为把视图固定为 `IdentityRequest` 的再导出，供既有导入方使用（见 §4.2.1 末尾）。
 
 - 请求：`method`、`path`（含 query）、小写单值 `headers` 加原始头列表 `rawHeaders`（重复头检测）、`clientAddress`（Node 为 socket 地址；Fetch 由组合根从可信边缘传入，Cloudflare 为 `CF-Connecting-IP`，适配器自身不信任请求头）、`readBody(limit): Promise<Uint8Array>`（流式计数，超限抛 `HttpBodyTooLarge` 并停止读取）、`signal`（替代 `response.destroyed`）、`identity`（传输层同一请求对象，Node 即 `IncomingMessage`，使一次性中继断言与准入缓存仍按同一对象命中）。
-- 应答：`{status, headers: [name, value][], body}`，允许多条 `set-cookie`；`null` 表示不拥有该路由；`HttpExchangeAborted` 表示已提交的应答无法完成（Node 断开连接，Fetch 让请求失败）。
+- 应答：`{status, headers: [name, value][], body}`，允许多条 `set-cookie`；`body` 为字符串、字节、`ReadableStream<Uint8Array>`（Web 流，2026-11-24 加入）或 `null`；`null` 表示不拥有该路由；`HttpExchangeAborted` 表示已提交的应答无法完成（Node 断开连接，Fetch 让请求失败）。流式正文：Node 适配器按背压逐块写出，客户端断开时取消源流，源流在状态行发出后出错则断开连接；Fetch 适配器把流原样交给 `Response`，204／304 等无正文状态取消所给的流。
 - `Host`：Fetch 适配器取路由 URL 的 host（由平台按 zone／route 保证），Node 仍取请求头。
 - 适配器：`http-exchange-node`（Headless `serve-workbench-web.mjs` 与桌面 `createDesktopAccountHost` 使用）按列表顺序 `setHeader`、再 `writeHead`／`end`，超限请求流在应答写出后释放；`http-exchange-fetch`（workerd 登录入口使用）把字符串正文按字节发送，避免 `Response` 隐式加 `content-type`。Fetch `Headers` 保持 `set-cookie` 顺序，其他头名按其规范顺序迭代。
-- 等价证据：迁移前后对 Headless 网关同一 77 个请求序列（登录页、session、跨源／非 JSON／`Authorization`／多余字段／超长正文／坏 JSON、账号页与 `/setup`、初始化、邀请与接受、改密、成员与审计、Actor 管理、登出、两类尝试上限）抓取原始应答字节，归一化日期、token、nonce 与 UUID 后逐字节相同。共享一致性测试 `tests/identity/http-exchange-conformance.test.ts` 对两个适配器各跑 8 项（方法／路径／头／host／地址、头顺序与多条 `set-cookie`、空正文与 303、正文上限内读取与重复读取、跨块 UTF-8、超限 413、客户端断开触发 `signal`、`HttpExchangeAborted`）。唯一有意差异：`InstanceAccess` 原先逐块 `toString()` 拼接正文，跨块的多字节 UTF-8 会被拆坏，现在整体解码。
+- 等价证据：迁移前后对 Headless 网关同一 77 个请求序列（登录页、session、跨源／非 JSON／`Authorization`／多余字段／超长正文／坏 JSON、账号页与 `/setup`、初始化、邀请与接受、改密、成员与审计、Actor 管理、登出、两类尝试上限）抓取原始应答字节，归一化日期、token、nonce 与 UUID 后逐字节相同。共享一致性测试 `tests/server/http-exchange-conformance.test.ts`（原 `tests/identity/`）对两个适配器各跑 8 项（方法／路径／头／host／地址、头顺序与多条 `set-cookie`、空正文与 303、正文上限内读取与重复读取、跨块 UTF-8、超限 413、客户端断开触发 `signal`、`HttpExchangeAborted`），另有 6 项流式正文用例（逐块按序、客户端断开取消源流、源流出错断开、无正文状态取消流）。唯一有意差异：`InstanceAccess` 原先逐块 `toString()` 拼接正文，跨块的多字节 UTF-8 会被拆坏，现在整体解码。
 
 **放置建议。** 登录写入（`human_logins`、账号版本）必须在 IC。若 Argon2id 也在 IC 中计算，全局 60 次／分钟的尝试上限下最坏约占 IC 每分钟 10 s CPU（旧 scrypt 估算为 15 s），且 IC 是全部部署级授权的单点。可选的拆分：EW 向 IC 取 PHC 参数与 salt（未知用户返回由 IC 密钥派生的稳定占位 salt，避免枚举），在 EW 计算摘要，再交给 IC 常量时间比较、复核版本并签发登录；密码明文不进 IC，摘要不出 IC。这需要把 `LocalAccountServerPlugin.verify` 拆成"派生"与"比较＋复核"两步，属于后续工作，原型未实现。尝试计数目前是进程内存，在 IC 内可沿用；放在无状态 EW 时需改用 IC 计数或 Workers Rate Limiting 绑定。
 
@@ -366,7 +366,7 @@
 
 | 端口 | 现状 | Node 适配器 | Cloudflare 适配器 |
 | --- | --- | --- | --- |
-| HTTP 处理 | 身份与准入处理器（`HumanAuth`、`LocalAccountApplication`、`InstanceAccess`、`ActorAccess`）已改为 `@opencraft/identity-core/http-exchange` 端口（§3.4）；其余服务仍是 `handle(IncomingMessage, ServerResponse)`（`collaboration.ts:22`、`app-host-server/src/index.ts:11`、`hub-network` 等） | `http-exchange-node`（已实现） | `http-exchange-fetch`（已实现，workerd 登录入口使用） |
+| HTTP 处理 | 中立平台包 `@opencraft/http-exchange`（§3.4）。已迁：身份与准入处理器（`HumanAuth`、`LocalAccountApplication`、`InstanceAccess`、`ActorAccess`），以及 G4 第一批 `Collaboration`、服务器信息、个人模型默认值、个人 SSH 公钥、模型策略、模型网关（§4.2.1）；其余服务仍是 `handle(IncomingMessage, ServerResponse)`，清单与分类见 §4.2.1 | `@opencraft/http-exchange/node`（已实现，含流式正文） | `@opencraft/http-exchange/fetch`（已实现；workerd 登录入口与 `test:http-exchange:workerd` 使用） |
 | WebSocket 会话 | `ws` 对象直接进入会话逻辑（`serve-workbench-web.mjs:1180-1290`） | `ws` 包装 | DO hibernation WebSocket |
 | 定时器 | `setInterval`（HA:1350；`conversation-resource-lifecycle.mjs:64`；`observability-ingress.mjs:49`；`serve-workbench-web.mjs:397`；host-schedules 2 s 轮询） | owner 定时器 | DO alarm（每 DO 单个，需要合并到"下一个到期时间"） |
 | 单写者 owner | `worker_threads` Worker（核心 owner、编排、spaces、assets vault、token usage 查询、push） | `@opencraft/worker-owner` | DO 本身即单写者，`SqlDatabase` 同步调用（storage-ports §6） |
@@ -376,6 +376,44 @@
 | 进程创建 | `child_process`、`proper-lockfile`（Pi、DSH、个人助理、Git Worker） | 不变 | 只在容器内 |
 
 **不提供于 Cloudflare 的能力**（只在 Node 组合根装配，Cloudflare 不声明，Web 端按现有缺席分支呈现）：本机文件"local"模式（HA:1215）、SSH 管理与 SSH 入口、本机桌面观察与控制、relay-connect、匿名部署、同机托管访问文件、观测 ingress、可用性通知监听、读取服务器主机文件系统或进程的一切能力。
+
+**端口设计原则（适用于本节全部端口与后续各步）。** 不为 Cloudflare 做特化：Cloudflare 只是部署场景之一。全部部署中最弱的运行时——请求作用域、无文件系统、无子进程、单写者经 Durable Object 的 Workers isolate——定义通用契约的下限；领域代码只依赖该契约，Node、Docker、桌面与 Cloudflare 是实现它的对等适配器。因此契约按 Fetch `Request`／`Response` 语义成形（正文为字节或 Web 流、不暴露 socket），Node 适配器映射到它；契约中不加 Node 专属能力，也不以 Cloudflare 命名任何东西。`scripts/check/check-platform-boundaries.mjs` 对 `packages/http-exchange/src/index.ts` 与 `fetch.ts` 检查不引用 `node:`、`ws`、`Buffer` 与 `process`；只有 `node.ts` 适配器可以。
+
+#### 4.2.1 G4 HTTP 服务清单（2026-11-24，main `535407bde`）
+
+Headless 网关路由表在 `serve-workbench-web.mjs`（`createWorkbenchWebServer`）的请求回调里按顺序分派；服务由 `headless-application.mjs` 与 `assembly/account.mjs` 构造。分类："已迁"＝经 `@opencraft/http-exchange`；"现可迁"＝只需 JSON 正文、`readBody(limit)` 与 `signal`，端口已够用；"需流式"＝需要流式应答或代理（端口已有流式应答，代理与上游出站仍是 Node 实现）；"Node-only"＝按上文"不提供于 Cloudflare 的能力"只在 Node 装配，不迁；"G6"＝WebSocket 升级，不在 G4。
+
+| 路由 | 服务（源码） | 形状 | 分类 |
+| --- | --- | --- | --- |
+| `/setup`、`/__opencraft_account*` | `LocalAccountApplication`（`plugins/local-account/src/application.ts`） | JSON，16 KiB | 已迁（#511） |
+| `/__opencraft_auth*` | `HumanAuth`（`access-control/src/human-auth.ts`） | JSON，16 KiB；OIDC 重定向 | 已迁（#511） |
+| `/__opencraft_actors*` | `ActorAccess`（`access-control/src/actor-access.ts`） | JSON | 已迁（#511） |
+| 成员管理（准入之后） | `InstanceAccess.handle`（`access-control/src/index.ts`） | JSON | 已迁（#511） |
+| `/__opencraft_actors/collaboration/*` | `CollaborationHttpApi`（`access-control/src/collaboration.ts`） | JSON，64 KiB；每个 await 后复核 Actor | **本批已迁** |
+| `/__opencraft_server_information` | `serverInformationHttp`（`apps/headless-server/src/server-information.mjs`） | JSON，4 KiB；`StateDocumentStore` | **本批已迁**；workerd 证明见下 |
+| `/__opencraft_model_defaults` | `accountModelDefaultsHttp`（`apps/headless-server/src/account-model-defaults-http.ts`） | JSON，8 KiB；Server owner 异步端口 | **本批已迁** |
+| `/__opencraft_ssh_keys*` | `actorSshKeysHttp`（`apps/headless-server/src/actor-ssh-keys-http.ts`） | JSON，20 000 B | **本批已迁**（公钥数据通用；SSH 登录本身 Node-only） |
+| `/__opencraft_model_policy` | `modelPolicyHttp`（`packages/model-usage-policy/src/http.ts`） | JSON，128 KiB | **本批已迁**；存储已在 `SqlDatabase`（G3） |
+| `/__opencraft_model_gateway`（路径可配置） | `modelGatewayHttp`（`packages/account-pool-host/src/model-gateway-http.ts`） | JSON，32 KiB | **本批已迁** HTTP；`ModelGatewayStore` 每请求以 `node:sqlite` 打开，待 G3 |
+| `/__opencraft_push`、`/__opencraft_notifications` | `TurnPushService.handle`（`packages/web-push-node/src/service.ts:290`） | JSON，16 KiB；存储 `DatabaseSync`；出站 `node:https` | 现可迁（HTTP 形状）；存储与出站待 G3／§4.2 出站；第一里程碑可缺席 |
+| `/__opencraft_connectors` | `HeadlessConnectors.handle`（`packages/connector-host/src/headless.ts:166`） | JSON，64 KiB；Worker owner；SSRF 用 `node:dns` | 现可迁（HTTP 形状）；出站校验待问题 8；第一里程碑可缺席 |
+| Assets 路由（准入之后、成员 watch 之前分派） | `identity-assets.ts:282`、`configurations.ts:337`（`plugins/assets/src/server/`） | JSON；授权事件到达时以 `response.destroy()` 隔断在途请求 | 现可迁：隔断改用 `signal`＋`HttpExchangeAborted`；第一里程碑只需固定工作区的最小部分 |
+| `/__opencraft_speech/*` | `SpeechTranscriptionService.handle`（`apps/headless-server/src/speech-transcription-service.mjs:66`） | WAV 上传（有上限）、上游长调用、断开即中止 | 现可迁（`readBody(limit)`＋`signal` 足够）；第一里程碑可缺席 |
+| `/__opencraft_im*`、渠道回调 `/__opencraft_im/<path>` | `ImChannelService.handle`／`handleChannelCallback`（`apps/headless-server/src/im-channel-service.mjs:688、824`） | JSON；回调验签用原始正文（`readBody` 给字节）；IM 拒绝诊断包裹 `response.end` | 现可迁形状；产品范围待问题 3 |
+| `/__opencraft_hub*`（及 upgrade） | `createHubController().handle`（`packages/hub-network/src/controller.ts:32`） | 反向代理到本机 Hub 节点（`pipe`）；upgrade | 需流式＋出站代理；upgrade 属 G6；第一里程碑可缺席 |
+| `/__opencraft_files`、`/__opencraft_preview/tickets`、HTML 预览公开路由 | `HostFileDownloads`（`apps/opencraft-daemon/src/host-file-downloads.ts:135`）、`HtmlFilePreviews`（`html-file-previews.mjs`） | 文件流、子进程 `pipe`、读取主机文件 | Node-only（读取主机文件系统或进程） |
+| `/__opencraft_observe/*` | `createObservabilityIngress`（`observability-ingress.mjs`） | 反向代理到本机 dashboard | Node-only（观测 ingress） |
+| `/__opencraft_ssh*`、`/__opencraft_ssh_servers` | `SshManagement`（`apps/opencraft-daemon/src/ssh-management.ts:147`） | 子进程 `ssh` | Node-only |
+| 准入后兜底 | 身份产品 `WorkbenchRequestIdentity.handle`（`packages/app-host-server/src/index.ts:19`） | 下游 ABI | 待决：下游装配端口，改形状需与下游产品同步 |
+| 准入后、静态资源前 | 运行时插件宿主（`apps/headless-server/src/runtime-plugins.mjs:159`） | 插件 ABI 为 `node:http` | 待决：插件 ABI 变更另行设计 |
+| `/health`、`/__opencraft_health`、`/__opencraft_access/admission`、`/__opencraft_browser/capabilities`、`/__opencraft_runtime_error`、`/__opencraft_apphost_diagnostic`、`/__opencraft_plugin_catalog`、`/__opencraft_plugins/*`、产品插件资源、静态资源与 SPA | 网关内联（`serve-workbench-web.mjs`） | 小 JSON；静态文件 `createReadStream`＋压缩协商 | 路由表本身随 EW 重写（§3.1）；静态资源在 EW 由平台静态资源提供，不迁这段 Node 代码 |
+| `/apphost`、`/ssh-apphost`、`/appserver`、`/desktop/connect`、远程浏览器 | WebSocket 升级 | — | G6 |
+
+**第一批做了什么（before → after）。** 每个服务原来是 `(IncomingMessage, ServerResponse) → Promise<boolean>`，自己 `writeHead`／`end`、`for await` 读正文；现在是 `(HttpExchangeRequest<View>) → Promise<HttpExchangeResponse | null>`，正文经 `readBody(limit)`（超限 `HttpBodyTooLarge` 映射为原来的 413／400 错误码），授权回调收到 `request.identity`（Node 上仍是同一个 `IncomingMessage`，每请求缓存键不变）。网关以 `serveNodeHttpExchange(request, response, handler)` 挂载（`serve-workbench-web.mjs` 五处调用行），`assembly/account.mjs` 只改了合并模型网关与策略的一行。状态码、头（含顺序）、错误体、正文上限、鉴权复核、同源规则不变；原有测试与浏览器 smoke 改为经 Node 适配器挂载后全部通过。与身份处理器一样，可观察差异只有正文整体解码（不再逐块拼接）。
+
+**运行时中立证明。** `npm run test:http-exchange:workerd`（`tests/server/http-exchange-workerd.test.ts`，场景 `tests/server/workerd/http-exchange.scenarios.ts`，也进入 `cf:rehearsal`）：同一个 `serverInformationHttp` 在 workerd Durable Object 中经 Fetch 适配器运行（`ServerInformationStore` 位于 DO 状态存储），与 `node:http` 适配器上的同一处理器（文件状态文档）对 16 个请求（匿名、成员、方法、跨源、无 Origin、非 JSON、超 4 KiB、坏 JSON、多余字段、账号栅栏、非法 URL、写入、过期 revision、读回）给出逐项相同的状态、错误体与 `content-type`／`cache-control`／`x-content-type-options`；不拥有的路由两边都交回调用方；运行时重启后写入仍在；Web 流应答在两个适配器上逐块完整到达。
+
+**仍用旧路径 `@opencraft/identity-core/http-exchange*` 的导入方**（再导出，行为相同）：`packages/access-control/src/{human-auth,actor-access,index}.ts`、`plugins/local-account/src/{application,desktop}.ts`、`plugins/login-admission/src/server.ts`、`tests/identity/workerd/{login-entry-worker,login-entry.scenarios}.ts`。新代码直接依赖 `@opencraft/http-exchange`；这些导入方可在后续 PR 机械替换后删除再导出。
 
 ## 5. 依赖顺序与分步计划
 
@@ -390,7 +428,7 @@
 | G1 | 把 `HA` 按 §4.1 拆成装配模块，行为与关闭顺序不变 | 组合根可测、可读；嵌入方（Docker gateway）复用模块 | 无 | **进行中**：account 已抽到 `apps/headless-server/src/assembly/account.mjs`（#552）；组合根前置的生命周期与迟绑定端口在 `assembly/lifecycle.mjs`；其余段仍在 `startHeadlessServer`，现状映射与抽取顺序见 §4.1.1 |
 | G2 | 合并 `opencraft-server.sqlite` 的编排与空间连接到核心 owner（已实施，见 [server-core-owner §4](../server/server-core-owner.md#4-分阶段实施)）；网络线程过渡连接随 server-core-owner 第 2–6 阶段移除 | 消除同库多 Worker 写入者；减少主线程同步 IO 登记 | G1 | **部分**：合并已完成（`orchestration-runtime-domain`、`server-spaces-domain` 注册在 `apps/headless-server/src/server-core-worker.mjs`，#511；身份写入 #463）；过渡连接仍在（`ThreadAccessStore` 的 `permissionOwner: serverStorage.database`，`headless-application.mjs:794`），server-core-owner 第 2–6 阶段未完成 |
 | G3 | 剩余直接 `node:sqlite` 的部署级库（模型策略、MCP apps、push、connectors）迁到 `SqlDatabase` 端口 | 统一迁移与 outcome 报告 | 存储端口第 1–2 阶段（已实施） | **部分**：模型策略已在 `SqlDatabase` 上（`packages/model-usage-policy/src/index.ts:1-12`，Node 打开仍经 `openManagedDatabase`＋`nodeSqlDatabase`，#511）；MCP apps（`packages/mcp-apps/src/store.ts:38`）、push（`packages/web-push-node/src/store.ts:2`）、connectors（`packages/connector-host/src/store.ts:1`）仍直接使用 `DatabaseSync` |
-| G4 | HTTP 处理改为 `Request`→`Response` 端口，Node 包装（身份与准入处理器已完成，§3.4；其余服务待迁） | 服务单测不需要真实监听 | G1 | **部分**：`@opencraft/identity-core/http-exchange{,-node,-fetch}` 与身份、准入处理器已迁（#511；Web 入口经 `serveNodeHttpExchange`，`serve-workbench-web.mjs:22`）；协作、AppHost、Hub、模型策略／网关等仍是 `(request, response)` 处理器 |
+| G4 | HTTP 处理改为 `Request`→`Response` 端口，Node 包装（身份与准入处理器已完成，§3.4；第一批服务已迁，§4.2.1） | 服务单测不需要真实监听 | G1 | **部分**：端口移到中立包 `@opencraft/http-exchange{,/node,/fetch}`，加入 Web 流应答（identity-core 路径保留为再导出）；身份、准入处理器（#511）与第一批 `Collaboration`、服务器信息、个人模型默认值、个人 SSH 公钥、模型策略、模型网关已迁，workerd 证明为 `test:http-exchange:workerd`（2026-11-24）；push、connectors、Assets、语音、IM 现可迁，Hub 需流式代理，身份产品与运行时插件端口待决，其余 Node-only 或属 G6（§4.2.1） |
 | G5 | 定时器端口；资源对账、心跳、观测改为 owner 定时器 | 关闭排空与时钟回拨可测 | G1；与 P4-3 同一抽象 | **部分**：端口已有（`OwnerWakeTimer`／`boundedWakeTimer`，`packages/workspace-host/src/index.ts:171-246`，#511），仅定时任务使用；资源对账（`headless-application.mjs:1606`、`conversation-resource-lifecycle.mjs:62`）、观测（`observability-ingress.mjs:49`）、心跳（`serve-workbench-web.mjs:399、1196`）仍是 `setInterval` |
 | G6 | 拆出 `client-session`：AppHost 逻辑路由与访问会话脱离 `ws` | 连接逻辑可用内存 transport 测试 | G4 | **未开始**：`AppHostServer` 仍在组合根构造（`headless-application.mjs:1192`）；只有 workerd 原型（`tests/protocol/workerd/client-do-worker.ts`，§3.3） |
 | P4-2 | 抽出 `WorkspaceHost`（Codex overlays 以工作区根打开） | 见原文 | G1 | **完成（Node）**：`packages/workspace-host`（#511）；Gateway 只装配 `default`（`headless-application.mjs:1310`） |

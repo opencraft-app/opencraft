@@ -73,8 +73,7 @@ export function assembleAccount({ dataDirectory, codexCoreEndpoint, codexCoreAut
           origin: instanceAccess.trustedOrigin(request),
         };
       });
-      return async (request, response) =>
-        (gateway && (await gateway(request, response))) || (await policy(request, response));
+      return async (exchange) => (gateway ? await gateway(exchange) : null) ?? (await policy(exchange));
     },
     /** The Web server owns the returned service and closes it with itself. */
     createSpeechService() {
