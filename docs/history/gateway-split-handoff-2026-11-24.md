@@ -21,6 +21,8 @@
 建议合并顺序：#583 → #582 → #585 → #589 → #590 → #587（处理迁移族冲突）→ #584。全部合并后统一更新 `gateway-split.md` §5.1 状态表。
 另有 #588（`codex/gateway-composition-preflight`）不是本会话创建，未触碰。
 
+**09:25 追加**：#590 已合并（G1 完成）。它基于 #583 分支，squash 时已带入 #583 的大部分改动，因此 #583、#585、#589 随即 `MERGE_CONFLICT` 出队。处理：对每个分支 merge origin/main，冲突文件以其被 squash 前的尖端为基准做 `git merge-file` 三方合并（#583 尖端 `75082f749`、#581 尖端 `dedd50c`）；#583 合并后若与 main 无差异，可直接关闭。
+
 ## 1. 目标与原则
 
 - 同一套领域代码装配到多种部署形态：Node 自托管（Docker／systemd／Electron，一等公民）与 Cloudflare（Workers＋DO＋Containers，可选）。
