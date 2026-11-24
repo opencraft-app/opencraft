@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createStdioPeer } from '../adapters/local/stdio-peer.mjs';
-import { acquireOwnerLock } from '@opencraft/sqlite-node/writer-lock';
+import { acquireOwnerLockOffThread } from '@opencraft/sqlite-node/locks';
 import { privateDirectoryAsync } from '../adapters/local/private-directory-async.mjs';
 import { validateCodexConfig } from '../adapters/codex/config.mjs';
 import { readCodexKeyAsync } from '../adapters/codex/credential-file-async.mjs';
@@ -100,7 +100,8 @@ export async function createPersonalAssistantHost({ directory, service, spawn = 
   async function reconcile() {
     if(!release) {
       // One Host per installation for its lifetime: a kernel lock a stalled Host never loses; its death frees it for a standby.
-      try { release=await acquireOwnerLock(join(root,'.personal-assistant-host.lock')); }
+      // A standby retries every tick, so the lock is taken and held off this event loop.
+      try { release=await acquireOwnerLockOffThread(join(root,'.personal-assistant-host.lock'),{onLost:()=>{release=undefined;void host.close().catch(()=>{});}}); }
       catch { return; }
       if(stopping)return;
     }

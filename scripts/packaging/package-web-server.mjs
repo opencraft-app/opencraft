@@ -126,6 +126,9 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
       define: { 'process.env.OPENCRAFT_RELAY_SOURCE_REVISION': JSON.stringify(web.sourceRevision ?? null), 'process.env.OPENCRAFT_RELAY_BUILD_ID': JSON.stringify(web.buildId) },
       banner: { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" } });
   }
+  // hub-admin and relay-cluster-admin open the Hub state (its Worker) and update state
+  // documents (the lock Worker); both start beside the bundle that names them.
+  await buildOwnerWorkers(join(packageRoot, 'runtime'), { only: ['hub-state-worker.mjs', 'lock-worker.mjs'] });
   // Product-owned files referenced through import.meta.url must ship before sealing.
   for (const { source, target } of additionalRuntimeAssets) {
     const destination = resolve(packageRoot, 'runtime', target);

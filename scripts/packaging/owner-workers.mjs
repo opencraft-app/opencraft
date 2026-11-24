@@ -10,7 +10,7 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..")
 export const OWNER_WORKERS = Object.freeze([
   ["apps/opencraft-daemon/src/ssh-connections.worker.ts", "ssh-connections-worker.mjs"],
   ["packages/hub-network/src/hub-state.worker.ts", "hub-state-worker.mjs"],
-  ["packages/document-storage/src/state-lock.worker.ts", "state-lock-worker.mjs"],
+  ["packages/sqlite-node/src/lock.worker.ts", "lock-worker.mjs"],
   ["apps/personal-assistant/src/runtime/memory-browser-offline-worker.mjs", "memory-browser-offline-worker.mjs"],
   ["packages/storage-node/src/server/server-core-owner.worker.ts", "server-core-owner-worker.mjs"],
   ["apps/headless-server/src/server-core-worker.mjs", "server-core-worker.mjs"],
@@ -20,8 +20,10 @@ export const OWNER_WORKERS = Object.freeze([
   ["plugins/login-admission/src/login-admission.worker.ts", "login-admission-worker.mjs"],
 ]);
 
-export async function buildOwnerWorkers(directory, { target = "node24" } = {}) {
+/** `only` limits the build to the named files, for a directory whose bundles start just those. */
+export async function buildOwnerWorkers(directory, { target = "node24", only } = {}) {
   for (const [entry, file] of OWNER_WORKERS) {
+    if (only && !only.includes(file)) continue;
     await build({
       entryPoints: [join(repositoryRoot, entry)],
       outfile: join(directory, file),

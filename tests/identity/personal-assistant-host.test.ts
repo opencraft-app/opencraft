@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,rm,readFile,realpath,utimes,lstat} from 'node:fs/promises';
+import fs from 'node:fs';
+import {syncBuiltinESMExports} from 'node:module';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {openServerDatabase} from '@opencraft/storage-node/server';
@@ -114,6 +116,24 @@ test('a Host whose installation lease looks unrefreshed keeps it; a standby neve
  try {await new Promise(r=>setTimeout(r,500));assert.equal(starts,1);assert.equal(second.state(assistant.binding.botId).phase,'unavailable');
    assert.equal(first.state(assistant.binding.botId).phase,'running');assert.equal((await lstat(lock)).isFile(),true);
  }finally{await second.close();await secondService.close();}
+});
+
+// A standby Host retries the installation lock on every tick of the Headless event loop,
+// so taking it must not open the lock file synchronously on that thread.
+test('a standby Host retries the installation lock without synchronous IO on its event loop',async t=>{
+ const f=await fixture(t),{assistant}=await f.service.personalAssistant(f.alice,'opencraft/personal-assistant/claim');
+ const config={intervalMs:30,readConfig:async()=>({maxRuntimes:1,profileOptions:{}}),spawn:()=>({ready:Promise.resolve(),failed:()=>false,async close(){}})};
+ const first=await f.start(config);await waitFor(()=>first.state(assistant.binding.botId).phase==='running');
+ const touched:string[]=[],original={openSync:fs.openSync,lstatSync:fs.lstatSync};
+ const spy=(name:'openSync'|'lstatSync')=>(...args:any[])=>{if(String(args[0]).includes('.personal-assistant-host.lock'))touched.push(name);return (original[name] as any)(...args);};
+ fs.openSync=spy('openSync') as any;fs.lstatSync=spy('lstatSync') as any;syncBuiltinESMExports();
+ const secondService=new Collaboration(f.storage,f.actors);let second:any;
+ try {
+   second=await createPersonalAssistantHost({directory:f.directory,service:secondService,...config});
+   await new Promise(r=>setTimeout(r,500));
+   assert.equal(second.state(assistant.binding.botId).phase,'unavailable');
+   assert.deepEqual(touched,[]);
+ }finally{fs.openSync=original.openSync;fs.lstatSync=original.lstatSync;syncBuiltinESMExports();await second?.close();await secondService.close();}
 });
 
 test('task observation follows the owner grant and disappears when its runtime fails',async t=>{
