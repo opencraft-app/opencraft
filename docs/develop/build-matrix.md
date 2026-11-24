@@ -243,7 +243,8 @@ platforms, including for lockfiles, CI changes or an unreadable diff.
 | Electron Main/Preload/native code, Daemon, local agent host, DSH runtime | Linux server regressions; desktop/native validation is opt-in |
 | Shared package/plugin code or unknown inputs | Web browser build, managed Web regression and Linux server regressions |
 | Web update UI, Vite/static inputs, update/deployment scripts and tests | Managed Web regression and applicable Web/server checks |
-| Root manifests/lockfile/toolchain or CI/selector changes | Web build, all installation-root audits, managed Web and Linux server regressions |
+| Release scripts (`scripts/release/*.mjs`, `*.sh`), their tooling tests, or workflows other than `build-matrix.yml` and `ci-plan.yml` | No product build or server regression: every PR's plan job runs the release and CI tooling tests, and workflow-lint checks workflow changes |
+| Root manifests/lockfile/toolchain, `.github/actions`, `build-matrix.yml`/`ci-plan.yml` or the selector | Web build, all installation-root audits, managed Web and Linux server regressions |
 | Server archive/installer/deployment inputs or build artifact contract | Linux server regressions plus archive build and smoke test |
 
 Any change that selects a Web build or Linux server regressions also runs

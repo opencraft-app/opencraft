@@ -1,13 +1,13 @@
 name: CodeQL
 
+# Pull requests scan only their changes; main gets one full analysis a day as the
+# baseline they compare with. CodeQL is not a required check, so merge-queue
+# groups and each push to main would only repeat that work and hold runners.
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
-  merge_group:
   schedule:
-    - cron: "17 3 * * 1"
+    - cron: "17 3 * * *"
   workflow_dispatch:
 
 permissions:
