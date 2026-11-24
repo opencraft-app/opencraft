@@ -1,0 +1,13 @@
+# Optional operator-selected composition. Only Gateway receives this mount.
+services:
+  gateway:
+    environment:
+      OPENCRAFT_GATEWAY_COMPOSITION_DIRECTORY: /run/opencraft-composition
+      OPENCRAFT_GATEWAY_COMPOSITION_SHA256: ${OPENCRAFT_GATEWAY_COMPOSITION_SHA256:?Set the Gateway composition manifest SHA-256}
+    volumes:
+      - type: bind
+        source: ${OPENCRAFT_GATEWAY_COMPOSITION_HOST_DIRECTORY:-../composition}
+        target: /run/opencraft-composition
+        read_only: true
+        bind:
+          create_host_path: false

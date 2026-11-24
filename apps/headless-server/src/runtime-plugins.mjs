@@ -90,7 +90,7 @@ export function validateRuntimePluginOptions(value) {
  */
 export async function startHeadlessRuntimePlugins(
   configuration,
-  { dataDirectory, instanceAccess, authService, load = loadRuntimePlugins, log = console },
+  { dataDirectory, fileSystemOwner, instanceAccess, authService, load = loadRuntimePlugins, log = console },
 ) {
   const role = configuration.role ?? "gateway";
   const report = (diagnostic) => {
@@ -120,7 +120,9 @@ export async function startHeadlessRuntimePlugins(
     ...(packageSource === undefined
       ? {}
       : {
-          packageSource: typeof packageSource === "function" ? () => packageSource({ dataDirectory }) : packageSource,
+          packageSource: typeof packageSource === "function"
+            ? () => packageSource({ dataDirectory, ...(fileSystemOwner ? { fileSystemOwner } : {}) })
+            : packageSource,
         }),
     ...(role === "gateway"
       ? {

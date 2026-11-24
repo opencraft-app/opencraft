@@ -139,6 +139,7 @@ services:
     entrypoint: ["/opt/opencraft/bin/node", "/opt/opencraft/runtime/container-service.mjs", "brain"]
     environment:
       <<: *environment
+      OPENCRAFT_WORKSPACE_AUTHORITY_SOCKET:
       # Brain waits for the proxy service instead of embedding the account Core. Only compose-release's automatic
       # restore after a failed switch from an embedded-Core release sets OPENCRAFT_BRAIN_PROXY_MODE=embedded and an
       # empty OPENCRAFT_BRAIN_PROXY_PORT (the embedded Core then picks a free loopback port, as before the switch).
@@ -232,6 +233,7 @@ services:
     entrypoint: ["/opt/opencraft/bin/node", "/opt/opencraft/runtime/container-service.mjs", "gateway"]
     environment:
       <<: *environment
+      OPENCRAFT_WORKSPACE_AUTHORITY_SOCKET:
       # Where the default workspace runs (one URI per environment; Brain and Hands are
       # separate containers until they merge). Each budget must match the service's limits.
       OPENCRAFT_WORKSPACE_ENVIRONMENTS: static-docker://brain static-docker://hands

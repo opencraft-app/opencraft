@@ -46,6 +46,10 @@ export interface ServerMigrationCompositionInput {
   readonly productVersion:string;
   readonly expectedHash?:string;
 }
+export interface ProductServerMigrations {
+  readonly extensions?:readonly ServerMigrationFamily[];
+  readonly lineages?:readonly (ServerAlternateHistory & Required<Pick<ServerAlternateHistory, 'adopts'>>)[];
+}
 export const CORE_FAMILY='core';
 const digest=(sql:string)=>createHash('sha256').update(sql).digest('hex');
 function copyChain(chain:readonly Migration[]):readonly Migration[] {
@@ -128,6 +132,25 @@ export function createServerMigrationRegistry(fallback:ServerMigrationCompositio
   });
 }
 export const DEFAULT_SERVER_MIGRATION_COMPOSITION=createServerMigrationComposition({canonical:SERVER_MIGRATIONS,alternates:SERVER_ALTERNATE_MIGRATIONS,productVersion:OPENCRAFT_VERSION,expectedHash:SERVER_MIGRATION_CONTRACT_HASH});
+
+/** Resolve a trusted product contribution against this host's published core. */
+export function prepareProductServerMigrations(value: unknown): ServerMigrationComposition | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== 'object' || Object.getPrototypeOf(value) !== Object.prototype
+    || Object.keys(value).some(key => key !== 'extensions' && key !== 'lineages'))
+    throw Error('Invalid product Server migrations');
+  const { extensions, lineages = [] } = value as ProductServerMigrations;
+  if (!Array.isArray(lineages) || lineages.length > 32 || lineages.some(lineage => !Array.isArray(lineage?.adopts)))
+    throw Error('Product Server lineages must declare their adoption maps');
+  return createServerMigrationComposition({
+    canonical: SERVER_MIGRATIONS,
+    // Prefer a declared product lineage over a shared prefix of a core alternate.
+    alternates: [...lineages, ...SERVER_ALTERNATE_MIGRATIONS],
+    extensions,
+    productVersion: OPENCRAFT_VERSION,
+  });
+}
+
 const registry=createServerMigrationRegistry(DEFAULT_SERVER_MIGRATION_COMPOSITION);
 export const installServerMigrationComposition=registry.install;
 export const serverMigrationComposition=registry.current;

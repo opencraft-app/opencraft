@@ -24,6 +24,7 @@ import { startCodexEngineHost } from '@opencraft/opencraft-daemon/codex-bridge-s
 import { resolveCodexPermissions } from '@opencraft/opencraft-daemon/codex-bridge-host';
 import { codexBridgeConversationTools, codexBridgeCreationTools } from '@opencraft/opencraft-daemon/codex-bridge-conversation-tools';
 import { openServerCoreOwner } from "@opencraft/storage-node/server-owner";
+import { prepareProductServerMigrations } from "@opencraft/storage-node/server-composition";
 import { ownerEntry } from '@opencraft/worker-owner';
 import { ModelPolicyTransport } from '@opencraft/model-usage-policy/transport';
 import { assembleAccount } from './assembly/account.mjs';
@@ -314,6 +315,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   if (composition.isHuman !== undefined && typeof composition.isHuman !== "function") throw new Error("Invalid Headless human qualification");
   const loginAdmissionScope = validateLoginAdmission(composition.loginAdmission);
   const runtimePluginConfiguration = validateRuntimePluginOptions(composition.runtimePlugins);
+  const migrationComposition = prepareProductServerMigrations(composition.serverMigrations);
   // Extension modules are imported and validated before startup creates any resource.
   const extensions = await loadHeadlessExtensions(validateHeadlessExtensions(composition.extensions));
   const root = resolve(options.root ?? packageRoot);
@@ -347,9 +349,9 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   const releaseManifest = JSON.parse(await readFile(join(root, 'manifest.json'), 'utf8').catch(error => {
     if (error.code === 'ENOENT') return '{}'; throw error;
   }));
-  const productPluginAssets = await prepareProductPluginRelease({ releaseRoot: root, webRoot,
+  const productPluginAssets = await prepareProductPluginRelease({ releaseRoot: options.productPluginRelease?.root ?? root, webRoot,
     cacheDirectory: process.env.OPENCRAFT_PRODUCT_PLUGIN_CACHE_DIRECTORY || join(dataDirectory, 'product-plugin-packs'),
-    metadata: releaseManifest.productPlugins ?? null });
+    metadata: options.productPluginRelease ? options.productPluginRelease.metadata : releaseManifest.productPlugins ?? null });
   // The identity commit fence's shared buffer: the core owner Worker passes it,
   // this thread serves it (the commit fence port's shared-memory adapter).
   const identityFence = createCommitFenceBuffer();
@@ -362,6 +364,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let serverStorage;
   try {
     serverStorage = await openServerCoreOwner(dataDirectory, { entry: ownerEntry(import.meta.url, 'server-core'),
+      migrationComposition,
       data: { identityFence, ...(communicationExtensionModule() ? { communicationExtensionModule: communicationExtensionModule() } : {}) } });
   } catch (error) { releaseExtensions(); throw error; }
   // Identity, admission, collaboration and deployment-level services over the
@@ -1061,7 +1064,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     // Explicit opt-in only: loaded once instance authentication and admission exist,
     // before the listener opens so declared routes are mounted from the first request.
     if (runtimePluginConfiguration) runtimePlugins = await startHeadlessRuntimePlugins(runtimePluginConfiguration,
-      { dataDirectory, instanceAccess, authService: humanAuth });
+      { dataDirectory, fileSystemOwner: options.fileSystemOwner, instanceAccess, authService: humanAuth });
     const createWeb = options.createWebServer ?? createWorkbenchWebServer;
     web = await createWeb({
       root: webRoot,

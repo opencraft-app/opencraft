@@ -172,6 +172,13 @@ Node 上 `opencraft-server.sqlite` 的编排运行时与 Server space 已在核�
 - **密封**：每记录数据密钥、密钥轮换与重新密封流程；密钥备份的运维说明。
 - 引擎跨进程读取策略（`native.mjs`）在 Cloudflare 上的替代（AC 投影或 RPC）；容器内引擎拿到的策略快照与版本。
 - 真实 Cloudflare 复核（`cf:rehearsal` 的 `account-core-do` 分组）。
+### 5.7 装配包的 VFS
+
+`@opencraft/runtime-plugin-host/package-vfs` 接收宿主指定的 manifest 摘要和限长的
+`readFile(path, maxBytes)`。它校验 manifest 与登记文件后提供只读快照。
+Docker 从只读目录取文件，DO 可以按相同相对路径从 R2 读取对象。本地 workerd
+用 DO、R2 和 Worker Loader 运行测试包里的 Worker 模块，并验证摘要不匹配时拒绝加载。
+正式 InstallationCore 目前提供核心登录路径，私有身份和服务装配尚未接入 DO。
 
 ## 6. RelayHub 原型结果
 

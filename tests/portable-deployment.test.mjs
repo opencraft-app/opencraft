@@ -42,9 +42,11 @@ test('default CLI exports exactly the core template files', () => {
   const parent = mkdtempSync(join(tmpdir(), 'portable-deploy-'));
   try {
     const snapshot = join(parent, 'snapshot.json'), output = join(parent, 'bundle');
-    writeFileSync(snapshot, JSON.stringify({ releaseId: 'cli', images: refs }));
+    const gatewayArtifacts = { compositionSha256: 'a'.repeat(64), webSha256: 'b'.repeat(64) };
+    writeFileSync(snapshot, JSON.stringify({ releaseId: 'cli', images: refs, gatewayArtifacts }));
     execFileSync(process.execPath, ['scripts/ci/export-deployment.mjs', snapshot, output], { env: { ...process.env, NODE_OPTIONS: '' } });
     assert.deepEqual(readdirSync(output).sort(), [...templateFiles, ...Object.keys(coreComposeFiles), 'images.env', 'release.json'].sort());
+    assert.deepEqual(JSON.parse(readFileSync(join(output, 'release.json'), 'utf8')).gatewayArtifacts, gatewayArtifacts);
     for (const file of templateFiles) assert.equal(readFileSync(join(output, file), 'utf8'), readFileSync(join(defaultTemplate, file), 'utf8'), file);
     const usage = spawnSync(process.execPath, ['scripts/ci/export-deployment.mjs', snapshot], { encoding: 'utf8', env: { ...process.env, NODE_OPTIONS: '' } });
     assert.notEqual(usage.status, 0); assert.match(usage.stderr, /Usage:/);
@@ -97,6 +99,69 @@ test('compose.portable.yaml only names the project and the Gateway listener', ()
 });
 
 const composeAvailable = () => spawnSync('docker', ['compose', 'version'], { stdio: 'ignore' }).status === 0;
+
+test('a portable deployment mounts an explicitly selected composition directory on Gateway only', t => {
+  if (!composeAvailable()) return t.skip('Docker Compose CLI is unavailable');
+  const parent = mkdtempSync(join(tmpdir(), 'portable-composition-'));
+  try {
+    const bundle = join(parent, 'bundle');
+    const digest = 'a'.repeat(64);
+    exportDeployment({ images: refs, gatewayArtifacts: { compositionSha256: digest } }, bundle);
+    const sitePath = join(bundle, 'site.env');
+    const base = readFileSync(join(bundle, 'site.env.example'), 'utf8').replaceAll('/srv/opencraft', join(parent, 'site'));
+    const compositionSettings = directory => `\nOPENCRAFT_GATEWAY_COMPOSITION_HOST_DIRECTORY=${directory}\n`;
+    const compose = () => spawnSync('python3', [join(bundle, 'deploy.py'), 'config'], { encoding: 'utf8' });
+    const directory = join(parent, 'private/composition');
+    writeFileSync(sitePath, base + compositionSettings(directory));
+    const rendered = compose();
+    assert.equal(rendered.status, 0, rendered.stderr);
+    const { services } = JSON.parse(rendered.stdout);
+    const mounts = Object.entries(services).flatMap(([role, service]) => service.volumes
+      .filter(mount => mount.target === '/run/opencraft-composition').map(mount => ({ role, ...mount })));
+    assert.equal(mounts.length, 1);
+    assert.equal(mounts[0].role, 'gateway');
+    assert.equal(mounts[0].source, directory);
+    assert.equal(mounts[0].read_only, true);
+    assert.equal(services.gateway.environment.OPENCRAFT_GATEWAY_COMPOSITION_SHA256, digest);
+    const workspace = services.gateway.volumes.find(mount => mount.target === services.gateway.environment.OPENCRAFT_WORKSPACE_DIR);
+    writeFileSync(sitePath, base + compositionSettings(join(workspace.source, 'composition')));
+    const rejected = compose();
+    assert.equal(rejected.status, 1, rejected.stderr);
+    assert.match(rejected.stderr, /outside shared deployment mounts/);
+  } finally { rmSync(parent, { recursive: true, force: true }); }
+});
+
+test('portable releases select their own artifact digests and directories with the same site settings', t => {
+  if (!composeAvailable()) return t.skip('Docker Compose CLI is unavailable');
+  const parent = mkdtempSync(join(tmpdir(), 'portable-artifacts-'));
+  try {
+    const site = readFileSync(join(defaultTemplate, 'site.env.example'), 'utf8').replaceAll('/srv/opencraft', join(parent, 'site'));
+    const env = site + '\nOPENCRAFT_GATEWAY_COMPOSITION_SHA256=' + 'a'.repeat(64) +
+      '\nOPENCRAFT_GATEWAY_WEB_RELEASE_SHA256=' + 'b'.repeat(64) + '\n';
+    for (const [name, composition, web] of [['previous', 'a', 'b'], ['candidate', 'c', 'd']]) {
+      const version = join(parent, name);
+      const bundle = join(version, 'deploy');
+      mkdirSync(version);
+      const gatewayArtifacts = { compositionSha256: composition.repeat(64), webSha256: web.repeat(64) };
+      exportDeployment({ images: refs, gatewayArtifacts }, bundle);
+      writeFileSync(join(bundle, 'site.env'), env);
+      const rendered = spawnSync('python3', [join(bundle, 'deploy.py'), 'config'], { encoding: 'utf8' });
+      assert.equal(rendered.status, 0, rendered.stderr);
+      const { services } = JSON.parse(rendered.stdout);
+      for (const [envPrefix, folder, digest] of [
+        ['OPENCRAFT_GATEWAY_COMPOSITION', 'composition', gatewayArtifacts.compositionSha256],
+        ['OPENCRAFT_GATEWAY_WEB_RELEASE', 'web', gatewayArtifacts.webSha256],
+      ]) {
+        const target = services.gateway.environment[envPrefix + '_DIRECTORY'];
+        assert.equal(services.gateway.environment[envPrefix + '_SHA256'], digest);
+        const mounts = Object.entries(services).flatMap(([role, service]) => service.volumes
+          .filter(m => m.target === target).map(m => [role, m.source, m.read_only]));
+        assert.deepEqual(mounts, [['gateway', join(version, folder), true]]);
+      }
+    }
+  } finally { rmSync(parent, { recursive: true, force: true }); }
+});
+
 test('a portable bundle renders the source deployment model and passes deploy.py (root and nonroot Hands)', t => {
   if (!composeAvailable()) return t.skip('Docker Compose CLI is unavailable');
   const parent = mkdtempSync(join(tmpdir(), 'portable-deploy-'));
