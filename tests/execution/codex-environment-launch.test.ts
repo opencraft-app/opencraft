@@ -703,19 +703,24 @@ async function identityVaultOwner(t: test.TestContext, f: Awaited<ReturnType<typ
 
 /** Records every vault access on this (Main) thread from now on. */
 function spyVault(t: test.TestContext) {
-  const calls: string[] = [],
-    prototype = EmployeeGitVaultStore.prototype as unknown as Record<string, unknown>;
-  for (const name of Object.getOwnPropertyNames(prototype)) {
-    const original = prototype[name];
-    if (name === "constructor" || typeof original !== "function") continue;
-    prototype[name] = function (this: unknown, ...args: unknown[]) {
-      calls.push(name);
-      return (original as (...a: unknown[]) => unknown).apply(this, args);
-    };
-    t.after(() => {
-      prototype[name] = original;
-    });
-  }
+  const calls: string[] = [];
+  // The Node owner inherits its vault operations from the runtime-neutral EmployeeGitVault.
+  const prototypes: Record<string, unknown>[] = [];
+  for (let next: unknown = EmployeeGitVaultStore.prototype; next && next !== Object.prototype; next = Object.getPrototypeOf(next))
+    prototypes.push(next as Record<string, unknown>);
+  assert.ok(prototypes.length >= 2 && Object.getOwnPropertyNames(prototypes[1]!).includes("readDocument"));
+  for (const prototype of prototypes)
+    for (const name of Object.getOwnPropertyNames(prototype)) {
+      const original = prototype[name];
+      if (name === "constructor" || typeof original !== "function") continue;
+      prototype[name] = function (this: unknown, ...args: unknown[]) {
+        calls.push(name);
+        return (original as (...a: unknown[]) => unknown).apply(this, args);
+      };
+      t.after(() => {
+        prototype[name] = original;
+      });
+    }
   return calls;
 }
 

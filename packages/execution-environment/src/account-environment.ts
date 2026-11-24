@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { EmployeeGitVaultStore } from './employee-git-vault-store.js';
+import type { EmployeeGitVault } from './employee-git-vault-store.js';
 import type { EnvironmentVariableView, EnvironmentScope, EnvironmentView } from '@opencraft/workbench-runtime';
 export type { EnvironmentVariableView, EnvironmentScope, EnvironmentView } from '@opencraft/workbench-runtime';
 
@@ -45,7 +45,7 @@ const view = (items: EnvironmentVariable[]): EnvironmentVariableView[] => items.
 /** The verified account is supplied by ingress/launch authority, never a form.
  * Reuses the credential vault's encryption, AAD, key and CAS; no second store. */
 export class AccountEnvironment {
-  constructor(private readonly vault: Pick<EmployeeGitVaultStore, 'readDocument' | 'writeDocument'>) {}
+  constructor(private readonly vault: Pick<EmployeeGitVault, 'readDocument' | 'writeDocument'>) {}
   private read(account: string, scope: EnvironmentScope) {
     const { revision, document } = this.vault.readDocument(account, scopeKey(scope));
     if (document === null) return { revision, variables: [] as EnvironmentVariable[] };

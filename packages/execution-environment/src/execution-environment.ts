@@ -5,7 +5,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { TransportSubmissionContext } from '@opencraft/appserver-client/transport';
-import { EmployeeGitVaultStore } from './employee-git-vault-store.js';
+import { EmployeeGitVaultStore } from './employee-git-vault-store.node.js';
 import { AccountEnvironment, EnvironmentError, validateEnvironmentName } from './account-environment.js';
 
 export const EXECUTION_ENVIRONMENT_FIELD = '__opencraftEnvironment';
