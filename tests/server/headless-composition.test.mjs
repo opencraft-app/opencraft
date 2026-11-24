@@ -1163,6 +1163,58 @@ test('workspace-host execution: in-process Pi holds its owner lock beside lazy D
   assert.equal((await fetch(app.url)).status, 200);
 });
 
+test('workspace-host Host transports: configured Hands owners scope the opencraft-server Host to their terminal and file transports behind the resource authority', { timeout: 60_000 }, async t => {
+  for (const owners of [false, true]) {
+    await t.test(owners ? 'Hands terminal and file owners' : 'no Hands owners', async t => {
+      const f = await fixture(t), methods = [];
+      const backend = new WebSocketServer({ host: '127.0.0.1', port: 0 }); await once(backend, 'listening');
+      backend.on('connection', socket => socket.on('message', raw => {
+        const message = JSON.parse(String(raw)); methods.push(message.method);
+        const client = message.__opencraftClient === undefined ? {} : { __opencraftClient: message.__opencraftClient };
+        socket.send(JSON.stringify({ id: message.id, ...client, result: message.method === 'initialize'
+          ? { capabilities: { extensions: { 'opencraft/method-access': { version: 1, methods: ['thread/read'] } } } } : { entries: [] } }));
+      }));
+      const app = await startHeadlessServer({ ...f.options,
+        ...(owners ? { fileSystemOwner: { endpoint: join(f.root, 'files.sock'), tokenFile: join(f.root, 'files.token') },
+          terminalOwner: { directory: join(f.root, 'terminal'), endpoint: join(f.root, 'terminal.sock'), tokenFile: join(f.root, 'terminal.token') } } : {}),
+        startAgentHost: async () => ({ websocketUrl: `ws://127.0.0.1:${backend.address().port}`, close: async () => {} }) });
+      f.own(() => new Promise(resolve => backend.close(resolve))); f.own(() => app.close());
+      const socket = new WebSocket(app.url.replace('http:', 'ws:') + '/apphost', { origin: app.url }); await once(socket, 'open');
+      const frames = [];
+      socket.on('message', raw => frames.push(JSON.parse(String(raw))));
+      const next = async predicate => {
+        const until = Date.now() + 5000;
+        while (Date.now() < until) { const row = frames.find(predicate); if (row) { frames.splice(frames.indexOf(row), 1); return row; } await new Promise(resolve => setTimeout(resolve, 5)); }
+        throw Error('frame timed out');
+      };
+      socket.send(JSON.stringify({ type: 'hello', protocolVersion: 2, rendererId: 'fixture' })); await next(() => true);
+      socket.send(JSON.stringify({ type: 'host/connect', requestId: 'connect', hostId: 'opencraft-server', leaseId: 'lease' }));
+      const generation = (await next(row => row.requestId === 'connect')).result.generation;
+      const rpc = async (id, method, params = {}) => {
+        socket.send(JSON.stringify({ type: 'host/send', requestId: 'send-' + id, hostId: 'opencraft-server', leaseId: 'lease', generation, frame: JSON.stringify({ id, method, params }) }));
+        return JSON.parse((await next(row => row.type === 'host/frame' && JSON.parse(row.frame).id === id)).frame);
+      };
+      const initialized = await rpc(1, 'initialize');
+      const extensions = initialized.result.capabilities.extensions;
+      const files = await rpc(2, 'fs/readDirectory', { path: '/' });
+      if (owners) {
+        // The terminal transport declares its (unreachable) owner; file methods join the Host's method access.
+        assert.equal(extensions['opencraft/terminal']?.version, 1);
+        assert.ok(extensions['opencraft/method-access'].methods.includes('fs/readDirectory'));
+        // Files never reach the engine: an anonymous request fails the Host resource authority.
+        assert.ok(files.error, JSON.stringify(files));
+        assert.equal(methods.includes('fs/readDirectory'), false);
+      } else {
+        assert.equal(extensions['opencraft/terminal'], undefined);
+        assert.equal(extensions['opencraft/method-access'].methods.some(method => /^(process|fs)\//.test(method)), false);
+        assert.deepEqual(files.result, { entries: [] });
+        assert.equal(methods.includes('fs/readDirectory'), true);
+      }
+      socket.close(); await once(socket, 'close');
+    });
+  }
+});
+
 test('installation routes: the shared route table and admission gate keep their wire bytes on a real Headless server', { timeout: 60_000 }, async t => {
   // Raw HTTP/1.1 bytes (Date removed): the installation route definitions and the
   // admission refusals are shared with the InstallationCore front door, so the
