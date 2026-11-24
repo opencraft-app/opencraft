@@ -839,3 +839,69 @@ test('installation admission: a malformed setup token or login admission without
   const app = await startHeadlessServer(f.options); f.own(() => app.close());
   assert.equal((await fetch(app.url)).status, 200);
 });
+
+test('installation services: collaboration, connectors, server information and push follow the signed-in Human and persist across a restart', { timeout: 60_000 }, async t => {
+  const f = await fixture(t);
+  const probe = await startHeadlessServer(f.options); await probe.close();
+  const proof = randomBytes(32).toString('base64url');
+  const proofPath = join(f.root, 'setup-token'), configPath = join(f.root, 'human-auth.json');
+  await writeFile(proofPath, JSON.stringify({ token: proof }), { mode: 0o600 });
+  await writeFile(configPath, JSON.stringify({ origin: probe.url, local: true, oidc: [], setupTokenFile: proofPath }), { mode: 0o600 });
+  const options = { ...f.options, port: Number(new URL(probe.url).port), humanAuthConfig: configPath };
+  let app = await startHeadlessServer(options); f.own(() => app.close());
+  const json = { origin: app.url, 'content-type': 'application/json' };
+  const setup = await fetch(app.url + '/__opencraft_account/setup', { method: 'POST', headers: json,
+    body: JSON.stringify({ proof, mode: 'web', username: 'owner', password: 'Fixture-account-password-42' }) });
+  assert.equal(setup.status, 200, await setup.text());
+  const owner = setup.headers.get('set-cookie')?.split(';')[0];
+  const ownerId = (await fetch(app.url + '/__opencraft_account/status', { headers: { cookie: owner } }).then(r => r.json())).actor.id;
+
+  // Collaboration answers the signed-in Actor only.
+  assert.equal((await fetch(app.url + '/__opencraft_actors/collaboration/inbox')).status, 401);
+  const inbox = await fetch(app.url + '/__opencraft_actors/collaboration/inbox', { headers: { cookie: owner } });
+  assert.equal(inbox.status, 200, await inbox.clone().text());
+  assert.deepEqual(await inbox.json(), { messages: [] });
+  // Connectors publish the installation's execution servers for both local hosts.
+  const connectors = await fetch(app.url + '/__opencraft_connectors', { headers: { cookie: owner } }).then(r => r.json());
+  assert.equal(connectors.protocolVersion, 1);
+  assert.deepEqual(Object.keys(connectors.hosts).sort(), ['local-codex', 'opencraft-server']);
+  assert.match(connectors.hosts['local-codex'], /^server:[^:]+:codex$/u);
+  assert.equal(connectors.hosts['opencraft-server'], connectors.hosts['local-codex'].replace(/:codex$/u, ':dsh'));
+  // Server information: anonymous refused, the administrator manages it.
+  const information = app.url + '/__opencraft_server_information';
+  assert.equal((await fetch(information)).status, 401);
+  assert.deepEqual(await fetch(information, { headers: { cookie: owner } }).then(r => r.json()),
+    { revision: 0, publicUrl: '', actorId: ownerId, canManage: true });
+  const saved = await fetch(information, { method: 'POST', headers: { ...json, cookie: owner },
+    body: JSON.stringify({ revision: 0, publicUrl: 'https://opencraft.example/team', expectedActorId: ownerId }) });
+  assert.equal(saved.status, 200, await saved.clone().text());
+  // Push subscriptions answer the signed-in Human for both local hosts.
+  assert.equal((await fetch(app.url + '/__opencraft_push')).status, 401);
+  const push = await fetch(app.url + '/__opencraft_push', { headers: { cookie: owner } }).then(r => r.json());
+  assert.equal(push.available, true); assert.equal(push.actorId, ownerId);
+  assert.deepEqual(push.hosts, ['local-codex', 'opencraft-server']);
+  // Each deployment-level store reports its storage outcome.
+  const storage = (await fetch(app.url + '/__opencraft_health').then(r => r.json())).storage.map(row => row.name);
+  for (const name of ['server-core', 'web-push', 'mcp-apps']) assert.ok(storage.includes(name), name);
+
+  // Close releases every writer before the lock; a restart reads the same state.
+  await app.close();
+  app = await startHeadlessServer(options);
+  assert.deepEqual(await fetch(information, { headers: { cookie: owner } }).then(r => r.json()),
+    { revision: 1, publicUrl: 'https://opencraft.example/team', actorId: ownerId, canManage: true });
+  assert.equal((await fetch(app.url + '/__opencraft_push', { headers: { cookie: owner } }).then(r => r.json())).publicKey, push.publicKey);
+});
+
+test('installation services: a startup failure after they opened closes every installation writer and releases the data lock', { timeout: 30_000 }, async t => {
+  const f = await fixture(t);
+  let missing;
+  await assert.rejects(startHeadlessServer({ ...f.options, createWebServer: async options => {
+    missing = ['actorCollaborationService', 'connectorService', 'serverInformationService', 'turnPushService', 'mcpAppsService',
+      'accountModelDefaultsService', 'actorSshKeysService'].filter(key => !options[key]);
+    throw new Error('fixture web failure');
+  } }), /fixture web failure/);
+  // Every installation service is open by the time the Web server is created.
+  assert.deepEqual(missing, []);
+  const app = await startHeadlessServer(f.options); f.own(() => app.close());
+  assert.equal((await fetch(app.url)).status, 200);
+});
