@@ -128,6 +128,23 @@ Git vault key 由 `EmployeeGitVaultStore.open()` 异步解析：新库经 `KeyMa
 
 Unix socket、锁文件、`/proc` 读取、Git 与 `/workspace` 工作目录、Electron profile、Codex 原生 home 与 rollout、主机文件 RPC。它们是容器或本机内部资源，由执行环境 owner 管理。Codex、Pi、DSH 引擎自身的 SQLite 随引擎运行在 Node 容器内，不迁移到 SQL 端口。
 
+### 3.6 WorkspaceHost 侧存储
+
+状态：2026-11-24 实施（[gateway-split §4.2](gateway-split.md) 存储行）。领域模块只依赖 `SqlDatabase`；Node 外壳保留原导出、构造签名、库文件、迁移与 checksum；网络主线程同步 IO 只减少。
+
+| 存储 | 唯一写者与线程 | 跨进程／线程读者 | 迁移与账本 | 领域（中立） | Node 外壳 |
+| --- | --- | --- | --- | --- | --- |
+| thread directory：`opencraft_thread_catalog`、`opencraft_catalog_sync` | 借用 owner 连接的 `ThreadDirectory`：本机 Host 的 `ThreadCatalog`（`opencraft-threads.sqlite`，schema `thread-catalog`）或 Daemon 的 `OpenCraftHostStateDatabase`（`opencraft-host-state.sqlite`），均在各自进程主线程（已登记） | 快照 Worker `snapshot-reader.ts` 在同一文件上只读打开，只把分页结果交回网络线程 | 归连接 owner（`thread-catalog`／`opencraft-host-state-database`） | `SqlThreadDirectory`（`thread-directory/index.ts`，导出 `./thread-directory/domain`）：分块提交经 `transaction()`（原手写 `SAVEPOINT`）；计数票据的读保护可注入，缺省 `connectionReadGuard` 以 `total_changes()` 判定单连接 owner（DO、内存库）的提交；无快照读者时快照来自内存索引 | `thread-directory/node.ts`（导出 `./thread-directory`，`ThreadDirectory(connection, port, now, intervalMs)` 不变）：`nodeSqlDatabase`、`captureSqliteReadGuard`（`data_version` 也看见其他连接的提交）与文件型快照 Worker |
+| 员工 Git vault：`employee-git-vault.sqlite` | 无单一写者：Assets 存储 Worker（`plugins/assets/src/server/storage.ts`）与执行 owner（`ExecutionEnvironmentRuntime.open()`：engine／ACP Host、本机 DSH 插件）各自经 `EmployeeGitVaultStore.open()` 打开同一文件，写入由 SQLite 写事务串行、修订号 CAS 判定；DO 装配时须收敛为一个 owner 对象，其余改为 RPC | 容器 Git broker 的 `personal-git-worker.ts` 只读打开并自行解密 | 归 vault owner（schema `employee-git-vault-store`，`stores.json` 的 owner 指向 `.node.ts`） | `EmployeeGitVault`（`employee-git-vault-store.ts`，导出 `./employee-git-vault`）：行、修订号 CAS、墓碑、命名空间与执行上下文信封；加解密与个人 Git 授权经 owner 注入的 `GitVaultCipher`，领域不接触密钥；base64url 自带编解码；写入经 `transaction()`（原手写 `BEGIN IMMEDIATE`） | `employee-git-vault-store.node.ts`（导出 `./employee-git-vault-store`，`EmployeeGitVaultStore.open(directory)` 不变）：0700 目录、0600 NOFOLLOW 文件与属主校验（改用异步 `fs/promises`）、`KeyMaterial`、`openManagedDatabase`、`nodeGitVaultCipher`（AES-256-GCM，`iv‖密文‖tag` 布局不变，旧行可读） |
+
+不迁到 SQL 端口的 Node 专属读者：它们读取其他 owner 的库文件，Cloudflare 上应改为向该 owner 的 RPC，而不是在另一个 DO 里打开同一份数据。
+
+- `ExecutionEnvironmentRuntime.execution()`（`execution-environment.ts`）只读打开 Daemon 或 thread identity 的执行租约库，取得原始执行来源。
+- 个人 Git（容器 Git broker Worker）：`git-identity-origin.ts` 读 Codex registry 并经 `/proc` 校验进程来源；`git-execution-authority.ts` 读执行租约库与 `opencraft-server.sqlite` 的主体绑定；`personal-git-worker.ts` 只读 vault 并用 `KeyMaterial` 解密，经 Unix socket 服务。
+- thread directory 的快照 Worker（见上表）。
+
+验证：`tests/storage/workspace-stores-workerd.test.ts`（`test:storage-ports:workerd` 与 Cloudflare 演练组 `workspace-stores`）对两个领域模块做中立平台打包检查（无 `node:*`、`Buffer`、`sqlite-node` 与 Node 外壳）；两条迁移链经中立账本运行，与 Node owner 的账本和 schema 相同；thread directory（含与不含连接内执行投影）与 vault 的同一操作序列在 DO SQL 与 `nodeSqlDatabase` 上逐项相同（含失败分块整体回滚、读保护失效、外层事务回滚 vault 写入）；vault 行跨对象重启保留。DO 上的 vault 测试使用测试密钥的 AES-GCM；生产 DO 的密钥来源（`KeyMaterial` 或 Secrets binding）随装配决定。
+
 ## 4. 分阶段
 
 1. **SQL 端口与 Node 适配器（服务器核心数据）。** 新增 `@opencraft/sql` 与一致性测试；`@opencraft/sqlite-node` 提供 `nodeSqlDatabase()`；`ServerDatabaseSource`／`openServerRepository()` 改为交付 `SqlDatabase`；`access-control` 的领域类、函数与 `CommunicationExtension` 插件契约不再依赖 `DatabaseSync`；手写事务改为 `transaction()`；`Collaboration` 不再从连接推导文件路径。
