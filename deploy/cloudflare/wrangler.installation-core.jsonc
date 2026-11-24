@@ -1,15 +1,17 @@
 // Template: the installation's Cloudflare Workers deployment assembly
-// (docs/architecture/platform/cloudflare-deployment.md §5, §5.6). Copy it,
-// choose the Worker name and origin, and deploy with Wrangler from this
-// directory. Nothing in this repository deploys it; validation and builds never
-// touch an account.
+// (docs/architecture/platform/cloudflare-deployment.md §5, §5.6, §5.7). Copy it,
+// choose the Worker name and origin, set the workspace image digest, and deploy
+// with Wrangler from this directory. Nothing in this repository deploys it;
+// validation and builds never touch an account.
 //
 // It serves the installation's identity and admission (setup, local login,
 // sessions, Actors, instance membership) from one SQLite-backed Durable Object,
-// InstallationCore, and the account's model usage policy, model configuration,
+// InstallationCore; the account's model usage policy, model configuration,
 // sealed model credentials and credential leases from a second one,
-// AccountCore. Static assets, the Client DO and WorkspaceHost are not
-// assembled yet; see §5.4 and §5.6 for what a production deployment still lacks.
+// AccountCore; and one WorkspaceHost object per workspace that holds the
+// workspace's Host state and its container. Static assets and the Client DO
+// are not assembled yet; see §5.4, §5.6 and §5.7 for what a production
+// deployment still lacks.
 //
 // Secrets, never vars:
 //   wrangler secret put OPENCRAFT_SETUP_TOKEN --config wrangler.installation-core.jsonc
@@ -19,27 +21,48 @@
 //   node -e "console.log('k1.'+require('crypto').randomBytes(32).toString('base64url'))"
 //   It seals every model credential AccountCore stores, so losing it loses
 //   them; without a valid key AccountCore stays closed)
+// The workspace container receives no secret and holds no credential.
 {
   "name": "opencraft-installation-core",
   "main": "../../apps/headless-server/src/cloudflare/worker.ts",
   // The same runtime the local workerd tests and the rehearsal use.
   "compatibility_date": "2026-07-30",
-  // node:crypto and the other built-ins the installation module imports.
+  // node:crypto and the other built-ins the installation, account and workspace-host modules import.
   "compatibility_flags": ["nodejs_compat"],
   "durable_objects": {
     "bindings": [
       { "name": "INSTALLATION_CORE", "class_name": "InstallationCore" },
-      { "name": "ACCOUNT_CORE", "class_name": "AccountCore" }
+      { "name": "ACCOUNT_CORE", "class_name": "AccountCore" },
+      { "name": "WORKSPACE_HOST", "class_name": "WorkspaceHost" }
     ]
   },
+  // Each class arrives in its own migration, so a deployment of an earlier template only adds it.
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["InstallationCore"] },
-    { "tag": "v2", "new_sqlite_classes": ["AccountCore"] }
+    { "tag": "v2", "new_sqlite_classes": ["AccountCore"] },
+    { "tag": "v3", "new_sqlite_classes": ["WorkspaceHost"] }
+  ],
+  // One container per WorkspaceHost object (`cloudflare://WorkspaceHost`): the workspace
+  // image (Brain and Hands, `workspace-agent` as its main process), pinned by digest. The
+  // object starts it through the sandbox provider with the workspace's own instance size
+  // (4 vCPU / 8 GiB by default) and no Internet access; it stops it when idle.
+  "containers": [
+    {
+      "class_name": "WorkspaceHost",
+      "image": "registry.cloudflare.com/ACCOUNT_ID/opencraft-workspace@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "max_instances": 10
+    }
   ],
   "vars": {
     // Validated like the Node Human login configuration file; `origin` is this deployment's HTTPS origin.
     "OPENCRAFT_HUMAN_AUTH": "{\"origin\":\"https://opencraft.example\",\"local\":true,\"oidc\":[]}",
-    "OPENCRAFT_MACHINE_NAME": "OpenCraft"
+    "OPENCRAFT_MACHINE_NAME": "OpenCraft",
+    // The container's image name as the object reads it (`ctx.container.images`).
+    "OPENCRAFT_WORKSPACE_IMAGE": "workspace",
+    // Stop a workspace's container after this many idle milliseconds, or `resident`.
+    "OPENCRAFT_WORKSPACE_IDLE": "900000",
+    // The engines of the workspace's Engine Host (`pi`, `dsh`); the first is its endpoint.
+    "OPENCRAFT_WORKSPACE_ENGINES": "pi"
   },
   "observability": { "enabled": true }
 }

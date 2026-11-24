@@ -8,7 +8,10 @@ const dockerDirectory = resolve(dirname(fileURLToPath(import.meta.url)), '../../
 export const defaultTemplate = join(dockerDirectory, 'deploy');
 // The deployment model itself: exported byte for byte from deploy/docker, never from a
 // template, so a portable bundle and a source deployment cannot drift apart.
-export const coreComposeFiles = { 'compose.yaml': join(dockerDirectory, 'compose.yaml'), 'compose.role-images.yaml': join(dockerDirectory, 'compose.role-images.yaml') };
+export const coreComposeFiles = Object.fromEntries(
+  ['compose.yaml', 'compose.role-images.yaml', 'compose.gateway-composition.yaml', 'compose.gateway-web-release.yaml']
+    .map(file => [file, join(dockerDirectory, file)]),
+);
 export const templateFiles = ['compose.portable.yaml', 'compose.root-hands.yaml', 'compose.personal-git.yaml', 'deploy.py', 'files-smoke.mjs', 'workspace-preflight.mjs', 'site.env.example', 'README.md'];
 export function imageReferences(snapshot) {
   const source = snapshot.images ?? snapshot;
@@ -24,6 +27,15 @@ export function imageReferences(snapshot) {
 // copy additional top-level files from it; the generated lock files stay reserved.
 export function exportDeployment(snapshot, output, { template = defaultTemplate, include = [] } = {}) {
   const refs = imageReferences(snapshot);
+  const artifacts = snapshot.gatewayArtifacts;
+  if (artifacts !== undefined) {
+    assert.ok(artifacts && typeof artifacts === 'object' && !Array.isArray(artifacts), 'Invalid Gateway artifact lock');
+    assert.match(artifacts.compositionSha256 ?? '', /^[a-f0-9]{64}$/, 'Missing Gateway composition digest');
+    for (const [name, digest] of Object.entries(artifacts)) {
+      assert.ok(['compositionSha256', 'webSha256'].includes(name), 'Unknown Gateway artifact: ' + name);
+      assert.match(digest ?? '', /^[a-f0-9]{64}$/, 'Invalid Gateway artifact digest: ' + name);
+    }
+  }
   assert.equal(typeof template, 'string', 'Template directory must be a path');
   for (const file of include) {
     assert.ok(typeof file === 'string' && file && basename(file) === file && file !== '..' && file !== '.', 'Extra deployment file must be a plain file name: ' + file);
@@ -36,8 +48,12 @@ export function exportDeployment(snapshot, output, { template = defaultTemplate,
   mkdirSync(output, { mode: 0o700 });
   for (const [file, source] of Object.entries(coreComposeFiles)) cpSync(source, join(output, file));
   for (const file of [...templateFiles, ...include]) cpSync(join(template, file), join(output, file));
-  writeFileSync(join(output, 'images.env'), roles.map(role => `OPENCRAFT_${role.toUpperCase()}_IMAGE=${refs[role]}`).join('\n') + '\n', { mode: 0o600 });
+  const environment = roles.map(role => `OPENCRAFT_${role.toUpperCase()}_IMAGE=${refs[role]}`);
+  if (artifacts) environment.push('OPENCRAFT_GATEWAY_COMPOSITION_SHA256=' + artifacts.compositionSha256);
+  if (artifacts?.webSha256) environment.push('OPENCRAFT_GATEWAY_WEB_RELEASE_SHA256=' + artifacts.webSha256);
+  writeFileSync(join(output, 'images.env'), environment.join('\n') + '\n', { mode: 0o600 });
   writeFileSync(join(output, 'release.json'), JSON.stringify({ schemaVersion: 1, images: refs,
+    ...(artifacts ? { gatewayArtifacts: artifacts } : {}),
     sourceRevision: snapshot.sourceRevision ?? null, sourceReleaseId: snapshot.releaseId ?? null }, null, 2) + '\n', { mode: 0o600 });
 }
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {

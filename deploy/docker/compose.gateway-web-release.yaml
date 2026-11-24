@@ -1,0 +1,13 @@
+# Optional Web release selected alongside a Gateway composition.
+services:
+  gateway:
+    environment:
+      OPENCRAFT_GATEWAY_WEB_RELEASE_DIRECTORY: /run/opencraft-web-release
+      OPENCRAFT_GATEWAY_WEB_RELEASE_SHA256: ${OPENCRAFT_GATEWAY_WEB_RELEASE_SHA256:?Set the Gateway Web manifest SHA-256}
+    volumes:
+      - type: bind
+        source: ${OPENCRAFT_GATEWAY_WEB_RELEASE_HOST_DIRECTORY:-../web}
+        target: /run/opencraft-web-release
+        read_only: true
+        bind:
+          create_host_path: false

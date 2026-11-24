@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { applySqlMigrations, hashSqlMigrations } from "@opencraft/sql/migrations";
-import { isMigrationLedgerObject } from "@opencraft/sql/schema-ledgers";
+import { isMigrationLedgerObject } from "@opencraft/sql/families";
 import { recordSealer } from "@opencraft/secret-storage/sealed-records";
 import { migrateModelPolicySqlDatabase } from "@opencraft/model-usage-policy/sql-owner";
 import {
@@ -96,7 +96,7 @@ const factories: Record<string, Factory> = {
     };
   },
   // The AccountCore Durable Object's layout: the pool's chains beside the policy's in one database,
-  // credential records sealed in the same SQL (tests/storage/schema-ledgers.test.ts covers the chains).
+  // credential records sealed in the same SQL (tests/storage/account-pool-sql-owner.test.ts covers the families).
   async "shared database + schema ledgers + sealed SQL credential records"(settings) {
     const connection = new DatabaseSync(":memory:");
     connection.exec("PRAGMA foreign_keys=ON");

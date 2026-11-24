@@ -162,6 +162,8 @@ export interface WorkspaceHostAssembly {
     codexCoreEndpoint: string | undefined;
     /** Read once the vault is open: an installed assistant sandbox configuration the vault adopts, if any. */
     readAssistantSandboxConfig: () => string | undefined;
+    /** Launches a local Bot process for the installed Bot provider (Node: `spawnAssistant`). */
+    spawnAssistant: (...args: never[]) => unknown;
     openAssetsStorage(options: Record<string, unknown>): Promise<WorkspaceHostAssetsStorage>;
     openWorkspaceExecution(options: Record<string, unknown>): Promise<WorkspaceHostClosable>;
     openHumanAssets(options: {

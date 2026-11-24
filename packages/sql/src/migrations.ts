@@ -36,8 +36,8 @@ export class SqlMigrationError extends Error {
 /**
  * Where one chain's history is kept. Every single-chain database keeps it in
  * its own `schema_migrations` table (the default). A database that hosts
- * several published chains keeps each further chain's rows under its schema id
- * (`./schema-ledgers`, storage-ports §3.1). The version, name and checksum
+ * several published chains keeps each family chain's rows under its family id
+ * in a family ledger (`./families`, storage-ports §3.1). The version, name and checksum
  * rules are the same for every ledger.
  */
 export interface SqlMigrationLedger {

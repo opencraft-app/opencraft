@@ -23,6 +23,8 @@ import { INSTALLATION_CORE_DO_SCENARIOS, INSTALLATION_CORE_DO_SPEC } from "./wor
 
 const root = resolve(import.meta.dirname, "../..");
 const ENTRY = "apps/headless-server/src/cloudflare/worker.ts";
+/** The object's own module: the deployment entry also bundles the WorkspaceHost object (workspace-host-do-workerd.test.ts). */
+const OBJECT = "apps/headless-server/src/cloudflare/installation-core.ts";
 const NODE_OWNERS = [
   "packages/sqlite-node/",
   "packages/worker-owner/",
@@ -60,10 +62,10 @@ const NODE_OWNERS = [
   "apps/headless-server/src/assembly/root-inputs-node.mjs",
 ];
 
-test(`${ENTRY} reaches no Node owner implementation`, async () => {
+test(`${OBJECT} reaches no Node owner implementation`, async () => {
   const result = await build({
     absWorkingDir: root,
-    entryPoints: [ENTRY],
+    entryPoints: [OBJECT],
     bundle: true,
     write: false,
     metafile: true,
@@ -123,17 +125,22 @@ test("the Wrangler template names the entry, class, bindings and runtime the tes
   assert.equal(resolve(dirname(template), config.main), resolve(root, ENTRY));
   assert.equal(config.compatibility_date, COMPATIBILITY_DATE);
   assert.deepEqual(config.compatibility_flags, INSTALLATION_CORE_DO_SPEC.compatibilityFlags);
-  assert.deepEqual(config.durable_objects.bindings, [
+  assert.deepEqual(config.durable_objects.bindings.slice(0, 2), [
     { name: "INSTALLATION_CORE", class_name: "InstallationCore" },
     { name: "ACCOUNT_CORE", class_name: "AccountCore" },
   ]);
-  // AccountCore arrives in its own migration, so a deployment of the first template only adds it.
-  assert.deepEqual(config.migrations, [
+  // Each class arrives in its own migration, so a deployment of an earlier template only adds it.
+  assert.deepEqual(config.migrations.slice(0, 2), [
     { tag: "v1", new_sqlite_classes: ["InstallationCore"] },
     { tag: "v2", new_sqlite_classes: ["AccountCore"] },
   ]);
   // Configuration only; the setup proof and the account's sealing key are secrets and never vars.
-  assert.deepEqual(Object.keys(config.vars).sort(), ["OPENCRAFT_HUMAN_AUTH", "OPENCRAFT_MACHINE_NAME"]);
+  assert.deepEqual(
+    Object.keys(config.vars)
+      .filter((name) => !name.startsWith("OPENCRAFT_WORKSPACE_"))
+      .sort(),
+    ["OPENCRAFT_HUMAN_AUTH", "OPENCRAFT_MACHINE_NAME"],
+  );
   parseHumanAuthConfiguration(JSON.parse(config.vars.OPENCRAFT_HUMAN_AUTH));
   const entry = await import(resolve(root, ENTRY));
   assert.equal(typeof entry.InstallationCore, "function");

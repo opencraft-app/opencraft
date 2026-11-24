@@ -46,6 +46,44 @@ def mount(service, target):
     return next(v for v in service['volumes'] if v['target'] == target)
 
 class Safety(unittest.TestCase):
+    def test_workspace_socket_accepts_distinct_container_paths_and_requires_a_bind(self):
+        config, release = fixture()
+        gateway, brain = (config['services'][role] for role in ('gateway', 'brain'))
+        variable = 'OPENCRAFT_WORKSPACE_AUTHORITY_SOCKET'
+        gateway['environment'][variable] = '/var/lib/opencraft/run/workspace-authority.sock'
+        brain['environment'][variable] = '/var/lib/opencraft/alias/workspace-authority.sock'
+        deploy.validate(config, release)
+        brain['environment'][variable] = '/run/opencraft-link/workspace-authority.sock'
+        with self.assertRaisesRegex(ValueError, 'inside a shared bind'):
+            deploy.validate(config, release)
+        brain['environment'].pop(variable)
+        with self.assertRaisesRegex(ValueError, 'for brain'):
+            deploy.validate(config, release)
+
+    def test_manifest_locks_both_gateway_artifacts(self):
+        config, release = fixture()
+        gateway = config['services']['gateway']
+        env = gateway['environment']
+        env.update(
+            OPENCRAFT_GATEWAY_COMPOSITION_DIRECTORY='/run/opencraft-composition',
+            OPENCRAFT_GATEWAY_COMPOSITION_SHA256='a' * 64,
+            OPENCRAFT_GATEWAY_WEB_RELEASE_DIRECTORY='/run/product-web',
+            OPENCRAFT_GATEWAY_WEB_RELEASE_SHA256='b' * 64,
+        )
+        gateway['volumes'] += [
+            bind('/release/composition', '/run/opencraft-composition', read_only=True),
+            bind('/release/web', '/run/product-web', read_only=True),
+        ]
+        release['gatewayArtifacts'] = {'compositionSha256': 'a' * 64, 'webSha256': 'b' * 64}
+        deploy.validate(config, release)
+        gateway['volumes'][-1]['read_only'] = False
+        with self.assertRaisesRegex(ValueError, 'Web release requires a Gateway-only read-only bind'):
+            deploy.validate(config, release)
+        gateway['volumes'][-1]['read_only'] = True
+        env['OPENCRAFT_GATEWAY_WEB_RELEASE_SHA256'] = 'c' * 64
+        with self.assertRaisesRegex(ValueError, 'differ from release.json'):
+            deploy.validate(config, release)
+
     def test_personal_git_is_configurable_but_never_half_enabled(self):
         from copy import deepcopy
         for host, runtime in [('/srv/one/git', '/var/lib/opencraft/git-credentials'),
@@ -104,6 +142,7 @@ class Safety(unittest.TestCase):
         from unittest.mock import patch
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);site=root/'site.env'
+            (root / 'release.json').write_text('{}')
             for flags, names in [('OPENCRAFT_HANDS_ROOT=1\nOPENCRAFT_PERSONAL_GIT=1\n', ['compose.root-hands.yaml','compose.personal-git.yaml']),
                                  ('OPENCRAFT_HANDS_ROOT=0\nOPENCRAFT_PERSONAL_GIT=0\n', [])]:
                 site.write_text(flags)

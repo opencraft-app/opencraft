@@ -23,6 +23,7 @@ on). `deploy.py` renders, in order:
 compose.yaml + compose.role-images.yaml + compose.portable.yaml
   [+ compose.root-hands.yaml if OPENCRAFT_HANDS_ROOT=1]
   [+ compose.personal-git.yaml if OPENCRAFT_PERSONAL_GIT=1]
+  [+ compose.gateway-composition.yaml if a Gateway composition directory is configured]
 ```
 
 The Gateway reaches Brain and Hands only through `static-docker://brain
@@ -58,8 +59,8 @@ all four images with the selected UID/GID. Container paths are stable; host path
 may live on any disk. Gateway, Brain and Hands explicitly mount the same execution
 directory even when it is outside the state directory (`init` creates its mount
 point inside the state directory privately). Hands owns browser, execution,
-terminal **and files**; no extra host file-service unit, docker-exec supervisor or
-mounted code. `OPENCRAFT_BRAIN_CPUS`/`OPENCRAFT_BRAIN_MEMORY_BYTES` and
+terminal **and files** through the existing container service.
+`OPENCRAFT_BRAIN_CPUS`/`OPENCRAFT_BRAIN_MEMORY_BYTES` and
 `OPENCRAFT_HANDS_CPUS`/`OPENCRAFT_HANDS_MEMORY_BYTES` are both the enforced
 container limits and the budgets the Gateway requests through static-docker;
 preflight rejects any disagreement.
@@ -95,6 +96,26 @@ remains responsible for signature, account, grant and admission validation.
 Account, model and external channel provisioning is separate. Health and file RPC
 checks do not prove an authenticated model turn.
 No model requests are made by this drill. Do not copy production state to test hosts.
+
+## Optional Gateway composition
+
+Set `gatewayArtifacts.compositionSha256` in the export input to lock the composition
+with the images. A product with a separate Web release can also set
+`gatewayArtifacts.webSha256`. Place the approved `composition/` and optional
+`web/` release directories beside the exported deployment bundle, outside its
+shared state and workspace directories. Select a different host location through
+`OPENCRAFT_GATEWAY_COMPOSITION_HOST_DIRECTORY` or
+`OPENCRAFT_GATEWAY_WEB_RELEASE_HOST_DIRECTORY` in `site.env`.
+
+Each bundle exports its own artifact digests. To select a new release, use its
+deployment bundle and the same site settings. `check` and `up` verify the selected
+files using the target Gateway runtime UID before changing running services.
+
+When `OPENCRAFT_WORKSPACE_AUTHORITY_SOCKET` is set, the target Gateway and Brain
+also test their actual bind mounts by connecting over a temporary sibling
+socket. The Gateway path must resolve to a private directory owned by its
+runtime UID. Brain can reach that directory through an alias.
+See [manifest and factory contract](../README.md#gateway-composition-from-a-mounted-directory).
 
 ## Migration, restart, rollback
 

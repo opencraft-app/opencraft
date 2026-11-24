@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
-import { openManagedDatabase, type Migration } from "@opencraft/sqlite-node";
+import { openManagedDatabase, SqliteLifecycleError, type Migration } from "@opencraft/sqlite-node";
 import {
   createServerMigrationComposition,
   createServerMigrationRegistry,
@@ -16,8 +16,12 @@ import {
 } from "../../packages/storage-node/src/server/migration-composition.js";
 import {
   coreSchemaValidator,
+  EXTENSION_LEDGER_SQL,
+  EXTENSION_LEDGER_TABLE,
+  readFamilyLedger,
   verifyExtensionFamilies,
 } from "../../packages/storage-node/src/server/extension-families.js";
+import { migrationFamilyLedgerSql } from "@opencraft/sql/families";
 import {
   composition,
   family,
@@ -387,4 +391,38 @@ test("a composition with families survives the Worker handoff with the same cont
     () => createServerMigrationRegistry(base).install({ ...structuredClone(single), extensions: [] }),
     /hash mismatch/,
   );
+});
+
+test("the family ledger is the shared migration-family primitive under the published table; rows and refusals unchanged", async (t) => {
+  // The published definition, byte for byte: existing installations keep their table.
+  assert.equal(
+    EXTENSION_LEDGER_SQL,
+    "CREATE TABLE IF NOT EXISTS schema_extension_migrations (family TEXT NOT NULL, version INTEGER NOT NULL, name TEXT NOT NULL, checksum TEXT NOT NULL, applied_at INTEGER NOT NULL, PRIMARY KEY (family, version)) STRICT",
+  );
+  assert.equal(EXTENSION_LEDGER_SQL, migrationFamilyLedgerSql(EXTENSION_LEDGER_TABLE));
+  const { directory, path } = await installation(t);
+  opened("extension", directory);
+  const rows = read(path, (db) =>
+    plain(db.prepare("SELECT * FROM schema_extension_migrations ORDER BY family,version").all()),
+  );
+  const ledger = () => read(path, (db) => readFamilyLedger(db, composition("extension")));
+  const refusal = (kind: string, message: string) => (error: unknown) =>
+    error instanceof SqliteLifecycleError && error.kind === kind && error.message === message;
+  assert.equal(ledger().get(FAMILY_ID), 2);
+  // A changed checksum and a version beyond the build: the Server's own kinds and messages.
+  write(path, `UPDATE schema_extension_migrations SET checksum='${"0".repeat(64)}' WHERE version=2`);
+  assert.throws(
+    ledger,
+    refusal("history-mismatch", `Server extension family ${FAMILY_ID} ledger does not match its published migrations`),
+  );
+  write(path, `UPDATE schema_extension_migrations SET checksum='${String(rows[1]!.checksum)}' WHERE version=2`);
+  write(path, `INSERT INTO schema_extension_migrations VALUES('${FAMILY_ID}',3,'later','${"0".repeat(64)}',1)`);
+  assert.throws(ledger, refusal("newer-schema", `Unsupported newer Server extension family history: ${FAMILY_ID}`));
+  write(path, "DELETE FROM schema_extension_migrations WHERE version=3");
+  // Existing rows written before the delegation stay exactly as they were, and the installation opens.
+  assert.deepEqual(
+    read(path, (db) => plain(db.prepare("SELECT * FROM schema_extension_migrations ORDER BY family,version").all())),
+    rows,
+  );
+  assert.equal(opened("extension", directory).outcome.status, "up-to-date");
 });

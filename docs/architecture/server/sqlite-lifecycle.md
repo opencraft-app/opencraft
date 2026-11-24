@@ -52,7 +52,7 @@ OpenCraft 自有 SQLite 共两类，全部经 `openManagedDatabase` 打开并在
 | | `owner-handoff/consumer-receipts.sqlite` | dsh-consumer-receipts | v1 | dsh-host 启动时 |
 | | `employee-git-vault.sqlite` | employee-git-vault-store | v1 | 执行环境插件启动时（DSH、Pi、ACP Host） |
 | **多进程共享路径** | `OPENCRAFT_MODEL_GATEWAY_DATABASE` 指定的库 | model-gateway | v4 | 每次操作短开短关：Headless、Codex 适配器、Local Agent 模型配置、codex-core 计量与 `scripts/admin/model-gateway.ts` |
-| **AccountCore DO**（可选 Cloudflare 部署，[§5.6](../platform/cloudflare-deployment.md#56-accountcore-状态2026-11-24)） | 对象自己的 SQL，三条链同库：策略记在 `schema_migrations`，其余记在 `schema_ledgers`（[同库多条迁移链](../platform/storage-ports.md#生命周期仍归-owner)） | model-usage-policy、account-pool-host、account-credential-records | v1、v4、v1 | 对象构造时（`blockConcurrencyWhile` 内）；任一链被拒绝则对象保持关闭 |
+| **AccountCore DO**（可选 Cloudflare 部署，[§5.6](../platform/cloudflare-deployment.md#56-accountcore-状态2026-11-24)） | 对象自己的 SQL，三条链同库：策略记在 `schema_migrations`，其余两个族记在 `schema_family_migrations`（`@opencraft/sql/families`，[同库多条迁移链](../platform/storage-ports.md#生命周期仍归-owner)） | model-usage-policy、account-pool-host、account-credential-records | v1、v4、v1 | 对象构造时（`blockConcurrencyWhile` 内）；任一链被拒绝则对象保持关闭 |
 
 ### 同一库文件被多个组件打开
 
@@ -1093,6 +1093,8 @@ Server 的 `migration-lineages.json` 只声明源码中已审查的有限历史�
 
 下游产品若需要在 Server 核心库里保存自己的表（与核心表同事务读写），不再维护一条把公开迁移逐个重编号进去的私有线性账本，而是登记**扩展迁移族**。入口是 `createServerMigrationComposition({ canonical, alternates, extensions })`，由产品启动与离线工具在打开存储前用 `installServerMigrationComposition` 安装，Worker 经现有 composition 交接继承；不从数据库或请求推导。
 
+容器 Gateway 的可信 VFS 装配可声明 `serverMigrations: { extensions, lineages }`。Headless 用运行镜像的 core canonical 链与公开历史解析声明，再显式交给同一个 Server owner Worker。预检命令在独立进程内校验扩展 SQL，实际数据库的账本和数据仍由 Worker 持锁检查及迁移。见 [Gateway 装配部署](../../../deploy/docker/README.md#gateway-composition-from-a-mounted-directory)。
+
 ```ts
 createServerMigrationComposition({
   canonical: SERVER_MIGRATIONS,                 // 核心链，原样使用
@@ -1102,7 +1104,7 @@ createServerMigrationComposition({
 });
 ```
 
-- **账本**：核心继续使用 `schema_migrations`，版本号与有无扩展无关；每个族在 `schema_extension_migrations(family, version, name, checksum, applied_at)` 中有自己从 1 开始的连续版本。族 id 不得为 `core`，objectPrefix 小写、以 `_` 结尾、互不前缀重叠，不得使用 `sqlite_`/`schema_`。
+- **账本**：核心继续使用 `schema_migrations`，版本号与有无扩展无关；每个族在 `schema_extension_migrations(family, version, name, checksum, applied_at)` 中有自己从 1 开始的连续版本。账本定义与行规则是运行时中立的迁移族原语 `@opencraft/sql/families`（`beside-main` 组合）在这个已发布表名下的实例，DO owner 用同一原语、表名 `schema_family_migrations`（[存储端口 §3.1"同库多条迁移链"](../platform/storage-ports.md#生命周期仍归-owner)）；表定义、既有账本行与本节的拒绝文案不变。族 id 不得为 `core`，objectPrefix 小写、以 `_` 结尾、互不前缀重叠，不得使用 `sqlite_`/`schema_`。
 - **顺序与事务**：先由 `openManagedDatabase` 迁移核心（备份、恢复、严格校验不变；核心校验只比较不属于任何族前缀且不是账本的对象），再按声明顺序逐族执行，每族一个事务，族结构校验通过后才提交账本行；任一族变化后再校验一次核心结构。核心已是最新而族有待执行步骤时，先用同一 `pre-v<核心版本>` 命名生成恢复点；核心本次已有升级快照时复用它。
 - **校验**：每族逐行核对 version/name/SHA-256；缺口或改动为 `history-mismatch`，高于声明为 `newer-schema`；账本中出现未声明的族、或只装核心的构建打开含产品对象的库，都拒绝打开。
 - **核心表所有权**：在 Server owner Worker 内（不在网络主线程）先用内存库验证：完整核心链不得声明落入任何族前缀的对象；随后在 SQLite authorizer 下执行各族 SQL，只允许读取任意表，以及创建、修改、删除、建索引、写入本族前缀的对象；触发器、视图、临时对象、ATTACH、事务语句和会写入的 PRAGMA 一律拒绝，执行后核心对象必须逐字不变。真实迁移同样在 authorizer 下执行。authorizer 无法区分 SQLite 内部维护 `sqlite_sequence` 与直接写它；`ALTER TABLE ... RENAME TO` 的新名称由之后的结构校验拦截。需要重建表（`PRAGMA foreign_keys=OFF`）的族迁移不受支持，改用新增表/列。

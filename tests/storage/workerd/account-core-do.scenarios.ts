@@ -726,14 +726,14 @@ export const ACCOUNT_CORE_DO_SCENARIOS: readonly WorkerScenario[] = [
         );
         value(await opCall(object, { op: "config.update", revision: 0, providers: [provider("p1")] }));
         value(await opCall(object, { op: "credentials.set", ref: "P1_KEY", value: PROVIDER_KEY }));
-        // The object's storage as the policy-only AccountCore left it: one chain, no pool objects, no schema ledger.
+        // The object's storage as the policy-only AccountCore left it: one chain, no pool objects, no family ledger.
         await sqlCall(object, [
           "DROP TABLE pool_affinity",
           "DROP TABLE pool_active_account",
           "DROP TABLE pool_quota",
           "DROP TABLE pool_accounts",
           "DROP TABLE account_credential_records",
-          "DROP TABLE schema_ledgers",
+          "DROP TABLE schema_family_migrations",
         ]);
         const policyLedger = await sqlCall(object, [
           "SELECT version,name,checksum FROM schema_migrations ORDER BY version",
@@ -747,14 +747,14 @@ export const ACCOUNT_CORE_DO_SCENARIOS: readonly WorkerScenario[] = [
           policyLedger,
         );
         const ledgers = await sqlCall(object, [
-          "SELECT schema_id,version,name FROM schema_ledgers ORDER BY schema_id,version",
+          "SELECT family,version,name FROM schema_family_migrations ORDER BY family,version",
         ]);
         assert.deepEqual(ledgers[0], [
-          { schema_id: "account-credential-records", version: 1, name: "account-credential-records" },
-          { schema_id: "account-pool-host", version: 1, name: "account-pool" },
-          { schema_id: "account-pool-host", version: 2, name: "codex-reset-credit-count" },
-          { schema_id: "account-pool-host", version: 3, name: "codex-account-credit-policy" },
-          { schema_id: "account-pool-host", version: 4, name: "codex-account-human-owner" },
+          { family: "account-credential-records", version: 1, name: "account-credential-records" },
+          { family: "account-pool-host", version: 1, name: "account-pool" },
+          { family: "account-pool-host", version: 2, name: "codex-reset-credit-count" },
+          { family: "account-pool-host", version: 3, name: "codex-account-credit-policy" },
+          { family: "account-pool-host", version: 4, name: "codex-account-human-owner" },
         ]);
         value(await poolCall(object, { op: "pool.add", id: "a", priority: 1, secret: poolSecret("tok-a", FAR()) }));
         const lease = value<{ token: string }>(
@@ -768,20 +768,20 @@ export const ACCOUNT_CORE_DO_SCENARIOS: readonly WorkerScenario[] = [
         );
         // A changed checksum in the pool's chain refuses the open; the original history opens again.
         const [[original]] = await sqlCall(object, [
-          "SELECT checksum FROM schema_ledgers WHERE schema_id='account-pool-host' AND version=1",
+          "SELECT checksum FROM schema_family_migrations WHERE family='account-pool-host' AND version=1",
         ]);
         await sqlCall(object, [
-          "UPDATE schema_ledgers SET checksum='0' WHERE schema_id='account-pool-host' AND version=1",
+          "UPDATE schema_family_migrations SET checksum='0' WHERE family='account-pool-host' AND version=1",
         ]);
         await object.fetch("/__test/account/evict").catch(() => undefined);
         assert.equal((await owner.call(POLICY)).status, 503);
         await sqlCall(object, [
-          `UPDATE schema_ledgers SET checksum='${String(original!.checksum)}' WHERE schema_id='account-pool-host' AND version=1`,
+          `UPDATE schema_family_migrations SET checksum='${String(original!.checksum)}' WHERE family='account-pool-host' AND version=1`,
         ]);
         await object.fetch("/__test/account/evict").catch(() => undefined);
         assert.equal((await owner.call(POLICY)).status, 200);
         // Pool objects without the pool's ledger are a foreign history: refused, never adopted.
-        await sqlCall(object, ["DELETE FROM schema_ledgers WHERE schema_id='account-credential-records'"]);
+        await sqlCall(object, ["DELETE FROM schema_family_migrations WHERE family='account-credential-records'"]);
         await object.fetch("/__test/account/evict").catch(() => undefined);
         assert.equal((await owner.call(POLICY)).status, 503);
       } finally {

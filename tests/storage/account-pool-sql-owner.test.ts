@@ -1,6 +1,7 @@
 // Several published migration chains in one database (storage-ports §3.1
-// "同库多条迁移链"): the database's own chain keeps `schema_migrations`, every
-// further chain its rows in `schema_ledgers` under its schema id. Runs on the
+// "同库多条迁移链") beside a main chain: the database's own chain keeps
+// `schema_migrations`, every family its rows in `schema_family_migrations`
+// (`@opencraft/sql/families`, composition `beside-main`). Runs on the
 // Node SQL adapter; the AccountCore Durable Object runs the same chains in
 // workerd (tests/storage/account-core-do-workerd.test.ts). Also covers the
 // account pool's shared-SQL owner, synchronously sealed credential records,
@@ -44,7 +45,13 @@ import {
   ACCOUNT_REFRESH_LEAD_MS,
   ACCOUNT_REFRESH_RETRY_MS,
 } from "../../packages/account-pool-host/src/account-refresh-schedule.ts";
-import { isMigrationLedgerObject, migrateSqlSchema, schemaMigrationLedger } from "@opencraft/sql/schema-ledgers";
+import {
+  applySqlMigrationFamilies,
+  isMigrationLedgerObject,
+  migrationFamilyLedger,
+  MIGRATION_FAMILY_LEDGER_TABLE,
+  type SqlMigrationFamily,
+} from "@opencraft/sql/families";
 
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 const KEY = `k1.${"A".repeat(43)}`;
@@ -65,83 +72,92 @@ const chain = (prefix: string, versions = 2): SqlMigration[] =>
         ? `CREATE TABLE ${prefix}_rows (id INTEGER PRIMARY KEY, v TEXT) STRICT`
         : `CREATE INDEX ${prefix}_rows_v${index} ON ${prefix}_rows(v)`,
   }));
-const declare = (prefix: string, versions = 2) => ({
-  schema: prefix,
+const declare = (prefix: string, versions = 2): SqlMigrationFamily => ({
+  id: prefix,
   migrations: hashSqlMigrations(chain(prefix, versions), sha256),
   owns: (name: string) => name.startsWith(`${prefix}_`),
 });
+const BESIDE_MAIN = { table: MIGRATION_FAMILY_LEDGER_TABLE, composition: "beside-main" } as const;
+const migrate = (database: Parameters<typeof applySqlMigrationFamilies>[0], ...families: SqlMigrationFamily[]) =>
+  applySqlMigrationFamilies(database, families, BESIDE_MAIN);
 
-test("named chains share a database with its own chain: independent versions, ledgers and outcomes", () => {
+test("families share a database beside its main chain: independent versions, ledgers and outcomes", () => {
   const { connection, database } = memory();
   const policy = migrateModelPolicySqlDatabase(database, {
     ownedByRuntime: (name) => isMigrationLedgerObject(name) || name.startsWith("alpha_") || name.startsWith("beta_"),
   });
   new ModelPolicyStore(policy).write(0, [{ engine: "pi", effort: "high" }], "admin");
-  assert.deepEqual(migrateSqlSchema(database, declare("alpha")), {
-    schema: "alpha",
-    status: "fresh",
-    appliedVersion: 2,
-  });
-  assert.deepEqual(migrateSqlSchema(database, declare("beta", 1)), {
-    schema: "beta",
-    status: "fresh",
-    appliedVersion: 1,
-  });
+  assert.deepEqual(migrate(database, declare("alpha"), declare("beta", 1)), [
+    { id: "alpha", status: "fresh", applied: 2, version: 2 },
+    { id: "beta", status: "fresh", applied: 1, version: 1 },
+  ]);
   // Version 1 exists in all three chains; each history is its own.
   assert.deepEqual(
     connection
-      .prepare("SELECT schema_id,version,name FROM schema_ledgers ORDER BY schema_id,version")
+      .prepare("SELECT family,version,name FROM schema_family_migrations ORDER BY family,version")
       .all()
       .map((row) => ({ ...row })),
     [
-      { schema_id: "alpha", version: 1, name: "alpha-1" },
-      { schema_id: "alpha", version: 2, name: "alpha-2" },
-      { schema_id: "beta", version: 1, name: "beta-1" },
+      { family: "alpha", version: 1, name: "alpha-1" },
+      { family: "alpha", version: 2, name: "alpha-2" },
+      { family: "beta", version: 1, name: "beta-1" },
     ],
   );
   const own = connection.prepare("SELECT version,name FROM schema_migrations ORDER BY version").all();
   assert.ok(own.length > 0 && own.every((row) => String(row.name) !== "alpha-1"));
-  // A later chain version is applied on the next open; nothing else moves.
-  assert.deepEqual(migrateSqlSchema(database, declare("beta", 2)).status, "migrated");
-  assert.deepEqual(migrateSqlSchema(database, declare("alpha")).status, "up-to-date");
+  // A later family version is applied on the next open; nothing else moves.
+  assert.deepEqual(
+    migrate(database, declare("alpha"), declare("beta", 2)).map((outcome) => outcome.status),
+    ["up-to-date", "migrated"],
+  );
   assert.equal(migrateModelPolicySqlDatabase(database, { ownedByRuntime: () => true }).outcome.status, "up-to-date");
   assert.equal(new ModelPolicyStore(policy).read().revision, 1);
 });
 
-test("a named chain refuses a changed, foreign, newer or unledgered history without touching the others", () => {
+test("a family refuses a changed, renamed, newer, undeclared or unledgered history; the main chain's objects are not its to judge", () => {
   const { connection, database } = memory();
-  migrateSqlSchema(database, declare("alpha"));
-  migrateSqlSchema(database, declare("beta"));
-  connection.prepare("UPDATE schema_ledgers SET checksum='0' WHERE schema_id='alpha' AND version=2").run();
+  migrate(database, declare("alpha"), declare("beta"));
+  connection.prepare("UPDATE schema_family_migrations SET checksum='0' WHERE family='alpha' AND version=2").run();
   assert.throws(
-    () => migrateSqlSchema(database, declare("alpha")),
+    () => migrate(database, declare("alpha"), declare("beta")),
     (error: unknown) => error instanceof SqlMigrationError && error.kind === "history-mismatch",
   );
-  assert.equal(migrateSqlSchema(database, declare("beta")).status, "up-to-date");
-  // A chain that renamed a published migration is another history.
-  const renamed = {
+  connection
+    .prepare("UPDATE schema_family_migrations SET checksum=? WHERE family='alpha' AND version=2")
+    .run(declare("alpha").migrations[1]!.checksum);
+  // A family that renamed a published migration is another history.
+  const renamed: SqlMigrationFamily = {
     ...declare("beta"),
     migrations: hashSqlMigrations(
       chain("beta").map((m) => ({ ...m, name: `${m.name}x` })),
       sha256,
     ),
   };
-  assert.throws(() => migrateSqlSchema(database, renamed), /Unsupported database migration history/);
-  // A ledger beyond the declared chain is a newer schema.
-  assert.throws(
-    () => migrateSqlSchema(database, declare("beta", 1)),
-    (error: unknown) => error instanceof SqlMigrationError && error.kind === "newer-schema",
-  );
-  // Owned objects without the chain's ledger are never adopted; foreign objects do not matter.
+  assert.throws(() => migrate(database, declare("alpha"), renamed), /Unsupported migration history for beta/);
+  // A ledger beyond the declared family, or a family this build does not declare, is a newer schema.
+  for (const families of [[declare("alpha"), declare("beta", 1)], [declare("alpha")]])
+    assert.throws(
+      () => migrate(database, ...families),
+      (error: unknown) => error instanceof SqlMigrationError && error.kind === "newer-schema",
+    );
+  // A family's objects without its ledger are never adopted; the main chain's objects do not matter.
   connection.exec(
     "CREATE TABLE gamma_rows (id INTEGER PRIMARY KEY) STRICT; CREATE TABLE unrelated (id INTEGER) STRICT",
   );
-  assert.throws(() => migrateSqlSchema(database, declare("gamma", 1)), /has objects but no migration ledger/);
-  assert.equal(migrateSqlSchema(database, declare("delta", 1)).status, "fresh");
-  assert.throws(() => migrateSqlSchema(database, { ...declare("delta"), schema: "Delta!" }), /Schema id/);
+  assert.throws(
+    () => migrate(database, declare("alpha"), declare("beta"), declare("gamma", 1)),
+    /has objects but no migration ledger/,
+  );
+  assert.equal(migrate(database, declare("alpha"), declare("beta"), declare("delta", 1))[2]!.status, "fresh");
+  assert.throws(() => migrate(database, { ...declare("delta"), id: "Delta!" }), /unique lowercase names/);
+  // Beside a main chain every family declares its objects.
+  assert.throws(
+    () => migrate(database, { id: "omega", migrations: declare("omega").migrations }),
+    /declare its objects/,
+  );
   // A failed migration leaves no ledger row and no object behind.
-  const broken = {
-    schema: "epsilon",
+  const broken: SqlMigrationFamily = {
+    id: "epsilon",
     migrations: hashSqlMigrations(
       [
         {
@@ -154,8 +170,16 @@ test("a named chain refuses a changed, foreign, newer or unledgered history with
     ),
     owns: (name: string) => name.startsWith("epsilon_"),
   };
-  assert.throws(() => migrateSqlSchema(database, broken), /already exists/);
-  assert.equal(validateMigrationHistory(database, broken.migrations, { ledger: schemaMigrationLedger("epsilon") }), 0);
+  assert.throws(
+    () => migrate(database, declare("alpha"), declare("beta"), declare("delta", 1), broken),
+    /already exists/,
+  );
+  assert.equal(
+    validateMigrationHistory(database, broken.migrations, {
+      ledger: migrationFamilyLedger(MIGRATION_FAMILY_LEDGER_TABLE, "epsilon"),
+    }),
+    0,
+  );
   assert.equal(connection.prepare("SELECT 1 FROM sqlite_master WHERE name='epsilon_rows'").get(), undefined);
 });
 
@@ -196,7 +220,7 @@ test("the account pool's shared-SQL chains apply the Node owner's published chai
   });
   const storage = openAccountPoolSqlStorage(database, recordSealer(KEY));
   assert.deepEqual(
-    storage.outcomes.map((outcome) => [outcome.schema, outcome.status, outcome.appliedVersion]),
+    storage.outcomes.map((outcome) => [outcome.id, outcome.status, outcome.version]),
     [
       ["account-pool-host", "fresh", 4],
       ["account-credential-records", "fresh", 1],

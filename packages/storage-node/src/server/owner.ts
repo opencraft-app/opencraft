@@ -2,7 +2,7 @@ import { SqliteLifecycleError, type DatabaseOutcome } from "@opencraft/sqlite-no
 import { WorkerOwner, ownerEntry, type OwnerCalls } from "@opencraft/worker-owner";
 import { borrowServerDatabase } from "./borrow.js";
 import type { ServerDatabase } from "./index.js";
-import { installedServerMigrationComposition, type ServerDataContract } from "./migration-composition.js";
+import { installedServerMigrationComposition, type ServerDataContract, type ServerMigrationComposition } from "./migration-composition.js";
 
 import type { CreationReceiptMethods } from "./conversation-creation-receipts.js";
 import type { ConversationResourceMethods } from "./conversation-resources.js";
@@ -59,12 +59,17 @@ export async function openServerCoreOwner<T = object>(
   {
     entry = ownerEntry(import.meta.url, "server-core-owner"),
     data,
+    migrationComposition,
   }: {
     entry?: URL;
     /** Passed to the entry's domains, e.g. a SharedArrayBuffer for a commit fence. */
     data?: Record<string, unknown>;
+    migrationComposition?: ServerMigrationComposition;
   } = {},
 ): Promise<ServerCoreStorage<T>> {
+  const installed = installedServerMigrationComposition();
+  if (installed !== undefined && migrationComposition !== undefined)
+    throw Error("Server migration composition supplied both explicitly and through the startup registry");
   const unavailable = new Set<(error: Error) => void>();
   let lost: Error | undefined;
   const { owner, ready } = await WorkerOwner.open<
@@ -72,7 +77,7 @@ export async function openServerCoreOwner<T = object>(
     { outcome: DatabaseOutcome; contract: ServerDataContract }
   >(entry, {
     name: "Server storage",
-    workerData: { directory, composition: installedServerMigrationComposition(), data },
+    workerData: { directory, composition: migrationComposition ?? installed, data },
     errors: [SqliteLifecycleError],
     onFailure: (error) => {
       lost = error;

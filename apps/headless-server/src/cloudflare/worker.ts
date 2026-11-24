@@ -2,11 +2,14 @@
 // (deploy/cloudflare/wrangler.installation-core.jsonc). It forwards the
 // installation's own routes (the shared route table and membership
 // administration) to the deployment's single InstallationCore object, the
-// account's routes (account-routes.ts) to its single AccountCore object, and
-// answers nothing else: static assets, Client DO and WorkspaceHost routing
-// belong to the edge Worker, which is not assembled yet
-// (cloudflare-deployment §5.4). Internal object-to-object paths (the account
-// authority exchange) are never forwarded.
+// account's routes (account-routes.ts) to its single AccountCore object, and a
+// workspace's operator operations (workspace-host-routes.ts) to that
+// workspace's WorkspaceHost object, addressed by its id, once the installation
+// confirms an administrator. It answers nothing else: static assets, the Client
+// DO and client sessions to a workspace belong to the edge Worker, which is not
+// assembled yet (cloudflare-deployment §5.4, §5.7). Internal object-to-object
+// paths (the account authority exchange, a workspace's owner operations) are
+// never forwarded.
 import { fetchResponse } from "@opencraft/http-exchange/fetch";
 import { accountRoute } from "../account-routes.js";
 import {
@@ -15,12 +18,20 @@ import {
   installationExchangeReply,
   installationRoute,
 } from "../installation-routes.js";
-import type { DeploymentEnv } from "./bindings.js";
+import {
+  WORKSPACE_HOST_HEADER,
+  WORKSPACE_HOST_OBJECT_PREFIX,
+  WORKSPACE_HOST_OPERATIONS,
+  workspaceHostObjectName,
+  workspaceHostRoute,
+} from "../workspace-host-routes.js";
+import type { DeploymentEnv, DeploymentRoutingEnv, InstallationCoreEnv } from "./bindings.js";
 import { ACCOUNT_CORE_OBJECT } from "./account-core.js";
 import { INSTALLATION_CORE_OBJECT } from "./installation-core.js";
 
 export { InstallationCore } from "./installation-core.js";
 export { AccountCore } from "./account-core.js";
+export { WorkspaceHost } from "./workspace-host.js";
 
 /** Whether the installation's object owns `pathname`. */
 export function installationCoreOwns(pathname: string): boolean {
@@ -32,13 +43,55 @@ export function accountCoreOwns(pathname: string): boolean {
   return accountRoute(pathname) !== null;
 }
 
+/** A deployment without the account or workspace binding routes none of their paths. */
+type EntryEnv = InstallationCoreEnv &
+  Partial<Pick<DeploymentEnv, "ACCOUNT_CORE">> &
+  Partial<Pick<DeploymentRoutingEnv, "WORKSPACE_HOST">>;
+
+const installation = (env: InstallationCoreEnv) =>
+  env.INSTALLATION_CORE.get(env.INSTALLATION_CORE.idFromName(INSTALLATION_CORE_OBJECT));
+
+/**
+ * The installation's answer for the request's own credentials: an administrator's
+ * session, or the refusal the installation gave. Only credentials travel; the
+ * request body never reaches the installation.
+ */
+async function administrator(request: Request, env: InstallationCoreEnv): Promise<Response | null> {
+  const headers = new Headers({ accept: "application/json" });
+  for (const name of ["cookie", "authorization", "cf-connecting-ip"]) {
+    const value = request.headers.get(name);
+    if (value !== null) headers.set(name, value);
+  }
+  const answer = await installation(env).fetch(
+    new Request(new URL(`${INSTANCE_ACCESS_PREFIX}session`, request.url), { headers }),
+  );
+  if (answer.status !== 200) return answer.status === 401 || answer.status === 403 ? answer : refusal(503);
+  const session = (await answer.json().catch(() => null)) as { role?: unknown } | null;
+  return session?.role === "admin" ? null : refusal(403);
+}
+
+const refusal = (status: number) =>
+  new Response(JSON.stringify({ error: status === 403 ? "administrator_required" : "workspace_unavailable" }), {
+    status,
+    headers: { "content-type": "application/json", "cache-control": "no-store" },
+  });
+
 export default {
-  async fetch(request: Request, env: DeploymentEnv): Promise<Response> {
+  async fetch(request: Request, env: EntryEnv): Promise<Response> {
     const pathname = new URL(request.url).pathname;
-    if (installationCoreOwns(pathname))
-      return env.INSTALLATION_CORE.get(env.INSTALLATION_CORE.idFromName(INSTALLATION_CORE_OBJECT)).fetch(request);
-    if (accountCoreOwns(pathname))
-      return env.ACCOUNT_CORE.get(env.ACCOUNT_CORE.idFromName(ACCOUNT_CORE_OBJECT)).fetch(request);
+    if (installationCoreOwns(pathname)) return installation(env).fetch(request);
+    const account = env.ACCOUNT_CORE;
+    if (account && accountCoreOwns(pathname)) return account.get(account.idFromName(ACCOUNT_CORE_OBJECT)).fetch(request);
+    const route = workspaceHostRoute(pathname);
+    const workspaces = env.WORKSPACE_HOST;
+    if (route && workspaces && request.method === WORKSPACE_HOST_OPERATIONS[route.operation]) {
+      const refused = await administrator(request, env);
+      if (refused) return refused;
+      const target = new URL(WORKSPACE_HOST_OBJECT_PREFIX + route.operation, request.url);
+      return workspaces.get(workspaces.idFromName(workspaceHostObjectName(route.workspace))).fetch(
+        new Request(target, { method: request.method, headers: { [WORKSPACE_HOST_HEADER]: route.workspace } }),
+      );
+    }
     return fetchResponse(installationExchangeReply(MISSING));
   },
 };
