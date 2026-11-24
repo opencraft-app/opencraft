@@ -1,8 +1,6 @@
-import {
-  parseThreadReadReceipts,
-  type ThreadReadReceiptPort,
-  type ThreadReadReceiptSource,
-} from "@opencraft/workbench-runtime";
+// Type-only imports keep this demand-loaded chunk free of startup dependencies; the
+// attention owner parses every receipt it receives (`parseThreadReadReceipts`).
+import type { ThreadReadReceiptPort, ThreadReadReceiptSource } from "@opencraft/workbench-runtime";
 
 export const THREAD_READ_RECEIPTS_PATH = "/__opencraft_thread_reads";
 
@@ -17,7 +15,7 @@ export class ThreadReadReceiptsRequestError extends Error {
   }
 }
 
-type Hint = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+type Storage_ = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
 function actorOf(value: unknown): string {
   const actorId = (value as { actorId?: unknown } | null)?.actorId;
@@ -36,15 +34,61 @@ async function failure(response: Response): Promise<ThreadReadReceiptsRequestErr
   return new ThreadReadReceiptsRequestError(code, response.status);
 }
 
+function receiptsOf(value: unknown): string[] {
+  const receipts = (value as { receipts?: unknown }).receipts;
+  if (!Array.isArray(receipts)) throw new Error("Invalid read receipts");
+  return receipts as string[];
+}
+
 const json = (response: Response) => response.headers.get("content-type")?.includes("application/json") === true;
+
+/** One browser slot: the last verified person and, once cached, their receipts. */
+class Slot {
+  constructor(
+    private readonly storage: Storage_ | undefined,
+    private readonly key: string,
+  ) {}
+  private get(): { actorId?: unknown; receipts?: unknown } | null {
+    try {
+      const raw = this.storage?.getItem(this.key);
+      return raw ? (JSON.parse(raw) as { actorId?: unknown; receipts?: unknown }) : null;
+    } catch {
+      return null;
+    }
+  }
+  actor(): string | null {
+    const actorId = this.get()?.actorId;
+    return typeof actorId === "string" && actorId && actorId.length <= 512 ? actorId : null;
+  }
+  /** A different person, or nobody, replaces the slot; the same person keeps their receipts. */
+  remember(actorId: string | null) {
+    try {
+      if (actorId === null) this.storage?.removeItem(this.key);
+      else if (this.actor() !== actorId) this.storage?.setItem(this.key, JSON.stringify({ actorId }));
+    } catch {
+      /* The slot only restores offline display; storage may be unavailable. */
+    }
+  }
+  read(actorId: string): string[] | null {
+    const slot = this.get();
+    return slot?.actorId === actorId && Array.isArray(slot.receipts)
+      ? slot.receipts.filter((item): item is string => typeof item === "string")
+      : null;
+  }
+  write(actorId: string, receipts: readonly string[]) {
+    this.storage?.setItem(this.key, JSON.stringify({ actorId, receipts }));
+  }
+}
 
 /**
  * Cross-device read receipts of the server's own logins (local accounts, OIDC and other
  * verified identity sources). The server keys receipts by the signed-in human Actor; the
  * scope is that Actor's ID and only fences an account change between requests. Reads are
  * incremental: the port returns only receipts recorded after the last page it returned for
- * the current scope. A remembered Actor (a display hint, never a credential) lets a device
- * that starts offline keep showing and queueing its own reads until the server answers.
+ * the current scope. The source owns one browser slot holding the last verified person
+ * (a display hint, never a credential) and their cached receipts: a device that starts
+ * offline keeps showing and queueing its own reads until the server answers, another
+ * person replaces the slot, and a server reporting nobody signed in removes it.
  */
 export class ServerThreadReadReceipts implements ThreadReadReceiptSource {
   readonly id = "opencraft.server-account";
@@ -55,8 +99,7 @@ export class ServerThreadReadReceipts implements ThreadReadReceiptSource {
   private constructor(
     private readonly fetcher: typeof fetch,
     private scope: string | null,
-    private readonly hint: Hint | undefined,
-    private readonly hintKey: string,
+    readonly cache: Slot,
   ) {}
 
   /**
@@ -65,16 +108,9 @@ export class ServerThreadReadReceipts implements ThreadReadReceiptSource {
    */
   static async discover(
     fetcher: typeof fetch,
-    options: { readonly hint?: Hint; readonly hintKey: string; readonly signal?: AbortSignal },
+    options: { readonly storage?: Storage_; readonly key: string; readonly signal?: AbortSignal },
   ): Promise<ServerThreadReadReceipts | undefined> {
-    const remember = (actorId: string | null) => {
-      try {
-        if (actorId === null) options.hint?.removeItem(options.hintKey);
-        else options.hint?.setItem(options.hintKey, actorId);
-      } catch {
-        /* The hint only restores offline display; storage may be unavailable. */
-      }
-    };
+    const slot = new Slot(options.storage, options.key);
     let response: Response;
     try {
       response = await fetcher(THREAD_READ_RECEIPTS_PATH, {
@@ -84,26 +120,21 @@ export class ServerThreadReadReceipts implements ThreadReadReceiptSource {
       });
     } catch {
       // Offline: keep the last verified person's read state; the server rechecks on reconnect.
-      let actorId: string | null = null;
-      try {
-        actorId = actorOf({ actorId: options.hint?.getItem(options.hintKey) });
-      } catch {
-        return undefined;
-      }
-      return new ServerThreadReadReceipts(fetcher, actorId, options.hint, options.hintKey);
+      const actorId = slot.actor();
+      return actorId === null ? undefined : new ServerThreadReadReceipts(fetcher, actorId, slot);
     }
     try {
       if (response.status === 401 || response.status === 403) {
-        remember(null);
-        return new ServerThreadReadReceipts(fetcher, null, options.hint, options.hintKey);
+        slot.remember(null);
+        return new ServerThreadReadReceipts(fetcher, null, slot);
       }
       if (!response.ok || !json(response)) {
-        if (response.status === 404 || response.ok) remember(null);
+        if (response.status === 404 || response.ok) slot.remember(null);
         return undefined;
       }
       const actorId = actorOf(await response.json());
-      remember(actorId);
-      return new ServerThreadReadReceipts(fetcher, actorId, options.hint, options.hintKey);
+      slot.remember(actorId);
+      return new ServerThreadReadReceipts(fetcher, actorId, slot);
     } catch {
       return undefined;
     }
@@ -131,12 +162,7 @@ export class ServerThreadReadReceipts implements ThreadReadReceiptSource {
       return;
     }
     if (generation !== this.generation) return;
-    try {
-      if (next === null) this.hint?.removeItem(this.hintKey);
-      else this.hint?.setItem(this.hintKey, next);
-    } catch {
-      /* Display hint only. */
-    }
+    this.cache.remember(next);
     if (next === this.scope) return;
     this.scope = next;
     this.cursor = null;
@@ -155,7 +181,7 @@ export class ServerThreadReadReceipts implements ThreadReadReceiptSource {
       const value = await this.page(response, scope);
       const cursor = (value as { cursor?: unknown }).cursor;
       if (!Number.isSafeInteger(cursor) || (cursor as number) < 0) throw new Error("Invalid read receipt cursor");
-      const receipts = parseThreadReadReceipts((value as { receipts?: unknown }).receipts);
+      const receipts = receiptsOf(value);
       // Only a page for the current scope advances its cursor; a late page never rewinds it.
       if (this.scope === scope && (this.cursor?.scope !== scope || this.cursor.value < (cursor as number)))
         this.cursor = { scope, value: cursor as number };
@@ -170,7 +196,7 @@ export class ServerThreadReadReceipts implements ThreadReadReceiptSource {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ receipts, expectedActorId: scope }),
       });
-      return parseThreadReadReceipts(((await this.page(response, scope)) as { receipts?: unknown }).receipts);
+      return receiptsOf(await this.page(response, scope));
     },
   };
 
@@ -187,4 +213,15 @@ export class ServerThreadReadReceipts implements ThreadReadReceiptSource {
     }
     return value;
   }
+}
+
+/** The demand-loaded entry: discovery with this browser's local storage, when available. */
+export function discoverServerThreadReadReceipts(fetcher: typeof fetch, key: string) {
+  let storage: Storage | undefined;
+  try {
+    storage = window.localStorage;
+  } catch {
+    /* Private or disabled storage keeps read state in memory only. */
+  }
+  return ServerThreadReadReceipts.discover(fetcher, { storage, key });
 }

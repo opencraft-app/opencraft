@@ -15,6 +15,15 @@ export interface ThreadReadReceiptSource {
   readonly port: ThreadReadReceiptPort;
   getScope(): string | null;
   subscribe(listener: () => void): () => void;
+  /**
+   * The signed-in person's browser cache/outbox, owned by the source: it holds one person
+   * only and is removed when the server reports that nobody is signed in. `read` is null
+   * when nothing is cached for that person.
+   */
+  readonly cache: {
+    read(actorId: string): string[] | null;
+    write(actorId: string, receipts: readonly string[]): void;
+  };
 }
 /** Largest batch a device sends in one merge. */
 export const THREAD_READ_RECEIPT_MERGE_LIMIT = 128;

@@ -1,26 +1,20 @@
 import type { AppServerClientRegistry } from "@opencraft/appserver-client";
 import type { HostConnectionProfile, TurnCompletionObserver } from "@opencraft/workbench-runtime";
-import { ThreadAttention, THREAD_READ_RECEIPT_MERGE_LIMIT, parseThreadReadReceipts, type ThreadReadReceiptPort, type ThreadReadReceiptSource } from "@opencraft/workbench-runtime";
+import { ThreadAttention, parseThreadReadReceipts, type ThreadReadReceiptPort, type ThreadReadReceiptSource } from "@opencraft/workbench-runtime";
 import type { PlatformAccountContributionRegistry } from "./platform-account-contributions";
-
-type ReceiptStorage = Pick<Storage, "getItem" | "setItem"> & Partial<Pick<Storage, "removeItem">>;
-/** Where receipts live: a product account scope, the server's signed-in person, or this browser only. */
-type Partition = { readonly kind: "scope"; readonly scope: string } | { readonly kind: "server"; readonly actorId: string };
-const POLL_MS = 15_000;
-const MAX_BACKOFF_MS = 5 * 60_000;
 
 /** Application lifetime owner. Account authority stores exact read identities;
  * browser storage is a cache/outbox (or local-only fallback without an account port).
- * A product account contribution's `readReceipts` port takes precedence; otherwise the
- * server's own logins (`core`) hold the signed-in person's receipts while the public scope
- * stays the local one, so other local caches keep their partitions.
+ * A product account's `readReceipts` port takes precedence; otherwise the server's own
+ * logins (`core`) hold the signed-in person's receipts and own that person's browser cache,
+ * while the public scope stays the local one so other local caches keep their partitions.
  * History catch-up borrows connected clients; it never resumes or executes work. */
 export class BrowserThreadAttention {
   private state = new ThreadAttention();
   private scope: string | null = null;
-  private partition: Partition | null = null;
+  /** The signed-in person whose receipts the server source holds, or null. */
+  private person: string | null = null;
   private failures = 0;
-  private nextPollAt = 0;
   private revision = 0;
   private epoch = 0;
   private disposed = false;
@@ -39,27 +33,18 @@ export class BrowserThreadAttention {
   private readonly live = new Map<string, number>();
   constructor(private readonly clients: Pick<AppServerClientRegistry, "get">,
     source: TurnCompletionObserver, accounts: PlatformAccountContributionRegistry,
-    private readonly storage: ReceiptStorage,
+    private readonly storage: Pick<Storage, "getItem" | "setItem">,
     private readonly prefix: string,
     private readonly resetBeforeSeconds = 0,
-    core: ThreadReadReceiptSource | null = null) {
+    private readonly core: ThreadReadReceiptSource | null = null) {
     const bind = () => {
       this.stopAccount();
       const account = accounts.getSnapshot().contribution;
       const server = account?.readReceipts ? null : core;
       const refresh = () => {
-        const snapshot = account?.getSnapshot();
-        const scope = account ? snapshot?.readStateScope ?? null : "local";
-        if (server) {
-          const actorId = server.getScope();
-          // Signed out: the previous person's cached receipts leave this browser.
-          if (actorId === null) this.clearServerCache();
-          return this.setScope(scope, actorId === null || scope === null ? undefined : server.port,
-            scope === null ? null : actorId === null ? { kind: "scope", scope } : { kind: "server", actorId });
-        }
-        // A product account that signs out takes its cached receipts with it.
-        if (account && scope === null && snapshot?.phase === "anonymous" && this.partition?.kind === "scope") this.removeCache(this.partition);
-        this.setScope(scope, account?.readReceipts, scope === null ? null : { kind: "scope", scope });
+        const scope = account ? account.getSnapshot().readStateScope ?? null : "local";
+        const person = scope === null ? null : server?.getScope() ?? null;
+        this.setScope(scope, person === null ? account?.readReceipts : server!.port, person);
       };
       const stops = [account?.subscribe(refresh), server?.subscribe(refresh)];
       this.stopAccount = () => { for (const stop of stops) stop?.(); };
@@ -75,9 +60,9 @@ export class BrowserThreadAttention {
     }));
     if (typeof window !== "undefined") {
       const refresh = () => { if (document.visibilityState === "visible") void this.synchronize(); };
-      // Foreground polling backs off while the authority keeps failing; focus and online retry at once.
-      const poll = () => { if (Date.now() >= this.nextPollAt) refresh(); };
-      const timer = window.setInterval(poll, POLL_MS);
+      // Polling skips 2^n - 1 ticks (at most 20, about 5 minutes) after n failed refreshes.
+      let skipped = 0;
+      const timer = window.setInterval(() => { if (++skipped >= Math.min(2 ** this.failures, 20)) { skipped = 0; refresh(); } }, 15_000);
       window.addEventListener("focus", refresh);
       window.addEventListener("online", refresh);
       document.addEventListener("visibilitychange", refresh);
@@ -85,60 +70,39 @@ export class BrowserThreadAttention {
         window.removeEventListener("online", refresh); document.removeEventListener("visibilitychange", refresh); });
     }
   }
-  private setScope(scope: string | null, port: ThreadReadReceiptPort | undefined, partition: Partition | null) {
-    if (this.scope === scope && this.port === port && JSON.stringify(this.partition) === JSON.stringify(partition)) return;
+  private setScope(scope: string | null, port: ThreadReadReceiptPort | undefined, person: string | null) {
+    if (this.scope === scope && this.port === port && this.person === person) return;
     this.controller.abort(); this.controller = new AbortController();
     this.synchronization = null; this.unsent.clear();
     this.port = port; this.hydrated = !port;
     this.stopState();
     this.scope = scope;
-    this.partition = partition;
-    this.failures = 0; this.nextPollAt = 0;
+    this.person = person;
+    this.failures = 0;
     this.persistedReceipts = null;
     ++this.epoch;
     this.checked.clear(); this.pending.clear(); this.live.clear();
-    const receipts = partition ? this.readCache(partition) : [];
+    let receipts: string[] = [];
+    try {
+      let value: unknown = scope === null ? null : JSON.parse(this.storage.getItem(this.storageKey(scope)) ?? "null");
+      if (person !== null) {
+        // The server source owns the person's cache; once per browser, reads made before
+        // the server held them go to the first signed-in person.
+        const imported = `${this.prefix}.server-imported`;
+        value = this.core!.cache.read(person) ?? (this.storage.getItem(imported) === null ? value : null);
+        this.storage.setItem(imported, "1");
+      }
+      if (Array.isArray(value)) receipts = value.filter((item): item is string => typeof item === "string");
+    } catch { /* Private/disabled storage retains in-memory read semantics. */ }
     this.state = new ThreadAttention(receipts);
     // Import legacy browser reads by union; never replace another device's receipts.
     if (port) for (const receipt of receipts) this.unsent.add(receipt);
-    // The person's slot is written at once, replacing any other person's and keeping an import.
-    if (partition?.kind === "server") this.persistCache();
+    if (person !== null) this.persistCache(scope!);
     this.stopState = this.state.subscribe(() => { this.publish(); });
     this.publish();
     void this.synchronize();
   }
-  private storageKey(partition: Partition) {
-    // The scope key predates server partitions; one server slot holds the signed-in person only.
-    return partition.kind === "scope" ? `${this.prefix}:${JSON.stringify(partition.scope)}` : `${this.prefix}.server-account`;
-  }
-  private readArray(key: string): string[] {
-    const value: unknown = JSON.parse(this.storage.getItem(key) ?? "null");
-    return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
-  }
-  private readCache(partition: Partition): string[] {
-    try {
-      if (partition.kind === "scope") return this.readArray(this.storageKey(partition));
-      const raw = this.storage.getItem(this.storageKey(partition));
-      const value: unknown = raw === null ? null : JSON.parse(raw);
-      const slot = value as { actorId?: unknown; receipts?: unknown } | null;
-      if (slot && slot.actorId === partition.actorId && Array.isArray(slot.receipts))
-        return slot.receipts.filter((item): item is string => typeof item === "string");
-      // Another person's receipts never seed this one; replace that slot now.
-      if (raw !== null) this.clearServerCache();
-      // Once per browser, reads made before the server held them go to the first signed-in person.
-      const imported = `${this.prefix}.server-imported`;
-      if (this.storage.getItem(imported) !== null) return [];
-      this.storage.setItem(imported, "1");
-      return this.readArray(this.storageKey({ kind: "scope", scope: "local" }));
-    } catch { return []; /* Private/disabled storage retains in-memory read semantics. */ }
-  }
-  private removeCache(partition: Partition) {
-    try { this.storage.removeItem?.(this.storageKey(partition)); } catch { /* Best effort; the slot is keyed by person. */ }
-  }
-  private clearServerCache() {
-    if (this.partition?.kind === "server") this.persistedReceipts = null;
-    try { this.storage.removeItem?.(`${this.prefix}.server-account`); } catch { /* Best effort; the slot is keyed by person. */ }
-  }
+  private storageKey(scope: string) { return `${this.prefix}:${JSON.stringify(scope)}`; }
   private publish() { ++this.revision; for (const listener of this.listeners) listener(); }
   getSnapshot = () => this.revision;
   getScope = () => this.scope;
@@ -148,27 +112,24 @@ export class BrowserThreadAttention {
     if (this.disposed || scope === null || scope !== this.scope) return;
     if (!this.state.acknowledge(hostId, threadId, turnId)) return;
     if (this.port) this.unsent.add(JSON.stringify([hostId, threadId, turnId]));
-    this.persistCache();
+    this.persistCache(scope);
     void this.synchronize();
   }
-  private persistCache() {
-    const partition = this.partition;
-    if (!partition) return;
-    const receipts = this.state.receipts();
-    const value = JSON.stringify(partition.kind === "scope" ? receipts : { actorId: partition.actorId, receipts });
+  private persistCache(scope: string) {
+    const value = JSON.stringify(this.state.receipts());
     if (value === this.persistedReceipts) return;
     try {
-      this.storage.setItem(this.storageKey(partition), value);
+      if (this.person !== null) this.core!.cache.write(this.person, this.state.receipts());
+      else this.storage.setItem(this.storageKey(scope), value);
       this.persistedReceipts = value;
     } catch { /* Retry persistence next time; in-memory outbox remains retryable. */ }
   }
   /** Refresh on account activation, foreground/online recovery and bounded foreground polling. */
   synchronize(): Promise<void> {
     if (this.synchronization) return this.synchronization;
-    const { scope, port, epoch, state, partition } = this;
+    const { scope, port, epoch, state } = this;
     if (this.disposed || scope === null || !port) return Promise.resolve();
-    // The authority's own scope: the signed-in person for the server, else the account scope.
-    const authority = partition?.kind === "server" ? partition.actorId : scope;
+    const authority = this.person ?? scope;
     const signal = this.controller.signal;
     const current = () => !this.disposed && !signal.aborted && epoch === this.epoch && scope === this.scope;
     const task = Promise.resolve().then(async () => {
@@ -179,18 +140,15 @@ export class BrowserThreadAttention {
         // A cached confirmed receipt needs no repeated upload; uncertain writes are idempotent.
         for (const receipt of remote) this.unsent.delete(receipt);
         while (current() && this.unsent.size) {
-          const batch = [...this.unsent].slice(0, THREAD_READ_RECEIPT_MERGE_LIMIT);
+          const batch = [...this.unsent].slice(0, 128);
           const confirmed = parseThreadReadReceipts(await port.merge(authority, batch, signal));
           if (!current()) return;
           if (batch.some(receipt => !confirmed.includes(receipt))) throw new Error("Read receipt not confirmed");
           state.mergeReceipts(confirmed);
           for (const receipt of batch) this.unsent.delete(receipt);
         }
-        if (current()) { this.persistCache(); this.failures = 0; this.nextPollAt = 0; }
-      } catch {
-        // Keep the scoped cache/outbox; foreground/online refresh retries, without changing execution.
-        if (current()) this.nextPollAt = Date.now() + Math.min(POLL_MS * 2 ** ++this.failures, MAX_BACKOFF_MS);
-      }
+        if (current()) { this.persistCache(scope); this.failures = 0; }
+      } catch { if (current()) this.failures++; /* Keep the scoped cache/outbox; foreground/online refresh retries, without changing execution. */ }
       finally {
         if (current()) {
           const wasHydrated = this.hydrated;

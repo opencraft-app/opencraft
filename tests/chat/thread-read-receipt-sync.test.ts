@@ -99,7 +99,7 @@ function browser(s: Server, token: { value: string }) {
   }) as typeof fetch;
   const open = async (accounts = new PlatformAccountContributionRegistry()) => {
     let complete: (result: { hostId: string; threadId: string; turnId: string }) => void = () => {};
-    const source = await ServerThreadReadReceipts.discover(fetcher, { hint: storage, hintKey: "server-actor" });
+    const source = await ServerThreadReadReceipts.discover(fetcher, { storage, key: "server-account" });
     const store = new BrowserThreadAttention(
       { get: () => undefined } as never,
       {
@@ -213,7 +213,7 @@ test("sign-out and account switch remove the previous person's receipts from the
     device.complete("alice-turn");
     device.store.acknowledge("local", "host", "thread", "alice-turn");
     await device.store.synchronize();
-    assert.match(shared.saved.get("test.server-account") ?? "", /alice-turn/);
+    assert.match(shared.saved.get("server-account") ?? "", /alice-turn/);
 
     // Another person signs in on the same browser: the server fences, the slot is replaced.
     login.value = "bob";
@@ -223,15 +223,14 @@ test("sign-out and account switch remove the previous person's receipts from the
     await device.store.synchronize();
     device.complete("alice-turn");
     assert.equal(device.store.unread("host", "thread"), true, "Bob never sees Alice's reads");
-    assert.doesNotMatch(shared.saved.get("test.server-account") ?? "", /alice-turn/);
-    assert.equal(shared.saved.get("server-actor"), bobId);
+    assert.doesNotMatch(shared.saved.get("server-account") ?? "", /alice-turn/);
+    assert.equal(JSON.parse(shared.saved.get("server-account") ?? "{}").actorId, bobId);
 
     // Signing out removes Bob's receipts and the remembered person.
     s.signOut("bob");
     await device.source!.refresh();
     assert.equal(device.source!.getScope(), null);
-    assert.equal(shared.saved.has("test.server-account"), false);
-    assert.equal(shared.saved.has("server-actor"), false);
+    assert.equal(shared.saved.has("server-account"), false);
     assert.deepEqual(
       (await s.storage.call.readThreadReadReceipts(aliceId, 0)).receipts.map((item) => item[2]),
       ["alice-turn"],
@@ -243,10 +242,10 @@ test("sign-out and account switch remove the previous person's receipts from the
 
   // A browser that starts signed out drops any slot left behind.
   const stale = browser(s, { value: "nobody" });
-  stale.saved.set("test.server-account", JSON.stringify({ actorId: aliceId, receipts: [receipt("leftover")] }));
+  stale.saved.set("server-account", JSON.stringify({ actorId: aliceId, receipts: [receipt("leftover")] }));
   const signedOut = await stale.open();
   assert.equal(signedOut.source?.getScope(), null);
-  assert.equal(stale.saved.has("test.server-account"), false);
+  assert.equal(stale.saved.has("server-account"), false);
   signedOut.store.dispose();
 });
 
@@ -264,7 +263,7 @@ test("existing browser reads go to the first signed-in person once; servers with
     ["legacy"],
   );
   device.store.dispose();
-  legacy.saved.delete("test.server-account");
+  legacy.saved.delete("server-account");
   s.signIn("alice-again", "bob");
   const again = await browser(s, { value: "alice-again" }).open();
   again.store.dispose();
@@ -312,46 +311,4 @@ test("a product account's own read receipt port takes precedence over the server
   } finally {
     device.store.dispose();
   }
-});
-
-test("a product account that signs out removes its cached receipts", async () => {
-  const saved = new Map<string, string>([['test:"a"', JSON.stringify([receipt("kept-until-sign-out")])]]);
-  let snapshot: { phase: string; readStateScope: string | null } = { phase: "authenticated", readStateScope: "a" };
-  let changed = () => {};
-  const contribution = {
-    getSnapshot: () => snapshot,
-    subscribe: (listener: () => void) => {
-      changed = listener;
-      return () => {};
-    },
-  };
-  const accounts = {
-    getSnapshot: () => ({ contribution }),
-    subscribe: () => () => {},
-  } as unknown as PlatformAccountContributionRegistry;
-  const store = new BrowserThreadAttention(
-    { get: () => undefined } as never,
-    { subscribe: () => () => {} } as never,
-    accounts,
-    {
-      getItem: (key) => saved.get(key) ?? null,
-      setItem: (key, value) => {
-        saved.set(key, value);
-      },
-      removeItem: (key) => {
-        saved.delete(key);
-      },
-    },
-    "test",
-  );
-  snapshot = { phase: "loading", readStateScope: null };
-  changed();
-  assert.equal(saved.has('test:"a"'), true, "a refresh in progress is not a sign-out");
-  snapshot = { phase: "authenticated", readStateScope: "a" };
-  changed();
-  snapshot = { phase: "anonymous", readStateScope: null };
-  changed();
-  assert.equal(saved.has('test:"a"'), false);
-  assert.equal(store.getScope(), null);
-  store.dispose();
 });

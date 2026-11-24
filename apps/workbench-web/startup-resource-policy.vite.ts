@@ -67,7 +67,13 @@
 // around the new demand-only ENV editor edge. The ENV editor itself is declared
 // demand-only above. Reserve 600 B for content-hash variance; JS/CSS/chunk
 // limits and every demand-only boundary are unchanged.
-export const startupResourceBudget = Object.freeze({ javascript: 3_700_000, css: 734_000, gzip: 1_230_500 });
+// Cross-device read receipts measure 1,230,684 B gzip against a 1,230,347 B main
+// baseline (+337 B). The server source is demand-only above and loads through a
+// dynamic import; what remains on the startup graph is the thread attention hook
+// (signed-in person partition, failure backoff) and the import stub. Before the
+// split the same feature measured 1,231,435 B. Reserve 216 B for content-hash
+// variance; JS/CSS/chunk limits and every demand-only boundary are unchanged.
+export const startupResourceBudget = Object.freeze({ javascript: 3_700_000, css: 734_000, gzip: 1_230_900 });
 export const startupJavaScriptChunkBudget = 120;
 export const requiredStartupModule = /\/(?:apps\/workbench-web\/src\/(?:workbench-entry|main)\.tsx?|plugins\/(?:builtin-agents|headless-model-services)\/src\/runtime-entry\.tsx?|plugins\/builtin-agents\/src\/index\.tsx?)$/;
 /** Trusted build owners may add roots and exclusions without relaxing core limits. */
@@ -113,6 +119,8 @@ const demandOnlyPatterns = [
   /\/cloud-desktop\/src\/panel\.tsx$/,
   /\/builtin-agents\/src\/(?:model-services|codex-accounts|ssh-connections)\/view\./,
   /\/panels\/workspace-resource-panel\./,
+  // Headless-only read receipt authority; discovered through a dynamic import at startup.
+  /\/apps\/workbench-web\/src\/runtime\/server-thread-read-receipts\.ts$/,
 ];
 export const demandOnlyModule = new RegExp(demandOnlyPatterns.map(pattern => pattern.source).join("|"));
 export interface StartupResourceReport {

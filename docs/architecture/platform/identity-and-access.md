@@ -60,8 +60,10 @@ receipt import and a scoped cache/outbox. Browser persistence is not the account
 authority. With the core authority its public scope stays the local one (other
 local caches keep their partitions), while receipts are cached in one slot that
 holds only the signed-in person: another person's slot is replaced, and a
-verified sign-out (401/403) removes the slot and the remembered Actor. A product
-account that turns anonymous removes its scope's cache. Reads made in the
+verified sign-out (401/403) removes the slot and the remembered Actor; the
+`ServerThreadReadReceipts` source owns that slot and is loaded on demand, outside
+the startup bundle. A product account's scope cache remains owned by that product.
+Reads made in the
 browser before the server held them go to the first signed-in person once. A
 device that starts offline keeps the remembered person's cached reads and queues
 new ones; the server rechecks the person on reconnect and fences a different one.
@@ -71,7 +73,7 @@ concurrent local reads, and failed or unknown writes remain retryable across
 reload. Account/provider replacement and disposal abort/fence late results.
 Initial hydration avoids flashing cached unread dots; a failed first read retains
 local/offline behavior. Foreground devices synchronize every 15 seconds,
-backing off up to 5 minutes while the authority keeps failing, and immediately
+backing off to about 5 minutes while the authority keeps failing, and immediately
 on focus, online and visible recovery; the core authority reads only changes
 after its cursor. This is bounded polling, not server Push: no notification
 channel to other devices exists. Servers without the route, signed-out visitors,
