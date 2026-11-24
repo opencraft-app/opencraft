@@ -1028,3 +1028,69 @@ test('root inputs: the Hub node state, machine identity and relay configuration 
   app = await startHeadlessServer(f.options, composition);
   assert.deepEqual(inputs.hubAuthority, authority, 'the local Hub node state is still there');
 });
+
+test('workspace-host delivery: the core assets vault serves Assets and personal Git, and workspace-host services close at their shutdown positions', { timeout: 60_000 }, async t => {
+  const { RemoteSessionCapabilities } = await import('../../packages/session-capabilities/src/remote.ts');
+  const f = await fixture(t), order = [];
+  const humanAuthConfig = join(f.root, 'human-auth.json');
+  await writeFile(humanAuthConfig, JSON.stringify({ origin: 'http://127.0.0.1', local: true, oidc: [] }), { mode: 0o600 });
+  const record = name => { if (!order.includes(name)) order.push(name); };
+  const observe = (service, name) => { const close = service.close.bind(service); service.close = (...args) => { record(name); return close(...args); }; };
+  let services;
+  const options = { ...f.options, humanAuthConfig, accessControl: true, createWebServer: async webOptions => {
+    services = webOptions;
+    for (const [key, name] of [['assetsService', 'assets'], ['fileDownloads', 'file-downloads']]) observe(webOptions[key], name);
+    const web = await createWorkbenchWebServer(webOptions);
+    observe(web, 'web');
+    return web;
+  } };
+  const composition = { createIdentity: async () => ({ providers: [], close() { record('identity'); } }), close() { record('composition'); } };
+  let app = await startHeadlessServer(options, composition); f.own(() => app?.close());
+  // The core assets vault owns personal Assets and the personal Git execution owner.
+  assert.equal(typeof services.assetsService?.handle, 'function');
+  assert.equal(typeof services.assetsService.gitAuthority, 'string');
+  assert.equal((await fetch(app.url + '/__opencraft_assets/status')).status, 401);
+  assert.equal((await stat(join(f.options.dataDirectory, 'employee-git-vault.sqlite'))).isFile(), true);
+  // The session capability listener serves the Host's own Git tool through that owner: a Turn
+  // without an admitted lease is refused instead of falling back to anonymous mode.
+  const machineId = (await readFile(join(f.options.dataDirectory, 'machine-id'), 'utf8')).trim();
+  const remote = new RemoteSessionCapabilities(f.options.dataDirectory, `server:${machineId}:dsh`);
+  await assert.rejects(remote.hostGit('dsh_synthetic', { inputId: 'unadmitted-input' }));
+  // Browser, file downloads and token usage queries reach the Web server.
+  assert.equal(typeof services.remoteBrowserService?.threadScopes, 'function');
+  assert.equal(typeof services.fileDownloads?.handle, 'function');
+  assert.equal(typeof services.createAppServerQuerySession, 'function');
+  assert.deepEqual(services.getHostReadiness(), {}, 'no Codex Core, no readiness owner');
+  await app.close(); app = undefined;
+  // Entry owners close with the listener; the vault-backed writers close after the identity and before the composition.
+  assert.ok(order.indexOf('web') === 0 && order.indexOf('file-downloads') < order.indexOf('identity'), order.join());
+  assert.deepEqual(order.filter(name => ['identity', 'assets', 'composition'].includes(name)), ['identity', 'assets', 'composition']);
+  // Every writer was released: the same data directory starts again with the same Git authority.
+  const authority = services.assetsService.gitAuthority;
+  app = await startHeadlessServer(options, composition);
+  assert.equal(services.assetsService.gitAuthority, authority);
+});
+
+test('workspace-host services: a startup failure after they opened hands them to Web and rollback releases the data lock', { timeout: 30_000 }, async t => {
+  const f = await fixture(t);
+  const humanAuthConfig = join(f.root, 'human-auth.json');
+  await writeFile(humanAuthConfig, JSON.stringify({ origin: 'http://127.0.0.1', local: true, oidc: [] }), { mode: 0o600 });
+  let missing;
+  await assert.rejects(startHeadlessServer({ ...f.options, humanAuthConfig, accessControl: true, createWebServer: async options => {
+    missing = ['assetsService', 'remoteBrowserService', 'fileDownloads', 'createAppServerQuerySession', 'getHostReadiness'].filter(key => !options[key]);
+    throw new Error('fixture web failure');
+  } }), /fixture web failure/);
+  // Every workspace-host service is open by the time the Web server is created.
+  assert.deepEqual(missing, []);
+  // The capability listener published its descriptor; rollback retains it as in a clean shutdown.
+  assert.equal((await stat(join(f.options.dataDirectory, 'session-capabilities.json'))).isFile(), true);
+  // With an account Core, the local Codex Host has a readiness owner once the listener is up.
+  let readiness;
+  const core = await startHeadlessServer({ ...f.options, codexCoreEndpoint: join(f.root, 'nonexistent-core.sock'), codexCoreAuthToken: 'synthetic-token',
+    createWebServer: async options => { readiness = options.getHostReadiness; return createWorkbenchWebServer(options); } });
+  f.own(() => core.close());
+  assert.deepEqual(Object.keys(readiness()), ['local-codex']);
+  await core.close();
+  const app = await startHeadlessServer(f.options); f.own(() => app.close());
+  assert.equal((await fetch(app.url)).status, 200);
+});
