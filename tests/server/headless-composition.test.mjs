@@ -772,6 +772,69 @@ test('model policy and model gateway routes follow instance admission on a real 
   assert.deepEqual({ revision: persisted.body.revision, rules: persisted.body.rules }, { revision: 1, rules });
 });
 
+test('model gateway store: opened by the first gateway request, borrowed by every later one, closed with the account after the listener', { timeout: 60_000 }, async t => {
+  // The gateway route borrows one store from the account instead of opening the
+  // file per request. The file is still first opened by a gateway request (never
+  // at startup), a failed open is retried by the next request, the process holds
+  // one connection however many requests it serves, and the account closes it
+  // after the Web server stopped. Linux: open connections are counted in /proc.
+  const f = await fixture(t);
+  const gatewayFile = join(f.root, 'model-gateway.sqlite');
+  const previousGateway = process.env.OPENCRAFT_MODEL_GATEWAY_DATABASE;
+  process.env.OPENCRAFT_MODEL_GATEWAY_DATABASE = gatewayFile;
+  t.after(() => {
+    if (previousGateway === undefined) delete process.env.OPENCRAFT_MODEL_GATEWAY_DATABASE;
+    else process.env.OPENCRAFT_MODEL_GATEWAY_DATABASE = previousGateway;
+  });
+  const { readdir, readlink } = await import('node:fs/promises');
+  const connections = async () => {
+    if (process.platform !== 'linux') return null;
+    let count = 0;
+    for (const fd of await readdir('/proc/self/fd')) {
+      const target = await readlink(join('/proc/self/fd', fd)).catch(() => null);
+      if (target === gatewayFile) count++;
+    }
+    return count;
+  };
+  const probe = await startHeadlessServer(f.options); await probe.close();
+  await assert.rejects(stat(gatewayFile), { code: 'ENOENT' }, 'a server without gateway requests never opens the file');
+  const proof = randomBytes(32).toString('base64url');
+  const proofPath = join(f.root, 'setup-token'), configPath = join(f.root, 'human-auth.json');
+  await writeFile(proofPath, JSON.stringify({ token: proof }), { mode: 0o600 });
+  await writeFile(configPath, JSON.stringify({ origin: probe.url, local: true, oidc: [], setupTokenFile: proofPath }), { mode: 0o600 });
+  const options = { ...f.options, port: Number(new URL(probe.url).port), humanAuthConfig: configPath };
+  // A foreign file in the gateway's place: the request that opens it fails as before (503), the server keeps serving.
+  const { DatabaseSync } = await import('node:sqlite');
+  const foreign = new DatabaseSync(gatewayFile); foreign.exec('CREATE TABLE unrelated(x)'); foreign.close();
+  const app = await startHeadlessServer(options); f.own(() => app.close());
+  const gatewayPath = app.url + '/__opencraft_model_gateway';
+  const json = { origin: app.url, 'content-type': 'application/json' };
+  const setup = await fetch(app.url + '/__opencraft_account/setup', { method: 'POST', headers: json,
+    body: JSON.stringify({ proof, mode: 'web', username: 'owner', password: 'Fixture-account-password-42' }) });
+  assert.equal(setup.status, 200, await setup.text());
+  const owner = setup.headers.get('set-cookie')?.split(';')[0];
+  const ownerId = (await fetch(app.url + '/__opencraft_account/status', { headers: { cookie: owner } }).then(r => r.json())).actor.id;
+  const read = async () => { const response = await fetch(gatewayPath, { headers: { cookie: owner } }); return { status: response.status, body: await response.json() }; };
+  assert.deepEqual(await read(), { status: 503, body: { error: 'gateway_unavailable' } });
+  assert.equal(await connections() ?? 0, 0, 'a failed open holds nothing');
+  // The operator removes the foreign file: the next request opens the gateway's own.
+  await rm(gatewayFile);
+  assert.equal((await read()).status, 200);
+  assert.equal((await stat(gatewayFile)).isFile(), true);
+  for (let index = 0; index < 5; index++) assert.equal((await read()).status, 200);
+  const configured = await fetch(gatewayPath, { method: 'POST', headers: { ...json, cookie: owner },
+    body: JSON.stringify({ action: 'configure', actor: ownerId, monthlyTokens: 1000, requestTokens: 10, concurrency: 1, revision: 0 }) });
+  assert.equal(configured.status, 200, await configured.clone().text());
+  const held = await connections();
+  if (held !== null) assert.equal(held, 1, 'one connection for every request, not one per request');
+  await app.close();
+  if (held !== null) assert.equal(await connections(), 0, 'the account closed the gateway store');
+  // Another process (the Codex Core, an operator tool) reads what the route wrote, in the same file.
+  const { ModelGatewayStore } = await import('../../packages/account-pool-host/src/model-gateway-store.ts');
+  const reader = new ModelGatewayStore(gatewayFile);
+  try { assert.equal(reader.limit(ownerId, false)?.monthlyTokens, 1000); } finally { reader.close(); }
+});
+
 // Node-local services (gateway-split §4.1.1): each is wired from its deployment
 // configuration on a real Headless server and released by `close`.
 async function withEnvironment(name, value, operation) {

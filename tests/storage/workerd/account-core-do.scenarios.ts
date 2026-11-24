@@ -10,11 +10,14 @@
 // (tests/storage/account-core-do-workerd.test.ts) and the real-Cloudflare
 // rehearsal (`npm run cf:rehearsal`).
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join, resolve } from "node:path";
 import { assembleAccount } from "../../../apps/headless-server/src/assembly/account.mjs";
+import { ModelConfigurationRepository } from "../../../apps/local-agent-host/src/model-config/repository.ts";
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import { nodeAccountInputs } from "../../../apps/headless-server/src/assembly/account-node.mjs";
 import {
   sleep,
@@ -61,11 +64,12 @@ const POLICY = "/__opencraft_model_policy";
 const PROVIDER_KEY = "synthetic-provider-key-1";
 const ROTATED_KEY = "synthetic-provider-key-2";
 
-function deploymentVars(sealingKey: string | null) {
+function deploymentVars(sealingKey: string | null, extra: Record<string, string> = {}) {
   return (origin: string) => ({
     OPENCRAFT_HUMAN_AUTH: JSON.stringify({ origin, local: true, oidc: [] }),
     OPENCRAFT_SETUP_TOKEN: PROOF,
     ...(sealingKey === null ? {} : { OPENCRAFT_ACCOUNT_SEALING_KEY: sealingKey }),
+    ...extra,
   });
 }
 
@@ -73,10 +77,12 @@ function deploymentVars(sealingKey: string | null) {
 async function deploymentBackend(
   runtime: WorkerRuntime,
   sealingKey: string | null = SEALING_KEY,
+  /** Test-only variables for the test subclass (never read by the production object). */
+  extra: Record<string, string> = {},
 ): Promise<Backend & { instance(): WorkerInstance }> {
   const persist = `account-core-do-${crypto.randomUUID()}`;
   const start = () =>
-    runtime.start(ACCOUNT_CORE_DO_SPEC, { persist, vars: deploymentVars(sealingKey), localOrigin: LOCAL_ORIGIN });
+    runtime.start(ACCOUNT_CORE_DO_SPEC, { persist, vars: deploymentVars(sealingKey, extra), localOrigin: LOCAL_ORIGIN });
   let instance = await start();
   return {
     get origin() {
@@ -428,6 +434,140 @@ async function workspaceHostCall(backend: Backend, operation: WorkspaceHostLease
   return (await response.json()) as AccountOperationResult;
 }
 
+const GATEWAY = "/__opencraft_model_gateway";
+/** Every table of the model gateway's published chain (indexes go with them). */
+const GATEWAY_TABLES = [
+  "gateway_audit",
+  "gateway_contributions",
+  "gateway_execution_heads",
+  "gateway_execution_turns",
+  "gateway_executions",
+  "gateway_limits",
+  "gateway_personal_limits",
+  "gateway_private_threads",
+  "gateway_requests",
+  "gateway_sponsors",
+  "gateway_thread_humans",
+  "gateway_thread_models",
+];
+/** The gateway chain's ledger rows: the Node owner's chain, by the same names. */
+const GATEWAY_LEDGER = [
+  { schema_id: "model-gateway", version: 1, name: "model-gateway" },
+  { schema_id: "model-gateway", version: 2, name: "personal-keys" },
+  { schema_id: "model-gateway", version: 3, name: "execution-authority" },
+  { schema_id: "model-gateway", version: 4, name: "conversation-model-binding" },
+];
+/** An administrator-declared service Humans may contribute a key for (no credential of its own). */
+const APPROVED = {
+  id: "approved",
+  name: "Approved service",
+  enabled: false,
+  protocol: "openai-responses",
+  baseUrl: "https://provider.example/v1",
+  credentialRef: null,
+  models: [{ id: "model", enabled: false }],
+};
+const CONTRIBUTED_KEY = "synthetic-contributed-key-1";
+
+/** The deployment's gateway file for the Node server; the route exists only when it is named. */
+async function withGatewayEnvironment<T>(path: string, run: () => Promise<T>): Promise<T> {
+  const previous = process.env.OPENCRAFT_MODEL_GATEWAY_DATABASE;
+  process.env.OPENCRAFT_MODEL_GATEWAY_DATABASE = path;
+  try {
+    return await run();
+  } finally {
+    if (previous === undefined) delete process.env.OPENCRAFT_MODEL_GATEWAY_DATABASE;
+    else process.env.OPENCRAFT_MODEL_GATEWAY_DATABASE = previous;
+  }
+}
+
+/**
+ * The model gateway over HTTP: admission, Human identity, administration,
+ * limits, conflicts, contributions (consent, approval, scope, withdrawal),
+ * revocation and restart. Configuration is seeded beforehand on each side.
+ */
+async function gatewaySequence(backend: Backend) {
+  const observe = normalizer(backend.origin);
+  const seen: Awaited<ReturnType<typeof observe>>[] = [];
+  const record = async (label: string, response: Promise<Response>) => {
+    seen.push(await observe(label, await response));
+  };
+  const anonymous = new Browser(backend);
+  await record("anonymous gateway", anonymous.call(GATEWAY));
+  await record("anonymous gateway page", anonymous.call(GATEWAY, undefined, { accept: "text/html" }));
+  await record("session bearer gateway", anonymous.call(GATEWAY, undefined, { authorization: "Bearer oc_actor_fixture" }));
+  const { owner, member, memberId } = await login(backend);
+  const ownerId = (
+    (await (await owner.call("/__opencraft_actors/me")).json()) as { actor: { id: string } }
+  ).actor.id;
+  const limit = { monthlyTokens: 1000, requestTokens: 10, concurrency: 2 };
+  await record("owner reads", owner.call(GATEWAY));
+  await record("owner configures", owner.call(GATEWAY, { action: "configure", actor: memberId, ...limit, revision: 0 }));
+  await record("stale revision", owner.call(GATEWAY, { action: "configure", actor: memberId, ...limit, revision: 0 }));
+  await record(
+    "invalid limit",
+    owner.call(GATEWAY, { action: "configure", actor: memberId, ...limit, concurrency: 0, revision: 1 }),
+  );
+  await record("extra field", owner.call(GATEWAY, { action: "configure", actor: memberId, ...limit, revision: 1, x: 1 }));
+  await record(
+    "cross-origin write",
+    owner.call(GATEWAY, { action: "configure", actor: ownerId, ...limit, revision: 0 }, { origin: "https://elsewhere.example" }),
+  );
+  await record("not json", owner.call(GATEWAY, { action: "configure" }, { "content-type": "text/plain" }));
+  await record("owner reads member", owner.call(`${GATEWAY}?actor=${encodeURIComponent(memberId)}`));
+  await record("member reads", member.call(GATEWAY));
+  await record("member reads owner", member.call(`${GATEWAY}?actor=${encodeURIComponent(ownerId)}`));
+  await record("member configures", member.call(GATEWAY, { action: "configure", actor: memberId, ...limit, revision: 1 }));
+  await record("member personal limit", member.call(GATEWAY, { action: "personalLimit", monthlyTokens: 500, revision: 0 }));
+  await record("member subscription", member.call(GATEWAY, { action: "subscription", operation: "start" }));
+  const contribution = {
+    action: "contribute",
+    name: "My key",
+    baseUrl: APPROVED.baseUrl,
+    protocol: "openai-responses",
+    model: "model",
+    apiKey: CONTRIBUTED_KEY,
+  };
+  await record("team without consent", member.call(GATEWAY, { ...contribution, scope: "team" }));
+  await record("unapproved endpoint", member.call(GATEWAY, { ...contribution, baseUrl: "https://elsewhere.example/v1" }));
+  await record("invalid key", member.call(GATEWAY, { ...contribution, apiKey: "has space" }));
+  const created = await member.call(GATEWAY, contribution);
+  const { providerId } = (await created.clone().json()) as { providerId: string };
+  await record("member contributes", Promise.resolve(created));
+  await record("member reads contributions", member.call(GATEWAY));
+  await record("owner directory", owner.call(GATEWAY));
+  await record(
+    "share without consent",
+    member.call(GATEWAY, { action: "scope", provider: providerId, scope: "team", revision: 0 }),
+  );
+  await record(
+    "share with team",
+    member.call(GATEWAY, { action: "scope", provider: providerId, scope: "team", revision: 0, shareWithTeam: true }),
+  );
+  await record("owner sees the team key", owner.call(GATEWAY));
+  await record("owner withdraws another's key", owner.call(GATEWAY, { action: "withdraw", provider: providerId }));
+  await record("member withdraws", member.call(GATEWAY, { action: "withdraw", provider: providerId }));
+  await record(
+    "reconcile unknown request",
+    owner.call(GATEWAY, { action: "reconcile", requestId: "missing", actualTokens: 1, reason: "fixture" }),
+  );
+  await record(
+    "revoke member",
+    owner.call("/__opencraft_access/members", { actorId: memberId, role: "member", enabled: false }),
+  );
+  await record("revoked member reads", member.call(GATEWAY));
+  await backend.restart();
+  await record("owner reads member after restart", owner.call(`${GATEWAY}?actor=${encodeURIComponent(memberId)}`));
+  await record(
+    "owner configures after restart",
+    owner.call(GATEWAY, { action: "configure", actor: memberId, ...limit, revision: 1 }),
+  );
+  return seen;
+}
+
+/** The test route standing in for the Codex selection egress (not deployed); see account-core-do-worker.ts. */
+const SUBSCRIPTION_ROUTE = "https://codex-egress.invalid";
+
 export const ACCOUNT_CORE_DO_SCENARIOS: readonly WorkerScenario[] = [
   {
     name: "the AccountCore object, behind the entry and the InstallationCore gate, answers the model policy sequence as the Node Headless server does",
@@ -587,7 +727,7 @@ export const ACCOUNT_CORE_DO_SCENARIOS: readonly WorkerScenario[] = [
     },
   },
   {
-    name: "the entry Worker never forwards the internal account authority path, and an account route it does not serve answers missing",
+    name: "the entry Worker never forwards the internal account authority path, and forwards the model gateway route to the object",
     async run({ runtime }) {
       const object = await deploymentBackend(runtime);
       try {
@@ -602,10 +742,10 @@ export const ACCOUNT_CORE_DO_SCENARIOS: readonly WorkerScenario[] = [
           assert.deepEqual(await response.json(), { error: "missing" });
         }
         const { owner } = await login(object);
-        // The model gateway is owned by the account but not assembled in the object.
+        // The model gateway is assembled in the object; without a subscription route it offers none.
         const gateway = await owner.call("/__opencraft_model_gateway");
-        assert.equal(gateway.status, 404);
-        assert.deepEqual(await gateway.json(), { error: "missing" });
+        assert.equal(gateway.status, 200, await gateway.clone().text());
+        assert.equal(((await gateway.json()) as { subscriptionAvailable: boolean }).subscriptionAvailable, false);
       } finally {
         await object.close();
       }
@@ -733,6 +873,7 @@ export const ACCOUNT_CORE_DO_SCENARIOS: readonly WorkerScenario[] = [
           "DROP TABLE pool_quota",
           "DROP TABLE pool_accounts",
           "DROP TABLE account_credential_records",
+          ...GATEWAY_TABLES.map((table) => `DROP TABLE ${table}`),
           "DROP TABLE schema_ledgers",
         ]);
         const policyLedger = await sqlCall(object, [
@@ -755,6 +896,7 @@ export const ACCOUNT_CORE_DO_SCENARIOS: readonly WorkerScenario[] = [
           { schema_id: "account-pool-host", version: 2, name: "codex-reset-credit-count" },
           { schema_id: "account-pool-host", version: 3, name: "codex-account-credit-policy" },
           { schema_id: "account-pool-host", version: 4, name: "codex-account-human-owner" },
+          ...GATEWAY_LEDGER,
         ]);
         value(await poolCall(object, { op: "pool.add", id: "a", priority: 1, secret: poolSecret("tok-a", FAR()) }));
         const lease = value<{ token: string }>(
@@ -927,6 +1069,182 @@ export const ACCOUNT_CORE_DO_SCENARIOS: readonly WorkerScenario[] = [
         await object.close();
         upstream.release();
         await upstream.close();
+      }
+    },
+  },
+  {
+    name: "the AccountCore object, behind the entry and the InstallationCore gate, answers the model gateway sequence as the Node Headless server does",
+    async run({ runtime, scratch, diagnostic }) {
+      const gatewayFile = join(scratch, `gateway-${crypto.randomUUID()}.sqlite`);
+      const nodeRun = await withGatewayEnvironment(gatewayFile, async () => {
+        const node = await nodeBackend(scratch, async (dataDirectory) => {
+          const models = join(dataDirectory, "models");
+          await mkdir(dataDirectory, { recursive: true, mode: 0o700 });
+          await mkdir(models, { recursive: true, mode: 0o700 });
+          await new ModelConfigurationRepository(fileStateDocumentStore(models)).update(0, (draft) => {
+            draft.providers = [APPROVED] as typeof draft.providers;
+          });
+        });
+        try {
+          return await gatewaySequence(node);
+        } finally {
+          await node.close();
+        }
+      });
+      const object = await deploymentBackend(runtime);
+      try {
+        value(await opCall(object, { op: "config.update", revision: 0, providers: [APPROVED] }));
+        const objectRun = await gatewaySequence(object);
+        diagnostic(objectRun.map((step) => `${step.label}: ${step.status}`).join("; "));
+        assert.deepEqual(objectRun, nodeRun);
+        // The contributed key is a sealed credential: nowhere in the object's storage in plaintext.
+        const stored = JSON.stringify(await (await object.fetch("/__test/account/storage")).json());
+        assert.doesNotMatch(stored, new RegExp(CONTRIBUTED_KEY, "u"));
+      } finally {
+        await object.close();
+      }
+      // The comparison exercised what it claims.
+      const status = (label: string) => nodeRun.find((step) => step.label === label)?.status;
+      assert.deepEqual(
+        [
+          "anonymous gateway",
+          "session bearer gateway",
+          "owner reads",
+          "owner configures",
+          "stale revision",
+          "cross-origin write",
+          "member reads owner",
+          "member configures",
+          "member subscription",
+          "unapproved endpoint",
+          "member contributes",
+          "share with team",
+          "owner withdraws another's key",
+          "member withdraws",
+          "revoked member reads",
+          "owner configures after restart",
+        ].map(status),
+        [401, 403, 200, 200, 409, 403, 403, 403, 403, 403, 200, 200, 403, 200, 403, 200],
+      );
+      const restarted = nodeRun.find((step) => step.label === "owner reads member after restart")!.body as {
+        limit: { revision: number };
+        contributions: { state: string; scope: string }[];
+      };
+      assert.equal(restarted.limit.revision, 1);
+      assert.deepEqual(
+        restarted.contributions.map(({ state, scope }) => ({ state, scope })),
+        [{ state: "withdrawn", scope: "team" }],
+      );
+    },
+  },
+  {
+    name: "a Human's personal subscription is served by the account pool in the same AccountCore object, and survives eviction",
+    async run({ runtime }) {
+      const object = await deploymentBackend(runtime, SEALING_KEY, { OPENCRAFT_TEST_SUBSCRIPTION_ROUTE: SUBSCRIPTION_ROUTE });
+      try {
+        const { owner } = await login(object);
+        const ownerId = ((await (await owner.call("/__opencraft_actors/me")).json()) as { actor: { id: string } }).actor
+          .id;
+        const namespace = createHash("sha256").update(ownerId).digest("hex");
+        const personal = async (body: Record<string, unknown>) => {
+          const response = await object.fetch("/__test/account/personal", {
+            method: "POST",
+            body: JSON.stringify({ actor: ownerId, ...body }),
+          });
+          assert.equal(response.status, 200, await response.clone().text());
+          return response.json() as Promise<Record<string, unknown>>;
+        };
+        const read = async () => (await (await owner.call(GATEWAY)).json()) as {
+          subscriptionAvailable: boolean;
+          contributions: { provider: string; state: string; scope: string }[];
+        };
+        assert.equal((await read()).subscriptionAvailable, true);
+        // No account of this Human in the pool: device login is not in this object, so starting is unavailable.
+        const unavailable = await owner.call(GATEWAY, { action: "subscription", operation: "start" });
+        assert.deepEqual({ status: unavailable.status, body: await unavailable.json() }, {
+          status: 503,
+          body: { error: "gateway_unavailable" },
+        });
+        assert.deepEqual(await personal({ op: "add" }), { personal: 1, installation: 0 });
+        const started = await owner.call(GATEWAY, { action: "subscription", operation: "start" });
+        assert.equal(started.status, 200, await started.clone().text());
+        assert.deepEqual(await started.json(), {
+          status: "complete",
+          providerId: `subscription-${namespace}`,
+          scope: "personal",
+          kind: "subscription",
+        });
+        const recorded = (await read()).contributions.map(({ provider, state, scope }) => ({ provider, state, scope }));
+        assert.deepEqual(recorded, [{ provider: `subscription-${namespace}`, state: "shared", scope: "personal" }]);
+        const configuration = value<{ providers: { id: string; baseUrl: string; catalogId: string }[] }>(
+          await opCall(object, { op: "config.read" }),
+        );
+        assert.deepEqual(
+          configuration.providers.map(({ id, baseUrl, catalogId }) => ({ id, baseUrl, catalogId })),
+          [
+            {
+              id: `subscription-${namespace}`,
+              baseUrl: `${SUBSCRIPTION_ROUTE}/personal/${namespace}/v1`,
+              catalogId: "opencraft-human-subscription",
+            },
+          ],
+        );
+        // The connection's credential (stored under the provider's reference) is a Host token of this Human's pool in
+        // the same object. Human providers are never leased to engines, so the test reads it in the object.
+        const ref = `GATEWAY_SUBSCRIPTION_${namespace.toUpperCase()}`;
+        const { host, credential } = (await personal({ op: "authenticate", ref })) as { host: string; credential: string };
+        assert.match(credential, HOST_TOKEN);
+        assert.equal(host, `personal-subscription:${namespace}`);
+        const stored = JSON.stringify(await (await object.fetch("/__test/account/storage")).json());
+        assert.doesNotMatch(stored, new RegExp(credential, "u"));
+        const cancelled = await owner.call(GATEWAY, { action: "subscription", operation: "cancel", sessionId: "none" });
+        assert.deepEqual(await cancelled.json(), { cancelled: false });
+        // Eviction: the contribution, the configuration and the pool come back from storage; polling completes again.
+        await object.fetch("/__test/account/evict").catch(() => undefined);
+        assert.deepEqual(
+          (await read()).contributions.map(({ provider, state }) => ({ provider, state })),
+          [{ provider: `subscription-${namespace}`, state: "shared" }],
+        );
+        const polled = await owner.call(GATEWAY, { action: "subscription", operation: "poll", sessionId: "none" });
+        assert.equal(polled.status, 200, await polled.clone().text());
+        assert.equal(((await polled.json()) as { status: string }).status, "complete");
+        assert.deepEqual(await personal({ op: "authenticate", ref }), { host, credential });
+      } finally {
+        await object.close();
+      }
+    },
+  },
+  {
+    name: "an AccountCore object from before the model gateway gains its chain, keeps the others, and refuses gateway objects without the chain's ledger",
+    async run({ runtime }) {
+      const object = await deploymentBackend(runtime);
+      try {
+        const { owner } = await login(object);
+        assert.equal((await owner.call(POLICY, { revision: 0, rules: [{ engine: "pi", effort: "high" }] })).status, 200);
+        value(await poolCall(object, { op: "pool.add", id: "a", priority: 1, secret: poolSecret("tok-a", FAR()) }));
+        const others = "SELECT schema_id,version,name,checksum FROM schema_ledgers WHERE schema_id<>'model-gateway' ORDER BY schema_id,version";
+        const [before] = await sqlCall(object, [others]);
+        // The object's storage as the second part left it: no gateway objects and no gateway chain.
+        await sqlCall(object, [
+          ...GATEWAY_TABLES.map((table) => `DROP TABLE ${table}`),
+          "DELETE FROM schema_ledgers WHERE schema_id='model-gateway'",
+        ]);
+        await object.fetch("/__test/account/evict").catch(() => undefined);
+        const reread = (await (await owner.call(GATEWAY)).json()) as { canManage: boolean };
+        assert.equal(reread.canManage, true);
+        const [after, gatewayChain] = await sqlCall(object, [
+          others,
+          "SELECT schema_id,version,name FROM schema_ledgers WHERE schema_id='model-gateway' ORDER BY version",
+        ]);
+        assert.deepEqual(after, before);
+        assert.deepEqual(gatewayChain, GATEWAY_LEDGER);
+        assert.equal(((await (await owner.call(POLICY)).json()) as { revision: number }).revision, 1);
+        // Gateway objects without the gateway chain's ledger are a foreign history: refused, never adopted.
+        await sqlCall(object, ["DELETE FROM schema_ledgers WHERE schema_id='model-gateway'"]);
+        await object.fetch("/__test/account/evict").catch(() => undefined);
+        assert.equal((await owner.call(GATEWAY)).status, 503);
+      } finally {
+        await object.close();
       }
     },
   },

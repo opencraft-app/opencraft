@@ -218,7 +218,7 @@ tasks 与扩展文档的领域留在原文件（SQL 语句的主线程登记随�
 
 ## 7. AccountCore 存储
 
-状态：**Node 侧准备已实施；DO 部分实现（2026-11-24）：模型策略、模型配置、密封凭据与凭据租约已在 `AccountCore` DO 中装配；第二部分装配账号池（选号、亲和、续期调度，凭据记录在同一 SQL 中同步密封，见[可选 Cloudflare 部署 §5.6](cloudflare-deployment.md#56-accountcore-状态2026-11-24)），模型网关未进入。** 目标是让[可选 Cloudflare 部署](cloudflare-deployment.md#2-目标拓扑)中每部署一个的 `AccountCore` DO 直接持有现有领域代码；Node 行为、文件名、格式、权限、迁移与 checksum 均不变，写者锁与 owner 进程拓扑保持原样。行号以 2026-11-22 源码为准。
+状态：**Node 侧准备已实施；DO 部分实现（2026-11-24）：模型策略、模型配置、密封凭据与凭据租约已在 `AccountCore` DO 中装配；第二部分装配账号池（选号、亲和、续期调度，凭据记录在同一 SQL 中同步密封，见[可选 Cloudflare 部署 §5.6](cloudflare-deployment.md#56-accountcore-状态2026-11-24)）；第三部分装配模型网关（同一 SQL 中的命名链 `model-gateway`、经共享账号路由暴露、个人订阅由同对象账号池提供）。** 目标是让[可选 Cloudflare 部署](cloudflare-deployment.md#2-目标拓扑)中每部署一个的 `AccountCore` DO 直接持有现有领域代码；Node 行为、文件名、格式、权限、迁移与 checksum 均不变，写者锁与 owner 进程拓扑保持原样。行号以 2026-11-22 源码为准。
 
 ### 7.1 持久化清单
 
@@ -227,7 +227,7 @@ tasks 与扩展文档的领域留在原文件（SQL 语句的主线程登记随�
 | `$DATA/codex/account-pool.sqlite`：`packages/account-pool-host/src/store.ts:134`（`openManagedDatabase`，schema `account-pool-host`） | 账号、配额、亲和、活动账号、`owner_actor` | SQL 端口 | 领域类 `AccountPool`（`account-pool.ts:282`）只依赖 `SqlDatabase`；事务经 `transaction()`（`account-pool.ts:853`），手写 `BEGIN IMMEDIATE`／`COMMIT` 已删除。迁移 v1–3 文本移到 `account-pool-schema.ts`（runtime-neutral，`check:storage` 经导入绑定读取），v4 仍来自生成注册表；`PRAGMA foreign_keys=ON` 与无账本旧库采纳（`legacyAccountPoolMigration`，需 `:memory:` 对照库）留在 Node owner |
 | `secrets/account-<id>.json`（托管 OAuth 凭据或外部 `auth.json` 引用）与 `secrets/host-<sha256>.json`（Host／调用方 token）：`store.ts:72` | 凭据记录 | 凭据记录端口 `AccountCredentialRecords`（`account-pool.ts:220`） | Node 适配器 `fileAccountCredentialRecords()` 保持 0700 目录、0600 文件、临时文件＋rename 原子写、删除时的 tombstone 回滚 |
 | 外部 `auth.json`（`codex login` 写入，运维者持有） | 引用目标，只读 | Node 专属 | 经 `readExternalFile()`；DO 适配器应拒绝（外部共享文件只存在于主机） |
-| `$DATA/model-gateway.sqlite`（`OPENCRAFT_MODEL_GATEWAY_DATABASE`）：`model-gateway-store.ts:84` | 准入账本、限额、贡献、执行授权、计量 | SQL 端口 | `ModelGatewayStore` 领域方法只依赖 `SqlDatabase`；构造参数可为路径（Node owner，含 `busy_timeout=5000`）或已迁移的 `ModelGatewayDatabase` |
+| `$DATA/model-gateway.sqlite`（`OPENCRAFT_MODEL_GATEWAY_DATABASE`）：`model-gateway-store.ts`（`openModelGatewayDatabase`） | 准入账本、限额、贡献、执行授权、计量 | SQL 端口 | 领域 `ModelGatewayStore`（`model-gateway.ts`，中立：只依赖 `SqlDatabase`，迁移链 `modelGatewayMigrations` 为纯数据，不导入 `node:` 与 `sqlite-node`）与 Node owner 分文件；Node 入口（`model-gateway-store.ts`，包根导出）保留按路径构造（`openManagedDatabase`、schema `model-gateway`、`busy_timeout=5000`），文件、账本与 checksum 不变（`model-gateway-sql-port.test.ts` 钉住）。DO：同一链作为命名链 `model-gateway`（`model-gateway-sql-owner.ts`，链声明集中在 `modelGatewaySqlSchema()`）。设置路由 `modelGatewayHttp` 借用组合根打开的 store（`ModelGatewayStoreHolder`），不再按请求开库；Codex Core、引擎计量与 sponsor 仍在各自进程按调用打开同一文件 |
 | `model-usage-policy.sqlite`：`packages/model-usage-policy/src/index.ts:11` | 模型使用策略与审计 | SQL 端口 | 同上，`ModelPolicyStore` 接受路径或 `ModelPolicyDatabase`；`write()` 改为 `transaction()` |
 | `native.mjs:22、45` 的只读 `DatabaseSync` | Daemon／DSH 插件跨进程读取策略与网关贡献 | Node 专属（消费方） | 不迁移；Cloudflare 上改由 AC 投影或 RPC 提供 |
 | `.codex-writer.sqlite`／`.codex-runtime.sqlite`：`codex-writer-lock.ts:14` | 内核释放的 `BEGIN EXCLUSIVE` 写者锁＋`/proc` 扫描 | Node 专属进程所有权 | 保留；DO 的单实例语义替代 |
@@ -239,7 +239,7 @@ tasks 与扩展文档的领域留在原文件（SQL 语句的主线程登记随�
 
 ### 7.2 验证
 
-`tests/storage/account-pool-sql-port.test.ts`（已加入 `test:storage-ports`）把同一组用例分别跑在 Node 文件 owner（`AccountPoolStore`）与"`nodeSqlDatabase(:memory:)`＋`@opencraft/sql/migrations` 精简账本＋内存凭据记录"上：账号与凭据、选号与亲和、配额耗尽轮换、删除级联、Host token、Human owner 隔离；另验证凭据写入失败时账号行经端口事务回滚、精简账本与托管 owner 的 schema 指纹相同、非法设置会关闭交入的存储。第三种装配"共享库＋命名链＋密封 SQL 凭据记录"（AccountCore 的布局）跑同一组用例；`tests/storage/schema-ledgers.test.ts` 覆盖多链账本、凭据记录密封与续期调度。DO 中的运行见 `test:account-core:workerd`（与 Node 文件 owner 同一序列逐项相同，含驱逐后由 alarm 续期、从策略单链升级与历史拒绝）。
+`tests/storage/account-pool-sql-port.test.ts`（已加入 `test:storage-ports`）把同一组用例分别跑在 Node 文件 owner（`AccountPoolStore`）与"`nodeSqlDatabase(:memory:)`＋`@opencraft/sql/migrations` 精简账本＋内存凭据记录"上：账号与凭据、选号与亲和、配额耗尽轮换、删除级联、Host token、Human owner 隔离；另验证凭据写入失败时账号行经端口事务回滚、精简账本与托管 owner 的 schema 指纹相同、非法设置会关闭交入的存储。第三种装配"共享库＋命名链＋密封 SQL 凭据记录"（AccountCore 的布局）跑同一组用例；`tests/storage/schema-ledgers.test.ts` 覆盖多链账本、凭据记录密封与续期调度。DO 中的运行见 `test:account-core:workerd`（与 Node 文件 owner 同一序列逐项相同，含驱逐后由 alarm 续期、从策略单链升级与历史拒绝）。模型网关：`tests/storage/model-gateway-sql-port.test.ts`（进入 `test:storage-ports`）先钉住 Node owner 的文件、账本、checksum、对象清单与 `busy_timeout`，再把同一领域序列跑在 Node 文件 owner 与"共享库＋命名链"上并要求逐项相同，另验证无账本的网关对象与改动的历史被拒绝；`test:account-core:workerd` 让同一网关 HTTP 序列在 AC 与 Node `startHeadlessServer` 上逐项相同。
 
 ### 7.3 阻碍 DO 的 Node 依赖
 
@@ -252,6 +252,6 @@ tasks 与扩展文档的领域留在原文件（SQL 语句的主线程登记随�
 | Unix socket 控制面（`node:http` 请求） | `codex-core-control.ts`、`apps/codex-core/src/main.ts` | 保留；DO 以 RPC 暴露同一操作集合 |
 | `setInterval`／`setTimeout`（用量轮询、设备码过期、诊断） | `codex-usage.ts`、`codex-auth.ts`、`server.ts`、`split-core.ts` | DO 中改由 alarm |
 | `node:crypto`、`Buffer`、`node:zlib`（`configured-forward.ts` 解压） | 多处 | `nodejs_compat` 预期可用，待在 workerd 中核实 |
-| `@opencraft/sqlite-node` 值导入 | `store.ts`、`model-gateway-store.ts`、`model-usage-policy/src/index.ts` | `AccountPool` 已与 Node owner 分文件；网关与策略的 owner 打开仍与领域类同文件，DO 装配前需拆分或加 `workerd` 导出条件 |
+| `@opencraft/sqlite-node` 值导入 | `store.ts`、`model-gateway-store.ts`、`model-usage-policy/src/index.ts` | 已拆分：`AccountPool`、`ModelPolicyStore`（`store.ts`）与 `ModelGatewayStore`（`model-gateway.ts`）均与各自 Node owner 分文件；DO 只经生成迁移注册表（纯数据）触及 `sqlite-node` |
 
-DO 已有（第二部分）：按 schema id 区分的账本（`schema_ledgers`，策略继续用默认账本）、同步密封的 SQL 凭据记录适配器、续期的 `fetch` 交换契约与 owner 唤醒上的续期调度。DO 仍缺：维护容器本身（续期、设备登录与用量查询的执行方），模型网关的 owner 拆分与装配；租约的对外接口已有部署内部交换与最小出口（`credential-lease-exchange`、`credential-egress`），签发方 WorkspaceHost 与出口的计量尚无。
+DO 已有（第二部分）：按 schema id 区分的账本（`schema_ledgers`，策略继续用默认账本）、同步密封的 SQL 凭据记录适配器、续期的 `fetch` 交换契约与 owner 唤醒上的续期调度。第三部分：模型网关的 owner 拆分与 DO 装配（命名链 `model-gateway`，贡献经账号模块的模型配置与凭据端口，个人订阅端口 `PersonalSubscriptions`：Node 为 Codex Core 控制客户端，AC 为同对象账号池）。DO 仍缺：维护容器本身（续期、设备登录与用量查询的执行方），Codex 选号出口（个人订阅完成后的请求路由）；租约的对外接口已有部署内部交换与最小出口（`credential-lease-exchange`、`credential-egress`），签发方 WorkspaceHost 与出口的计量尚无。

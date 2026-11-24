@@ -9,6 +9,8 @@ import type {
   ModelCredentialRepository,
 } from "@opencraft/local-agent-host/model-config/repository";
 import type { CredentialLeases } from "@opencraft/account-pool-host/credential-leases";
+import type { ModelGatewayStoreHolder } from "@opencraft/account-pool-host/model-gateway";
+import type { PersonalSubscriptions } from "@opencraft/account-pool-host/personal-subscriptions";
 import type { AccountAuthority, InstallationAuthorityServices } from "../account-routes.ts";
 
 /** The Node gateway's installation services (kept as the account module's historical name). */
@@ -17,7 +19,7 @@ export type AccountHttpAuthorities = InstallationAuthorityServices<IncomingMessa
 /** Who may use the account's routes for one request; the policy authority may answer asynchronously. */
 export interface AccountRouteAuthorities<Request> {
   policy(request: Request): ModelPolicyAuthority | null | Promise<ModelPolicyAuthority | null>;
-  gateway(request: Request): AccountAuthority | null;
+  gateway(request: Request): AccountAuthority | null | Promise<AccountAuthority | null>;
 }
 
 /** The account's storage and services as ports; each root passes its own adapters. */
@@ -28,8 +30,18 @@ export interface AccountInputs {
   modelDocuments: StateDocumentStore;
   /** Model credentials, by reference. */
   modelSecrets: SecretStore;
-  /** The model gateway's handler over a gateway authority; absent or null when the deployment has none. */
-  modelGateway?(authority: (request: any) => AccountAuthority | null): HttpExchangeHandler<any> | null;
+  /**
+   * The model gateway's storage and personal subscriptions; read once, when the
+   * first HTTP service is created. Absent or null when the deployment has none.
+   */
+  modelGateway?(): ModelGatewayInputs | null;
+}
+
+export interface ModelGatewayInputs {
+  /** The gateway store; the account borrows it for its routes and closes it in `close`. */
+  readonly store: ModelGatewayStoreHolder;
+  /** Personal subscriptions; null when the deployment offers none. */
+  readonly subscriptions: PersonalSubscriptions | null;
 }
 
 export interface AccountAssembly {
@@ -45,7 +57,7 @@ export interface AccountAssembly {
   createHttpService(authorities: AccountHttpAuthorities): HttpExchangeHandler<IncomingMessage>;
   /** A new speech transcription service; the Web server closes it with itself. */
   createSpeechService(): { close(): void };
-  /** Closes the policy writer; the composition root calls it before releasing its writer lock. */
+  /** Closes the gateway store (if one was opened), then the policy writer; the composition root calls it before releasing its writer lock. */
   close(): void;
 }
 

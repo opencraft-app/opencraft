@@ -12,7 +12,24 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { STORE_MIGRATIONS } from "@opencraft/sqlite-node/store-migrations-data";
-import { ModelGatewayStore } from "../../packages/account-pool-host/src/model-gateway-store.ts";
+import { createHash } from "node:crypto";
+import { nodeSqlDatabase } from "@opencraft/sqlite-node";
+import { hashSqlMigrations, SqlMigrationError } from "@opencraft/sql/migrations";
+import { migrateSqlSchema } from "@opencraft/sql/schema-ledgers";
+import {
+  ModelGatewayStore,
+  openModelGatewayDatabase,
+} from "../../packages/account-pool-host/src/model-gateway-store.ts";
+import {
+  ModelGatewayError,
+  ModelGatewayStore as SqlModelGatewayStore,
+} from "../../packages/account-pool-host/src/model-gateway.ts";
+import {
+  migrateModelGatewaySqlDatabase,
+  modelGatewaySqlSchema,
+} from "../../packages/account-pool-host/src/model-gateway-sql-owner.ts";
+
+const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 
 /** The published chain as the generated registry holds it; the Node owner's ledger must equal it. */
 const PUBLISHED = [
@@ -100,11 +117,152 @@ test("the Node model gateway owner keeps its file, ledger, checksums, busy timeo
 
 test("the Node model gateway owner sets the busy timeout for the processes sharing its file", async (t) => {
   const path = join(await directory(t), "gateway.sqlite");
-  const store = new ModelGatewayStore(path);
+  const opened = openModelGatewayDatabase(path);
   try {
-    const database = (store as unknown as { db: { prepare(sql: string): { get(): Record<string, unknown> } } }).db;
-    assert.equal(Number(Object.values(database.prepare("PRAGMA busy_timeout").get())[0]), 5000);
+    assert.equal(Number(Object.values(opened.database.prepare("PRAGMA busy_timeout").get()!)[0]), 5000);
   } finally {
-    store.close();
+    opened.close();
   }
+});
+
+/** One admission, limit, contribution, execution and metering sequence; failures become their error kinds. */
+function domainSequence(store: SqlModelGatewayStore) {
+  const seen: [string, unknown][] = [];
+  const step = (label: string, run: () => unknown) => {
+    try {
+      seen.push([label, run()]);
+    } catch (error) {
+      seen.push([label, { error: error instanceof ModelGatewayError ? error.kind : String(error) }]);
+    }
+  };
+  step("configure", () =>
+    store.configure("human-a", { monthlyTokens: 300, requestTokens: 100, concurrency: 2 }, 0, "admin"),
+  );
+  step("stale", () => store.configure("human-a", { monthlyTokens: 1, requestTokens: 1, concurrency: 1 }, 0, "admin"));
+  step("default limit", () =>
+    store.configure("*", { monthlyTokens: 50, requestTokens: 10, concurrency: 1 }, 0, "admin"),
+  );
+  step("bind", () => store.bind("thread-a", "human-a"));
+  step("bind child", () => store.bind("thread-b", null, "thread-a"));
+  step("personal limit", () => store.setPersonalLimit("human-a", 250, 0));
+  let first = "";
+  step("reserve", () => (first = store.reserve("thread-a", "model").id));
+  step("dispatched", () => store.dispatched(first));
+  step("finish", () =>
+    store.finish(first, 40, { inputTokens: 30, outputTokens: 10, cacheReadTokens: null, cacheWriteTokens: null }),
+  );
+  let second = "";
+  step("reserve again", () => (second = store.reserve("thread-b", "model").id));
+  step("reserve a third", () => store.reserve("thread-a", "model"));
+  step("unknown outcome", () => store.finish(second, null));
+  step("reconcile", () => store.reconcile(second, 20, "admin", "receipt"));
+  step("summary", () => store.summary("human-a"));
+  step("unsponsored", () => store.reserve("thread-z", "model"));
+  step("prepare", () => store.prepareContribution("byok-1", "human-a", "approved"));
+  step("share", () => store.contributionState("byok-1", "human-a", "shared"));
+  step("scope", () => store.setScope("byok-1", "human-a", "team", 0));
+  step("can use", () => [store.canUse("byok-1", "human-b"), store.canUse("byok-1", null)]);
+  step("bind conversation", () => store.bindConversationModel("thread-c", "human-a", "configured/byok-1/model"));
+  step("conversation", () => store.conversationModel("thread-c"));
+  step("withdraw", () => store.contributionState("byok-1", "human-a", "withdrawn"));
+  step("forbidden reconnect", () => store.reconnectContribution("byok-1", "human-a"));
+  step("contributions", () => store.contributions("human-a"));
+  step("execution", () =>
+    store.beginExecution("thread-e", {
+      id: "exec-1",
+      authorizer: "human-a",
+      executor: null,
+      model: "model",
+      expiresAt: Date.UTC(2030, 0, 1),
+    }),
+  );
+  step("execution head", () => store.execution("thread-e"));
+  step("end execution", () => store.endExecution("thread-e", "exec-1"));
+  step("requests", () => store.requests("human-a"));
+  return seen;
+}
+
+const normalize = (value: unknown) => {
+  const ids = new Map<string, string>();
+  return JSON.parse(
+    JSON.stringify(value, (key, item) =>
+      typeof item === "number" && item > 1e12 ? "<time>" : key === "at" || key === "created_at" ? "<time>" : item,
+    ).replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gu, (id) => {
+      if (!ids.has(id)) ids.set(id, `<id${ids.size}>`);
+      return ids.get(id)!;
+    }),
+  );
+};
+
+test("the gateway domain gives the same results on the Node file owner and on a named chain of a shared database", async (t) => {
+  const path = join(await directory(t), "gateway.sqlite");
+  // A clock that advances per call: request order (by creation time) is then defined on both owners.
+  const clock = () => {
+    let at = Date.UTC(2026, 10, 1);
+    return () => (at += 1000);
+  };
+  const node = new ModelGatewayStore(path, clock());
+  let nodeRun: unknown;
+  try {
+    nodeRun = normalize(domainSequence(node));
+  } finally {
+    node.close();
+  }
+  const connection = new DatabaseSync(":memory:");
+  const database = nodeSqlDatabase(connection);
+  // Another chain already in the database, as the account pool's are in the AccountCore object.
+  migrateSqlSchema(database, {
+    schema: "neighbour",
+    migrations: hashSqlMigrations(
+      [{ version: 1, name: "neighbour", sql: "CREATE TABLE neighbour_rows(id INTEGER PRIMARY KEY) STRICT" }],
+      sha256,
+    ),
+    owns: (name) => name.startsWith("neighbour_"),
+  });
+  const shared = new SqlModelGatewayStore(migrateModelGatewaySqlDatabase(database), clock());
+  assert.deepEqual(shared.outcome, { status: "fresh", appliedVersion: 4, movedAsidePaths: [] });
+  assert.deepEqual(normalize(domainSequence(shared)), nodeRun);
+  // The sequence exercised refusals as well as writes.
+  const result = (label: string) => (nodeRun as [string, unknown][]).find(([name]) => name === label)?.[1];
+  assert.deepEqual(["stale", "unsponsored", "forbidden reconnect"].map(result), [
+    { error: "gateway_revision_conflict" },
+    { error: "gateway_human_sponsor_required" },
+    { error: "gateway_contribution_forbidden" },
+  ]);
+  assert.equal((result("summary") as { usedTokens: number }).usedTokens, 40);
+  // The shared chain's objects are exactly the Node file's, and its versions, names and checksums are the published ones.
+  assert.deepEqual(
+    connection
+      .prepare("SELECT type,name FROM sqlite_master WHERE name LIKE 'gateway\\_%' ESCAPE '\\' ORDER BY name")
+      .all()
+      .map((row) => `${String(row.type)}:${String(row.name)}`),
+    OBJECTS.filter((name) => name !== "table:schema_migrations"),
+  );
+  const declaration = modelGatewaySqlSchema();
+  assert.deepEqual(
+    declaration.migrations.map(({ version, name, checksum }) => ({ version, name, checksum })),
+    PUBLISHED,
+  );
+  assert.equal(migrateModelGatewaySqlDatabase(database).outcome?.status, "up-to-date");
+  // The other chain is untouched, and a single-chain Node file was never given a shared ledger (above).
+  assert.equal(connection.prepare("SELECT count(*) AS n FROM neighbour_rows").get()!.n, 0);
+  connection.close();
+});
+
+test("a shared database refuses gateway objects without the gateway chain's ledger, and a changed gateway history", () => {
+  const foreign = new DatabaseSync(":memory:");
+  foreign.exec("CREATE TABLE gateway_limits(actor TEXT PRIMARY KEY) STRICT");
+  assert.throws(() => migrateModelGatewaySqlDatabase(nodeSqlDatabase(foreign)), SqlMigrationError);
+  foreign.close();
+  const connection = new DatabaseSync(":memory:");
+  const database = nodeSqlDatabase(connection);
+  migrateModelGatewaySqlDatabase(database);
+  // A recorded migration whose checksum differs from the published one.
+  const declaration = modelGatewaySqlSchema();
+  const changed = {
+    ...declaration,
+    migrations: declaration.migrations.map((m) => (m.version === 2 ? { ...m, checksum: "0".repeat(64) } : m)),
+  };
+  assert.throws(() => migrateSqlSchema(database, changed), SqlMigrationError);
+  connection.close();
 });

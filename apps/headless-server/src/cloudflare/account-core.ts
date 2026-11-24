@@ -19,8 +19,13 @@
 //                       renewals through the maintenance executor's fetch binding and the schedule
 //                       on the object's alarm (Node: account-pool.sqlite, private files, a native
 //                       codex maintenance process and runtime timeouts)
-// Not assembled here: the model gateway, speech and personal subscriptions
-// (cloudflare-deployment §5.6 "仍缺").
+//   model gateway       the same store and route over a further named chain (`model-gateway`) of the
+//                       object's SQL, contributions over the object's model configuration and sealed
+//                       credentials, the route's authority asked of the InstallationCore object (Node:
+//                       OPENCRAFT_MODEL_GATEWAY_DATABASE, the `models/` files, the installation's services)
+//   personal            the Human's accounts in this object's account pool (Node: the Codex Core over its
+//   subscriptions       control socket); device login and the subscription route are not assembled
+// Not assembled here: speech, device login and the Codex selection egress (cloudflare-deployment §5.6 "仍缺").
 import { durableObjectSqlDatabase } from "@opencraft/storage-cloudflare/sql";
 import { durableObjectStateDocumentStore } from "@opencraft/storage-cloudflare/state";
 import { durableObjectSecretStore } from "@opencraft/storage-cloudflare/secrets";
@@ -29,6 +34,12 @@ import { recordSealer } from "@opencraft/secret-storage/sealed-records";
 import { migrateModelPolicySqlDatabase } from "@opencraft/model-usage-policy/sql-owner";
 import { isMigrationLedgerObject } from "@opencraft/sql/schema-ledgers";
 import { openAccountPoolSqlStorage, ownedByAccountPoolSchemas } from "@opencraft/account-pool-host/sql-owner";
+import { ModelGatewayStore, ownedByModelGateway } from "@opencraft/account-pool-host/model-gateway";
+import { migrateModelGatewaySqlDatabase } from "@opencraft/account-pool-host/model-gateway-sql-owner";
+import {
+  accountPoolPersonalSubscriptions,
+  type PersonalSubscriptionRoute,
+} from "@opencraft/account-pool-host/personal-subscriptions";
 import { assembleAccountPoolCore, type AccountPoolCore } from "@opencraft/account-pool-host/pool-core";
 import { AccountPool } from "@opencraft/account-pool-host/account-pool";
 import { fetchAccountRenewal } from "@opencraft/account-pool-host/renewal";
@@ -63,6 +74,10 @@ export interface AccountCoreServices {
   readonly account: AccountAssembly;
   /** The account pool: selection, affinity and renewal; this object is their only writer. */
   readonly pool: AccountPoolCore;
+  /** One Human's accounts (`ownerActor`) in the same pool storage; personal subscriptions read them. */
+  personalPool(actor: string): AccountPool;
+  /** The model gateway's store: admission, limits, contributions and metering; this object is its only writer. */
+  readonly gateway: ModelGatewayStore;
   /** The credential lease exchange for bound callers; resolves null for any other path. */
   readonly leaseExchange: (request: Request) => Promise<Response | null>;
   readonly http: HttpExchangeHandler<FetchRequestView>;
@@ -116,18 +131,33 @@ export class AccountCore {
     const sealing = await importSecretSealingKey(env.OPENCRAFT_ACCOUNT_SEALING_KEY);
     const records = recordSealer(env.OPENCRAFT_ACCOUNT_SEALING_KEY);
     const database = durableObjectSqlDatabase(storage);
-    // Three chains share the object's SQL: the policy keeps the database's own
-    // ledger, the account pool and its credential records keep `schema_ledgers`.
+    // Four chains share the object's SQL: the policy keeps the database's own
+    // ledger; the account pool, its credential records and the model gateway are named chains.
     const policy = migrateModelPolicySqlDatabase(database, {
       // workerd's own tables and the other chains' objects are not policy schema.
       ownedByRuntime: (name) =>
-        name.startsWith("_cf_") || isMigrationLedgerObject(name) || ownedByAccountPoolSchemas(name),
+        name.startsWith("_cf_") ||
+        isMigrationLedgerObject(name) ||
+        ownedByAccountPoolSchemas(name) ||
+        ownedByModelGateway(name),
     });
     const poolStorage = openAccountPoolSqlStorage(database, records);
+    const gateway = new ModelGatewayStore(migrateModelGatewaySqlDatabase(database));
+    // A Human's pool is a view of the same storage (rows owned by that Human), built per use so it never holds
+    // state the installation pool changed; it leaves affinity to the installation pool.
+    const personalPool = (actor: string) =>
+      new AccountPool(poolStorage, { ownerActor: actor, now: () => wake.now(), preserveAffinity: true });
+    const route = this.personalSubscriptionRoute(env);
     const account = assembleAccount({
       openModelPolicy: () => policy,
       modelDocuments: durableObjectStateDocumentStore(storage, { prefix: "models/" }),
       modelSecrets: sealedSecretStore(durableObjectSecretStore(storage), sealing),
+      modelGateway: () => ({
+        // The object owns its SQL; the account closing the store releases nothing.
+        store: { store: () => gateway, close: () => gateway.close() },
+        // Offered only where a route serves them; without one the route reports none, as Node without a Core.
+        subscriptions: route ? accountPoolPersonalSubscriptions({ pool: personalPool, route }) : null,
+      }),
     });
     this.#disposers = [() => account.close()];
     const maintenance = env.ACCOUNT_MAINTENANCE;
@@ -169,10 +199,30 @@ export class AccountCore {
         const answer = await ask("policy", request);
         return !(answer instanceof Response) && answer.scope === "policy" ? answer.authority : null;
       },
-      // The model gateway is not assembled in this object; its route answers `missing`.
-      gateway: () => null,
+      // The same question for the gateway, at each point the route asks it (before, after the body, during writes).
+      async gateway(request) {
+        const answer = await ask("gateway", request);
+        return !(answer instanceof Response) && answer.scope === "gateway" ? answer.authority : null;
+      },
     });
-    return { account, pool, http, ask, leaseExchange: serveCredentialLeaseExchange(account.credentialLeases) };
+    return {
+      account,
+      pool,
+      personalPool,
+      gateway,
+      http,
+      ask,
+      leaseExchange: serveCredentialLeaseExchange(account.credentialLeases),
+    };
+  }
+
+  /**
+   * Where a Human's completed subscription sends its requests and reads its
+   * models. The Codex selection egress does not exist yet (§5.6 "仍缺"), so a
+   * deployment has none and completed subscriptions answer unavailable.
+   */
+  protected personalSubscriptionRoute(_env: AccountCoreEnv): PersonalSubscriptionRoute | null {
+    return null;
   }
 
   /** The object's alarm: wakes whichever owner work is due (account renewals); each re-derives from state. */
