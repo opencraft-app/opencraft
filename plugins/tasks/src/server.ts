@@ -10,8 +10,8 @@ import {
   type TaskProperties,
   type TaskPriority,
 } from "@opencraft/appserver-protocol";
-import { TasksFault, TasksSqliteStore, TASK_RECYCLE_RETENTION_MS, type TaskEventContext } from "./sqlite";
-export { TasksFault } from "./sqlite";
+import { TasksFault, TasksSqliteStore, TASK_RECYCLE_RETENTION_MS, type TaskEventContext } from "./node-store";
+export { TasksFault } from "./node-store";
 function text(input: unknown, max: number, empty = false): string {
   if (
     typeof input !== "string" ||
