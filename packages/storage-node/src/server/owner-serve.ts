@@ -1,12 +1,7 @@
 import { serveWorkerOwner } from "@opencraft/worker-owner/serve";
 import { installServerMigrationComposition, openServerDatabase, type ServerDatabase } from "./index.js";
-import { conversationCreationReceiptMethods } from "./conversation-creation-receipts.js";
-import { conversationResourceMethods } from "./conversation-resources.js";
 import { conversationResourceLegacyJournal } from "./conversation-resource-journal.js";
-import { accountModelDefaultsMethods } from "./account-model-defaults.js";
-import { environmentCreationReservationMethods } from "./environment-creation-reservations.js";
-import { actorSshKeyMethods } from "./actor-ssh-keys.js";
-import { threadReadReceiptMethods } from "./thread-read-receipts.js";
+import { serverCoreStorageMethods } from "./core-methods.js";
 import type { ServerMigrationComposition } from "./migration-composition.js";
 
 /** Domain services that run beside the Server owner, on its connection. */
@@ -41,21 +36,11 @@ export function serveServerCoreOwner(
       if (composition !== undefined) installServerMigrationComposition(composition);
       const owner = await openServerDatabase(directory);
       let served: ServerCoreDomains;
-      let creation: ReturnType<typeof conversationCreationReceiptMethods>;
-      let resources: ReturnType<typeof conversationResourceMethods>;
-      let modelDefaults: ReturnType<typeof accountModelDefaultsMethods>;
-      let reservations: ReturnType<typeof environmentCreationReservationMethods>;
-      let sshKeys: ReturnType<typeof actorSshKeyMethods>;
-      let readReceipts: ReturnType<typeof threadReadReceiptMethods>;
+      let storage: ReturnType<typeof serverCoreStorageMethods>;
       try {
-        creation = conversationCreationReceiptMethods(owner.database);
         // The retired journal lives beside the database; it is imported when the
         // lifecycle opens, not here, because only the lifecycle knows its owners.
-        resources = conversationResourceMethods(owner.database, conversationResourceLegacyJournal(directory));
-        modelDefaults = accountModelDefaultsMethods(owner.database);
-        reservations = environmentCreationReservationMethods(owner.database);
-        sshKeys = actorSshKeyMethods(owner.database);
-        readReceipts = threadReadReceiptMethods(owner.database);
+        storage = serverCoreStorageMethods(owner.database, conversationResourceLegacyJournal(directory));
         served = domains?.(owner, data ?? {}) ?? { methods: {} };
       } catch (error) {
         await owner.close();
@@ -63,7 +48,7 @@ export function serveServerCoreOwner(
       }
       return {
         ready: { outcome: owner.outcome, contract: owner.contract },
-        methods: { ...served.methods, ...creation, ...resources, ...modelDefaults, ...reservations, ...sshKeys, ...readReceipts },
+        methods: { ...served.methods, ...storage },
         close: async () => {
           try {
             await served.close?.();

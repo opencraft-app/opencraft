@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 
 import WebSocket, { WebSocketServer } from "ws";
 import { serveNodeHttpExchange } from "@opencraft/http-exchange/node";
+import { installationGate, installationRoute, MISSING as INSTALLATION_MISSING, REFUSAL_PAGE_HEADERS } from "./installation-routes.ts";
 import { ResumeRegistry } from "@opencraft/app-host-resume/server";
 import { acceptAppHostClientSession } from "@opencraft/client-session/app-host";
 import { trackSocketHeartbeat } from "./websocket-heartbeat.mjs";
@@ -51,6 +52,15 @@ function sendJson(response, statusCode, value) {
   response.setHeader("cache-control", "no-store");
   response.setHeader("content-type", "application/json; charset=utf-8");
   response.end(`${JSON.stringify(value)}\n`);
+}
+
+/** Frames a shared installation reply (installation-routes.ts) as this gateway always has. */
+function sendInstallationReply(response, reply) {
+  if (reply.kind === "json") { sendJson(response, reply.status, reply.value); return; }
+  const [[cacheName, cacheValue], ...headers] = REFUSAL_PAGE_HEADERS;
+  response.setHeader(cacheName, cacheValue);
+  response.writeHead(reply.status, Object.fromEntries(headers));
+  response.end(reply.page);
 }
 
 async function readJsonBody(request, maximumBytes = 256 * 1024) {
@@ -465,6 +475,28 @@ export async function createWorkbenchWebServer({
   ...unknownOptions
 } = {}) {
   if (Object.keys(unknownOptions).length) throw new Error("Unknown workbench gateway option; check server composition");
+  // The installation services behind the shared route table (installation-routes.ts).
+  const installationServices = {
+    account: accountService && (exchange => accountService.handle(exchange)),
+    auth: authService && (exchange => authService.handle(exchange)),
+    actorCollaboration: actorCollaborationService && (exchange => actorCollaborationService.handle(exchange)),
+    // Actor API has its own verified admission. A Session credential is never a
+    // substitute for membership on the legacy unscoped execution interfaces.
+    actors: actorService && (exchange => actorService.handle(exchange)),
+    serverInformation: serverInformationService,
+    // Personal model defaults, read receipts and SSH keys verify the signed-in human Actor and its admission themselves.
+    modelDefaults: accountModelDefaultsService,
+    threadReads: threadReadReceiptsService,
+    sshKeys: actorSshKeysService,
+  };
+  // The admission gate's view of this gateway; a request from the local machine is admitted.
+  const installationGateFor = local => ({
+    sessionRequest: actorService ? request => actorService.isSessionRequest(request) : undefined,
+    admission: request => local ? 204 : authService?.invalidSession(request) ? 401
+      : accessService?.admissionStatus(request) ?? identityService?.admissionStatus(request) ?? 204,
+    legacyAdmission: actorService ? request => actorService.legacyAdmissionStatus(request) : undefined,
+    login: !!authService,
+  });
   if (instanceId !== null && (typeof instanceId !== 'string' || !/^[A-Za-z0-9._-]{1,128}$/u.test(instanceId))) throw new Error('Invalid instance storage identity');
   if (assetVersion !== null && (typeof assetVersion !== 'string' || !assetVersion || assetVersion.length > 128)) throw new Error('Invalid asset version');
   if (identityService !== null && (!identityService || ["admissionStatus", "connectionContext", "handle"].some(method => typeof identityService[method] !== "function"))) throw new Error("Invalid request identity service");
@@ -550,70 +582,28 @@ export async function createWorkbenchWebServer({
       // These capabilities only reach a frozen report, never installation APIs.
       if (htmlPreviews && await htmlPreviews.handlePublic(request, response, sameOrigin)) return;
       if (!local && !["/health", "/__opencraft_health"].includes(url.pathname)) await accessService?.prepare?.(request);
-      // Login/callback endpoints must remain reachable before instance admission.
-      if (url.pathname === '/setup' || url.pathname === '/__opencraft_account' || url.pathname.startsWith('/__opencraft_account/')) {
-        if (accountService && await serveNodeHttpExchange(request, response, exchange => accountService.handle(exchange))) return;
-        sendJson(response, 404, { error: 'missing' }); return;
-      }
-      if (url.pathname === '/__opencraft_auth' || url.pathname.startsWith('/__opencraft_auth/')) {
-        if (authService && await serveNodeHttpExchange(request, response, exchange => authService.handle(exchange))) return;
-        sendJson(response, 404, { error: 'missing' }); return;
-      }
-      if (url.pathname.startsWith('/__opencraft_actors/collaboration/')) {
-        if (actorCollaborationService && await serveNodeHttpExchange(request, response, exchange => actorCollaborationService.handle(exchange))) return;
-        sendJson(response, 404, { error: 'missing' }); return;
-      }
-      // Actor API has its own verified admission. A Session credential is never a
-      // substitute for membership on the legacy unscoped execution interfaces.
-      if (url.pathname === '/__opencraft_actors' || url.pathname.startsWith('/__opencraft_actors/')) {
-        if (actorService && await serveNodeHttpExchange(request, response, exchange => actorService.handle(exchange))) return;
-        sendJson(response, 404, { error: 'missing' }); return;
+      // Login, setup, Actor and personal routes remain reachable before instance
+      // admission; each service verifies its own caller. The route table is shared
+      // with the InstallationCore front door (installation-routes.ts).
+      const installationService = installationRoute(url.pathname);
+      if (installationService) {
+        const handler = installationServices[installationService];
+        if (handler && await serveNodeHttpExchange(request, response, handler)) return;
+        sendInstallationReply(response, INSTALLATION_MISSING); return;
       }
       if (url.pathname === "/__opencraft_connectors") {
         if (connectorService && await connectorService.handle(request, response)) return;
         sendJson(response, 404, { error: "missing" }); return;
       }
-      if (url.pathname === '/__opencraft_server_information') {
-        if (serverInformationService && await serveNodeHttpExchange(request, response, serverInformationService)) return;
-        sendJson(response, 404, { error: 'missing' }); return;
-      }
-      // Personal model defaults verify the signed-in human Actor and its admission themselves.
-      if (url.pathname === '/__opencraft_model_defaults') {
-        if (accountModelDefaultsService && await serveNodeHttpExchange(request, response, accountModelDefaultsService)) return;
-        sendJson(response, 404, { error: 'missing' }); return;
-      }
-      // Cross-device read receipts verify the signed-in human Actor and its admission themselves.
-      if (url.pathname === '/__opencraft_thread_reads') {
-        if (threadReadReceiptsService && await serveNodeHttpExchange(request, response, threadReadReceiptsService)) return;
-        sendJson(response, 404, { error: 'missing' }); return;
-      }
-      // Personal SSH keys verify the signed-in human Actor and its admission themselves.
-      if (url.pathname === '/__opencraft_ssh_keys' || url.pathname.startsWith('/__opencraft_ssh_keys/')) {
-        if (actorSshKeysService && await serveNodeHttpExchange(request, response, actorSshKeysService)) return;
-        sendJson(response, 404, { error: 'missing' }); return;
-      }
       if ((url.pathname === '/__opencraft_push' || url.pathname === '/__opencraft_notifications')) {
         if (turnPushService && await turnPushService.handle(request, response)) return;
         sendJson(response, 404, { error: 'missing' }); return;
       }
-      if (actorService?.isSessionRequest(request)) {
-        sendJson(response, 403, { error: 'actor_resource_interface_required' }); return;
-      }
-      // Health remains available to installation probes; no application data bypasses admission.
-      if (!["/health", "/__opencraft_health"].includes(url.pathname)) {
-        const status = local ? 204 : authService?.invalidSession(request) ? 401 : accessService?.admissionStatus(request) ?? identityService?.admissionStatus(request) ?? 204;
-        if (status !== 204) {
-          response.setHeader("cache-control", "private, no-store");
-          if (request.headers.accept?.includes("text/html")) {
-            response.writeHead(status, { "content-type": "text/html; charset=utf-8", "x-content-type-options": "nosniff", "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'" });
-            response.end('<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>访问受限</title><style>:root{color-scheme:light dark}a{color:inherit}a:focus-visible{outline:2px solid currentColor;outline-offset:4px}</style><body style="font:16px system-ui;margin:12vh auto;padding:24px;max-width:480px"><h1>暂时无法访问</h1><p>' + (status === 401 ? (authService ? '请登录后继续。' : '请通过认证入口重新访问。') : '你的账号暂未获得访问权限，请联系管理员。') + '</p>' + (authService ? '<a href="/__opencraft_auth/">登录与账号</a> · ' : '') + '<a href="">重新检查</a></body></html>');
-          } else sendJson(response, status, { error: status === 401 ? "authentication_required" : "instance_access_denied" });
-          return;
-        }
-      }
-      if (!["/health", "/__opencraft_health"].includes(url.pathname) && actorService?.legacyAdmissionStatus(request) === 403) {
-        sendJson(response, 403, { error: 'actor_access_denied' }); return;
-      }
+      // The installation's admission gate (shared with the InstallationCore front
+      // door): a Session bearer never reaches unscoped interfaces, health stays
+      // available to installation probes, and no application data bypasses admission.
+      const refusal = installationGate(request, url.pathname, request.headers.accept, installationGateFor(local));
+      if (refusal) { sendInstallationReply(response, refusal); return; }
       if (local && url.pathname === '/__opencraft_access/admission' && request.method === 'GET') { response.writeHead(204, { 'cache-control': 'no-store' }); response.end(); return; }
       // Assets fences every in-flight request on login/member/Actor authority
       // events and answers a definite 403 before any write. The polling watch

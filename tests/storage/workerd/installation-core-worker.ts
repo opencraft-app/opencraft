@@ -3,8 +3,10 @@
 // database with the slim Server lifecycle and serves the unchanged
 // access-control domain stores over RPC. Bundled with esbuild (`workerd`
 // export condition, nodejs_compat) and driven through Miniflare by
-// tests/storage/installation-core-workerd.test.ts. Test-only: no deployment
-// assembly, routing, authentication front door or projection fan-out yet.
+// tests/storage/installation-core-workerd.test.ts. Test-only fixture for the
+// migration and domain-port scenarios; the production object, which opens the
+// installation module and serves its front door, is
+// apps/headless-server/src/cloudflare/installation-core.ts.
 import { DurableObject } from "cloudflare:workers";
 import { durableObjectSqlDatabase } from "@opencraft/storage-cloudflare/sql";
 import type { DurableObjectStorage } from "@opencraft/storage-cloudflare/bindings";

@@ -51,8 +51,13 @@ import { actorSshKeysHttp } from "../actor-ssh-keys-http.ts";
  * calls each step at its original position in startup and each named
  * disposer at its original position in the shutdown order; a disposer for
  * something that was never opened resolves without effect.
+ *
+ * `ownerWake` (optional, `@opencraft/owner-wake`) drives the instance and Actor
+ * access watches; without it they keep the runtime's own timeouts, as the Node
+ * root does. A single-alarm owner (the InstallationCore Durable Object) passes
+ * its merged alarm.
  */
-export function assembleInstallation({ serverStorage, identityFence, isHuman }) {
+export function assembleInstallation({ serverStorage, identityFence, isHuman, ownerWake }) {
   let membership, actorStore, identity, instanceAccess, loginAdmission;
   let humanAccounts, localAccountPlugin, humanAuth, accountManagement, accountApplication;
   let providers, identityWrites, actorAccess;
@@ -143,6 +148,7 @@ export function assembleInstallation({ serverStorage, identityFence, isHuman }) 
       createPasswordHasher,
       readSetupToken,
       openLoginAdmission,
+      loginAttempts,
     }) {
       if (
         accessMemberProviders?.length &&
@@ -175,6 +181,8 @@ export function assembleInstallation({ serverStorage, identityFence, isHuman }) 
           localAccountPlugin = localAccounts;
         } else humanAccounts.disableLocalAccounts();
         humanAuth = new HumanAuth(humanAccounts, actorStore, humanConfiguration, humanLoginPage, externalHuman);
+        // Where login, setup and invitation attempts are counted; without it, this process's memory (Node).
+        if (loginAttempts) humanAuth.useAttemptLimiter(loginAttempts);
         if (humanConfiguration.local && membership) {
           let setupToken;
           if (readSetupToken) {
@@ -195,6 +203,7 @@ export function assembleInstallation({ serverStorage, identityFence, isHuman }) 
             auth: humanAuth,
             management: accountManagement,
             setupToken,
+            ...(loginAttempts ? { attempts: loginAttempts } : {}),
           });
         }
       }
@@ -214,6 +223,7 @@ export function assembleInstallation({ serverStorage, identityFence, isHuman }) 
           accessMemberProviders ?? [],
           identity?.admissionPolicy ?? loginAdmission,
         );
+      if (ownerWake) instanceAccess?.useOwnerWake(ownerWake);
       return { humanAccounts, humanAuth, accountApplication, loginAdmission, instanceAccess };
     },
     /**
@@ -247,6 +257,7 @@ export function assembleInstallation({ serverStorage, identityFence, isHuman }) 
       // Login sessions, identity bindings and Actor administration commit in the
       // Server owner Worker; reads stay on this thread's permission projection.
       identityWrites = new IdentityWrites(serverStorage.call, actorStore, humanAccounts, identityFence, membership);
+      if (ownerWake) actorAccess.useOwnerWake(ownerWake);
       actorAccess.useOwnerWrites(identityWrites);
       // Login-time password record upgrades commit in the owner Worker too.
       localAccountPlugin?.useOwnerWrites(identityWrites);

@@ -170,6 +170,14 @@ for (const file of ["packages/http-exchange/src/index.ts", "packages/http-exchan
 for (const file of [
   "apps/headless-server/src/assembly/installation.mjs",
   "apps/headless-server/src/assembly/root-inputs.ts",
+  // The InstallationCore composition (cloudflare-deployment §5): the same-thread
+  // core owner, the owner domains and storage methods it shares with the Node
+  // owner Worker, the shared route table, and the Durable Object assembly.
+  "apps/headless-server/src/assembly/server-core-same-thread.ts",
+  "apps/headless-server/src/server-core-domains.mjs",
+  "packages/storage-node/src/server/core-methods.ts",
+  "apps/headless-server/src/installation-routes.ts",
+  "apps/headless-server/src/cloudflare",
   "packages/access-control/src/commit-fence.ts",
   "packages/access-control/src/human-auth-configuration.ts",
   "packages/hub-network/src/state-port.ts",

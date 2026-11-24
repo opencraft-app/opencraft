@@ -3,17 +3,12 @@
 // here on the owner connection. The network thread calls them through
 // `openServerCoreOwner(...).call` (docs/architecture/server/server-core-owner.md).
 import { serveServerCoreOwner } from "@opencraft/storage-node/server-owner-serve";
-import { ThreadNoteStore } from "@opencraft/plugin-thread-summary/note-store";
 import { ModelGatewayStore } from "@opencraft/account-pool-host";
 import { projectModelCatalog } from "@opencraft/model-usage-policy/transport";
-import { CapabilityBindings } from "@opencraft/session-capabilities/bindings";
-import { IdentityWriteOwner, identityWriteMethods } from "@opencraft/access-control/identity-writes";
 import { sharedMemoryCommitFence } from "@opencraft/access-control/commit-fence/shared-memory";
-import { localAccountPasswordUpgrade } from "@opencraft/access-control/local-account-upgrade-owner";
-import { orchestrationRuntimeOwnerMethods } from "@opencraft/access-control/orchestration-runtime-domain";
-import { serverSpacesOwnerMethods } from "@opencraft/access-control/server-spaces-domain";
 import { installCommunicationExtension } from "@opencraft/access-control/communication-extension";
 import { workerData } from "node:worker_threads";
+import { serverCoreDomains } from "./server-core-domains.mjs";
 
 // The network thread's communication extension, as the standalone orchestration
 // Worker installed it. Trusted parent-owned data; no request selects the module.
@@ -21,33 +16,15 @@ const extensionModule = workerData?.data?.communicationExtensionModule;
 if (typeof extensionModule === "string") installCommunicationExtension((await import(extensionModule)).communicationExtension);
 
 serveServerCoreOwner((owner, data) => {
-  const notes = new ThreadNoteStore(owner);
-  const capabilityBindings = new CapabilityBindings(owner);
   // The commit fence lets the network thread recheck Actor administration under
   // this writer lock; the shared buffer crosses to this Worker as data.
-  const identity = new IdentityWriteOwner(owner, data.identityFence ? sharedMemoryCommitFence(data.identityFence) : undefined, {
-    upgradeLocalPassword: localAccountPasswordUpgrade(owner.database),
+  const domains = serverCoreDomains(owner, {
+    identityFence: data.identityFence ? sharedMemoryCommitFence(data.identityFence) : undefined,
   });
-  // Orchestration runtime, communication and automation ledgers, and the Server
-  // space ledger: one writer on this connection, in FIFO with every domain here.
-  const orchestration = orchestrationRuntimeOwnerMethods(owner);
-  const spaces = serverSpacesOwnerMethods(owner);
-  const readConversationOwner = owner.database.prepare(
-    "SELECT server_id AS serverId, owner_actor_id AS ownerActorId FROM opencraft_thread_relations WHERE thread_id=?",
-  );
   return {
     methods: {
-      // Login sessions, identity bindings and Actor administration (IdentityWrites).
-      ...identityWriteMethods(identity),
-      ...orchestration.methods,
-      ...spaces.methods,
-      /** Merges a shared note update; access was checked on the network thread. */
-      exchangeThreadNote: (serverId, threadId, update, vector) => notes.exchange(serverId, threadId, update, vector),
-      /** Every capability binding, loaded once into the network thread's projection. */
-      capabilityBindings: () => capabilityBindings.snapshot(),
-      /** Commits one write the projection already checked and applied. */
-      applyCapabilityBinding: (write) => capabilityBindings.apply(write),
-      readConversationOwner: (threadId) => readConversationOwner.get(threadId) ?? null,
+      ...domains.methods,
+      // Node-only: both catalogs read a policy or gateway database by path.
       projectModelCatalog,
       filterGatewayModelCatalog: (path, actorId, models) => {
         const gateway = new ModelGatewayStore(path);
@@ -66,20 +43,6 @@ serveServerCoreOwner((owner, data) => {
         }
       },
     },
-    close: async () => {
-      try {
-        await orchestration.close();
-      } finally {
-        try {
-          identity.close();
-        } finally {
-          try {
-            capabilityBindings.close();
-          } finally {
-            notes.close();
-          }
-        }
-      }
-    },
+    close: domains.close,
   };
 });
