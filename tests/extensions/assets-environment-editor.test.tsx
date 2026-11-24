@@ -115,3 +115,55 @@ test("the status route advertises personal ENV; anything but true is refused", a
   const malformed = new ServerAssetsAccount(async () => Response.json({ version: 1, scope, environment: "yes" }));
   await assert.rejects(malformed.refresh());
 });
+
+test("the ENV editor counts inherited values before showing its empty state and labels the scope once", async () => {
+  const { JSDOM } = await import("jsdom");
+  const { createRoot } = await import("react-dom/client");
+  const { act } = await import("react");
+  const dom = new JSDOM("<!doctype html><div id='root'></div>", { pretendToBeVisual: true });
+  const keys = ["window", "document", "IS_REACT_ACT_ENVIRONMENT", "HTMLElement", "Node", "Event"] as const;
+  const previous = Object.fromEntries(keys.map((key) => [key, (globalThis as Record<string, unknown>)[key]]));
+  Object.assign(globalThis, {
+    window: dom.window,
+    document: dom.window.document,
+    IS_REACT_ACT_ENVIRONMENT: true,
+    HTMLElement: dom.window.HTMLElement,
+    Node: dom.window.Node,
+    Event: dom.window.Event,
+  });
+  const render = async (inherited: { name: string; value: string; secret: false }[]) => {
+    const Editor = createAssetVariablesEditor(
+      async () => Response.json({ projectId: null, revision: 0, variables: [], inherited, projects: [] }),
+      account(),
+    );
+    const container = dom.window.document.createElement("div");
+    dom.window.document.body.append(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <IntlProvider locale="en" onError={() => {}}>
+          <Editor scope={scope} onStateChange={() => {}} />
+        </IntlProvider>,
+      );
+    });
+    await act(async () => {
+      for (let i = 0; i < 5; i++) await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    const text = container.textContent ?? "";
+    const labels = [...container.querySelectorAll("h2, h3, label")].map((node) => node.textContent);
+    await act(async () => root.unmount());
+    container.remove();
+    return { text, labels };
+  };
+  try {
+    const inheritedOnly = await render([{ name: "SHARED_TOKEN", value: "synthetic", secret: false }]);
+    assert.match(inheritedOnly.text, /SHARED_TOKEN/);
+    assert.match(inheritedOnly.text, /From all my projects/);
+    assert.doesNotMatch(inheritedOnly.text, /No variables yet/);
+    assert.equal(inheritedOnly.labels.filter((label) => label === "Scope").length, 1);
+    const none = await render([]);
+    assert.match(none.text, /No variables yet/);
+  } finally {
+    Object.assign(globalThis, previous);
+  }
+});

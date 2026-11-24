@@ -92,6 +92,18 @@ test("SSH form: loading, no key, key ready, conflict and expired-account states"
   assert.match(conflicted, /role="alert"[^>]*>Changed elsewhere\./);
   assert.match(conflicted, /Load latest/);
 
+  // A failed read is reported once, in the form's own status slot beside the
+  // conflict it follows; it is not appended as a second notice below the form.
+  const readFailed = render(
+    controller(keyed, {
+      operationErrors: { read: "Read failed.", [host + ":credentials"]: "Changed elsewhere." },
+      operationCodes: { [host + ":credentials"]: "conflict" },
+    }),
+  );
+  assert.match(readFailed, /role="alert"[^>]*>Read failed\. Changed elsewhere\.</);
+  assert.equal(readFailed.split("Read failed.").length, 2);
+  assert.doesNotMatch(readFailed, /settings-control-notice/);
+
   const invalid = render(
     controller(keyed, {
       operationErrors: { [host + ":credentials"]: "token copy" },

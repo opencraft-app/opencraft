@@ -207,8 +207,48 @@ try {
     await page.getByRole("alertdialog").getByRole("button", { name: "Cancel", exact: true }).click();
     assert.equal(await page.getByRole("textbox", { name: "Commit name", exact: true }).inputValue(), "Keep this draft");
     await page.getByRole("button", { name: "Load latest", exact: true }).click();
+    // A failed reload is reported in the dialog's existing feedback slot, not
+    // behind the modal. The slot is replaced in place (no block added or removed;
+    // only its text changes) and the draft is retained.
+    const dialog = page.getByRole("alertdialog");
+    const readFailure = "Connection information is unavailable. Refresh and try again.";
+    const dialogBefore = await dialog.boundingBox();
+    const slot = dialog.locator(".settings-control-notice");
+    assert.equal(await slot.count(), 1);
+    await slot.evaluate((node) => Reflect.set(window, "assetsDialogSlot", node));
+    const failedRead = (route: import("playwright").Route) =>
+      route.request().method() === "GET"
+        ? route.fulfill({ status: 503, contentType: "application/json", body: '{"error":"unavailable"}' })
+        : route.fallback();
+    await page.route("**/__opencraft_assets/git-connections", failedRead);
+    await dialog.getByRole("button", { name: "Load latest", exact: true }).click();
+    await dialog.getByText(readFailure, { exact: true }).waitFor();
+    assert.equal(await slot.evaluate((node) => node === Reflect.get(window, "assetsDialogSlot")), true);
+    assert.equal((await dialog.boundingBox())?.width, dialogBefore?.width);
+    assert.equal(
+      await page.evaluate(
+        (text) =>
+          [...document.querySelectorAll("body *")].filter(
+            (node) =>
+              node.childElementCount === 0 &&
+              node.textContent?.includes(text) &&
+              !node.closest("[role=alertdialog]") &&
+              (node as HTMLElement).checkVisibility(),
+          ).length,
+        readFailure,
+      ),
+      0,
+    );
+    await page.screenshot({ path: resolve(output, platform + "-git-reload-failed-" + theme + ".png") });
+    await page.unroute("**/__opencraft_assets/git-connections", failedRead);
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    // Closed, the same failure appears once, in the form's status slot.
+    assert.equal(await page.getByText(readFailure).filter({ visible: true }).count(), 1);
+    assert.equal(await page.getByRole("textbox", { name: "Commit name", exact: true }).inputValue(), "Keep this draft");
+    await page.getByRole("button", { name: "Load latest", exact: true }).click();
     await page.getByRole("alertdialog").getByRole("button", { name: "Load latest", exact: true }).click();
     await page.getByRole("alertdialog").waitFor({ state: "hidden" });
+    assert.equal(await page.getByText(readFailure).filter({ visible: true }).count(), 0);
     assert.equal(await page.getByRole("textbox", { name: "Commit name", exact: true }).inputValue(), "Other tab");
     await page.screenshot({ path: resolve(output, platform + "-git-" + theme + ".png") });
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
