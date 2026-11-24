@@ -793,3 +793,49 @@ test('local desktop without a verified observer fails startup and rollback relea
   const app = await startHeadlessServer(f.options); f.own(() => app.close());
   assert.equal((await fetch(app.url + '/')).status, 200);
 });
+
+test('installation identity: the identity composition receives its inputs, isHuman filters external principals, and its disposers keep their shutdown order', { timeout: 30_000 }, async t => {
+  const f = await fixture(t), order = [];
+  const principal = subject => ({ provider: 'fixture-directory', subject, displayName: subject, expiresAt: Date.now() + 60_000 });
+  let inputs;
+  const app = await startHeadlessServer({ ...f.options, accessMemberProviders: ['fixture-directory'] }, {
+    createIdentity: async input => {
+      inputs = input;
+      return { providers: [{ authenticate: request => request.headers['x-fixture-subject'] ? principal(request.headers['x-fixture-subject']) : null }],
+        executionEnvironment: { close() { order.push('execution-environment'); } },
+        close() { order.push('identity'); } };
+    },
+    isHuman: candidate => candidate.subject !== 'service-account',
+    close() { order.push('composition'); },
+  }); f.own(() => app.close());
+  assert.deepEqual(Object.keys(inputs), ['dataDirectory', 'membership', 'relayConfiguration', 'workspaceExecution', 'hubAuthority',
+    'resolveIdentity', 'getInstanceAccess', 'machineIdentity', 'actors', 'sshIngressEnabled']);
+  assert.equal(inputs.dataDirectory, f.options.dataDirectory);
+  assert.equal(typeof inputs.membership?.actorMembership, 'function', 'accepted member providers enable instance membership');
+  assert.deepEqual([inputs.relayConfiguration, inputs.workspaceExecution, inputs.hubAuthority, inputs.sshIngressEnabled], [null, undefined, null, false]);
+  assert.equal(typeof inputs.machineIdentity.machineId, 'string');
+  assert.equal(typeof inputs.actors.findHuman, 'function');
+  // Instance access is constructed after the identity composition; its late reads see it.
+  assert.equal(typeof inputs.getInstanceAccess()?.authenticate, 'function');
+  assert.equal(inputs.resolveIdentity({ headers: { 'x-fixture-subject': 'alice' } })?.subject, 'alice');
+  assert.equal(inputs.resolveIdentity({ headers: {} }), null);
+  // The composition's qualification decides which verified principals are people.
+  const me = await fetch(app.url + '/__opencraft_actors/me', { headers: { 'x-fixture-subject': 'alice' } });
+  assert.equal(me.status, 200); assert.equal((await me.json()).actor.kind, 'human');
+  assert.equal((await fetch(app.url + '/__opencraft_actors/me', { headers: { 'x-fixture-subject': 'service-account' } })).status, 401);
+  await app.close();
+  assert.deepEqual(order, ['execution-environment', 'identity', 'composition']);
+});
+
+test('installation admission: a malformed setup token or login admission without membership fails startup and rollback releases the data lock', { timeout: 30_000 }, async t => {
+  const f = await fixture(t);
+  const tokenPath = join(f.root, 'malformed-setup-token'), configPath = join(f.root, 'human-auth.json');
+  await writeFile(tokenPath, JSON.stringify({ token: 'too-short' }), { mode: 0o600 });
+  await writeFile(configPath, JSON.stringify({ origin: 'http://127.0.0.1:1', local: true, oidc: [], setupTokenFile: tokenPath }), { mode: 0o600 });
+  await assert.rejects(startHeadlessServer({ ...f.options, humanAuthConfig: configPath }), /Invalid private setup token file/);
+  await assert.rejects(startHeadlessServer(f.options, { loginAdmission: { provider: 'fixture-directory', attribute: 'login' } }),
+    /Login admission requires instance access/);
+  assert.equal(f.starts(), 0, 'admission fails before any execution host starts');
+  const app = await startHeadlessServer(f.options); f.own(() => app.close());
+  assert.equal((await fetch(app.url)).status, 200);
+});
