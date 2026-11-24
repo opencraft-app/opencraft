@@ -41,6 +41,20 @@ test('shared contracts and unknown build inputs retain Web and server coverage',
     }, path);
   }
 });
+test('release scripts, their tooling tests and other workflows need no product build', () => {
+  for (const path of ['.github/workflows/codeql.yml', '.github/workflows/ios-testflight.yml',
+    '.github/workflows/app-release.yml', '.github/workflows/container.yml', 'scripts/release/testflight-ios.mjs',
+    'scripts/release/publish-container-release.sh', 'tests/tooling/ios-testflight.test.mjs']) {
+    assert.deepEqual(planChanges([path]), emptyPlan, path);
+  }
+  // The matrix definition, its selector, shared actions and Web publishing keep their coverage.
+  for (const path of ['.github/workflows/build-matrix.yml', '.github/workflows/ci-plan.yml',
+    '.github/actions/owned-electron/action.yml', 'scripts/release/publish-workbench-web.mjs']) {
+    assert.deepEqual(planChanges([path]).targets, webTargets, path);
+  }
+  // A release-tooling change beside product source still builds that source.
+  assert.deepEqual(planChanges(['scripts/release/testflight-ios.mjs', 'apps/mobile/app.json']).targets, webTargets);
+});
 test('root toolchain, lockfile, workflow and selector changes stay on Web/Linux', () => {
   for (const path of ['package.json', 'package-lock.json', '.nvmrc', '.npmrc', 'tsconfig.base.json',
     'config/build-matrix.json', '.github/workflows/ci-plan.yml', 'scripts/ci/ci-plan.mjs', 'tests/tooling/ci-plan.test.mjs']) {
