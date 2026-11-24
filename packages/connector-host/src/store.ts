@@ -1,8 +1,10 @@
-import type { DatabaseSync } from "node:sqlite";
-import { openManagedDatabase, createMissingLegacyObjects, type DatabaseOutcome } from "@opencraft/sqlite-node";
+// Runtime-neutral connector store over the SQL port: no node:* imports, so the
+// same store runs on node:sqlite (`./node-store`, opened by `openManagedDatabase`)
+// and on Durable Object SQL. See docs/architecture/platform/storage-ports.md.
+import type { SqlDatabase } from "@opencraft/sql";
 import { connectorDefinition, type ConnectorInstance } from "@opencraft/connector-core";
 
-const BASELINE = `
+export const CONNECTOR_BASELINE = `
 CREATE TABLE connector_instances (id TEXT PRIMARY KEY, definition_id TEXT NOT NULL, title TEXT NOT NULL, revision INTEGER NOT NULL, enabled INTEGER NOT NULL, value TEXT NOT NULL, updated_at INTEGER NOT NULL) STRICT;
 CREATE TABLE connector_credentials (instance_id TEXT PRIMARY KEY REFERENCES connector_instances(id) ON DELETE CASCADE, secrets TEXT NOT NULL, oauth TEXT NOT NULL) STRICT;
 CREATE TABLE connector_oauth_transactions (id TEXT PRIMARY KEY, instance_id TEXT NOT NULL, revision INTEGER NOT NULL, state TEXT NOT NULL UNIQUE, expires_at INTEGER NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL) STRICT
@@ -34,26 +36,23 @@ function strings(value: unknown): Record<string, string> {
   return structuredClone(object) as Record<string, string>;
 }
 
+/** Published inline prefix; the owner's registry (`connector-host`) appends the generated migrations. */
+export const CONNECTOR_MIGRATIONS = [{ version: 1, name: "managed-connectors", sql: CONNECTOR_BASELINE }] as const;
+
+/** A migrated connector database lent by the owner that opened it, with the owner's outcome report. */
+export interface ConnectorStorage<Outcome = unknown> { readonly database: SqlDatabase; readonly outcome: Outcome; close(): void }
+
 /** Host-private database only. Never return a StoredConnection from an RPC. */
-export class ConnectorDatabase {
-  private readonly db: DatabaseSync;
-  readonly outcome: DatabaseOutcome;
-  constructor(path: string) {
-    const managed = openManagedDatabase({ schemaId: "connector-host",
-      path,
-      migrations: [{ version: 1, name: "managed-connectors", sql: BASELINE }],
-      legacyMigration: createMissingLegacyObjects(BASELINE),
-    });
-    this.db = managed.database;
-    this.outcome = managed.outcome;
+export class SqlConnectorDatabase<Outcome = unknown> {
+  private readonly db: SqlDatabase;
+  readonly outcome: Outcome;
+  constructor(private readonly storage: ConnectorStorage<Outcome>) {
+    this.db = storage.database;
+    this.outcome = storage.outcome;
     this.db.exec("PRAGMA foreign_keys=ON; UPDATE connector_oauth_transactions SET status='cancelled', data='{}' WHERE status='pending'");
     this.prune();
   }
-  private transaction<T>(work: () => T): T {
-    this.db.exec("BEGIN IMMEDIATE");
-    try { const result = work(); this.db.exec("COMMIT"); return result; }
-    catch (error) { this.db.exec("ROLLBACK"); throw error; }
-  }
+  private transaction<T>(work: () => T): T { return this.db.transaction(work); }
   get(id: string): StoredConnection {
     const row = this.db.prepare("SELECT i.*, c.secrets, c.oauth FROM connector_instances i JOIN connector_credentials c ON c.instance_id=i.id WHERE i.id=?").get(id);
     if (!row) throw new ConnectorHostError("missing");
@@ -121,5 +120,5 @@ export class ConnectorDatabase {
     this.db.prepare("UPDATE connector_oauth_transactions SET status='expired',data='{}' WHERE status='pending' AND expires_at<?").run(Date.now());
     this.db.prepare("DELETE FROM connector_oauth_transactions WHERE expires_at<?").run(Date.now() - 86400000);
   }
-  close() { this.db.close(); }
+  close() { this.storage.close(); }
 }

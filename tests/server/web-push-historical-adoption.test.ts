@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { PushStore } from "@opencraft/web-push-node/store";
 
-const owner = readFileSync(new URL("../../packages/web-push-node/src/store.ts", import.meta.url), "utf8");
+const owner = readFileSync(new URL("../../packages/web-push-node/src/sql-store.ts", import.meta.url), "utf8");
 const v1 = /const SCHEMA = `\n([\s\S]*?)\n`\.trim\(\);/.exec(owner)![1].trim();
 const adoption = JSON.parse(
   readFileSync(

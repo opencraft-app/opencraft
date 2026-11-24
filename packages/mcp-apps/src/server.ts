@@ -1,5 +1,5 @@
 import { MCP_APPS_GUIDE } from "./instructions";
-import { AppStore } from "./store";
+import { AppStore, type AppStorage, type AppStoreOptions } from "./store";
 import {
   appId,
   object,
@@ -39,11 +39,12 @@ function result(data: unknown, text?: string) {
         : { value: data },
   };
 }
-export class McpAppsService {
-  readonly store: AppStore;
+export class McpAppsService<Outcome = unknown> {
+  readonly store: AppStore<Outcome>;
   private closed = false;
-  constructor(path: string) {
-    this.store = new AppStore(path);
+  /** Runtime-neutral: the owner opens and migrates the database; on Node use `openMcpAppsService` from `./node`. */
+  constructor(storage: AppStorage<Outcome>, options: AppStoreOptions) {
+    this.store = new AppStore(storage, options);
   }
   get outcome() {
     return this.store.outcome;
