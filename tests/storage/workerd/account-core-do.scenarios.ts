@@ -33,6 +33,17 @@ import {
   type Backend,
 } from "./installation-core-do.scenarios.ts";
 import { runAccountOperation, type AccountOperation, type AccountOperationResult } from "./account-core-operations.ts";
+import {
+  fixtureRenewalExecutor,
+  runAccountPoolOperation,
+  type AccountPoolOperation,
+  type AccountPoolOperationResult,
+} from "./account-pool-operations.ts";
+import { AccountPoolStore } from "../../../packages/account-pool-host/src/store.ts";
+import { assembleAccountPoolCore } from "../../../packages/account-pool-host/src/account-pool-core.ts";
+import { fetchAccountRenewal } from "../../../packages/account-pool-host/src/account-renewal.ts";
+import { ACCOUNT_REFRESH_LEAD_MS } from "../../../packages/account-pool-host/src/account-refresh-schedule.ts";
+import { boundedWakeTimer, timeoutWakeClock, type OwnerWake } from "@opencraft/owner-wake";
 
 export const ACCOUNT_CORE_DO_SPEC: WorkerSpec = {
   id: "account-core-do",
@@ -230,6 +241,133 @@ async function opCall(backend: Backend, operation: AccountOperation): Promise<Ac
   return (await response.json()) as AccountOperationResult;
 }
 
+/** The Node composition of the account pool: the file owner, the same renewal manager and schedule on runtime timeouts. */
+function nodePoolCore(dataDirectory: string, executor = fixtureRenewalExecutor()) {
+  const wake: OwnerWake = {
+    now: () => Date.now(),
+    timer: (fire) => boundedWakeTimer(timeoutWakeClock(Date.now), fire),
+  };
+  const pool = new AccountPoolStore({
+    databasePath: join(dataDirectory, "account-pool.sqlite"),
+    secretsDirectory: join(dataDirectory, "secrets"),
+    now: () => wake.now(),
+  });
+  return { core: assembleAccountPoolCore({ pool, renew: fetchAccountRenewal(executor), wake }), executor };
+}
+
+const HOST_TOKEN = /^[A-Za-z0-9_-]{43}$/u;
+const FAR = () => Date.now() + 10 * 60 * 60_000;
+/** Due for renewal about `ms` from now. */
+const dueIn = (ms: number) => Date.now() + ACCOUNT_REFRESH_LEAD_MS + ms;
+const poolSecret = (token: string, expiresAt: number | null, refreshToken = `ref-${token}`) => ({
+  accessToken: token,
+  refreshToken,
+  idToken: null,
+  expiresAt,
+});
+
+type PoolCall = (operation: AccountPoolOperation) => Promise<AccountPoolOperationResult>;
+
+/**
+ * The account pool: accounts, selection and affinity (bound, inherited,
+ * metadata), quota rotation, authorization errors, ordering, Host tokens,
+ * proactive renewal on the owner wake-up (one renewed, one rejected by the
+ * executor), on-demand renewal, a restart, and removal.
+ */
+async function poolSequence(call: PoolCall, restart: () => Promise<void>) {
+  const seen: [string, AccountPoolOperationResult][] = [];
+  const run = async (label: string, operation: AccountPoolOperation) => {
+    const result = await call(operation);
+    seen.push([label, result]);
+    return result;
+  };
+  const select = (affinityId: string, extra: Partial<Extract<AccountPoolOperation, { op: "pool.select" }>> = {}) =>
+    ({ op: "pool.select", hostId: "host-1", affinityId, ...extra }) as const;
+  await run("empty pool", { op: "pool.list" });
+  await run("add a", { op: "pool.add", id: "a", priority: 1, secret: poolSecret("tok-a", FAR()) });
+  await run("add b", { op: "pool.add", id: "b", priority: 2, secret: poolSecret("tok-b", FAR()) });
+  await run("add a again", { op: "pool.add", id: "a", priority: 3, secret: poolSecret("tok-x", null) });
+  await run("add invalid id", { op: "pool.add", id: "not an id", priority: 3, secret: poolSecret("tok-x", null) });
+  await run("list", { op: "pool.list" });
+  await run("first selection", select("t1", { accept: true }));
+  await run("bound selection", select("t1"));
+  await run("inherited selection", select("t2", { parentAffinityId: "t1", accept: true }));
+  await run("metadata selection", select("meta", { purpose: "metadata" }));
+  await run("affinity count", { op: "pool.affinityCount" });
+  await run("exhaust a", { op: "pool.observeQuota", id: "a", utilization: 1, resetAt: FAR() });
+  await run("bound moves off exhausted", select("t1", { accept: true }));
+  await run("states", { op: "pool.states" });
+  await run("excluded", select("t3", { exclude: ["b"] }));
+  await run("reject b", { op: "pool.markRejected", id: "b" });
+  await run("none eligible", select("t4"));
+  await run("a recovers", { op: "pool.observeQuota", id: "a", utilization: 0.1, resetAt: null });
+  await run("selection after recovery", select("t4", { accept: true }));
+  await run("disable a", { op: "pool.setEnabled", id: "a", enabled: false });
+  await run("nothing enabled and eligible", select("t5"));
+  await run("enable a", { op: "pool.setEnabled", id: "a", enabled: true });
+  await run("reorder", { op: "pool.reorder", ids: ["b", "a"] });
+  await run("reorder incomplete", { op: "pool.reorder", ids: ["b"] });
+  await run("list reordered", { op: "pool.list" });
+  const issued = await run("host token", { op: "pool.hostToken", hostId: "local-codex" });
+  const token = "ok" in issued ? (issued.ok as { token: string }).token : "";
+  await run("authenticate host token", { op: "pool.authenticate", token });
+  await run("authenticate unknown token", { op: "pool.authenticate", token: "x".repeat(43) });
+  await run("add c due soon", { op: "pool.add", id: "c", priority: 3, secret: poolSecret("tok-c", dueIn(1_500)) });
+  await run("add d due soon, executor rejects", {
+    op: "pool.add",
+    id: "d",
+    priority: 4,
+    secret: poolSecret("tok-d", dueIn(1_500), "revoked-d"),
+  });
+  await run("renewal due", { op: "pool.renewalDue" });
+  // Proactive renewal: nobody asks; the owner wake-up fires and the schedule renews what is due.
+  await sleep(4_000);
+  await run("c renewed by the schedule", { op: "pool.credential", id: "c" });
+  await run("c maintenance", { op: "pool.maintenance", id: "c" });
+  await run("d kept after a rejected renewal", { op: "pool.credential", id: "d" });
+  await run("d maintenance", { op: "pool.maintenance", id: "d" });
+  await run("on-demand renewal of a", { op: "pool.resolve", id: "a", reason: "unauthorized" });
+  await run("a renewed", { op: "pool.credential", id: "a" });
+  await run("replace b", { op: "pool.replaceCredential", id: "b", secret: poolSecret("tok-b2", FAR()) });
+  await run("states before restart", { op: "pool.states" });
+  await restart();
+  await run("list after restart", { op: "pool.list" });
+  await run("c after restart", { op: "pool.credential", id: "c" });
+  await run("b after restart", { op: "pool.credential", id: "b" });
+  await run("bound after restart", select("t1"));
+  await run("host token after restart", { op: "pool.hostToken", hostId: "local-codex" });
+  await run("remove b", { op: "pool.remove", id: "b" });
+  await run("removed b is gone", { op: "pool.credential", id: "b" });
+  await run("t1 moves after removal", select("t1", { accept: true }));
+  await run("affinity count after removal", { op: "pool.affinityCount" });
+  await run("states after removal", { op: "pool.states" });
+  const walk = operationNormalizer();
+  const tokens = new Map<string, string>();
+  const hostTokens = (value: unknown): unknown => {
+    if (typeof value === "string" && HOST_TOKEN.test(value)) {
+      if (!tokens.has(value)) tokens.set(value, `<host-token${tokens.size}>`);
+      return tokens.get(value);
+    }
+    if (Array.isArray(value)) return value.map(hostTokens);
+    if (value && typeof value === "object")
+      return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, hostTokens(item)]));
+    return value;
+  };
+  return seen.map(([label, result]) => ({ label, result: walk(hostTokens(result)) }));
+}
+
+async function poolCall(backend: Backend, operation: AccountPoolOperation): Promise<AccountPoolOperationResult> {
+  const response = await backend.fetch("/__test/account/pool", { method: "POST", body: JSON.stringify(operation) });
+  assert.equal(response.status, 200, await response.clone().text());
+  return (await response.json()) as AccountPoolOperationResult;
+}
+
+async function sqlCall(backend: Backend, statements: string[]): Promise<Record<string, unknown>[][]> {
+  const response = await backend.fetch("/__test/account/sql", { method: "POST", body: JSON.stringify({ statements }) });
+  assert.equal(response.status, 200, await response.clone().text());
+  return (await response.json()) as Record<string, unknown>[][];
+}
+
 export const ACCOUNT_CORE_DO_SCENARIOS: readonly WorkerScenario[] = [
   {
     name: "the AccountCore object, behind the entry and the InstallationCore gate, answers the model policy sequence as the Node Headless server does",
@@ -408,6 +546,184 @@ export const ACCOUNT_CORE_DO_SCENARIOS: readonly WorkerScenario[] = [
         const gateway = await owner.call("/__opencraft_model_gateway");
         assert.equal(gateway.status, 404);
         assert.deepEqual(await gateway.json(), { error: "missing" });
+      } finally {
+        await object.close();
+      }
+    },
+  },
+  {
+    name: "the account pool in the AccountCore object answers the same selection, affinity, Host token and renewal sequence as the Node file owner, with its credentials sealed",
+    async run({ runtime, scratch, diagnostic }) {
+      const dataDirectory = join(scratch, `pool-${crypto.randomUUID()}`);
+      await mkdir(dataDirectory, { recursive: true });
+      let node = nodePoolCore(dataDirectory);
+      let nodeRun: Awaited<ReturnType<typeof poolSequence>>;
+      try {
+        nodeRun = await poolSequence(
+          (operation) => runAccountPoolOperation(node.core, operation),
+          async () => {
+            await node.core.close();
+            node = nodePoolCore(dataDirectory);
+          },
+        );
+      } finally {
+        await node.core.close();
+      }
+      const object = await deploymentBackend(runtime);
+      try {
+        const objectRun = await poolSequence(
+          (operation) => poolCall(object, operation),
+          () => object.restart(),
+        );
+        diagnostic(
+          objectRun
+            .map((step) => `${step.label}: ${"ok" in (step.result as object) ? "ok" : JSON.stringify(step.result)}`)
+            .join("; "),
+        );
+        assert.deepEqual(objectRun, nodeRun);
+        // Credentials and Host tokens are sealed in the object's SQL; none appears in plaintext.
+        const stored = JSON.stringify(await (await object.fetch("/__test/account/storage")).json());
+        assert.doesNotMatch(stored, /tok-[a-d]|ref-tok|revoked-d/u);
+        assert.match(stored, /ocr1\.k1\./u);
+      } finally {
+        await object.close();
+      }
+      // The sequence exercised what it claims.
+      const result = (label: string) => nodeRun!.find((step) => step.label === label)?.result;
+      assert.deepEqual(
+        [
+          "first selection",
+          "bound selection",
+          "inherited selection",
+          "bound moves off exhausted",
+          "selection after recovery",
+          "bound after restart",
+          "t1 moves after removal",
+        ].map((label) => (result(label) as { ok: { account: string; keepsAffinity: boolean } }).ok),
+        [
+          { account: "a", accessToken: "tok-a", keepsAffinity: false, held: false },
+          { account: "a", accessToken: "tok-a", keepsAffinity: true, held: false },
+          { account: "a", accessToken: "tok-a", keepsAffinity: true, held: false },
+          { account: "b", accessToken: "tok-b", keepsAffinity: false, held: false },
+          { account: "a", accessToken: "tok-a", keepsAffinity: false, held: false },
+          { account: "b", accessToken: "tok-b2", keepsAffinity: true, held: false },
+          // Rotation continues after the removed account's position.
+          { account: "c", accessToken: "tok-c+r", keepsAffinity: false, held: false },
+        ],
+      );
+      assert.deepEqual(result("none eligible"), { error: "No eligible account" });
+      assert.equal((result("c renewed by the schedule") as { ok: { accessToken: string } }).ok.accessToken, "tok-c+r");
+      assert.equal((result("c after restart") as { ok: { accessToken: string } }).ok.accessToken, "tok-c+r");
+      assert.equal(
+        (result("d kept after a rejected renewal") as { ok: { accessToken: string } }).ok.accessToken,
+        "tok-d",
+      );
+      assert.deepEqual(result("d maintenance"), { ok: { state: "error", failure: "authorization-rejected" } });
+      assert.equal((result("a renewed") as { ok: { accessToken: string } }).ok.accessToken, "tok-a+r");
+      assert.deepEqual(result("authenticate host token"), { ok: "local-codex" });
+      assert.deepEqual(result("host token after restart"), result("host token"));
+    },
+  },
+  {
+    name: "an evicted AccountCore object renews a due account from its alarm and keeps the pool's affinity",
+    async run({ runtime }) {
+      const object = await deploymentBackend(runtime);
+      try {
+        value(await poolCall(object, { op: "pool.add", id: "a", priority: 1, secret: poolSecret("tok-a", FAR()) }));
+        value(await poolCall(object, { op: "pool.select", hostId: "h", affinityId: "t", accept: true }));
+        value(
+          await poolCall(object, { op: "pool.add", id: "c", priority: 2, secret: poolSecret("tok-c", dueIn(2_000)) }),
+        );
+        // Memory dropped with no event; only the stored alarm can bring the object back before the next request.
+        await object.fetch("/__test/account/evict").catch(() => undefined);
+        await sleep(4_000);
+        // The alarm rebuilt the object, whose schedule re-derived the due renewal from storage.
+        assert.deepEqual(await (await object.fetch("/__test/account/renewals")).json(), ["upstream-c"]);
+        assert.equal(
+          value<{ accessToken: string }>(await poolCall(object, { op: "pool.credential", id: "c" })).accessToken,
+          "tok-c+r",
+        );
+        assert.deepEqual(value(await poolCall(object, { op: "pool.select", hostId: "h", affinityId: "t" })), {
+          account: "a",
+          accessToken: "tok-a",
+          keepsAffinity: true,
+          held: false,
+        });
+      } finally {
+        await object.close();
+      }
+    },
+  },
+  {
+    name: "an AccountCore object from before the account pool gains its chains beside the policy's, and refuses a changed or foreign pool history",
+    async run({ runtime }) {
+      const object = await deploymentBackend(runtime);
+      try {
+        const { owner } = await login(object);
+        assert.equal(
+          (await owner.call(POLICY, { revision: 0, rules: [{ engine: "pi", effort: "high" }] })).status,
+          200,
+        );
+        value(await opCall(object, { op: "config.update", revision: 0, providers: [provider("p1")] }));
+        value(await opCall(object, { op: "credentials.set", ref: "P1_KEY", value: PROVIDER_KEY }));
+        // The object's storage as the policy-only AccountCore left it: one chain, no pool objects, no schema ledger.
+        await sqlCall(object, [
+          "DROP TABLE pool_affinity",
+          "DROP TABLE pool_active_account",
+          "DROP TABLE pool_quota",
+          "DROP TABLE pool_accounts",
+          "DROP TABLE account_credential_records",
+          "DROP TABLE schema_ledgers",
+        ]);
+        const policyLedger = await sqlCall(object, [
+          "SELECT version,name,checksum FROM schema_migrations ORDER BY version",
+        ]);
+        await object.fetch("/__test/account/evict").catch(() => undefined);
+        // Upgrade: the policy and its ledger are kept; the pool's chains are applied fresh beside them.
+        const read = (await (await owner.call(POLICY)).json()) as { revision: number };
+        assert.equal(read.revision, 1);
+        assert.deepEqual(
+          await sqlCall(object, ["SELECT version,name,checksum FROM schema_migrations ORDER BY version"]),
+          policyLedger,
+        );
+        const ledgers = await sqlCall(object, [
+          "SELECT schema_id,version,name FROM schema_ledgers ORDER BY schema_id,version",
+        ]);
+        assert.deepEqual(ledgers[0], [
+          { schema_id: "account-credential-records", version: 1, name: "account-credential-records" },
+          { schema_id: "account-pool-host", version: 1, name: "account-pool" },
+          { schema_id: "account-pool-host", version: 2, name: "codex-reset-credit-count" },
+          { schema_id: "account-pool-host", version: 3, name: "codex-account-credit-policy" },
+          { schema_id: "account-pool-host", version: 4, name: "codex-account-human-owner" },
+        ]);
+        value(await poolCall(object, { op: "pool.add", id: "a", priority: 1, secret: poolSecret("tok-a", FAR()) }));
+        const lease = value<{ token: string }>(
+          await opCall(object, { op: "leases.grant", holder: holder("i1"), ttlMs: 60_000 }),
+        );
+        assert.equal(
+          value<{ credential: string }>(
+            await opCall(object, { op: "leases.redeem", token: lease.token, providerId: "p1" }),
+          ).credential,
+          PROVIDER_KEY,
+        );
+        // A changed checksum in the pool's chain refuses the open; the original history opens again.
+        const [[original]] = await sqlCall(object, [
+          "SELECT checksum FROM schema_ledgers WHERE schema_id='account-pool-host' AND version=1",
+        ]);
+        await sqlCall(object, [
+          "UPDATE schema_ledgers SET checksum='0' WHERE schema_id='account-pool-host' AND version=1",
+        ]);
+        await object.fetch("/__test/account/evict").catch(() => undefined);
+        assert.equal((await owner.call(POLICY)).status, 503);
+        await sqlCall(object, [
+          `UPDATE schema_ledgers SET checksum='${String(original!.checksum)}' WHERE schema_id='account-pool-host' AND version=1`,
+        ]);
+        await object.fetch("/__test/account/evict").catch(() => undefined);
+        assert.equal((await owner.call(POLICY)).status, 200);
+        // Pool objects without the pool's ledger are a foreign history: refused, never adopted.
+        await sqlCall(object, ["DELETE FROM schema_ledgers WHERE schema_id='account-credential-records'"]);
+        await object.fetch("/__test/account/evict").catch(() => undefined);
+        assert.equal((await owner.call(POLICY)).status, 503);
       } finally {
         await object.close();
       }

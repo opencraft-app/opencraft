@@ -36,10 +36,13 @@ function bytesOf(text: string): Uint8Array<ArrayBuffer> {
 }
 
 /**
- * Imports a key configured as `<id>.<base64url of 32 random bytes>` (for
- * example a Secrets binding). The key is not extractable.
+ * Parses a key configured as `<id>.<base64url of 32 random bytes>` into its id
+ * and raw bytes. The caller imports the bytes and then zeroes them.
  */
-export async function importSecretSealingKey(configured: string | undefined): Promise<SecretSealingKey> {
+export function parseSecretSealingKey(configured: string | undefined): {
+  readonly id: string;
+  readonly raw: Uint8Array<ArrayBuffer>;
+} {
   const [id, encoded, ...rest] = (configured ?? "").split(".");
   if (!id || !KEY_ID.test(id) || encoded === undefined || rest.length)
     throw new SecretSealingKeyError("Secret sealing key must be <id>.<base64url 32 bytes>");
@@ -50,6 +53,21 @@ export async function importSecretSealingKey(configured: string | undefined): Pr
     throw new SecretSealingKeyError("Secret sealing key must be <id>.<base64url 32 bytes>");
   }
   if (raw.byteLength !== 32) throw new SecretSealingKeyError("Secret sealing key must be 32 bytes");
+  return { id, raw };
+}
+
+/** base64url text of `bytes` and back, as sealed values spell them. */
+export const sealedText = {
+  encode: base64url,
+  decode: bytesOf,
+};
+
+/**
+ * Imports a key configured as `<id>.<base64url of 32 random bytes>` (for
+ * example a Secrets binding). The key is not extractable.
+ */
+export async function importSecretSealingKey(configured: string | undefined): Promise<SecretSealingKey> {
+  const { id, raw } = parseSecretSealingKey(configured);
   const key = await crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
   raw.fill(0);
   return { id, key };

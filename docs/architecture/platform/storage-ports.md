@@ -64,7 +64,11 @@ interface SqlDatabase {
 
 #### 生命周期仍归 owner
 
-迁移账本（`schema_migrations`、连续版本、SHA-256 校验）的语义是跨运行时的，唯一实现是 `@opencraft/sql/migrations`：`hashSqlMigrations`（哈希函数由 owner 提供，Node 与 workerd `nodejs_compat` 均用 `node:crypto`）、`validateMigrationHistory`（版本、名称或 checksum 不符拒绝为 `history-mismatch`，账本超出声明链拒绝为 `newer-schema`）、`applySqlMigrations`（每个待执行迁移一次 `transaction()`，在事务内重新校验账本，原样 `exec` 已发布 SQL，最后一个迁移在记录账本前执行可选 schema 校验）。owner 可传入自己的错误类型：`@opencraft/sqlite-node` 的 `prepareMigrations`／`validateHistory`／`applyMigrations` 委托这些函数并继续抛 `SqliteLifecycleError`，已发布 SQL、名称与 checksum 不变。DO owner 的精简生命周期是 `@opencraft/storage-node/server-sql` 的 `migrateServerSqlDatabase(database)`：只做上述账本与迁移，有对象但无账本的库拒绝采纳，返回 `{ database, outcome, contract }`，不含 `location`（见[InstallationCore 状态](cloudflare-deployment.md#5-installationcore-状态)）。下列能力属于 Node owner，保留在 `@opencraft/sqlite-node` 与 `@opencraft/storage-node`：
+迁移账本（`schema_migrations`、连续版本、SHA-256 校验）的语义是跨运行时的，唯一实现是 `@opencraft/sql/migrations`：`hashSqlMigrations`（哈希函数由 owner 提供，Node 与 workerd `nodejs_compat` 均用 `node:crypto`）、`validateMigrationHistory`（版本、名称或 checksum 不符拒绝为 `history-mismatch`，账本超出声明链拒绝为 `newer-schema`）、`applySqlMigrations`（每个待执行迁移一次 `transaction()`，在事务内重新校验账本，原样 `exec` 已发布 SQL，最后一个迁移在记录账本前执行可选 schema 校验）。owner 可传入自己的错误类型：`@opencraft/sqlite-node` 的 `prepareMigrations`／`validateHistory`／`applyMigrations` 委托这些函数并继续抛 `SqliteLifecycleError`，已发布 SQL、名称与 checksum 不变。DO owner 的精简生命周期是 `@opencraft/storage-node/server-sql` 的 `migrateServerSqlDatabase(database)`：只做上述账本与迁移，有对象但无账本的库拒绝采纳，返回 `{ database, outcome, contract }`，不含 `location`（见[InstallationCore 状态](cloudflare-deployment.md#5-installationcore-状态)）。
+
+**同库多条迁移链。** 一个 Node owner 一个库文件、一条链；DO 只有一个 SQL 库，却要容纳它组合的多个 owner 的已发布链（AccountCore：模型策略、账号池、凭据记录；WorkspaceHost 合库同理）。账本位置因此是可替换的 `SqlMigrationLedger`：默认是库自己的 `schema_migrations`（单链库与 Node owner 不变），`@opencraft/sql/schema-ledgers` 的 `schemaMigrationLedger(id)` 把一条命名链的行记在 `schema_ledgers(schema_id, version, name, checksum, applied_at)`，版本、名称、checksum、更新历史与每迁移一事务的规则仍是 `@opencraft/sql/migrations` 同一实现。`migrateSqlSchema(database, { schema, migrations, owns })` 是命名链的精简生命周期：本链无账本而本链对象（`owns`，通常是名称前缀）已存在时拒绝采纳；其他链的对象不归它判断，库自己的链（例如策略的 `ownedByRuntime`）同样要把账本表与其他链的对象排除。已发布 SQL、名称与 checksum 与该链在其他 owner 中完全相同，生成注册表追加的迁移经中立 `resolveSqlMigrationContract` 以 Node `resolveStoreMigrations` 的同一规则取得（`@opencraft/sqlite-node/store-migrations-data` 是纯数据导出）。证明：`tests/storage/schema-ledgers.test.ts` 与 AccountCore 的 workerd 升级／拒绝场景（[可选 Cloudflare 部署 §5.6](cloudflare-deployment.md#56-accountcore-状态2026-11-24)）。
+
+下列能力属于 Node owner，保留在 `@opencraft/sqlite-node` 与 `@opencraft/storage-node`：
 
 | 能力 | Node | DO |
 | --- | --- | --- |
@@ -194,7 +198,7 @@ Unix socket、锁文件、`/proc` 读取、Git 与 `/workspace` 工作目录、E
 
 ## 7. AccountCore 存储
 
-状态：**Node 侧准备已实施；DO 部分实现（2026-11-24）：模型策略、模型配置、密封凭据与凭据租约已在 `AccountCore` DO 中装配（[可选 Cloudflare 部署 §5.6](cloudflare-deployment.md#56-accountcore-状态2026-11-24)），账号池与模型网关未进入。** 目标是让[可选 Cloudflare 部署](cloudflare-deployment.md#2-目标拓扑)中每部署一个的 `AccountCore` DO 直接持有现有领域代码；Node 行为、文件名、格式、权限、迁移与 checksum 均不变，写者锁与 owner 进程拓扑保持原样。行号以 2026-11-22 源码为准。
+状态：**Node 侧准备已实施；DO 部分实现（2026-11-24）：模型策略、模型配置、密封凭据与凭据租约已在 `AccountCore` DO 中装配；第二部分装配账号池（选号、亲和、续期调度，凭据记录在同一 SQL 中同步密封，见[可选 Cloudflare 部署 §5.6](cloudflare-deployment.md#56-accountcore-状态2026-11-24)），模型网关未进入。** 目标是让[可选 Cloudflare 部署](cloudflare-deployment.md#2-目标拓扑)中每部署一个的 `AccountCore` DO 直接持有现有领域代码；Node 行为、文件名、格式、权限、迁移与 checksum 均不变，写者锁与 owner 进程拓扑保持原样。行号以 2026-11-22 源码为准。
 
 ### 7.1 持久化清单
 
@@ -211,11 +215,11 @@ Unix socket、锁文件、`/proc` 读取、Git 与 `/workspace` 工作目录、E
 | `run/proxy-callers/<caller>.json`：`codex-account-service.ts:166` | 本机调用方（Pi／DSH）的代理 URL 与 token | Node 专属发布 | 保留；Cloudflare 上 token 经边缘 Worker 签发 |
 | `refresh/`、`login/`、`personal-logins/<sha>/`、`device-login-maintenance/`：`codex-account-service.ts:73–87`、`codex-auth.ts`、`device-login-maintenance.ts` | 刷新与设备登录的临时 `CODEX_HOME`、恢复导入、维护注记 | Node 专属（原生 codex 进程工作目录） | 保留；见 7.3 |
 
-未改用 `SecretStore`：它是异步、按名称的单文档（`credentials.json`），既不能保持每账号文件布局，也不能在选号的同步 SQL 事务内读取凭据。因此新增同步的 `AccountCredentialRecords`；DO 适配器应把凭据记录存入同一 DO 的 SQL 表，用 `KeyMaterial`（或 Secrets binding）派生的密钥做信封加密，使"预留亲和＋读取凭据""写入行＋写入凭据"在同一存储事务内完成。
+未改用 `SecretStore`：它是异步、按名称的单文档（`credentials.json`），既不能保持每账号文件布局，也不能在选号的同步 SQL 事务内读取凭据。因此新增同步的 `AccountCredentialRecords`。DO 适配器已实现（`sqlAccountCredentialRecords`，`@opencraft/account-pool-host/sql-owner`）：记录是同一 SQL 中 `account_credential_records` 的行（命名链 `account-credential-records`），值经 `@opencraft/secret-storage/sealed-records` 同步密封（`node:crypto` AES-256-GCM，子密钥由密封密钥经 HMAC-SHA256 派生，附加数据绑定行），"预留亲和＋读取凭据""写入行＋写入凭据"在同一 `transaction()` 内完成；外部 `auth.json` 引用在该适配器中不可读。这仍不是信封加密（无每记录数据密钥与轮换，见 cloudflare-deployment §5.6"仍缺"）。
 
 ### 7.2 验证
 
-`tests/storage/account-pool-sql-port.test.ts`（已加入 `test:storage-ports`）把同一组用例分别跑在 Node 文件 owner（`AccountPoolStore`）与"`nodeSqlDatabase(:memory:)`＋`@opencraft/sql/migrations` 精简账本＋内存凭据记录"上：账号与凭据、选号与亲和、配额耗尽轮换、删除级联、Host token、Human owner 隔离；另验证凭据写入失败时账号行经端口事务回滚、精简账本与托管 owner 的 schema 指纹相同、非法设置会关闭交入的存储。尚未在 Miniflare DO 中运行。
+`tests/storage/account-pool-sql-port.test.ts`（已加入 `test:storage-ports`）把同一组用例分别跑在 Node 文件 owner（`AccountPoolStore`）与"`nodeSqlDatabase(:memory:)`＋`@opencraft/sql/migrations` 精简账本＋内存凭据记录"上：账号与凭据、选号与亲和、配额耗尽轮换、删除级联、Host token、Human owner 隔离；另验证凭据写入失败时账号行经端口事务回滚、精简账本与托管 owner 的 schema 指纹相同、非法设置会关闭交入的存储。第三种装配"共享库＋命名链＋密封 SQL 凭据记录"（AccountCore 的布局）跑同一组用例；`tests/storage/schema-ledgers.test.ts` 覆盖多链账本、凭据记录密封与续期调度。DO 中的运行见 `test:account-core:workerd`（与 Node 文件 owner 同一序列逐项相同，含驱逐后由 alarm 续期、从策略单链升级与历史拒绝）。
 
 ### 7.3 阻碍 DO 的 Node 依赖
 
@@ -230,4 +234,4 @@ Unix socket、锁文件、`/proc` 读取、Git 与 `/workspace` 工作目录、E
 | `node:crypto`、`Buffer`、`node:zlib`（`configured-forward.ts` 解压） | 多处 | `nodejs_compat` 预期可用，待在 workerd 中核实 |
 | `@opencraft/sqlite-node` 值导入 | `store.ts`、`model-gateway-store.ts`、`model-usage-policy/src/index.ts` | `AccountPool` 已与 Node owner 分文件；网关与策略的 owner 打开仍与领域类同文件，DO 装配前需拆分或加 `workerd` 导出条件 |
 
-DO 仍缺：账号池与网关在同一对象 SQL 中的按 schema 账本（策略库已用 `migrateModelPolicySqlDatabase` 的精简生命周期占用默认账本）、同步的加密凭据记录适配器（`sealedSecretStore` 是异步的，不能在选号事务内使用）、刷新执行方式（维护容器）的实现、租约的对外接口（契约已在 `@opencraft/account-pool-host/credential-leases`）。
+DO 已有（第二部分）：按 schema id 区分的账本（`schema_ledgers`，策略继续用默认账本）、同步密封的 SQL 凭据记录适配器、续期的 `fetch` 交换契约与 owner 唤醒上的续期调度。DO 仍缺：维护容器本身（续期、设备登录与用量查询的执行方），模型网关的 owner 拆分与装配，租约的对外接口（契约已在 `@opencraft/account-pool-host/credential-leases`）。

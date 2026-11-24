@@ -6,10 +6,13 @@
 // `npm run cf:rehearsal`). See docs/architecture/platform/cloudflare-deployment.md §5.6.
 //
 // Runtime-neutral packaging: the account object reaches the account module,
-// its neutral ports and the Durable Object adapters, and no Node owner
-// implementation (the policy file owner and native readers, the account pool
-// and model gateway stores, the Codex Core client, file stores, the Node
-// account inputs).
+// the account pool's domain, renewal and shared-SQL owner, their neutral ports
+// and the Durable Object adapters, and no Node owner implementation (the
+// policy file owner and native readers, the account pool's file owner, the
+// model gateway store, the Codex Core client and maintenance processes, the
+// proxy, file stores, the Node account inputs). The only file of the Node
+// SQLite package it reaches is the generated migration registry, pure data
+// that both owners of the account pool read the published SQL from.
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import { test } from "node:test";
@@ -35,7 +38,24 @@ const NODE_OWNERS = [
   "apps/headless-server/src/headless-application.mjs",
   "apps/headless-server/src/serve-workbench-web.mjs",
 ];
-const ACCOUNT_POOL_NEUTRAL = new Set(["packages/account-pool-host/src/credential-leases.ts"]);
+/** The account package's runtime-neutral modules; everything else in it is Node (files, processes, sockets, undici). */
+const ACCOUNT_POOL_NEUTRAL = new Set(
+  [
+    "credential-leases.ts",
+    "account-pool.ts",
+    "account-pool-schema.ts",
+    "account-pool-sql-owner.ts",
+    "account-pool-core.ts",
+    "account-refresh-schedule.ts",
+    "account-renewal.ts",
+    "oauth-refresh.ts",
+    "account-diagnostics.ts",
+    "codex-auth-file-format.ts",
+    "codex-launch.ts",
+  ].map((file) => `packages/account-pool-host/src/${file}`),
+);
+/** Pure data: the published SQL the Node owner's registry appends, read by both account pool owners. */
+const GENERATED_MIGRATIONS = "packages/sqlite-node/src/store-migrations.generated.ts";
 
 test(`${ENTRY} reaches no Node owner implementation`, async () => {
   const result = await build({
@@ -55,11 +75,13 @@ test(`${ENTRY} reaches no Node owner implementation`, async () => {
   assert.deepEqual(
     inputs.filter(
       (input) =>
-        NODE_OWNERS.some((owner) => input.includes(owner)) ||
+        (NODE_OWNERS.some((owner) => input.includes(owner)) && input !== GENERATED_MIGRATIONS) ||
         (input.includes("packages/account-pool-host/") && !ACCOUNT_POOL_NEUTRAL.has(input)),
     ),
     [],
   );
+  // The generated registry module has no imports of its own.
+  assert.deepEqual(result.metafile.inputs[GENERATED_MIGRATIONS]?.imports, []);
   // The same composition as the Node root: the account module, its shared routes and neutral ports.
   for (const shared of [
     "apps/headless-server/src/assembly/account.mjs",
@@ -69,6 +91,14 @@ test(`${ENTRY} reaches no Node owner implementation`, async () => {
     "packages/model-usage-policy/src/sql-owner.ts",
     "packages/account-pool-host/src/credential-leases.ts",
     "packages/secret-storage/src/sealed.ts",
+    "packages/secret-storage/src/sealed-records.ts",
+    "packages/sql/src/migrations.ts",
+    "packages/account-pool-host/src/account-pool.ts",
+    "packages/account-pool-host/src/account-pool-sql-owner.ts",
+    "packages/account-pool-host/src/oauth-refresh.ts",
+    "packages/account-pool-host/src/account-refresh-schedule.ts",
+    "packages/account-pool-host/src/account-renewal.ts",
+    "packages/owner-wake/src/index.ts",
     "apps/local-agent-host/src/model-config/repository.ts",
     "apps/local-agent-host/src/model-config/provider-credentials.ts",
   ])
@@ -80,8 +110,10 @@ test(`${ENTRY} reaches no Node owner implementation`, async () => {
         .map((imported) => imported.path),
     ),
   );
-  // node:crypto only: migration checksums (as the Node owner computes them) and the speech service's binding.
-  assert.deepEqual([...builtins].sort(), ["node:crypto"]);
+  // node:crypto: migration checksums (as the Node owner computes them), synchronous record sealing, the account
+  // pool's digests and the speech service's binding; node:path: the shared auth file reference's absolute-path
+  // rule (pure computation). Both are provided by workerd under nodejs_compat.
+  assert.deepEqual([...builtins].sort(), ["node:crypto", "node:path"]);
 });
 
 testScenariosOnMiniflare("account-core-do-workerd", ACCOUNT_CORE_DO_SCENARIOS);

@@ -13,14 +13,26 @@
 //                       (Node: the private credentials.json file)
 //   route authority     asked of the InstallationCore object per request (Node: the installation's
 //                       services in the same process), answered by the same function
-// Not assembled here: the model gateway and the account pool (each needs a
-// second SQL ledger in this object), speech, personal subscriptions and OAuth
-// refresh (cloudflare-deployment §5.6 "仍缺").
+//   account pool        the same AccountPool, renewal manager and renewal schedule as the Node
+//                       Codex Core composes, over two further migration chains in the object's SQL
+//                       (`schema_ledgers`), credential records sealed synchronously in the same SQL,
+//                       renewals through the maintenance executor's fetch binding and the schedule
+//                       on the object's alarm (Node: account-pool.sqlite, private files, a native
+//                       codex maintenance process and runtime timeouts)
+// Not assembled here: the model gateway, speech and personal subscriptions
+// (cloudflare-deployment §5.6 "仍缺").
 import { durableObjectSqlDatabase } from "@opencraft/storage-cloudflare/sql";
 import { durableObjectStateDocumentStore } from "@opencraft/storage-cloudflare/state";
 import { durableObjectSecretStore } from "@opencraft/storage-cloudflare/secrets";
 import { importSecretSealingKey, sealedSecretStore } from "@opencraft/secret-storage/sealed";
+import { recordSealer } from "@opencraft/secret-storage/sealed-records";
 import { migrateModelPolicySqlDatabase } from "@opencraft/model-usage-policy/sql-owner";
+import { isMigrationLedgerObject } from "@opencraft/sql/schema-ledgers";
+import { openAccountPoolSqlStorage, ownedByAccountPoolSchemas } from "@opencraft/account-pool-host/sql-owner";
+import { assembleAccountPoolCore, type AccountPoolCore } from "@opencraft/account-pool-host/pool-core";
+import { AccountPool } from "@opencraft/account-pool-host/account-pool";
+import { fetchAccountRenewal } from "@opencraft/account-pool-host/renewal";
+import { mergedOwnerWake, type OwnerWake } from "@opencraft/owner-wake";
 import {
   fetchRequestView,
   fetchResponse,
@@ -48,6 +60,8 @@ const INSTALLATION_OBJECT = "installation";
 /** What the object serves once it opened. */
 export interface AccountCoreServices {
   readonly account: AccountAssembly;
+  /** The account pool: selection, affinity and renewal; this object is their only writer. */
+  readonly pool: AccountPoolCore;
   readonly http: HttpExchangeHandler<FetchRequestView>;
   /** Asks the installation about one request; resolves its answer or the installation's own refusal. */
   ask(scope: AccountAuthorityScope, request: FetchRequestView): Promise<AccountAuthorityAnswer | Response>;
@@ -61,6 +75,7 @@ export class AccountCore {
   #failure: unknown;
   #closing: Promise<void> | undefined;
   #disposers: (() => unknown)[] = [];
+  #wake: (() => void) | null = null;
 
   constructor(ctx: AccountCoreState, env: AccountCoreEnv) {
     this.ctx = ctx;
@@ -77,20 +92,52 @@ export class AccountCore {
     });
   }
 
+  /** The object's single alarm as the owner wake-up port; `at` is wall-clock time, as an alarm's is. */
+  #alarmWake(): OwnerWake {
+    const storage = this.ctx.storage;
+    return {
+      now: () => Date.now(),
+      timer: (wake) => {
+        this.#wake = wake;
+        return {
+          arm: (at) => void storage.setAlarm(at).catch(() => undefined),
+          cancel: () => void storage.deleteAlarm().catch(() => undefined),
+        };
+      },
+    };
+  }
+
   async #open(env: AccountCoreEnv): Promise<AccountCoreServices> {
     const storage = this.ctx.storage;
     // Credentials are never stored unsealed: no key, no object.
     const sealing = await importSecretSealingKey(env.OPENCRAFT_ACCOUNT_SEALING_KEY);
-    const policy = migrateModelPolicySqlDatabase(durableObjectSqlDatabase(storage), {
-      // workerd's own tables in the object's SQL are not policy schema.
-      ownedByRuntime: (name) => name.startsWith("_cf_"),
+    const records = recordSealer(env.OPENCRAFT_ACCOUNT_SEALING_KEY);
+    const database = durableObjectSqlDatabase(storage);
+    // Three chains share the object's SQL: the policy keeps the database's own
+    // ledger, the account pool and its credential records keep `schema_ledgers`.
+    const policy = migrateModelPolicySqlDatabase(database, {
+      // workerd's own tables and the other chains' objects are not policy schema.
+      ownedByRuntime: (name) =>
+        name.startsWith("_cf_") || isMigrationLedgerObject(name) || ownedByAccountPoolSchemas(name),
     });
+    const poolStorage = openAccountPoolSqlStorage(database, records);
     const account = assembleAccount({
       openModelPolicy: () => policy,
       modelDocuments: durableObjectStateDocumentStore(storage, { prefix: "models/" }),
       modelSecrets: sealedSecretStore(durableObjectSecretStore(storage), sealing),
     });
     this.#disposers = [() => account.close()];
+    const maintenance = env.ACCOUNT_MAINTENANCE;
+    const wake = mergedOwnerWake(this.#alarmWake());
+    const pool = assembleAccountPoolCore({
+      pool: new AccountPool(poolStorage, { now: () => wake.now() }),
+      renew: maintenance
+        ? fetchAccountRenewal(maintenance)
+        : () => Promise.reject(new Error("Account maintenance executor is not configured")),
+      wake,
+    });
+    // Renewals settle before the policy writer closes.
+    this.#disposers.unshift(() => pool.close());
     const installationId = env.INSTALLATION_CORE.idFromName(INSTALLATION_OBJECT);
     const ask = async (scope: AccountAuthorityScope, request: FetchRequestView) => {
       const query: AccountAuthorityQuery = {
@@ -122,7 +169,12 @@ export class AccountCore {
       // The model gateway is not assembled in this object; its route answers `missing`.
       gateway: () => null,
     });
-    return { account, http, ask };
+    return { account, pool, http, ask };
+  }
+
+  /** The object's alarm: wakes whichever owner work is due (account renewals); each re-derives from state. */
+  async alarm(): Promise<void> {
+    this.#wake?.();
   }
 
   /** The opened services; throws when the open failed. */
