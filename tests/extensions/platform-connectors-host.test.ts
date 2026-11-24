@@ -4,7 +4,7 @@ import { mkdtemp, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createServer } from "node:http";
-import { ConnectorDatabase } from "../../packages/connector-host/src/store";
+import { ConnectorDatabase } from "../../packages/connector-host/src/node-store";
 import { ManagedConnectorService } from "../../packages/connector-host/src/service";
 import { ConnectorOAuth } from "../../packages/connector-host/src/oauth";
 import { CONNECTOR_CATALOG } from "@opencraft/connector-core";

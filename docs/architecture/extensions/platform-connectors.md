@@ -23,7 +23,7 @@ OAuth 由 Host 使用 MCP SDK 的 DCR/PKCE 流程执行；临时 verifier/client
 源码拓扑：
 
 - `packages/connector-core/src/{contract,catalog}.ts`：稳定 DTO、23 项目录和字段/步骤；第三方许可见 [NOTICE](../../../packages/connector-core/NOTICE.md)。
-- `packages/connector-host/src/store.ts`：Host SQLite，实例/凭据/授权事务分表，revision CAS、敏感字段白名单、删除和过期清理。
+- `packages/connector-host/src/store.ts`（runtime-neutral，经 `SqlDatabase` 端口；Node 打开在 `node-store.ts`）：Host SQLite，实例/凭据/授权事务分表，revision CAS、敏感字段白名单、删除和过期清理。
 - `packages/connector-host/src/{oauth,mcp,api,api-knowledge,network,service}.ts`：SDK 协议、各服务请求映射、网络边界和窄 RPC 分发，独立于 DSH。
 - `packages/workbench-runtime/src/connectors/{managed-controller,managed-provider}.ts`：无凭据的 UI 状态与既有 ConnectorRuntime 对接，通知按实例失效。
 - `apps/workbench-web/src/components/connectors/{connector-library,connector-setup}.tsx`：目录和配置流程；借用共享控件和 Modal。

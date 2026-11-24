@@ -3,7 +3,7 @@ import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { auth, type OAuthClientProvider, type OAuthDiscoveryState } from "@modelcontextprotocol/sdk/client/auth.js";
 import { OAuthClientInformationSchema as OAuthClientInformationMixedSchema, OAuthTokensSchema } from "@modelcontextprotocol/sdk/shared/auth.js";
 import type { ConnectorOAuthProgress } from "@opencraft/connector-core";
-import { ConnectorDatabase, ConnectorHostError, type OAuthTransaction } from "./store";
+import { ConnectorHostError, type OAuthTransaction, type SqlConnectorDatabase } from "./store";
 import { OAUTH_SERVICES } from "./mcp-endpoints";
 import { connectorFetch } from "./network";
 
@@ -11,7 +11,7 @@ import { connectorFetch } from "./network";
 export class ConnectorOAuth {
   private readonly listeners = new Map<string, { server: Server; timer: ReturnType<typeof setTimeout>; abort: AbortController }>();
   private readonly refreshing = new Map<string, Promise<void>>();
-  constructor(private readonly db: ConnectorDatabase, private readonly changed: (instanceId: string) => void,
+  constructor(private readonly db: SqlConnectorDatabase, private readonly changed: (instanceId: string) => void,
     private readonly services = OAUTH_SERVICES, private readonly fetchOverride?: typeof fetch) {}
   async start(instanceId: string): Promise<ConnectorOAuthProgress> {
     const row = this.db.get(instanceId), service = this.services[row.definitionId];

@@ -1,17 +1,14 @@
-import { createHash } from "node:crypto";
-import { mkdirSync } from "node:fs";
-import { dirname } from "node:path";
-import {
-  openManagedDatabase,
-  createSchemaValidator,
-} from "@opencraft/sqlite-node";
+// Runtime-neutral MCP app definitions over the SQL port: no node:* imports, so
+// the same store runs on node:sqlite (`./node`, opened by `openManagedDatabase`)
+// and on Durable Object SQL. See docs/architecture/platform/storage-ports.md.
+import type { SqlDatabase } from "@opencraft/sql";
 import type { AppSpec } from "./spec";
-const schema = `
+export const appSchema = `
 CREATE TABLE apps(owner TEXT NOT NULL,id TEXT NOT NULL,version INTEGER NOT NULL,active INTEGER,next INTEGER NOT NULL,draft TEXT NOT NULL,deleted INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(owner,id)) STRICT;
 CREATE TABLE releases(owner TEXT NOT NULL,id TEXT NOT NULL,revision INTEGER NOT NULL,uri TEXT NOT NULL,spec TEXT NOT NULL,created INTEGER NOT NULL,PRIMARY KEY(owner,id,revision),FOREIGN KEY(owner,id) REFERENCES apps(owner,id) ON DELETE CASCADE) STRICT;
 `;
 export const appMigrations = [
-  { version: 1, name: "owned-app-definitions-and-releases", sql: schema },
+  { version: 1, name: "owned-app-definitions-and-releases", sql: appSchema },
 ];
 export interface AppRow {
   owner: string;
@@ -30,23 +27,31 @@ export interface Release {
   spec: string;
   created: number;
 }
-export class AppStore {
-  readonly database;
-  readonly outcome;
-  constructor(path: string) {
-    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-    const opened = openManagedDatabase({ schemaId: "mcp-apps",
-      path,
-      legacyPolicy: "reject",
-      validateSchema: createSchemaValidator(schema),
-      migrations: appMigrations,
-    });
-    this.database = opened.database;
-    this.outcome = opened.outcome;
+/** A migrated app database lent by the owner that opened it, with the owner's outcome report. */
+export interface AppStorage<Outcome = unknown> {
+  readonly database: SqlDatabase;
+  readonly outcome: Outcome;
+  close(): void;
+}
+export interface AppStoreOptions {
+  /** Lowercase hex SHA-256 of a UTF-8 string, from the owner's runtime. */
+  readonly sha256Hex: (text: string) => string;
+}
+export class AppStore<Outcome = unknown> {
+  readonly database: SqlDatabase;
+  readonly outcome: Outcome;
+  private readonly sha256Hex: (text: string) => string;
+  constructor(
+    private readonly storage: AppStorage<Outcome>,
+    options: AppStoreOptions,
+  ) {
+    this.database = storage.database;
+    this.outcome = storage.outcome;
+    this.sha256Hex = options.sha256Hex;
     this.database.exec("PRAGMA foreign_keys=ON");
   }
   close() {
-    this.database.close();
+    this.storage.close();
   }
   list(owner: string, offset: number, limit: number) {
     const rows = this.database
@@ -93,8 +98,7 @@ export class AppStore {
     spec?: AppSpec,
     revision?: number,
   ) {
-    this.database.exec("BEGIN IMMEDIATE");
-    try {
+    return this.database.transaction(() => {
       const old = this.get(owner, id);
       if ((old?.version ?? 0) !== expected)
         throw new Error(
@@ -154,10 +158,8 @@ export class AppStore {
           )
           .run(owner, id, version, active, next, draft);
         if (action === "publish") {
-          const digest = createHash("sha256")
-            .update(spec!.uiHtml)
-            .digest("hex");
-          const actor = createHash("sha256").update(owner).digest("hex");
+          const digest = this.sha256Hex(spec!.uiHtml);
+          const actor = this.sha256Hex(owner);
           const uri = `ui://opencraft/apps/${actor}/${id}/sha256-${digest}.html`;
           this.database
             .prepare("INSERT INTO releases VALUES(?,?,?,?,?,?)")
@@ -173,11 +175,7 @@ export class AppStore {
         throw new Error(
           "App definition storage limit reached (16 MiB per owner)",
         );
-      this.database.exec("COMMIT");
       return this.get(owner, id);
-    } catch (e) {
-      this.database.exec("ROLLBACK");
-      throw e;
-    }
+    });
   }
 }

@@ -126,12 +126,12 @@
   },
   {
     "id": "mcp-apps",
-    "owner": "packages/mcp-apps/src/store.ts",
+    "owner": "packages/mcp-apps/src/node.ts",
     "index": 0
   },
   {
     "id": "connector-host",
-    "owner": "packages/connector-host/src/store.ts",
+    "owner": "packages/connector-host/src/node-store.ts",
     "index": 0
   },
   {

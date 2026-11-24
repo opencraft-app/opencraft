@@ -13,6 +13,7 @@ import { McpAppsRpcSession } from "../../packages/mcp-apps/src/transport";
 import { javascript } from "../../packages/mcp-apps/src/javascript";
 import { validateSpec } from "../../packages/mcp-apps/src/spec";
 import { appMigrations } from "../../packages/mcp-apps/src/store";
+import { openMcpAppsService } from "../../packages/mcp-apps/src/node";
 import { openManagedDatabase } from "../../packages/sqlite-node/src/index";
 import { MCP_APP_RESOURCE_META } from "../../packages/appserver-protocol/src/mcp-apps";
 
@@ -52,7 +53,7 @@ async function fixture(
 ) {
   const dir = await mkdtemp(join(tmpdir(), "mcp-app-builder-")),
     path = join(dir, "apps.sqlite"),
-    s = new McpAppsService(path);
+    s = openMcpAppsService(path);
   try {
     await run(s, path);
   } finally {
@@ -263,7 +264,7 @@ test("draft is separate; rollback/unpublish/delete revoke tools and recover dura
       revision: 1,
       expectedVersion: 3,
     });
-    const recovered = new McpAppsService(path);
+    const recovered = openMcpAppsService(path);
     try {
       assert.equal(recovered.outcome.status, "up-to-date");
       assert.equal(

@@ -6,12 +6,14 @@
   "exports": {
     ".": "./src/index.ts",
     "./diagnostics": "./src/diagnostics.ts",
-    "./store": "./src/store.ts"
+    "./store": "./src/store.ts",
+    "./sql-store": "./src/sql-store.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@opencraft/sql": "0.1.0",
     "@opencraft/sqlite-node": "0.1.0",
     "@opencraft/appserver-client": "0.1.0",
     "@opencraft/app-host-protocol": "0.1.0",

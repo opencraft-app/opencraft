@@ -5,12 +5,14 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./headless": "./src/headless.ts"
+    "./headless": "./src/headless.ts",
+    "./store": "./src/store.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@opencraft/sql": "0.1.0",
     "@opencraft/connector-core": "0.1.0",
     "@opencraft/sqlite-node": "0.1.0",
     "@modelcontextprotocol/sdk": "1.32.2",
