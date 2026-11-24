@@ -17,7 +17,8 @@ import { createEngineModelSource } from "../../apps/local-agent-host/src/model-c
 import { AccountPoolStore, CodexAccountPoolProxy } from "../../packages/account-pool-host/src/index.js";
 import { createAssistantModelGateway } from "../../apps/local-agent-host/src/model-config/assistant-gateway.js";
 import { assertModelPolicy } from "../../packages/model-usage-policy/src/native.mjs";
-import { ModelConfigurationRepository } from "../../apps/local-agent-host/src/model-config/repository.js";
+import { ModelConfigurationRepository, ModelCredentialRepository } from "../../apps/local-agent-host/src/model-config/repository.js";
+import { fileSecretStore } from "@opencraft/secret-storage/file";
 import { ModelPolicyStore } from "../../packages/model-usage-policy/src/index.js";
 import {serveNodeHttpExchange} from '@opencraft/http-exchange/node';
 
@@ -134,8 +135,8 @@ test("Codex proxy authenticates, requires trusted sponsor, meters configured mod
 });
 
 test("HTTP rejects forged payer, cross-origin changes and non-admin configuration", async t => {
-  const {path}=await fixture(t);let admin=false;let origin='';
-  const handler=modelGatewayHttp({path,authority:req=>req.headers.authorization==='Bearer human'?{actor:'human-a',administrator:admin,origin}:null});
+  const {store}=await fixture(t);let admin=false;let origin='';
+  const handler=modelGatewayHttp({store:()=>store,authority:req=>req.headers.authorization==='Bearer human'?{actor:'human-a',administrator:admin,origin}:null});
   const server=createServer((req,res)=>{void serveNodeHttpExchange(req,res,handler);});await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));
   origin=`http://127.0.0.1:${(server.address() as {port:number}).port}`;
   t.after(()=>new Promise<void>(r=>{server.closeAllConnections();server.close(()=>r());}));
@@ -151,7 +152,7 @@ test("HTTP rejects forged payer, cross-origin changes and non-admin configuratio
 
 test("human contributions reuse the credential repository, require consent, and revoke without sharing secrets", async t => {
   const {path,root,store}=await fixture(t);environment(t,path);
-  const directory=join(root,'models'),contributions=gatewayContributions(directory,path);
+  const directory=join(root,'models'),contributions=gatewayContributions({models:new ModelConfigurationRepository(fileStateDocumentStore(directory)),credentials:new ModelCredentialRepository(fileSecretStore(directory)),store:()=>store});
   const input={name:'My shared model',baseUrl:'https://provider.invalid/v1',protocol:'openai-responses',model:'model',apiKey:'synthetic-secret',shareWithTeam:true};
   const repository=new ModelConfigurationRepository(fileStateDocumentStore(directory));
   await repository.update(0,draft=>draft.providers.push({id:'approved-service',name:'Approved service',baseUrl:input.baseUrl,protocol:input.protocol,credentialRef:null,enabled:false,models:[{id:'model',enabled:false}]}));
@@ -205,12 +206,12 @@ test("personal keys default to owner-only across Codex, descendants and assistan
   const {path,root,store}=await fixture(t); environment(t,path);
   store.configure('human-b',{monthlyTokens:1000,requestTokens:100,concurrency:2},0,'admin');
   store.bind('thread-b','human-b'); store.bind('child-a',null,'thread-a');
-  const directory=join(root,'models'),contributions=gatewayContributions(directory,path);
+  const directory=join(root,'models'),contributions=gatewayContributions({models:new ModelConfigurationRepository(fileStateDocumentStore(directory)),credentials:new ModelCredentialRepository(fileSecretStore(directory)),store:()=>store});
   const input={name:'Personal',baseUrl:'https://provider.invalid/v1',protocol:'openai-responses',model:'model',apiKey:'synthetic-personal-key'};
   const repository=new ModelConfigurationRepository(fileStateDocumentStore(directory));
   await repository.update(0,d=>d.providers.push({id:'approved',name:'Approved',baseUrl:input.baseUrl,protocol:input.protocol,credentialRef:null,enabled:false,models:[{id:'model',enabled:false}]}));
   let origin='';
-  const handler=modelGatewayHttp({path,authority:()=>({actor:'human-a',administrator:false,origin}),...contributions});
+  const handler=modelGatewayHttp({store:()=>store,authority:()=>({actor:'human-a',administrator:false,origin}),...contributions});
   const server=createServer((req,res)=>{void serveNodeHttpExchange(req,res,handler);});await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));
   origin='http://127.0.0.1:'+(server.address() as {port:number}).port;
   t.after(()=>new Promise<void>(r=>{server.closeAllConnections();server.close(()=>r());}));

@@ -219,7 +219,10 @@
       "SQL statement": 1
     },
     "packages/account-pool-host/src/model-gateway-store.ts": {
-      "SQL statement": 47
+      "SQL statement": 1
+    },
+    "packages/account-pool-host/src/model-gateway.ts": {
+      "SQL statement": 46
     },
     "packages/account-pool-host/src/store.ts": {
       "chmodSync": 3,

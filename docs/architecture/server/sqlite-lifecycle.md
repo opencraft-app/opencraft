@@ -51,7 +51,8 @@ OpenCraft 自有 SQLite 共两类，全部经 `openManagedDatabase` 打开并在
 | | `observe.sqlite` | observability | v6 | observability-service 启动时 |
 | | `owner-handoff/consumer-receipts.sqlite` | dsh-consumer-receipts | v1 | dsh-host 启动时 |
 | | `employee-git-vault.sqlite` | employee-git-vault-store | v1 | 执行环境插件启动时（DSH、Pi、ACP Host） |
-| **多进程共享路径** | `OPENCRAFT_MODEL_GATEWAY_DATABASE` 指定的库 | model-gateway | v4 | 每次操作短开短关：Headless、Codex 适配器、Local Agent 模型配置、codex-core 计量与 `scripts/admin/model-gateway.ts` |
+| **多进程共享路径** | `OPENCRAFT_MODEL_GATEWAY_DATABASE` 指定的库 | model-gateway | v4 | Headless 的设置路由：首个网关请求打开，account 关闭时关闭；其余每次操作短开短关：Codex 适配器、Local Agent 模型配置、codex-core 计量与 `scripts/admin/model-gateway.ts` |
+| **AccountCore DO**（可选 Cloudflare 部署，[§5.6](../platform/cloudflare-deployment.md#56-accountcore-状态2026-11-24)） | 对象自己的 SQL，四条链同库：策略记在 `schema_migrations`，其余记在 `schema_ledgers`（[同库多条迁移链](../platform/storage-ports.md#生命周期仍归-owner)） | model-usage-policy、account-pool-host、account-credential-records、model-gateway | v1、v4、v1、v4 | 对象构造时（`blockConcurrencyWhile` 内）；任一链被拒绝则对象保持关闭 |
 
 ### 同一库文件被多个组件打开
 
@@ -60,6 +61,7 @@ OpenCraft 自有 SQLite 共两类，全部经 `openManagedDatabase` 打开并在
 - **model-gateway**：Headless 与独立升级的 codex-core 会打开同一路径。给该库加迁移时，codex-core 必须与 Headless 同批升级；先升级的一方会让另一方在升级完成前无法打开该库。
 - **model-usage-policy**：Headless 常驻打开 `<H>/model-usage-policy.sqlite`；dsh-host、engine-host、acp-host 启动时各打开一次以完成迁移，默认路径是各自数据目录的上一级。部署让它们落到同一文件时，同样要同批升级。
 - **桌面 `human-account/opencraft-server.sqlite`**：只有 daemon 打开、迁移并持有写锁，Electron Main 不打开它。Main 发现另一构建的 daemon 仍在运行时（例如 Main 崩溃后升级了 App），先请它正常退出，再由本构建的 daemon 打开并迁移。
+- **account-pool-host、model-usage-policy 与 model-gateway 的链也在 AccountCore DO 中运行**：DO 与 Node owner 读同一份已发布链（账号池追加的迁移来自同一生成注册表），给这些 owner 加迁移时，新 SQL 必须能在 DO SQL 上执行（不用 `PRAGMA`、`ATTACH`、`BEGIN` 文本），并在 `test:account-core:workerd` 中验证；DO 只有一个库，各链对象须保持各自前缀（账号池 `pool_`、凭据记录 `account_credential_`、网关 `gateway_`），不得与同库的其他链重名。
 - **Server 核心库有三份独立实例**（Headless、桌面 `human-account`、Local Agent Host `collaboration`），文件不同，各自随所在组件迁移；修改核心 schema 会影响全部三处。
 
 `account-pool.sqlite`、`tasks.sqlite`、`conversation-schedules.sqlite` 等在不同组件里各有一份，位于不同目录，互不影响。

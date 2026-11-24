@@ -270,7 +270,11 @@ async function freePort(): Promise<number> {
 }
 
 /** The Node Headless server from source, with the same Human login configuration and setup proof, listening publicly. */
-export async function nodeBackend(scratch: string): Promise<Backend> {
+/** `prepare` runs on the data directory before the server first starts (for example to seed model configuration). */
+export async function nodeBackend(
+  scratch: string,
+  prepare?: (dataDirectory: string) => Promise<void>,
+): Promise<Backend> {
   const root = join(scratch, `node-${crypto.randomUUID()}`);
   const webRoot = join(root, "web");
   await mkdir(webRoot, { recursive: true });
@@ -304,6 +308,7 @@ export async function nodeBackend(scratch: string): Promise<Backend> {
     humanAuthConfig: configPath,
     startAgentHost: async () => ({ websocketUrl: "ws://127.0.0.1:9/rpc", close: async () => {} }),
   };
+  await prepare?.(options.dataDirectory);
   let app = await startHeadlessServer(options);
   return {
     origin,

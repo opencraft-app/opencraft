@@ -13,14 +13,38 @@
 //                       (Node: the private credentials.json file)
 //   route authority     asked of the InstallationCore object per request (Node: the installation's
 //                       services in the same process), answered by the same function
-// Not assembled here: the model gateway and the account pool (each needs a
-// second SQL ledger in this object), speech, personal subscriptions and OAuth
-// refresh (cloudflare-deployment §5.6 "仍缺").
+//   account pool        the same AccountPool, renewal manager and renewal schedule as the Node
+//                       Codex Core composes, over two further migration chains in the object's SQL
+//                       (`schema_ledgers`), credential records sealed synchronously in the same SQL,
+//                       renewals through the maintenance executor's fetch binding and the schedule
+//                       on the object's alarm (Node: account-pool.sqlite, private files, a native
+//                       codex maintenance process and runtime timeouts)
+//   model gateway       the same store and route over a further named chain (`model-gateway`) of the
+//                       object's SQL, contributions over the object's model configuration and sealed
+//                       credentials, the route's authority asked of the InstallationCore object (Node:
+//                       OPENCRAFT_MODEL_GATEWAY_DATABASE, the `models/` files, the installation's services)
+//   personal            the Human's accounts in this object's account pool (Node: the Codex Core over its
+//   subscriptions       control socket); device login and the subscription route are not assembled
+// Not assembled here: speech, device login and the Codex selection egress (cloudflare-deployment §5.6 "仍缺").
 import { durableObjectSqlDatabase } from "@opencraft/storage-cloudflare/sql";
 import { durableObjectStateDocumentStore } from "@opencraft/storage-cloudflare/state";
 import { durableObjectSecretStore } from "@opencraft/storage-cloudflare/secrets";
 import { importSecretSealingKey, sealedSecretStore } from "@opencraft/secret-storage/sealed";
+import { recordSealer } from "@opencraft/secret-storage/sealed-records";
 import { migrateModelPolicySqlDatabase } from "@opencraft/model-usage-policy/sql-owner";
+import { isMigrationLedgerObject } from "@opencraft/sql/schema-ledgers";
+import { openAccountPoolSqlStorage, ownedByAccountPoolSchemas } from "@opencraft/account-pool-host/sql-owner";
+import { ModelGatewayStore, ownedByModelGateway } from "@opencraft/account-pool-host/model-gateway";
+import { migrateModelGatewaySqlDatabase } from "@opencraft/account-pool-host/model-gateway-sql-owner";
+import {
+  accountPoolPersonalSubscriptions,
+  type PersonalSubscriptionRoute,
+} from "@opencraft/account-pool-host/personal-subscriptions";
+import { assembleAccountPoolCore, type AccountPoolCore } from "@opencraft/account-pool-host/pool-core";
+import { AccountPool } from "@opencraft/account-pool-host/account-pool";
+import { fetchAccountRenewal } from "@opencraft/account-pool-host/renewal";
+import { serveCredentialLeaseExchange } from "@opencraft/account-pool-host/credential-lease-exchange";
+import { mergedOwnerWake, type OwnerWake } from "@opencraft/owner-wake";
 import {
   fetchRequestView,
   fetchResponse,
@@ -48,6 +72,14 @@ const INSTALLATION_OBJECT = "installation";
 /** What the object serves once it opened. */
 export interface AccountCoreServices {
   readonly account: AccountAssembly;
+  /** The account pool: selection, affinity and renewal; this object is their only writer. */
+  readonly pool: AccountPoolCore;
+  /** One Human's accounts (`ownerActor`) in the same pool storage; personal subscriptions read them. */
+  personalPool(actor: string): AccountPool;
+  /** The model gateway's store: admission, limits, contributions and metering; this object is its only writer. */
+  readonly gateway: ModelGatewayStore;
+  /** The credential lease exchange for bound callers; resolves null for any other path. */
+  readonly leaseExchange: (request: Request) => Promise<Response | null>;
   readonly http: HttpExchangeHandler<FetchRequestView>;
   /** Asks the installation about one request; resolves its answer or the installation's own refusal. */
   ask(scope: AccountAuthorityScope, request: FetchRequestView): Promise<AccountAuthorityAnswer | Response>;
@@ -61,6 +93,7 @@ export class AccountCore {
   #failure: unknown;
   #closing: Promise<void> | undefined;
   #disposers: (() => unknown)[] = [];
+  #wake: (() => void) | null = null;
 
   constructor(ctx: AccountCoreState, env: AccountCoreEnv) {
     this.ctx = ctx;
@@ -77,20 +110,67 @@ export class AccountCore {
     });
   }
 
+  /** The object's single alarm as the owner wake-up port; `at` is wall-clock time, as an alarm's is. */
+  #alarmWake(): OwnerWake {
+    const storage = this.ctx.storage;
+    return {
+      now: () => Date.now(),
+      timer: (wake) => {
+        this.#wake = wake;
+        return {
+          arm: (at) => void storage.setAlarm(at).catch(() => undefined),
+          cancel: () => void storage.deleteAlarm().catch(() => undefined),
+        };
+      },
+    };
+  }
+
   async #open(env: AccountCoreEnv): Promise<AccountCoreServices> {
     const storage = this.ctx.storage;
     // Credentials are never stored unsealed: no key, no object.
     const sealing = await importSecretSealingKey(env.OPENCRAFT_ACCOUNT_SEALING_KEY);
-    const policy = migrateModelPolicySqlDatabase(durableObjectSqlDatabase(storage), {
-      // workerd's own tables in the object's SQL are not policy schema.
-      ownedByRuntime: (name) => name.startsWith("_cf_"),
+    const records = recordSealer(env.OPENCRAFT_ACCOUNT_SEALING_KEY);
+    const database = durableObjectSqlDatabase(storage);
+    // Four chains share the object's SQL: the policy keeps the database's own
+    // ledger; the account pool, its credential records and the model gateway are named chains.
+    const policy = migrateModelPolicySqlDatabase(database, {
+      // workerd's own tables and the other chains' objects are not policy schema.
+      ownedByRuntime: (name) =>
+        name.startsWith("_cf_") ||
+        isMigrationLedgerObject(name) ||
+        ownedByAccountPoolSchemas(name) ||
+        ownedByModelGateway(name),
     });
+    const poolStorage = openAccountPoolSqlStorage(database, records);
+    const gateway = new ModelGatewayStore(migrateModelGatewaySqlDatabase(database));
+    // A Human's pool is a view of the same storage (rows owned by that Human), built per use so it never holds
+    // state the installation pool changed; it leaves affinity to the installation pool.
+    const personalPool = (actor: string) =>
+      new AccountPool(poolStorage, { ownerActor: actor, now: () => wake.now(), preserveAffinity: true });
+    const route = this.personalSubscriptionRoute(env);
     const account = assembleAccount({
       openModelPolicy: () => policy,
       modelDocuments: durableObjectStateDocumentStore(storage, { prefix: "models/" }),
       modelSecrets: sealedSecretStore(durableObjectSecretStore(storage), sealing),
+      modelGateway: () => ({
+        // The object owns its SQL; the account closing the store releases nothing.
+        store: { store: () => gateway, close: () => gateway.close() },
+        // Offered only where a route serves them; without one the route reports none, as Node without a Core.
+        subscriptions: route ? accountPoolPersonalSubscriptions({ pool: personalPool, route }) : null,
+      }),
     });
     this.#disposers = [() => account.close()];
+    const maintenance = env.ACCOUNT_MAINTENANCE;
+    const wake = mergedOwnerWake(this.#alarmWake());
+    const pool = assembleAccountPoolCore({
+      pool: new AccountPool(poolStorage, { now: () => wake.now() }),
+      renew: maintenance
+        ? fetchAccountRenewal(maintenance)
+        : () => Promise.reject(new Error("Account maintenance executor is not configured")),
+      wake,
+    });
+    // Renewals settle before the policy writer closes.
+    this.#disposers.unshift(() => pool.close());
     const installationId = env.INSTALLATION_CORE.idFromName(INSTALLATION_OBJECT);
     const ask = async (scope: AccountAuthorityScope, request: FetchRequestView) => {
       const query: AccountAuthorityQuery = {
@@ -119,10 +199,35 @@ export class AccountCore {
         const answer = await ask("policy", request);
         return !(answer instanceof Response) && answer.scope === "policy" ? answer.authority : null;
       },
-      // The model gateway is not assembled in this object; its route answers `missing`.
-      gateway: () => null,
+      // The same question for the gateway, at each point the route asks it (before, after the body, during writes).
+      async gateway(request) {
+        const answer = await ask("gateway", request);
+        return !(answer instanceof Response) && answer.scope === "gateway" ? answer.authority : null;
+      },
     });
-    return { account, http, ask };
+    return {
+      account,
+      pool,
+      personalPool,
+      gateway,
+      http,
+      ask,
+      leaseExchange: serveCredentialLeaseExchange(account.credentialLeases),
+    };
+  }
+
+  /**
+   * Where a Human's completed subscription sends its requests and reads its
+   * models. The Codex selection egress does not exist yet (§5.6 "仍缺"), so a
+   * deployment has none and completed subscriptions answer unavailable.
+   */
+  protected personalSubscriptionRoute(_env: AccountCoreEnv): PersonalSubscriptionRoute | null {
+    return null;
+  }
+
+  /** The object's alarm: wakes whichever owner work is due (account renewals); each re-derives from state. */
+  async alarm(): Promise<void> {
+    this.#wake?.();
   }
 
   /** The opened services; throws when the open failed. */
@@ -158,6 +263,10 @@ export class AccountCore {
         installationExchangeReply({ kind: "json", status: 503, value: { error: "account_unavailable" } }),
       );
     const services = this.#services;
+    // Internal: the lease exchange for bound callers (WorkspaceHost grants, the egress redeems); the entry Worker
+    // never forwards `/__opencraft_internal/`.
+    const leaseReply = await services.leaseExchange(request);
+    if (leaseReply) return leaseReply;
     const pathname = new URL(request.url).pathname;
     if (!accountRoute(pathname)) return fetchResponse(installationExchangeReply(MISSING));
     const gate = await services.ask("gate", fetchRequestView(request));

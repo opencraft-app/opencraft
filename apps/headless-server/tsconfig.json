@@ -45,6 +45,7 @@
     "src/cloudflare/bindings.ts",
     "src/cloudflare/installation-core.ts",
     "src/cloudflare/account-core.ts",
+    "src/cloudflare/egress.ts",
     "src/cloudflare/worker.ts"
   ]
 }

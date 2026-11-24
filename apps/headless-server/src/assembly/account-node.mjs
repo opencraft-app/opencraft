@@ -1,6 +1,11 @@
 import { join } from "node:path";
-import { configuredModelGatewayPath, modelGatewayHttp, CodexCoreControlClient } from "@opencraft/account-pool-host";
-import { gatewayContributions } from "@opencraft/local-agent-host/model-config";
+import {
+  configuredModelGatewayPath,
+  modelGatewayStoreHolder,
+  ModelGatewayStore,
+  CodexCoreControlClient,
+} from "@opencraft/account-pool-host";
+import { codexCorePersonalSubscriptions } from "@opencraft/account-pool-host/personal-subscriptions";
 import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import { fileSecretStore } from "@opencraft/secret-storage/file";
 import { openModelPolicyDatabase } from "@opencraft/model-usage-policy";
@@ -14,7 +19,11 @@ import { openModelPolicyDatabase } from "@opencraft/model-usage-policy";
  *   credential leases;
  * - the model gateway (its own SQLite file, named by
  *   OPENCRAFT_MODEL_GATEWAY_DATABASE, and personal subscriptions through the
- *   Codex Core control socket), read when the Web server is built.
+ *   Codex Core control socket), read when the Web server is built. The file
+ *   is opened by the first gateway request (as before, where each request
+ *   opened it), then kept open by the account until the account closes, after
+ *   the Web server stopped; the Codex Core, engines and sponsors still open
+ *   the same file per call in their own processes, with the same busy timeout.
  */
 export function nodeAccountInputs({ dataDirectory, codexCoreEndpoint, codexCoreAuthToken }) {
   const modelPolicyPath = join(dataDirectory, "model-usage-policy.sqlite");
@@ -25,38 +34,16 @@ export function nodeAccountInputs({ dataDirectory, codexCoreEndpoint, codexCoreA
     openModelPolicy: () => openModelPolicyDatabase(modelPolicyPath),
     modelDocuments: fileStateDocumentStore(models),
     modelSecrets: fileSecretStore(models),
-    modelGateway(authority) {
+    modelGateway() {
       const gatewayPath = configuredModelGatewayPath();
       if (!gatewayPath) return null;
-      const contributions = gatewayContributions(models, gatewayPath);
-      const subscriptionCore =
-        codexCoreEndpoint && codexCoreAuthToken
-          ? new CodexCoreControlClient(codexCoreEndpoint, codexCoreAuthToken)
-          : null;
-      return modelGatewayHttp({
-        path: gatewayPath,
-        ...contributions,
-        subscription: subscriptionCore
-          ? async (actor, input, assertCurrent) => {
-              assertCurrent();
-              const result = await subscriptionCore.accountRequest(
-                "opencraft/codex/accounts/personal/" + input.operation,
-                {
-                  actor,
-                  sessionId: input.sessionId,
-                },
-              );
-              assertCurrent();
-              if (result.status === "complete")
-                return {
-                  status: "complete",
-                  ...(await contributions.connectSubscription(actor, result.connection, assertCurrent)),
-                };
-              return result;
-            }
-          : undefined,
-        authority,
-      });
+      return {
+        store: modelGatewayStoreHolder(() => new ModelGatewayStore(gatewayPath)),
+        subscriptions:
+          codexCoreEndpoint && codexCoreAuthToken
+            ? codexCorePersonalSubscriptions(new CodexCoreControlClient(codexCoreEndpoint, codexCoreAuthToken))
+            : null,
+      };
     },
   };
 }
