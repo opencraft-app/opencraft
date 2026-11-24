@@ -220,7 +220,11 @@ test('Server assembly drives once through Broker and cron through input ledger w
   for(const kind of ['once','cron'] as const) {
     const task=kind==='once'?{kind,sourceThreadId:'parent',driver:'codex',model:'fixture',environment:'host',prompt:'OK'}:target;
     const grant=await runtime.grant(caller,'create',{serverId:'server',projectId:'project',target:task,permissionProfile:'read-only'},'grant-'+kind) as any;
-    const schedule=kind==='once'?{kind,at:Date.now()}:{kind,expression:'* * * * *',timezone:'UTC'};
+    // These runs are triggered manually. Keep the scheduled occurrences away
+    // from the current minute so the automatic wake cannot claim them first.
+    const later = new Date(Date.now() + 12 * 60 * 60 * 1000);
+    const schedule = kind === 'once' ? {kind, at: later.getTime()}
+      : {kind, expression: `${later.getUTCMinutes()} ${later.getUTCHours()} * * *`, timezone: 'UTC'};
     const automation=await runtime.command(caller,'create',{grantId:grant.id,schedule},'create-'+kind) as any;
     await runtime.command(caller,'run',{id:automation.id,occurrenceId:'manual',runKey:automationRunKey(automation.id,1,'manual')},'run-'+kind);
     for(let n=0;n<50;n++) {
