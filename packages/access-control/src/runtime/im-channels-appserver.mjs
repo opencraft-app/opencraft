@@ -2,6 +2,7 @@ import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
 import { CHANNELS_CHANGED, CHANNELS_EXTENSION, PERSONAL_ASSISTANT_EXTENSION, isJsonRpcRequest, parseJsonRpcMessage } from '@opencraft/appserver-protocol';
 import { ClientObserverList, TransportStatusObservers } from '@opencraft/appserver-client/transport';
 import { nativeChannelId } from '../native-channels.js';
+import { periodicOwnerWork, timeoutOwnerWake } from '@opencraft/owner-wake';
 
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const id = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/u.test(value);
@@ -27,9 +28,13 @@ export class ImChannelsAppServer {
   #statuses = new TransportStatusObservers();
   #clients = new Map();
   #unwatch = [];
+  // Membership of a subscribed channel changes outside this process (IM providers) without a notification here, so it
+  // is re-read every 30 s on the owner wake-up port from the first subscription until close.
   #membershipRefresh;
+  #wake;
 
-  constructor(getNative) { this.getNative = getNative; }
+  /** `ownerWake` is the owner wake-up port (gateway-split.md §4.2, G5); the default Node timeout one. */
+  constructor(getNative, { ownerWake } = {}) { this.getNative = getNative; this.#wake = ownerWake ?? timeoutOwnerWake(); }
 
   async connect(signal) {
     signal?.throwIfAborted();
@@ -43,7 +48,7 @@ export class ImChannelsAppServer {
 
   async close() {
     for (const unwatch of this.#unwatch.splice(0)) unwatch();
-    clearInterval(this.#membershipRefresh);
+    this.#membershipRefresh?.close();
     this.#membershipRefresh = undefined;
     this.#clients.clear();
     this.status = { state: 'closed' };
@@ -162,8 +167,7 @@ export class ImChannelsAppServer {
         if (!this.#membershipRefresh) {
           const nativeChanges = this.getNative()?.channels;
           if (nativeChanges) this.#unwatch.push(nativeChanges.onChange(change => this.#notify(change)));
-          this.#membershipRefresh = setInterval(() => this.#refreshMembership(), 30_000);
-          this.#membershipRefresh.unref();
+          this.#membershipRefresh = periodicOwnerWork(this.#wake, 30_000, () => this.#refreshMembership());
         }
         return null;
       }

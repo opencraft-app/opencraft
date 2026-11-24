@@ -53,9 +53,10 @@ import { actorSshKeysHttp } from "../actor-ssh-keys-http.ts";
  * something that was never opened resolves without effect.
  *
  * `ownerWake` (optional, `@opencraft/owner-wake`) drives the instance and Actor
- * access watches; without it they keep the runtime's own timeouts, as the Node
- * root does. A single-alarm owner (the InstallationCore Durable Object) passes
- * its merged alarm.
+ * access watches, the collaboration pump, the orchestration sweep and the
+ * automation run check (schedule occurrences keep a wall-clock wake-up);
+ * without it they keep the runtime's own timeouts. A single-alarm owner (the
+ * InstallationCore Durable Object) passes its merged alarm.
  */
 export function assembleInstallation({ serverStorage, identityFence, isHuman, ownerWake }) {
   let membership, actorStore, identity, instanceAccess, loginAdmission;
@@ -346,9 +347,9 @@ export function assembleInstallation({ serverStorage, identityFence, isHuman, ow
         codexBridge(),
       );
       const actorCollaborationApi = new CollaborationHttpApi(actorCollaboration, actorAccess, projectAutomations);
-      await projectAutomations.start();
-      actorCollaboration.start();
-      threadOrchestration.start();
+      await projectAutomations.start({ ownerWake });
+      actorCollaboration.start(ownerWake);
+      threadOrchestration.start(ownerWake);
       return { actorCollaboration, threadOrchestration, actorCollaborationApi };
     },
     /**

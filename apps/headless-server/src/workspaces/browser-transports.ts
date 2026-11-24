@@ -1,4 +1,12 @@
 import { randomBytes } from "node:crypto";
+import {
+  dueOwnerWork,
+  periodicOwnerWork,
+  timeoutOwnerWake,
+  type DueOwnerWork,
+  type OwnerWake,
+  type PeriodicOwnerWork,
+} from "@opencraft/owner-wake";
 import type { SandboxBrowserOwnerTransport } from "@opencraft/local-agent-host/sandbox-browser-owner";
 import type { OrdinaryExecutionBinding } from "@opencraft/local-agent-host/ordinary-conversation-owner";
 import type { WorkspaceActorAdmission } from "./actor-authority.js";
@@ -19,6 +27,10 @@ export interface WorkspaceBrowserPort {
   workspaceBrowserClose(token: string): Promise<"pending" | "closed" | "failed">;
 }
 const invalid = () => Error("Workspace browser unavailable");
+/** A channel untouched this long is closed. */
+export const BROWSER_CHANNEL_IDLE_MS = 30_000;
+/** Authority and binding currency have no change notification; open channels are re-checked this often. */
+export const BROWSER_CHANNEL_CHECK_MS = 100;
 const shape = (token: unknown): token is string => typeof token === "string" && /^[a-f0-9]{64}$/u.test(token);
 const bytes = (value: unknown, max: number) => {
   const size = Buffer.byteLength(JSON.stringify(value));
@@ -54,19 +66,49 @@ export class WorkspaceBrowserTransfers {
   private readonly channels = new Map<string, Channel>();
   private queuedBytes = 0;
   private closed = false;
-  private readonly timer: ReturnType<typeof setInterval>;
+  private readonly wake: OwnerWake;
+  /** Idle channels close when the least recently touched one expires; nothing wakes while no channel is open. */
+  private readonly idle: DueOwnerWork;
+  /** Armed only while a channel is open (its phase starts with the first one). */
+  private check: PeriodicOwnerWork | null = null;
   constructor(
     private readonly options: {
       current(access: WorkspaceActorAdmission, pending: boolean): boolean;
       binding(access: WorkspaceActorAdmission, threadId: string): Promise<OrdinaryExecutionBinding>;
+      /** Owner wake-up for the authority check and idle expiry; the default Node timeout one. */
+      wake?: OwnerWake;
     },
   ) {
-    this.timer = setInterval(() => {
-      for (const [token, channel] of this.channels) {
-        if (!this.current(channel) || Date.now() - channel.touched > 30000) void this.close(token).catch(() => {});
-      }
-    }, 100);
-    this.timer.unref();
+    this.wake = options.wake ?? timeoutOwnerWake();
+    this.idle = dueOwnerWork(
+      this.wake,
+      () => {
+        let oldest: number | null = null;
+        for (const channel of this.channels.values())
+          if (!channel.closing && (oldest === null || channel.touched < oldest)) oldest = channel.touched;
+        return oldest === null ? null : oldest + BROWSER_CHANNEL_IDLE_MS;
+      },
+      (now) => {
+        for (const [token, channel] of this.channels)
+          if (!channel.closing && now - channel.touched >= BROWSER_CHANNEL_IDLE_MS) void this.close(token).catch(() => {});
+      },
+    );
+  }
+  /** Re-arms the authority check and idle expiry after a channel opens or closes. Touching a channel only moves its
+   * expiry later, so it needs no re-arm: an early wake-up finds nothing due and re-arms for the new time. */
+  private changed() {
+    const open = !this.closed && [...this.channels.values()].some((channel) => !channel.closing);
+    if (open)
+      this.check ??= periodicOwnerWork(this.wake, BROWSER_CHANNEL_CHECK_MS, () => {
+        for (const [token, channel] of this.channels)
+          if (!channel.closing && !this.current(channel)) void this.close(token).catch(() => {});
+        this.changed();
+      });
+    else {
+      this.check?.close();
+      this.check = null;
+    }
+    this.idle.reschedule();
   }
   private current(channel: Channel): boolean {
     try {
@@ -89,7 +131,7 @@ export class WorkspaceBrowserTransfers {
   private get(token: string): Channel {
     const channel = this.lookup(token);
     if (!this.current(channel)) throw invalid();
-    channel.touched = Date.now();
+    channel.touched = this.wake.now();
     return channel;
   }
   open(access: WorkspaceActorAdmission, threadId: string, lease: WorkspaceTerminalLease): string {
@@ -116,7 +158,7 @@ export class WorkspaceBrowserTransfers {
         status: { state: "opening" },
         closed: false,
         cleanupFailed: false,
-        touched: Date.now(),
+        touched: this.wake.now(),
         open: undefined!,
         frames: [],
         bytes: 0,
@@ -128,6 +170,7 @@ export class WorkspaceBrowserTransfers {
         writes: new Set(),
       };
     this.channels.set(token, channel);
+    this.changed();
     channel.open = (async () => {
       try {
         const binding = await this.options.binding(access, threadId);
@@ -207,7 +250,7 @@ export class WorkspaceBrowserTransfers {
   async status(token: string): Promise<WorkspaceBrowserStatus> {
     const channel = this.lookup(token);
     if (!this.current(channel)) return { state: "failed" };
-    channel.touched = Date.now();
+    channel.touched = this.wake.now();
     if (channel.status.state === "ready") await this.validate(channel);
     return channel.status;
   }
@@ -298,7 +341,8 @@ export class WorkspaceBrowserTransfers {
     if (!shape(token)) return Promise.reject(invalid());
     const channel = this.channels.get(token);
     if (!channel) return Promise.resolve();
-    return (channel.closing ??= (async () => {
+    if (channel.closing) return channel.closing;
+    channel.closing = (async () => {
       channel.closed = true;
       channel.remove?.();
       await channel.open;
@@ -314,11 +358,14 @@ export class WorkspaceBrowserTransfers {
       channel.bytes = 0;
       channel.frames = [];
       this.channels.delete(token);
-    })());
+    })();
+    this.changed();
+    return channel.closing;
   }
   async closeAll() {
     this.closed = true;
-    clearInterval(this.timer);
+    this.idle.close();
+    this.changed();
     const results = await Promise.allSettled([...this.channels.keys()].map((token) => this.close(token)));
     const failures = results.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
     if (failures.length) throw new AggregateError(failures, "Workspace browser detach unconfirmed");

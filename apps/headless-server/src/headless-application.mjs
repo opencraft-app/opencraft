@@ -378,8 +378,10 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   // Identity, admission, collaboration and deployment-level services over the
   // core SQL owner; creating it opens nothing, each step and disposer keeps
   // its original position.
+  // Deployment-level periodic owner work runs on the owner wake-up port (gateway-split.md §4.2).
+  const ownerWake = options.ownerWake ?? timeoutOwnerWake();
   const installation = assembleInstallation({ serverStorage, identityFence: sharedMemoryCommitFence(identityFence),
-    isHuman: principal => composition.isHuman?.(principal) });
+    isHuman: principal => composition.isHuman?.(principal), ownerWake });
   const orchestrationStorage = installation.openOrchestrationStorage();
   const releaseLock = async () => { await installation.closeOrchestrationStorage(); await serverStorage.close(); releaseExtensions(); };
   let agent;
@@ -445,8 +447,6 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   // Node-only services; creating the module opens nothing, each step runs at
   // its original position and each disposer at its original shutdown step.
   const nodeLocal = assembleNodeLocal({ dataDirectory });
-  // Deployment-level periodic owner work runs on the owner wake-up port (gateway-split.md §4.2).
-  const ownerWake = options.ownerWake ?? timeoutOwnerWake();
   // The lifecycle publishes the shared promise before invoking any disposer
   // (including a synchronous failure or reentrant close). Retire listeners before stores.
   const close = (update = null) => lifecycle.shutdown(async () => {
@@ -1044,7 +1044,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       logicalClientRouting: true,
       physicalHostLifetime: "server",
       createTransport(hostId) {
-        if (hostId === CHANNELS_HOST_ID) return new ImChannelsAppServer(() => actorCollaboration);
+        if (hostId === CHANNELS_HOST_ID) return new ImChannelsAppServer(() => actorCollaboration, { ownerWake });
         const transport = new ModelPolicyTransport((() => {
         if (hostId === 'opencraft-server') return new TokenUsageQueryTransport(new MachineIdentityTransport(machineIdentity,'OpenCraft',async () => {
           const engine = new WebSocketTransport({

@@ -1,3 +1,4 @@
+import { dueOwnerWork, timeoutOwnerWake, type DueOwnerWork, type OwnerWake } from '@opencraft/owner-wake';
 import { parseInputCompletion } from "@opencraft/appserver-protocol";
 import type { ActorContext } from "@opencraft/identity-core/actors";
 import type { ThreadAccessStore } from "./thread-access.js";
@@ -45,7 +46,18 @@ export class ThreadOrchestrationBroker {
   private readonly operationCalls=new Map<string,Promise<unknown>>();
   private ackSweep:Promise<void>|null=null;
   private reconciledStartup=false;
-  private timer:ReturnType<typeof setInterval>|null=null;
+  // The timer sweep wakes only when something is due (gateway-split.md §4.2, G5): a child's paced status read or
+  // failure retry, a parent notification's delivery time, a pending native acknowledgement, or, for a target with
+  // neither or work left over, one 500 ms period after the sweep began. With nothing to watch it does not wake. Every
+  // operation that can add a target or work signals, so the next sweep is due at once.
+  private wake:OwnerWake|null=null;
+  private due:DueOwnerWork|null=null;
+  /** Owner-clock time the next timer sweep is due, from the last sweep; null when it left nothing to watch. */
+  private sweepDue:number|null=null;
+  /** Owner-clock time a pending native acknowledgement is retried. */
+  private ackDue:number|null=null;
+  /** An operation changed targets or work after the running sweep read them. */
+  private signalled=false;
   private sweep:Promise<void>|null=null;
   private closed=false;
   private reportedSweepFailure=false;
@@ -66,7 +78,7 @@ export class ThreadOrchestrationBroker {
   async initializeAssistantThreads():Promise<void>{await this.assistant?.initialize();}
   command(c:ActorContext,method:string,p:Record<string,unknown>):Promise<unknown>{
     if(!this.assistant||this.closed)throw new CollaborationError(503,'assistant_threads_unavailable');
-    return this.assistantCommand(c,method,p);
+    return this.assistantCommand(c,method,p).finally(()=>this.signal());
   }
   allowsInput(grant:any,threadId:string):boolean{return !this.closed&&!!this.assistant?.allowsInput(grant,threadId);}
   refreshInput(grant:any,threadId:string):Promise<void>{
@@ -75,9 +87,27 @@ export class ThreadOrchestrationBroker {
   }
   invalidate(threadId?:string,ownerActorId?:string,botId?:string):void{this.assistant?.invalidate(threadId,ownerActorId,botId);}
   private get runtime(){if(!this.runtimeStorage)throw new CollaborationError(503,'orchestration_runtime_unavailable');return this.runtimeStorage;}
-  start():void {if(!this.runtimeStorage)throw new CollaborationError(503,'orchestration_runtime_unavailable');if(!this.timer&&!this.closed){this.timer=setInterval(()=>{void this.reconcile(true).then(()=>{this.reportedSweepFailure=false;},()=>{if(!this.reportedSweepFailure){this.reportedSweepFailure=true;console.warn('[opencraft orchestration]',JSON.stringify({event:'orchestration-sweep-failed'}));}});},500);this.timer.unref();}}
+  /** Starts the timer sweep on `ownerWake` (the default Node timeout one; a single-alarm owner passes its merged alarm).
+   * The first sweep is one period after start, as before, and finds the targets left by an earlier process. */
+  start(ownerWake:OwnerWake=timeoutOwnerWake()):void {
+    if(!this.runtimeStorage)throw new CollaborationError(503,'orchestration_runtime_unavailable');
+    if(this.due||this.closed)return;
+    this.wake=ownerWake;this.sweepDue=ownerWake.now()+ORCHESTRATION_POLL_MIN_MS;
+    this.due=dueOwnerWork(ownerWake,()=>{
+      // A running sweep re-arms when it settles; arming meanwhile would only wake into it.
+      if(this.closed||this.sweep)return null;
+      if(this.signalled)return ownerWake.now();
+      const sweep=this.sweepDue,ack=this.ackDue;
+      return sweep===null?ack:ack===null?sweep:Math.min(sweep,ack);
+    },()=>{
+      if(this.sweep)return;
+      void this.reconcile(true).then(()=>{this.reportedSweepFailure=false;},()=>{if(!this.reportedSweepFailure){this.reportedSweepFailure=true;console.warn('[opencraft orchestration]',JSON.stringify({event:'orchestration-sweep-failed'}));}});
+    });
+  }
+  /** Something may have added a target or work; the next sweep is due at once. */
+  private signal():void{this.signalled=true;this.due?.reschedule();}
   get available():boolean{return !this.closed&&!!this.runtimeStorage;}
-  stop():void{this.closed=true;void this.assistant?.close();this.detachAssistant?.();this.detachAssistant=undefined;if(this.timer)clearInterval(this.timer);this.pacing.clear();this.pacingEpoch.clear();this.statusFailures.clear();this.statusReads.clear();}
+  stop():void{this.closed=true;void this.assistant?.close();this.detachAssistant?.();this.detachAssistant=undefined;this.due?.close();this.pacing.clear();this.pacingEpoch.clear();this.statusFailures.clear();this.statusReads.clear();}
   async close():Promise<void>{this.stop();await this.sweep?.catch(()=>{});await this.ackSweep?.catch(()=>{});await Promise.allSettled([...this.observations]);await Promise.allSettled([...this.calls.values()].map(call=>call.promise));await Promise.allSettled(this.operationCalls.values());}
   async invoke(threadId:string,turnId:string,toolCallKey:string,name:string,args:Record<string,unknown>,delegationId?:string,callbackIncarnation?:string):Promise<unknown>{
     if(!this.available)return Promise.reject(new CollaborationError(503,this.closed?'orchestration_closed':'orchestration_runtime_unavailable'));
@@ -266,7 +296,11 @@ export class ThreadOrchestrationBroker {
     if(['failed','error','interrupted_by_user','exhausted'].includes(snapshot.state))return {state:'failed',result:binding};
     return {state:'running',result:binding};
   }
-  private async perform(threadId:string,turnId:string,key:string,name:string,args:Record<string,unknown>,delegationId?:string,callbackIncarnation?:string):Promise<unknown>{
+  /** Every tool operation may add a child, a wait or a notification; the sweep looks again once it settles. */
+  private perform(threadId:string,turnId:string,key:string,name:string,args:Record<string,unknown>,delegationId?:string,callbackIncarnation?:string):Promise<unknown>{
+    return this.performTool(threadId,turnId,key,name,args,delegationId,callbackIncarnation).finally(()=>this.signal());
+  }
+  private async performTool(threadId:string,turnId:string,key:string,name:string,args:Record<string,unknown>,delegationId?:string,callbackIncarnation?:string):Promise<unknown>{
     // A direct operation on a child is new evidence; read it again on the next sweep.
     if(!['thread_wait','read_thread','get_thread_delivery'].includes(name))for(const id of [args.threadId,...(Array.isArray(args.threadIds)?args.threadIds:[])])if(typeof id==='string'){this.pacing.delete(id);this.statusFailures.delete(id);this.pacingEpoch.set(id,(this.pacingEpoch.get(id)??0)+1);}
     if(['read_thread','send_message_to_thread','get_thread_delivery'].includes(name))return this.conversationTool(threadId,turnId,key,name,args,delegationId);
@@ -821,9 +855,17 @@ export class ThreadOrchestrationBroker {
   }
   private reconcileAcks():Promise<void>{
     if(this.closed||!this.execution.acknowledge||!this.runtimeStorage)return Promise.resolve();
-    return this.ackSweep??=(async()=>{for(const id of await this.runtime.pendingAcks()){
-      try{if(await this.execution.acknowledge!(id)!==false){await this.runtime.acknowledge(id);}}catch{/* Durable intent remains for the next sweep. */}
-    }})().finally(()=>{this.ackSweep=null;});
+    return this.ackSweep??=(async()=>{
+      // A failed or unconfirmed acknowledgement, or a full page, is retried one period later.
+      let retry=false;
+      try{
+        const pending=await this.runtime.pendingAcks();retry=pending.length>=16;
+        for(const id of pending){
+          try{if(await this.execution.acknowledge!(id)!==false){await this.runtime.acknowledge(id);}else retry=true;}catch{retry=true;/* Durable intent remains for the next sweep. */}
+        }
+      }catch(error){retry=true;throw error;}
+      finally{if(this.wake){this.ackDue=retry?this.wake.now()+ORCHESTRATION_POLL_MIN_MS:null;this.due?.reschedule();}}
+    })().finally(()=>{this.ackSweep=null;});
   }
   observe(snapshot:OrchestrationRuntimeSnapshot,epoch=this.pacingEpoch.get(snapshot.threadId)??0):Promise<void>{
     if(this.closed)return Promise.resolve();
@@ -852,7 +894,18 @@ export class ThreadOrchestrationBroker {
     }).finally(()=>{if(this.statusReads.get(id)?.promise===read)this.statusReads.delete(id);});
     this.statusReads.set(id,{epoch,promise:read});return read;
   }
-  reconcile(paced=false):Promise<void>{if(this.closed)return Promise.resolve();return this.sweep??=this.runSweep(paced).finally(()=>{this.sweep=null;});}
+  reconcile(paced=false):Promise<void>{
+    if(this.closed)return Promise.resolve();
+    // A sweep that already read its targets may miss what the caller just changed; the next one is due at once.
+    if(this.sweep){this.signalled=true;return this.sweep;}
+    return this.sweep=this.runSweep(paced).finally(()=>{this.sweep=null;this.due?.reschedule();});
+  }
+  /** When target `id` is next due on the owner clock: its paced read or failure retry (wall clock, the clock they are
+   * stamped and checked on), and never earlier than one period after the sweep began. */
+  private targetDue(id:string,sweepStart:number):number{
+    const pace=this.pacing.get(id)?.dueAt??-Infinity,failed=this.statusFailures.get(id)?.dueAt??-Infinity,wall=Math.max(pace,failed),floor=sweepStart+ORCHESTRATION_POLL_MIN_MS;
+    return wall===-Infinity?floor:Math.max(floor,this.wake!.now()+(wall-this.now()));
+  }
   /** Record one observed child state and schedule its next timer-driven read. */
   private pace(id:string,state:OrchestrationRuntimeSnapshot,now:number,epoch:number):void{
     if(this.closed||(this.pacingEpoch.get(id)??0)!==epoch)return;
@@ -863,8 +916,19 @@ export class ThreadOrchestrationBroker {
     this.pacing.set(id,{key,unchanged,since,dueAt:now+interval,state});
   }
   private async runSweep(paced=false):Promise<void>{
-    void this.reconcileAcks();
+    const sweepStart=this.wake?.now()??0,floor=sweepStart+ORCHESTRATION_POLL_MIN_MS;
+    let due:number|null=null;
+    const consider=(at:number)=>{if(due===null||at<due)due=at;};
+    try{await this.sweepOnce(paced,sweepStart,consider);}
+    catch(error){consider(floor);throw error;}
+    finally{if(this.wake)this.sweepDue=due;}
+  }
+  private async sweepOnce(paced:boolean,sweepStart:number,consider:(at:number)=>void):Promise<void>{
+    const floor=sweepStart+ORCHESTRATION_POLL_MIN_MS;
+    void this.reconcileAcks().catch(()=>{});
     const ledger=this.collaboration.orchestration;
+    // Changes from here on are not in this sweep; their signal makes the next one due at once.
+    this.signalled=false;
     const targets=new Set(await this.runtime.targets(!this.reconciledStartup,this.now()));
     if(this.closed)return;
     const snapshots=new Map<string,OrchestrationRuntimeSnapshot>();
@@ -877,8 +941,13 @@ export class ThreadOrchestrationBroker {
       let state:OrchestrationRuntimeSnapshot;try{state=await this.readStatus(id,!paced);}catch{continue;}if(this.closed)return;snapshots.set(id,state);
     }
     this.reconciledStartup=true;
+    if(this.wake)for(const id of targets)consider(this.targetDue(id,sweepStart));
     const work=await this.runtime.work(this.now());
     if(this.closed)return;
+    // Notifications due now are delivered below, or retried one period later; one not yet due wakes at its time. A
+    // runtime port that does not report it is looked at every period.
+    if(work.notifications.length||work.nextNotificationAt===undefined)consider(floor);
+    else if(work.nextNotificationAt!==null&&this.wake)consider(Math.max(floor,this.wake.now()+(work.nextNotificationAt-this.now())));
     for(const ticket of work.waits){
       const states=ticket.targetThreadIds.map(id=>snapshots.get(id)),settled=ticket.waitFor==='all_settled'?states.every(state=>state&&terminal.has(state.state)):states.some(state=>state&&terminal.has(state.state));
       if(settled){
@@ -892,6 +961,8 @@ export class ThreadOrchestrationBroker {
             const batch=ledger.queueNotification({parentThreadId:ticket.callerThreadId,childThreadId:state.threadId,childRootTurnId:state.rootTurnId??`wait:${ticket.waitTicketId}`,outcomeKind:state.state as ChildOutcome,
               hasDirectUserInput:ledger.relation(state.threadId)?.hasDirectUserInput??false,userInputExcerpt:ledger.relation(state.threadId)?.userInputExcerpt??null,summary:{text:state.summary?.slice(0,4096)??state.state}});
             this.collaboration.notificationAuthority(batch.batchId,delegation.id);
+            // Its delivery time is read by the next sweep.
+            consider(floor);
           }
           if(operation.result===null)ledger.finish(operation.toolCallKey,{settled:true,waitTicketId:ticket.waitTicketId,threads:states.filter(Boolean)});
           ledger.settleWait(ticket.waitTicketId,'satisfied');

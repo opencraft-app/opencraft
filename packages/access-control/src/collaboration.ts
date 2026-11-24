@@ -14,6 +14,7 @@ import { PERSONAL_ASSISTANT_METHODS, type PersonalAssistantAccess, type Personal
 import { channelSyncCommand, enqueueChannelDelivery, channelImageType, type ChannelImage, type ChannelSyncCommand } from "./native-channel-sync.js";
 import type { ProjectAutomations } from './automation-runtime.js';
 import { AutomationError } from './automation.js';
+import { dueOwnerWork, timeoutOwnerWake, type DueOwnerWork, type OwnerWake } from '@opencraft/owner-wake';
 import type { OrchestrationRuntimeWorker } from './orchestration-runtime-store.js';
 // Node resolves the `node` condition (a companion Worker on a Node file); other runtimes get the neutral module.
 import { isOrchestrationRuntimeService, openOrchestrationRuntimeCompanion } from '@opencraft/access-control/orchestration-runtime-companion';
@@ -144,6 +145,22 @@ export class Collaboration {
   // Timer pumps re-read an unchanged receipt with backoff: "queued" 500 ms -> 5 s, "unknown"
   // (awaits human review) 500 ms -> 30 s. A paused queue head or an unconfirmed handoff otherwise
   // costs one engine logical client every 500 ms for as long as it stays.
+  // The timer pump wakes only when an open request is due (gateway-split.md §4.2, G5): the earliest receipt backoff,
+  // reconciliation retry or, for a request with neither (accepted, transferring, or beyond the 32-row page), one
+  // 500 ms period after the pass began. With no open request it does not wake. Every place that creates a request
+  // (here, or in a storage Worker's instance and reported back) signals, so the next pass is due at once.
+  #wake: OwnerWake | null = null;
+  #due: DueOwnerWork | null = null;
+  /** Owner-clock time the next timer pass is due, from the last pass; null when it left no open request. */
+  #passDue: number | null = null;
+  /** A request was created, or a pump was asked for, after the running pass read its rows. */
+  #signalled = false;
+  #executionRequestsCreated = 0;
+  /** Requests this instance created. A storage Worker's command result reports a change so the network instance
+   * that pumps learns of requests created in the Worker. */
+  get executionRequestsCreated() { return this.#executionRequestsCreated; }
+  #requestCreated() { this.#executionRequestsCreated++; this.#signal(); }
+  #signal() { this.#signalled = true; this.#due?.reschedule(); }
   // Crew rules read and write SQLite, so they live only where the communication storage owner runs
   // (its Worker attaches them). An instance on a network thread has none and the rules stand aside.
   #crew?: { contact: CrewContact; work: CrewWork };
@@ -207,7 +224,6 @@ export class Collaboration {
   get crewWork(): CrewWork { return this.#crew?.work ?? (() => { throw new CollaborationError(503, 'crew_unavailable'); })(); }
   readonly #receiptPacing = new Map<string, { key: string; unchanged: number; dueAt: number }>();
   #operations: Promise<unknown> = Promise.resolve();
-  #timer: ReturnType<typeof setInterval> | null = null;
   readonly #closeDatabase: () => void;
   /** Node file backing this service; companion Workers open it. Absent for in-memory or non-file storage. */
   readonly #storageLocation: string | undefined;
@@ -233,14 +249,22 @@ export class Collaboration {
     if (!this.executionPort) throw new CollaborationError(409, "execution_unavailable");
     return this.executionPort;
   }
-  start() {
+  /** Starts the timer pump on `ownerWake` (the default Node timeout one; a single-alarm owner passes its merged alarm).
+   * The first pass is one period after start, as before, and finds any open request left by an earlier process. */
+  start(ownerWake: OwnerWake = timeoutOwnerWake()) {
     if (!this.hasExecution) return;
-    if (this.#timer || this.#closed) return;
-    this.#timer = setInterval(() => { void this.pump(true).catch(() => {}); }, 500); this.#timer.unref();
+    if (this.#due || this.#closed) return;
+    this.#wake = ownerWake;
+    this.#passDue = ownerWake.now() + 500;
+    this.#due = dueOwnerWork(ownerWake, () => {
+      // A running pass re-arms when it settles; arming meanwhile would only wake into it.
+      if (this.#closed || this.#pump) return null;
+      return this.#signalled ? ownerWake.now() : this.#passDue;
+    }, () => { if (!this.#pump) void this.pump(true).catch(() => {}); });
   }
   async close() {
     if (this.#closed) return;
-    this.#closed = true; if (this.#timer) clearInterval(this.#timer);
+    this.#closed = true; this.#due?.close();
     await Promise.allSettled(this.#creations);
     await this.#operations; await this.ownedExecutionStorage?.close(); await this.communicationStorage?.close(); this.#unsubscribeIdentity(); this.#unregisterAuthority(); this.#closeDatabase();
   }
@@ -315,6 +339,7 @@ export class Collaboration {
     const id = randomUUID(), now = this.now();
     this.database.prepare("INSERT INTO actor_execution_requests(id,requester_id,requester_generation,target_id,target_generation,binding_epoch,thread_id,mode,expected_turn_id,state,queue_id,turn_id,reason,created_at,updated_at,host_id) VALUES(?,?,?,?,?,?,?,?,?,'accepted',NULL,NULL,NULL,?,?,?)")
       .run(id, context.actorId, context.generation, target, actor.generation, binding.epoch, binding.threadId, intent.mode, expectedTurn, now, now, binding.hostId);
+    this.#requestCreated();
     messageIds.forEach((messageId, position) => this.database.prepare('INSERT INTO actor_execution_inputs VALUES(?,?,?)').run(id, messageId, position));
     for (const [channelId, epochs] of channelMembership) {
       this.database.prepare('INSERT INTO actor_channel_execution_membership VALUES(?,?,?,?)').run(id,channelId,...epochs);
@@ -606,6 +631,7 @@ export class Collaboration {
         .run(messageId,seq,target,context.actorId,target,content,now,ref.serverId,source ? encodeConversationRef(source) : null,delegationId);
       this.database.prepare("INSERT INTO actor_execution_requests(id,requester_id,requester_generation,target_id,target_generation,binding_epoch,thread_id,mode,expected_turn_id,state,created_at,updated_at,target_kind,host_id,server_id,credential_id,expires_at) VALUES(?,?,?,?,0,0,?,?,?,'accepted',?,?,'conversation',?,?,?,?)")
         .run(requestId,context.actorId,context.generation,target,ref.threadId,intent.mode,intent.mode === 'steer' ? intent.expectedTurnId ?? null : null,now,now,null,ref.serverId,context.credentialId,context.expiresAt);
+      this.#requestCreated();
       this.database.prepare('INSERT INTO actor_execution_inputs VALUES(?,?,0)').run(requestId,messageId);
       const inputId=ACTOR_INPUT_PREFIX+requestId, automated=source!==null || this.actors.get(context.actorId)?.kind==='session';
       this.recordInputOrigin(ref.threadId,inputId,{kind:automationRunKey?'system':automated?'agent':'user',clientMessageId:inputId,authorActorId:automated?null:context.actorId,
@@ -1350,6 +1376,7 @@ export class Collaboration {
     for(const id of packet.retiredCredentials??[])this.actors.acceptRetiredCredential(id);
     // Committed changes must notify other identities even if this caller expired.
     if (this.managedStorage) for (const change of packet.changes) this.channels.changed(change);
+    if (this.managedStorage && packet.executionRequested) this.#signal();
     if(['opencraft/channels/group/leave','opencraft/channels/group/dissolve','opencraft/channels/group/member/set'].includes(method))void this.pump().catch(()=>{});
     current();
     return packet.result;
@@ -1365,6 +1392,7 @@ export class Collaboration {
       const storage=this.#communicationStorage();if(!storage)throw Error('communication_storage_unavailable');
       packet=await storage.synchronizeChannels(command);
     }else packet=channelSyncCommand(this,this.database,command);
+    if(this.managedStorage&&packet.executionRequested)this.#signal();
     if(command.method==='reserveHuman')this.actors.acceptReservedHuman(packet.result);
     for(const change of packet.changes)this.channels.changed(change);
     return packet.result;
@@ -1529,9 +1557,10 @@ export class Collaboration {
   }
   pump(paced = false): Promise<void> {
     if (!this.hasExecution) return Promise.resolve();
-    if (this.#pump) return this.#pump;
+    // A pass that already read its rows may miss what the caller just created; the next pass is then due at once.
+    if (this.#pump) { this.#signalled = true; return this.#pump; }
     if (this.#closed) return Promise.resolve();
-    this.#pump = this.#serial(() => this.#drain(paced)).finally(() => { this.#pump = null; }); return this.#pump;
+    this.#pump = this.#serial(() => this.#drain(paced)).finally(() => { this.#pump = null; this.#due?.reschedule(); }); return this.#pump;
   }
   /** Back off a request whose pump pass left it queued, submitted or unknown with nothing changed,
    * whether its receipt read succeeded or threw; any change reads again at the next tick. */
@@ -1553,18 +1582,41 @@ export class Collaboration {
       throw error;
     }
   }
+  /** When `id`, left in `state`, is next due on the owner clock: its receipt backoff and reconciliation retry (wall
+   * clock, the clock they are stamped and checked on), and never earlier than one period after the pass began. */
+  #nextDue(id: string, state: unknown, passStart: number): number | null {
+    if (!openRequestStates.has(String(state))) return null;
+    const wake = this.#wake!;
+    const health = this.#reconciliation.status(id);
+    let wall = 'nextAttemptAt' in health ? health.nextAttemptAt : -Infinity;
+    if (pacedRequestStates.has(String(state))) wall = Math.max(wall, this.#receiptPacing.get(id)?.dueAt ?? -Infinity);
+    const floor = passStart + 500;
+    return wall === -Infinity ? floor : Math.max(floor, wake.now() + (wall - this.now()));
+  }
   async #drain(paced = false) {
+    const passStart = this.#wake?.now() ?? 0;
+    let due: number | null = null;
+    const consider = (id: string, state: unknown) => {
+      if (!this.#wake) return;
+      const at = this.#nextDue(id, state, passStart);
+      if (at !== null && (due === null || at < due)) due = at;
+    };
+    try {
     if (this.#receiptPacing.size > 4096) this.#receiptPacing.clear();
     const storage = await this.#runtimeStorage();
+    // Rows created from here on are not in this page; their signal makes the next pass due at once.
+    this.#signalled = false;
     const rows = this.database.prepare("SELECT rowid AS cursor,* FROM actor_execution_requests WHERE state IN ('accepted','transferring','queued','unknown','submitted') ORDER BY (rowid > ?) DESC,rowid LIMIT 32").all(this.#cursor);
+    // A full page may leave open requests unread; the next period continues from the cursor.
+    if (rows.length >= 32) due = passStart + 500;
     for (const snapshot of rows) {
       if (this.#closed) return;
       this.#cursor = Number(snapshot.cursor);
       const id = snapshot.id as string;
       // Ordinary pumps triggered by other inputs cannot bypass a failed observation's backoff.
-      if (!this.#reconciliation.canAttempt(id)) continue;
+      if (!this.#reconciliation.canAttempt(id)) { consider(id, snapshot.state); continue; }
       let binding: RunBinding | undefined;
-      if (paced && (snapshot.state === 'queued' || snapshot.state === 'unknown' || snapshot.state === 'submitted') && (this.#receiptPacing.get(id)?.dueAt ?? 0) > this.now()) continue;
+      if (paced && (snapshot.state === 'queued' || snapshot.state === 'unknown' || snapshot.state === 'submitted') && (this.#receiptPacing.get(id)?.dueAt ?? 0) > this.now()) { consider(id, snapshot.state); continue; }
       let observed = snapshot;
       let phase = 'binding';
       const update = async (requestId: string, state: string, reason: string | null = null, receipt?: ExecutionReceipt) => {
@@ -1661,10 +1713,18 @@ export class Collaboration {
           }
         } else await update(id, 'unknown', 'engine_outcome_unknown');
       }
-      } finally { this.#pace(id, observed); }
+      } finally { this.#pace(id, observed); consider(id, observed.state); }
     }
+    } catch (error) {
+      // A pass that failed before settling its rows retries one period later, as the fixed period did.
+      due = passStart + 500;
+      throw error;
+    } finally { this.#passDue = due; }
   }
 }
+
+const openRequestStates = new Set(['accepted','transferring','queued','unknown','submitted']);
+const pacedRequestStates = new Set(['queued','unknown','submitted']);
 
 /** HTTP adapter: only authenticated Actor contexts enter the domain service. */
 export class CollaborationHttpApi {

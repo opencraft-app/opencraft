@@ -1,7 +1,8 @@
 import type { DuplexTransport, TransportSubmissionContext, TransportStatus } from '@opencraft/appserver-client/transport';
 import type { Collaboration } from '../collaboration.js';
+import type { OwnerWake } from '@opencraft/owner-wake';
 export class ImChannelsAppServer implements DuplexTransport {
-  constructor(getNative: () => Collaboration | null | undefined);
+  constructor(getNative: () => Collaboration | null | undefined, options?: { ownerWake?: OwnerWake });
   readonly status: TransportStatus;
   connect(signal?: AbortSignal): Promise<void>;
   send(frame: string, signal?: AbortSignal): Promise<void>;
