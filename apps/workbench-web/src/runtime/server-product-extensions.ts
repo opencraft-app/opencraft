@@ -3,10 +3,16 @@ import { createObservabilityExtension } from './observability';
 import type { AppServerClient } from "@opencraft/appserver-client";
 import type { TrustedExtensionDefinition } from "@opencraft/extension-runtime";
 import type { LocaleCatalog } from "@opencraft/i18n";
+import type { ServerAssetsContribution } from "@opencraft/plugin-assets/client";
+import type { ApplicationRoute } from "./workbench-navigation";
 
 /** Trusted build/application composition, never a deployment JSON module URL. */
 export interface ServerWorkbenchExtension {
   readonly id: string;
+  /** Optional product capabilities for the shared Server Assets page. */
+  readonly assets?: ServerAssetsContribution;
+  /** Normalizes previously published product routes before navigation. */
+  resolveRoute?(route: ApplicationRoute): ApplicationRoute;
   readonly chatRenderExtensions?: readonly import("@deepseek-ai/cordis").Plugin[];
   /** Prepare public code only; never construct services, read account data or activate. */
   readonly preload?: () => Promise<unknown>;

@@ -1,14 +1,82 @@
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, existsSync } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { WebSocketServer } from "ws";
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
 import {
   CodexHostServices,
   codexAccountsService,
   codexTasksService,
 } from "../../apps/opencraft-daemon/src/codex-host-services.ts";
+import { CodexNativeReader } from "../../apps/opencraft-daemon/src/codex-native-reader.ts";
+
+test("Host metadata reads the split runtime socket with broker auth from the account Core", async t => {
+  const directory = mkdtempSync(join(process.platform === "darwin" ? "/tmp" : tmpdir(), "oc-reader-"));
+  const accountPath = join(directory, "account.sock");
+  const runtimePath = join(directory, "runtime.sock");
+  const nativePath = join(directory, "native.sock");
+  const accountRequests: Array<[string | undefined, string | undefined]> = [];
+  const runtimeRequests: Array<[string | undefined, string | undefined]> = [];
+  const auth = { accessToken: "fixture", chatgptAccountId: "opencraft-account-pool" };
+  const models = { data: [{ id: "fixture-model" }], nextCursor: null };
+  const account = createServer((req, res) => {
+    accountRequests.push([req.url, req.headers.authorization]);
+    res.setHeader("content-type", "application/json");
+    if (req.url !== "/launch") {
+      res.writeHead(404).end(JSON.stringify({ error: "Account Core has no runtime owner" }));
+      return;
+    }
+    res.end(JSON.stringify({ dataDirectory: directory, launch: {
+      args: [], env: { OPENCRAFT_CODEX_POOL_AUTH_TOKEN: "fixture" }, auth: { type: "chatgptAuthTokens", ...auth },
+    } }));
+  });
+  const runtime = createServer((req, res) => {
+    runtimeRequests.push([req.url, req.headers.authorization]);
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ protocolVersion: 1, pid: 1, codexPid: 2, nativeSocket: "/brain-only/native.sock" }));
+  });
+  const native = createServer();
+  const sockets = new WebSocketServer({ server: native });
+  let receivedAuth: unknown;
+  sockets.on("connection", socket => {
+    let listRequest: number | undefined;
+    socket.on("message", raw => {
+      const frame = JSON.parse(String(raw));
+      if (frame.method === "initialize") socket.send(JSON.stringify({ id: frame.id, result: {} }));
+      if (frame.method === "initialized") socket.send(JSON.stringify({ id: "refresh", method: "account/chatgptAuthTokens/refresh" }));
+      if (frame.id === "refresh") receivedAuth = frame.result;
+      if (frame.method === "model/list") listRequest = frame.id;
+      if (receivedAuth && listRequest !== undefined) {
+        socket.send(JSON.stringify({ id: listRequest, result: models }));
+        listRequest = undefined;
+      }
+    });
+  });
+  let fenced = 0;
+  const reader = new CodexNativeReader(accountPath, "account-token", 1500, {
+    endpoint: runtimePath,
+    token: async () => "runtime-token",
+    nativeSocket: nativePath,
+    fence: async operation => { fenced++; return operation(); },
+  });
+  const servers = [[account, accountPath], [runtime, runtimePath], [native, nativePath]] as const;
+  t.after(async () => {
+    reader.close();
+    sockets.close();
+    await Promise.all(servers.map(([server]) => new Promise<void>(resolve => server.close(() => resolve()))));
+    rmSync(directory, { recursive: true, force: true });
+  });
+  await Promise.all(servers.map(([server, path]) => new Promise<void>(resolve => server.listen(path, resolve))));
+
+  assert.deepEqual(await reader.request("model/list", {}), models);
+  assert.deepEqual(accountRequests, [["/launch", "Bearer account-token"]]);
+  assert.deepEqual(runtimeRequests, [["/native-health", "Bearer runtime-token"]]);
+  assert.equal(fenced, 1);
+  assert.deepEqual(receivedAuth, auth);
+});
 
 function routing() {
   const sent: any[] = [],

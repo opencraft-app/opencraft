@@ -274,6 +274,7 @@ export async function createWebWorkbenchApplicationSupervisor(
     if (appHostAdmission) startupRollback.push(() => appHostAdmission.dispose());
     const headlessAppHost = appHostAdmission
       ? connectWebSocketAppHost(undefined, { beforeConnect: () => appHostAdmission.prepare() }) : null;
+    const serverExtensions = headlessAppHost === null ? [] : options.serverExtensions ?? [];
     if (headlessAppHost !== null) startupRollback.push(() => headlessAppHost.close());
     const sshManagement = headlessAppHost ? new (await import("@opencraft/plugin-builtin-agents")).SshConnectionsController(serverFetch, serverAdmissionOrigin()) : null;
     if (sshManagement) { startupRollback.push(() => sshManagement.dispose()); await sshManagement.startDiscovery(webSshDiscoveryLifecycle); }
@@ -516,8 +517,12 @@ export async function createWebWorkbenchApplicationSupervisor(
         (await import('@opencraft/plugin-local-account/client')).createLocalAccountExtension(globalThis.fetch.bind(globalThis)));
     }
     if (headlessAppHost !== null || electronAppHost !== null) {
+      const assets = serverExtensions.find(extension => extension.assets)?.assets;
       await extensions.loadOptional("opencraft.assets", async () =>
-        (await import('@opencraft/plugin-assets/client')).createServerAssetsExtension(serverFetch));
+        (await import('@opencraft/plugin-assets/client')).createServerAssetsExtension(serverFetch, undefined, {
+          contribution: assets,
+          subscribeIdentity: cordis.authentication.subscribe,
+        }));
       await extensions.loadOptional("opencraft.im", async () => {
         const { createImExtension } = await import("@opencraft/plugin-im");
         const { createChannelsRpc } = await import("./channels-rpc");
@@ -525,7 +530,7 @@ export async function createWebWorkbenchApplicationSupervisor(
       });
     }
     if (headlessAppHost !== null) {
-      for (const extension of options.serverExtensions ?? []) {
+      for (const extension of serverExtensions) {
         await extensions.loadOptional(extension.id, () => extension.load({
           fetcher: serverFetch,
           getClient: hostId => appServerRegistry.clients.get(hostId) ?? undefined,
@@ -595,7 +600,10 @@ export async function createWebWorkbenchApplicationSupervisor(
     const routerOptions = {
       presentation: options.presentation,
       mode: options.navigationMode,
-      resolveApplicationRoute: (route: ApplicationRoute) => resolveBuiltinConnectionRoute(route, headlessAppHost !== null),
+      resolveApplicationRoute: (route: ApplicationRoute) => serverExtensions.reduce(
+        (resolved, extension) => extension.resolveRoute?.(resolved) ?? resolved,
+        resolveBuiltinConnectionRoute(route, headlessAppHost !== null),
+      ),
       resolveParentRoute: (route: ApplicationRoute): ApplicationRoute | null => {
         if (route.kind !== "extension-view") return null;
         const parent = extensions.contributions.getSnapshot().views.find(view => view.contribution.id === route.viewId)?.contribution.navigationParent;

@@ -705,7 +705,9 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         localCodex: hostId => {
         // Host-wide duties (tasks first) are answered by the services front before Thread routing.
         let codexAdapterStorage = [], codexFront, codexRouting;
-        const codexReader = options.codexCoreEndpoint ? new CodexNativeReader(options.codexCoreEndpoint, options.codexCoreAuthToken) : undefined;
+        const codexReader = options.codexCoreEndpoint
+          ? new CodexNativeReader(options.codexCoreEndpoint, options.codexCoreAuthToken, undefined, options.codexRuntime)
+          : undefined;
         // Host-owned dynamic tools (browser), for local and bridge Threads alike.
         const codexNativeTool = (context, tool, args, signal) => browserCapabilities.invokeNative({
           serverId: conversationExecution.serverForThread(context.threadId),

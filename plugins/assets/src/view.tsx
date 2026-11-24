@@ -45,7 +45,7 @@ import { labels, type AssetMessage } from "./messages";
 import type { AssetProvider } from "./providers";
 import { noAssetConnections, type AssetsViewOptions } from "./ports";
 import { parseAssetCatalog, connectionLabel, catalogRevision, mergeAssetCatalog } from "./catalog";
-import { ASSETS_CONNECTIONS_RESOURCE } from "./navigation";
+import { ASSETS_CONNECTIONS_RESOURCE, ASSETS_VARIABLES_RESOURCE } from "./navigation";
 import { AssetDetails } from "./details";
 import { DatabaseIcon, CloudIcon, CodeIcon, ServerIcon } from "@opencraft/design-system-web/action-icons";
 import "./view.scss";
@@ -108,7 +108,7 @@ export function createAssetsView(options: AssetsViewOptions) {
       <AccountAssets
         key={scope}
         scope={scope}
-        personalVariables={personalVariables}
+        personalVariables={personalVariables || (!!VariablesEditor && props.activation.resourceUri === ASSETS_VARIABLES_RESOURCE)}
         options={options}
         fetcher={fetcher}
         {...props}

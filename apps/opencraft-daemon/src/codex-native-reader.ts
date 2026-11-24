@@ -1,10 +1,11 @@
 import WebSocket from "ws";
 import { CodexCoreControlClient, openCodexNativeSocket } from "@opencraft/account-pool-host";
+import { createCodexRuntimeHealthReader, type CodexRuntimeEndpoints } from "./codex-native-core-transport.js";
 
 type Value = Record<string, unknown>;
 
 /**
- * A Host-services connection to the Core-owned native Codex AppServer for
+ * A Host-services connection to the native Codex AppServer for
  * Thread-independent reads and metadata (models, permission profiles, pins).
  * It subscribes to no Thread and runs nothing; it answers only native
  * credential refresh with Core's broker credentials. Connects on first use and
@@ -20,6 +21,7 @@ export class CodexNativeReader {
   >();
   private closed = false;
   private readonly control: CodexCoreControlClient;
+  private readonly readHealth: ReturnType<typeof createCodexRuntimeHealthReader>;
   private initialized?: unknown;
   private readonly notificationListeners = new Set<(method: string, params: Value) => void>();
 
@@ -27,15 +29,17 @@ export class CodexNativeReader {
     endpoint: string,
     token: string,
     private readonly timeoutMs = 30_000,
+    runtime?: CodexRuntimeEndpoints,
   ) {
     this.control = new CodexCoreControlClient(endpoint, token);
+    this.readHealth = createCodexRuntimeHealthReader(this.control, runtime);
   }
 
   private open(): Promise<WebSocket> {
     if (this.closed) return Promise.reject(new Error("Codex native reader is closed"));
     if (this.socket?.readyState === WebSocket.OPEN) return Promise.resolve(this.socket);
     return (this.opening ??= (async () => {
-      const [health, auth] = await Promise.all([this.control.health(), this.control.brokerAuth()]);
+      const [health, auth] = await Promise.all([this.readHealth(undefined, "native"), this.control.brokerAuth()]);
       const socket = openCodexNativeSocket(health.nativeSocket, {
         maxPayload: 16 * 1024 ** 2,
         handshakeTimeout: 5000,
