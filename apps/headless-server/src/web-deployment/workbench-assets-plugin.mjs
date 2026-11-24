@@ -14,8 +14,12 @@ export async function readWorkbenchAssetsPlugin(vfs) {
 }
 
 export function injectWorkbenchAssetsPlugin(html, { sha256 }) {
-  return html.replace(/<head(?:\s[^>]*)?>/iu, head =>
-    head + `<script id="opencraft-workbench-assets-plugin" type="application/json">${JSON.stringify({ apiVersion: 1, sha256 })}</script>`);
+  return html.replace(
+    /<head(?:\s[^>]*)?>/iu,
+    (head) =>
+      head +
+      `<script id="opencraft-workbench-assets-plugin" type="application/json">${JSON.stringify({ apiVersion: 1, sha256 })}</script>`,
+  );
 }
 
 export function serveWorkbenchAssetsPlugin(request, response, url, { sha256, bytes }) {
@@ -26,12 +30,14 @@ export function serveWorkbenchAssetsPlugin(request, response, url, { sha256, byt
     response.writeHead(405, { allow: "GET, HEAD", "cache-control": "no-store" }).end();
   } else {
     // Only the current selection is available through the normal instance gate.
-    response.writeHead(200, {
-      "cache-control": "no-store",
-      "content-length": bytes.byteLength,
-      "content-type": "text/javascript; charset=utf-8",
-      "x-content-type-options": "nosniff",
-    }).end(request.method === "HEAD" ? undefined : bytes);
+    response
+      .writeHead(200, {
+        "cache-control": "no-store",
+        "content-length": bytes.byteLength,
+        "content-type": "text/javascript; charset=utf-8",
+        "x-content-type-options": "nosniff",
+      })
+      .end(request.method === "HEAD" ? undefined : bytes);
   }
   return true;
 }
