@@ -15,12 +15,12 @@
 |---|---|---|
 | 中立端口（SQL、HTTP exchange、client-session、owner-wake、根输入、commit fence） | ~95% | 已合并 |
 | 部署级存储迁到 `SqlDatabase` 端口 | ~95% | 领域存储全部迁完；剩跨进程只读读者（按设计在 CF 上改为向 owner 发 RPC） |
-| G1 组合根拆分（`apps/headless-server/src/assembly/`） | ~90% | account、lifecycle、node-local、installation、root-inputs、workspace-host 1/2 完成；client-session、edge 在做 |
+| G1 组合根拆分（`apps/headless-server/src/assembly/`） | ~100%（待 #583/#590 合并） | 七个模块全部抽出；HA 只剩配置读取、Node 工厂、模块调用与关闭顺序 |
 | 可靠性（内核单写者锁、到期调度） | ~90% | 剩 Host 侧 token usage 投影 |
 | InstallationCore DO | ~50% | 身份、登录、准入、会话已通；协作、spaces、connectors、OIDC、登录准入 `admit` 求值未装配 |
-| AccountCore DO | ~70% | 策略、配置、密封凭据、租约、账号池、出口转发；模型网关在做；语音不走租约（原因见文档） |
+| AccountCore DO | ~80% | 策略、配置、密封凭据、租约、账号池、出口转发、模型网关（#587）；缺维护执行方、Codex 选号出口、计量调用方；语音不走租约 |
 | WorkspaceHost DO | ~45% | 第一版完成（容器经沙盒 provider、空闲休眠、崩溃恢复、化身围栏）；只接了 Pi 引擎 |
-| 边缘 Worker＋Client DO | ~10% | 未开始，等 client-session／edge 模块 |
+| 边缘 Worker＋Client DO | ~10% | 未开始；client-session／edge 模块已就绪（#590），可直接启动 |
 | 真实 Cloudflare 演练（`cf:rehearsal`） | 0% | 需要用户提供 CF API Token（经 request_credential） |
 
 ## 3. PR 状态
@@ -40,10 +40,9 @@
 | #587 | `account-core-3` | AccountCore 第三部分：模型网关进 AC、个人订阅端口（`secrets` 失败已修：checksum 与 "personal-keys" 同行被 gitleaks 误报，已拆行） |
 | #589 | `workspace-host-do` | WorkspaceHost DO＋**迁移族收敛**（`@opencraft/sql/families` 唯一原语；Server 扩展族委托且不变；AC 切到 `schema_family_migrations`；删除 `schema-ledgers`） |
 
-### 进行中的子任务
-| 分支 | 内容 |
-|---|---|
-| `client-session-edge` | G1 最后两个模块；完成后 G1 结束。若报告未交回，检查分支是否已推送，按 gateway-split §4.1.1"G1 剩余"审查后开 PR |
+| #590 | `client-session-edge` | G1 最后两个模块 client-session 与 edge；**G1 完成**（HA 1064→961 行） |
+
+所有子任务均已结束，没有仍在运行的研发任务。
 
 ## 4. 已知问题与必须跟进
 
@@ -59,12 +58,13 @@
    - `actor-collaboration-codex` "actual Headless bundle persists…" 在高负载下失败过一次未复现；若 CI 出现请保存完整输出查根因。
    - 推新提交会取消旧提交 CI，汇总检查 `build-checks` 变红属正常（core/gate `cancelled`）。
 4. **容器环境**：`npm ci --ignore-scripts` 后需 `npm rebuild node-pty`，否则含终端的测试加载失败。磁盘有限（~10 GB 可用），每个 worktree 依赖约 2.4 GB，用完删 `node_modules`。
-5. **#584 `gate-tests (platform)` 失败（head `e0d9ad4e4`，run 45356093896，job 138315315724）**：失败发生在合并 #577/#579/#581 之后的提交上；check run 无注释，日志尾部被启动缓存输出淹没，未定位到具体用例。本地对该合并做过 typecheck、headless-composition、collaboration/transport/owner-wake 唤醒测试（56/56）与 check:boundaries，均通过。已于 08:43 `rerun_failed_jobs` 一次（规则允许的唯一一次）；若仍失败，下载完整日志查 `✖`/`not ok`，平台 part 含 `test:tasks`、`test:electron-launch` 之外的多个步骤（见 `.github/workflows/build-matrix.yml` 中 `matrix.part == 'platform'`）。
-6. **文档**：`gateway-split.md` §5.1 状态表按约定未被各 PR 修改，需要在这批合并后**统一更新一次**。
+5. **已知遗留（#590 记录）**：Web 已创建但未监听时启动回滚，`createWorkbenchWebServer.close` 抛 `ERR_SERVER_NOT_RUNNING`，计入关闭汇总导致数据目录写锁在该进程内不释放；需单独修复。
+6. **#584 `gate-tests (platform)` 失败（head `e0d9ad4e4`，run 45356093896，job 138315315724）**：失败发生在合并 #577/#579/#581 之后的提交上；check run 无注释，日志尾部被启动缓存输出淹没，未定位到具体用例。本地对该合并做过 typecheck、headless-composition、collaboration/transport/owner-wake 唤醒测试（56/56）与 check:boundaries，均通过。已于 08:43 `rerun_failed_jobs` 一次（规则允许的唯一一次）；若仍失败，下载完整日志查 `✖`/`not ok`，平台 part 含 `test:tasks`、`test:electron-launch` 之外的多个步骤（见 `.github/workflows/build-matrix.yml` 中 `matrix.part == 'platform'`）。
+7. **文档**：`gateway-split.md` §5.1 状态表按约定未被各 PR 修改，需要在这批合并后**统一更新一次**。
 
 ## 5. 后续主线（按顺序）
 
-1. 收尾上面三个子任务的 PR；完成迁移族收敛。
+1. 把队列中 #582–#590 推到合并（处理 MERGE_CONFLICT 出队与 #587/#589 的迁移族冲突、#584 platform gate）；之后统一更新 gateway-split §5.1。
 2. 边缘 Worker＋Client DO：用 client-session／edge 模块＋`@opencraft/http-exchange`、`@opencraft/client-session`，把 IC／AC／WH 三个 DO 串成完整链路（静态资源、路由、Client 会话、模型出口经租约）。
 3. 补齐 DO 装配缺口：
    - IC：`openServerInformation`、`openPersonalServices`、`openCapabilityBindings`、`openSpaces`、`openCollaboration`、connectors、MCP apps、push；OIDC 状态入 DO storage；登录准入 `admit` 求值方式。
