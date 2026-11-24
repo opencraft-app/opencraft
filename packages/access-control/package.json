@@ -25,6 +25,7 @@
     "./im-channels-appserver": "./src/runtime/im-channels-appserver.mjs",
     "./deployment-operator": "./src/deployment-operator.ts",
     "./orchestration-runtime-store": "./src/orchestration-runtime-store.ts",
+    "./orchestration-runtime-companion": { "node": "./src/orchestration-runtime-companion.node.ts", "default": "./src/orchestration-runtime-companion.ts" },
     "./communication-extension": "./src/communication-extension.ts",
     "./orchestration-runtime-domain": "./src/orchestration-runtime-domain.ts",
     "./server-spaces-domain": "./src/server-spaces-domain.ts",
@@ -37,6 +38,7 @@
     "./personal-assistants": "./src/personal-assistants.ts"
   },
   "dependencies": {
+    "@noble/hashes": "2.4.0",
     "@opencraft/identity-core": "*",
     "@opencraft/http-exchange": "0.1.0",
     "@opencraft/sqlite-node": "*",

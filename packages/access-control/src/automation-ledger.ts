@@ -1,8 +1,7 @@
 import { attachCrewRules } from './crew-work.js';
 import { Collaboration } from './collaboration.js';
 import { ActorStore } from './actors.js';
-import { createHash, randomUUID } from 'node:crypto';
-import { isMainThread } from 'node:worker_threads';
+import { decodeBase64, encodeBase64Url, randomUUID, sha256Hex, utf8ByteLength, utf8Decode } from './portable-crypto.js';
 import type { SqlDatabase } from '@opencraft/sql';
 import type { ActorContext } from '@opencraft/identity-core/actors';
 import { canonical } from './orchestration-ledger.js';
@@ -14,11 +13,11 @@ export interface AutomationGrant {
   target: AutomationTarget; permissionSnapshot: string; permissionProfile: string; revokedAt: number | null; createdAt: number;
 }
 export interface AutomationCaller { context: ActorContext; authorityId?: string }
-/** Borrows the installation owner's migrated connection in its serialized Worker. */
+/** Borrows the installation owner's migrated connection inside that owner
+ * (`orchestrationRuntimeDomain`: a Node owner Worker or a single-writer
+ * isolate), never a network thread; `check:main-thread-sync-io` keeps it off one. */
 export class AutomationLedger {
-  constructor(private readonly db: SqlDatabase, private readonly now: number) {
-    if (isMainThread) throw Error('Automation SQL requires a Worker');
-  }
+  constructor(private readonly db: SqlDatabase, private readonly now: number) {}
   private row(sql: string, ...args: any[]) { return this.db.prepare(sql).get(...args); }
   private all(sql: string, ...args: any[]) { return this.db.prepare(sql).all(...args); }
   private run(sql: string, ...args: any[]) { return this.db.prepare(sql).run(...args); }
@@ -41,7 +40,7 @@ export class AutomationLedger {
   }
   private mutation<T>(caller: AutomationCaller, key: unknown, input: unknown, change:()=>T): T {
     this.actor(caller.context);
-    const id=automationText(key,128),digest=createHash('sha256').update(JSON.stringify(canonical(input))).digest('hex');
+    const id=automationText(key,128),digest=sha256Hex(JSON.stringify(canonical(input)));
     return this.db.transaction(()=>{
       const old=this.row('SELECT digest,result FROM automation_mutations WHERE actor_id=? AND key=?',caller.context.actorId,id);
       if(old) {
@@ -72,7 +71,7 @@ export class AutomationLedger {
     this.actor(caller.context);
     const id=automationText(key,128),old=this.row('SELECT digest,result FROM automation_mutations WHERE actor_id=? AND key=?',caller.context.actorId,id);
     if(!old)return null;
-    const digest=createHash('sha256').update(JSON.stringify(canonical(['grant',command,body]))).digest('hex');
+    const digest=sha256Hex(JSON.stringify(canonical(['grant',command,body])));
     if(old.digest!==digest)throw new AutomationError('automation_idempotency_conflict',409);
     return JSON.parse(String(old.result));
   }
@@ -108,7 +107,7 @@ export class AutomationLedger {
       if(!Number.isSafeInteger(limit)||Number(limit)<1||Number(limit)>100)throw new AutomationError('invalid_automation_limit');
       let after='';
       if(body.cursor!==undefined) {
-        try { const value=JSON.parse(Buffer.from(automationText(body.cursor,2048),'base64url').toString());
+        try { const value=JSON.parse(utf8Decode(decodeBase64(automationText(body.cursor,2048))));
           if(value.command!==command || value.scope!==scope || value.actor!==caller.context.actorId)throw Error();
           after=automationText(value.after);
         } catch {throw new AutomationError('invalid_automation_cursor');}
@@ -117,8 +116,8 @@ export class AutomationLedger {
         ?this.all('SELECT id AS cursor,value FROM project_automations WHERE project_id=? AND actor_id=? AND deleted=0 AND id>? ORDER BY id LIMIT ?',scope,caller.context.actorId,after,Number(limit)+1)
         :this.all('SELECT key AS cursor,value FROM automation_runs WHERE automation_id=? AND key>? ORDER BY key LIMIT ?',scope,after,Number(limit)+1);
       const page:typeof rows=[];let bytes=0;
-      for(const row of rows.slice(0,Number(limit))){const size=Buffer.byteLength(String(row.value));if(page.length&&bytes+size>24*1024)break;page.push(row);bytes+=size;}
-      return {items:page.map(row=>{const value=JSON.parse(String(row.value));if(command==='runs'&&Buffer.byteLength(String(row.value))>20*1024)value.result={truncated:true,reason:'output_exceeds_page_limit'};return value;}),nextCursor:rows.length>page.length?Buffer.from(JSON.stringify({command,scope,actor:caller.context.actorId,after:page.at(-1)!.cursor})).toString('base64url'):null};
+      for(const row of rows.slice(0,Number(limit))){const size=utf8ByteLength(String(row.value));if(page.length&&bytes+size>24*1024)break;page.push(row);bytes+=size;}
+      return {items:page.map(row=>{const value=JSON.parse(String(row.value));if(command==='runs'&&utf8ByteLength(String(row.value))>20*1024)value.result={truncated:true,reason:'output_exceeds_page_limit'};return value;}),nextCursor:rows.length>page.length?encodeBase64Url(JSON.stringify({command,scope,actor:caller.context.actorId,after:page.at(-1)!.cursor})):null};
     }
     if(command==='show') {automationFields(body,['id']);return this.definition(automationText(body.id),caller);}
     if(this.derived(caller.authorityId))throw new AutomationError(command==='create'?'automation_recursive_creation_denied':'automation_recursive_mutation_denied',403);

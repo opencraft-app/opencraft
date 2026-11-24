@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { encodeBase64, randomUUID } from "./portable-crypto.js";
 import type { SqlDatabase } from '@opencraft/sql';
 import type { ActorContext } from "@opencraft/identity-core/actors";
 import type { ActorStore } from "./actors.js";
@@ -130,7 +130,7 @@ export class CrewWork {
       type: String(file.mime),
       size: Number(file.size),
       next: Number(at) + 65536 < Number(file.size) ? Number(at) + 65536 : null,
-      base64: Buffer.from(file.bytes as Uint8Array).toString("base64"),
+      base64: encodeBase64(file.bytes as Uint8Array),
     };
   }
 

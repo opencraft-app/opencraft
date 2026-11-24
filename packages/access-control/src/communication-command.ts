@@ -8,6 +8,7 @@ import type { ActorContext } from '@opencraft/identity-core/actors';
 import type { Collaboration } from './collaboration.js';
 import type { NativeChannelChange } from './native-channels.js';
 import { syncActorInbox } from './actor-inbox-projection.js';
+import { decodeBase64, encodeBase64 } from './portable-crypto.js';
 
 export interface CommunicationCommand { context: ActorContext; method: string; params: Record<string, unknown>; executionScope?:{serverId:string;hostId:string} }
 export interface CommunicationResult { retiredCredentials?:string[]; result: unknown; changes: NativeChannelChange[]; personalReadGuard?: {epoch:string;groups:{id:string;epoch:string}[]}; createdActors?: Actor[]; createdCredential?: {id:string;actor_id:string;generation:number;expires_at:number;enabled:1} }
@@ -93,8 +94,8 @@ export function communicationCommand(service: Collaboration, db: SqlDatabase, co
         case 'opencraft/channels/attachments/send': {
           fields(p,['channelId','clientMessageId','name','type','base64','text']);
           if(typeof p.base64!=='string'||p.base64.length>11184812)invalid();
-          if(Buffer.from(p.base64,'base64').toString('base64')!==p.base64)invalid();
-          const bytes=Buffer.from(p.base64,'base64'),channelId=text(p.channelId);
+          const bytes=decodeBase64(p.base64);if(encodeBase64(bytes)!==p.base64)invalid();
+          const channelId=text(p.channelId);
           return {receipt:service.sendAttachment(c,channelId,p.clientMessageId,{name:p.name as string,type:p.type as string,bytes},p.text)};
         }
         case 'opencraft/channels/attachments/read':
@@ -102,9 +103,9 @@ export function communicationCommand(service: Collaboration, db: SqlDatabase, co
         case 'opencraft/channels/attachments/get': {
           fields(p,['channelId','sequence']);const id=text(p.channelId),sequence=Number(p.sequence);
           const file=service.channels.attachment(c,id,sequence);
-          if(file)return {name:file.name,type:file.type,base64:Buffer.from(file.bytes as Uint8Array).toString('base64')};
+          if(file)return {name:file.name,type:file.type,base64:encodeBase64(file.bytes as Uint8Array)};
           const image=service.channels.image(c,id,sequence);
-          return image?{name:'image',type:image.type,base64:Buffer.from(image.bytes as Uint8Array).toString('base64')}:null;
+          return image?{name:'image',type:image.type,base64:encodeBase64(image.bytes as Uint8Array)}:null;
         }
         case 'channel/image': {
           fields(p,['channelId','sequence']);

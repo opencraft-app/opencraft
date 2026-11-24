@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID, sha256Hex } from './portable-crypto.js';
 import type { SqlDatabase } from '@opencraft/sql';
 
 /** Appended to the collaboration owner's migrations; never opened independently. */
@@ -149,7 +149,7 @@ export class ThreadOrchestrationLedger {
   accept(value: Omit<ToolOperation,'operationId'|'state'|'waitingOn'|'result'> & {idempotencyKey?: string}, validateNew?: () => void): ToolOperation {
     return this.transaction(() => {
       const {toolCallKey, arguments: args, idempotencyKey, ...identity} = value;
-      const fingerprint = createHash('sha256').update(JSON.stringify(canonical({identity,args}))).digest('hex');
+      const fingerprint = sha256Hex(JSON.stringify(canonical({identity,args})));
       // Explicit keys are scoped to the source session, never shared across users or sessions.
       const scopedKey = idempotencyKey ? JSON.stringify([value.senderThreadId,idempotencyKey]) : null;
       const prior = this.db.prepare('SELECT DISTINCT o.* FROM opencraft_orchestration_operations o LEFT JOIN opencraft_orchestration_tool_calls c ON c.operation_id=o.operation_id WHERE c.tool_call_key=? OR o.idempotency_key=?').all(toolCallKey,scopedKey);

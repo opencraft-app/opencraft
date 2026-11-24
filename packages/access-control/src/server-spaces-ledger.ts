@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { randomToken, randomUUID, sha256Hex } from './portable-crypto.js';
 import type { SqlDatabase } from '@opencraft/sql';
 import type { ActorContext } from '@opencraft/identity-core/actors';
 import type { ServerSpaceCommand, ServerSpaceDirectory, ServerSpaceMember } from '@opencraft/appserver-protocol/server-spaces';
@@ -10,7 +10,7 @@ export class ServerSpaceError extends Error {
   }
 }
 const deny = () => { throw new ServerSpaceError('unavailable'); };
-const digest = (value: string) => createHash('sha256').update(value).digest('hex');
+const digest = (value: string) => sha256Hex(value);
 const valid = (value: unknown): value is string => typeof value === 'string' && value.length > 0 && value.length <= 4096;
 export interface SpaceProjection {
   spaces: {id:string;name:string;ownerActorId:string;createdAt:number;openContact:boolean}[];
@@ -139,7 +139,7 @@ export class ServerSpacesLedger {
         this.member(input.spaceId,context,true);
         this.db.prepare('DELETE FROM collaboration_space_invitations WHERE expires_at<=?').run(this.now());
         if (Number(this.db.prepare('SELECT COUNT(*) AS n FROM collaboration_space_invitations WHERE space_id=? AND used_by IS NULL').get(input.spaceId)?.n) >= 100) throw new ServerSpaceError('invalid', -32602);
-        const code = randomBytes(32).toString('base64url'), expiresAt = this.now() + 24 * 3600_000;
+        const code = randomToken(32), expiresAt = this.now() + 24 * 3600_000;
         this.db.prepare('INSERT INTO collaboration_space_invitations VALUES(?,?,?,?,NULL)').run(digest(code),input.spaceId,context.actorId,expiresAt);
         return {code,expiresAt};
       }
