@@ -59,7 +59,7 @@
    - 推新提交会取消旧提交 CI，汇总检查 `build-checks` 变红属正常（core/gate `cancelled`）。
 4. **容器环境**：`npm ci --ignore-scripts` 后需 `npm rebuild node-pty`，否则含终端的测试加载失败。磁盘有限（~10 GB 可用），每个 worktree 依赖约 2.4 GB，用完删 `node_modules`。
 5. **已知遗留（#590 记录）**：Web 已创建但未监听时启动回滚，`createWorkbenchWebServer.close` 抛 `ERR_SERVER_NOT_RUNNING`，计入关闭汇总导致数据目录写锁在该进程内不释放；需单独修复。
-6. **#584 `gate-tests (platform)` 失败（head `e0d9ad4e4`，run 45356093896，job 138315315724）**：失败发生在合并 #577/#579/#581 之后的提交上；check run 无注释，日志尾部被启动缓存输出淹没，未定位到具体用例。本地对该合并做过 typecheck、headless-composition、collaboration/transport/owner-wake 唤醒测试（56/56）与 check:boundaries，均通过。已于 08:43 `rerun_failed_jobs` 一次（规则允许的唯一一次）；若仍失败，下载完整日志查 `✖`/`not ok`，平台 part 含 `test:tasks`、`test:electron-launch` 之外的多个步骤（见 `.github/workflows/build-matrix.yml` 中 `matrix.part == 'platform'`）。
+6. **#584 `gate-tests (platform)` 失败（head `e0d9ad4e4`，run 45356093896，job 138315315724）**：失败发生在合并 #577/#579/#581 之后的提交上；check run 无注释，日志尾部被启动缓存输出淹没，未定位到具体用例。本地对该合并做过 typecheck、headless-composition、collaboration/transport/owner-wake 唤醒测试（56/56）与 check:boundaries，均通过。已于 08:43 `rerun_failed_jobs` 一次（规则允许的唯一一次），**重跑仍失败（08:50），确认为真实失败，不得再重跑**；已在 PR 留言。下一步：下载完整日志查 `✖`/`not ok`，平台 part 含 `test:tasks`、`test:electron-launch` 之外的多个步骤（见 `.github/workflows/build-matrix.yml` 中 `matrix.part == 'platform'`）。
 7. **文档**：`gateway-split.md` §5.1 状态表按约定未被各 PR 修改，需要在这批合并后**统一更新一次**。
 
 ## 5. 后续主线（按顺序）
