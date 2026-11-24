@@ -198,6 +198,14 @@ checkFiles("workspace-host assembly", "apps/headless-server/src/assembly/workspa
   message: "must stay runtime-neutral; Workers, processes, files and listeners are root factories",
 }]);
 
+// The client-session assembly module (gateway-split §4.1.1) receives each Host's
+// inner engine transport, the Node transport layers and the Hands sessions from
+// the composition root as factories; the module itself reaches none of them.
+checkFiles("client-session assembly", "apps/headless-server/src/assembly/client-session.mjs", [{
+  pattern: /(?:from\s*|import\s*|require\(\s*)["'](?:node:|ws["']|@opencraft\/sqlite-node|@opencraft\/worker-owner|@opencraft\/sandbox-node)|\bBuffer\b|\bprocess\./m,
+  message: "must stay runtime-neutral; engine transports, Node layers and Hands sessions are root factories",
+}]);
+
 for (const directory of ['packages/identity-core/src', 'packages/access-control/src', 'packages/relay-protocol/src', 'packages/hub-network/src']) {
   checkFiles('identity/authorization core', directory, [{
     pattern: /(?:from\s*|import\s*)["'](?:@opencraft\/plugin-|[^"']*\/plugins\/)/m,

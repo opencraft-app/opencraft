@@ -15,7 +15,6 @@ import { createPersonalAssistantHost } from '@opencraft/personal-assistant/host'
 import { LocalAttachmentStagingService } from '@opencraft/local-agent-host/attachments/local-staging';
 import { deploymentOperator } from "@opencraft/access-control/deployment-operator";
 import { localExecutionCli } from "@opencraft/session-capabilities/execution-cli";
-import { ServerSpacesSession } from '@opencraft/access-control/server-spaces-session';
 import { executionCliSourceToken } from '@opencraft/session-capabilities/credentials';
 import { codexAdmissionPaused,createServerCodexBridge,readCodexBridgeConfiguration } from '@opencraft/opencraft-daemon/bridge-execution-admission';
 import { CodexHostServices, codexAccountsService, codexModelsService, codexPinsService, codexTasksService } from '@opencraft/opencraft-daemon/codex-host-services';
@@ -30,6 +29,7 @@ import { assembleAccount } from './assembly/account.mjs';
 import { assembleNodeLocal } from './assembly/node-local.mjs';
 import { assembleInstallation } from './assembly/installation.mjs';
 import { assembleWorkspaceHost } from './assembly/workspace-host.mjs';
+import { assembleClientSession } from './assembly/client-session.mjs';
 import { createHeadlessLifecycle, createLateBinding } from './assembly/lifecycle.mjs';
 import { ExecutionEnvironmentTransport } from './execution-environment-transport.ts';
 import { EnvironmentMetadataTransport } from './environment-metadata-transport.ts';
@@ -57,9 +57,8 @@ import { loadSshIngressConfiguration } from "@opencraft/ssh-http-ingress/server"
 
 import { openMcpAppsService } from "@opencraft/mcp-apps/node";
 import { McpAppsTransport } from "@opencraft/mcp-apps/transport";
-import { AppHostServer } from "@opencraft/app-host-server";
 import { AppServerIdentityOverlay } from "@opencraft/opencraft-daemon/appserver-identity-overlay";
-import { TokenUsageQuerySession, TokenUsageQueryTransport } from "@opencraft/opencraft-daemon/token-usage-query-transport";
+import { TokenUsageQueryTransport } from "@opencraft/opencraft-daemon/token-usage-query-transport";
 import { TokenUsageQueryService } from "@opencraft/opencraft-daemon/token-usage-query-service";
 import { CodexEngineAdapter } from "@opencraft/opencraft-daemon/codex-engine-adapter";
 import { defaultWorkspace } from "@opencraft/opencraft-daemon/workspace-host";
@@ -69,7 +68,7 @@ import { ExecutionLeaseStore } from "@opencraft/opencraft-daemon/execution-lease
 import { ThreadIdentityDatabase } from "@opencraft/opencraft-daemon/thread-identity-database";
 import { observeNativeExecutionProcess, reportedExecutionProcess } from "@opencraft/opencraft-daemon/native-execution-origin";
 import { createWebSocketExecutionTurnInspector } from "@opencraft/opencraft-daemon/native-execution-inspector";
-import { AgentDriverTransport, AgentDriverSession } from "@opencraft/opencraft-daemon/agent-driver-transport";
+import { AgentDriverTransport } from "@opencraft/opencraft-daemon/agent-driver-transport";
 import { WebSocketTransport } from "@opencraft/appserver-transport-websocket";
 import { WebSocket } from 'ws';
 import { readSshCodexServerBindings, createSshCodexEngineAdapter } from "@opencraft/opencraft-daemon/ssh-codex-connections";
@@ -89,13 +88,10 @@ import { loadLocalMachineAccess } from './local-machine-access.mjs';
 import { readTaskCodexConversations } from "./tasks-conversation-catalog.mjs";
 import { assertHeadlessWebRelease } from "./headless-web-release.mjs";
 import { ModelConfigurationRepository, ModelCredentialRepository } from "@opencraft/local-agent-host/model-config/repository";
-import { ThreadAccessSession } from '@opencraft/access-control/thread-access';
 import { communicationExtensionModule } from '@opencraft/access-control/communication-extension';
-import { conversationAccessServer, callConversationHost } from './conversation-execution.mjs';
 import { openPushStore, TurnPushService, PushObservationTransport } from '@opencraft/web-push-node';
 import { readImConfiguration, startImPlugins, createChannelSyncDependencies, channelSyncContext } from './im-plugins.mjs';
 import { ImChannelsAppServer } from './im-channels-appserver.mjs';
-import { CHANNELS_HOST_ID } from '@opencraft/appserver-protocol/channels';
 import { createNodePasswordHasher } from '@opencraft/plugin-local-account/password-hash-node';
 import { readPrivateJson } from '@opencraft/identity-core/node';
 import { createCommitFenceBuffer, sharedMemoryCommitFence } from '@opencraft/access-control/commit-fence/shared-memory';
@@ -383,7 +379,9 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   // closures that read them; assembly modules receive these instead of the
   // root's bindings (docs/architecture/platform/gateway-split.md §4.1.1).
   const lifecycle = createHeadlessLifecycle();
-  const lateAppHost = createLateBinding('App Host server');
+  // The client session's App Host server is bound where it is constructed; the
+  // module owns that late binding and installation and workspace-host read it.
+  const clientSession = assembleClientSession();
   const lateCapabilityKey = createLateBinding('Capability signing key');
   // A configured external bridge is known now; the server's own Engine Host
   // publishes its bridge only once it has started.
@@ -398,7 +396,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   // Execution delivery, the capability surface a workspace's runs call, the
   // engines, execution observation and conversation resources; creating it
   // opens nothing, each step and disposer keeps its original position.
-  const workspaceHost = assembleWorkspaceHost({ lifecycle, capabilities, appHost: lateAppHost, codexBridge: lateCodexBridge, fileSystem });
+  const workspaceHost = assembleWorkspaceHost({ lifecycle, capabilities, appHost: clientSession.appHost, codexBridge: lateCodexBridge, fileSystem });
   // Deployment-level periodic owner work runs on the owner wake-up port (gateway-split.md §4.2).
   const ownerWake = options.ownerWake ?? timeoutOwnerWake();
   // The lifecycle publishes the shared promise before invoking any disposer
@@ -430,7 +428,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     await settle([installation.closeProjectAutomations]);
     await settle([installation.closeThreadOrchestration]);
     await settle([() => personalAssistantHost?.close()]);
-    await settle([() => lateAppHost.current()?.close()]);
+    await settle([clientSession.closeAppHost]);
     await settle([workspaceHost.closeCodexEngineHost]);
     workspaceHost.closeTerminals();
     workspaceHost.closeFileSystem();
@@ -532,41 +530,11 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       ? new AgentDriverTransport(transport, actorCollaboration,
         threadId => conversationExecution.serverForHost(hostId, threadId), signExecutionCli, operator.context)
       : transport;
-    const accessServerForHost = (hostId, threadId) => conversationAccessServer(conversationExecution, machineIdentity.machineId, hostId, threadId);
-    const createThreadPolicySession = (hostId, context, emit) => new ThreadAccessSession(threadAccess,
-      (threadId, serverId, method) => {
-        if (method === 'opencraft/token-usage/query' && serverId === undefined) return `server:${machineIdentity.machineId}:codex`;
-        if (serverId?.startsWith('server:')) return serverId;
-        const target = serverId === 'local-codex' || serverId === 'opencraft-server' ? serverId : hostId;
-        return accessServerForHost(target, threadId);
-      }, context.actorContext, emit, async threadId => {
-        if (context.actorContext && identity?.isThreadCreator && await identity.isThreadCreator(hostId, threadId, context,
-          (method, params) => callConversationHost(lateAppHost.current(),{hostId,threadId:''},'thread-creator',method,params)))
-          threadAccess.created(accessServerForHost(hostId,threadId),threadId,context.actorContext);
-      }, () => {
-        context.resourceOwner?.assertCurrent();
-        if (context.actorContext && (!actorStore.isCurrent(context.actorContext) || instanceAccess && !instanceAccess.admitsActor(context.actorContext.actorId)))
-          throw new Error('Conversation access expired');
-      }, threadNotes, false, () => ['local-codex','opencraft-server'].includes(hostId) && anonymousHandoff());
-    const createThreadAccessSession=(hostId,context,emit)=>{
-      // Anonymous installations retain their legacy path until an explicit human
-      // administrator initializes collaboration membership.
-      if(!context.actorContext)return createThreadPolicySession(hostId,context,emit);
-      const session=new ServerSpacesSession(serverSpaces,context.actorContext,
-        id=>conversationExecution.serverForHost(hostId,id),emit,createThreadPolicySession(hostId,context,emit),(serverId,threadId)=>threadAccess.allows(serverId,threadId,context.actorContext),()=>{
-          context.resourceOwner?.assertCurrent();
-          if(!actorStore.isCurrent(context.actorContext)||instanceAccess&&!instanceAccess.admitsActor(context.actorContext.actorId))throw new Error('Server access expired');
-        },threadId=>callConversationHost(lateAppHost.current(),{hostId,threadId:''},'server-space-history','thread/read',{threadId,includeTurns:false}));
-      return {
-        async receive(frame){
-          if(!serverSpaces.initialized&&instanceAccess?.admitsActor(context.actorContext.actorId)&&membership.actorMembership(context.actorContext.actorId)?.role==='admin')
-            await serverSpaces.bootstrap(context.actorContext.actorId);
-          return session.receive(frame);
-        },rewrite:frame=>session.rewrite(frame),prepare:frame=>session.prepare(frame),project:frame=>session.project(frame),close:()=>session.close(),
-      };
-    };
+    // Access sessions for App Host RPC and Web's App Server socket; opening them opens nothing.
+    const { accessServerForHost } = clientSession.openAccessSessions({ machineIdentity, conversationExecution, threadAccess, threadNotes,
+      serverSpaces, membership, actorStore, instanceAccess, identity, anonymousHandoff });
     const { actorCollaboration, threadOrchestration, actorCollaborationApi } = await installation.openCollaboration({
-      conversationExecution, operator, anonymousHandoff, appHost: lateAppHost, engines,
+      conversationExecution, operator, anonymousHandoff, appHost: clientSession.appHost, engines,
       // The server's own Engine Host starts later (after the capability listener); automations reach it when they run.
       codexBridge: () => options.codexBridgePrograms!==undefined?{get url(){return lateCodexBridge.current()?.url??'http://127.0.0.1:1/';},get token(){return lateCodexBridge.current()?.token??'';}}:lateCodexBridge.get() });
     const desktop = await nodeLocal.startDesktop({ enabled: options.localDesktop, control: options.desktopControl, access: desktopAccess });
@@ -709,14 +677,13 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         conversationResources: (transport, hostId, resources) => new ConversationResourceTransport(transport, hostId, resources),
       },
       selectHostTerminalService: composition.selectHostTerminalService, selectHostFiles: composition.selectHostFiles });
-    const appHostServer = lateAppHost.bind(new AppHostServer({
-      createRpcAccessSession: createThreadAccessSession,
-      logicalClientRouting: true,
-      physicalHostLifetime: "server",
-      createTransport(hostId) {
-        if (hostId === CHANNELS_HOST_ID) return new ImChannelsAppServer(() => actorCollaboration);
-        const transport = new ModelPolicyTransport((() => {
-        if (hostId === 'opencraft-server') return new TokenUsageQueryTransport(new MachineIdentityTransport(machineIdentity,'OpenCraft',async () => {
+    // The App Host server: the client-session module dispatches each Host id to its
+    // transport. Each Host's inner engine transport, and the account and push layers
+    // around it, are Node constructions (gateway-split §4.1.1 "client-session").
+    const appHostServer = clientSession.openAppHost({
+      transports: {
+        channels: () => new ImChannelsAppServer(() => actorCollaboration),
+        server: () => new TokenUsageQueryTransport(new MachineIdentityTransport(machineIdentity,'OpenCraft',async () => {
           const engine = new WebSocketTransport({
             url: agent.resolveWebsocketUrl ? await agent.resolveWebsocketUrl() : agent.websocketUrl,
             createSocket: url => new WebSocket(url),
@@ -724,14 +691,9 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           const transport = agentIdentity?.wrapTransport(engine) ?? engine;
           return new AgentDriverTransport(new ExecutionOwnershipTransport(new ModelCapabilityTransport(new ImageModelTransport(transport, new ImageGenerationConfiguration(fileStateDocumentStore(join(dataDirectory,'models')), new ModelCredentialRepository(fileSecretStore(join(dataDirectory,'models'))))), {read:()=>new ModelConfigurationRepository(fileStateDocumentStore(join(dataDirectory,'models'))).read(),credential:async ref=>(await new ModelCredentialRepository(fileSecretStore(join(dataDirectory,'models'))).resolve(ref))??process.env[ref]}), executionStore, resolveExecutionNative), actorCollaboration,
             threadId => conversationExecution.serverForHost('opencraft-server', threadId), signExecutionCli, operator.context);
-        }), usageQueries, actorId => actorStore.get(actorId));
-        const remote = remoteServers.get(hostId);
-        if (remote) return new MachineIdentityTransport(null, "Codex", () => createRemoteCodexTransport(remote, hostId));
-        if (hostId.startsWith("ssh:")) {
-          const binding = lateSshManagement.get().store.binding(hostId);
-          return new MachineIdentityTransport(null, "Codex", () => createRemoteCodexTransport(binding, hostId));
-        }
-        if (hostId !== "local-codex") throw new Error(`Unknown server Host ${hostId}`);
+        }), usageQueries, actorId => actorStore.get(actorId)),
+        remoteCodex: (binding, hostId) => new MachineIdentityTransport(null, "Codex", () => createRemoteCodexTransport(binding, hostId)),
+        localCodex: hostId => {
         // Host-wide duties (tasks first) are answered by the services front before Thread routing.
         let codexAdapterStorage = [], codexFront, codexRouting;
         const codexReader = options.codexCoreEndpoint ? new CodexNativeReader(options.codexCoreEndpoint, options.codexCoreAuthToken) : undefined;
@@ -873,29 +835,32 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           ...(codexReader ? [codexModelsService(codexReader, context => context.actorContext && actorStore.isCurrent(context.actorContext) ? actorStore.get(context.actorContext.actorId)?.id ?? null : null),
             codexPinsService(codexReader, clients, { toNative: id => codexRouting?.threadIdentities?.()?.toNative(id), toPublic: id => codexRouting?.threadIdentities?.()?.toPublic(id) }),
             { handles: () => false, request: () => null, close: () => codexReader.close() }] : [])])), mcpApps), hostId);
-        })(), modelPolicyPath, hostId === 'opencraft-server' ? 'dsh' : 'codex', serverStorage.call.projectModelCatalog);
-        let scopedTransport = hostTransports.scopeExecution(hostId, transport);
-        const gatewayPath=configuredModelGatewayPath();
-        if(gatewayPath && ['local-codex','opencraft-server'].includes(hostId)) scopedTransport=new ModelGatewaySettingsTransport(scopedTransport,gatewayPath,join(dataDirectory,'models'),context=>{
+        },
+      },
+      layers: {
+        modelPolicy: (transport, engine) => new ModelPolicyTransport(transport, modelPolicyPath, engine, serverStorage.call.projectModelCatalog),
+        modelGatewaySettings: () => {
+          const gatewayPath=configuredModelGatewayPath();
+          return gatewayPath ? transport => new ModelGatewaySettingsTransport(transport,gatewayPath,join(dataDirectory,'models'),context=>{
           const actor=context.actorContext;
           if(!actor || !actorStore.isCurrent(actor) || actorStore.get(actor.actorId)?.kind!=='human' || instanceAccess && !instanceAccess.admitsActor(actor.actorId))return null;
           const role=context.tokenUsageAuthority?.();
           return {actor:actor.actorId,administrator:role?.actorId===actor.actorId && role.administrator===true};
-        });
-        scopedTransport = hostTransports.scopeResources(hostId, scopedTransport);
-        return ['local-codex', 'opencraft-server'].includes(hostId) ? new PushObservationTransport(scopedTransport, value => {
+          }) : undefined;
+        },
+        pushObservation: (transport, hostId) => new PushObservationTransport(transport, value => {
           const turnPush = lateTurnPush.current();
           if (!turnPush || actorStore.get(value.actorId)?.kind !== 'human') return;
           void Promise.resolve(turnPush.store.watch(value.actorId, conversationExecution.serverForHost(hostId, value.threadId), hostId, value.threadId, value.inputId)).catch(() => {});
-        }) : scopedTransport;
+        }),
       },
-    }));
+      hostTransports, remoteServers, sshManagement: lateSshManagement });
     const { serverInformationService } = installation.openServerInformation(fileStateDocumentStore(dataDirectory));
     const { accountModelDefaultsService, threadReadReceiptsService, personalSshKeys, actorSshKeysService } = await installation.openPersonalServices({ sshLogin: !!ingressConfiguration });
     const turnPush = lateTurnPush.bind(await installation.openTurnPush({
       openStore: () => openPushStore(join(dataDirectory, 'web-push.sqlite')),
       createService: (store, pushOptions) => new TurnPushService(store, pushOptions),
-      appHost: lateAppHost, imPlugins: lateImPlugins, conversationExecution }));
+      appHost: clientSession.appHost, imPlugins: lateImPlugins, conversationExecution }));
     await turnPush.initialize();
     const sshManagement = lateSshManagement.bind(await nodeLocal.openSshManagement({
       enabled: host === "127.0.0.1" || options.sshPublicAccess, publicAccess: options.sshPublicAccess, accessFile: options.sshAccessFile,
@@ -920,28 +885,14 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       ownerWake,
       getExecutionHealth: options.getExecutionHealth,
       getHostReadiness: () => workspaceHost.hostReadiness(),
-      createAppServerAccessSession: (context, emit) => createThreadAccessSession("opencraft-server", context, emit),
-      createAppServerDriverSession: emit => new AgentDriverSession(actorCollaboration,
-        threadId => conversationExecution.serverForHost('opencraft-server', threadId), emit,
-        signExecutionCli, operator.context),
-      createAppServerQuerySession: emit => new TokenUsageQuerySession(usageQueries, emit, actorId => actorStore.get(actorId)),
-      createTerminalSession: options.terminalOwner || fileSystem ? emit => {
-        const sessions = [
-          ...(options.terminalOwner ? [new HostTerminalSession(terminalService('opencraft-server'), terminalScope('opencraft-server'),
-            composeHostTerminalSelector('opencraft-server', terminalService('opencraft-server'),
-              composition.selectHostTerminalService ? (scope, context, local) => composition.selectHostTerminalService('opencraft-server', scope, context, local) : undefined))] : []),
-          ...(fileSystem ? [new HostFileSystemSession(fileSystem, resourceAuthority,
-            composeHostFileSelector(fileSystem, resourceAuthority,
-              composition.selectHostFiles ? (context, params, local) => composition.selectHostFiles('opencraft-server', context, params, local) : undefined))] : []),
-        ];
-        for (const session of sessions) session.subscribeMessage(emit);
-        return {
-          connect: () => Promise.all(sessions.map(session => session.connect())),
-          close: () => { for (const session of sessions) session.close(); },
-          project: frame => sessions.reduce((value, session) => value === null ? null : session.project(value), frame),
-          receive: async (frame, context) => { for (const session of sessions) if (await session.receive(frame, context)) return true; return false; },
-        };
-      } : null,
+      // The App Server, driver, query and Hands sessions for the server's own Host.
+      ...clientSession.openWebSessions({ actorCollaboration, conversationExecution, signExecutionCli, operator, usageQueries, actorStore,
+        terminalService: options.terminalOwner ? terminalService : undefined, terminalScope, fileSystem, resourceAuthority,
+        selectHostTerminalService: composition.selectHostTerminalService, selectHostFiles: composition.selectHostFiles,
+        sessions: {
+          terminal: (service, scope, hostId, select) => new HostTerminalSession(service, scope, composeHostTerminalSelector(hostId, service, select)),
+          files: (files, authority, select) => new HostFileSystemSession(files, authority, composeHostFileSelector(files, authority, select)),
+        } }),
       appServerTarget: agent.websocketUrl,
       resolveAppServerTarget: agent.resolveWebsocketUrl,
       appServerIdentity: agentIdentity ?? null,
