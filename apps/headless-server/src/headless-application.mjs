@@ -63,7 +63,7 @@ import { fileURLToPath } from "node:url";
 import lockfile from "proper-lockfile";
 import { loadSshIngressConfiguration } from "@opencraft/ssh-http-ingress/server";
 
-import { McpAppsService } from "@opencraft/mcp-apps/server";
+import { openMcpAppsService } from "@opencraft/mcp-apps/node";
 import { McpAppsTransport } from "@opencraft/mcp-apps/transport";
 import { AppHostServer } from "@opencraft/app-host-server";
 import { AppServerIdentityOverlay } from "@opencraft/opencraft-daemon/appserver-identity-overlay";
@@ -950,7 +950,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         }
       } catch { /* Authority cannot be inferred from a failed recovery read. */ }
     }
-    const mcpApps = installation.openMcpApps(() => new McpAppsService(join(dataDirectory, "mcp-apps.sqlite")));
+    const mcpApps = installation.openMcpApps(() => openMcpAppsService(join(dataDirectory, "mcp-apps.sqlite")));
     // Reuse the deployment's existing Codex ledger without starting a Codex
     // transport or opening/migrating its writer from the DSH/Pi entry.
     // Packages bundle the query worker beside this module; source runs use the TypeScript entry.

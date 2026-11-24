@@ -245,8 +245,7 @@
       "mkdirSync": 1
     },
     "packages/connector-host/src/store.ts": {
-      "DatabaseSync": 1,
-      "SQL statement": 18
+      "SQL statement": 15
     },
     "packages/document-storage/src/client-resources-sqlite.ts": {
       "DatabaseSync": 1,
@@ -280,8 +279,7 @@
       "SQL statement": 9
     },
     "packages/mcp-apps/src/store.ts": {
-      "mkdirSync": 1,
-      "SQL statement": 16
+      "SQL statement": 13
     },
     "packages/model-usage-policy/src/index.ts": {
       "SQL statement": 5

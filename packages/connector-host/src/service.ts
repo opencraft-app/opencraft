@@ -1,5 +1,6 @@
 import { connectorDefinition, type ConnectorHostSnapshot, type ConnectorProbe } from "@opencraft/connector-core";
-import { ConnectorDatabase, ConnectorHostError, record, text } from "./store";
+import { ConnectorHostError, record, text } from "./store";
+import { ConnectorDatabase } from "./node-store";
 import { ConnectorOAuth } from "./oauth";
 import { ConnectorMcp, toolsDigest } from "./mcp";
 import { MCP_DEFINITIONS } from "./mcp-endpoints";

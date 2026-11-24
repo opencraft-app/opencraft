@@ -1,12 +1,10 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import {
   RESUME_DETACH_MS, RESUME_GLOBAL_MAX_BYTES, RESUME_GLOBAL_MAX_FRAMES, RESUME_PROTOCOL_VERSION, RESUME_SESSION_MAX_BYTES,
-  ResumeLink, type ResumeAttempt, type ResumeFailureReason, type ResumeGrant,
+  ResumeLink, ResumeSessionCapacityError, type ResumeAttempt, type ResumeFailureReason, type ResumeGrant,
 } from "@opencraft/app-host-resume";
 
-export class ResumeSessionCapacityError extends Error {
-  constructor() { super("Resume session capacity exhausted"); }
-}
+export { ResumeSessionCapacityError };
 
 export interface ResumeRegistryOptions {
   readonly maxBytes?: number;
@@ -20,8 +18,8 @@ export interface ResumeRegistryOptions {
   readonly clearTimeout?: (handle: unknown) => void;
 }
 
-/** Frame retained by a server session: encoded once, outside the V8 heap. */
-export type RetainedFrame = Buffer | null;
+/** Frame retained by a server session: encoded once as UTF-8 bytes, outside the V8 heap. */
+export type RetainedFrame = Uint8Array | null;
 
 /**
  * One resumable App Host connection. The registry owns its lifetime; the

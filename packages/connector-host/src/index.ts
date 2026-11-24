@@ -1,2 +1,3 @@
 export { ManagedConnectorService } from "./service";
-export { ConnectorDatabase, ConnectorHostError } from "./store";
+export { ConnectorHostError } from "./store";
+export { ConnectorDatabase } from "./node-store";

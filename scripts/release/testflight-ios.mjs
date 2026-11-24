@@ -51,6 +51,7 @@ function createReadClient(environment) {
   }
   const get = (path, query) => request("GET", path, query);
   const post = (path, body) => request("POST", path, {}, body);
+  const patch = (path, body) => request("PATCH", path, {}, body);
   async function list(path, query = {}) {
     const records = [];
     const seen = new Set();
@@ -65,7 +66,7 @@ function createReadClient(environment) {
       page = await get(next);
     }
   }
-  return { appId: APP_STORE_APP_ID, get, list, post };
+  return { appId: APP_STORE_APP_ID, get, list, post, patch };
 }
 
 export function nextBuildNumber(numbers) {
@@ -210,11 +211,20 @@ async function main(mode, environment) {
         const release = environment.RELEASE_TAG
           ? ` Release notes: https://github.com/opencraft-app/opencraft/releases/tag/${environment.RELEASE_TAG}`
           : "";
-        await client.post("/v1/betaBuildLocalizations", { data: {
-          type: "betaBuildLocalizations",
-          attributes: { locale: "en-US", whatsNew: `OpenCraft ${version} (${number}).${release}` },
-          relationships: { build: { data: { type: "builds", id: result.buildId } } },
-        } });
+        const whatsNew = `OpenCraft ${version} (${number}).${release}`;
+        // Apple creates an empty localization per app language with the build; fill that in.
+        const existing = localizations.find(record => record.attributes.locale === "en-US") ?? localizations[0];
+        if (existing) {
+          await client.patch(`/v1/betaBuildLocalizations/${encodeURIComponent(existing.id)}`, { data: {
+            type: "betaBuildLocalizations", id: existing.id, attributes: { whatsNew },
+          } });
+        } else {
+          await client.post("/v1/betaBuildLocalizations", { data: {
+            type: "betaBuildLocalizations",
+            attributes: { locale: "en-US", whatsNew },
+            relationships: { build: { data: { type: "builds", id: result.buildId } } },
+          } });
+        }
       } else if (action === "add_to_group") {
         await client.post(`/v1/betaGroups/${encodeURIComponent(group.id)}/relationships/builds`, {
           data: [{ type: "builds", id: result.buildId }],
