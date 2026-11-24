@@ -27,9 +27,9 @@ export interface InstallationCoreNamespace {
 /** The account's object namespace; the same structural binding. */
 export type AccountCoreNamespace = InstallationCoreNamespace;
 
-/** `ctx` of the AccountCore object (no alarm: none of its owners waits on time yet). */
+/** `ctx` of the AccountCore object; its alarm wakes the account pool's renewal schedule. */
 export interface AccountCoreState {
-  readonly storage: DurableObjectStorage;
+  readonly storage: InstallationCoreStorage;
   blockConcurrencyWhile<T>(callback: () => Promise<T>): Promise<T>;
   /** Resets the object: its memory is dropped and the next event constructs it again. */
   abort(reason?: string): void;
@@ -45,6 +45,13 @@ export interface AccountCoreEnv {
    * stays closed; it never stores a credential unsealed.
    */
   readonly OPENCRAFT_ACCOUNT_SEALING_KEY?: string;
+  /**
+   * The account maintenance executor (a service binding to the maintenance
+   * container's front door), which runs a provider's OAuth renewal for the
+   * account pool (`@opencraft/account-pool-host/renewal`). Absent: renewals
+   * fail as unavailable and are retried; selection still serves valid credentials.
+   */
+  readonly ACCOUNT_MAINTENANCE?: { fetch(request: Request): Promise<Response> };
 }
 
 /** Everything the deployment's entry Worker is bound to. */

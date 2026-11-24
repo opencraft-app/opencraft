@@ -5,7 +5,15 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./credential-leases": "./src/credential-leases.ts"
+    "./credential-leases": "./src/credential-leases.ts",
+    "./account-pool": "./src/account-pool.ts",
+    "./sql-owner": "./src/account-pool-sql-owner.ts",
+    "./refresh": "./src/oauth-refresh.ts",
+    "./refresh-schedule": "./src/account-refresh-schedule.ts",
+    "./renewal": "./src/account-renewal.ts",
+    "./pool-core": "./src/account-pool-core.ts",
+    "./credential-lease-exchange": "./src/credential-lease-exchange.ts",
+    "./credential-egress": "./src/credential-egress.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
@@ -15,6 +23,8 @@
     "@opencraft/appserver-protocol": "0.1.0",
     "@opencraft/document-storage": "0.1.0",
     "@opencraft/http-exchange": "0.1.0",
+    "@opencraft/owner-wake": "0.1.0",
+    "@opencraft/secret-storage": "0.1.0",
     "@opencraft/sql": "0.1.0",
     "@opencraft/sqlite-node": "0.1.0",
     "ws": "^8.22.1"

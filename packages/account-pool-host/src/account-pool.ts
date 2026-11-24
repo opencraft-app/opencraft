@@ -7,7 +7,7 @@ import {
   parseCodexAuthFile,
   parseCodexAuthFileReference,
   type CodexAuthFileReference,
-} from "./codex-auth-file.js";
+} from "./codex-auth-file-format.js";
 import { createCodexAccountPoolLaunch } from "./codex-launch.js";
 
 export type AccountPoolProvider = "codex";
