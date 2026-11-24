@@ -920,3 +920,65 @@ test('installation services: a startup failure after they opened closes every in
   const app = await startHeadlessServer(f.options); f.own(() => app.close());
   assert.equal((await fetch(app.url)).status, 200);
 });
+
+test('root inputs: the Hub node state, machine identity and relay configuration reach the installation from their files, unchanged across a restart', { timeout: 60_000 }, async t => {
+  const f = await fixture(t), dataDirectory = f.options.dataDirectory;
+  await mkdir(dataDirectory, { recursive: true, mode: 0o700 });
+  const { openLocalHubNetwork } = await import('../../packages/hub-network/src/store-file.ts');
+  const { AssertionSigner, ASSERTION_HEADER } = await import('../../packages/identity-core/src/node.ts');
+  const pem = () => { const pair = generateKeyPairSync('ed25519');
+    return { publicKey: pair.publicKey.export({ format: 'pem', type: 'spki' }).toString(), privateKey: pair.privateKey.export({ format: 'pem', type: 'pkcs8' }).toString() }; };
+  // A Hub node that accepted an identity authority and published an origin before this start.
+  const hubKeys = pem(), authority = { issuer: 'hub-login', publicKey: hubKeys.publicKey, providers: ['hub-directory'] };
+  const statePath = join(dataDirectory, 'hub-network.json');
+  const hub = await openLocalHubNetwork(statePath, { authority });
+  await hub.apply({ revision: hub.store.state.revision, action: 'configure', name: 'Fixture Hub', endpoint: '', origin: 'https://hub-origin.test', accepting: false, forwarding: false }, 'fixture');
+  const hubId = hub.store.id; hub.close();
+  const storedHub = await readFile(statePath, 'utf8');
+  const relayKeys = pem(), relayPath = join(f.root, 'relay-connect.json');
+  await writeFile(relayPath, JSON.stringify({ schemaVersion: 1, relay: 'http://127.0.0.1:9', credential: 'c'.repeat(43), allowLoopbackInsecure: true,
+    issuer: 'relay-login', instanceId: 'relay-instance', origin: 'https://relay-origin.test', publicKey: relayKeys.publicKey }), { mode: 0o600 });
+  let inputs;
+  const options = { ...f.options, machineName: '  Fixture machine  ', relayConnectFile: relayPath };
+  const composition = { createIdentity: async input => { inputs = input; return { providers: [], close() {} }; } };
+  let app = await startHeadlessServer(options, composition); f.own(() => app?.close());
+  const machineId = (await readFile(join(dataDirectory, 'machine-id'), 'utf8')).trim();
+  assert.deepEqual({ ...inputs.machineIdentity }, { machineId, name: 'Fixture machine', platform: process.platform === 'darwin' ? 'macos' : process.platform === 'win32' ? 'windows' : 'linux' });
+  assert.deepEqual(inputs.hubAuthority, authority);
+  assert.equal(typeof inputs.membership?.actorMembership, 'function', 'a published Hub origin enables instance membership');
+  assert.deepEqual([inputs.relayConfiguration.options.relay, inputs.relayConfiguration.options.allowLoopbackInsecure], ['http://127.0.0.1:9', true]);
+  // Both external providers verify assertions for their own scope only.
+  const principal = { provider: 'hub-directory', subject: 'alice', displayName: 'Alice', expiresAt: Date.now() + 60_000 };
+  const asserted = (signer, host) => ({ method: 'GET', url: '/__opencraft_actors/me',
+    headers: { host, [ASSERTION_HEADER]: signer.issue(principal, 'GET', '/__opencraft_actors/me') } });
+  const hubSigner = new AssertionSigner({ issuer: 'hub-login', instanceId: hubId, origin: 'https://hub-origin.test' }, hubKeys.privateKey);
+  const relaySigner = new AssertionSigner({ issuer: 'relay-login', instanceId: 'relay-instance', origin: 'https://relay-origin.test' }, relayKeys.privateKey);
+  assert.equal(inputs.resolveIdentity(asserted(hubSigner, 'hub-origin.test'))?.subject, 'alice');
+  assert.equal(inputs.resolveIdentity(asserted(relaySigner, 'relay-origin.test'))?.subject, 'alice');
+  assert.equal(inputs.resolveIdentity(asserted(hubSigner, 'relay-origin.test')), null);
+  await app.close(); app = undefined;
+  // Opening the Hub node changed nothing: same bytes, still owner-only; the machine ID file is owner-only too.
+  assert.equal(await readFile(statePath, 'utf8'), storedHub);
+  assert.equal((await stat(statePath)).mode & 0o777, 0o600);
+  assert.equal((await stat(join(dataDirectory, 'machine-id'))).mode & 0o777, 0o600);
+  app = await startHeadlessServer(options, composition);
+  assert.equal(inputs.machineIdentity.machineId, machineId, 'a restart reads the same machine identity');
+  assert.deepEqual(inputs.hubAuthority, authority);
+  await app.close(); app = undefined;
+
+  // An operator-installed remote Hub controller replaces the local node: no Hub authority, and a malformed one fails startup.
+  const controllerPath = join(dataDirectory, 'hub-network-controller.json');
+  await writeFile(controllerPath, JSON.stringify({ schemaVersion: 1, endpoint: 'http://127.0.0.1:9', credential: 'h'.repeat(43) }), { mode: 0o600 });
+  app = await startHeadlessServer(f.options, composition);
+  assert.deepEqual([inputs.hubAuthority, inputs.membership], [null, undefined]);
+  await app.close(); app = undefined;
+  const started = f.starts();
+  await writeFile(controllerPath, JSON.stringify({ schemaVersion: 1, endpoint: 'https://hub.example', credential: 'h'.repeat(43) }), { mode: 0o600 });
+  await assert.rejects(startHeadlessServer(f.options, composition), /Hub controller requires loopback/);
+  await writeFile(controllerPath, JSON.stringify({ schemaVersion: 2, endpoint: 'http://127.0.0.1:9', credential: 'h'.repeat(43) }), { mode: 0o600 });
+  await assert.rejects(startHeadlessServer(f.options, composition), /Invalid Hub controller configuration/);
+  assert.equal(f.starts(), started, 'no execution host started');
+  await rm(controllerPath);
+  app = await startHeadlessServer(f.options, composition);
+  assert.deepEqual(inputs.hubAuthority, authority, 'the local Hub node state is still there');
+});
