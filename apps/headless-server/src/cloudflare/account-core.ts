@@ -15,7 +15,7 @@
 //                       services in the same process), answered by the same function
 //   account pool        the same AccountPool, renewal manager and renewal schedule as the Node
 //                       Codex Core composes, over two further migration chains in the object's SQL
-//                       (`schema_ledgers`), credential records sealed synchronously in the same SQL,
+//                       (`schema_family_migrations`, `@opencraft/sql/families`), credential records sealed synchronously in the same SQL,
 //                       renewals through the maintenance executor's fetch binding and the schedule
 //                       on the object's alarm (Node: account-pool.sqlite, private files, a native
 //                       codex maintenance process and runtime timeouts)
@@ -27,7 +27,7 @@ import { durableObjectSecretStore } from "@opencraft/storage-cloudflare/secrets"
 import { importSecretSealingKey, sealedSecretStore } from "@opencraft/secret-storage/sealed";
 import { recordSealer } from "@opencraft/secret-storage/sealed-records";
 import { migrateModelPolicySqlDatabase } from "@opencraft/model-usage-policy/sql-owner";
-import { isMigrationLedgerObject } from "@opencraft/sql/schema-ledgers";
+import { isMigrationLedgerObject } from "@opencraft/sql/families";
 import { openAccountPoolSqlStorage, ownedByAccountPoolSchemas } from "@opencraft/account-pool-host/sql-owner";
 import { assembleAccountPoolCore, type AccountPoolCore } from "@opencraft/account-pool-host/pool-core";
 import { AccountPool } from "@opencraft/account-pool-host/account-pool";
@@ -117,7 +117,7 @@ export class AccountCore {
     const records = recordSealer(env.OPENCRAFT_ACCOUNT_SEALING_KEY);
     const database = durableObjectSqlDatabase(storage);
     // Three chains share the object's SQL: the policy keeps the database's own
-    // ledger, the account pool and its credential records keep `schema_ledgers`.
+    // ledger, the account pool and its credential records keep the family ledger `schema_family_migrations`.
     const policy = migrateModelPolicySqlDatabase(database, {
       // workerd's own tables and the other chains' objects are not policy schema.
       ownedByRuntime: (name) =>

@@ -9,7 +9,13 @@ import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { nodeSqlDatabase, resolveStoreMigrations } from "@opencraft/sqlite-node";
 import { applySqlMigrations, hashSqlMigrations, SqlMigrationError } from "@opencraft/sql/migrations";
-import { applySqlMigrationFamilies, readSqlMigrationFamilies, type SqlMigrationFamily } from "@opencraft/sql/families";
+import {
+  applySqlMigrationFamilies as applyFamilies,
+  MIGRATION_FAMILY_LEDGER_TABLE,
+  sqlMigrationFamilyRows,
+  type SqlMigrationFamily,
+  type SqlMigrationFamilyOptions,
+} from "@opencraft/sql/families";
 import {
   WORKSPACE_HOST_SQL_STORES,
   migrateWorkspaceHostSql,
@@ -25,6 +31,15 @@ const family = (id: string, ...sql: string[]): SqlMigrationFamily => ({
     sha256Hex,
   ),
 });
+/** The WorkspaceHost composition: families only, the Durable Object ledger. */
+const FAMILIES = { table: MIGRATION_FAMILY_LEDGER_TABLE, composition: "families" } as const;
+const applySqlMigrationFamilies = (
+  database: Parameters<typeof applyFamilies>[0],
+  families: readonly SqlMigrationFamily[],
+  options: Partial<SqlMigrationFamilyOptions> = {},
+) => applyFamilies(database, families, { ...FAMILIES, ...options });
+const readSqlMigrationFamilies = (database: Parameters<typeof applyFamilies>[0]) =>
+  sqlMigrationFamilyRows(database, MIGRATION_FAMILY_LEDGER_TABLE);
 const refused = (kind: string) => (error: unknown) => error instanceof SqlMigrationError && error.kind === kind;
 const objects = (database: ReturnType<typeof memory>) =>
   database
@@ -41,14 +56,14 @@ test("families keep their own contiguous versions in one ledger and upgrade keep
   assert.deepEqual(
     applySqlMigrationFamilies(database, [{ id: "notes", migrations: notes.migrations.slice(0, 1) }, tags]),
     [
-      { id: "notes", applied: 1, version: 1 },
-      { id: "tags", applied: 1, version: 1 },
+      { id: "notes", status: "fresh", applied: 1, version: 1 },
+      { id: "tags", status: "fresh", applied: 1, version: 1 },
     ],
   );
   database.prepare("INSERT INTO notes(id) VALUES ('kept')").run();
   assert.deepEqual(applySqlMigrationFamilies(database, [notes, tags]), [
-    { id: "notes", applied: 1, version: 2 },
-    { id: "tags", applied: 0, version: 1 },
+    { id: "notes", status: "migrated", applied: 1, version: 2 },
+    { id: "tags", status: "up-to-date", applied: 0, version: 1 },
   ]);
   assert.deepEqual(
     database

@@ -19,7 +19,7 @@ import {
   WORKSPACE_HOST_OBJECT_PREFIX,
   workspaceHostObjectName,
 } from "../../../apps/headless-server/src/workspace-host-routes.ts";
-import { readSqlMigrationFamilies } from "@opencraft/sql/families";
+import { MIGRATION_FAMILY_LEDGER_TABLE, sqlMigrationFamilyRows } from "@opencraft/sql/families";
 import { durableObjectSqlDatabase } from "@opencraft/storage-cloudflare/sql";
 import { containerDouble } from "./workspace-container-double.ts";
 
@@ -97,7 +97,7 @@ export class TestWorkspaceHost extends WorkspaceHost {
             inputs: double.inputs,
             served: double.served,
           },
-          families: readSqlMigrationFamilies(database),
+          families: sqlMigrationFamilyRows(database, MIGRATION_FAMILY_LEDGER_TABLE),
           tables: database
             .prepare(
               "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE '\\_cf\\_%' ESCAPE '\\' ORDER BY name",

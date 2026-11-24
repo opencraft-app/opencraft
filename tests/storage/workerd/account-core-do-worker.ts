@@ -74,7 +74,7 @@ export class TestAccountCore extends AccountCore {
             "model_usage_policy",
             "model_usage_audit",
             "schema_migrations",
-            "schema_ledgers",
+            "schema_family_migrations",
             "pool_accounts",
             "pool_quota",
             "pool_affinity",

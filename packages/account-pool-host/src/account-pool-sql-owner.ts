@@ -4,8 +4,9 @@
 // node:crypto (Node, and workerd under nodejs_compat), which the Node owner
 // uses for the same checksums.
 //
-// Two named chains share the database with its own chain (the model usage
-// policy keeps `schema_migrations`), each with its rows in `schema_ledgers`:
+// Two migration families share the database beside its main chain (the model
+// usage policy keeps `schema_migrations`), each with its rows in the family
+// ledger `schema_family_migrations` (`@opencraft/sql/families`):
 //   account-pool-host           the published account pool chain, exactly as
 //                               the Node file owner applies it (v1–v3 from
 //                               account-pool-schema.ts, later versions from the
@@ -19,7 +20,12 @@
 import { createHash } from "node:crypto";
 import type { SqlDatabase } from "@opencraft/sql";
 import { hashSqlMigrations, resolveSqlMigrationContract, type SqlMigration } from "@opencraft/sql/migrations";
-import { migrateSqlSchema, type SqlSchemaDeclaration, type SqlSchemaOutcome } from "@opencraft/sql/schema-ledgers";
+import {
+  applySqlMigrationFamilies,
+  MIGRATION_FAMILY_LEDGER_TABLE,
+  type SqlMigrationFamily,
+  type SqlMigrationFamilyOutcome,
+} from "@opencraft/sql/families";
 import { STORE_MIGRATIONS } from "@opencraft/sqlite-node/store-migrations-data";
 import type { RecordSealer } from "@opencraft/secret-storage/sealed-records";
 import { ACCOUNT_POOL_MIGRATIONS } from "./account-pool-schema.js";
@@ -41,11 +47,11 @@ export const ACCOUNT_CREDENTIAL_RECORD_MIGRATIONS: readonly SqlMigration[] = [
   },
 ];
 
-/** The two chains, as a shared database hosts them. Every object of either carries its chain's prefix. */
-export function accountPoolSqlSchemas(): readonly SqlSchemaDeclaration[] {
+/** The two families, as a shared database hosts them. Every object of either carries its family's prefix. */
+export function accountPoolSqlSchemas(): readonly SqlMigrationFamily[] {
   return [
     {
-      schema: ACCOUNT_POOL_SCHEMA,
+      id: ACCOUNT_POOL_SCHEMA,
       migrations: hashSqlMigrations(
         resolveSqlMigrationContract(ACCOUNT_POOL_MIGRATIONS, STORE_MIGRATIONS[ACCOUNT_POOL_SCHEMA], sha256Hex),
         sha256Hex,
@@ -53,7 +59,7 @@ export function accountPoolSqlSchemas(): readonly SqlSchemaDeclaration[] {
       owns: (name) => name.startsWith("pool_"),
     },
     {
-      schema: ACCOUNT_CREDENTIAL_RECORDS_SCHEMA,
+      id: ACCOUNT_CREDENTIAL_RECORDS_SCHEMA,
       migrations: hashSqlMigrations(ACCOUNT_CREDENTIAL_RECORD_MIGRATIONS, sha256Hex),
       owns: (name) => name.startsWith("account_credential_"),
     },
@@ -62,7 +68,7 @@ export function accountPoolSqlSchemas(): readonly SqlSchemaDeclaration[] {
 
 /** Whether a storage object belongs to one of the account pool's chains. */
 export function ownedByAccountPoolSchemas(name: string): boolean {
-  return accountPoolSqlSchemas().some((declaration) => declaration.owns(name));
+  return accountPoolSqlSchemas().some((family) => family.owns!(name));
 }
 
 /**
@@ -128,15 +134,18 @@ export function sqlAccountCredentialRecords(database: SqlDatabase, sealer: Recor
 }
 
 export interface AccountPoolSqlStorage extends AccountPoolStorage {
-  readonly outcomes: readonly SqlSchemaOutcome[];
+  readonly outcomes: readonly SqlMigrationFamilyOutcome[];
 }
 
 /**
- * Migrates both chains in the shared database and returns the pool's storage.
- * A changed, newer or foreign history in either chain refuses the open. The
- * returned `close` releases nothing: the database belongs to its owner.
+ * Migrates both families beside the database's main chain and returns the
+ * pool's storage. A changed, newer, undeclared or unledgered history refuses
+ * the open. The returned `close` releases nothing: the database belongs to its owner.
  */
 export function openAccountPoolSqlStorage(database: SqlDatabase, sealer: RecordSealer): AccountPoolSqlStorage {
-  const outcomes = accountPoolSqlSchemas().map((declaration) => migrateSqlSchema(database, declaration));
+  const outcomes = applySqlMigrationFamilies(database, accountPoolSqlSchemas(), {
+    table: MIGRATION_FAMILY_LEDGER_TABLE,
+    composition: "beside-main",
+  });
   return { database, credentials: sqlAccountCredentialRecords(database, sealer), outcomes, close() {} };
 }

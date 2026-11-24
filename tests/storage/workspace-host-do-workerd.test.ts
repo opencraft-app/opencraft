@@ -99,11 +99,14 @@ test("the Wrangler template binds the WorkspaceHost class to its container", asy
   assert.deepEqual(config.compatibility_flags, WORKSPACE_HOST_DO_SPEC.compatibilityFlags);
   assert.deepEqual(config.durable_objects.bindings, [
     { name: "INSTALLATION_CORE", class_name: "InstallationCore" },
+    { name: "ACCOUNT_CORE", class_name: "AccountCore" },
     { name: "WORKSPACE_HOST", class_name: "WorkspaceHost" },
   ]);
+  // Each class in its own migration: a deployment of the earlier template only adds the WorkspaceHost class.
   assert.deepEqual(config.migrations, [
     { tag: "v1", new_sqlite_classes: ["InstallationCore"] },
-    { tag: "v2", new_sqlite_classes: ["WorkspaceHost"] },
+    { tag: "v2", new_sqlite_classes: ["AccountCore"] },
+    { tag: "v3", new_sqlite_classes: ["WorkspaceHost"] },
   ]);
   assert.equal(config.containers.length, 1);
   const [container] = config.containers;

@@ -190,7 +190,7 @@ for (const file of [
   // The account module and the ports the AccountCore Durable Object feeds it
   // through (cloudflare-deployment §5.6): the shared account routes, the policy
   // store and rules, credential leases, their exchange, egress and provider source,
-  // sealed secrets, and the shared-database schema ledgers.
+  // and sealed secrets (the shared-database family ledger is listed below).
   "apps/headless-server/src/assembly/account.mjs",
   "apps/headless-server/src/account-routes.ts",
   "packages/model-usage-policy/src/store.ts",
@@ -198,7 +198,6 @@ for (const file of [
   "packages/account-pool-host/src/credential-leases.ts",
   "packages/account-pool-host/src/credential-lease-exchange.ts",
   "packages/account-pool-host/src/credential-egress.ts",
-  "packages/sql/src/schema-ledgers.ts",
   "packages/secret-storage/src/sealed.ts",
   "apps/local-agent-host/src/model-config/provider-route.ts",
   "apps/local-agent-host/src/model-config/provider-credentials.ts",

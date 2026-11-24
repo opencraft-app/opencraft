@@ -7,8 +7,16 @@ import {
   sqliteTransaction,
   SqliteLifecycleError,
   verifyManagedDatabaseHistory,
+  nodeSqlDatabase,
   type Migration,
 } from "@opencraft/sqlite-node";
+import { hashSqlMigrations } from "@opencraft/sql/migrations";
+import {
+  migrationFamilyLedger,
+  migrationFamilyLedgerSql,
+  readSqlMigrationFamilyLedger,
+  type SqlMigrationFamily,
+} from "@opencraft/sql/families";
 import {
   CORE_FAMILY,
   type ServerAlternateHistory,
@@ -22,11 +30,14 @@ import {
  * (docs/architecture/server/sqlite-lifecycle.md, "Server 产品扩展迁移族").
  * Runs only in the Server owner, under the installation writer fence: never on
  * a network thread. Core keeps `schema_migrations`; each family keeps its own
- * contiguous versions in `schema_extension_migrations`.
+ * contiguous versions in `schema_extension_migrations`. The family ledger and
+ * its row rules are the runtime-neutral migration-family primitive
+ * (`@opencraft/sql/families`, composition `beside-main`) under this published
+ * table name; the authorizer, backups, schema validation and lineage adoption
+ * are this Node owner's.
  */
 export const EXTENSION_LEDGER_TABLE = "schema_extension_migrations";
-export const EXTENSION_LEDGER_SQL =
-  "CREATE TABLE IF NOT EXISTS schema_extension_migrations (family TEXT NOT NULL, version INTEGER NOT NULL, name TEXT NOT NULL, checksum TEXT NOT NULL, applied_at INTEGER NOT NULL, PRIMARY KEY (family, version)) STRICT";
+export const EXTENSION_LEDGER_SQL = migrationFamilyLedgerSql(EXTENSION_LEDGER_TABLE);
 /** Original linear ledger rows of an adopted lineage, kept for audit; never read as authority. */
 export const ADOPTION_RECEIPT_TABLE = "schema_migration_adoptions";
 export const ADOPTION_RECEIPT_SQL =
@@ -207,23 +218,34 @@ function assertLedgerTable(database: DatabaseSync, name: string, sql: string): b
  * family is a newer schema. Returns each declared family's applied count.
  */
 export function readFamilyLedger(database: DatabaseSync, composition: ServerMigrationComposition): Map<string, number> {
-  const applied = new Map(composition.extensions.map((family) => [family.id, 0]));
-  if (!assertLedgerTable(database, EXTENSION_LEDGER_TABLE, EXTENSION_LEDGER_SQL)) return applied;
-  const rows = database
-    .prepare("SELECT family,version,name,checksum FROM schema_extension_migrations ORDER BY family,version")
-    .all();
-  for (const row of rows) {
-    const family = composition.extensions.find((entry) => entry.id === row.family);
-    if (!family) throw mismatch(`Unknown Server extension family recorded: ${String(row.family)}`);
-    const count = applied.get(family.id)!;
-    if (Number(row.version) > family.migrations.length)
-      throw new SqliteLifecycleError("newer-schema", `Unsupported newer Server extension family history: ${family.id}`);
-    const expected = family.migrations[count];
-    if (!expected || row.version !== count + 1 || row.name !== expected.name || row.checksum !== digest(expected.sql))
-      throw mismatch(`Server extension family ${family.id} ledger does not match its published migrations`);
-    applied.set(family.id, count + 1);
-  }
-  return applied;
+  if (!assertLedgerTable(database, EXTENSION_LEDGER_TABLE, EXTENSION_LEDGER_SQL))
+    return new Map(composition.extensions.map((family) => [family.id, 0]));
+  return readSqlMigrationFamilyLedger(nodeSqlDatabase(database), ledgerFamilies(composition), {
+    table: EXTENSION_LEDGER_TABLE,
+    // The Server's own refusals, as published.
+    fail: (_kind, _message, { reason, family }) =>
+      reason === "unknown-family"
+        ? mismatch(`Unknown Server extension family recorded: ${String(family)}`)
+        : reason === "newer"
+          ? new SqliteLifecycleError("newer-schema", `Unsupported newer Server extension family history: ${family}`)
+          : mismatch(`Server extension family ${family} ledger does not match its published migrations`),
+  });
+}
+
+const familyLedgers = new WeakMap<ServerMigrationComposition, readonly SqlMigrationFamily[]>();
+/** The composition's families as the family primitive declares them (checksums of the published SQL). */
+function ledgerFamilies(composition: ServerMigrationComposition): readonly SqlMigrationFamily[] {
+  let families = familyLedgers.get(composition);
+  if (!families)
+    familyLedgers.set(
+      composition,
+      (families = composition.extensions.map((family) => ({
+        id: family.id,
+        migrations: hashSqlMigrations(family.migrations, digest),
+        owns: (name: string) => lower(name).startsWith(family.objectPrefix),
+      }))),
+    );
+  return families;
 }
 
 /**
@@ -244,12 +266,11 @@ export function applyExtensionFamilies(
     sqliteTransaction(database, () => {
       database.exec(EXTENSION_LEDGER_SQL);
       const applied = readFamilyLedger(database, composition).get(family.id)!;
-      const record = database.prepare(
-        "INSERT INTO schema_extension_migrations(family,version,name,checksum,applied_at) VALUES(?,?,?,?,?)",
-      );
+      const ledger = migrationFamilyLedger(EXTENSION_LEDGER_TABLE, family.id);
+      const port = nodeSqlDatabase(database);
       for (const migration of family.migrations.slice(applied)) {
         execAsFamily(database, family, migration);
-        record.run(family.id, migration.version, migration.name, digest(migration.sql), Date.now());
+        ledger.record(port, { ...migration, checksum: digest(migration.sql) });
       }
       familySchemaValidator(core, family, family.migrations.length)(database);
     });
