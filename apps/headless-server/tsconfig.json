@@ -35,6 +35,12 @@
     "src/assembly/lifecycle.d.mts",
     "src/assembly/node-local.d.mts",
     "src/assembly/root-inputs.ts",
-    "src/assembly/root-inputs-node.d.mts"
+    "src/assembly/root-inputs-node.d.mts",
+    "src/assembly/server-core-same-thread.ts",
+    "src/server-core-domains.d.mts",
+    "src/installation-routes.ts",
+    "src/cloudflare/bindings.ts",
+    "src/cloudflare/installation-core.ts",
+    "src/cloudflare/worker.ts"
   ]
 }
