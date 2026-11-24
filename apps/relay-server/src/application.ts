@@ -9,6 +9,7 @@ import { MACHINE_GATEWAY_CONTROL_PATH, MACHINE_GATEWAY_DATA_PATH, machineEnrollm
 import { HubNetwork } from '../../../packages/hub-network/src/node.js';
 import { publicOrigin } from '../../../packages/hub-network/src/contract.js';
 import { parseSelectionDefaults, parseServerPaths, type ServerPaths } from './selection.js';
+import { RELAY_LANDING_ICON_SVG, renderRelayLandingPage } from './landing.js';
 
 export interface RelayAuthenticationConfiguration {
   issuer: string;
@@ -155,7 +156,35 @@ export async function startRelayApplication(input: unknown, composition: RelayCo
       listener.on('upgrade', (req, socket, head) => app!.server.emit('upgrade', req, socket, head));
     }
     if (network?.port) {
-      peerListener = createHttpsServer({ cert: await readFile(network.tlsCertFile!), key: await readFile(network.tlsKeyFile!) }, (req, res) => { if (config.machineGateway && machineEnrollmentRequest(req.url ?? '', req.method ?? '')) app!.server.emit('request', req, res); else {res.writeHead(404); res.end();} });
+      const landingHtml = renderRelayLandingPage();
+      peerListener = createHttpsServer({ cert: await readFile(network.tlsCertFile!), key: await readFile(network.tlsKeyFile!) }, (req, res) => {
+        if (config.machineGateway && machineEnrollmentRequest(req.url ?? '', req.method ?? '')) {
+          app!.server.emit('request', req, res);
+          return;
+        }
+        const pathname = (req.url ?? '/').split('?')[0];
+        if ((req.method === 'GET' || req.method === 'HEAD') && (pathname === '/' || pathname === '/index.html')) {
+          res.writeHead(200, {
+            'content-type': 'text/html; charset=utf-8',
+            'cache-control': 'public, max-age=300',
+            'x-content-type-options': 'nosniff',
+            'referrer-policy': 'strict-origin-when-cross-origin',
+          });
+          res.end(req.method === 'HEAD' ? undefined : landingHtml);
+          return;
+        }
+        if ((req.method === 'GET' || req.method === 'HEAD') && (pathname === '/favicon.svg' || pathname === '/favicon.ico')) {
+          res.writeHead(200, {
+            'content-type': 'image/svg+xml; charset=utf-8',
+            'cache-control': 'public, max-age=86400',
+            'x-content-type-options': 'nosniff',
+          });
+          res.end(req.method === 'HEAD' ? undefined : RELAY_LANDING_ICON_SVG);
+          return;
+        }
+        res.writeHead(404);
+        res.end();
+      });
       peerListener.on('upgrade', (req, socket, head) => { if (config.machineGateway && (req.url === MACHINE_GATEWAY_CONTROL_PATH || req.url === MACHINE_GATEWAY_DATA_PATH || machineEnrollmentRequest(req.url ?? '', req.method ?? '', true))) app!.server.emit('upgrade', req, socket, head); else if (!hub!.handleUpgrade(req, socket, head)) socket.destroy(); });
       await listen(peerListener, network.port, '0.0.0.0');
     }
