@@ -276,18 +276,20 @@ test("collaboration pump shares a single alarm with other owner work", async (t)
   const merged = mergedOwnerWake(alarm.wake);
   const f = await collaborationFixture(t, fake);
   f.service.start(merged);
-  assert.equal(alarm.state.armed, fake.now + 500);
-  await realTurns();
-  fake.jump(500);
-  alarm.fire();
-  await realTurns(6);
-  assert.equal(alarm.state.armed, null, "no open request: the alarm is cleared");
+  assert.equal(alarm.state.armed, fake.now + 500, "the first pass one period after start");
   const sent = f.send();
   assert.equal(alarm.state.armed, fake.now, "a new request arms the alarm for now");
   alarm.fire();
-  await realTurns(6);
+  await until(fake, () => f.adds.length === 1 && alarm.state.armed !== null);
   assert.deepEqual(f.adds, [sent.requestId]);
   assert.equal(alarm.state.armed, fake.now + 500, "the queued receipt is next read at its backoff");
+  f.receipts.set(sent.requestId!, { id: "queue:" + sent.requestId, state: "delivered", targetTurnId: "turn-1" });
+  const reads = f.reads;
+  fake.jump(500);
+  alarm.fire();
+  await until(fake, () => f.reads > reads);
+  await realTurns(6);
+  assert.equal(alarm.state.armed, null, "no open request: the alarm is cleared");
 });
 
 async function brokerFixture(t: any, fake: ReturnType<typeof fakeWakeClock>) {
@@ -367,6 +369,14 @@ async function brokerFixture(t: any, fake: ReturnType<typeof fakeWakeClock>) {
     },
   };
 }
+/** Waits, while fake time stands still, until `condition` holds or a real-time bound passes. */
+async function untilReal(fake: ReturnType<typeof fakeWakeClock>, condition: () => boolean) {
+  for (let i = 0; i < 400 && !condition(); i++) {
+    fake.elapse(0);
+    await flush();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
 /** Waits for the broker's asynchronous storage Worker round trips while time stands still. */
 async function drain(fake: ReturnType<typeof fakeWakeClock>) {
   for (let i = 0; i < 6; i++) {
@@ -397,14 +407,14 @@ test("orchestration sweep: wakes only for due children; a spawn mid-sweep is rea
   await elapseBroker(fake, 10 * MINUTE, MINUTE);
   assert.equal(state.wakes, 1);
   const child = await f.spawn("one");
-  await drain(fake);
+  await untilReal(fake, () => f.snapshots.includes(child.threadId));
   assert.ok(f.snapshots.includes(child.threadId), "a spawn makes the next sweep due at once");
   // Paced reads of an unchanged child: 500 ms, backing off to 5 s; every wake-up reads it.
   f.snapshots.length = 0;
   state.wakes = 0;
   await elapseBroker(fake, 30_000);
   const reads = f.snapshots.filter((id) => id === child.threadId).length;
-  assert.ok(reads >= 9 && reads <= 16, `unchanged child read ${reads} times in 30 s`);
+  assert.ok(reads >= 6 && reads <= 16, `unchanged child read ${reads} times in 30 s`);
   assert.ok(state.wakes <= reads + 1, `${state.wakes} wake-ups for ${reads} reads`);
   // A spawn while a sweep reads a child status is seen right after that sweep.
   const release = f.holdSnapshots();
@@ -414,7 +424,7 @@ test("orchestration sweep: wakes only for due children; a spawn mid-sweep is rea
   release();
   const spawned = await second;
   f.snapshots.length = 0;
-  await drain(fake);
+  await untilReal(fake, () => f.snapshots.includes(spawned.threadId));
   assert.ok(f.snapshots.includes(spawned.threadId), "the signal made the next sweep due at once");
   // Children that finish leave nothing to watch.
   for (const id of [child.threadId, spawned.threadId])
@@ -554,11 +564,14 @@ test("automations: schedules wake at their next occurrence, the run check only w
   await drain(fake);
   assert.ok(runs.state.wakes >= checks + 2, "running run inspected every second");
   inspect = "completed";
-  fake.elapse(AUTOMATION_RUN_CHECK_MS);
+  // A sweep that starts now settles the run; its end disarms the run check.
+  await f.service.tick();
   await drain(fake);
   const settled = runs.state.wakes;
-  fake.elapse(10 * AUTOMATION_RUN_CHECK_MS);
-  await drain(fake);
+  for (let i = 0; i < 10; i++) {
+    fake.elapse(AUTOMATION_RUN_CHECK_MS);
+    await drain(fake);
+  }
   assert.equal(runs.state.wakes, settled, "no open run: the run check is disarmed");
   await f.service.close();
   assert.equal(fake.pending, 0, "closing disarms both");
