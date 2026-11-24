@@ -11,8 +11,10 @@ import { durableObjectStateDocumentStore } from "./state.js";
 /**
  * Named secrets as one `credentials.json` state document in the owner Durable
  * Object, in its own KV namespace. Values are stored as Durable Object data
- * (encrypted at rest by the platform) but not yet sealed with a key from a
- * Secrets binding; that envelope encryption is a later deployment step.
+ * (encrypted at rest by the platform) exactly as given: an owner that keeps
+ * credentials here wraps this store in `sealedSecretStore`
+ * (`@opencraft/secret-storage/sealed`) with a key from a Secrets binding, as
+ * AccountCore does, so the object's storage alone never holds a plaintext value.
  */
 export function durableObjectSecretStore(storage: DurableObjectStorage): SecretStore {
   return documentSecretStore(durableObjectStateDocumentStore(storage, { prefix: "secret/" }));

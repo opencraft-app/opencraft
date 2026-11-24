@@ -1,5 +1,4 @@
-import type {StateDocumentStore} from '@opencraft/document-storage/state';
-import {StateDocumentNotPrivateError} from '@opencraft/document-storage/state-file';
+import {StateDocumentNotPrivateError,type StateDocumentStore} from '@opencraft/document-storage/state';
 import {SecretStoreCorruptError,validateSecretName,validateSecretValue,type SecretStore} from '@opencraft/secret-storage';
 import {emptyModelDocument,validateModelDocument,type ModelDocument} from './model-document.js';
 import {configurationDocument} from './state-documents.js';

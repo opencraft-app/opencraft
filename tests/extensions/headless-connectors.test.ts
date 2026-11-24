@@ -15,8 +15,10 @@ import { randomBytes } from "node:crypto";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { CapabilitySession } from "../../packages/session-capabilities/src/index";
+import type { OwnerWake } from "@opencraft/owner-wake";
+import { fakeOwnerWake, fakeWakeClock } from "../support/fake-wake-clock.ts";
 
-async function fixture(t: test.TestContext) {
+async function fixture(t: test.TestContext, wake?: OwnerWake) {
   const root = await mkdtemp(join(tmpdir(), "headless-connectors-"));
   const actors = new ActorStore(join(root, "actors.sqlite")), capabilities = new SessionCapabilities();
   const revoked = new Set<string>();
@@ -40,7 +42,7 @@ async function fixture(t: test.TestContext) {
   await new Promise<void>(resolve => external.listen(0, "127.0.0.1", resolve));
   const url = `http://127.0.0.1:${(external.address() as { port: number }).port}/mcp`;
   const hosts = { "host-a": "server:fixture:a", "host-b": "server:fixture:b", "host-c": "server:fixture:c" };
-  const open = () => new HeadlessConnectors(join(root, "connectors"), access, hosts, capabilities, () => true, path => new ManagedConnectorService(path, (_input, init) => fetch(url, init)));
+  const open = () => new HeadlessConnectors(join(root, "connectors"), access, hosts, capabilities, () => true, path => new ManagedConnectorService(path, (_input, init) => fetch(url, init)), undefined, wake);
   let service = open();
   const http = createServer(async (req, res) => { if (!await service.handle(req, res)) { res.writeHead(404); res.end(); } });
   await new Promise<void>(resolve => http.listen(0, "127.0.0.1", resolve));
@@ -144,4 +146,27 @@ test("restart retains configuration but never session consent or temporary handl
   assert.ok(!JSON.stringify(state).includes("synthetic-private-token"));
   assert.equal(f.capabilities.tools(f.session()).length, 0);
   await assert.rejects(f.model(f.session(), "connectors_call_tool", { handle, arguments: {} }));
+});
+
+test("grant authority is re-checked every 500 ms on the owner wake-up only while a grant exists", async t => {
+  const fake = fakeWakeClock(0), periods: number[] = [];
+  const base = fakeOwnerWake(fake);
+  const wake: OwnerWake = { now: base.now, timer: callback => { const timer = base.timer(callback); return { arm(at) { periods.push(at - fake.now); timer.arm(at); }, cancel: () => timer.cancel() }; } };
+  const f = await fixture(t, wake); await f.save("alice");
+  fake.elapse(60_000);
+  assert.equal(fake.pending, 0, "no grant: no wake-up (the former 500 ms interval ran regardless)");
+  await f.select();
+  assert.deepEqual(periods, [500]);
+  fake.elapse(1_000);
+  assert.deepEqual(periods, [500, 500, 500]);
+  assert.equal(fake.pending, 1);
+  f.revoked.add("alice");
+  fake.elapse(500);
+  assert.equal(fake.pending, 0, "the check released the revoked grant without any request and disarmed");
+  assert.equal(f.capabilities.tools(f.session()).length, 0);
+  f.revoked.delete("alice");
+  await f.select();
+  assert.equal(fake.pending, 1);
+  await f.restart();
+  assert.equal(fake.pending, 0, "close disarms");
 });

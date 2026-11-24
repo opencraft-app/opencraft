@@ -27,6 +27,7 @@ import { openServerCoreOwner } from "@opencraft/storage-node/server-owner";
 import { ownerEntry } from '@opencraft/worker-owner';
 import { ModelPolicyTransport } from '@opencraft/model-usage-policy/transport';
 import { assembleAccount } from './assembly/account.mjs';
+import { nodeAccountInputs } from './assembly/account-node.mjs';
 import { assembleNodeLocal } from './assembly/node-local.mjs';
 import { assembleInstallation } from './assembly/installation.mjs';
 import { assembleWorkspaceHost } from './assembly/workspace-host.mjs';
@@ -467,8 +468,10 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     const membership = installation.openMembership({ hub: hubController.node, accessControl: options.accessControl,
       accessMemberProviders: options.accessMemberProviders, humanConfiguration, relayConfiguration });
     const machineIdentity = await rootInputs.machineIdentity();
-    account = assembleAccount({ dataDirectory, codexCoreEndpoint: options.codexCoreEndpoint, codexCoreAuthToken: options.codexCoreAuthToken });
-    const { modelPolicyPath } = account;
+    // The account takes its storage as ports; the Node inputs are the data directory's files (account-node.mjs).
+    const accountInputs = nodeAccountInputs({ dataDirectory, codexCoreEndpoint: options.codexCoreEndpoint, codexCoreAuthToken: options.codexCoreAuthToken });
+    account = assembleAccount(accountInputs);
+    const { modelPolicyPath } = accountInputs;
     const { actorStore, identity, environmentDelivered } = await installation.openIdentity({
       // The Node data directory reaches only the identity composition, first as before.
       createIdentity: composition.createIdentity && (input => composition.createIdentity({ dataDirectory, ...input })),
@@ -572,7 +575,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     const desktop = await nodeLocal.startDesktop({ enabled: options.localDesktop, control: options.desktopControl, access: desktopAccess });
     const connectorService = installation.openConnectors({
       createConnectors: ({ access, hosts, admitted, resolveServer }) => new HeadlessConnectors(join(dataDirectory, "connectors"), access,
-        hosts, capabilities, admitted, undefined, resolveServer),
+        hosts, capabilities, admitted, undefined, resolveServer, ownerWake),
       machineId: machineIdentity.machineId, defaultEngine: options.defaultEngine ?? (engines.includes("dsh") ? "dsh" : "pi"), conversationExecution });
     const { remoteBrowser, browserCapabilities } = workspaceHost.openBrowser({
       createRemoteBrowser: browserOptions => new RemoteBrowserService({ root, dataDirectory,
@@ -895,7 +898,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     const { accountModelDefaultsService, threadReadReceiptsService, personalSshKeys, actorSshKeysService } = await installation.openPersonalServices({ sshLogin: !!ingressConfiguration });
     const turnPush = lateTurnPush.bind(await installation.openTurnPush({
       openStore: () => openPushStore(join(dataDirectory, 'web-push.sqlite')),
-      createService: (store, pushOptions) => new TurnPushService(store, pushOptions),
+      createService: (store, pushOptions) => new TurnPushService(store, { ...pushOptions, wake: ownerWake }),
       appHost: lateAppHost, imPlugins: lateImPlugins, conversationExecution }));
     await turnPush.initialize();
     const sshManagement = lateSshManagement.bind(await nodeLocal.openSshManagement({

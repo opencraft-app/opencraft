@@ -313,6 +313,9 @@ jobs:
       - run: npm run test:installation-core:workerd
         if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'tests'
         timeout-minutes: 10
+      - run: npm run test:account-core:workerd
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'tests'
+        timeout-minutes: 10
       - run: npm run test:client-do:workerd
         if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'tests'
         timeout-minutes: 10

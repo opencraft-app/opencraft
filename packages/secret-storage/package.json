@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/contract.ts",
     "./documents": "./src/documents.ts",
+    "./sealed": "./src/sealed.ts",
     "./file": "./src/file.ts",
     "./conformance": "./src/conformance.ts"
   },

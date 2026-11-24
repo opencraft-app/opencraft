@@ -7,6 +7,7 @@ import { createServer } from 'node:http';
 import { TurnPushService, PushObservationTransport, validatePushSubscription, type PushBinding, type PushDevice } from '@opencraft/web-push-node';
 import { PushStore } from '@opencraft/web-push-node/store';
 import { DatabaseSync } from 'node:sqlite';
+import { fakeOwnerWake, fakeWakeClock, flush } from '../support/fake-wake-clock.ts';
 const subscription={endpoint:'https://web.push.apple.com/QExample',keys:{p256dh:Buffer.concat([Buffer.from([4]),Buffer.alloc(64,7)]).toString('base64url'),auth:Buffer.alloc(16,8).toString('base64url')}};
 const authorization: PushBinding={context:{actorId:'human-a',credentialId:null,generation:1,expiresAt:Date.now()+86400000}};
 const messages={completed:'Response complete',failed:'Response failed',interrupted:'Response stopped',body:'Return to the conversation.',test:'Notifications enabled'};
@@ -119,4 +120,17 @@ test('real AppHost service lane completes after renderer retirement without resu
   await wait(()=>starts===1);connection.close();assert.equal(host.hostState('local-codex'),'open');
   complete=true;await service.tick();assert.equal(sent,1);assert.equal(starts,1,'notification reads must never replay submission');
  }finally{connection.close();await service.close();await host.close();f.remove();}
+});
+
+test('the outbox pass runs every 5 s on the injected owner wake-up and close disarms it',async()=>{
+ const f=fixture();const store=new PushStore(f.path);const clock=fakeWakeClock(0);let sent=0;
+ store.register(authorization,subscription,'https://workbench.example','','en-US',messages);store.watch('human-a','server-a','local-codex','thread-a','input-a');store.finish(store.watches()[0]!,'turn-a','completed');
+ const service=new TurnPushService(store,{authenticate:()=>authorization,current:()=>true,trustedOrigin:()=>null,hosts:[],read:async()=>({}),send:async()=>{sent++;},wake:fakeOwnerWake(clock)});
+ try{
+  // Engine history has no change notification, so the pass keeps the fixed period of the former setInterval.
+  assert.equal(clock.pending,1);assert.deepEqual(clock.delays,[5000]);
+  clock.elapse(4999);await flush();assert.equal(sent,0);
+  clock.elapse(1);await flush();assert.equal(sent,1,'the first pass runs one period after construction');
+  assert.deepEqual(clock.delays,[5000,5000]);
+ }finally{await service.close();assert.equal(clock.pending,0,'close disarms');f.remove();}
 });
