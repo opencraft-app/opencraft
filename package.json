@@ -278,7 +278,7 @@
     "auth:account": "tsx scripts/admin/human-account.ts",
     "ssh:keys": "tsx scripts/admin/ssh-keys.ts",
     "smoke:ssh-keys": "node --import tsx scripts/smoke/server/smoke-ssh-keys.mjs",
-    "test:human-auth": "tsx --test tests/identity/actor-ssh-keys.test.ts tests/identity/http-exchange-conformance.test.ts tests/identity/login-admission.test.ts tests/protocol/admission-policy-port.test.ts tests/identity/identity-writes.test.ts tests/identity/human-auth.test.ts tests/identity/human-auth-artifact.test.ts tests/identity/local-account-plugin.test.ts tests/identity/account-setup.test.ts tests/identity/account-page.test.ts tests/identity/account-client-scope.test.ts tests/identity/desktop-account.test.ts tests/identity/assets-default-service.test.ts",
+    "test:human-auth": "tsx --test tests/identity/actor-ssh-keys.test.ts tests/identity/http-exchange-conformance.test.ts tests/identity/login-admission.test.ts tests/protocol/admission-policy-port.test.ts tests/identity/identity-writes.test.ts tests/identity/human-auth.test.ts tests/identity/login-attempts.test.ts tests/identity/human-auth-artifact.test.ts tests/identity/local-account-plugin.test.ts tests/identity/account-setup.test.ts tests/identity/account-page.test.ts tests/identity/account-client-scope.test.ts tests/identity/desktop-account.test.ts tests/identity/assets-default-service.test.ts",
     "smoke:human-auth": "tsx scripts/smoke/execution/smoke-human-auth.ts",
     "test:hub-network": "tsx --test tests/protocol/hub-network.test.ts",
     "smoke:hub-network": "tsx scripts/smoke/execution/smoke-hub-network.ts",

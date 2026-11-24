@@ -166,7 +166,7 @@
 
 - 本地账号（`plugins/local-account/src/server.ts`）：原型时为 `scrypt(password, salt, 32, {N: 131072, r: 8, p: 1, maxmem: 192 MiB})`，salt 为 64 位 hex 文本，摘要存 hex。现已改为 Argon2id PHC 记录（见下文“密码哈希结论”与[服务器登录](../identity/server-authentication.md)）；无 pepper。未知用户名也对固定占位记录计算一次，之后复读账号确认 `enabled` 与 `version` 未变。单进程最多 2 个并发哈希，超出直接拒绝。
 - 登录态（`HumanAccounts`）：`randomBytes(32)` base64url（43 字符）作为 token，库中只存 `sha256(token)` hex（`human_logins`，带 Actor 代次、本地账号 `version`、`expires_at`＝最多 8 小时）。验证时要求 Actor 当前、绑定未变，本地账号版本与登录时一致——禁用、改密都会使旧登录失效；登出删除该行。
-- 浏览器载体（`HumanAuth`）：Cookie `oc_human`（`Path=/; HttpOnly; SameSite=Lax; Max-Age`，HTTPS origin 加 `Secure`）；OIDC 事务 Cookie `oc_human_flow`（`Path=/__opencraft_auth`）。CSRF 依赖：`Host` 等于配置 origin、POST 要求 `Origin` 精确同源且 `content-type: application/json`、拒绝带 `Authorization` 的请求、字段白名单、16 KiB 正文上限；登录尝试全局 60 次／分钟、每地址 12 次／分钟（内存计数）。
+- 浏览器载体（`HumanAuth`）：Cookie `oc_human`（`Path=/; HttpOnly; SameSite=Lax; Max-Age`，HTTPS origin 加 `Secure`）；OIDC 事务 Cookie `oc_human_flow`（`Path=/__opencraft_auth`）。CSRF 依赖：`Host` 等于配置 origin、POST 要求 `Origin` 精确同源且 `content-type: application/json`、拒绝带 `Authorization` 的请求、字段白名单、16 KiB 正文上限；登录尝试全局 60 次／分钟、每地址 12 次／分钟（读正文前），以及每个归一化登录名 12 次／分钟（解析后、任何派生前），经下文“登录尝试预算”端口计数。
 - 受保护请求走 `InstanceAccess.authenticate`／`admissionStatus`（204／401／403），`HumanAuth` 是其中一个 `IdentityProvider`。
 
 **密码哈希结论（2026-11-23 改为 Argon2id）。** 原型首先确认了 scrypt 可在 workerd `nodejs_compat` 中互通（本地 workerd 约 250 ms、Node 约 280 ms），但 N=2^17、r=8 的工作区为 `128·N·r` = 128 MiB，恰等于 isolate 128 MB 上限，原生分配是否计入未见文档；WebCrypto 没有 scrypt，纯 JS／Wasm scrypt 必然计入 JS 堆而超限（纯 JS 约 1.16 s）。该风险以更换算法解决：
@@ -205,7 +205,16 @@
 - 适配器：`http-exchange-node`（Headless `serve-workbench-web.mjs` 与桌面 `createDesktopAccountHost` 使用）按列表顺序 `setHeader`、再 `writeHead`／`end`，超限请求流在应答写出后释放；`http-exchange-fetch`（workerd 登录入口使用）把字符串正文按字节发送，避免 `Response` 隐式加 `content-type`。Fetch `Headers` 保持 `set-cookie` 顺序，其他头名按其规范顺序迭代。
 - 等价证据：迁移前后对 Headless 网关同一 77 个请求序列（登录页、session、跨源／非 JSON／`Authorization`／多余字段／超长正文／坏 JSON、账号页与 `/setup`、初始化、邀请与接受、改密、成员与审计、Actor 管理、登出、两类尝试上限）抓取原始应答字节，归一化日期、token、nonce 与 UUID 后逐字节相同。共享一致性测试 `tests/identity/http-exchange-conformance.test.ts` 对两个适配器各跑 8 项（方法／路径／头／host／地址、头顺序与多条 `set-cookie`、空正文与 303、正文上限内读取与重复读取、跨块 UTF-8、超限 413、客户端断开触发 `signal`、`HttpExchangeAborted`）。唯一有意差异：`InstanceAccess` 原先逐块 `toString()` 拼接正文，跨块的多字节 UTF-8 会被拆坏，现在整体解码。
 
-**放置建议。** 登录写入（`human_logins`、账号版本）必须在 IC。若 Argon2id 也在 IC 中计算，全局 60 次／分钟的尝试上限下最坏约占 IC 每分钟 10 s CPU（旧 scrypt 估算为 15 s），且 IC 是全部部署级授权的单点。可选的拆分：EW 向 IC 取 PHC 参数与 salt（未知用户返回由 IC 密钥派生的稳定占位 salt，避免枚举），在 EW 计算摘要，再交给 IC 常量时间比较、复核版本并签发登录；密码明文不进 IC，摘要不出 IC。这需要把 `LocalAccountServerPlugin.verify` 拆成"派生"与"比较＋复核"两步，属于后续工作，原型未实现。尝试计数目前是进程内存，在 IC 内可沿用；放在无状态 EW 时需改用 IC 计数或 Workers Rate Limiting 绑定。
+**登录尝试预算（2026-11-24 已实现）。** 端口 `@opencraft/identity-core/login-attempts`（`LoginAttemptLimiter.take(keys, now)`，运行时中立）在任何 Argon2id 派生之前计数，包括未知用户名的占位派生；`HumanAuth` 先按 `auth/global`（60）与 `auth/address/<clientAddress>`（12）计数，字段校验后再按 `auth/account/<小写去空白的登录名>`（12）计数，窗口 60 s，账本最多 1024 个活动键（新键在满时拒绝）。键只取提交的登录名、不查账号是否存在，被拒请求一律 429 `try_later`＋`retry-after: 60`（沿用原有限流应答），不派生，已知与未知用户不可区分；未被限流时未知用户仍付一次占位派生。账本不可读写时拒绝（fail closed）。`LocalAccountApplication` 的 `/setup`、`/accept` 用同一端口的 `account/` 作用域（全局＋地址）。
+
+| 运行时 | 计数位置 | 理由 |
+| --- | --- | --- |
+| Node Headless／桌面 | `memoryLoginAttemptLimiter`（进程内，默认值，组合根无改动） | 单进程是唯一派生者（libuv 线程池，另有每进程 2 个并发派生上限），进程内计数已约束全部工作；重启由运维触发、攻击者不可控，持久化会让每次尝试多一次 owner Worker 往返并新增 Server 迁移而不减少可派生次数 |
+| Cloudflare（`LoginCore` DO） | `stateLoginAttemptLimiter(durableObjectStateDocumentStore(ctx.storage))`：DO KV 中一个状态文档，`transactionSync` 原子更新并 `sync()` 后返回 | DO 内存计数在驱逐、部署或重启后清零，未来若把派生移到无状态 EW 更会按 isolate 分散；状态文档端口已有 DO 适配器且不需要新表，因此无 N+1 迁移。键以截断 SHA-256 存储，不落地客户端地址与登录名 |
+
+证据：`tests/identity/login-attempts.test.ts`（两种适配器的预算、顺序计数、窗口与键上限；注入计数 hasher 证明达到预算后派生次数不再增加，已知／未知用户名应答相同，跨地址的登录名预算，全局上限，账本故障时拒绝，两入口共享一个持久账本）；`npm run test:login-entry:workerd` 新场景在 DO 中用存于 DO storage 的派生计数证明 12 次后拒绝且不派生，以同一 persist 键重启运行时（新 isolate、空内存）后仍拒绝，Miniflare 下再证明换地址后登录名预算仍成立。把 worker 中的持久账本换回默认内存账本时，该场景在“重启后仍拒绝”处失败（401）。
+
+**放置建议。** 登录写入（`human_logins`、账号版本）必须在 IC。若 Argon2id 也在 IC 中计算，全局 60 次／分钟的尝试上限下最坏约占 IC 每分钟 10 s CPU（旧 scrypt 估算为 15 s），且 IC 是全部部署级授权的单点。可选的拆分：EW 向 IC 取 PHC 参数与 salt（未知用户返回由 IC 密钥派生的稳定占位 salt，避免枚举），在 EW 计算摘要，再交给 IC 常量时间比较、复核版本并签发登录；密码明文不进 IC，摘要不出 IC。这需要把 `LocalAccountServerPlugin.verify` 拆成"派生"与"比较＋复核"两步，属于后续工作，原型未实现。尝试计数已在 IC 的持久状态中（见上文“登录尝试预算”）；派生移到无状态 EW 时，EW 先经 IC 的同一账本取得许可再派生，不能在 isolate 内存计数。
 
 **OIDC（未实现，Worker 需要的条件）。**
 
@@ -215,7 +224,7 @@
 - 回调中 `response.destroyed` 判断已改用交换请求的 `signal`；`claims.exp` 与流程过期依赖 `Date.now()`，Workers 在请求内冻结时钟（I/O 后推进），对分钟级窗口无影响。
 - 客户端密钥来自 Worker secret，而非 `readPrivateJson` 私有文件。
 
-**需在真实 Cloudflare 上确认。** 线上纯 JS Argon2id 单次验证 CPU 时间（本地约 0.17 s）；IC 在并发登录下的排队延迟；`CF-Connecting-IP` 作为限流键；OIDC 对真实 issuer 的 discovery、出站超时与 JWKS 轮换。
+**需在真实 Cloudflare 上确认。** 线上纯 JS Argon2id 单次验证 CPU 时间（本地约 0.17 s）；IC 在并发登录下的排队延迟；`CF-Connecting-IP` 作为限流键（尝试预算场景在真实 Cloudflare 上只验证单地址与重启，换地址部分只在 Miniflare 运行）；OIDC 对真实 issuer 的 discovery、出站超时与 JWKS 轮换。
 
 ## 4. 拆分方式
 
