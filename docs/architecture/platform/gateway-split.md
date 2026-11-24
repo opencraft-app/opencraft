@@ -296,7 +296,7 @@
 | 2 | 503 | `web.close(update, closeEntry)`：Web 停止接受后在载体阶段调用 `closeEntry` | edge |
 | 3 | 497–502、505 | `closeEntry`（并行、只执行一次）：`hubController`、`turnPush`（installation）；`relay`、`ingress`、`sshNativeRpc`、`desktop`、`availabilityNotification`、`imPlugins`（node-local）；`codexReadiness`、`usageQueries`、`fileDownloads`（workspace-host）；以及串行一组 `withdrawGitStatus`（installation 的 Git 能力撤回）→`browserCapabilities`→`remoteBrowser`（workspace-host） | 多模块 |
 | 4 | 508 | `runtimePlugins` | edge |
-| 5 | 509 | `personalSshKeys.close()`（同步，未经 `settle`） | installation |
+| 5 | 509 | `personalSshKeys.close()`（组合根前置 PR 起经 `settle`，此前为同步裸调用） | installation |
 | 6 | 510 | `observability` | node-local |
 | 7 | 511–515 | 逐个：`projectAutomations`、`threadOrchestration`（installation）→ `personalAssistantHost`（node-local）→ `appHostServer`（client-session）→ `codexEngineHost`（workspace-host） | 多模块 |
 | 8 | 516–518 | `terminalServices` 逐个关闭并清空；`fileSystem.close()` | workspace-host |
@@ -305,7 +305,7 @@
 | 11 | 526–532 | 串行写入者：`executionDatabase`（workspace-host）→ `modelPolicy`（account）→ `mcpApps`（installation）→ `sshManagement`（node-local）→ `identity.executionEnvironment`、`identity.close`、`loginAdmission`、`ownedWorkspaceRouting`、`installedBotProvider`、`botAdmission`、`humanGitExecution`、`assetsService`、`assetsStorage`（installation）→ `composition.close`（组合根）→ `accountApplication`、`accountManagement`、`humanAuth`、`humanAccounts`、`identityWrites`、`capabilityBindings`、`actorStore`、`membership`（installation） | 多模块 |
 | 12 | 533–537 | 有失败：抛 `AggregateError`，不释放写锁（进程退出才释放）；否则 `releaseLock`：`orchestrationStorage`、`serverStorage`、`releaseExtensions` | installation |
 
-由此得出：installation、workspace-host 与 node-local 的关闭在第 3、7、9–11 步交错，任何模块都不能只返回一个 `close`。抽取后的模块应返回**具名 disposer**（按所属步骤分组），由组合根在原位置逐个调用，`close` 的结构与顺序保持字面不变。两处现有行为照原样保留：`threadOrchestration.close()` 被调用两次（512、519），依赖其幂等；509 的同步异常不经 `settle`，会使 `closing` 直接拒绝并跳过其后的全部步骤（与第 12 步一样不释放写锁）。
+由此得出：installation、workspace-host 与 node-local 的关闭在第 3、7、9–11 步交错，任何模块都不能只返回一个 `close`。抽取后的模块应返回**具名 disposer**（按所属步骤分组），由组合根在原位置逐个调用，`close` 的结构与顺序保持字面不变。`threadOrchestration.close()` 被调用两次（512、519），依赖其幂等，照原样保留。509 原先的同步异常不经 `settle`，会使 `closing` 直接拒绝并跳过其后的全部步骤（与第 12 步一样不释放写锁）；组合根前置 PR 已把它改为经 `settle`，失败与其他 disposer 一样汇总进 `AggregateError`，其后的步骤照常执行（`tests/server/headless-composition.test.mjs` 覆盖）。
 
 **3. 跨模块依赖、环与共享可变状态。** 以下各项决定抽取顺序；抽取相应模块时它们都要变成显式端口，而不是继续读组合根的 `let`。
 
@@ -320,10 +320,21 @@
 9. **`remoteExecutionAuthorities`（478）。** SSH 远端 transport（1180–1182，node-local）写入，浏览器授权与 capability 上下文解析（902–905、917–925，workspace-host）读取。
 10. **网络线程过渡连接。** `ThreadAccessStore` 以 `serverStorage.database` 为 `permissionOwner`（794）；这是 G2 的剩余部分，在 installation 内部，不阻塞模块边界。
 
+**组合根前置 PR 已移除的阻碍（2026-11-24）。** `apps/headless-server/src/assembly/lifecycle.mjs` 提供 `createHeadlessLifecycle()`（`closing()`、`shutdown(dispose)`）与 `createLateBinding(name)`（`bind` 只允许一次；`get()` 在绑定前抛出具名错误；`current()` 在绑定前返回 `undefined`，供原本就容忍"尚未构造"的读者）。各值仍在原来的位置、原来的时刻可用，关闭顺序不变。
+
+- 第 1 项：`let closing` 删除；上列授权闭包与资源对账改读 `lifecycle.closing()`，ENV 交接的 `closed` 直接接收 `lifecycle.closing`；`close` 经 `lifecycle.shutdown` 发布同一个共享 promise。
+- 第 2 项：AppHost 改为 `lateAppHost`；构造之前的闭包（771、819、834、849、858、910、1020）读 `lateAppHost.current()`，构造之后的组合根代码读同一常量。环本身仍在，留待 client-session 抽取。
+- 第 3 项：`conversationResources` 改为 `lateConversationResources`；666 的 `assertThreadActive` 读端口，错误文案不变。
+- 第 4 项：`executionStore` 与 `resolveExecutionNative` 合为 `lateExecutionObservation`（`{ store, resolveNative }`），在原 `resolveExecutionNative` 赋值处一次绑定（两者之间没有 `await`，绑定时机不变）；678–683、777–787 与身份覆盖层的回调读端口，绑定前仍按"无 native"处理。
+- 第 5 项：`capabilityKey` 与 `startDsh` 改为 `lateCapabilityKey`／`lateStartDsh`，在原声明处绑定；803、774 经 `get()` 读取，过早调用得到具名错误而不是 TDZ `ReferenceError`。
+- 第 7 项：`let codexAgentBridge` 改为 `configuredCodexBridge`＋`lateCodexBridge`：没有自有 Engine Host 时启动即绑定配置值，否则在 989 绑定 Engine Host 的 bridge；861 的 getter 与 1324 读端口。
+- 第 8 项：`turnPush`、`imPlugins`、`sshManagement` 改为 `lateTurnPush`／`lateImPlugins`／`lateSshManagement`，在原构造处绑定（`sshManagement` 未配置时绑定 `undefined`）；前向读者与 `close` 读端口。1464 的文件下载在 `sshManagement` 之后构造，直接读常量。`instanceAccess` 在 567–568 的读取属 installation 内部，未改。
+- 未处理：第 6 项（注册表与就绪门本就是组合根持有的常量，抽取时作为输入传入即可）、第 9 项（`remoteExecutionAuthorities` 是 `const Map`，不是前向绑定，随 workspace-host／node-local 抽取时作为共享端口传入）、第 10 项（G2）。`close` 自身读取的其余 `let` 槽是组合根内部的 disposer 汇总，按上文"具名 disposer"方案随各模块抽取替换。
+
 **4. 推荐抽取顺序（每个 PR 一个模块）。**
 
 1. **account**（理由见下）。
-2. **组合根前置（不移动服务）**：引入 `lifecycle.closing()` 与迟绑定端口（AppHost、`executionStore`／`resolveExecutionNative`、`capabilityKey`、`startDsh`、`codexAgentBridge`、第 3 部分第 8 项的槽），把直接读 `let` 改为读端口；行为不变。之后各模块只接收端口。
+2. **组合根前置（不移动服务，已完成，见上）**：引入 `lifecycle.closing()` 与迟绑定端口（AppHost、`executionStore`／`resolveExecutionNative`、`capabilityKey`、`startDsh`、`codexAgentBridge`、第 3 部分第 8 项的槽），把直接读 `let` 改为读端口；行为不变。之后各模块只接收端口。
 3. **node-local**：347、376–384、796–807、866–876、1447–1460、1610–1625 中的 SSH 入口与 relay、1628–1649。依赖 AppHost 端口与 installation 的 `instanceAccess`／`actorStore`；其 disposer 分布在关闭第 3、6、7、11 步。
 4. **installation**：段落多，建议分两个 PR 落到同一模块：先身份与准入（394–407、547–761 中除 account 外的部分），再协作与部署级服务（792–795、808–809、843–865、877–882、913–933 的绑定投影、1109、1397–1446）。
 5. **workspace-host**：762–791、883–1191、1196–1394 中的 transport 链、1461–1467、1583–1606、1627。依赖 installation 的全部输出；P4-2 已把 overlays 移入 `packages/workspace-host`，这里只是装配。
@@ -376,7 +387,7 @@
 
 | 步 | 内容 | Node 价值 | 依赖 | 状态（2026-11-23） |
 | --- | --- | --- | --- | --- |
-| G1 | 把 `HA` 按 §4.1 拆成装配模块，行为与关闭顺序不变 | 组合根可测、可读；嵌入方（Docker gateway）复用模块 | 无 | **未开始**：`startHeadlessServer` 仍是单个函数（`headless-application.mjs:320-1656`），`apps/headless-server/src` 下没有装配模块；现状映射与抽取顺序见 §4.1.1 |
+| G1 | 把 `HA` 按 §4.1 拆成装配模块，行为与关闭顺序不变 | 组合根可测、可读；嵌入方（Docker gateway）复用模块 | 无 | **进行中**：account 已抽到 `apps/headless-server/src/assembly/account.mjs`（#552）；组合根前置的生命周期与迟绑定端口在 `assembly/lifecycle.mjs`；其余段仍在 `startHeadlessServer`，现状映射与抽取顺序见 §4.1.1 |
 | G2 | 合并 `opencraft-server.sqlite` 的编排与空间连接到核心 owner（已实施，见 [server-core-owner §4](../server/server-core-owner.md#4-分阶段实施)）；网络线程过渡连接随 server-core-owner 第 2–6 阶段移除 | 消除同库多 Worker 写入者；减少主线程同步 IO 登记 | G1 | **部分**：合并已完成（`orchestration-runtime-domain`、`server-spaces-domain` 注册在 `apps/headless-server/src/server-core-worker.mjs`，#511；身份写入 #463）；过渡连接仍在（`ThreadAccessStore` 的 `permissionOwner: serverStorage.database`，`headless-application.mjs:794`），server-core-owner 第 2–6 阶段未完成 |
 | G3 | 剩余直接 `node:sqlite` 的部署级库（模型策略、MCP apps、push、connectors）迁到 `SqlDatabase` 端口 | 统一迁移与 outcome 报告 | 存储端口第 1–2 阶段（已实施） | **部分**：模型策略已在 `SqlDatabase` 上（`packages/model-usage-policy/src/index.ts:1-12`，Node 打开仍经 `openManagedDatabase`＋`nodeSqlDatabase`，#511）；MCP apps（`packages/mcp-apps/src/store.ts:38`）、push（`packages/web-push-node/src/store.ts:2`）、connectors（`packages/connector-host/src/store.ts:1`）仍直接使用 `DatabaseSync` |
 | G4 | HTTP 处理改为 `Request`→`Response` 端口，Node 包装（身份与准入处理器已完成，§3.4；其余服务待迁） | 服务单测不需要真实监听 | G1 | **部分**：`@opencraft/identity-core/http-exchange{,-node,-fetch}` 与身份、准入处理器已迁（#511；Web 入口经 `serveNodeHttpExchange`，`serve-workbench-web.mjs:22`）；协作、AppHost、Hub、模型策略／网关等仍是 `(request, response)` 处理器 |

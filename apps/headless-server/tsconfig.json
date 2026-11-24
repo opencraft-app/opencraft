@@ -29,6 +29,7 @@
     "src/environment-launch-admission.ts",
     "src/codex-environment-launch.ts",
     "src/personal-mcp-provider.ts",
-    "src/assembly/account.d.mts"
+    "src/assembly/account.d.mts",
+    "src/assembly/lifecycle.d.mts"
   ]
 }

@@ -19,6 +19,8 @@ import { publishEnvironmentIssuer } from '@opencraft/execution-environment/envir
 import { deploymentPaths } from '../../scripts/container-deployment/paths.mjs';
 import { executionHostIssuer } from '../../scripts/container-deployment/execution-hosts.mjs';
 import { ownedCleanup } from '../support/owned-cleanup.mjs';
+import { ActorSshKeys } from '../../apps/headless-server/src/actor-ssh-keys.ts';
+import { createHeadlessLifecycle, createLateBinding } from '../../apps/headless-server/src/assembly/lifecycle.mjs';
 
 async function fixture(t) {
   const runtime = fileURLToPath(new URL('../../.runtime/', import.meta.url));
@@ -405,6 +407,57 @@ test('a disposal failure settles other resources but retains the writer until pr
   const app = await startHeadlessServer(f.options, { createIdentity: async () => ({ providers: [], close() { closes++; throw new Error('fixture disposal failure'); } }) });
   const first = app.close(), second = app.close(); assert.equal(first, second);
   await assert.rejects(first, AggregateError); assert.equal(closes, 1);
+  await assert.rejects(startHeadlessServer(f.options), { code: 'ELOCKED' });
+});
+
+test('composition-root ports: closing flips when shutdown starts, late bindings bind once', async () => {
+  const lifecycle = createHeadlessLifecycle();
+  let runs = 0, seen;
+  assert.equal(lifecycle.closing(), false);
+  const first = lifecycle.shutdown(async () => { runs++; seen = lifecycle.closing(); });
+  assert.equal(lifecycle.closing(), true, 'closing is published before the disposer runs');
+  assert.equal(runs, 0);
+  assert.equal(lifecycle.shutdown(async () => { runs++; }), first);
+  await first;
+  assert.deepEqual({ runs, seen }, { runs: 1, seen: true });
+
+  const late = createLateBinding('Fixture port');
+  assert.equal(late.current(), undefined);
+  assert.throws(() => late.get(), /Fixture port is not available yet/);
+  const value = { id: 1 };
+  assert.equal(late.bind(value), value);
+  assert.equal(late.get(), value);
+  assert.equal(late.current(), value);
+  assert.throws(() => late.bind({ id: 2 }), /Fixture port is already bound/);
+  const absent = createLateBinding('Absent port');
+  absent.bind(undefined);
+  assert.equal(absent.get(), undefined, 'an intentionally absent service is bound as undefined');
+});
+
+test('a throwing personal SSH key disposer is settled and every later close step still runs', async t => {
+  const f = await fixture(t);
+  // Force the one synchronous disposer to throw on this server only; the prototype is restored before cleanup.
+  const close = ActorSshKeys.prototype.close;
+  t.after(() => { ActorSshKeys.prototype.close = close; });
+  let thrown = 0;
+  ActorSshKeys.prototype.close = function () { thrown++; close.call(this); throw new Error('fixture SSH key disposal failure'); };
+  let identityCloses = 0, compositionCloses = 0;
+  const app = await startHeadlessServer(f.options, {
+    createIdentity: async () => ({ providers: [], close() { identityCloses++; } }),
+    close() { compositionCloses++; },
+  });
+  const policyWal = join(f.options.dataDirectory, 'model-usage-policy.sqlite-wal');
+  assert.equal((await stat(policyWal)).isFile(), true, 'the open policy writer keeps a WAL');
+  // The failure is collected with the others instead of skipping the remaining steps.
+  const failure = await app.close().then(() => null, error => error);
+  assert.ok(failure instanceof AggregateError, `close rejects with the collected failures, not ${failure}`);
+  assert.deepEqual(failure.errors.map(error => error.message), ['fixture SSH key disposal failure']);
+  assert.equal(thrown, 1);
+  // Steps after the SSH keys ran: writers flushed and the identity and composition closed.
+  await assert.rejects(stat(policyWal), { code: 'ENOENT' });
+  assert.equal(identityCloses, 1);
+  assert.equal(compositionCloses, 1);
+  // A rejected flush is not a release receipt: the writer lock stays held until process exit.
   await assert.rejects(startHeadlessServer(f.options), { code: 'ELOCKED' });
 });
 
