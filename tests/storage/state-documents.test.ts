@@ -1,4 +1,5 @@
-import { test } from "node:test";
+import { test, type TestContext } from "node:test";
+import { spawn } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -46,4 +47,90 @@ test("private file state documents refuse symlinks, shared modes and oversized f
     store.update("shared.json", () => ({ result: 0, next: {} })),
     StateDocumentNotPrivateError,
   );
+});
+
+// Updates from different processes serialize on `<file>.lock`. The former
+// proper-lockfile mtime lease let a contender take over a holder whose event
+// loop stalled for 10s, threw ECOMPROMISED from the holder's refresh timer and
+// kept a crashed holder's lease for 10s.
+const stateFileModule = new URL("../../packages/document-storage/src/state-file.ts", import.meta.url).pathname;
+function holdUpdate(t: TestContext, directory: string, holdMs: number) {
+  const code = `import { fileStateDocumentStore } from ${JSON.stringify(stateFileModule)};
+    await fileStateDocumentStore(process.argv[1]).update("counter.json", (current) => {
+      process.stdout.write("held\\n");
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(process.argv[2]));
+      return { result: 0, next: { count: (current?.count ?? 0) + 1 } };
+    });`;
+  const child = spawn(
+    process.execPath,
+    ["--import", "tsx", "--input-type=module", "-e", code, directory, String(holdMs)],
+    {
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  let stderr = "";
+  child.stderr.on("data", (chunk) => (stderr += chunk));
+  const exited = new Promise<number | null>((resolve) => child.once("exit", (code) => resolve(code)));
+  t.after(async () => {
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+    await exited;
+  });
+  const held = new Promise<void>((resolve, reject) => {
+    child.stdout.on("data", (chunk) => String(chunk).includes("held") && resolve());
+    void exited.then(() => reject(new Error(`State holder exited early: ${stderr}`)));
+  });
+  return { child, held, exited, stderr: () => stderr };
+}
+const bump = (current: unknown) => ({
+  result: 0,
+  next: { count: ((current as { count?: number } | null)?.count ?? 0) + 1 },
+});
+
+test(
+  "a state update whose holder stalls past the former lease is not taken over, and the holder still commits",
+  { skip: process.platform === "win32", timeout: 60_000 },
+  async (t) => {
+    const { deepEqual, rejects, equal, doesNotMatch } = await import("node:assert/strict");
+    const { setTimeout: delay } = await import("node:timers/promises");
+    const directory = await mkdtemp(join(tmpdir(), "state-stall-"));
+    t.after(() => rm(directory, { recursive: true, force: true }));
+    const holder = holdUpdate(t, directory, 16_000);
+    await holder.held;
+    await delay(10_500);
+    const store = fileStateDocumentStore(directory);
+    await rejects(store.update("counter.json", bump), { code: "ELOCKED" });
+    equal(await holder.exited, 0);
+    doesNotMatch(holder.stderr(), /ECOMPROMISED/);
+    await store.update("counter.json", bump);
+    deepEqual(await store.read("counter.json"), { count: 2 });
+  },
+);
+
+test("a killed state update holder releases its lock at once", { skip: process.platform === "win32" }, async (t) => {
+  const { deepEqual } = await import("node:assert/strict");
+  const directory = await mkdtemp(join(tmpdir(), "state-crash-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const holder = holdUpdate(t, directory, 30_000);
+  await holder.held;
+  holder.child.kill("SIGKILL");
+  await holder.exited;
+  const store = fileStateDocumentStore(directory);
+  await store.update("counter.json", bump);
+  deepEqual(await store.read("counter.json"), { count: 1 });
+});
+
+test("a legacy lease directory blocks state updates until it is long expired, then becomes a lock file", async (t) => {
+  const { mkdir, lstat, utimes } = await import("node:fs/promises");
+  const { rejects, equal, deepEqual } = await import("node:assert/strict");
+  const directory = await mkdtemp(join(tmpdir(), "state-legacy-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const lock = join(directory, "counter.json.lock");
+  await mkdir(lock);
+  const store = fileStateDocumentStore(directory);
+  await rejects(store.update("counter.json", bump), { code: "ELOCKED" });
+  const expired = new Date(Date.now() - 120_000);
+  await utimes(lock, expired, expired);
+  await store.update("counter.json", bump);
+  equal((await lstat(lock)).isFile(), true);
+  deepEqual(await store.read("counter.json"), { count: 1 });
 });

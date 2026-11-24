@@ -1,8 +1,8 @@
 import { openTerminalAdmission } from './terminal-admission-owner.js';
 import { randomBytes } from 'node:crypto';
 import { createServer, type Socket } from 'node:net';
-import { chmod, unlink } from 'node:fs/promises';
-import lockfile from 'proper-lockfile';
+import { chmod, realpath, unlink } from 'node:fs/promises';
+import { acquireOwnerLock } from '@opencraft/sqlite-node/writer-lock';
 import { timingSafeEqual } from 'node:crypto';
 import { HostProcessService, TerminalCapacityError, type PreparedProcessIdentity } from './process-service.js';
 import { readOwnerFrames, sendOwnerFrame, TERMINAL_OWNER_PROTOCOL } from './terminal-owner-wire.js';
@@ -17,7 +17,9 @@ export async function startTerminalPtyOwner(directory: string, endpoint: string,
    * launches through a capsule opened here, under this owner's reservation. */
   environmentLaunch?: boolean;
 } = {}) {
-  const release = await lockfile.lock(directory, { realpath: true, stale: 30_000, update: 5000, retries: 0 });
+  // A process-lifetime kernel lock beside the directory (the former lease's path): a
+  // stalled or suspended owner is never replaced, and the owner's death releases it.
+  const release = await acquireOwnerLock(`${await realpath(directory)}.lock`);
   let admission: Awaited<ReturnType<typeof openTerminalAdmission>>;
   try { admission = await openTerminalAdmission(directory); } catch (error) { await release(); throw error; }
   const incarnation = randomBytes(32).toString('hex');

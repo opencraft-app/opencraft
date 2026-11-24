@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { mkdir, open, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import lockfile from "proper-lockfile";
+import { WorkerOwner, ownerEntry } from "@opencraft/worker-owner";
 import { stateChangeOutcome, StateDocumentCorruptError, validateStateKey, type StateDocumentStore } from "./state.js";
 
 /** Directory handles cannot be fsynced on Windows; rename/link durability there is the file system's. */
@@ -31,15 +31,56 @@ function serialize<T>(file: string, run: () => Promise<T>): Promise<T> {
   return next;
 }
 
+type StateLocks = { acquire(path: string): number | null; release(token: number): void };
+/** One lazily started Worker per process holds every update's kernel lock; it
+ * does not keep the process alive while idle. A lost Worker fails the pending
+ * updates (its locks die with it) and the next update starts another. */
+let stateLocks: Promise<WorkerOwner<StateLocks>> | undefined;
+function lockOwner(): Promise<WorkerOwner<StateLocks>> {
+  const forget = () => {
+    if (stateLocks === opening) stateLocks = undefined;
+  };
+  const opening = (stateLocks ??= WorkerOwner.open<StateLocks>(ownerEntry(import.meta.url, "state-lock"), {
+    name: "State document locks",
+    onFailure: forget,
+  }).then(
+    ({ owner }) => owner,
+    (error: unknown) => {
+      forget();
+      throw error;
+    },
+  ));
+  return opening;
+}
+
+/** The former lease's attempts and backoff: 20 retries, 20ms doubling to 200ms. */
+async function lockStateFile(path: string): Promise<() => Promise<void>> {
+  const owner = await lockOwner();
+  for (let attempt = 0, wait = 20; ; attempt++, wait = Math.min(wait * 2, 200)) {
+    const token = await owner.call.acquire(path);
+    if (token !== null) return () => owner.call.release(token);
+    if (attempt >= 20)
+      throw Object.assign(new Error("Lock file is already being held"), { code: "ELOCKED", file: path });
+    await new Promise((resolve) => setTimeout(resolve, wait));
+  }
+}
+
 /**
  * Node adapter: one pretty-printed JSON file per key in `directory`.
- * Updates take the same proper-lockfile lock the previous helpers used, so
- * processes on older and newer code still serialize on one file; updates in
- * one process queue first, so they never compete for the lock. Writes go
- * through a temporary file, fsync, rename and a directory fsync.
+ * Updates from different processes serialize on a kernel lock at
+ * `<file>.lock`: a SQLite exclusive transaction on a permanent private file,
+ * held in a Worker so the caller's event loop does no synchronous IO. It never
+ * expires while its holder lives, however long that holder's event loop
+ * stalls; it has no refresh timer; the holder's death releases it at once.
+ * Earlier releases leased the same path as a proper-lockfile directory: the
+ * lock file refuses those older updaters (they cannot create or remove it),
+ * and a leftover lease directory is converted only once it is far older than
+ * any refresh. Updates in one process queue first, so they never compete for
+ * the lock. Writes go through a temporary file, fsync, rename and a directory
+ * fsync.
  *
- * `lockfilePath` relocates the proper-lockfile lock (default `<file>.lock`)
- * for owners whose `<file>.lock` already holds another fence.
+ * `lockfilePath` relocates the lock (default `<file>.lock`) for owners whose
+ * `<file>.lock` already holds another fence.
  */
 export interface FileStateDocumentOptions {
   lockfilePath?(file: string): string;
@@ -118,11 +159,7 @@ export function fileStateDocumentStore(directory: string, options: FileStateDocu
       const target = path(key);
       return serialize(resolve(target), async () => {
         await mkdir(directory, { recursive: true, mode: 0o700 });
-        const release = await lockfile.lock(target, {
-          realpath: false,
-          retries: { retries: 20, minTimeout: 20, maxTimeout: 200 },
-          ...(options.lockfilePath ? { lockfilePath: options.lockfilePath(target) } : {}),
-        });
+        const release = await lockStateFile(resolve(options.lockfilePath?.(target) ?? `${target}.lock`));
         try {
           const outcome = stateChangeOutcome(change(await load(key)));
           if (outcome.json !== undefined) await commit(key, outcome.json);

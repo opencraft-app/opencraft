@@ -22,7 +22,7 @@ Docker 部署（`deploy/docker/compose.yaml`）有 `gateway`、`brain`、`hands`
 
 | 状态／锁 | 位置 | 现 owner（进程） | 证据 | 目标 owner |
 | --- | --- | --- | --- | --- |
-| Brain 进程单例锁 | `$DATA/native-host`（proper-lockfile） | brain `host.mjs` | scripts/container-deployment/host.mjs:28 | 容器（每容器一个，锁在容器私有根） |
+| Brain 进程单例锁 | `$DATA/native-host.lock`（内核单写者锁 `acquireOwnerLock`） | brain `host.mjs` | scripts/container-deployment/host.mjs:28 | 容器（每容器一个，锁在容器私有根） |
 | 账号 writer 锁 | `$DATA/codex/.codex-writer.sqlite`（`BEGIN EXCLUSIVE`） | codex-core split core（brain 内嵌或 `proxy`） | packages/account-pool-host/src/codex-writer-lock.ts:11-17；apps/codex-core/src/split-core.ts:16 | AC |
 | 账号池与密钥 | `$DATA/codex/account-pool.sqlite`、`secrets/`、`personal-logins/<sha>` | 同上 | packages/account-pool-host/src/codex-account-service.ts:64-71 | AC |
 | 模型代理 | loopback 端口（`proxy` 模式默认 45071，内嵌模式随机） | 同上 | host.mjs:98-110；scripts/container-deployment/proxy-core.mjs:6-15；compose.proxy.yaml:27 | AC（经 WH 中转或边缘出口，见 §5） |

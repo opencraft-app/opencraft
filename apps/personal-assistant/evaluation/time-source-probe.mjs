@@ -1,6 +1,6 @@
-import lockfile from "proper-lockfile";
+import { acquireOwnerLock } from "@opencraft/sqlite-node/writer-lock";
 import { parseArgs } from "node:util";
-import { writeFile } from "node:fs/promises";
+import { realpath, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { readModelConfiguration } from "./longmemeval.mjs";
 import { loadProfile } from "../src/adapters/local/profile.mjs";
@@ -31,7 +31,8 @@ for (const field of ["provider", "modelId", "baseUrl", "thinking"]) {
   if (profile.config.model?.[field] !== config[field])
     throw new Error("Model configuration must match evaluated profile");
 }
-const release = await lockfile.lock(profile.path, { stale: 10000, retries: 0 });
+// The runner's profile lock: no live runner may write the evaluated profile meanwhile.
+const release = await acquireOwnerLock(`${await realpath(profile.path)}.lock`);
 let app, uow;
 try {
   ({ app, uow } = createLocalDomain(profile));

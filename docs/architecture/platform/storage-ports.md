@@ -84,7 +84,7 @@ Node Headless 当前由 `Collaboration` 按数据库文件路径启动 `Orchestr
 
 不复用插件文档 API `DocumentPersistence`：它的 `{revision, version, value}` 记录格式会改变既有文件的磁盘格式。两者同属 `@opencraft/document-storage`，契约分开。
 
-Node 适配器 `fileStateDocumentStore(directory)` 每键一个文件，保持原有缩进格式与 proper-lockfile 锁，新旧进程仍在同一文件上串行；同进程按绝对路径先排队，再取文件锁；写入经临时文件、fsync、rename 与目录 fsync（修正旧 `json-file.ts` 未 fsync 的问题）。
+Node 适配器 `fileStateDocumentStore(directory)` 每键一个文件，保持原有缩进格式；跨进程在 `<file>.lock` 上以 Worker 持有的内核锁串行（见 [SQLite 生命周期](../server/sqlite-lifecycle.md) 锁文件段，旧版 proper-lockfile 进程被拒绝而非并发写）；同进程按绝对路径先排队，再取文件锁；写入经临时文件、fsync、rename 与目录 fsync（修正旧 `json-file.ts` 未 fsync 的问题）。
 
 **跨 await 的不变量不能依赖端口锁。** 需要在提交前执行异步操作（例如写凭据）的仓储，必须把异步副作用设计成可被 CAS 安全丢弃。图片配置替换密钥时写入新的唯一引用，再由文档 CAS 切换指向，落败方删除自己的引用，成功后回收旧引用；已提交的声明只会指向为它写入的密钥。
 

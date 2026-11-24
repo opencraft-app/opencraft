@@ -49,7 +49,6 @@
     "@opencraft/appserver-protocol": "0.1.0",
     "@opencraft/composer-core": "^0.1.0",
     "node-pty": "1.1.0",
-    "proper-lockfile": "^4.1.2",
     "ws": "^8.23.0",
     "yaml": "^2.9.1",
     "@opencraft/sqlite-node": "0.1.0",
@@ -73,7 +72,6 @@
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
-    "@types/proper-lockfile": "^4.1.4",
     "@types/ws": "^8.18.2",
     "typescript": "^6.0.3"
   }

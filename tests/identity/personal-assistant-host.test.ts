@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,rm,readFile} from 'node:fs/promises';
+import {mkdtemp,rm,readFile,realpath,utimes,lstat} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {openServerDatabase} from '@opencraft/storage-node/server';
@@ -99,6 +99,20 @@ test('one installation lease permits only one Host to provision, then standby ta
  const secondService=new Collaboration(f.storage,f.actors),second=await createPersonalAssistantHost({directory:f.directory,service:secondService,...config});
  try {await new Promise(r=>setTimeout(r,100));assert.equal(starts,1);assert.equal(second.state(assistant.binding.botId).phase,'unavailable');
    await first.close();await waitFor(()=>second.state(assistant.binding.botId).phase==='running');assert.equal(starts,2);
+ }finally{await second.close();await secondService.close();}
+});
+
+// The installation lease was a proper-lockfile mtime lease: a standby took over a Host whose
+// refresh looked 15s late (a stalled event loop), and the holder then closed itself from a timer.
+test('a Host whose installation lease looks unrefreshed keeps it; a standby never takes over',async t=>{
+ const f=await fixture(t),{assistant}=await f.service.personalAssistant(f.alice,'opencraft/personal-assistant/claim');
+ let starts=0;const config={intervalMs:30,readConfig:async()=>({maxRuntimes:1,profileOptions:{}}),spawn:()=>{starts++;return {ready:Promise.resolve(),failed:()=>false,async close(){}};}};
+ const first=await f.start(config);await waitFor(()=>first.state(assistant.binding.botId).phase==='running');
+ const lock=join(await realpath(f.directory),'.personal-assistant-host.lock'),expired=new Date(Date.now()-120_000);
+ await utimes(lock,expired,expired);
+ const secondService=new Collaboration(f.storage,f.actors),second=await createPersonalAssistantHost({directory:f.directory,service:secondService,...config});
+ try {await new Promise(r=>setTimeout(r,500));assert.equal(starts,1);assert.equal(second.state(assistant.binding.botId).phase,'unavailable');
+   assert.equal(first.state(assistant.binding.botId).phase,'running');assert.equal((await lstat(lock)).isFile(),true);
  }finally{await second.close();await secondService.close();}
 });
 

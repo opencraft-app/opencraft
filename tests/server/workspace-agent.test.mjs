@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { EventEmitter } from "node:events";
-import { lstat, mkdir, mkdtemp, readFile, readlink, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, readlink, rm, stat, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -14,7 +14,7 @@ import {
   parseAgentRoles,
   startWorkspaceAgent,
 } from "../../scripts/container-deployment/workspace-agent-application.mjs";
-import { relaunchBrainOwners } from "../../scripts/container-deployment/workspace-agent-roles.mjs";
+import { holdBrainDataDirectory, relaunchBrainOwners } from "../../scripts/container-deployment/workspace-agent-roles.mjs";
 import { deploymentPaths } from "../../scripts/container-deployment/paths.mjs";
 import { createHandsTerminalService } from "../../apps/headless-server/src/host-terminal-transport.ts";
 
@@ -76,6 +76,35 @@ async function supervisorFixture(t) {
     order: async () => (await readFile(join(directory, "order"), "utf8")).trim().split("\n"),
   };
 }
+
+// The Brain's data-directory lock was a proper-lockfile mtime lease: a second Brain took over
+// one whose lease looked 10s old (a stalled event loop), and the holder's refresh timer threw.
+test("a Brain whose data-directory lock looks unrefreshed is never replaced and never fails from a timer", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "brain-lock-"));
+  const uncaught = [],
+    record = (error) => uncaught.push(error);
+  process.on("uncaughtException", record);
+  const release = await holdBrainDataDirectory(root);
+  let contender;
+  t.after(async () => {
+    process.off("uncaughtException", record);
+    await contender?.();
+    await release();
+    await rm(root, { recursive: true, force: true });
+  });
+  const lock = join(root, "native-host.lock"),
+    expired = new Date(Date.now() - 120_000);
+  await utimes(lock, expired, expired);
+  await assert.rejects(
+    holdBrainDataDirectory(root).then((started) => {
+      contender = started;
+    }),
+    { code: "ELOCKED" },
+  );
+  await new Promise((resolve) => setTimeout(resolve, 6000));
+  assert.deepEqual(uncaught, []);
+  assert.equal((await lstat(lock)).isFile(), true);
+});
 
 test("incarnations are unique per start and bound to process birth evidence", async () => {
   const [first, second] = await Promise.all([createAgentIncarnation(), createAgentIncarnation()]);

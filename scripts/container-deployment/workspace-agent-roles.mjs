@@ -3,7 +3,7 @@ import { once } from "node:events";
 import { randomBytes } from "node:crypto";
 import { lstat, mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import lockfile from "proper-lockfile";
+import { acquireOwnerLock } from "@opencraft/sqlite-node/writer-lock";
 import { readPrivateToken } from "./paths.mjs";
 import { readPrivateJson } from "../../apps/headless-server/src/server-deployment/dsh-host-client.mjs";
 import { handsResources } from "./resources.mjs";
@@ -70,6 +70,11 @@ export async function relaunchBrainOwners(
   agent.endpointsReplaced();
 }
 
+/** One Brain per data directory for its lifetime: a kernel lock at `native-host.lock` (the former
+ * lease's path) that a stalled Brain never loses and whose death frees it at once. */
+export const holdBrainDataDirectory = (dataDirectory) =>
+  acquireOwnerLock(join(dataDirectory, "native-host.lock"));
+
 /** Brain: Codex AppServer owner (+ native app-server), DSH and Pi engine hosts, and the
  * embedded account Core only when no proxy service owns it. */
 export const brainRole = {
@@ -78,7 +83,7 @@ export const brainRole = {
     await privateDirectory(paths.dataDirectory, "The data directory must be owned by this user with mode 0700");
     await mkdir(paths.runtimeDirectory, { recursive: true, mode: 0o700 });
     await mkdir(paths.runDirectory, { recursive: true, mode: 0o700 });
-    const release = await lockfile.lock(join(paths.dataDirectory, "native-host"), { realpath: false, retries: 0 });
+    const release = await holdBrainDataDirectory(paths.dataDirectory);
     agent.defer(() => release());
     // Earlier releases kept launch configuration, engine descriptors and the AppServer
     // sockets in the shared run directory; under the lock no other Brain uses them.

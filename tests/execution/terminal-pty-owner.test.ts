@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { fork, type ChildProcess } from 'node:child_process';
 import { connect, createServer } from 'node:net';
-import { mkdtemp, rm, stat } from 'node:fs/promises';
+import { mkdtemp, realpath, rm, stat, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
@@ -97,6 +97,24 @@ test('concurrent Host adapters share one owner and account quota; disconnect doe
   assert.equal((await b.dispatch('process/list', {}, { ...scope, account: 'bob' }) as any).processes.length, 0);
   const info = await stat(location.endpoint); assert.equal(info.mode & 0o077, 0);
   await assert.rejects(startTerminalPtyOwner(location.directory, location.endpoint), /lock/i);
+});
+
+// The owner lock was a proper-lockfile mtime lease: a contender took over once the lease
+// looked 30s old (a stalled or suspended owner), and the owner's refresh timer then threw.
+test('a PTY owner whose lock looks unrefreshed is never taken over and never fails from a timer', { skip: process.platform === 'win32' }, async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'pty-owner-stall-')), location = await terminalOwnerLocation(directory);
+  const uncaught: unknown[] = [], record = (error: unknown) => { uncaught.push(error); };
+  process.on('uncaughtException', record);
+  const stop = await startTerminalPtyOwner(location.directory, location.endpoint);
+  let contender: (() => Promise<void>) | undefined;
+  t.after(async () => { process.off('uncaughtException', record); await contender?.(); await stop(); await rm(directory, { recursive: true, force: true }); await rm(join(location.endpoint, '..'), { recursive: true, force: true }); });
+  const lock = `${await realpath(location.directory)}.lock`, expired = new Date(Date.now() - 120_000);
+  await utimes(lock, expired, expired);
+  await assert.rejects(startTerminalPtyOwner(location.directory, location.endpoint).then(started => { contender = started; }), /lock/i);
+  await new Promise(resolve => setTimeout(resolve, 6000));
+  assert.deepEqual(uncaught, []);
+  assert.equal(await ownerPid(location.endpoint), process.pid);
+  assert.equal((await stat(lock)).isFile(), true);
 });
 
 test('closing during lazy owner attachment cannot revive Host; stale authority cannot send after connection setup', async t => {

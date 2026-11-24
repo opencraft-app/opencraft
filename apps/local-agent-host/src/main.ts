@@ -252,7 +252,7 @@ export async function startLocalAgentHost(options: {
       await access(resolve(dirname(plugin), '../../../packages/execution-environment/src/execution-environment.ts'));
       const { build } = await import('esbuild');
       nativePlugin = join(bridgeDirectory, 'dsh-capability-plugin.mjs');
-      // Bundled CommonJS dependencies (e.g. proper-lockfile via the state-file adapter) need `require` in ESM,
+      // Bundled CommonJS dependencies need `require` in ESM,
       // the same banner the packaged DSH routing runtime uses.
       await build({ entryPoints: [plugin], outfile: nativePlugin, bundle: true, platform: 'node', format: 'esm', target: 'node24', logLevel: 'silent',
         banner: { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" } });

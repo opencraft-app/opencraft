@@ -4,7 +4,7 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { acquireLocalAgentStorageOwner } from "../../apps/local-agent-host/src/storage/daemon-storage-owner.js";
 import { observeNativeExecutionProcess } from "../../packages/execution-environment/src/native-execution-origin.js";
-import { mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -93,6 +93,22 @@ test("storage ownership is not held by a reused PID whose process birth differs"
     await writeFile(join(directory, ".daemon-storage-owner.json"), JSON.stringify({ pid: process.pid, claim: "previous", incarnation: live }));
     await assert.rejects(acquireLocalAgentStorageOwner(directory), /already owned/);
   } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test("storage ownership is a kernel lock that a removed owner record or an aged lease cannot hand over", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oc-storage-owner-kernel-"));
+  let release: (() => Promise<void>) | undefined;
+  try {
+    release = await acquireLocalAgentStorageOwner(directory);
+    // The former owner record was a PID file serialized by an mtime mutex: removing it
+    // (or the PID reappearing in another namespace) handed storage to a second daemon.
+    await rm(join(directory, ".daemon-storage-owner.json"), { force: true });
+    const expired = new Date(Date.now() - 120_000);
+    await utimes(join(directory, ".daemon-storage-owner.lock"), expired, expired).catch(() => {});
+    await assert.rejects(acquireLocalAgentStorageOwner(directory), /already owned/);
+    await release(); release = undefined;
+    const next = await acquireLocalAgentStorageOwner(directory); await next();
+  } finally { await release?.(); await rm(directory, { recursive: true, force: true }); }
 });
 
 test("storage ownership rejects a live process and can recover its claim after exit", async () => {

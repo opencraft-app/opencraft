@@ -24,6 +24,8 @@ export async function readDshColdResources({dependencyRoots = [], excluded = [],
   const visit = async (path,name) => {
     if (skip.has(path)) return;
     const info = await lstat(path);
+    // An empty `*.lock` is a kernel lock (state documents, owners): no state, and opening it would drop this process's lock.
+    if (info.isFile() && info.size === 0 && path.endsWith('.lock')) return;
     if (info.isSymbolicLink()) {
       const target = await realpath(path);
       if (![...allowed,...await dependencyTargets()].some(root=>root && (target === root || target.startsWith(root+sep))) || visiting.has(target)) throw new Error('Unbound DSH resource link: '+name);
@@ -36,7 +38,7 @@ export async function readDshColdResources({dependencyRoots = [], excluded = [],
       directories.set(path,name);
       for (const entry of (await readdir(path)).sort()) {
         if (['.daemon-storage-owner.json','.daemon-storage-owner.lock','host-handoff.json','owner-writer.lock'].includes(entry)
-          || entry.endsWith('-wal') || entry.endsWith('-shm')) continue;
+          || entry.endsWith('.lock.owner.json') || entry.endsWith('.lock-journal') || entry.endsWith('-wal') || entry.endsWith('-shm')) continue;
         await visit(join(path,entry),join(name,entry));
       }
       return;

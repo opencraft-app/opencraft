@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync, realpathSync, statSync, utimesSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { Runner, request } from "../src/runner.mjs";
@@ -198,6 +198,29 @@ test(
   async (t) => {
     const { profile, call } = await running(t);
     await assert.rejects(Runner.open(profile), /already being held/);
+    assert.equal((await call("status")).owner, "local:test-owner");
+  },
+);
+
+// The profile lock was a proper-lockfile mtime lease: a second runner took over a runner
+// whose refresh looked 10s late (a stalled event loop), which then closed itself from a timer.
+test(
+  "a second runner cannot take over a live profile whose lock looks unrefreshed",
+  { timeout: 30000 },
+  async (t) => {
+    const { profile, call } = await running(t);
+    const lock = `${realpathSync(profile.path)}.lock`;
+    const expired = new Date(Date.now() - 120_000);
+    utimesSync(lock, expired, expired);
+    let contender;
+    t.after(() => contender?.close());
+    await assert.rejects(
+      Runner.open(profile).then((runner) => {
+        contender = runner;
+      }),
+      /already being held/,
+    );
+    assert.equal(statSync(lock).isFile(), true);
     assert.equal((await call("status")).owner, "local:test-owner");
   },
 );

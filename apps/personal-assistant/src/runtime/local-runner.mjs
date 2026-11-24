@@ -11,7 +11,8 @@ import { FileEventSource } from "../adapters/filesystem/file-event-source.mjs";
 import { MemoryLearningCoordinator } from "./memory-learning-coordinator.mjs";
 import { MemoryLearningModel } from "../adapters/models/memory-learning-model.mjs";
 import { join } from "node:path";
-import lockfile from "proper-lockfile";
+import { realpath } from "node:fs/promises";
+import { acquireOwnerLock } from "@opencraft/sqlite-node/writer-lock";
 import { createLocalDomain } from "./create-local-domain.mjs";
 import { ThreadCompletionCoordinator } from "./thread-completion-coordinator.mjs";
 import { WorkCoordinator } from "./work-coordinator.mjs";
@@ -51,15 +52,13 @@ export class LocalRunner {
         runner.healthError = String(error);
       };
     try {
-      runner.release = await lockfile.lock(profile.path, {
-        stale: 10000,
-        update: 2000,
-        retries: { retries: 24, minTimeout: 500, maxTimeout: 500 },
-        onCompromised: (error) => {
-          onError(error);
-          void runner.close().catch(onError);
-        },
-      });
+      // A process-lifetime kernel lock beside the profile (the former lease's path): a
+      // stalled runner is never replaced, and its death frees the profile at once. The
+      // retries (one second apart) wait out a runner that is still closing.
+      runner.release = await acquireOwnerLock(
+        `${await realpath(profile.path)}.lock`,
+        { retries: 12 },
+      );
       if (profile.config.botBinding && !overrides.platformChannelPort)
         throw Error("Managed Bot requires its Host authority port");
       if (overrides.platformChannelPort) {

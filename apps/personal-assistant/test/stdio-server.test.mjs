@@ -142,7 +142,8 @@ test("bidirectional framing supports fragmented UTF-8, cancellation and late res
 });
 
 test("owner process death closes its child and releases the durable profile lock", async (t) => {
-  const { existsSync } = await import("node:fs");
+  const { realpathSync, statSync } = await import("node:fs");
+  const { acquireOwnerLock } = await import("@opencraft/sqlite-node/writer-lock");
   const { until } = await import("./helpers.mjs");
   const profile = profileFor(t, { telemetry: { enabled: false } });
   const server = new URL("../src/runtime/assistant-server.mjs", import.meta.url)
@@ -176,10 +177,19 @@ test("owner process death closes its child and releases the durable profile lock
   });
   const [ready] = await once(parent.stdout, "data");
   assert.equal(ready.toString(), "ready");
-  assert.equal(existsSync(profile.path + ".lock"), true);
+  const lock = `${realpathSync(profile.path)}.lock`;
+  assert.equal(statSync(lock).isFile(), true);
   parent.kill("SIGKILL");
   await exited;
-  await until(() => !existsSync(profile.path + ".lock"), 4500);
+  // The kernel lock file stays; the child's exit is what frees it.
+  await until(
+    () =>
+      acquireOwnerLock(lock).then(
+        (release) => (release(), true),
+        () => false,
+      ),
+    4500,
+  );
   const replacement = client(t);
   await replacement.peer.request("initialize", {
     protocolVersion: 1,
