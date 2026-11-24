@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { TransportSubmissionContext } from "@opencraft/appserver-client/transport";
-import type { EmployeeGitVaultStore } from "./employee-git-vault-store.js";
+import type { EmployeeGitVault } from "./employee-git-vault-store.js";
 import { EnvironmentError } from "./account-environment.js";
 import { GitVaultError } from "./git-vault-error.js";
 import type { EnvironmentAccountResolver } from "./environment-account.js";
@@ -41,12 +41,12 @@ export const environmentProjectId = (hostId: string, projectId: string) => "proj
 const namespace = (kind: string, hostId: string, id = "") => `document-env-${kind}-${digest([hostId, id])}`;
 const text = (value: unknown): value is string =>
   typeof value === "string" && value.length > 0 && value.length <= 512 && !/[\0\r\n]/u.test(value);
-type MetadataVault = Pick<EmployeeGitVaultStore, "readDocument" | "writeDocument">;
+type MetadataVault = Pick<EmployeeGitVault, "readDocument" | "writeDocument">;
 
 /** The Thread's durable Project binding, as the Gateway recorded it from the
  * Host's own thread metadata. This, not a request or handoff, selects Project ENV. */
 export function environmentThreadProject(
-  vault: Pick<EmployeeGitVaultStore, "readDocument">,
+  vault: Pick<EmployeeGitVault, "readDocument">,
   hostId: string,
   threadId: string,
 ): string | null {

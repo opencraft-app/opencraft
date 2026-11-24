@@ -234,8 +234,7 @@
       "writeFileSync": 2
     },
     "packages/app-host-server/src/thread-directory/index.ts": {
-      "DatabaseSync": 1,
-      "SQL statement": 33
+      "SQL statement": 31
     },
     "packages/app-host-server/src/thread-directory/snapshot-reader.ts": {
       "DatabaseSync": 1,
@@ -256,13 +255,7 @@
       "SQL statement": 7
     },
     "packages/execution-environment/src/employee-git-vault-store.ts": {
-      "closeSync": 2,
-      "DatabaseSync": 1,
-      "fstatSync": 2,
-      "mkdirSync": 1,
-      "openSync": 2,
-      "realpathSync": 1,
-      "SQL statement": 6
+      "SQL statement": 3
     },
     "packages/execution-environment/src/execution-environment.ts": {
       "DatabaseSync": 1,
