@@ -20,6 +20,7 @@
     "@opencraft/connector-runtime": "0.1.0",
     "@opencraft/session-capabilities": "0.1.0",
     "@opencraft/identity-core": "0.1.0",
+    "@opencraft/owner-wake": "0.1.0",
     "@opencraft/access-control": "0.1.0"
   }
 }

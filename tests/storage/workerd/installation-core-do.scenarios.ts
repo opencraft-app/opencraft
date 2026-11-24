@@ -31,13 +31,13 @@ export const INSTALLATION_CORE_DO_SPEC: WorkerSpec = {
 };
 
 /** Miniflare origin: Human login accepts plain HTTP only on loopback. */
-const LOCAL_ORIGIN = "http://127.0.0.1:8787";
-const PROOF = "S".repeat(43);
-const OWNER_PASSWORD = "Fixture-owner-password-42";
-const MEMBER_PASSWORD = "Fixture-member-password-42";
+export const LOCAL_ORIGIN = "http://127.0.0.1:8787";
+export const PROOF = "S".repeat(43);
+export const OWNER_PASSWORD = "Fixture-owner-password-42";
+export const MEMBER_PASSWORD = "Fixture-member-password-42";
 
 /** One installation front door the sequence drives. */
-interface Backend {
+export interface Backend {
   readonly origin: string;
   fetch(path: string, init?: RequestInit): Promise<Response>;
   restart(): Promise<void>;
@@ -45,7 +45,7 @@ interface Backend {
 }
 
 /** A browser: a cookie jar and same-origin JSON writes, as the Web client sends them. */
-class Browser {
+export class Browser {
   readonly cookies = new Map<string, string>();
   constructor(readonly backend: Backend) {}
   async call(path: string, body?: unknown, headers: Record<string, string> = {}): Promise<Response> {
@@ -76,7 +76,7 @@ const COMPARED_HEADERS = ["cache-control", "content-type", "x-content-type-optio
  * order, times and secrets become markers, and the origin is replaced. Two
  * runs of the same sequence are then equal exactly when they agree.
  */
-function normalizer(origin: string) {
+export function normalizer(origin: string) {
   const ids = new Map<string, string>();
   const id = (value: string) => {
     if (!ids.has(value)) ids.set(value, `<id${ids.size}>`);
@@ -270,7 +270,7 @@ async function freePort(): Promise<number> {
 }
 
 /** The Node Headless server from source, with the same Human login configuration and setup proof, listening publicly. */
-async function nodeBackend(scratch: string): Promise<Backend> {
+export async function nodeBackend(scratch: string): Promise<Backend> {
   const root = join(scratch, `node-${crypto.randomUUID()}`);
   const webRoot = join(root, "web");
   await mkdir(webRoot, { recursive: true });
@@ -343,12 +343,12 @@ async function objectBackend(runtime: WorkerRuntime, proof = PROOF): Promise<Bac
   };
 }
 
-const evict = async (backend: Backend) => {
+export const evict = async (backend: Backend) => {
   // The aborted request itself fails; the next request constructs the object again.
   await backend.fetch("/__test/evict").catch(() => undefined);
 };
 
-async function login(backend: Backend) {
+export async function login(backend: Backend) {
   const owner = new Browser(backend);
   const setup = await owner.call("/__opencraft_account/setup", {
     proof: PROOF,

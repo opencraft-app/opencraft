@@ -6,6 +6,8 @@ import { withWorkspaceBudget } from "@opencraft/plugin-assets/server/workspace-b
 import type { AssetWorkspaceOwnerContext } from "@opencraft/plugin-assets/server/workspace-owner";
 import type { AssistantEnvironmentProvider } from "@opencraft/personal-assistant/host";
 import type { WorkspaceActorAdmission } from "./actor-authority.js";
+import type { OwnerWake } from "@opencraft/owner-wake";
+import { receiptRetention, type ReceiptRetention } from "./receipt-retention.js";
 import {
   BotEnvironmentAuthority,
   botRecordFingerprint,
@@ -116,7 +118,8 @@ export class WorkspaceBotOwner {
   private readonly actors: BotEnvironmentAuthority;
   private closed = false;
   private closing?: Promise<void>;
-  private readonly timer: ReturnType<typeof setInterval>;
+  /** Finished jobs are forgotten when they expire; nothing wakes while none has finished. */
+  private readonly retention: ReceiptRetention;
   constructor(
     private readonly context: AssetWorkspaceOwnerContext,
     private readonly options: {
@@ -126,14 +129,12 @@ export class WorkspaceBotOwner {
       source?: WorkspaceBotSource;
       /** Identity partition of personal backend IDs; default the Actor partition. */
       backendIdentity?: BotBackendIdentity;
+      /** Owner wake-up for job receipt expiry; the default Node timeout one. */
+      wake?: OwnerWake;
     },
   ) {
     this.actors = new BotEnvironmentAuthority(context.directory);
-    this.timer = setInterval(() => {
-      for (const [token, job] of this.jobs)
-        if (job.finished && Date.now() - job.finished > 300000) this.jobs.delete(token);
-    }, 1000);
-    this.timer.unref();
+    this.retention = receiptRetention(this.jobs, (job) => job.finished, options.wake);
   }
   private installed() {
     if (this.closed) throw unavailable();
@@ -522,7 +523,8 @@ export class WorkspaceBotOwner {
         },
       )
       .finally(() => {
-        job.finished = Date.now();
+        job.finished = this.retention.now();
+        this.retention.settled();
       });
     return token;
   }
@@ -557,6 +559,7 @@ export class WorkspaceBotOwner {
     if (!job) return;
     if (job.status.state === "pending") throw unavailable();
     this.jobs.delete(token);
+    this.retention.settled();
   }
   private retire(token: string) {
     const entry = this.entries.get(token);
@@ -630,7 +633,7 @@ export class WorkspaceBotOwner {
   close() {
     return (this.closing ??= (async () => {
       this.closed = true;
-      clearInterval(this.timer);
+      this.retention.close();
       for (const token of this.entries.keys()) this.retire(token);
       await Promise.all([...this.entries.values()].map((e) => e.starting));
       const results = await Promise.allSettled([

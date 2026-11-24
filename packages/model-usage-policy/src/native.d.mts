@@ -1,7 +1,6 @@
-export interface Rule {engine:string;model?:string;effort?:string}
-export const POLICY_PATH: string;
-export const engines: string[];
-export function parseRules(value:unknown):Rule[];
+import type { Rule } from './rules.mjs';
+export type { Rule } from './rules.mjs';
+export { POLICY_PATH, engines, parseRules } from './rules.mjs';
 export function readPolicy(path?:string):{revision:number;rules:Rule[]};
 export function denied(rules:Rule[],engine:string,model:string,effort?:string):boolean;
 export class ModelPolicyError extends Error {code:number; data:{code:string;kind:string;alternatives:string[]}}

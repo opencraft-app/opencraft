@@ -230,3 +230,55 @@ export function periodicOwnerWork(wake: OwnerWake, periodMs: number, run: () => 
     },
   };
 }
+
+/** A handle to {@link dueOwnerWork}. */
+export interface DueOwnerWork {
+  /** Reads the next due time again and re-arms for it, or disarms when nothing is due. The owner calls it after any
+   * change that can add, remove or move a due item (a new item, a cancelled one, an earlier deadline); an unchanged due
+   * time keeps the armed wake-up. No-op after `close`. */
+  reschedule(): void;
+  /** Stops it. Idempotent; `run` is not called again after it returns. */
+  close(): void;
+}
+
+/**
+ * Wakes the owner only at its next due time, and not at all while nothing is due. `next` derives the earliest due time
+ * on the owner clock from the owner's own state (null when nothing is due); `run(now)` settles everything due at `now`,
+ * which is never earlier than the time the wake-up was armed for (an elapsed timeout counts as having reached it), and
+ * then the next due time is read again. Because `next` re-derives from state, a merged single alarm or an owner that
+ * lost its memory resumes by calling `reschedule` (or running one pass) when it is opened again. Owners stamp their due
+ * items on `wake.now()`, so a wall-clock change neither delays nor hastens them on the default Node wake-up. Work whose
+ * due-ness cannot be derived (external state without a change notification) uses {@link periodicOwnerWork} instead.
+ */
+export function dueOwnerWork(wake: OwnerWake, next: () => number | null, run: (now: number) => void): DueOwnerWork {
+  let closed = false;
+  let armedAt: number | null = null;
+  const reschedule = () => {
+    if (closed) return;
+    const at = next();
+    if (at !== null && !Number.isFinite(at)) throw new RangeError("Wake time must be finite");
+    if (at === armedAt) return;
+    armedAt = at;
+    if (at === null) timer.cancel();
+    else timer.arm(at);
+  };
+  const timer = wake.timer(() => {
+    if (closed) return;
+    const reached = armedAt;
+    armedAt = null;
+    try {
+      run(reached === null ? wake.now() : Math.max(wake.now(), reached));
+    } finally {
+      reschedule();
+    }
+  });
+  reschedule();
+  return {
+    reschedule,
+    close() {
+      closed = true;
+      armedAt = null;
+      timer.cancel();
+    },
+  };
+}
