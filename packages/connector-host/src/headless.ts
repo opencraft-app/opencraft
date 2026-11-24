@@ -6,6 +6,7 @@ import type { ActorAccess } from "@opencraft/access-control/actor-access";
 import type { ActorContext } from "@opencraft/identity-core/actors";
 import type { CapabilitySession, SessionCapabilities } from "@opencraft/session-capabilities";
 import { ConnectorRuntime, ConnectorCapabilityRuntime, ConnectorApprovalQueue, ConnectorError, objectInput, CONNECTOR_SESSION_TOOLS, callConnectorTool } from "@opencraft/connector-runtime";
+import { periodicOwnerWork, timeoutOwnerWake, type OwnerWake, type PeriodicOwnerWork } from "@opencraft/owner-wake";
 import { ManagedConnectorService } from "./service";
 import { ConnectorHostError } from "./store";
 
@@ -29,13 +30,16 @@ export class HeadlessConnectors {
   private readonly grants = new Map<string, Grant>();
   private readonly operations = new Map<string, symbol>();
   private readonly unregister: () => void;
-  private readonly timer: ReturnType<typeof setInterval>;
+  /** Actor, admission and grant authority have no change notification, so grants are re-checked every 500 ms on the
+   * owner wake-up; the check is armed only while a grant exists. */
+  private grantCheck: PeriodicOwnerWork | null = null;
   private closed = false;
   constructor(private readonly directory: string, private readonly access: ActorAccess,
     private readonly hosts: Readonly<Record<string, string>>, capabilities: SessionCapabilities,
     private readonly admitted: (actorId: string) => boolean = () => true,
     private readonly createPhysical = (path: string) => new ManagedConnectorService(path),
-    private readonly resolveServer?: (hostId: string, threadId: string) => string) {
+    private readonly resolveServer?: (hostId: string, threadId: string) => string,
+    private readonly wake: OwnerWake = timeoutOwnerWake()) {
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     this.unregister = capabilities.register({ id: "opencraft.connectors", formatResult: value => ({ success: !(value && typeof value === "object" && "isError" in value && value.isError === true), contentItems: [{ type: "inputText", text: JSON.stringify(value) ?? "null" }] }), tools: session => {
       return this.grant(session) ? CONNECTOR_SESSION_TOOLS : [];
@@ -47,8 +51,12 @@ export class HeadlessConnectors {
       if (this.grant(session) !== grant) throw new ConnectorError("authorization-required");
       return value;
     } });
-    this.timer = setInterval(() => { for (const [key, grant] of this.grants) if (!this.valid(grant)) this.release(key, grant); }, 500);
-    this.timer.unref();
+  }
+  private granted() {
+    if (this.grants.size && !this.closed) this.grantCheck ??= periodicOwnerWork(this.wake, 500, () => {
+      for (const [key, grant] of this.grants) if (!this.valid(grant)) this.release(key, grant);
+    });
+    else { this.grantCheck?.close(); this.grantCheck = null; }
   }
   private current(context: ActorContext) {
     try { return !this.closed && this.access.store.isCurrent(context) && this.access.store.get(context.actorId)?.kind === "human" && this.admitted(context.actorId); }
@@ -68,6 +76,7 @@ export class HeadlessConnectors {
   }
   private release(key: string, grant: Grant) {
     this.grants.delete(key);
+    this.granted();
     const owner = this.owners.get(grant.context.actorId);
     owner?.catalog.releaseScope(grant); owner?.runtime.releaseScope(grant);
   }
@@ -151,7 +160,7 @@ export class HeadlessConnectors {
       const grant = { context: Object.freeze({ ...context }), hostId, threadId, ids, connectionIds: connections.map(c => c.connectionId), authorized };
       if (ids.length) {
         if (!this.grants.has(key) && this.grants.size >= 4096) throw new ConnectorError("unavailable");
-        owner.runtime.select(grant, connections.map(c => c.connectionId)); this.grants.set(key, grant);
+        owner.runtime.select(grant, connections.map(c => c.connectionId)); this.grants.set(key, grant); this.granted();
       }
       else if (existing) this.release(key, existing);
       return this.state(context, hostId);
@@ -191,8 +200,9 @@ export class HeadlessConnectors {
   }
   outcomes() { return [...this.owners.values()].map(o => ({ name: "headless-connectors", status: o.physical.database.outcome.status, appliedVersion: o.physical.database.outcome.appliedVersion, movedAside: o.physical.database.outcome.movedAsidePaths.length > 0 })); }
   async close() {
-    this.closed = true; clearInterval(this.timer); this.unregister(); this.operations.clear();
+    this.closed = true; this.unregister(); this.operations.clear();
     for (const [key, grant] of this.grants) this.release(key, grant);
+    this.granted();
     for (const owner of this.owners.values()) { owner.approvals.dispose(); owner.catalog.dispose(); await owner.runtime.dispose(); owner.physical.close(); }
     this.owners.clear();
   }

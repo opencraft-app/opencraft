@@ -1,4 +1,6 @@
 import { randomBytes } from "node:crypto";
+import type { OwnerWake } from "@opencraft/owner-wake";
+import { receiptRetention, type ReceiptRetention } from "./receipt-retention.js";
 import type { OrdinaryThreadLifecycle } from "@opencraft/local-agent-host/ordinary-conversation-owner";
 export type WorkspaceLifecycleRow = OrdinaryThreadLifecycle;
 export type WorkspaceLifecycleStatus =
@@ -16,13 +18,13 @@ export class WorkspaceLifecycleJobs {
     { state: WorkspaceLifecycleStatus; work: Promise<void>; finished?: number }
   >();
   private stopped = false;
-  private readonly timer: ReturnType<typeof setInterval>;
-  constructor(private readonly apply: (row: WorkspaceLifecycleRow) => Promise<{ managed: boolean }>) {
-    this.timer = setInterval(() => {
-      for (const [token, job] of this.jobs)
-        if (job.finished && Date.now() - job.finished > 300000) this.jobs.delete(token);
-    }, 1000);
-    this.timer.unref();
+  /** Finished receipts are forgotten when they expire; nothing wakes while none has finished. */
+  private readonly retention: ReceiptRetention;
+  constructor(
+    private readonly apply: (row: WorkspaceLifecycleRow) => Promise<{ managed: boolean }>,
+    wake?: OwnerWake,
+  ) {
+    this.retention = receiptRetention(this.jobs, (job) => job.finished, wake);
   }
   begin(row: WorkspaceLifecycleRow) {
     if (
@@ -59,7 +61,8 @@ export class WorkspaceLifecycleJobs {
         },
       )
       .finally(() => {
-        job.finished = Date.now();
+        job.finished = this.retention.now();
+        this.retention.settled();
       });
     return token;
   }
@@ -72,10 +75,11 @@ export class WorkspaceLifecycleJobs {
     if (!job) return;
     if (job.state.state === "pending") throw Error("Workspace cleanup still pending");
     this.jobs.delete(token);
+    this.retention.settled();
   }
   async close() {
     this.stopped = true;
-    clearInterval(this.timer);
+    this.retention.close();
     await Promise.all([...this.jobs.values()].map((job) => job.work));
     this.jobs.clear();
   }

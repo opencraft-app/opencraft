@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import webpush from 'web-push';
 import { AppServerRpcError } from '@opencraft/appserver-client';
+import { periodicOwnerWork, timeoutOwnerWake, type OwnerWake, type PeriodicOwnerWork } from '@opencraft/owner-wake';
 import type { PushStorePort } from './async-store';
 import { DeliveryError, parseTarget, targetLabel, sendDestination, type NotificationMessage } from './destinations';
 import type { NotificationTarget } from './store';
@@ -17,6 +18,9 @@ export interface TurnPushOptions {
   read(hostId: string, method: string, params: Record<string,unknown>): Promise<unknown>;
   send?: (device: PushDevice, payload: string, keys: {publicKey:string;privateKey:string}) => Promise<unknown>;
   now?: () => number;
+  /** Owner wake-up for the outbox pass; the default Node timeout one. The pass reads engine history, which has no
+   * change notification, so it stays a fixed 5 s period. */
+  wake?: OwnerWake;
   /** Canonical external entry at send time; never changes authentication or PWA scope. */
   publicBaseUrl?: () => string | Promise<string>;
   imTargets?: (binding: PushBinding) => Promise<Array<{channelId:string;senderId:string;label:string;methodId?:string;methodLabel?:string}>>;
@@ -55,7 +59,7 @@ export class TurnPushService {
   keys!: {publicKey:string;privateKey:string};
   private readonly ready: Promise<void>;
   private readonly now: () => number;
-  private readonly timer: ReturnType<typeof setInterval>;
+  private readonly timer: PeriodicOwnerWork;
   private closed = false;
   private running: Promise<void> | null = null;
   private cursor = 0;
@@ -71,7 +75,7 @@ export class TurnPushService {
     const keys=store.keys(() => webpush.generateVAPIDKeys());
     if(keys instanceof Promise)this.ready=keys.then(value=>{this.keys=value;});
     else {this.keys=keys;this.ready=Promise.resolve();}
-    this.timer = setInterval(() => { void this.tick(); },5000); this.timer.unref();
+    this.timer = periodicOwnerWork(options.wake ?? timeoutOwnerWake(),5000,() => { void this.tick(); });
   }
   /** Called only after an authenticated human connection is admitted. Optional product
    * policy supplies the verified recipient; this never sends or blocks engine work. */
@@ -416,5 +420,5 @@ export class TurnPushService {
     }
     return this.configuration(binding);
   }
-  async close() {if(this.closed)return;this.closed=true;clearInterval(this.timer);for(const timer of this.defaultRetries.values())clearTimeout(timer);this.defaultRetries.clear();await this.running;await Promise.allSettled(this.defaultJobs.values());await this.store.close();}
+  async close() {if(this.closed)return;this.closed=true;this.timer.close();for(const timer of this.defaultRetries.values())clearTimeout(timer);this.defaultRetries.clear();await this.running;await Promise.allSettled(this.defaultJobs.values());await this.store.close();}
 }
