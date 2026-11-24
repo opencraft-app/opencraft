@@ -14,6 +14,7 @@ import { networkInterfaces, tmpdir } from 'node:os';
 import { request as httpRequest } from 'node:http';
 import { WebSocket, WebSocketServer } from 'ws';
 import { once } from 'node:events';
+import { connect } from 'node:net';
 import { Worker } from 'node:worker_threads';
 import { generateKeyPairSync } from 'node:crypto';
 import { publishEnvironmentIssuer } from '@opencraft/execution-environment/environment-launch-owner';
@@ -1093,4 +1094,42 @@ test('workspace-host services: a startup failure after they opened hands them to
   await core.close();
   const app = await startHeadlessServer(f.options); f.own(() => app.close());
   assert.equal((await fetch(app.url)).status, 200);
+});
+
+test('installation routes: the shared route table and admission gate keep their wire bytes on a real Headless server', { timeout: 60_000 }, async t => {
+  // Raw HTTP/1.1 bytes (Date removed): the installation route definitions and the
+  // admission refusals are shared with the InstallationCore front door, so the
+  // Node gateway must answer exactly as before they were shared.
+  const raw = async (url, path, headers = {}) => {
+    const { hostname, port } = new URL(url);
+    const socket = connect(Number(port), hostname);
+    await once(socket, 'connect');
+    socket.end(`GET ${path} HTTP/1.1\r\nHost: ${hostname}:${port}\r\n${Object.entries(headers).map(([k, v]) => `${k}: ${v}\r\n`).join('')}Connection: close\r\n\r\n`);
+    const chunks = [];
+    for await (const chunk of socket) chunks.push(chunk);
+    return Buffer.concat(chunks).toString('utf8').replace(/\r\nDate: [^\r]+/u, '');
+  };
+  const json = body => `cache-control: no-store\r\ncontent-type: application/json; charset=utf-8\r\nConnection: close\r\nContent-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`;
+  const f = await fixture(t);
+  let app = await startHeadlessServer(f.options); f.own(() => app?.close());
+  // Without Human login the login and account routes are owned but absent.
+  for (const path of ['/__opencraft_auth/', '/__opencraft_auth/session', '/setup', '/__opencraft_account/status'])
+    assert.equal(await raw(app.url, path), `HTTP/1.1 404 Not Found\r\n${json('{"error":"missing"}\n')}`, path);
+  const origin = app.url;
+  await app.close(); app = undefined;
+  const proofPath = join(f.root, 'setup-token'), configPath = join(f.root, 'human-auth.json');
+  await writeFile(proofPath, JSON.stringify({ token: randomBytes(32).toString('base64url') }), { mode: 0o600 });
+  await writeFile(configPath, JSON.stringify({ origin, local: true, oidc: [], setupTokenFile: proofPath }), { mode: 0o600 });
+  app = await startHeadlessServer({ ...f.options, port: Number(new URL(origin).port), humanAuthConfig: configPath });
+  const unauthenticated = '{"error":"authentication_required"}\n';
+  assert.equal(await raw(app.url, '/anything', { accept: 'application/json' }), `HTTP/1.1 401 Unauthorized\r\n${json(unauthenticated)}`);
+  assert.equal(await raw(app.url, '/anything'), `HTTP/1.1 401 Unauthorized\r\n${json(unauthenticated)}`);
+  const page = '<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>访问受限</title><style>:root{color-scheme:light dark}a{color:inherit}a:focus-visible{outline:2px solid currentColor;outline-offset:4px}</style><body style="font:16px system-ui;margin:12vh auto;padding:24px;max-width:480px"><h1>暂时无法访问</h1><p>请登录后继续。</p><a href="/__opencraft_auth/">登录与账号</a> · <a href="">重新检查</a></body></html>';
+  assert.equal(await raw(app.url, '/anything', { accept: 'text/html' }), 'HTTP/1.1 401 Unauthorized\r\ncache-control: private, no-store\r\ncontent-type: text/html; charset=utf-8\r\nx-content-type-options: nosniff\r\n'
+    + `content-security-policy: default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'\r\nConnection: close\r\nTransfer-Encoding: chunked\r\n\r\n${Buffer.byteLength(page).toString(16)}\r\n${page}\r\n0\r\n\r\n`);
+  assert.equal(await raw(app.url, '/anything', { authorization: 'Bearer oc_actor_fixture' }),
+    `HTTP/1.1 403 Forbidden\r\n${json('{"error":"actor_resource_interface_required"}\n')}`);
+  // Owned routes still reach their service after the route table moved.
+  assert.match(await raw(app.url, '/__opencraft_auth/session'), /^HTTP\/1\.1 200 OK\r\n/u);
+  assert.equal(await raw(app.url, '/__opencraft_access/session'), `HTTP/1.1 401 Unauthorized\r\n${json(unauthenticated)}`);
 });

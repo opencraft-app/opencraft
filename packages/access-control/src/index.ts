@@ -9,6 +9,7 @@ import type { IdentityProvider, IdentityRequest } from "@opencraft/identity-core
 import { HttpBodyTooLarge, decodeUtf8, jsonResponse, type HttpExchangeRequest, type HttpExchangeResponse } from '@opencraft/identity-core/http-exchange';
 import type { ActorStore } from './actors.js';
 import type { IdentityWrites } from './identity-writes.js';
+import { periodicOwnerWork, timeoutOwnerWake, type OwnerWake } from '@opencraft/owner-wake';
 
 
 export type MemberRole = "admin" | "member";
@@ -136,6 +137,12 @@ export class InstanceAccess {
   #writes: IdentityWrites | null = null;
   /** Membership administration writes go to the Server owner from now on. */
   useOwnerWrites(writes: IdentityWrites): void { this.#writes = writes; }
+  #wake: OwnerWake | null = null;
+  /**
+   * The owner wake-up that drives `watch` rechecks (gateway-split §4.2 "G5 定时器"). Defaults to the runtime's
+   * own timeouts (`timeoutOwnerWake`, the `setInterval` timing); a single-alarm owner passes its merged alarm.
+   */
+  useOwnerWake(wake: OwnerWake): void { this.#wake = wake; }
   readonly #cache = new WeakMap<object, Principal | null>();
   readonly #sources = new WeakMap<Principal, IdentityProvider>();
   private readonly authenticatedMemberProviders: ReadonlySet<string>;
@@ -230,12 +237,12 @@ export class InstanceAccess {
     return this.providers.map(p => p.trustedOrigin?.(request) ?? null).find(origin => origin !== null) ?? null;
   }
   watch(identity: Principal, revoke: () => void): () => void {
-    const timer = setInterval(() => {
+    const work = periodicOwnerWork(this.#wake ??= timeoutOwnerWake(), 500, () => {
       let allowed = false;
       try { allowed = this.role(identity) !== null; } catch { /* Storage read failure revokes access. */ }
       if (!allowed) revoke();
-    }, 500); timer.unref();
-    return () => clearInterval(timer);
+    });
+    return () => work.close();
   }
   /** Membership administration under `/__opencraft_access/`; null for any other path. */
   async handle(request: HttpExchangeRequest): Promise<HttpExchangeResponse | null> {

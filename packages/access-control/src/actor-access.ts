@@ -4,6 +4,7 @@ import type { IdentityRequest } from '@opencraft/identity-core/node';
 import type { ActorContext } from '@opencraft/identity-core/actors';
 import { ActorStore, isActorAuthorization } from './actors.js';
 import type { IdentityWrites } from './identity-writes.js';
+import { periodicOwnerWork, timeoutOwnerWake, type OwnerWake } from '@opencraft/owner-wake';
 
 export interface ActorAccessOptions {
   /** Only verified HUMAN providers belong here. Session proofs use their own credential path. */
@@ -20,6 +21,9 @@ export class ActorAccess {
   #writes: IdentityWrites | null = null;
   /** Actor administration writes go to the Server owner from now on. */
   useOwnerWrites(writes: IdentityWrites): void { this.#writes = writes; }
+  #wake: OwnerWake | null = null;
+  /** The owner wake-up that drives `watch` rechecks; defaults to the runtime's own timeouts (as `InstanceAccess`). */
+  useOwnerWake(wake: OwnerWake): void { this.#wake = wake; }
   constructor(readonly store: ActorStore, readonly options: ActorAccessOptions) {}
   authenticate(request: IdentityRequest): ActorContext | null {
     let entry = this.#requests.get(request);
@@ -70,13 +74,12 @@ export class ActorAccess {
   }
   watch(request: IdentityRequest, revoke: () => void): () => void {
     if (!this.authenticate(request)) return () => {};
-    const timer = setInterval(() => {
+    const work = periodicOwnerWork(this.#wake ??= timeoutOwnerWake(), 500, () => {
       let valid = false;
       try { valid = this.authenticate(request) !== null; } catch { /* Identity storage failure revokes the connection. */ }
       if (!valid) revoke();
-    }, 500);
-    timer.unref();
-    return () => clearInterval(timer);
+    });
+    return () => work.close();
   }
   /** Actor administration under `/__opencraft_actors/`; null for any other path. */
   async handle(exchange: HttpExchangeRequest): Promise<HttpExchangeResponse | null> {
