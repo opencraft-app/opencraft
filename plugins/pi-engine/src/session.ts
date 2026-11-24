@@ -7,7 +7,6 @@ import type { GitExecutionLocator } from "@opencraft/execution-environment/git-e
 import { createHash, randomUUID } from "node:crypto";
 import { PiPrivateCallsDoc, type PiPrivateCalls } from "./private-calls.js";
 import { join, resolve } from "node:path";
-import { lstat, rmdir } from "node:fs/promises";
 import { PiShellWorker, PiShellDoc, shellText, shellDescription } from "./shell.js";
 import { isDeepStrictEqual } from "node:util";
 import { PiQueueDoc, type PiQueueState, type PiQueuedInput } from "./queue.js";
@@ -20,7 +19,7 @@ import { AgentDoc, InboxDoc, LiveDoc, UsageDoc, createRegistry, defineDoc, defin
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
-import { acquireProcessWriter } from "@opencraft/sqlite-node";
+import { acquireOwnerLock } from "@opencraft/sqlite-node";
 import { decodeImage } from "./input.js";
 import { expiredPiSteers } from "./steering.js";
 
@@ -60,31 +59,9 @@ const nativeAdmissions = () => import(new URL("./harness/submissions.js", import
 const shellQueueModes = { steeringMode: "one-at-a-time", followUpMode: "all" } as const;
 const defaultPreamble = "You are a coding assistant. Complete the user task using the available tools. Preserve existing work.";
 
-// Earlier releases leased `<file>.lock` as a proper-lockfile directory that a live
-// holder refreshed every 5s and any contender reclaimed once its mtime was 10s old.
-const legacyLeaseExpiredMs = 60_000;
-/** Exactly one writer per session database for the owner's whole lifetime. The kernel
- * lock never expires while the owner process is alive, however long its event loop
- * stalls, and process death releases it; there is no refresh timer to be compromised.
- * The legacy lease pathname becomes a regular file, so older mkdir lockers can neither
- * acquire nor remove it. A legacy lease directory is converted only once it is far
- * older than any refresh its live holder would make. */
-async function acquireSessionWriter(file: string, retries: number): Promise<() => void> {
-  const path = `${resolve(file)}.lock`;
-  for (let attempt = 0; ; attempt++) {
-    try { return acquireProcessWriter(path); }
-    catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ELOCKED") throw error;
-      const legacy = await lstat(path).catch(() => undefined);
-      // rmdir never removes a regular-file lock; a legacy locker that recreates the
-      // directory first keeps it, and the next attempt refuses again.
-      if (legacy?.isDirectory() && legacy.mtimeMs < Date.now() - legacyLeaseExpiredMs
-        && await rmdir(path).then(() => true, () => false)) continue;
-      if (attempt >= retries) throw error;
-    }
-    await new Promise(resolve => setTimeout(resolve, 1000));
-  }
-}
+/** Exactly one writer per session database for the owner's whole lifetime, at the
+ * pathname earlier releases leased with proper-lockfile (see `acquireOwnerLock`). */
+const acquireSessionWriter = (file: string, retries: number) => acquireOwnerLock(`${resolve(file)}.lock`, { retries });
 
 /** One native durable owner. It publishes committed snapshots, never a second execution ledger. */
 export class PiDurableSession {

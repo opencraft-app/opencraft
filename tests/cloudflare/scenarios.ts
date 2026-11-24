@@ -9,6 +9,7 @@ import { WORKSPACE_HOST_SCENARIOS } from "../storage/workerd/workspace-host.scen
 import { DEPLOYMENT_STORE_SCENARIOS } from "../storage/workerd/deployment-stores.scenarios.ts";
 import { INSTALLATION_STORE_SCENARIOS } from "../storage/workerd/installation-stores.scenarios.ts";
 import { WORKSPACE_STORE_SCENARIOS } from "../storage/workerd/workspace-stores.scenarios.ts";
+import { EXTENSION_STORE_SCENARIOS } from "../storage/workerd/extension-stores.scenarios.ts";
 import { LOGIN_ENTRY_SCENARIOS } from "../identity/workerd/login-entry.scenarios.ts";
 import { HTTP_EXCHANGE_SCENARIOS } from "../server/workerd/http-exchange.scenarios.ts";
 import { CLIENT_DO_SCENARIOS } from "../protocol/workerd/client-do.scenarios.ts";
@@ -51,6 +52,11 @@ export const SCENARIO_GROUPS: readonly ScenarioGroup[] = [
     id: "workspace-stores",
     label: "WorkspaceHost stores (thread directory, employee Git vault on DO SQL)",
     scenarios: WORKSPACE_STORE_SCENARIOS,
+  },
+  {
+    id: "extension-stores",
+    label: "Plugin and extension stores (login admission, thread participants, tasks, documents on DO SQL)",
+    scenarios: EXTENSION_STORE_SCENARIOS,
   },
   { id: "login-entry", label: "Login entry (Argon2id, HumanAuth on DO SQL)", scenarios: LOGIN_ENTRY_SCENARIOS },
   {

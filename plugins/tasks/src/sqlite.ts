@@ -1,8 +1,9 @@
-import { DatabaseSync } from "node:sqlite";
-import { randomUUID } from "node:crypto";
-import { tasksV1Migration, tasksV1Schema } from "./v1-schema";
-import { tasksArchiveMigration, tasksArchiveSchema } from "./archive-schema";
-import { openManagedDatabase, createSchemaValidator, type DatabaseOutcome } from "@opencraft/sqlite-node";
+// Runtime-neutral task store over the SQL port: no node:* imports, so the same
+// rows, events and members run on a Node owner (`node-store.ts`) and on
+// Durable Object SQL. Opening, migrating and closing belong to the owner.
+import type { SqlDatabase } from "@opencraft/sql";
+import { tasksV1Migration } from "./v1-schema";
+import { tasksArchiveMigration } from "./archive-schema";
 import type {
   TaskDetail,
   TasksSnapshot,
@@ -52,22 +53,19 @@ ALTER TABLE task_members ADD COLUMN identity_id TEXT CHECK(
 );
 `;
 export const tasksMigrations = [{ version: 1, name: "tasks-rows", sql: schema }, { version: 2, name: "task-properties-and-members", sql: propertiesSchema }, { version: 3, name: "member-profile-identity", sql: memberIdentitySchema }];
+/** The published chain of `tasks.sqlite`, in ledger order. */
+export const TASKS_MIGRATIONS = [...tasksMigrations, tasksV1Migration, tasksArchiveMigration];
 const select = `SELECT id,title,description,status,project_server_id AS projectServerId,project_id AS projectId,
  kind,acceptance_criteria AS acceptanceCriteria,assignee_id AS assigneeId,priority,due_date AS dueDate,sort_order AS sortOrder,revision,created_at AS createdAt,updated_at AS updatedAt,deleted_at AS deletedAt,archived_at AS archivedAt FROM tasks`;
 type Params<M extends keyof TasksMethodMap> = TasksMethodMap[M]["params"];
 
-export class TasksSqliteStore {
-  private readonly db: DatabaseSync;
-  readonly outcome: DatabaseOutcome;
-  constructor(path: string, private readonly now: () => number = Date.now) {
-    const managed = openManagedDatabase({ schemaId: "tasks", path, legacyPolicy: "reject", validateSchema: createSchemaValidator(schema + propertiesSchema + memberIdentitySchema + tasksV1Schema + tasksArchiveSchema), migrations: [...tasksMigrations, tasksV1Migration, tasksArchiveMigration] });
-    this.db = managed.database;
-    this.outcome = managed.outcome;
-    this.db.exec("PRAGMA foreign_keys=ON");
-  }
-  close(): void {
-    this.db.close();
-  }
+/**
+ * Tasks, their conversations, events and the team directory on an owner's
+ * migrated database. The connection must enforce foreign keys (the
+ * node:sqlite default, and always on Durable Object SQL).
+ */
+export class SqlTasksStore {
+  constructor(private readonly db: SqlDatabase, private readonly now: () => number = Date.now) {}
   list(): TasksSnapshot {
     return this.transaction(() => this.snapshot());
   }
@@ -397,7 +395,7 @@ export class TasksSqliteStore {
   private decodeEvent(row: Record<string, unknown>): TaskEvent {
     return { seq: Number(row.seq), eventId: String(row.event_id), taskId: String(row.task_id), type: row.type as TaskEventType, taskRevision: Number(row.task_revision), actor: row.actor === null ? null : JSON.parse(String(row.actor)), channel: row.channel as TaskEvent["channel"], payload: JSON.parse(String(row.payload)), createdAt: Number(row.created_at) };
   }
-  private appendEvent(taskId: string, type: TaskEventType, payload: Readonly<Record<string, unknown>>, context: TaskEventContext, eventId: string = randomUUID()): TaskEvent {
+  private appendEvent(taskId: string, type: TaskEventType, payload: Readonly<Record<string, unknown>>, context: TaskEventContext, eventId: string = crypto.randomUUID()): TaskEvent {
     const row = this.db.prepare("SELECT revision FROM tasks WHERE id=?").get(taskId)!;
     this.db.prepare("INSERT INTO task_events(event_id,task_id,type,task_revision,actor,channel,payload,created_at) VALUES(?,?,?,?,?,?,?,?)")
       .run(eventId, taskId, type, Number(row.revision), context.actor === null ? null : JSON.stringify(context.actor), context.channel, JSON.stringify(payload), this.now());
@@ -434,14 +432,6 @@ export class TasksSqliteStore {
   }
 
   private transaction<T>(operation: () => T): T {
-    this.db.exec("BEGIN IMMEDIATE");
-    try {
-      const result = operation();
-      this.db.exec("COMMIT");
-      return result;
-    } catch (error) {
-      if (this.db.isTransaction) this.db.exec("ROLLBACK");
-      throw error;
-    }
+    return this.db.transaction(operation);
   }
 }

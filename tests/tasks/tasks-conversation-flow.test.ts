@@ -12,7 +12,7 @@ function setup() {
  const task={id:'task',title:'Work',description:'',status:'todo',projectServerId:null,projectId:null};
  return {values,storage,task};
 }
-import {TasksSqliteStore} from '../../plugins/tasks/src/sqlite';
+import {TasksSqliteStore} from '../../plugins/tasks/src/node-store';
 
 test('confirmed thread receipt reconciles conflicts and lost acknowledgements without any execution replay',async()=>{
  const {storage,values,task}=setup();

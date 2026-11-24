@@ -4,7 +4,7 @@ import {mkdtemp,mkdir,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {TasksService} from "../../../plugins/tasks/src/server";
-import {TasksSqliteStore} from "../../../plugins/tasks/src/sqlite";
+import {TasksSqliteStore} from "../../../plugins/tasks/src/node-store";
 import {AI_FOLLOW_UP_PREFIX} from "../../../plugins/tasks/src/ai-follow-up-model";
 import {RESEARCH_HANDOFF_PREFIX} from "../../../plugins/tasks/src/research-handoff";
 import {TASKS} from '@opencraft/appserver-protocol';
