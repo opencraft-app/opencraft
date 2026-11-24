@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import { retireManagedDatabase, retiredInto, SqliteLifecycleError } from "../../packages/sqlite-node/src/index.ts";
-import { SqliteDocumentStore } from "../../packages/document-storage/src/sqlite.ts";
+import { SqliteDocumentStore } from "../../packages/document-storage/src/node-store.ts";
 import { SqliteClientResources } from "../../packages/document-storage/src/client-resources-sqlite.ts";
 import type { ClientResourceKey } from "../../packages/document-storage/src/client-resources.ts";
 import { DesktopUiPreferenceStore } from "../../apps/desktop/src/ui-preferences-store.ts";

@@ -8,7 +8,7 @@ import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { DatabaseSync } from "node:sqlite";
 import { openManagedDatabase } from "@opencraft/sqlite-node";
-import { TasksSqliteStore, tasksMigrations } from "../../plugins/tasks/src/sqlite";
+import { TasksSqliteStore, tasksMigrations } from "../../plugins/tasks/src/node-store";
 import { TasksService } from "../../plugins/tasks/src/server";
 import { startTasksAgent } from "../../plugins/tasks/src/agent";
 import { TASKS, type TaskDetail } from "@opencraft/appserver-protocol";
