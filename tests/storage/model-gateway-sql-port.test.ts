@@ -33,8 +33,16 @@ const sha256 = (text: string) => createHash("sha256").update(text).digest("hex")
 
 /** The published chain as the generated registry holds it; the Node owner's ledger must equal it. */
 const PUBLISHED = [
-  { version: 1, name: "model-gateway", checksum: "880dea7637d5efc08d7c77f32804556003d3ddd81af4adf0b81e22737856744b" },
-  { version: 2, name: "personal-keys", checksum: "6228bea02d9e70bb43f03b8baacc057709fbd21366dbe0be49baf6f8a871674b" },
+  {
+    version: 1,
+    name: "model-gateway",
+    checksum: "880dea7637d5efc08d7c77f32804556003d3ddd81af4adf0b81e22737856744b",
+  },
+  {
+    version: 2,
+    name: "personal-keys",
+    checksum: "6228bea02d9e70bb43f03b8baacc057709fbd21366dbe0be49baf6f8a871674b",
+  },
   {
     version: 3,
     name: "execution-authority",
