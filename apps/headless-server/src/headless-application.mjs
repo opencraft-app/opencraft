@@ -37,6 +37,7 @@ import { ownerEntry } from '@opencraft/worker-owner';
 import { ModelPolicyTransport } from '@opencraft/model-usage-policy/transport';
 import { assembleAccount } from './assembly/account.mjs';
 import { assembleNodeLocal } from './assembly/node-local.mjs';
+import { assembleInstallation } from './assembly/installation.mjs';
 import { createHeadlessLifecycle, createLateBinding } from './assembly/lifecycle.mjs';
 import { ExecutionEnvironmentTransport } from './execution-environment-transport.ts';
 import { EnvironmentMetadataTransport } from './environment-metadata-transport.ts';
@@ -106,10 +107,7 @@ import { maintainHeadlessCodexHost } from "./headless-host-readiness.mjs";
 import { readTaskCodexConversations } from "./tasks-conversation-catalog.mjs";
 import { assertHeadlessWebRelease } from "./headless-web-release.mjs";
 import { ModelConfigurationRepository, ModelCredentialRepository } from "@opencraft/local-agent-host/model-config/repository";
-import { MembershipStore, InstanceAccess } from '@opencraft/access-control';
-import { ActorStore } from '@opencraft/access-control/actors';
 import { ThreadAccessStore, ThreadAccessSession } from '@opencraft/access-control/thread-access';
-import { ActorAccess } from '@opencraft/access-control/actor-access';
 import { Collaboration, CollaborationError, CollaborationHttpApi } from '@opencraft/access-control/collaboration';
 import { OrchestrationRuntimeWorker } from '@opencraft/access-control/orchestration-runtime-store';
 import { communicationExtensionModule } from '@opencraft/access-control/communication-extension';
@@ -122,18 +120,12 @@ import { NativeExecutionAuthority } from './native-execution-authority.ts';
 import { readImConfiguration, startImPlugins, createChannelSyncDependencies, channelSyncContext } from './im-plugins.mjs';
 import { ImChannelsAppServer } from './im-channels-appserver.mjs';
 import { CHANNELS_HOST_ID } from '@opencraft/appserver-protocol/channels';
-import { HumanAccounts } from '@opencraft/access-control/human-accounts';
-import { LocalAccountServerPlugin } from '@opencraft/plugin-local-account/server';
 import { createNodePasswordHasher } from '@opencraft/plugin-local-account/password-hash-node';
-import { LocalAccountApplication } from '@opencraft/plugin-local-account/application';
 import { readPrivateJson } from '@opencraft/identity-core/node';
-import { HumanAccountManagement } from '@opencraft/access-control/account-management';
-import { HumanAuth, readHumanAuthConfiguration } from '@opencraft/access-control/human-auth';
-import { IdentityWrites } from '@opencraft/access-control/identity-writes';
+import { readHumanAuthConfiguration } from '@opencraft/access-control/human-auth';
 import { createCommitFenceBuffer } from '@opencraft/access-control/commit-fence';
-import { humanLoginPage } from './human-login-page.ts';
 import { loadRelayConnection } from '@opencraft/plugin-relay-connect/server';
-import { validateHeadlessIdentity, validateLoginAdmission, environmentLaunchOwner, environmentDeliveryOptions } from "./headless-identity.mjs";
+import { validateLoginAdmission, environmentLaunchOwner, environmentDeliveryOptions } from "./headless-identity.mjs";
 import { openLoginAdmissionPolicy } from '@opencraft/plugin-login-admission/server';
 import { startHeadlessRuntimePlugins, validateRuntimePluginOptions } from "./runtime-plugins.mjs";
 import { installHeadlessExtensions, loadHeadlessExtensions, validateHeadlessExtensions } from "./headless-extensions.mjs";
@@ -401,14 +393,10 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let web;
   let personalSshKeys;
   let fileDownloads;
-  let identity;
   let agentIdentity;
   let executionDatabase, executionRecovery;
   let mcpApps;
-  let instanceAccess;
-  let loginAdmission;
   let account;
-  let membership;
   let assetsService;
   let assetsStorage;
   let installedBotProvider, botAdmission;
@@ -426,7 +414,6 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let gitExecutionOwner;
   // Codex creation and Turn ENV delivery to the split Codex Core.
   let codexEnvironmentLaunch;
-  let actorStore;
   const terminalServices = new Map();
   const fileSystem = options.fileSystemOwner ? createHostFileSystem(options.fileSystemOwner) : null;
   let actorCollaboration;
@@ -434,22 +421,15 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let threadOrchestration;
   let projectAutomations;
   let actorCollaborationApi;
-  let actorAccess;
   let serverSpaces;
   let threadAccess;
   let threadNotes;
-  let identityWrites;
-  let humanAccounts;
-  let localAccountPlugin;
   let connectorService;
   const capabilities = new SessionCapabilities();
   let capabilityMcp;
   let capabilityBindings;
   let capabilitiesReadyResolve;
   const capabilitiesReady = new Promise(resolve => { capabilitiesReadyResolve = resolve; });
-  let humanAuth;
-  let accountManagement;
-  let accountApplication;
   let hubController;
   let codexReadiness;
   let usageQueries;
@@ -481,6 +461,10 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   const nodeLocal = assembleNodeLocal({ dataDirectory });
   // Deployment-level periodic owner work runs on the owner wake-up port (gateway-split.md §4.2).
   const ownerWake = options.ownerWake ?? timeoutOwnerWake();
+  // Identity and admission over the core SQL owner opened above; creating it
+  // opens nothing, each step and disposer keeps its original position.
+  const installation = assembleInstallation({ serverStorage, identityFence,
+    isHuman: principal => composition.isHuman?.(principal) });
   // The lifecycle publishes the shared promise before invoking any disposer
   // (including a synchronous failure or reentrant close). Retire listeners before stores.
   const close = (update = null) => lifecycle.shutdown(async () => {
@@ -522,10 +506,10 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     // Each writer finishes before the root kernel lock is released. A failed
     // disposer is reported, but must not skip the remaining flushes.
     for (const dispose of [() => executionDatabase?.close(),
-      () => account?.close(), () => mcpApps?.close(), nodeLocal.closeSshManagement, () => identity?.executionEnvironment?.close(), () => identity?.close?.(), () => loginAdmission?.close(),
+      () => account?.close(), () => mcpApps?.close(), nodeLocal.closeSshManagement, installation.closeIdentityExecutionEnvironment, installation.closeIdentity, installation.closeLoginAdmission,
 
-      () => ownedWorkspaceRouting?.close(), () => installedBotProvider?.close(), () => botAdmission?.close(), () => humanGitExecution?.close(), () => assetsService?.close(), () => assetsStorage?.close(), () => composition.close?.(), () => accountApplication?.close(), () => accountManagement?.close(), () => humanAuth?.close(), () => humanAccounts?.close(),
-      () => identityWrites?.close(), () => capabilityBindings?.close(), () => actorStore?.close(), () => membership?.close()]) {
+      () => ownedWorkspaceRouting?.close(), () => installedBotProvider?.close(), () => botAdmission?.close(), () => humanGitExecution?.close(), () => assetsService?.close(), () => assetsStorage?.close(), () => composition.close?.(), installation.closeAccountApplication, installation.closeAccountManagement, installation.closeHumanAuth, installation.closeHumanAccounts,
+      installation.closeIdentityWrites, () => capabilityBindings?.close(), installation.closeActorStore, installation.closeMembership]) {
       await settle([dispose]);
     }
     const failures = results.filter((result) => result.status === "rejected").map((result) => result.reason);
@@ -541,35 +525,17 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     const humanConfiguration = options.humanAuthConfig ? await readHumanAuthConfiguration(options.humanAuthConfig) : null;
     const imConfiguration = await readImConfiguration(options.imConfigFile);
     hubController = await createHubController(join(dataDirectory, 'hub-network-controller.json'), join(dataDirectory, 'hub-network.json'));
-    if (options.accessControl || humanConfiguration?.setupTokenFile || options.accessMemberProviders?.length || relayConfiguration || hubController.node?.store.state.origin)
-      membership = new MembershipStore(serverStorage);
+    const membership = installation.openMembership({ hub: hubController, accessControl: options.accessControl,
+      accessMemberProviders: options.accessMemberProviders, humanConfiguration, relayConfiguration });
     const machineIdentity = await readDaemonMachineIdentity(dataDirectory, options.machineName);
     account = assembleAccount({ dataDirectory, codexCoreEndpoint: options.codexCoreEndpoint, codexCoreAuthToken: options.codexCoreAuthToken });
     const { modelPolicyPath } = account;
-    // Identity adapters can bind their own credentials to this stable Human authority.
-    actorStore = new ActorStore(serverStorage);
-    // ENV delivery is a deployment setting independent of the vault owner:
-    // whichever owner serves it publishes its issuer for the supervisor of
-    // independent engine hosts, so this is refused before any owner starts.
-    const environmentDelivered = environmentLaunchOwner(options.environmentDelivery, undefined) !== null;
-    if (options.environmentIssuer !== undefined && !environmentDelivered) throw new Error('The ENV issuer requires environment delivery');
-    if (environmentDelivered && options.engineHostDescriptor && !options.environmentIssuer?.publish)
-      throw new Error('Environment delivery to an independent engine host requires a published issuer');
-    if (composition.createIdentity) {
-      // With delivery, an identity composition that owns its vault receives the
-      // same publication path and rotation generation core's Worker would.
-      identity = await composition.createIdentity({ dataDirectory, membership, relayConfiguration, workspaceExecution,
-        hubAuthority: hubController.node?.store.state.authority ?? null,
-        resolveIdentity: request => instanceAccess?.authenticate(request) ?? null,
-        getInstanceAccess: () => instanceAccess, machineIdentity, actors: actorStore, sshIngressEnabled: !!ingressConfiguration,
-        ...(environmentDelivered ? { environmentIssuer: Object.freeze({ ...options.environmentIssuer }) } : {}) });
-      validateHeadlessIdentity(identity);
-      if (identity?.codexWorkspaceRouting !== undefined) {
-        validateCodexWorkspaceHooks(identity.codexWorkspaceRouting);
-        workspaceLifecycleRouting(undefined, identity.codexWorkspaceRouting);
-      }
-      for (const provider of identity?.capabilityProviders ?? []) capabilities.register(provider);
-    }
+    const { actorStore, identity, environmentDelivered } = await installation.openIdentity({
+      // The Node data directory reaches only the identity composition, first as before.
+      createIdentity: composition.createIdentity && (input => composition.createIdentity({ dataDirectory, ...input })),
+      hub: hubController, machineIdentity, relayConfiguration, workspaceExecution, sshIngressEnabled: !!ingressConfiguration,
+      environmentDelivery: options.environmentDelivery, environmentIssuer: options.environmentIssuer,
+      engineHostDescriptor: options.engineHostDescriptor, capabilities });
     // One installation has one ENV owner; configuring two fails here. An
     // identity composition's `environmentLaunch` is the owner; otherwise, with
     // delivery, core's assets vault Worker is. Never both, never a fallback.
@@ -592,48 +558,12 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       throw new Error('Managed workspace configuration requires its matching identity-owned routing');
     if (!workspaceExecution && identity?.codexWorkspaceRouting !== undefined)
       throw new Error('Identity workspace routing requires matched Core configuration');
-    if (options.accessMemberProviders?.length && !identity?.providers.length && !relayConfiguration && !humanConfiguration && !hubController.node?.store.state.authority)
-      throw new Error('Authenticated membership requires an identity provider');
-    // This identity authority is persistent even without an external human identity provider.
-    // Creating it does not enable instance admission or change legacy resource ownership.
-    const externalProviders = [
-      ...(identity?.providers ?? []), ...(relayConfiguration ? [relayConfiguration.provider] : []),
-      ...(hubController.node ? [hubController.node] : []),
-    ];
-    const externalHuman = request => {
-      const identities = externalProviders.map(provider => provider.authenticate(request)).filter(Boolean);
-      const principal = identities.length === 1 ? identities[0] : null;
-      return principal && (composition.isHuman?.(principal) ?? true) ? principal : null;
-    };
-    if (humanConfiguration) {
-      humanAccounts = new HumanAccounts(serverStorage, actorStore);
-      if (humanConfiguration.local) {
-        const localAccounts = new LocalAccountServerPlugin(humanAccounts.localAccountRepository, createNodePasswordHasher());
-        humanAccounts.registerLocalAccounts(localAccounts);
-        localAccountPlugin = localAccounts;
-      } else humanAccounts.disableLocalAccounts();
-      humanAuth = new HumanAuth(humanAccounts, actorStore, humanConfiguration, humanLoginPage, externalHuman);
-      if (humanConfiguration.local && membership) {
-        let setupToken;
-        if (humanConfiguration.setupTokenFile) {
-          const input = await readPrivateJson(humanConfiguration.setupTokenFile);
-          if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length !== 1
-            || typeof input.token !== 'string' || !/^[A-Za-z0-9_-]{43}$/u.test(input.token)) throw new Error('Invalid private setup token file');
-          setupToken = input.token;
-        }
-        accountManagement = new HumanAccountManagement(serverStorage, humanAccounts, actorStore, membership);
-        accountApplication = new LocalAccountApplication({ auth: humanAuth, management: accountManagement, setupToken });
-      }
-    }
-    const providers = [...(humanAuth ? [humanAuth] : []), ...externalProviders];
-    // The optional core login admission policy (composition `loginAdmission`); an
-    // identity composition that supplies its own policy cannot also enable it.
-    if (loginAdmissionScope) {
-      if (identity?.admissionPolicy) throw new Error('Login admission cannot have two owners');
-      if (!membership) throw new Error('Login admission requires instance access');
-      loginAdmission = await openLoginAdmissionPolicy({ ...loginAdmissionScope, path: join(dataDirectory, 'login-admission.sqlite') });
-    }
-    if (membership) instanceAccess = new InstanceAccess(membership, providers, actorStore, options.accessMemberProviders ?? [], identity?.admissionPolicy ?? loginAdmission);
+    const { humanAccounts, humanAuth, accountApplication, loginAdmission, instanceAccess } = await installation.openAdmission({
+      hub: hubController, relayConfiguration, humanConfiguration, accessMemberProviders: options.accessMemberProviders,
+      createPasswordHasher: createNodePasswordHasher,
+      readSetupToken: humanConfiguration?.setupTokenFile ? () => readPrivateJson(humanConfiguration.setupTokenFile) : undefined,
+      openLoginAdmission: loginAdmissionScope
+        ? () => openLoginAdmissionPolicy({ ...loginAdmissionScope, path: join(dataDirectory, 'login-admission.sqlite') }) : undefined });
     // An identity product that owns configurations keeps its route and legacy partitions.
     // Never start a second resource writer alongside that composition.
     if (!identity?.assistantEnvironmentConfigurationManaged) {
@@ -726,35 +656,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     // run human Turns without its personal ENV or Git.
     if (environmentLaunch && options.codexCoreEndpoint && (!codexEnvironmentLaunch || !gitExecutionOwner))
       throw new Error('Codex environment delivery requires launch, creation admission and a personal Git owner');
-    const authenticateHuman = request => {
-      if (instanceAccess) return instanceAccess.authenticate(request);
-      const identities = providers.map(provider => provider.authenticate(request)).filter(Boolean);
-      if (identities.length === 1) return identities[0];
-      const ids = identities.map(p => actorStore.findHuman(p)?.id);
-      return ids[0] && ids.every(id => id === ids[0]) ? identities[0] : null;
-    };
-    actorAccess = new ActorAccess(actorStore, {
-      authenticateHuman: request => {
-        const principal = authenticateHuman(request);
-        return principal && (['local', 'oidc'].includes(principal.provider)
-          || (composition.isHuman?.(principal) ?? true)) ? principal : null;
-      },
-      isHumanCurrent: principal => ['local', 'oidc'].includes(principal.provider) ? humanAuth?.isCurrent(principal) === true : true,
-      rejectHumanRequest: request => humanAuth?.invalidSession(request)
-        || (humanAuth?.hasSessionCookie(request) && request.headers.authorization !== undefined),
-      admitted: principal => !instanceAccess || instanceAccess.role(principal) !== null,
-      administrator: principal => instanceAccess?.role(principal) === 'admin',
-      trustedOrigin: request => instanceAccess?.trustedOrigin(request) ?? humanAuth?.trustedOrigin(request) ?? null,
-    });
-    // Login sessions, identity bindings and Actor administration commit in the
-    // Server owner Worker; reads stay on this thread's permission projection.
-    identityWrites = new IdentityWrites(serverStorage.call, actorStore, humanAccounts, identityFence, membership);
-    actorAccess.useOwnerWrites(identityWrites);
-    // Login-time password record upgrades commit in the owner Worker too.
-    localAccountPlugin?.useOwnerWrites(identityWrites);
-    humanAuth?.useOwnerWrites(identityWrites);
-    instanceAccess?.useOwnerWrites(identityWrites);
-    accountManagement?.useOwnerWrites(identityWrites);
+    const actorAccess = installation.openActorAccess();
     const engines = options.engines ?? ["dsh"];
     if (engines.some(engine => !['dsh','pi'].includes(engine)) && !options.engineHostDescriptor)
       throw new Error('ACP and Claude execution require an independent Engine Host descriptor');

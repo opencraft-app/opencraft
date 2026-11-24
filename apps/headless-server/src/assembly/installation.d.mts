@@ -1,0 +1,135 @@
+import type { InstanceAccess, InstanceAdmissionPolicy, MembershipStore } from "@opencraft/access-control";
+import type { ActorStore } from "@opencraft/access-control/actors";
+import type { ActorAccess } from "@opencraft/access-control/actor-access";
+import type { HumanAccounts } from "@opencraft/access-control/human-accounts";
+import type { HumanAuth, HumanAuthConfiguration } from "@opencraft/access-control/human-auth";
+import type { IdentityWrites } from "@opencraft/access-control/identity-writes";
+import type { Principal } from "@opencraft/identity-core";
+import type { IdentityProvider, IdentityRequest } from "@opencraft/identity-core/node";
+import type { PasswordHasher } from "@opencraft/plugin-local-account/password-hash";
+import type { LocalAccountApplication } from "@opencraft/plugin-local-account/application";
+
+/**
+ * The Server core SQL owner: the source the identity stores open their
+ * projection on, and the owner calls identity writes commit through.
+ */
+export type InstallationSqlOwner = ConstructorParameters<typeof ActorStore>[0] & {
+  readonly call: ConstructorParameters<typeof IdentityWrites>[0];
+};
+
+/** The Hub node state identity and admission read; the composition root constructs the controller. */
+export interface InstallationHub {
+  readonly node?:
+    (IdentityProvider & { readonly store: { readonly state: { origin?: unknown; authority?: unknown } } }) | null;
+}
+
+/** A configured outbound relay; its provider verifies relayed people. */
+export interface InstallationRelay {
+  readonly provider: IdentityProvider;
+}
+
+/**
+ * The identity composition's result as the installation reads it; the
+ * composition root and the other modules read further members.
+ */
+export interface InstallationIdentity {
+  readonly providers: readonly IdentityProvider[];
+  readonly admissionPolicy?: InstanceAdmissionPolicy;
+  readonly capabilityProviders?: readonly unknown[];
+  readonly codexWorkspaceRouting?: unknown;
+  readonly executionEnvironment?: { close(): unknown } | null;
+  close?(): unknown;
+  readonly [member: string]: unknown;
+}
+
+/** What the identity composition receives; the root adds its runtime-specific inputs. */
+export interface InstallationIdentityInputs {
+  membership: MembershipStore | undefined;
+  relayConfiguration: InstallationRelay | null;
+  workspaceExecution: unknown;
+  hubAuthority: unknown;
+  resolveIdentity(request: IdentityRequest): Principal | null;
+  getInstanceAccess(): InstanceAccess | undefined;
+  machineIdentity: { machineId: string };
+  actors: ActorStore;
+  sshIngressEnabled: boolean;
+  environmentIssuer?: Readonly<Record<string, unknown>>;
+}
+
+export interface InstallationAdmission {
+  humanAccounts: HumanAccounts | undefined;
+  humanAuth: HumanAuth | undefined;
+  /** Local account setup and administration; present with local accounts and membership. */
+  accountApplication: LocalAccountApplication | undefined;
+  /** The core login admission policy; present only when the composition enables it. */
+  loginAdmission: (InstanceAdmissionPolicy & { close(): unknown; outcome: unknown }) | undefined;
+  /** Instance admission; present with membership. */
+  instanceAccess: InstanceAccess | undefined;
+}
+
+export interface InstallationAssembly {
+  /** Opens instance membership when any admission source is configured; otherwise `undefined`. */
+  openMembership(options: {
+    hub: InstallationHub;
+    accessControl: boolean | undefined;
+    accessMemberProviders: readonly string[] | undefined;
+    humanConfiguration: HumanAuthConfiguration | null;
+    relayConfiguration: InstallationRelay | null;
+  }): MembershipStore | undefined;
+  /**
+   * Opens Actors, refuses invalid ENV delivery options, then creates and
+   * validates the identity composition and registers its capability providers.
+   */
+  openIdentity(options: {
+    createIdentity:
+      ((input: InstallationIdentityInputs) => Promise<InstallationIdentity | null | undefined>) | undefined;
+    hub: InstallationHub;
+    machineIdentity: { machineId: string };
+    relayConfiguration: InstallationRelay | null;
+    workspaceExecution: unknown;
+    sshIngressEnabled: boolean;
+    environmentDelivery: string | undefined;
+    environmentIssuer: Readonly<Record<string, unknown>> | undefined;
+    engineHostDescriptor: string | undefined;
+    capabilities: { register(provider: unknown): unknown };
+  }): Promise<{ actorStore: ActorStore; identity: InstallationIdentity | undefined; environmentDelivered: boolean }>;
+  /**
+   * Opens Human login (with local accounts when configured), the core login
+   * admission policy and instance access. Runtime-specific parts arrive as
+   * factories called at their original moment.
+   */
+  openAdmission(options: {
+    hub: InstallationHub;
+    relayConfiguration: InstallationRelay | null;
+    humanConfiguration: HumanAuthConfiguration | null;
+    accessMemberProviders: readonly string[] | undefined;
+    createPasswordHasher(): PasswordHasher;
+    /** Reads the private setup token document; absent when none is configured. */
+    readSetupToken: (() => Promise<unknown>) | undefined;
+    /** Opens the core login admission policy; absent unless the composition enables it. */
+    openLoginAdmission: (() => Promise<NonNullable<InstallationAdmission["loginAdmission"]>>) | undefined;
+  }): Promise<InstallationAdmission>;
+  /** Actor access over the admitted Human authority; identity owners commit through the identity writes. */
+  openActorAccess(): ActorAccess;
+  /** Shutdown step 11, serial, after the SSH management store and before the workspace routing and Assets owners. */
+  closeIdentityExecutionEnvironment(): unknown;
+  closeIdentity(): unknown;
+  closeLoginAdmission(): unknown;
+  /** Shutdown step 11, serial, after the composition's own disposer. */
+  closeAccountApplication(): unknown;
+  closeAccountManagement(): unknown;
+  closeHumanAuth(): unknown;
+  closeHumanAccounts(): unknown;
+  closeIdentityWrites(): unknown;
+  /** Shutdown step 11, serial, after the capability bindings: the last writers before the root lock. */
+  closeActorStore(): unknown;
+  closeMembership(): unknown;
+}
+
+export function assembleInstallation(options: {
+  serverStorage: InstallationSqlOwner;
+  /** The commit fence the core SQL owner was opened with. */
+  identityFence: SharedArrayBuffer;
+  /** The composition's qualification of a verified external principal; `undefined` means a person. */
+  isHuman(principal: Principal): boolean | undefined;
+}): InstallationAssembly;
