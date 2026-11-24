@@ -37,20 +37,21 @@
 | #585 | `account-core-2` | AccountCore 第二部分：账号池、租约兑换、出口 |
 | #586 | `relay-workers` | Relay 只打包会启动的 owner Worker；web-server runtime 同级检查 |
 
-### 进行中的子任务（收尾后开 PR，见第 5 节更新）
+| #587 | `account-core-3` | AccountCore 第三部分：模型网关进 AC、个人订阅端口（`secrets` 失败已修：checksum 与 "personal-keys" 同行被 gitleaks 误报，已拆行） |
+| #589 | `workspace-host-do` | WorkspaceHost DO＋**迁移族收敛**（`@opencraft/sql/families` 唯一原语；Server 扩展族委托且不变；AC 切到 `schema_family_migrations`；删除 `schema-ledgers`） |
+
+### 进行中的子任务
 | 分支 | 内容 |
 |---|---|
-| `client-session-edge` | G1 最后两个模块；完成后 G1 结束 |
-| `workspace-host-do` | WorkspaceHost DO＋**迁移族收敛**（见第 4 节第 1 条） |
-| `account-core-3` | AccountCore 模型网关 |
+| `client-session-edge` | G1 最后两个模块；完成后 G1 结束。若报告未交回，检查分支是否已推送，按 gateway-split §4.1.1"G1 剩余"审查后开 PR |
 
 ## 4. 已知问题与必须跟进
 
-1. **三套"同库多迁移链"机制需收敛为一套**（WorkspaceHost DO 分支正在做）：
+1. **迁移族收敛已在 #589 完成**（下述为背景）。**#587 与 #589 必然冲突**：#587 的网关链仍经 `schema-ledgers` 声明（集中在 `modelGatewaySqlSchema()`），后合并的一方需把它改为 `accountPoolSqlSchemas()` 中的一个族。原三套机制：
    - Server 扩展族（main，已发布，表 `schema_extension_migrations`，**不可改**）；
    - `@opencraft/sql/schema-ledgers`（#585，表 `schema_ledgers`，未部署）；
    - `@opencraft/sql/families`（WorkspaceHost DO 分支，表 `schema_family_migrations`，未部署）。
-   目标：`@opencraft/sql` 中一个中立原语、账本表名参数化；Server 扩展族委托它且行为不变；AccountCore 切过去并删除 `schema-ledgers`。若该 PR 未完成，**这是第一优先事项**。
+   结果：`@opencraft/sql/families`（组合 `families`／`beside-main`），DO 统一表 `schema_family_migrations`，Node Server 保持 `schema_extension_migrations`。
 2. **合并冲突处理惯例**：PR 被 `MERGE_CONFLICT` 出队时，把 `origin/main` merge 进分支（不 rebase／force-push），解决后跑相关测试再推送，重新 `enable_pr_auto_merge`。基于已 squash 合并分支的 PR，用原分支尖端作基准做 `git merge-file` 三方合并（例：#581 尖端 `dedd50c569e78585eb9f3e969c9054afe6155374`）。
 3. **CI 已知现象**：
    - `hands-terminal` 的 locale 用例在本容器（只有 C/C.utf8/POSIX）必失败，main 同样失败；CI 上正常。
@@ -58,7 +59,7 @@
    - `actor-collaboration-codex` "actual Headless bundle persists…" 在高负载下失败过一次未复现；若 CI 出现请保存完整输出查根因。
    - 推新提交会取消旧提交 CI，汇总检查 `build-checks` 变红属正常（core/gate `cancelled`）。
 4. **容器环境**：`npm ci --ignore-scripts` 后需 `npm rebuild node-pty`，否则含终端的测试加载失败。磁盘有限（~10 GB 可用），每个 worktree 依赖约 2.4 GB，用完删 `node_modules`。
-5. **#584 `gate-tests (platform)` 失败（head `e0d9ad4e4`，run 45356093896，job 138315315724）**：失败发生在合并 #577/#579/#581 之后的提交上；check run 无注释，日志尾部被启动缓存输出淹没，未定位到具体用例。本地对该合并做过 typecheck、headless-composition、collaboration/transport/owner-wake 唤醒测试（56/56）与 check:boundaries，均通过。下一步：整轮结束后 `rerun_failed_jobs` 一次；若仍失败，下载完整日志查 `✖`/`not ok`，平台 part 含 `test:tasks`、`test:electron-launch` 之外的多个步骤（见 `.github/workflows/build-matrix.yml` 中 `matrix.part == 'platform'`）。
+5. **#584 `gate-tests (platform)` 失败（head `e0d9ad4e4`，run 45356093896，job 138315315724）**：失败发生在合并 #577/#579/#581 之后的提交上；check run 无注释，日志尾部被启动缓存输出淹没，未定位到具体用例。本地对该合并做过 typecheck、headless-composition、collaboration/transport/owner-wake 唤醒测试（56/56）与 check:boundaries，均通过。已于 08:43 `rerun_failed_jobs` 一次（规则允许的唯一一次）；若仍失败，下载完整日志查 `✖`/`not ok`，平台 part 含 `test:tasks`、`test:electron-launch` 之外的多个步骤（见 `.github/workflows/build-matrix.yml` 中 `matrix.part == 'platform'`）。
 6. **文档**：`gateway-split.md` §5.1 状态表按约定未被各 PR 修改，需要在这批合并后**统一更新一次**。
 
 ## 5. 后续主线（按顺序）
