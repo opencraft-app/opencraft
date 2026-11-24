@@ -347,7 +347,7 @@
 3. **node-local**：347、376–384、796–807、866–876、1447–1460、1610–1625 中的 SSH 入口与 relay、1628–1649。依赖 AppHost 端口与 installation 的 `instanceAccess`／`actorStore`；其 disposer 分布在关闭第 3、6、7、11 步。第一部分已抽取，见下文"node-local 第一部分"。
 4. **installation**：段落多，建议分两个 PR 落到同一模块：先身份与准入（394–407、547–761 中除 account 外的部分），再协作与部署级服务（792–795、808–809、843–865、877–882、913–933 的绑定投影、1109、1397–1446）。
 5. **workspace-host**：762–791、883–1191、1196–1394 中的 transport 链、1461–1467、1583–1606、1627。依赖 installation 的全部输出；P4-2 已把 overlays 移入 `packages/workspace-host`，这里只是装配。
-6. **client-session**：810–842、`AppHostServer` 外壳（1192–1196）与 `createWebServer` 中的会话工厂（1482–1503）；与 G6 一并考虑。
+6. **client-session**：810–842、`AppHostServer` 外壳（1192–1196）与 `createWebServer` 中的会话工厂（1482–1503）；与 G6 一并考虑（每连接会话核心已在 `packages/client-session`，§4.2）。
 7. **edge**：1468–1582 与 1607–1624 中的监听；它消费所有服务，最后抽取。
 
 **第一个模块：account。** 入站依赖最少：构造只需要 `dataDirectory` 与 Codex Core 端点／令牌；HTTP 鉴权需要的 `actorAccess`／`actorStore`／`instanceAccess` 在调用点（1538）已经存在，作为参数传入即可。它不读 `closing`、不读任何前向槽，不参与第 3 部分的任何环；被移动的行与频繁修改的身份、ENV、工作区段落不重叠；关闭只有第 11 步的一个位置。
@@ -384,13 +384,25 @@
 | 端口 | 现状 | Node 适配器 | Cloudflare 适配器 |
 | --- | --- | --- | --- |
 | HTTP 处理 | 中立平台包 `@opencraft/http-exchange`（§3.4）。已迁：身份与准入处理器（`HumanAuth`、`LocalAccountApplication`、`InstanceAccess`、`ActorAccess`），以及 G4 第一批 `Collaboration`、服务器信息、个人模型默认值、个人 SSH 公钥、模型策略、模型网关（§4.2.1）；其余服务仍是 `handle(IncomingMessage, ServerResponse)`，清单与分类见 §4.2.1 | `@opencraft/http-exchange/node`（已实现，含流式正文） | `@opencraft/http-exchange/fetch`（已实现；workerd 登录入口与 `test:http-exchange:workerd` 使用） |
-| WebSocket 会话 | `ws` 对象直接进入会话逻辑（`serve-workbench-web.mjs:1180-1290`） | `ws` 包装 | DO hibernation WebSocket |
+| WebSocket 会话 | **已抽出（G6 第一步）**：AppHost 客户端会话（帧准入、hello、逐消息授权、心跳帧、探测诊断、resume 附着／分离／重放）在 `@opencraft/client-session/app-host`，只依赖 `SessionSocket` 契约（`packages/client-session/src/socket.ts`）；升级与准入仍在 `serve-workbench-web.mjs:869-1040`，见下方"会话 socket 契约" | `apps/headless-server/src/session-socket-ws.mjs`（`ws`＋既有 Pong 信用发送器）；内存适配器 `@opencraft/client-session/memory` 供测试 | DO hibernation WebSocket（未实现） |
 | 定时器 | `setInterval`（HA:1350；`conversation-resource-lifecycle.mjs:64`；`observability-ingress.mjs:49`；`serve-workbench-web.mjs:397`；host-schedules 2 s 轮询） | owner 定时器 | DO alarm（每 DO 单个，需要合并到"下一个到期时间"） |
 | 单写者 owner | `worker_threads` Worker（核心 owner、编排、spaces、assets vault、token usage 查询、push） | `@opencraft/worker-owner` | DO 本身即单写者，`SqlDatabase` 同步调用（storage-ports §6） |
 | 存储 | 模型策略、MCP apps、push、connectors 的领域存储已在 `SqlDatabase` 端口上（G3）；仍直接使用 `node:sqlite` 的部署级 owner 见 §5.1 G3 | 迁到 `SqlDatabase` 端口；Node 打开仍经 `openManagedDatabase`＋`nodeSqlDatabase` | DO SQL |
 | 引擎与资源通道 | UDS、私有描述符、loopback URL、`/proc` | `WorkspaceLink` 的本地 socket 适配 | DO → Container 端口（workspace-host-split §3.3） |
 | 出站 HTTP | `node:https`／`node:net`／`node:dns`（push、connectors SSRF 检查） | 现有实现 | `fetch`；SSRF 校验需另行设计 |
 | 进程创建 | `child_process`、`proper-lockfile`（Pi、DSH、个人助理、Git Worker） | 不变 | 只在容器内 |
+
+**会话 socket 契约（G6）。** 原则：不为 Cloudflare 特化。Node、Docker、桌面与 Cloudflare 是并列的部署场景，最弱的运行时（Workers isolate：按请求存活、无文件系统与子进程；长连接由单写者 DO 持有、可能 hibernate，即两条消息之间进程内存可被丢弃，会话须能从持久状态恢复）定义通用契约的下限。会话代码只依赖该契约；Node `ws`、内存 transport 与以后的 DO hibernation socket 是对等适配器。契约中不出现 `ws` 对象、`Buffer`、socket、`IncomingMessage`，也不以 Cloudflare 命名。成员与理由：
+
+| 成员 | 现有会话逻辑的用途 | 为什么满足下限 |
+| --- | --- | --- |
+| `send(frame: string \| Uint8Array, done?)` | 所有出站帧；`done` 用于探测写出诊断、"先发 `fatal`／`resume-failed` 再关闭" | 文本／二进制是 WHATWG 与 DO socket 的共同载荷；`done` 只表示本地写出完成，同步运行时可在下一个 microtask 回调 |
+| `close(code, reason)`、`terminate()` | 1000／1003／1008／1011 关闭；撤销时立即断开；resume 接管时断开旧 socket | 关闭码是线协议的一部分；无"强制断开"区分的运行时 `terminate` 退化为 `close` |
+| `readyState`（WHATWG 数值）、`bufferedAmount` | 只向 OPEN 的 socket 写；心跳在未写出字节超过 1 MiB 时跳过（背压）；诊断字段 | 标准 WebSocket 属性；无法观察队列的运行时如实返回 0 |
+| 处理器 `message(frame, byteLength)`、`close(code)`、`error()` | 帧准入与确认计数（字节数决定立即确认）；1001／1005／1006 分离、其余结束 | 契约不提供监听注册：运行时调用会话返回的处理器，hibernation 唤醒后同样以方法分派进入（对应 `webSocketMessage`／`webSocketClose`／`webSocketError`） |
+| resume 存储 `AppHostResumeStore`（`create`／`find`／`stats`） | 现有 `ResumeRegistry` 结构上满足；令牌、身份比较与重放窗口不变 | 进程内存可被丢弃的运行时对找不到的会话答 `unknown-session`，客户端退回全新连接；跨 hibernation 的连续性由 §3.3 的每 Thread 游标承担，不进入 socket 契约 |
+
+socket 级 Ping／Pong 存活检测（`websocket-heartbeat.mjs`）与 Pong 信用发送器（`relay-protocol/websocket-sender`）属于 Node 适配器；DO 的协议级 ping 由平台处理。证明：`tests/protocol/client-session-memory.test.ts` 在真实 `AppHostServer`＋`MemoryTransport` Host 上，不经任何 socket 走完 hello → Host 租约 → 编号帧 → 异常断开（分离）→ 分离期间 Host 输出 → 以令牌 resume 重放 → 同一租约继续 → `connection/end`，并覆盖正常／策略／二进制关闭不分离与心跳背压。
 
 **不提供于 Cloudflare 的能力**（只在 Node 组合根装配，Cloudflare 不声明，Web 端按现有缺席分支呈现）：本机文件"local"模式（HA:1215）、SSH 管理与 SSH 入口、本机桌面观察与控制、relay-connect、匿名部署、同机托管访问文件、观测 ingress、可用性通知监听、读取服务器主机文件系统或进程的一切能力。
 
@@ -447,7 +459,7 @@ Headless 网关路由表在 `serve-workbench-web.mjs`（`createWorkbenchWebServe
 | G3 | 剩余直接 `node:sqlite` 的部署级库（模型策略、MCP apps、push、connectors）迁到 `SqlDatabase` 端口 | 统一迁移与 outcome 报告 | 存储端口第 1–2 阶段（已实施） | **部分（2026-11-24 更新）**：四个点名的库已迁。模型策略见 `packages/model-usage-policy/src/index.ts`（#511）；push 领域 `SqlPushStore` 在 `packages/web-push-node/src/sql-store.ts`，Node owner `PushStore`／`openPushDatabase` 在 `store.ts`（仍只在 push 存储 Worker 内打开）；MCP apps 的 `AppStore`／`McpAppsService` 接受已迁移的 `AppStorage`，Node 打开在 `packages/mcp-apps/src/node.ts`；connectors 的 `SqlConnectorDatabase` 在 `packages/connector-host/src/store.ts`，Node owner `ConnectorDatabase` 在 `node-store.ts`。三者领域模块不导入 `node:*`，SHA-256 由 owner 注入，事务经 `transaction()`；库文件、账本与迁移不变。workerd 一致性见 `tests/storage/deployment-stores-workerd.test.ts`（`test:storage-ports:workerd`）。仍直接使用 `DatabaseSync` 的 Headless 部署级 owner：`app-host-server` thread directory（`thread-directory/index.ts`、`snapshot-reader.ts`）、`access-control` 的 `actor-admission-reader.ts` 与两个 owner Worker 入口、`execution-environment`（`execution-environment.ts`、`employee-git-vault-store.ts`）、个人 Git（`git-identity-origin.ts`、`git-execution-authority.ts`、`personal-git-worker.ts`）、`document-storage`、`native-history-node` 转录缓存、`plugins/login-admission`、`plugins/thread-participants`、`plugins/tasks`；`account-pool-host/src/store.ts` 只剩 Node owner 打开（领域 `AccountPool` 已在端口上），`model-usage-policy/src/native.mjs` 是跨进程只读读取（storage-ports §7.1） |
 | G4 | HTTP 处理改为 `Request`→`Response` 端口，Node 包装（身份与准入处理器已完成，§3.4；第一批服务已迁，§4.2.1） | 服务单测不需要真实监听 | G1 | **部分**：端口移到中立包 `@opencraft/http-exchange{,/node,/fetch}`，加入 Web 流应答（identity-core 路径保留为再导出）；身份、准入处理器（#511）与第一批 `Collaboration`、服务器信息、个人模型默认值、个人 SSH 公钥、模型策略、模型网关已迁，workerd 证明为 `test:http-exchange:workerd`（2026-11-24）；push、connectors、Assets、语音、IM 现可迁，Hub 需流式代理，身份产品与运行时插件端口待决，其余 Node-only 或属 G6（§4.2.1） |
 | G5 | 定时器端口；资源对账、心跳、观测改为 owner 定时器 | 关闭排空与时钟回拨可测 | G1；与 P4-3 同一抽象 | **部分**：端口已有（`OwnerWakeTimer`／`boundedWakeTimer`，`packages/workspace-host/src/index.ts:171-246`，#511），仅定时任务使用；资源对账（`headless-application.mjs:1606`、`conversation-resource-lifecycle.mjs:62`）、观测（`observability-ingress.mjs:49`）、心跳（`serve-workbench-web.mjs:399、1196`）仍是 `setInterval` |
-| G6 | 拆出 `client-session`：AppHost 逻辑路由与访问会话脱离 `ws` | 连接逻辑可用内存 transport 测试 | G4 | **未开始**：`AppHostServer` 仍在组合根构造（`headless-application.mjs:1192`）；只有 workerd 原型（`tests/protocol/workerd/client-do-worker.ts`，§3.3） |
+| G6 | 拆出 `client-session`：AppHost 逻辑路由与访问会话脱离 `ws` | 连接逻辑可用内存 transport 测试 | G4 | **部分**：会话 socket 契约、AppHost 客户端会话核心与内存适配器在 `packages/client-session`，Node `ws` 适配器在 `apps/headless-server/src/session-socket-ws.mjs`，内存证明见 §4.2；线格式、关闭码、心跳间隔、resume 窗口、准入与背压不变。未做：升级与准入（`serve-workbench-web.mjs:869-1040`：来源、身份／实例／Actor 准入、`trackAdmittedWebSocket` 授权租约）待 G4 的 exchange 端口后改为"准入结果＋会话 socket"接缝；`AppHostServer` 仍在组合根构造（`headless-application.mjs:1180`，逻辑路由本身早已只依赖 `AppHostServerPort`）；`/appserver` 桥（`bridgeAppServerSocket`）仍直接使用 `ws`；会话定时器（心跳、确认）仍是 `setInterval`／`setTimeout`，随 G5；DO hibernation 适配器与持久 resume 存储未实现 |
 | P4-2 | 抽出 `WorkspaceHost`（Codex overlays 以工作区根打开） | 见原文 | G1 | **完成（Node）**：`packages/workspace-host`（#511）；Gateway 只装配 `default`（`headless-application.mjs:1310`） |
 | P4-3 | 定时任务 owner 驱动 | 见原文 | G5 | **完成（Node）**：`packages/host-schedules/src/index.ts` 经 `OwnerWakeTimer`（#511）；唤醒仍在 Gateway 主线程，DO alarm 未做 |
 | P4-4 | `WorkspaceLink` 与 `workspace-agent` | 见原文 | P4-2 | **部分**：第 4a–4c 步已实现（`packages/sandbox/src/endpoint.ts`、`scripts/container-deployment/workspace-agent*.mjs`、`packages/sandbox-node/src/static-docker.ts`、`scripts/container-deployment/gateway-workspace.mjs`，#511；7b `docker-provisioner` #532）；第 4d 步（反向 RPC 进程）未做（workspace-host-split §7"第 4d 步"） |
