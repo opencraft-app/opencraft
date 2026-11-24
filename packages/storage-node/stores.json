@@ -1,7 +1,7 @@
 [
   {
     "id": "employee-git-vault-store",
-    "owner": "packages/execution-environment/src/employee-git-vault-store.ts",
+    "owner": "packages/execution-environment/src/employee-git-vault-store.node.ts",
     "index": 0
   },
   {

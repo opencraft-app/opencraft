@@ -1,13 +1,14 @@
-import {captureSqliteReadGuard} from '@opencraft/sqlite-node';
+// Runtime-neutral thread directory over the SqlDatabase port. The storage owner
+// lends its connection; Node-only parts (the file-backed snapshot reader Worker
+// and the cross-connection read guard) are injected by ./node.ts, which is the
+// `@opencraft/app-host-server/thread-directory` export Node callers use.
+import type { SqlDatabase } from "@opencraft/sql";
 import type {RecordedThreadCountRead,RecordedThreadCountSet} from '@opencraft/appserver-protocol/collaboration';
 import { recordedNameQuery, type RecordedNameRead, type RecordedNameWindow, type RecordedNameFence } from '@opencraft/appserver-protocol/collaboration';
-import { randomUUID } from "node:crypto";
 import { DIRECTORY_FULL_RECONCILE_MS, DIRECTORY_MAX_SOURCE_PAGES } from "./policy.js";
 import { threadCatalogStatus, parseThreadCatalogChange, THREAD_CATALOG_CHANGED, threadDirectoryIncomplete, type ThreadCatalogChange, type ThreadCatalogMetadata, type ThreadListResponse } from "@opencraft/appserver-protocol";
-import type { DatabaseSync } from "node:sqlite";
 import type { Thread, ThreadListParams } from "@opencraft/appserver-protocol/generated/v2";
 import { DirectorySnapshotIndex, DirectorySnapshotPages, SNAPSHOT_CURSOR } from "./snapshots.js";
-import { DirectorySnapshotReader } from "./snapshot-reader.js";
 export { DirectorySnapshotPages, SNAPSHOT_START, SNAPSHOT_CURSOR } from "./snapshots.js";
 
 const object = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -20,6 +21,46 @@ function metadata(value: unknown): Thread | null {
   return { ...Object.fromEntries(fields.filter(key => key in row).map(key => [key, row[key]])), preview: typeof row.preview === "string" ? row.preview.slice(0, 512) : "", extra: null, turns: [] } as unknown as Thread;
 }
 const cursorPrefix = "opencraft-catalog-v1:";
+const randomUUID = () => crypto.randomUUID();
+const utf8 = new TextEncoder();
+/** Lets timers, I/O and other callers run between bounded write chunks. */
+const yieldTurn = () => new Promise<void>(resolve => typeof setImmediate === "function" ? setImmediate(resolve) : setTimeout(resolve, 0));
+/** Paged snapshot reads served outside the owner (Node: a read-only Worker on the file). */
+export interface DirectorySnapshotSource {
+  list(params: { cursor: string; archived: boolean; limit: number; source: string; base: number; expectedRevision: number }): Promise<any>;
+  close(): void;
+}
+/** Proof that committed rows have not changed since capture; null when it cannot be taken. */
+export type DirectoryReadGuard = (database: SqlDatabase, isCurrent: () => boolean) => (() => boolean) | null;
+export interface ThreadDirectoryStorage {
+  readonly database: SqlDatabase;
+  /** File-backed owners serve snapshot cursors from this reader instead of the in-memory index. */
+  readonly snapshotReader?: DirectorySnapshotSource;
+  /** Defaults to `connectionReadGuard`, which only sees writes made through this connection. */
+  readonly readGuard?: DirectoryReadGuard;
+}
+/**
+ * Read guard for an owner whose connection is the only writer (a Durable Object,
+ * an in-memory database): every commit on the connection moves total_changes().
+ * Node owners whose file has other connections inject `captureSqliteReadGuard`.
+ */
+export const connectionReadGuard: DirectoryReadGuard = (database, isCurrent) => {
+  const read = () => {
+    if (!isCurrent() || database.inTransaction) return null;
+    const changes = database.prepare("SELECT total_changes() AS changes").get()?.changes;
+    return !database.inTransaction && isCurrent() && changes != null ? String(changes) : null;
+  };
+  try {
+    const initial = read();
+    if (initial === null) return null;
+    let invalid = false;
+    return () => {
+      if (invalid) return false;
+      try { invalid = read() !== initial; } catch { invalid = true; }
+      return !invalid;
+    };
+  } catch { return null; }
+};
 export interface DirectoryMeasurement {
   phase: "read" | "sync" | "flush";
   outcome: "ok" | "failed";
@@ -29,16 +70,36 @@ export interface DirectoryMeasurement {
   noop: number;
   sourceReads: number;
 }
+export interface ThreadDirectoryPort {
+  list(params: ThreadListParams, signal: AbortSignal): Promise<unknown>;
+  /** Execution observations are connection-local, never persisted metadata. */
+  connectionLocalExecution?: boolean;
+  changed(event?: ThreadCatalogChange): void;
+  measured?(measurement: DirectoryMeasurement): void;
+  readMetadata?(threadId: string, signal: AbortSignal): Promise<unknown>;
+  readMetadataBatch?(threadIds: readonly string[], signal: AbortSignal): Promise<ReadonlyMap<string, unknown>>;
+  project?(thread: Thread): Thread;
+  archived?(threadId: string): boolean;
+  retain?(threadId: string): boolean;
+  archivePartitioned?: boolean;
+  incrementalScan?: boolean;
+  /** Commit metadata per source page and reconcile in bounded rowid windows. */
+  streamingSync?: boolean;
+  nonblockingCold?: boolean;
+  observed?(threadIds: readonly string[]): void;
+}
 type Sync = { last_success_ms: number | null; watermark: number | null; last_full_ms: number | null; state: string };
 
 /** Owner-bound metadata projection. The storage owner lends the connection and retains its lifecycle. */
-export class ThreadDirectory {
+export class SqlThreadDirectory {
   readonly #snapshotIndex = new DirectorySnapshotIndex();
   readonly #snapshots: DirectorySnapshotPages;
-  readonly #snapshotReader?: DirectorySnapshotReader;
+  readonly #snapshotReader?: DirectorySnapshotSource;
+  readonly #readGuard: DirectoryReadGuard;
+  readonly database: SqlDatabase;
   readonly #snapshotBase: number;
   #indexEdits: Array<() => void> | null = null;
-  readonly #coverage = new Map<number, ReturnType<ThreadDirectory["coverage"]>>();
+  readonly #coverage = new Map<number, ReturnType<SqlThreadDirectory["coverage"]>>();
   #closed = false;
   readonly #countReads = new Map<string,{scope:string;expires:number;validate:()=>boolean}>();
   readonly #source = `directory:${randomUUID()}`;
@@ -59,29 +120,13 @@ export class ThreadDirectory {
   #job: Promise<void> | null = null;
   #lastAttempt = -Infinity;
   #abort = new AbortController();
-  constructor(readonly database: DatabaseSync, readonly port: {
-    list(params: ThreadListParams, signal: AbortSignal): Promise<unknown>;
-    /** Execution observations are connection-local, never persisted metadata. */
-    connectionLocalExecution?: boolean;
-    changed(event?: ThreadCatalogChange): void;
-    measured?(measurement: DirectoryMeasurement): void;
-    readMetadata?(threadId: string, signal: AbortSignal): Promise<unknown>;
-    readMetadataBatch?(threadIds: readonly string[], signal: AbortSignal): Promise<ReadonlyMap<string, unknown>>;
-    project?(thread: Thread): Thread;
-    archived?(threadId: string): boolean;
-    retain?(threadId: string): boolean;
-    archivePartitioned?: boolean;
-    incrementalScan?: boolean;
-    /** Commit metadata per source page and reconcile in bounded rowid windows. */
-    streamingSync?: boolean;
-    nonblockingCold?: boolean;
-    observed?(threadIds: readonly string[]): void;
-  }, readonly now = Date.now, readonly intervalMs = 60_000) {
+  constructor(storage: ThreadDirectoryStorage, readonly port: ThreadDirectoryPort, readonly now = Date.now, readonly intervalMs = 60_000) {
+    const database = this.database = storage.database;
+    this.#readGuard = storage.readGuard ?? connectionReadGuard;
     this.#snapshots = new DirectorySnapshotPages(now);
     this.#revision = Number(database.prepare("SELECT MAX(revision) AS revision FROM opencraft_thread_catalog").get()?.revision ?? 0);
     this.#snapshotBase = this.#revision;
-    const path = database.location();
-    if (path && !port.connectionLocalExecution) this.#snapshotReader = new DirectorySnapshotReader(path);
+    this.#snapshotReader = storage.snapshotReader;
     if (port.connectionLocalExecution) this.#snapshotIndex.replace(database.prepare("SELECT metadata_json,archived FROM opencraft_thread_catalog WHERE deleted=0").all()
       .map(row => ({row: this.#present(JSON.parse(String(row.metadata_json)) as Thread), archived: Boolean(row.archived)})));
   }
@@ -154,7 +199,7 @@ export class ThreadDirectory {
     const state=readState();
     if(this.#closed||!state||state.ready!==1||typeof state.observed!=='number'||!Number.isFinite(state.observed)||this.#countReads.size>=32)return {status:'unknown'};
     const revision=this.#revision,sync=JSON.stringify(state),expires=now+9000;
-    const validate=captureSqliteReadGuard(this.database,()=>!this.#closed&&Date.now()<expires
+    const validate=this.#readGuard(this.database,()=>!this.#closed&&Date.now()<expires
       &&this.#revision===revision&&JSON.stringify(readState())===sync);
     if(!validate)return {status:'unknown'};
     const ids:string[]=[];let bytes=0;
@@ -165,7 +210,7 @@ export class ThreadDirectory {
     for(const row of rows){
       if(performance.now()-readStarted>100||Date.now()>=expires)return {status:'unknown'};
       if(typeof row.id!=='string'||!row.id||ids.length>=16384)return {status:'unknown'};
-      bytes+=Buffer.byteLength(row.id);if(bytes>4*1024*1024)return {status:'unknown'};
+      bytes+=utf8.encode(row.id).byteLength;if(bytes>4*1024*1024)return {status:'unknown'};
       ids.push(row.id);
     }
     check();if(!validate())return {status:'unknown'};
@@ -199,7 +244,7 @@ export class ThreadDirectory {
     if (typeof params.cursor === "string" && params.cursor.startsWith(SNAPSHOT_CURSOR)) {
       return this.#snapshots.list(params.cursor, archived === 1, limit, () => ({
         parts: [this.snapshot(archived === 1)], catalog: this.coverage(archived === 1),
-      })) as Awaited<ReturnType<ThreadDirectory["list"]>>;
+      })) as Awaited<ReturnType<SqlThreadDirectory["list"]>>;
     }
     let anchor: { updatedAt: number; id: string } | null = null;
     if (params.cursor) {
@@ -278,7 +323,7 @@ export class ThreadDirectory {
           }
           if(this.port.streamingSync){
             if(!await this.#chunks(staged.splice(0),row=>{if((this.#fences.get(row.id)??0)<=startedObservation)this.#put(row,archived,startedRevision,true,metric);},metric))return;
-            await new Promise<void>(resolve=>setImmediate(resolve));
+            await yieldTurn();
             if(this.#closed || connection !== this.#connection)return;
           }
           if (response.nextCursor == null || !full && oldest < (previous?.watermark ?? 0)) { complete = true; break; }
@@ -297,7 +342,7 @@ export class ThreadDirectory {
               if(this.#closed || connection !== this.#connection)return;
               const rows=this.database.prepare('SELECT thread_id FROM opencraft_thread_catalog NOT INDEXED WHERE rowid>? AND rowid<=? AND archived=? AND revision<=? AND deleted=0 ORDER BY rowid').all(position,Math.min(upper,position+1024),archived,startedRevision);
               if(!await this.#chunks(rows,row=>{const id=String(row.thread_id);if(!seen.has(id)&&!this.port.retain?.(id)&&(this.#fences.get(id)??0)<=startedObservation)this.#remove(id,metric);},metric))return;
-              await new Promise<void>(resolve=>setImmediate(resolve));
+              await yieldTurn();
             }
           }else{
           const rows = this.database.prepare("SELECT thread_id FROM opencraft_thread_catalog WHERE (?=1 OR archived=?) AND revision<=? AND deleted=0").all(Number(this.port.archivePartitioned === false), archived, startedRevision);
@@ -328,7 +373,7 @@ export class ThreadDirectory {
           for(let position=0;position<upper;position+=1024){
             if(this.#closed || connection !== this.#connection)return;
             this.port.observed?.(this.database.prepare('SELECT thread_id FROM opencraft_thread_catalog NOT INDEXED WHERE rowid>? AND rowid<=? AND deleted=0 ORDER BY rowid').all(position,Math.min(upper,position+1024)).map(row=>String(row.thread_id)));
-            await new Promise<void>(resolve=>setImmediate(resolve));
+            await yieldTurn();
           }
         }else this.port.observed?.(this.database.prepare("SELECT thread_id FROM opencraft_thread_catalog WHERE deleted=0").all().map(row => String(row.thread_id)));
       } catch {
@@ -347,17 +392,18 @@ export class ThreadDirectory {
     for (let offset = 0; offset < rows.length; offset += 128) {
       if (this.#closed || connection !== this.#connection) return false;
       this.#commit(() => { for (const row of rows.slice(offset, offset + 128)) apply(row); }, metric);
-      if (offset + 128 < rows.length) await new Promise<void>(resolve => setImmediate(resolve));
+      if (offset + 128 < rows.length) await yieldTurn();
     }
     return !this.#closed && connection === this.#connection;
   }
   #commit(apply: () => void, metric: DirectoryMeasurement): void {
     const revision = this.#revision, eventRevision = this.#eventRevision, changed = metric.changed;
-    this.database.exec("SAVEPOINT catalog_sync"); this.#events = []; this.#indexEdits = [];
-    try { apply(); this.database.exec("RELEASE catalog_sync"); }
+    this.#events = []; this.#indexEdits = [];
+    // One write transaction per chunk (a savepoint when the owner already holds one).
+    try { this.database.transaction(apply); }
     catch (error) {
       this.#events = null; this.#indexEdits = null; this.#revision = revision; this.#eventRevision = eventRevision; metric.changed = changed;
-      this.database.exec("ROLLBACK TO catalog_sync; RELEASE catalog_sync"); throw error;
+      throw error;
     }
     const events = this.#events; this.#events = null;
     // Publish only after every changed row is reflected in the immutable index.

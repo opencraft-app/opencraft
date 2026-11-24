@@ -1,10 +1,11 @@
-import { gitGrantAuthority, sealGitGrant, type GitGrantScope } from './personal-git-protocol.js';
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
-import { closeSync, constants, fstatSync, mkdirSync, openSync, realpathSync } from 'node:fs';
-import { join } from 'node:path';
-import type { DatabaseSync } from 'node:sqlite';
-import { createSchemaValidator, openManagedDatabase, type DatabaseOutcome } from '@opencraft/sqlite-node';
-import { fileKeyMaterial } from '@opencraft/secret-storage/file';
+// Runtime-neutral domain of the employee Git vault: encrypted credential,
+// secret and document rows over the SqlDatabase port. The Node owner
+// (employee-git-vault-store.node.ts, the `./employee-git-vault-store` export)
+// checks the private directory and file, resolves the installation key through
+// KeyMaterial, opens the file with openManagedDatabase and supplies the AES-GCM
+// cipher; this module never sees key bytes and imports no node:* module.
+import type { SqlDatabase } from '@opencraft/sql';
+import type { GitGrantScope } from './personal-git-protocol.js';
 
 export type SigningRegistration = 'unregistered' | 'pending' | 'registered' | 'manual_required';
 export interface GitVaultCredential {
@@ -26,15 +27,6 @@ const PRIVATE_KEY_HEADER = '-----BEGIN PRIVATE KEY-----';
 const SCHEMA = 'CREATE TABLE employee_git_credentials (account TEXT NOT NULL, host TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0), credential BLOB, PRIMARY KEY(account,host)) STRICT';
 export const EMPLOYEE_GIT_VAULT_MIGRATIONS = [{ version: 1, name: 'employee-git-credentials', sql: SCHEMA }] as const;
 
-/** Opens (creating when absent) the private database file and reports whether it is still empty. */
-function privateFile(path: string): { fresh: boolean } {
-  const fd = openSync(path, constants.O_NOFOLLOW | constants.O_RDWR | constants.O_CREAT, 0o600);
-  try {
-    const st = fstatSync(fd);
-    if (!st.isFile() || st.uid !== process.getuid?.() || (st.mode & 0o077) !== 0) throw new GitVaultError('unavailable', 503);
-    return { fresh: st.size === 0 };
-  } finally { closeSync(fd); }
-}
 function validateKey(account: string, host: string): void {
   if (!account || account.length > 256 || /[\0\r\n]/u.test(account) || !/^[a-z0-9.-]{1,253}$/u.test(host)) throw new GitVaultError('invalid');
 }
@@ -54,47 +46,51 @@ export function validateGitVaultCredential(value: GitVaultCredential): void {
 /** Installation key for this vault, stored beside the database through the KeyMaterial port. */
 export const EMPLOYEE_GIT_VAULT_KEY = 'employee-git-vault.key';
 
-/** Opaque account scope is supplied by the verified identity provider, never by a browser body. */
-export class EmployeeGitVaultStore {
-  private readonly db: DatabaseSync;
-  private readonly key: Buffer;
-  readonly outcome: DatabaseOutcome;
-  /**
-   * The key is resolved before the database is opened: a freshly created
-   * database may create it once; an existing database only reads it, so a
-   * missing key is a recovery error and never orphans encrypted rows.
-   */
-  static async open(directory: string): Promise<EmployeeGitVaultStore> {
-    mkdirSync(directory, { recursive: true, mode: 0o700 });
-    // Managed deployments may retain a data-directory alias after migration.
-    // Pin its canonical directory once; key/database files still use NOFOLLOW.
-    const physicalDirectory = realpathSync(directory);
-    const dir = openSync(physicalDirectory, constants.O_RDONLY | constants.O_NOFOLLOW);
-    try {
-      const st = fstatSync(dir);
-      if (!st.isDirectory() || st.uid !== process.getuid?.() || (st.mode & 0o077) !== 0) throw new GitVaultError('unavailable', 503);
-    } finally { closeSync(dir); }
-    const path = join(physicalDirectory, 'employee-git-vault.sqlite');
-    const { fresh } = privateFile(path);
-    const keys = fileKeyMaterial(physicalDirectory);
-    let material: Uint8Array | undefined;
-    try {
-      // A nonempty database without its original key is a recovery error.
-      material = fresh ? await keys.ensure(EMPLOYEE_GIT_VAULT_KEY, () => randomBytes(32)) : await keys.read(EMPLOYEE_GIT_VAULT_KEY);
-    } catch (cause) { throw Object.assign(new GitVaultError('unavailable', 503), { cause }); }
-    if (!material) throw new GitVaultError('unavailable', 503);
-    const key = Buffer.from(material.buffer, material.byteOffset, material.byteLength);
-    if (key.length !== 32) { key.fill(0); throw new GitVaultError('unavailable', 503); }
-    return new EmployeeGitVaultStore(path, key);
+/**
+ * Authenticated encryption held by the vault owner. `seal` returns one opaque
+ * byte string that `open` accepts only with the same associated data; the
+ * Node owner keeps the original AES-256-GCM layout (IV, ciphertext, tag), so
+ * existing rows and envelopes stay readable. The grant methods use the same key.
+ */
+export interface GitVaultCipher {
+  seal(aad: Uint8Array, clear: Uint8Array): Uint8Array;
+  open(aad: Uint8Array, sealed: Uint8Array): Uint8Array;
+  grantAuthority(accountMode: 'principal' | 'actor'): string;
+  sealGrant(scope: GitGrantScope): string;
+  /** Erases the key; later calls fail. */
+  dispose(): void;
+}
+
+const utf8 = new TextEncoder();
+// Like Buffer#toString('utf8'): a leading BOM is kept, not stripped.
+const text = new TextDecoder('utf-8', { ignoreBOM: true });
+const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+/** Unpadded base64url, as Buffer's `base64url` encoding writes it. */
+export function encodeGitVaultBase64Url(bytes: Uint8Array): string {
+  let out = '';
+  for (let i = 0; i < bytes.length; i += 3) {
+    const n = (bytes[i]! << 16) | ((bytes[i + 1] ?? 0) << 8) | (bytes[i + 2] ?? 0);
+    out += ALPHABET[(n >> 18) & 63]! + ALPHABET[(n >> 12) & 63]!;
+    if (i + 1 < bytes.length) out += ALPHABET[(n >> 6) & 63]!;
+    if (i + 2 < bytes.length) out += ALPHABET[n & 63]!;
   }
-  private constructor(path: string, key: Buffer) {
-    this.key = key;
-    try {
-      const managed = openManagedDatabase({ schemaId: "employee-git-vault-store", path, migrations: EMPLOYEE_GIT_VAULT_MIGRATIONS,
-        validateSchema: createSchemaValidator(SCHEMA), legacyPolicy: 'reject' });
-      this.db = managed.database; this.outcome = managed.outcome;
-    } catch (error) { this.key.fill(0); throw error; }
+  return out;
+}
+/** Decodes base64url characters (others count as zero); callers reject input that does not re-encode identically. */
+export function decodeGitVaultBase64Url(value: string): Uint8Array {
+  const out = new Uint8Array(Math.floor((value.length * 6) / 8));
+  let bits = 0, buffer = 0, index = 0;
+  for (const character of value) {
+    buffer = ((buffer << 6) | Math.max(0, ALPHABET.indexOf(character))) & 0xffffff; bits += 6;
+    if (bits >= 8) { bits -= 8; out[index++] = (buffer >> bits) & 255; }
   }
+  return out;
+}
+
+/** Opaque account scope is supplied by the verified identity provider, never by a browser body.
+ * The owner lends a migrated connection and the cipher; `close()` hands both back. */
+export class EmployeeGitVault {
+  constructor(private readonly db: SqlDatabase, private readonly cipher: GitVaultCipher, private readonly release: () => void = () => {}) {}
   /** Binding presence only: never decrypt credentials to decide host-wide fallback. */
   hasBindings(host: string): boolean {
     validateKey('binding-presence', host);
@@ -105,13 +101,10 @@ export class EmployeeGitVaultStore {
     const row = this.db.prepare('SELECT revision,credential FROM employee_git_credentials WHERE account=? AND host=?').get(account, host);
     if (!row) return { revision: 0, credential: null };
     if (row.credential === null) return { revision: Number(row.revision), credential: null };
-    const data = Buffer.from(row.credential as Uint8Array);
-    let clear: Buffer | undefined;
+    let clear: Uint8Array | undefined;
     try {
-      const decipher = createDecipheriv('aes-256-gcm', this.key, data.subarray(0, 12));
-      decipher.setAAD(this.aad(account, host)); decipher.setAuthTag(data.subarray(-16));
-      clear = Buffer.concat([decipher.update(data.subarray(12, -16)), decipher.final()]);
-      const credential: unknown = JSON.parse(clear.toString('utf8'));
+      clear = this.cipher.open(this.aad(account, host), row.credential as Uint8Array);
+      const credential: unknown = JSON.parse(text.decode(clear));
       return { revision: Number(row.revision), credential };
     } finally { clear?.fill(0); }
   }
@@ -135,21 +128,19 @@ export class EmployeeGitVaultStore {
   }
   /** Authenticated private execution metadata, using the same key and AAD owner.
    * The envelope carries identity/scope only, never environment values. */
-  personalGitAuthority(accountMode:'principal'|'actor'='principal'): string { return gitGrantAuthority(this.key,accountMode); }
-  sealPersonalGitGrant(scope: GitGrantScope): string { return sealGitGrant(this.key, scope); }
+  personalGitAuthority(accountMode:'principal'|'actor'='principal'): string { return this.cipher.grantAuthority(accountMode); }
+  sealPersonalGitGrant(scope: GitGrantScope): string { return this.cipher.sealGrant(scope); }
   sealExecutionContext(document: unknown): string {
-    return this.encrypt('platform', 'document-execution-context', document).toString('base64url');
+    return encodeGitVaultBase64Url(this.encrypt('platform', 'document-execution-context', document));
   }
   openExecutionContext(envelope: string): unknown {
     if (typeof envelope !== 'string' || envelope.length > 8192 || !/^[A-Za-z0-9_-]+$/u.test(envelope)) throw new GitVaultError('invalid');
-    const data = Buffer.from(envelope, 'base64url');
-    if (data.toString('base64url') !== envelope) throw new GitVaultError('invalid');
-    let clear: Buffer | undefined;
+    const data = decodeGitVaultBase64Url(envelope);
+    if (encodeGitVaultBase64Url(data) !== envelope) throw new GitVaultError('invalid');
+    let clear: Uint8Array | undefined;
     try {
-      const decipher = createDecipheriv('aes-256-gcm', this.key, data.subarray(0, 12));
-      decipher.setAAD(this.aad('platform', 'document-execution-context')); decipher.setAuthTag(data.subarray(-16));
-      clear = Buffer.concat([decipher.update(data.subarray(12, -16)), decipher.final()]);
-      return JSON.parse(clear.toString('utf8'));
+      clear = this.cipher.open(this.aad('platform', 'document-execution-context'), data);
+      return JSON.parse(text.decode(clear));
     } catch { throw new GitVaultError('invalid'); }
     finally { clear?.fill(0); }
   }
@@ -179,22 +170,18 @@ export class EmployeeGitVaultStore {
     validateKey(account, host);
     if (!Number.isSafeInteger(revision) || revision < 0) throw new GitVaultError('invalid');
     const payload = credential ? this.encrypt(account, host, credential) : null;
-    this.db.exec('BEGIN IMMEDIATE');
-    try {
+    this.db.transaction(() => {
       if (this.readValue(account, host).revision !== revision) throw new GitVaultError('conflict', 409);
       // Keep a tombstone on delete: stale revision zero must never overwrite a later generation.
       this.db.prepare('INSERT INTO employee_git_credentials(account,host,revision,credential) VALUES(?,?,?,?) ON CONFLICT(account,host) DO UPDATE SET revision=excluded.revision,credential=excluded.credential')
         .run(account, host, revision + 1, payload);
-      this.db.exec('COMMIT');
-    } catch (error) { if (this.db.isTransaction) this.db.exec('ROLLBACK'); throw error; }
+    });
   }
-  close(): void { try { this.db.close(); } finally { this.key.fill(0); } }
-  private aad(account: string, host: string): Buffer { return Buffer.from(JSON.stringify(['employee-git-vault', 1, account, host, 'credential'])); }
-  private encrypt(account: string, host: string, credential: unknown): Buffer {
-    const clear = Buffer.from(JSON.stringify(credential)), iv = randomBytes(12);
-    try {
-      const cipher = createCipheriv('aes-256-gcm', this.key, iv); cipher.setAAD(this.aad(account, host));
-      return Buffer.concat([iv, cipher.update(clear), cipher.final(), cipher.getAuthTag()]);
-    } finally { clear.fill(0); }
+  close(): void { try { this.release(); } finally { this.cipher.dispose(); } }
+  private aad(account: string, host: string): Uint8Array { return utf8.encode(JSON.stringify(['employee-git-vault', 1, account, host, 'credential'])); }
+  private encrypt(account: string, host: string, credential: unknown): Uint8Array {
+    const clear = utf8.encode(JSON.stringify(credential));
+    try { return this.cipher.seal(this.aad(account, host), clear); }
+    finally { clear.fill(0); }
   }
 }

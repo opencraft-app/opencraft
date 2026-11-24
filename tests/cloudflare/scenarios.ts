@@ -7,6 +7,7 @@ import { INSTALLATION_CORE_SCENARIOS } from "../storage/workerd/installation-cor
 import { WORKSPACE_HOST_SCENARIOS } from "../storage/workerd/workspace-host.scenarios.ts";
 import { DEPLOYMENT_STORE_SCENARIOS } from "../storage/workerd/deployment-stores.scenarios.ts";
 import { INSTALLATION_STORE_SCENARIOS } from "../storage/workerd/installation-stores.scenarios.ts";
+import { WORKSPACE_STORE_SCENARIOS } from "../storage/workerd/workspace-stores.scenarios.ts";
 import { EXTENSION_STORE_SCENARIOS } from "../storage/workerd/extension-stores.scenarios.ts";
 import { LOGIN_ENTRY_SCENARIOS } from "../identity/workerd/login-entry.scenarios.ts";
 import { HTTP_EXCHANGE_SCENARIOS } from "../server/workerd/http-exchange.scenarios.ts";
@@ -40,6 +41,11 @@ export const SCENARIO_GROUPS: readonly ScenarioGroup[] = [
     id: "installation-stores",
     label: "InstallationCore stores (admission projection, Server spaces, orchestration runtime on DO SQL)",
     scenarios: INSTALLATION_STORE_SCENARIOS,
+  },
+  {
+    id: "workspace-stores",
+    label: "WorkspaceHost stores (thread directory, employee Git vault on DO SQL)",
+    scenarios: WORKSPACE_STORE_SCENARIOS,
   },
   {
     id: "extension-stores",

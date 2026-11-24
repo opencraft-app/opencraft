@@ -2,7 +2,7 @@ import { createPrivateKey, generateKeyPairSync, type KeyObject } from "node:cryp
 import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute } from "node:path";
 import { AccountEnvironment } from "./account-environment.js";
-import type { EmployeeGitVaultStore } from "./employee-git-vault-store.js";
+import type { EmployeeGitVault } from "./employee-git-vault-store.js";
 import {
   EnvironmentLaunchIssuer,
   canonicalEnvironmentLaunchAdmission,
@@ -70,7 +70,7 @@ export interface EnvironmentLaunchRecordReaders {
 /** Terminal records from the current Actor epoch and the Thread's Project
  * binding. A threadless terminal gets no Project: the request never selects one. */
 export function environmentTerminalRecords(
-  vault: Pick<EmployeeGitVaultStore, "readDocument">,
+  vault: Pick<EmployeeGitVault, "readDocument">,
   actor: (account: string) => EnvironmentActorEpoch | null,
 ): NonNullable<EnvironmentLaunchRecordReaders["terminal"]> {
   return (claim) => {
@@ -117,7 +117,7 @@ export class EnvironmentLaunchOwner {
   /** X25519 public key that execution owners pin through trusted composition. */
   readonly issuer: string;
   constructor(
-    private readonly vault: Pick<EmployeeGitVaultStore, "readDocument" | "writeDocument">,
+    private readonly vault: Pick<EmployeeGitVault, "readDocument" | "writeDocument">,
     /** Durable admission of an active Turn (`null` when it has no Human owner). */
     private readonly admission: (
       input: GitExecutionLocator,
@@ -318,7 +318,7 @@ const GENERATION = /^[A-Za-z0-9._-]{1,64}$/u;
  * keeps the stored key. A stored document that is not a valid key is refused
  * instead of silently rotated. Runs inside the sole vault owner. */
 export function sealedEnvironmentIssuerKey(
-  vault: Pick<EmployeeGitVaultStore, "readDocument" | "writeDocument">,
+  vault: Pick<EmployeeGitVault, "readDocument" | "writeDocument">,
   generation: string | null = null,
 ): KeyObject {
   if (generation !== null && !GENERATION.test(generation)) return unavailable();
