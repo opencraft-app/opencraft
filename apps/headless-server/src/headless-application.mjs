@@ -30,6 +30,7 @@ import { openServerCoreOwner } from "@opencraft/storage-node/server-owner";
 import { ownerEntry } from '@opencraft/worker-owner';
 import { ModelPolicyTransport } from '@opencraft/model-usage-policy/transport';
 import { assembleAccount } from './assembly/account.mjs';
+import { nodeAccountInputs } from './assembly/account-node.mjs';
 import { assembleNodeLocal } from './assembly/node-local.mjs';
 import { assembleInstallation } from './assembly/installation.mjs';
 import { createHeadlessLifecycle, createLateBinding } from './assembly/lifecycle.mjs';
@@ -513,8 +514,10 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     const membership = installation.openMembership({ hub: hubController.node, accessControl: options.accessControl,
       accessMemberProviders: options.accessMemberProviders, humanConfiguration, relayConfiguration });
     const machineIdentity = await rootInputs.machineIdentity();
-    account = assembleAccount({ dataDirectory, codexCoreEndpoint: options.codexCoreEndpoint, codexCoreAuthToken: options.codexCoreAuthToken });
-    const { modelPolicyPath } = account;
+    // The account takes its storage as ports; the Node inputs are the data directory's files (account-node.mjs).
+    const accountInputs = nodeAccountInputs({ dataDirectory, codexCoreEndpoint: options.codexCoreEndpoint, codexCoreAuthToken: options.codexCoreAuthToken });
+    account = assembleAccount(accountInputs);
+    const { modelPolicyPath } = accountInputs;
     const { actorStore, identity, environmentDelivered } = await installation.openIdentity({
       // The Node data directory reaches only the identity composition, first as before.
       createIdentity: composition.createIdentity && (input => composition.createIdentity({ dataDirectory, ...input })),

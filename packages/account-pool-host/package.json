@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./credential-leases": "./src/credential-leases.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
@@ -12,6 +13,7 @@
   "dependencies": {
     "undici": "^8.12.2",
     "@opencraft/appserver-protocol": "0.1.0",
+    "@opencraft/document-storage": "0.1.0",
     "@opencraft/http-exchange": "0.1.0",
     "@opencraft/sql": "0.1.0",
     "@opencraft/sqlite-node": "0.1.0",

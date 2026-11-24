@@ -5,6 +5,9 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./store": "./src/store.ts",
+    "./sql-owner": "./src/sql-owner.ts",
+    "./rules": "./src/rules.mjs",
     "./native": "./src/native.mjs",
     "./http": "./src/http.ts",
     "./transport": "./src/transport.ts"

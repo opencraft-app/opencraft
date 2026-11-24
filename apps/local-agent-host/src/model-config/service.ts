@@ -1,7 +1,7 @@
 import {readFile} from 'node:fs/promises';
 import type {ModelDocument} from './model-document.js';
 import {ModelConfigurationRepository} from './repository.js';
-import {engineEndpointAllowed} from './engine-endpoint.js';
+import {providerRoute,type RoutedProvider} from './provider-route.js';
 
 export interface ModelCredentialResolver {resolve(reference:string):Promise<string|undefined>}
 /** Credential owner seen by an engine composition. Embedded mode: the local model SecretStore. Proxy mode: the
@@ -29,22 +29,20 @@ export async function readProxyCaller(env:NodeJS.ProcessEnv=process.env):Promise
     ||typeof value.baseUrl!=='string'||!/^http:\/\/127\.0\.0\.1:[0-9]{1,5}\/?$/.test(value.baseUrl))throw new ModelConfigurationApplyError('模型代理调用凭据无效，请检查 proxy 服务。');
   return {caller:value.caller,baseUrl:value.baseUrl.replace(/\/$/,''),token:value.token};
 }
-/** Protocols the account Core forwards natively for non-Codex callers (codex-proxy.ts PROVIDER_ROUTE). */
-export const PROXY_PROTOCOLS=Object.freeze(['anthropic-messages','openai-responses','openai-completions'] as const);
-type RoutedProvider={id:string;name?:string;protocol:string;baseUrl?:string|null;credentialRef?:string|null;authentication?:string;catalogId?:string|null};
+export {PROXY_PROTOCOLS} from './provider-route.js';
 /** How an engine reaches one provider when the deployment runs a model proxy.
  * - `proxy`: through the account Core, which resolves the real credential.
- * - `keyless`: the engine needs no credential (no-auth endpoint, no reference, speech or human contributions,
- *   which engines never execute: speech belongs to the Gateway, human providers to the account Core).
+ * - `keyless`: the engine needs no credential (provider-route.ts).
  * - `rejected`: would require the engine to hold a provider key; refused with a user-facing reason. */
 export type ProxyRouting={route:'proxy';baseUrl:string}|{route:'keyless'}|{route:'rejected';reason:string};
 export function proxyRouting(p:RoutedProvider,caller:ProxyCaller):ProxyRouting{
-  if(p.authentication==='none'||!p.credentialRef||p.catalogId?.startsWith('opencraft-human-')||p.protocol==='hunyuan-asr')return {route:'keyless'};
+  const decided=providerRoute(p);
+  if(decided.route==='keyless')return decided;
   const name=p.name?.trim()||p.id;
-  if(!(PROXY_PROTOCOLS as readonly string[]).includes(p.protocol))
-    return {route:'rejected',reason:`“${name}”的连接协议不能经模型代理转发。当前部署不允许引擎直接持有模型密钥，请改用 OpenAI 兼容、OpenAI Responses 或 Anthropic Messages 连接。`};
-  if(!p.baseUrl)return {route:'rejected',reason:`“${name}”没有填写服务地址。当前部署经模型代理调用模型，请填写该提供商的明确服务地址后再启用。`};
-  if(!engineEndpointAllowed(p.baseUrl))return {route:'rejected',reason:`“${name}”的服务地址必须使用 HTTPS（或本机地址），模型代理才能转发。`};
+  if(decided.route==='rejected')return {route:'rejected',reason:decided.why==='protocol'
+    ?`“${name}”的连接协议不能经模型代理转发。当前部署不允许引擎直接持有模型密钥，请改用 OpenAI 兼容、OpenAI Responses 或 Anthropic Messages 连接。`
+    :decided.why==='base-url'?`“${name}”没有填写服务地址。当前部署经模型代理调用模型，请填写该提供商的明确服务地址后再启用。`
+    :`“${name}”的服务地址必须使用 HTTPS（或本机地址），模型代理才能转发。`};
   const route=caller.baseUrl+'/providers/'+encodeURIComponent(p.id);
   return {route:'proxy',baseUrl:p.protocol==='anthropic-messages'?route:route+'/v1'};
 }
