@@ -8,6 +8,17 @@ import type { Principal } from "@opencraft/identity-core";
 import type { IdentityProvider, IdentityRequest } from "@opencraft/identity-core/node";
 import type { PasswordHasher } from "@opencraft/plugin-local-account/password-hash";
 import type { LocalAccountApplication } from "@opencraft/plugin-local-account/application";
+import type { ServerSpacesRuntime } from "@opencraft/access-control/server-spaces";
+import type { ThreadAccessStore } from "@opencraft/access-control/thread-access";
+import type { Collaboration, CollaborationHttpApi } from "@opencraft/access-control/collaboration";
+import type { OrchestrationRuntimeWorker } from "@opencraft/access-control/orchestration-runtime-store";
+import type { ThreadOrchestrationBroker } from "@opencraft/access-control/thread-orchestration-broker";
+import type { CapabilityBindingProjection } from "@opencraft/session-capabilities/binding-projection";
+import type { KeyMaterial } from "@opencraft/secret-storage";
+import type { StateDocumentStore } from "@opencraft/document-storage/state";
+import type { TurnPushOptions, TurnPushService } from "@opencraft/web-push-node";
+import type { ActorSshKeys } from "../actor-ssh-keys.ts";
+import type { LateBinding } from "./lifecycle.mjs";
 
 /**
  * The Server core SQL owner: the source the identity stores open their
@@ -67,7 +78,40 @@ export interface InstallationAdmission {
   instanceAccess: InstanceAccess | undefined;
 }
 
+/** The routed conversation execution the collaboration services read (workspace-host owns it). */
+export interface InstallationConversationExecution {
+  serverForHost(hostId: string, threadId: string): string;
+  serverForThread(threadId: string): string;
+  hostForServer(serverId: string): string;
+  readonly [member: string]: unknown;
+}
+
+/** The deployment operator the root selects (anonymous deployments act through it). */
+export interface InstallationOperator {
+  owns(actorId: string): boolean;
+  readonly [member: string]: unknown;
+}
+
+/** The push subscription store the delivering service runs on. */
+export type InstallationPushStore = ConstructorParameters<typeof TurnPushService>[0];
+
+/** The installation's server information, as Turn push links read it. */
+export interface InstallationServerInformation {
+  read(): Promise<{ revision: number; publicUrl: string }>;
+}
+
+/** An HTTP handler that answers its own routes and declines the rest. */
+export type InstallationHttpService = (request: unknown, response: unknown) => Promise<boolean>;
+
+/** A store with a close the shutdown order calls. */
+export interface InstallationClosable {
+  close(): unknown;
+  readonly [member: string]: unknown;
+}
+
 export interface InstallationAssembly {
+  /** Orchestration runtime storage on the core owner's connection; opened right after the owner. */
+  openOrchestrationStorage(): OrchestrationRuntimeWorker;
   /** Opens instance membership when any admission source is configured; otherwise `undefined`. */
   openMembership(options: {
     hub: InstallationHub;
@@ -111,6 +155,88 @@ export interface InstallationAssembly {
   }): Promise<InstallationAdmission>;
   /** Actor access over the admitted Human authority; identity owners commit through the identity writes. */
   openActorAccess(): ActorAccess;
+  /** Server spaces, thread access over them, and shared thread notes in the core owner. */
+  openSpaces(): Promise<{
+    serverSpaces: ServerSpacesRuntime;
+    threadAccess: ThreadAccessStore;
+    threadNotes: {
+      exchange(serverId: string, threadId: string, update: unknown, vector: unknown): Promise<unknown>;
+    };
+  }>;
+  /**
+   * Collaboration, thread orchestration and project automations, started;
+   * the App Host is read through its late binding, `codexBridge` is called
+   * once the broker is ready.
+   */
+  openCollaboration(options: {
+    conversationExecution: InstallationConversationExecution;
+    operator: InstallationOperator;
+    anonymousHandoff(): boolean;
+    appHost: LateBinding<unknown>;
+    engines: readonly string[];
+    codexBridge(): { readonly url: string; readonly token: string } | undefined;
+  }): Promise<{
+    actorCollaboration: Collaboration;
+    threadOrchestration: ThreadOrchestrationBroker;
+    actorCollaborationApi: CollaborationHttpApi;
+  }>;
+  /** Connectors for the two local hosts' execution servers; the root's factory opens their stores. */
+  openConnectors<Connectors extends InstallationClosable>(options: {
+    createConnectors(input: {
+      access: ActorAccess;
+      hosts: Readonly<Record<"local-codex" | "opencraft-server", string>>;
+      admitted(actorId: string): boolean;
+      resolveServer(hostId: string, threadId: string): string;
+    }): Connectors;
+    machineId: string;
+    defaultEngine: string;
+    conversationExecution: InstallationConversationExecution;
+  }): Connectors;
+  /** Capability bindings read from memory and committed by the core owner. */
+  openCapabilityBindings(): Promise<CapabilityBindingProjection>;
+  /** The capability signing key, ensured in the given key material. */
+  openCapabilitySigningKey(keyMaterial: KeyMaterial): Promise<Buffer>;
+  /** MCP apps; the root's factory opens their store. */
+  openMcpApps<Apps extends InstallationClosable>(open: () => Apps): Apps;
+  /** Server information over the given document store. */
+  openServerInformation(documents: StateDocumentStore): {
+    serverInformation: InstallationServerInformation;
+    serverInformationService: InstallationHttpService;
+  };
+  /** Personal model defaults and personal SSH keys of the signed-in Human. */
+  openPersonalServices(options: { sshLogin: boolean }): Promise<{
+    accountModelDefaultsService: InstallationHttpService;
+    personalSshKeys: ActorSshKeys;
+    actorSshKeysService: InstallationHttpService;
+  }>;
+  /**
+   * Turn push subscriptions; the root's factories open the store and
+   * construct the service, returned before `initialize`.
+   */
+  openTurnPush(options: {
+    openStore(): Promise<InstallationPushStore>;
+    createService(store: InstallationPushStore, options: TurnPushOptions): TurnPushService;
+    appHost: LateBinding<unknown>;
+    imPlugins: LateBinding<unknown>;
+    conversationExecution: InstallationConversationExecution;
+  }): Promise<TurnPushService>;
+  /** Shutdown step 3, among the parallel entry disposers. */
+  closeTurnPush(): unknown;
+  /** Shutdown step 5, after the runtime plugins. */
+  closePersonalSshKeys(): unknown;
+  /** Shutdown step 7, one at a time, before the personal assistant host and the App Host. */
+  closeProjectAutomations(): unknown;
+  /** Shutdown steps 7 and 9; idempotent. */
+  closeThreadOrchestration(): unknown;
+  /** Shutdown step 9, in parallel. */
+  closeConnectors(): unknown;
+  closeCollaboration(): unknown;
+  closeThreadAccess(): unknown;
+  closeServerSpaces(): unknown;
+  /** Shutdown step 9 after that group, and first in the root's lock release. */
+  closeOrchestrationStorage(): unknown;
+  /** Shutdown step 11, serial, after the account and before SSH management. */
+  closeMcpApps(): unknown;
   /** Shutdown step 11, serial, after the SSH management store and before the workspace routing and Assets owners. */
   closeIdentityExecutionEnvironment(): unknown;
   closeIdentity(): unknown;
@@ -121,6 +247,7 @@ export interface InstallationAssembly {
   closeHumanAuth(): unknown;
   closeHumanAccounts(): unknown;
   closeIdentityWrites(): unknown;
+  closeCapabilityBindings(): unknown;
   /** Shutdown step 11, serial, after the capability bindings: the last writers before the root lock. */
   closeActorStore(): unknown;
   closeMembership(): unknown;
