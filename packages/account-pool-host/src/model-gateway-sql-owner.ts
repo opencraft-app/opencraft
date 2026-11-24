@@ -10,11 +10,7 @@ import { createHash } from "node:crypto";
 import { hashSqlMigrations, resolveSqlMigrationContract } from "@opencraft/sql/migrations";
 import type { SqlMigrationFamily } from "@opencraft/sql/families";
 import { STORE_MIGRATIONS } from "@opencraft/sqlite-node/store-migrations-data";
-import {
-  MODEL_GATEWAY_SCHEMA,
-  modelGatewayMigrations,
-  ownedByModelGateway,
-} from "./model-gateway.js";
+import { MODEL_GATEWAY_SCHEMA, modelGatewayMigrations, ownedByModelGateway } from "./model-gateway.js";
 
 const sha256Hex = (text: string) => createHash("sha256").update(text).digest("hex");
 
