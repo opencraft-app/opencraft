@@ -16,7 +16,7 @@
 
 [![AI Agents](https://img.shields.io/badge/AI_Agents-18181b)](https://github.com/topics/ai-agents) [![ACP](https://img.shields.io/badge/ACP-18181b)](plugins/acp-engine/README.md) [![MCP](https://img.shields.io/badge/MCP-18181b)](docs/architecture/execution/session-capabilities.md) [![自主部署](https://img.shields.io/badge/Self_Hosted-18181b)](deploy/docker/README.md) [![协作](https://img.shields.io/badge/Collaboration-18181b)](docs/architecture/identity/actor-collaboration-api.md)
 
-[快速开始](#快速开始) · [可以用来做什么](#可以用来做什么) · [文档导航](#文档导航) · [参与贡献](CONTRIBUTING.md)
+[安装](#安装) · [快速开始](#快速开始) · [可以用来做什么](#可以用来做什么) · [文档导航](#文档导航) · [参与贡献](CONTRIBUTING.md)
 
 </div>
 
@@ -56,6 +56,21 @@ OpenCraft 是一个开源 Agent 工作台，围绕 **Anyone Agents Anywhere** �
 跨 Hub 分享 Agent、任意 Agent 的通用即插即用接入，是我们推进的方向。
 已实现能力及具体范围见[主体协作接口](docs/architecture/identity/actor-collaboration-api.md)、
 [主体与 Hub 设计](docs/architecture/identity/actor-collaboration.md)和[执行契约](docs/architecture/execution/execution-ownership.md)。
+
+## 安装
+
+从 [Releases](https://github.com/opencraft-app/opencraft/releases) 下载最新版本，测试版标为 Pre-release。
+
+| 平台 | 下载 |
+| --- | --- |
+| macOS（Apple 芯片与 Intel） | `OpenCraft-<版本>-universal.dmg`，已签名并经 Apple 公证 |
+| Windows x64 | `OpenCraft-Setup-<版本>-x64.exe`，暂未签名，首次运行需在系统提示中确认 |
+| Linux x64 | `OpenCraft-<版本>-linux-x86_64.AppImage` |
+| Android | `OpenCraft-<版本>-android-arm64.apk` |
+| iOS | TestFlight 公测即将开放；也可用自己的 Apple ID 签名安装 `OpenCraft-<版本>-ios-unsigned.ipa` |
+| 服务器 | `docker pull ghcr.io/opencraft-app/opencraft-server:<版本>`，部署见 [Docker 部署指南](deploy/docker/README.md)；也可使用 Linux 压缩包 `OpenCraft-server-<版本>-linux-amd64.tar.gz` |
+
+每个版本附带 `SHA256SUMS.txt` 和 `release-manifest.json`，可用来核对下载的文件。
 
 ## 快速开始
 
