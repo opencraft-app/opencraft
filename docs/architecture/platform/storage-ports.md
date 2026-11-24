@@ -64,7 +64,7 @@ interface SqlDatabase {
 
 #### 生命周期仍归 owner
 
-迁移账本（`schema_migrations`、连续版本、SHA-256 校验）的语义是跨运行时的，唯一实现是 `@opencraft/sql/migrations`：`hashSqlMigrations`（哈希函数由 owner 提供，Node 与 workerd `nodejs_compat` 均用 `node:crypto`）、`validateMigrationHistory`（版本、名称或 checksum 不符拒绝为 `history-mismatch`，账本超出声明链拒绝为 `newer-schema`）、`applySqlMigrations`（每个待执行迁移一次 `transaction()`，在事务内重新校验账本，原样 `exec` 已发布 SQL，最后一个迁移在记录账本前执行可选 schema 校验）。owner 可传入自己的错误类型：`@opencraft/sqlite-node` 的 `prepareMigrations`／`validateHistory`／`applyMigrations` 委托这些函数并继续抛 `SqliteLifecycleError`，已发布 SQL、名称与 checksum 不变。DO owner 的精简生命周期是 `@opencraft/storage-node/server-sql` 的 `migrateServerSqlDatabase(database)`：只做上述账本与迁移，有对象但无账本的库拒绝采纳，返回 `{ database, outcome, contract }`，不含 `location`（见[InstallationCore 原型状态](cloudflare-deployment.md#5-installationcore-原型状态)）。下列能力属于 Node owner，保留在 `@opencraft/sqlite-node` 与 `@opencraft/storage-node`：
+迁移账本（`schema_migrations`、连续版本、SHA-256 校验）的语义是跨运行时的，唯一实现是 `@opencraft/sql/migrations`：`hashSqlMigrations`（哈希函数由 owner 提供，Node 与 workerd `nodejs_compat` 均用 `node:crypto`）、`validateMigrationHistory`（版本、名称或 checksum 不符拒绝为 `history-mismatch`，账本超出声明链拒绝为 `newer-schema`）、`applySqlMigrations`（每个待执行迁移一次 `transaction()`，在事务内重新校验账本，原样 `exec` 已发布 SQL，最后一个迁移在记录账本前执行可选 schema 校验）。owner 可传入自己的错误类型：`@opencraft/sqlite-node` 的 `prepareMigrations`／`validateHistory`／`applyMigrations` 委托这些函数并继续抛 `SqliteLifecycleError`，已发布 SQL、名称与 checksum 不变。DO owner 的精简生命周期是 `@opencraft/storage-node/server-sql` 的 `migrateServerSqlDatabase(database)`：只做上述账本与迁移，有对象但无账本的库拒绝采纳，返回 `{ database, outcome, contract }`，不含 `location`（见[InstallationCore 状态](cloudflare-deployment.md#5-installationcore-状态)）。下列能力属于 Node owner，保留在 `@opencraft/sqlite-node` 与 `@opencraft/storage-node`：
 
 | 能力 | Node | DO |
 | --- | --- | --- |

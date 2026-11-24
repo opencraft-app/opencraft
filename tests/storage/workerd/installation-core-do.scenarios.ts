@@ -221,7 +221,7 @@ async function sequence(backend: Backend) {
     anonymous.call("/__opencraft_access/session", undefined, { authorization: "Bearer oc_actor_fixture" }),
   );
   await record(
-    "member cannot remove admin",
+    "member cannot change membership",
     member.call("/__opencraft_access/members", { actorId: memberActorId, role: "member", enabled: false }),
   );
   await record(
