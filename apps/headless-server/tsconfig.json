@@ -35,6 +35,7 @@
     "src/assembly/lifecycle.d.mts",
     "src/assembly/node-local.d.mts",
     "src/assembly/root-inputs.ts",
-    "src/assembly/root-inputs-node.d.mts"
+    "src/assembly/root-inputs-node.d.mts",
+    "src/assembly/workspace-host.d.mts"
   ]
 }

@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import {openWorkspaceExecutionService} from './workspaces/execution-service.js';
-import {WorkspaceNativeAdmission} from './workspaces/native-admission.js';
 import {openHeadlessAssetsStorage} from './headless-assets-storage.js';
 import {humanGitRuntimeDirectory,createHumanGitExecution} from './human-git-execution.js';
 import { openHumanAssets } from '@opencraft/plugin-local-account/assets-server';
@@ -12,15 +11,13 @@ import { HostWorkspaceCatalogTransport } from './host-workspace-catalog-transpor
 import { createCodexWorkspaceHooks, validateCodexWorkspaceHooks, hasCodexWorkspaceHooks, configuredWorkspaceExecution, workspaceLifecycleRouting } from './codex-workspace-hooks.mjs';
 import { configuredModelGatewayPath, CodexCoreControlClient } from "@opencraft/account-pool-host";
 import { createAssistantModelSource } from '@opencraft/local-agent-host/model-config/assistant';
-import { createWorkspaceBotProvider } from './workspaces/bot-client.js';
 import { createPersonalAssistantHost } from '@opencraft/personal-assistant/host';
 import { LocalAttachmentStagingService } from '@opencraft/local-agent-host/attachments/local-staging';
 import { deploymentOperator } from "@opencraft/access-control/deployment-operator";
 import { localExecutionCli } from "@opencraft/session-capabilities/execution-cli";
 import { ServerSpacesSession } from '@opencraft/access-control/server-spaces-session';
 import { executionCliSourceToken } from '@opencraft/session-capabilities/credentials';
-import { waitForExecutionCliBinding } from '@opencraft/session-capabilities/execution-cli';
-import { codexAdmissionPaused,createServerCodexBridge,readCodexBridgeConfiguration,createBridgeSessionMcp } from '@opencraft/opencraft-daemon/bridge-execution-admission';
+import { codexAdmissionPaused,createServerCodexBridge,readCodexBridgeConfiguration } from '@opencraft/opencraft-daemon/bridge-execution-admission';
 import { CodexHostServices, codexAccountsService, codexModelsService, codexPinsService, codexTasksService } from '@opencraft/opencraft-daemon/codex-host-services';
 import { CodexNativeReader } from '@opencraft/opencraft-daemon/codex-native-reader';
 import { startCodexEngineHost } from '@opencraft/opencraft-daemon/codex-bridge-stack';
@@ -32,12 +29,11 @@ import { ModelPolicyTransport } from '@opencraft/model-usage-policy/transport';
 import { assembleAccount } from './assembly/account.mjs';
 import { assembleNodeLocal } from './assembly/node-local.mjs';
 import { assembleInstallation } from './assembly/installation.mjs';
+import { assembleWorkspaceHost } from './assembly/workspace-host.mjs';
 import { createHeadlessLifecycle, createLateBinding } from './assembly/lifecycle.mjs';
 import { ExecutionEnvironmentTransport } from './execution-environment-transport.ts';
 import { EnvironmentMetadataTransport } from './environment-metadata-transport.ts';
-import { createHostEnvironmentLaunch } from './host-environment-launch.ts';
-import { coreCodexEnvironmentLaunch, codexExecutionGit } from './codex-environment-launch.ts';
-import { createEnvironmentAdmissionHandoff } from './environment-admission-handoff.ts';
+import { codexExecutionGit } from './codex-environment-launch.ts';
 import { composeHostTerminalSelector, createHandsTerminalService, HostTerminalSession, HostTerminalTransport, terminalResourceOwnerId } from './host-terminal-transport.js';
 import { createHostFileSystem } from './host-filesystem.js';
 import { composeHostFileSelector, HostFileSystemSession, HostFileSystemTransport } from './host-filesystem-transport.js';
@@ -49,10 +45,6 @@ import { ConversationResourceLifecycle } from './conversation-resource-lifecycle
 import { periodicOwnerWork, timeoutOwnerWake } from "@opencraft/owner-wake";
 import { ConversationResourceTransport } from './conversation-resource-transport.js';
 import { RemoteBrowserService } from './remote-browser-service.mjs';
-import { RemoteBrowserCapabilities } from './remote-browser/capabilities.ts';
-import { createCapabilityContextResolver } from './capability-execution-context.ts';
-import { createGitStatusCapability } from './git-status-capability.ts';
-import { createBrowserGrantResolver } from './remote-browser/execution-grant.ts';
 import { connectBrowserOwner } from './remote-browser-owner.mjs';
 
 import { access, chmod, mkdir, mkdtemp, stat, readFile } from "node:fs/promises";
@@ -95,17 +87,14 @@ import { PiEngine } from "@opencraft/plugin-pi-engine";
 import { createWorkbenchWebServer } from "./serve-workbench-web.mjs";
 import { prepareProductPluginRelease } from './web-deployment/product-plugin-packs.mjs';
 import { loadLocalMachineAccess } from './local-machine-access.mjs';
-import { maintainHeadlessCodexHost } from "./headless-host-readiness.mjs";
 import { readTaskCodexConversations } from "./tasks-conversation-catalog.mjs";
 import { assertHeadlessWebRelease } from "./headless-web-release.mjs";
 import { ModelConfigurationRepository, ModelCredentialRepository } from "@opencraft/local-agent-host/model-config/repository";
 import { ThreadAccessSession } from '@opencraft/access-control/thread-access';
-import { CollaborationError } from '@opencraft/access-control/collaboration';
 import { communicationExtensionModule } from '@opencraft/access-control/communication-extension';
 import { THREAD_ORCHESTRATION_TOOLS } from '@opencraft/appserver-protocol/collaboration';
-import { createRoutedConversationExecution, conversationAccessServer, callConversationHost, readConversationCurrentTurn } from './conversation-execution.mjs';
+import { createRoutedConversationExecution, conversationAccessServer, callConversationHost } from './conversation-execution.mjs';
 import { openPushStore, TurnPushService, PushObservationTransport } from '@opencraft/web-push-node';
-import { NativeExecutionAuthority } from './native-execution-authority.ts';
 import { readImConfiguration, startImPlugins, createChannelSyncDependencies, channelSyncContext } from './im-plugins.mjs';
 import { ImChannelsAppServer } from './im-channels-appserver.mjs';
 import { CHANNELS_HOST_ID } from '@opencraft/appserver-protocol/channels';
@@ -310,7 +299,6 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     throw new Error('A server Codex Engine Host requires an existing Core endpoint and no external bridge configuration');
   if(options.codexBridgePrograms!==undefined&&options.codexRuntime!==undefined&&options.codexRuntime.nativeSocket===undefined)
     throw new Error('A server Codex Engine Host needs the workspace Codex runtime native endpoint');
-  let codexEngineHost;
   const agentBridge=options.agentBridge??(options.agentBridgeFile?await readPrivateJson(options.agentBridgeFile):undefined);
   if(agentBridge!==undefined&&(!agentBridge||typeof agentBridge!=='object'||Array.isArray(agentBridge)))throw new Error('Invalid private agent bridge configuration');
   if(configuredCodexBridge&&!options.codexCoreEndpoint)throw new Error('Codex bridge requires an existing Core endpoint');
@@ -386,42 +374,19 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let dshAgent;
   let releasePiOwner;
   let web;
-  let fileDownloads;
   let agentIdentity;
   let executionDatabase;
   let account;
-  let assetsService;
-  let assetsStorage;
-  let installedBotProvider, botAdmission;
   let workspaceRouting;
-  let ownedWorkspaceRouting;
-  let humanGitExecution;
-  let withdrawGitStatus;
-  // The one opaque ENV vault-owner port: a downstream port or the core vault Worker.
-  let environmentLaunch;
-  // Non-secret ENV metadata (bindings, creators, catalog) on that vault owner.
-  let environmentMetadata;
-  // The live Actor/lease handoff ENV delivery seals against.
-  let environmentHandoff;
-  // The one personal Git execution owner (core assets Worker or identity port).
-  let gitExecutionOwner;
-  // Codex creation and Turn ENV delivery to the split Codex Core.
-  let codexEnvironmentLaunch;
   const terminalServices = new Map();
   const fileSystem = options.fileSystemOwner ? createHostFileSystem(options.fileSystemOwner) : null;
   let personalAssistantHost;
   const capabilities = new SessionCapabilities();
-  let capabilityMcp;
   let capabilitiesReadyResolve;
   const capabilitiesReady = new Promise(resolve => { capabilitiesReadyResolve = resolve; });
   let hubController;
-  let codexReadiness;
   let usageQueries;
-  let remoteBrowser;
   let resourceReconciliationTimer;
-  let browserCapabilities;
-  const remoteExecutionAuthorities = new Map();
-  let connectedExecutionCli;
   let runtimePlugins;
   // Explicit ports for shutdown state and for values constructed after the
   // closures that read them; assembly modules receive these instead of the
@@ -445,6 +410,10 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   // Node-only services; creating the module opens nothing, each step runs at
   // its original position and each disposer at its original shutdown step.
   const nodeLocal = assembleNodeLocal({ dataDirectory });
+  // Execution delivery and the capability surface a workspace's runs call;
+  // creating it opens nothing, each step and disposer keeps its original position.
+  const workspaceHost = assembleWorkspaceHost({ lifecycle, capabilities, appHost: lateAppHost, codexBridge: lateCodexBridge,
+    conversationResources: lateConversationResources, executionObservation: lateExecutionObservation, executionRecovery: lateExecutionRecovery });
   // Deployment-level periodic owner work runs on the owner wake-up port (gateway-split.md §4.2).
   const ownerWake = options.ownerWake ?? timeoutOwnerWake();
   // The lifecycle publishes the shared promise before invoking any disposer
@@ -460,8 +429,9 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     let entryClosing;
     const closeEntry = () => entryClosing ??= settle([
       () => hubController?.close(), nodeLocal.closeRelay, nodeLocal.closeSshIngress, nodeLocal.closeSshNativeRpc,
-      () => codexReadiness?.close(), () => usageQueries?.close(), async () => { withdrawGitStatus?.(); await browserCapabilities?.close(); await remoteBrowser?.close(); },
-      () => fileDownloads?.close(), nodeLocal.closeDesktop, installation.closeTurnPush,
+      workspaceHost.closeReadiness, workspaceHost.closeUsageQueries,
+      async () => { workspaceHost.withdrawGitStatus(); await workspaceHost.closeBrowserCapabilities(); await workspaceHost.closeRemoteBrowser(); },
+      workspaceHost.closeFileDownloads, nodeLocal.closeDesktop, installation.closeTurnPush,
       nodeLocal.closeAvailabilityNotification, () => lateImPlugins.current()?.close(),
     ]);
     await settle([() => web?.close(update, closeEntry)]);
@@ -476,13 +446,13 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     await settle([installation.closeThreadOrchestration]);
     await settle([() => personalAssistantHost?.close()]);
     await settle([() => lateAppHost.current()?.close()]);
-    await settle([() => codexEngineHost?.close()]);
+    await settle([workspaceHost.closeCodexEngineHost]);
     for (const service of terminalServices.values()) service.close();
     terminalServices.clear();
     fileSystem?.close();
     await settle([installation.closeThreadOrchestration, installation.closeConnectors, installation.closeCollaboration, installation.closeThreadAccess, installation.closeServerSpaces]);
     await settle([installation.closeOrchestrationStorage]);
-    await settle([() => agent?.close(), async () => (await dshAgent?.catch(() => undefined))?.close(), () => connectedExecutionCli?.close(), () => capabilityMcp?.close()]);
+    await settle([() => agent?.close(), async () => (await dshAgent?.catch(() => undefined))?.close(), workspaceHost.closeExecutionCli, workspaceHost.closeCapabilityMcp]);
     if (releasePiOwner) await settle([() => releasePiOwner()]);
     await settle([() => lateExecutionRecovery.current()?.close(), () => agentIdentity?.close()]);
     // Each writer finishes before the root kernel lock is released. A failed
@@ -490,7 +460,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     for (const dispose of [() => executionDatabase?.close(),
       () => account?.close(), installation.closeMcpApps, nodeLocal.closeSshManagement, installation.closeIdentityExecutionEnvironment, installation.closeIdentity, installation.closeLoginAdmission,
 
-      () => ownedWorkspaceRouting?.close(), () => installedBotProvider?.close(), () => botAdmission?.close(), () => humanGitExecution?.close(), () => assetsService?.close(), () => assetsStorage?.close(), () => composition.close?.(), installation.closeAccountApplication, installation.closeAccountManagement, installation.closeHumanAuth, installation.closeHumanAccounts,
+      workspaceHost.closeWorkspaceRouting, workspaceHost.closeBotProvider, workspaceHost.closeBotAdmission, workspaceHost.closeHumanGitExecution, workspaceHost.closeHumanAssets, workspaceHost.closeAssetsStorage, () => composition.close?.(), installation.closeAccountApplication, installation.closeAccountManagement, installation.closeHumanAuth, installation.closeHumanAccounts,
       installation.closeIdentityWrites, installation.closeCapabilityBindings, installation.closeActorStore, installation.closeMembership]) {
       await settle([dispose]);
     }
@@ -549,99 +519,18 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       readSetupToken: humanConfiguration?.setupTokenFile ? () => readPrivateJson(humanConfiguration.setupTokenFile) : undefined,
       openLoginAdmission: loginAdmissionScope
         ? () => openLoginAdmissionPolicy({ ...loginAdmissionScope, path: join(dataDirectory, 'login-admission.sqlite') }) : undefined });
-    // An identity product that owns configurations keeps its route and legacy partitions.
-    // Never start a second resource writer alongside that composition.
-    if (!identity?.assistantEnvironmentConfigurationManaged) {
-      if (workspaceExecution && !workspaceRouting && !instanceAccess)
-        throw Error('Workspace execution requires Human instance authority');
-      assetsStorage = await openHeadlessAssetsStorage(dataDirectory, {...(workspaceExecution && !workspaceRouting ? {
-        workspaceMachineId: machineIdentity.machineId,
-        ...(options.terminalOwner ? {terminalOwner: options.terminalOwner} : {}),
-      } : {}), ...(coreEnvironmentLaunch ? {environmentLaunch: true,
-        ...(options.environmentIssuer ? {environmentIssuer: options.environmentIssuer} : {})} : {})});
-      if (!assetsStorage.botExecution) throw Error('Assets Bot execution owner unavailable');
-      if (process.env.OPENCRAFT_ASSISTANT_SANDBOX_CONFIG) {
-        try { await assetsStorage.store.adoptWorkspaceInstallation(process.env.OPENCRAFT_ASSISTANT_SANDBOX_CONFIG); }
-        catch { console.warn('assistant_environment_configuration_unavailable'); }
-      }
-      // With Human instance authority, a Bot owner's personal, platform and
-      // installed environments are resolved per Actor in the vault Worker.
-      if (instanceAccess) botAdmission = new WorkspaceNativeAdmission({actors:actorStore, access:instanceAccess});
-      installedBotProvider = createWorkspaceBotProvider({port:assetsStorage.store,
-        onCleanupUnconfirmed:()=>console.warn('assistant_environment_reconciliation_required'),
-        ...(botAdmission ? {admission:context=>botAdmission.admitResource(context.actorId)} : {})});
-      if (workspaceExecution && !workspaceRouting) {
-        if (!assetsStorage.workspaceExecution) throw Error('Assets Native execution owner unavailable');
-        ownedWorkspaceRouting = await openWorkspaceExecutionService({port:assetsStorage.store,
-          actors:actorStore, access:instanceAccess, ...workspaceExecution,
-          assertThreadActive:threadId=>{const resources=lateConversationResources.current();if(!resources)throw Error('Workspace lifecycle is starting');resources.assertActive('local-codex',threadId);},
-          onCleanupUnconfirmed:()=>console.warn('workspace_cleanup_unconfirmed')});
-        workspaceRouting = ownedWorkspaceRouting;
-      }
-    }
-    // Live checks shared by every Actor/lease handoff: the Actor is current and
-    // admitted, and the lease is active for the live native process.
-    const authorizeExecutionHandoff=scope=>{
-      const actorId=scope.account.slice('actor:'.length),actor=actorStore.get(actorId);
-      return !lifecycle.closing()&&actor?.enabled===true&&actor.kind==='human'&&actor.generation===scope.actorGeneration&&instanceAccess.admitsActor(actorId);
-    };
-    const inspectExecutionHandoff=async handoff=>{
-      const native=await lateExecutionObservation.current()?.resolveNative(handoff.scope.threadId);
-      const executionRecovery=lateExecutionRecovery.current();
-      if(lifecycle.closing()||!executionRecovery||!native||native.incarnation!==handoff.native.incarnation)return false;
-      const state=await executionRecovery.inspect({threadId:handoff.scope.threadId,inputId:handoff.scope.inputId,
-        executionId:handoff.scope.executionId,generation:handoff.scope.leaseGeneration,turnId:handoff.native.turnId,
-        engineIncarnation:handoff.native.incarnation,principal:null,ownership:'unknown',admittedAtMs:0,endedAtMs:null});
-      return state==='active'&&!lifecycle.closing()&&(await lateExecutionObservation.get().resolveNative(handoff.scope.threadId))?.incarnation===native.incarnation;
-    };
-    if (humanAuth && instanceAccess && !identity?.assistantEnvironmentConfigurationManaged) {
-      assetsService = await openHumanAssets({ directory: dataDirectory, auth: humanAuth, actors: actorStore, access: instanceAccess,
-        openStorage: async () => ({...assetsStorage, close:async()=>{}}) });
-      if(!assetsService.gitAuthority)throw Error('Assets execution authority unavailable');
-    }
-    const identityLaunch = identity?.environmentLaunch;
-    // One personal Git execution owner: core's assets vault Worker, or the
-    // identity composition that owns the vault. Both hand off sealed grants only.
-    if (identityLaunch?.git && assetsService) throw new Error('Personal Git execution cannot have two owners');
-    if (identityLaunch?.git && !instanceAccess) throw new Error('Personal Git execution requires Human instance authority');
-    gitExecutionOwner = assetsService ? Object.freeze({hosts:assetsService.gitHosts,authority:assetsService.gitAuthority,
-      grant:locator=>assetsService.executionGitGrant(locator),reservation:locator=>assetsService.executionGitReservation(locator)})
-      : identityLaunch?.git && Object.freeze({hosts:Object.freeze([...identityLaunch.git.hosts]),authority:identityLaunch.git.authority,
-        grant:locator=>identityLaunch.git.grant(locator),reservation:locator=>identityLaunch.git.reservation(locator)});
-    if (gitExecutionOwner) {
-      humanGitExecution=createHumanGitExecution({directory:dataDirectory,
+    const { assetsStorage, botAdmission, installedBotProvider, ownedWorkspaceRouting, workspaceRouting: deliveryRouting, assetsService,
+      gitExecutionOwner, humanGitExecution, environmentLaunch, environmentMetadata, codexEnvironmentLaunch } = await workspaceHost.openExecutionDelivery({
+      identity, workspaceExecution, workspaceRouting, coreEnvironmentLaunch, environmentIssuer: options.environmentIssuer,
+      terminalOwner: options.terminalOwner, machineIdentity, actorStore, instanceAccess, humanAuth, serverStorage,
+      codexCoreEndpoint: options.codexCoreEndpoint, readAssistantSandboxConfig: () => process.env.OPENCRAFT_ASSISTANT_SANDBOX_CONFIG,
+      openAssetsStorage: assetsOptions => openHeadlessAssetsStorage(dataDirectory, assetsOptions),
+      openWorkspaceExecution: openWorkspaceExecutionService,
+      openHumanAssets: assetsOptions => openHumanAssets({ directory: dataDirectory, ...assetsOptions }),
+      createHumanGitExecution: gitOptions => createHumanGitExecution({directory:dataDirectory,
         runtimeDirectory:humanGitRuntimeDirectory(join(dataDirectory,'git-runtime'),'gateway'),workerFile:options.gitWorkerFile??fileURLToPath(new URL('./personal-git-worker.mjs',import.meta.url)),
-        hosts:gitExecutionOwner.hosts,authority:gitExecutionOwner.authority,grant:gitExecutionOwner.grant,
-        authorize:authorizeExecutionHandoff,inspect:inspectExecutionHandoff,
-      });
-      // The personal Git status tool exists only where the human Git owner does.
-      withdrawGitStatus=capabilities.register(createGitStatusCapability(humanGitExecution));
-    }
-    environmentLaunch = identityLaunch ?? assetsStorage?.environmentLaunch;
-    if (coreEnvironmentLaunch && !assetsStorage?.environmentLaunch) throw new Error('Environment delivery requires the sole vault owner');
-    // A vault-owner port from the identity composition may bring its own
-    // metadata port; core relays it exactly as for its own vault Worker.
-    environmentMetadata = coreEnvironmentLaunch ? assetsStorage.environmentMetadata : identityLaunch?.metadata;
-    if (coreEnvironmentLaunch && !environmentMetadata) throw new Error('Environment delivery requires the sole vault owner');
-    // The same owner signs personal Git grants; Main never holds the vault key.
-    if (coreEnvironmentLaunch && !assetsStorage.personalGitSeal) throw new Error('Environment delivery requires the sole vault owner');
-    if (identityLaunch?.admission) {
-      // Core's own vault Worker already owns the Actor/lease handoff.
-      if (assetsService) throw new Error('Execution admission cannot have two owners');
-      // The composition owns the durable read; core keeps the live checks.
-      if (!instanceAccess) throw new Error('Environment delivery requires Human instance authority');
-      environmentHandoff = createEnvironmentAdmissionHandoff({ admission: locator => identityLaunch.admission(locator),
-        authorize: authorizeExecutionHandoff, inspect: inspectExecutionHandoff, closed: lifecycle.closing });
-    } else if (environmentLaunch && humanGitExecution) environmentHandoff = locator => humanGitExecution.handoff(locator);
-    // Codex: the split Codex Core receives creation and Turn ENV sealed for
-    // core's durable records, and the adapter's Git owner hands off grants.
-    codexEnvironmentLaunch = coreCodexEnvironmentLaunch(environmentLaunch, serverStorage,
-      options.codexCoreEndpoint, `server:${machineIdentity.machineId}:codex`,
-      actor => authorizeExecutionHandoff({account:`actor:${actor.actorId}`,actorGeneration:actor.actorGeneration}));
-    // Missing delivery fails closed: a configured vault owner never lets Codex
-    // run human Turns without its personal ENV or Git.
-    if (environmentLaunch && options.codexCoreEndpoint && (!codexEnvironmentLaunch || !gitExecutionOwner))
-      throw new Error('Codex environment delivery requires launch, creation admission and a personal Git owner');
+        ...gitOptions}) });
+    workspaceRouting = deliveryRouting;
     const actorAccess = installation.openActorAccess();
     const engines = options.engines ?? ["dsh"];
     if (engines.some(engine => !['dsh','pi'].includes(engine)) && !options.engineHostDescriptor)
@@ -730,114 +619,27 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       createConnectors: ({ access, hosts, admitted, resolveServer }) => new HeadlessConnectors(join(dataDirectory, "connectors"), access,
         hosts, capabilities, admitted, undefined, resolveServer),
       machineId: machineIdentity.machineId, defaultEngine: options.defaultEngine ?? (engines.includes("dsh") ? "dsh" : "pi"), conversationExecution });
-    remoteBrowser = new RemoteBrowserService({ root, dataDirectory,
-      allowNoSandbox: process.env.OPENCRAFT_BROWSER_ALLOW_NO_SANDBOX === '1',
-      ...(browserOwnerSocket ? { ownerConnector: () => connectBrowserOwner(browserOwnerSocket) }
-        : ownedWorkspaceRouting ? {ownerConnector: async () => { throw Error('Local Hands browser owner unavailable'); }} : {}),
-    });
-    workspaceRouting?.connectBrowserRouting?.({ service: remoteBrowser,
-      assertThreadAccess: ({ownerId, hostId, threadId}) => {
-        const serverId = threadId === null ? null : conversationExecution.serverForHost(hostId, threadId);
-        if (lifecycle.closing() || !actorStore.get(ownerId)?.enabled || !instanceAccess?.admitsActor(ownerId)
-          || (threadId !== null && !threadAccess.allowsActor(serverId, threadId, ownerId)))
-          throw Error('Browser conversation authority revoked');
-      },
-    });
-    const authorizeBrowserExecution = (context, serverId, threadId) => {
-        if (lifecycle.closing() || !actorStore.isCurrent(context) || actorStore.get(context.actorId)?.kind !== 'human'
-          || instanceAccess && !instanceAccess.admitsActor(context.actorId) || !threadAccess.allows(serverId, threadId, context))
-          throw new Error('Browser execution authority revoked');
-    };
-    browserCapabilities = new RemoteBrowserCapabilities(capabilities, remoteBrowser, createBrowserGrantResolver({
-      serverForThread: (threadId, requested) => remoteExecutionAuthorities.has(requested) ? requested : conversationExecution.serverForThread(threadId),
-      hostForServer: serverId => remoteExecutionAuthorities.get(serverId)?.hostId ?? conversationExecution.hostForServer(serverId),
-      source: async (threadId, execution, serverId) => remoteExecutionAuthorities.has(serverId)
-        ? remoteExecutionAuthorities.get(serverId).authority.source(threadId, execution)
-        : actorCollaboration.executionContext(threadId, execution),
-      authorize: authorizeBrowserExecution,
-      owner: context => anonymousDeployment && operator.owns(context.actorId) ? 'local-anonymous' : context.actorId,
-      currentTurn: async (hostId, threadId, context) => {
-        return readConversationCurrentTurn(lateAppHost.current(), { hostId, threadId }, { sender: null, actorContext: context });
-      },
-    }));
-    // Providers read the run's Host, verified human Actor and active lease from
-    // these owners instead of parsing serverId or opening execution stores.
-    capabilities.resolveContext(createCapabilityContextResolver({
-      route: (serverId, threadId) => {
-        const remote = remoteExecutionAuthorities.get(serverId);
-        if (remote) return { hostId: remote.hostId, engine: 'codex' };
-        const server = conversationExecution.servers.find(row => row.serverId === serverId);
-        try { if (!server || conversationExecution.serverForHost(server.hostId, threadId) !== serverId) return undefined; } catch { return undefined; }
-        return { hostId: server.hostId, engine: server.engine ?? 'codex' };
-      },
-      source: async (serverId, threadId, execution) => remoteExecutionAuthorities.has(serverId)
-        ? remoteExecutionAuthorities.get(serverId).authority.source(threadId, execution)
-        : actorCollaboration.executionContext(threadId, execution),
-      current: (context, serverId, threadId) => { try { authorizeBrowserExecution(context, serverId, threadId); return true; } catch { return false; } },
-      bindings: actorId => actorStore.bindings(actorId),
-      lease: async locator => humanGitExecution ? humanGitExecution.handoff(locator) : null,
-    }));
+    const { remoteBrowser, browserCapabilities } = workspaceHost.openBrowser({
+      createRemoteBrowser: browserOptions => new RemoteBrowserService({ root, dataDirectory,
+        allowNoSandbox: process.env.OPENCRAFT_BROWSER_ALLOW_NO_SANDBOX === '1', ...browserOptions }),
+      ownerConnector: browserOwnerSocket ? () => connectBrowserOwner(browserOwnerSocket) : undefined,
+      conversationExecution, actorStore, instanceAccess, threadAccess, actorCollaboration, anonymousDeployment, operator });
     const capabilityBindings = await installation.openCapabilityBindings();
-    // Opaque ENV delivery needs the same live Actor/lease handoff as Git; a
-    // configured vault owner without it fails here, not at every command.
-    if (environmentLaunch && !environmentHandoff) throw new Error('Environment delivery requires execution admission');
+    workspaceHost.assertEnvironmentAdmission();
     const capabilityKey=lateCapabilityKey.bind(await installation.openCapabilitySigningKey(fileKeyMaterial(dataDirectory)));
-    capabilityMcp = new SessionCapabilityMcp(capabilities, capabilityKey, capabilityBindings, {
-      descriptorPath:join(dataDirectory,'session-capabilities.json'), retainEndpoint: true,
-      cliDirectory:options.threadCliDirectory ?? join(dataDirectory,'thread-cli'),
-      hostGit:async session=>{
-        if(session.serverId!==conversationExecution.serverForHost('opencraft-server',session.threadId)
-          ||conversationExecution.hostForServer(session.serverId)!=='opencraft-server'||(!session.execution?.inputId&&!session.execution?.turnId))
-          throw Error('git_execution_unavailable');
-        // Only explicit installation-level anonymous mode can run without a
-        // personal authority. Missing login/observer/issuer is never fallback.
-        if(!humanGitExecution){if(anonymousDeployment)return {mode:'anonymous'};throw Error('git_execution_unavailable');}
-        const grant=await humanGitExecution.handoff({hostId:'opencraft-server',threadId:session.threadId,...(session.execution.inputId?{inputId:session.execution.inputId}:{turnId:session.execution.turnId})});
-        return {authority:gitExecutionOwner.authority,hosts:gitExecutionOwner.hosts,grant};
-      },
-      ...(environmentLaunch ? {hostEnvironment:createHostEnvironmentLaunch({port:environmentLaunch,
-        handoff:environmentHandoff,
-        routes:session=>!lifecycle.closing()&&session.serverId===conversationExecution.serverForHost('opencraft-server',session.threadId)
-          &&conversationExecution.hostForServer(session.serverId)==='opencraft-server'})} : {}),
-      authorizeExecution:async session=>{
-        if(session.serverId!==conversationExecution.serverForThread(session.threadId))throw new CollaborationError(403,'execution_delegation_required');
-        await actorCollaboration.admittedExecution(session.threadId,session.execution.inputId);
-      },
-      threadCli:async(session,request)=>{
-        await waitForExecutionCliBinding(()=>actorCollaboration.admittedExecution(session.threadId,session.execution.inputId));
-        return threadOrchestration.cli(session,request);
-      },
-      authorizeInput:(session,inputId)=>actorCollaboration.authorizeInput(session.threadId,inputId,'queue',undefined,session.serverId),
-      orchestration: async (session, request) => {
-        const fields = ['turnId','callId','name','arguments','inputId','incarnation','toolCallKey'];
-        if (Object.keys(request).some(key => !fields.includes(key))
-          || !['turnId','callId','name','incarnation'].every(key => typeof request[key] === 'string' && request[key].length > 0 && request[key].length <= 512)
-          || !request.arguments || typeof request.arguments !== 'object' || Array.isArray(request.arguments)
-          || request.inputId !== undefined && (typeof request.inputId !== 'string' || request.inputId.length > 512)
-          || session.serverId !== conversationExecution.serverForThread(session.threadId)) throw new CollaborationError(400, 'invalid_orchestration_source');
-        if (request.inputId) actorCollaboration.executionStarted(session.threadId, request.inputId, request.turnId);
-        const key = JSON.stringify([session.serverId, request.incarnation, session.threadId, request.turnId, request.callId]);
-        const result = await threadOrchestration.invoke(session.threadId, request.turnId, key, request.name, request.arguments, undefined, request.incarnation);
-        return { success: true, contentItems: [{ type: 'inputText', text: JSON.stringify(result) }] };
-      },
-    });
-    await capabilityMcp.listen();
-    connectedExecutionCli = await localExecutionCli({directory:join(dataDirectory,"connected-execution-cli"),endpoint:capabilityMcp.cliEndpoint,key:capabilityKey});
-    if(options.codexBridgePrograms!==undefined) {
-      // After the capability listener: the Engine Host forwards its execution CLI (thread
-      // spawn/tell/wait from a turn's shell) to this Server's /thread-cli, signed by its key.
-      codexEngineHost=await startCodexEngineHost({programs:options.codexBridgePrograms,node:process.execPath,
+    const { capabilityMcp, connectedExecutionCli, codexEngineHost, bridgeSessionMcp } = await workspaceHost.openCapabilityMcp({
+      capabilityKey, capabilityBindings, conversationExecution, anonymousDeployment, actorCollaboration, threadOrchestration,
+      createCapabilityMcp: (registry, key, bindings, handlers) => new SessionCapabilityMcp(registry, key, bindings, {
+        descriptorPath:join(dataDirectory,'session-capabilities.json'), retainEndpoint: true,
+        cliDirectory:options.threadCliDirectory ?? join(dataDirectory,'thread-cli'), ...handlers }),
+      openExecutionCli: ({ endpoint, key }) => localExecutionCli({directory:join(dataDirectory,"connected-execution-cli"),endpoint,key}),
+      startCodexEngineHost: options.codexBridgePrograms!==undefined ? ({ cliEndpoint }) => startCodexEngineHost({programs:options.codexBridgePrograms,node:process.execPath,
         coreEndpoint:options.codexCoreEndpoint,coreToken:options.codexCoreAuthToken,
         ...(options.codexRuntime?{coreNativeSocket:options.codexRuntime.nativeSocket}:{}),
         runtimeDirectory:join(dataDirectory,'codex'),stateDirectory:join(dataDirectory,'codex-bridge'),
-        cli:{directory:join(dataDirectory,'codex-bridge','cli'),signingKey:join(dataDirectory,'session-capabilities.key'),endpoint:capabilityMcp.cliEndpoint},
+        cli:{directory:join(dataDirectory,'codex-bridge','cli'),signingKey:join(dataDirectory,'session-capabilities.key'),endpoint:cliEndpoint},
         serverId:`server:${machineIdentity.machineId}:codex`,
-        log:line=>console.error(line)});
-      lateCodexBridge.bind(codexEngineHost.bridge);
-    }
-    const bridgeSessionMcp=createBridgeSessionMcp(capabilityMcp,
-      threadId=>({serverId:conversationExecution.serverForThread(threadId),threadId}),
-      session=>capabilities.refresh(session));
+        log:line=>console.error(line)}) : undefined });
     const startAgent = options.startAgentHost ?? startLocalAgentHost;
     const startDsh = lateStartDsh.bind(() => dshAgent ??= startAgent({
       executionCli: connectedExecutionCli,
@@ -963,12 +765,12 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     const bundledQueryWorker = fileURLToPath(new URL('./token-usage-query-worker.mjs', import.meta.url));
     const tokenUsageQueryWorkerEntry = await access(bundledQueryWorker).then(() => bundledQueryWorker,
       () => fileURLToPath(new URL('../../opencraft-daemon/src/token-usage-query-worker.ts', import.meta.url)));
-    usageQueries = new TokenUsageQueryService({
+    usageQueries = workspaceHost.openUsageQueries(() => new TokenUsageQueryService({
       entry: tokenUsageQueryWorkerEntry,
       databasePath: join(dataDirectory, 'codex', 'token-usage.sqlite'),
       serverId: `server:${machineIdentity.machineId}:codex`,
       ...(process.env.OPENCRAFT_TOKEN_USAGE_SOURCE === 'ledger' ? {} : {rollout:{nativeHome:join(dataDirectory,'codex','runtime')}}),
-    });
+    }));
     const unavailableTerminal = {probe:async()=>{throw Error('Local Hands terminal unavailable');},
       subscribe:()=>()=>{}, dispatch:async()=>{throw Error('Local Hands terminal unavailable');}, close() {}};
     const unavailableFiles = {request:async()=>{throw Error('Local Hands files unavailable');}};
@@ -1026,18 +828,10 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     // dropping the Host's execution authority and domain tool composition.
     const createCodexTransport = configuration => options.createCodexTransport?.(configuration) ?? new CodexEngineAdapter(configuration);
     const createRemoteCodexTransport = (binding, hostId) => {
-      const serverId = accessServerForHost(hostId, '');
-      remoteExecutionAuthorities.get(serverId)?.authority.invalidate();
-      const authority = new NativeExecutionAuthority((context, threadId) => authorizeBrowserExecution(context, serverId, threadId));
-      remoteExecutionAuthorities.set(serverId, {hostId, authority});
+      // The remote Host's native execution authority is the workspace host's; the SSH adapter stays Node-only.
+      const { authority, nativeTool } = workspaceHost.remoteExecution(accessServerForHost(hostId, ''), hostId);
       return createSshCodexEngineAdapter(binding, dataDirectory, createThreadMetadata, storageOpened(hostId), {
-        executionAuthority: authority,
-        nativeTool: (context, tool, args, signal) => remoteExecutionAuthorities.get(serverId)?.authority !== authority
-          ? Promise.reject(new Error('Native execution authority replaced')) : browserCapabilities.invokeNative({
-          serverId, threadId: context.threadId,
-          execution: {turnId:context.turnId, callId:context.callId},
-        }, tool, args, signal),
-      }, createCodexTransport);
+        executionAuthority: authority, nativeTool }, createCodexTransport);
     };
     const appHostServer = lateAppHost.bind(new AppHostServer({
       createRpcAccessSession: createThreadAccessSession,
@@ -1258,13 +1052,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     }));
     const observability = await nodeLocal.startObservability({ configFile: process.env.OPENCRAFT_OBSERVE_INGRESS_CONFIG,
       access: instanceAccess, actors: actorStore, executionHealth: options.getExecutionHealth, wake: ownerWake });
-    fileDownloads = new HostFileDownloads(hostId => {
-      if (hostId === "local-codex" && ownedWorkspaceRouting && !fileSystem) throw Error('Local Hands file downloads unavailable');
-      if (hostId === "opencraft-server" || hostId === "local-codex") return fileSystem ?? "local";
-      const binding = remoteServers.get(hostId) ?? (hostId.startsWith("ssh:") ? sshManagement?.store.binding(hostId) : null);
-      if (!binding) throw new Error("Unknown file Host");
-      return binding.connection;
-    });
+    const fileDownloads = workspaceHost.openFileDownloads({ createFileDownloads: resolve => new HostFileDownloads(resolve),
+      fileSystem, remoteServers, sshManagement });
     // Explicit opt-in only: loaded once instance authentication and admission exist,
     // before the listener opens so declared routes are mounted from the first request.
     if (runtimePluginConfiguration) runtimePlugins = await startHeadlessRuntimePlugins(runtimePluginConfiguration,
@@ -1279,7 +1068,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       observability,
       ownerWake,
       getExecutionHealth: options.getExecutionHealth,
-      getHostReadiness: () => codexReadiness ? { "local-codex": codexReadiness.snapshot() } : {},
+      getHostReadiness: () => workspaceHost.hostReadiness(),
       createAppServerAccessSession: (context, emit) => createThreadAccessSession("opencraft-server", context, emit),
       createAppServerDriverSession: emit => new AgentDriverSession(actorCollaboration,
         threadId => conversationExecution.serverForHost('opencraft-server', threadId), emit,
@@ -1393,7 +1182,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     } else address = await web.listen({ host: listenHost, port });
     nodeLocal.connectRelay(relayConfiguration, address.port);
     hubController.node?.start(hubTargetPort ?? address.port);
-    if (options.codexCoreEndpoint) codexReadiness = maintainHeadlessCodexHost(appHostServer);
+    if (options.codexCoreEndpoint) workspaceHost.maintainReadiness(appHostServer);
     // Per-Actor sources replace the installation-wide provider; an identity
     // composition's providers are merged after them, as before. Without Actor
     // admission the installed source is published under the Worker's
