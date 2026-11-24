@@ -6,7 +6,8 @@ import type { ExecutionEnvironmentRuntime } from "@opencraft/execution-environme
 import type { GitExecutionLocator } from "@opencraft/execution-environment/git-execution";
 import { createHash, randomUUID } from "node:crypto";
 import { PiPrivateCallsDoc, type PiPrivateCalls } from "./private-calls.js";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { lstat, rmdir } from "node:fs/promises";
 import { PiShellWorker, PiShellDoc, shellText, shellDescription } from "./shell.js";
 import { isDeepStrictEqual } from "node:util";
 import { PiQueueDoc, type PiQueueState, type PiQueuedInput } from "./queue.js";
@@ -19,7 +20,7 @@ import { AgentDoc, InboxDoc, LiveDoc, UsageDoc, createRegistry, defineDoc, defin
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
-import lockfile from "proper-lockfile";
+import { acquireProcessWriter } from "@opencraft/sqlite-node";
 import { decodeImage } from "./input.js";
 import { expiredPiSteers } from "./steering.js";
 
@@ -59,6 +60,32 @@ const nativeAdmissions = () => import(new URL("./harness/submissions.js", import
 const shellQueueModes = { steeringMode: "one-at-a-time", followUpMode: "all" } as const;
 const defaultPreamble = "You are a coding assistant. Complete the user task using the available tools. Preserve existing work.";
 
+// Earlier releases leased `<file>.lock` as a proper-lockfile directory that a live
+// holder refreshed every 5s and any contender reclaimed once its mtime was 10s old.
+const legacyLeaseExpiredMs = 60_000;
+/** Exactly one writer per session database for the owner's whole lifetime. The kernel
+ * lock never expires while the owner process is alive, however long its event loop
+ * stalls, and process death releases it; there is no refresh timer to be compromised.
+ * The legacy lease pathname becomes a regular file, so older mkdir lockers can neither
+ * acquire nor remove it. A legacy lease directory is converted only once it is far
+ * older than any refresh its live holder would make. */
+async function acquireSessionWriter(file: string, retries: number): Promise<() => void> {
+  const path = `${resolve(file)}.lock`;
+  for (let attempt = 0; ; attempt++) {
+    try { return acquireProcessWriter(path); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ELOCKED") throw error;
+      const legacy = await lstat(path).catch(() => undefined);
+      // rmdir never removes a regular-file lock; a legacy locker that recreates the
+      // directory first keeps it, and the next attempt refuses again.
+      if (legacy?.isDirectory() && legacy.mtimeMs < Date.now() - legacyLeaseExpiredMs
+        && await rmdir(path).then(() => true, () => false)) continue;
+      if (attempt >= retries) throw error;
+    }
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+}
+
 /** One native durable owner. It publishes committed snapshots, never a second execution ledger. */
 export class PiDurableSession {
   private closed = false;
@@ -66,7 +93,7 @@ export class PiDurableSession {
   private harness!: Awaited<ReturnType<typeof Harness.open>>;
   private root!: Conversation;
   private storage!: Storage;
-  private release?: () => Promise<void>;
+  private release?: () => void;
   private readonly skillPrompts = new Map<string, string>();
   private readonly environments = new Map<string, NodeExecutionEnv>();
   private entries: EntryRecord[] = [];
@@ -103,8 +130,7 @@ export class PiDurableSession {
     catch (error) { await session.close(); throw error; }
   }
   private async open() {
-    if (!this.options.ephemeral) this.release = await lockfile.lock(this.options.file, { realpath: false, stale: 10_000,
-      retries: { retries: this.options.lockRetries ?? 12, minTimeout: 1000, maxTimeout: 1000 } });
+    if (!this.options.ephemeral) this.release = await acquireSessionWriter(this.options.file, this.options.lockRetries ?? 12);
     if (this.options.shell !== false) {
       this.shell = new PiShellWorker({ cwd: this.options.cwd, directory: join(this.options.agentDirectory, "shell", this.options.threadId), threadId: this.options.threadId,
         onNotification: event => { this.shellNotifications++; this.shellEvents = this.shellEvents.then(() => this.shellNotification(event)).catch(error => { if (!this.closed) this.options.onExit(new Error("Pi shell notification could not be committed")); }).finally(() => { this.shellNotifications--; }); },
@@ -277,7 +303,7 @@ export class PiDurableSession {
   private async retireEnvironmentWorkers(reason: string) {
     const retired = [...this.environmentWorkers.values()];
     this.environmentWorkers.clear();
-    await Promise.all(retired.map(worker => worker.stop()));
+    await Promise.all(retired.map(worker => worker.close()));
     for (const worker of retired) await this.interruptShells(reason, false, worker.generation);
     if (retired.length) this.shellEvents = this.shellEvents.then(() => this.deliverShellNotifications()).catch(() => { if (!this.closed) this.options.onExit(new Error("Pi shell owner failed")); });
   }
@@ -289,9 +315,10 @@ export class PiDurableSession {
       if (this.shellLaunches === 0) {
         const active = new Set(await this.root.commit(async tx => (await tx.doc(PiShellDoc, this.root.id)).records.filter(record => record.state === "running").map(record => record.generation), context));
         for (const [key, previous] of this.environmentWorkers) if (!active.has(previous.generation)) {
-          await previous.stop(); this.environmentWorkers.delete(key);
+          await previous.close(); this.environmentWorkers.delete(key);
         }
       }
+      if (this.closed) throw new Error("Pi shell call cancelled");
       if (this.environmentWorkers.size >= 64) throw new Error("Shell environment limit reached; reopen the session");
       worker = new PiShellWorker({ cwd: this.options.cwd, directory: join(this.options.agentDirectory, "shell", this.options.threadId, randomUUID()), threadId: this.options.threadId, environment: snapshot,
         onNotification: event => { this.shellNotifications++; this.shellEvents = this.shellEvents.then(() => this.shellNotification(event)).catch(() => { if (!this.closed) this.options.onExit(new Error("Pi shell notification could not be committed")); }).finally(() => { this.shellNotifications--; }); },
@@ -749,10 +776,10 @@ export class PiDurableSession {
   }
   async close() {
     if (this.closed) return; this.closed = true;
-    try { await Promise.all([this.shell?.stop(), ...[...this.environmentWorkers.values()].map(worker => worker.stop())]); await this.shellEvents.catch(() => {}); try { await this.stream?.stop(); } finally { await this.harness?.close(context); } }
+    try { await Promise.all([this.shell?.close(), ...[...this.environmentWorkers.values()].map(worker => worker.close())]); await this.shellEvents.catch(() => {}); try { await this.stream?.stop(); } finally { await this.harness?.close(context); } }
     finally {
       try { await Promise.all([...this.environments.values()].map(env => env.cleanup(context))); }
-      finally { await this.release?.(); }
+      finally { this.release?.(); }
     }
   }
 }
