@@ -30,6 +30,7 @@ import { assembleNodeLocal } from './assembly/node-local.mjs';
 import { assembleInstallation } from './assembly/installation.mjs';
 import { assembleWorkspaceHost } from './assembly/workspace-host.mjs';
 import { assembleClientSession } from './assembly/client-session.mjs';
+import { assembleEdge } from './assembly/edge.mjs';
 import { createHeadlessLifecycle, createLateBinding } from './assembly/lifecycle.mjs';
 import { ExecutionEnvironmentTransport } from './execution-environment-transport.ts';
 import { EnvironmentMetadataTransport } from './environment-metadata-transport.ts';
@@ -364,7 +365,6 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     isHuman: principal => composition.isHuman?.(principal) });
   const orchestrationStorage = installation.openOrchestrationStorage();
   const releaseLock = async () => { await installation.closeOrchestrationStorage(); await serverStorage.close(); releaseExtensions(); };
-  let web;
   let account;
   let workspaceRouting;
   const fileSystem = options.fileSystemOwner ? createHostFileSystem(options.fileSystemOwner) : null;
@@ -374,7 +374,6 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   const capabilitiesReady = new Promise(resolve => { capabilitiesReadyResolve = resolve; });
   let hubController;
   let usageQueries;
-  let runtimePlugins;
   // Explicit ports for shutdown state and for values constructed after the
   // closures that read them; assembly modules receive these instead of the
   // root's bindings (docs/architecture/platform/gateway-split.md §4.1.1).
@@ -397,6 +396,9 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   // engines, execution observation and conversation resources; creating it
   // opens nothing, each step and disposer keeps its original position.
   const workspaceHost = assembleWorkspaceHost({ lifecycle, capabilities, appHost: clientSession.appHost, codexBridge: lateCodexBridge, fileSystem });
+  // Runtime plugins, the Web server's options and the listener; creating it
+  // opens nothing, each step and disposer keeps its original position.
+  const edge = assembleEdge();
   // Deployment-level periodic owner work runs on the owner wake-up port (gateway-split.md §4.2).
   const ownerWake = options.ownerWake ?? timeoutOwnerWake();
   // The lifecycle publishes the shared promise before invoking any disposer
@@ -417,12 +419,12 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       workspaceHost.closeFileDownloads, nodeLocal.closeDesktop, installation.closeTurnPush,
       nodeLocal.closeAvailabilityNotification, () => lateImPlugins.current()?.close(),
     ]);
-    await settle([() => web?.close(update, closeEntry)]);
+    await settle([() => edge.closeWeb(update, closeEntry)]);
     // Custom Web adapters need not implement the optional carrier phase.
     await closeEntry();
     // Plugins stop after the listener stopped accepting and before any owner
     // their authority or handlers may still call (admission, identity, stores).
-    await settle([() => runtimePlugins?.close()]);
+    await settle([edge.closeRuntimePlugins]);
     await settle([installation.closePersonalSshKeys]);
     await settle([nodeLocal.closeObservability]);
     await settle([installation.closeProjectAutomations]);
@@ -872,93 +874,33 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       remoteServers, sshManagement });
     // Explicit opt-in only: loaded once instance authentication and admission exist,
     // before the listener opens so declared routes are mounted from the first request.
-    if (runtimePluginConfiguration) runtimePlugins = await startHeadlessRuntimePlugins(runtimePluginConfiguration,
-      { dataDirectory, instanceAccess, authService: humanAuth });
-    const createWeb = options.createWebServer ?? createWorkbenchWebServer;
-    web = await createWeb({
-      root: webRoot,
-      userPluginDirectory,
-      productPluginAssets,
-      instanceId: options.isolateBrowserStorage ? machineIdentity.machineId : null,
-      assetVersion: options.isolateBrowserStorage ? webRelease.buildId : null,
-      observability,
-      ownerWake,
-      getExecutionHealth: options.getExecutionHealth,
-      getHostReadiness: () => workspaceHost.hostReadiness(),
+    await edge.startRuntimePlugins(runtimePluginConfiguration ? () => startHeadlessRuntimePlugins(runtimePluginConfiguration,
+      { dataDirectory, instanceAccess, authService: humanAuth }) : undefined);
+    // The Web server: the route table and its socket are Node constructions; the
+    // edge module assembles their options from every module's services.
+    await edge.openWeb({ createWebServer: options.createWebServer ?? createWorkbenchWebServer,
+      webRoot, userPluginDirectory, productPluginAssets, webRelease, isolateBrowserStorage: options.isolateBrowserStorage, machineIdentity,
+      observability, ownerWake, getExecutionHealth: options.getExecutionHealth, hostReadiness: workspaceHost.hostReadiness,
       // The App Server, driver, query and Hands sessions for the server's own Host.
-      ...clientSession.openWebSessions({ actorCollaboration, conversationExecution, signExecutionCli, operator, usageQueries, actorStore,
+      sessions: clientSession.openWebSessions({ actorCollaboration, conversationExecution, signExecutionCli, operator, usageQueries, actorStore,
         terminalService: options.terminalOwner ? terminalService : undefined, terminalScope, fileSystem, resourceAuthority,
         selectHostTerminalService: composition.selectHostTerminalService, selectHostFiles: composition.selectHostFiles,
         sessions: {
           terminal: (service, scope, hostId, select) => new HostTerminalSession(service, scope, composeHostTerminalSelector(hostId, service, select)),
           files: (files, authority, select) => new HostFileSystemSession(files, authority, composeHostFileSelector(files, authority, select)),
         } }),
-      appServerTarget: agent.websocketUrl,
-      resolveAppServerTarget: agent.resolveWebsocketUrl,
-      appServerIdentity: agentIdentity ?? null,
-      mcpAppsService: mcpApps,
-      getImService: () => lateImPlugins.current(),
-      connectorService,
-      loopbackOnly: host === "127.0.0.1",
-      localAccess,
-      appHostServer,
-      sshServerDescriptors: sshServers.map(binding => binding.descriptor),
-      sshManagement,
-      fileDownloads,
-      getPluginHealth: () => {
-        const imPlugins = lateImPlugins.current();
-        return {...(imPlugins ? {'opencraft.im':imPlugins.states()} : {}),...(turnPush ? {'opencraft.push':turnPush.health} : {}),
-          ...(runtimePlugins ? {'opencraft.runtime-plugins':runtimePlugins.health()} : {})};
-      },
-      getStorageOutcomes: () => { const imPlugins = lateImPlugins.current(); return [
-        { name: 'server-core', status: serverStorage.outcome.status, appliedVersion: serverStorage.outcome.appliedVersion,
-          movedAside: false, productVersion: serverStorage.contract.productVersion, contractHash: serverStorage.contract.hash },
-        ...(imPlugins ? [{name:'im-switchboard',status:imPlugins.outcome.status,appliedVersion:imPlugins.outcome.appliedVersion,movedAside:imPlugins.outcome.movedAsidePaths.length>0}] : []),
-        ...(imPlugins ? [{name:'im-posts',status:imPlugins.postOutcome.status,appliedVersion:imPlugins.postOutcome.appliedVersion,movedAside:imPlugins.postOutcome.movedAsidePaths.length>0}] : []),
-        ...(agent.storageOutcomes ?? []),
-        ...(remoteBrowser?.storageOutcomes() ?? []),
-        ...(connectorService?.outcomes() ?? []),
-        ...(turnPush ? [{name:'web-push',status:turnPush.store.outcome.status,appliedVersion:turnPush.store.outcome.appliedVersion,movedAside:turnPush.store.outcome.movedAsidePaths.length>0}] : []),
-        {name:"mcp-apps",status:mcpApps.outcome.status,appliedVersion:mcpApps.outcome.appliedVersion,movedAside:mcpApps.outcome.movedAsidePaths.length>0},
-        ...(agentIdentity ? [{ name: "thread-identity", hostId: "opencraft-server", status: agentIdentity.store.outcome.status,
-          appliedVersion: agentIdentity.store.outcome.appliedVersion, backupPath: agentIdentity.store.outcome.backupPath,
-          movedAside: agentIdentity.store.outcome.movedAsidePaths.length > 0 }] : []),
-        ...(identity?.getStorageOutcomes?.() ?? []), ...(loginAdmission ? [{ name: 'login-admission', status: loginAdmission.outcome.status, appliedVersion: loginAdmission.outcome.appliedVersion, movedAside: loginAdmission.outcome.movedAsidePaths.length > 0 }] : []), ...[...codexStorageOutcomes.values()].flat(),
-        ...(sshManagement ? [{ name: "ssh-connections", status: sshManagement.store.outcome.status,
-          appliedVersion: sshManagement.store.outcome.appliedVersion, backupPath: sshManagement.store.outcome.backupPath,
-          movedAside: sshManagement.store.outcome.movedAsidePaths.length > 0 }] : []),
-      ]; },
-      desktopService: desktop ?? null,
-      desktopAccess,
-      modelPolicyService: account.createHttpService({ actorAccess, actorStore, instanceAccess }),
-      assetsService,
-      identityService: identity?.service ?? null,
-      ...(runtimePlugins ? { runtimePluginService: runtimePlugins } : {}),
-      accessService: instanceAccess ?? null,
-      actorService: actorAccess,
-      allowSessionChannels: true,
-      actorCollaborationService: actorCollaborationApi,
-      turnPushService: turnPush,
-      serverInformationService,
-      accountModelDefaultsService,
-      threadReadReceiptsService,
-      actorSshKeysService,
-      authService: humanAuth ?? null,
-      accountService: accountApplication ?? null,
-      hubService: hubController,
-      remoteBrowserService: remoteBrowser,
-      speechService: account.createSpeechService(),
-    });
+      agent, agentIdentity, mcpApps, imPlugins: lateImPlugins, connectorService, loopbackOnly: host === "127.0.0.1", localAccess,
+      appHostServer, sshServers, sshManagement, fileDownloads, turnPush, serverStorage, remoteBrowser, identity, loginAdmission,
+      codexStorageOutcomes, desktop, desktopAccess, account, actorAccess, actorStore, instanceAccess, assetsService, actorCollaborationApi,
+      serverInformationService, accountModelDefaultsService, threadReadReceiptsService, actorSshKeysService, humanAuth, accountApplication,
+      hubController });
     workspaceHost.startResourceReconciliation({ appHostServer, ownerWake });
     const listenHost = options.listenHost ?? host;
     if (!["127.0.0.1", "0.0.0.0"].includes(listenHost)) throw new Error("Invalid listener host");
-    let address;
-    if (ingressConfiguration) {
-      const privateAddress = await web.listen({ host: "127.0.0.1", port: 0 });
-      address = await nodeLocal.listenSshIngress({ configuration: ingressConfiguration, httpPort: privateAddress.port,
-        appHost: appHostServer, identitySshAccess: identity?.sshAccess, personalSshKeys,
-        codexExecutable: options.codexExecutable ?? join(root, "runtime/codex/bin/codex"), host: listenHost, port });
-    } else address = await web.listen({ host: listenHost, port });
+    // With SSH ingress the Web server listens privately and the node-local ingress owns the address.
+    const address = await edge.listen({ host: listenHost, port, sshIngress: ingressConfiguration ? httpPort => nodeLocal.listenSshIngress({
+      configuration: ingressConfiguration, httpPort, appHost: appHostServer, identitySshAccess: identity?.sshAccess, personalSshKeys,
+      codexExecutable: options.codexExecutable ?? join(root, "runtime/codex/bin/codex"), host: listenHost, port }) : undefined });
     nodeLocal.connectRelay(relayConfiguration, address.port);
     hubController.node?.start(hubTargetPort ?? address.port);
     if (options.codexCoreEndpoint) workspaceHost.maintainReadiness(appHostServer);

@@ -206,6 +206,14 @@ checkFiles("client-session assembly", "apps/headless-server/src/assembly/client-
   message: "must stay runtime-neutral; engine transports, Node layers and Hands sessions are root factories",
 }]);
 
+// The edge assembly module (gateway-split §4.1.1) composes the Web server's
+// options from every module's services; the route table and its listener, the
+// runtime plugin host and the SSH ingress are root factories.
+checkFiles("edge assembly", "apps/headless-server/src/assembly/edge.mjs", [{
+  pattern: /(?:from\s*|import\s*|require\(\s*)["'](?:node:|ws["']|@opencraft\/sqlite-node|@opencraft\/worker-owner|@opencraft\/sandbox-node)|\bBuffer\b|\bprocess\./m,
+  message: "must stay runtime-neutral; the route table, listeners and plugin hosts are root factories",
+}]);
+
 for (const directory of ['packages/identity-core/src', 'packages/access-control/src', 'packages/relay-protocol/src', 'packages/hub-network/src']) {
   checkFiles('identity/authorization core', directory, [{
     pattern: /(?:from\s*|import\s*)["'](?:@opencraft\/plugin-|[^"']*\/plugins\/)/m,
