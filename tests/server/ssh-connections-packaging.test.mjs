@@ -74,10 +74,13 @@ test("every package that bundles a network process builds the owner Workers besi
   assert.ok(OWNER_WORKERS.some(([entry, file]) => entry.endsWith("plugins/local-account/src/desktop-account-owner.worker.ts") && file === "desktop-account-owner-worker.mjs"));
   assert.ok(OWNER_WORKERS.some(([entry, file]) => entry.endsWith("plugins/thread-participants/src/thread-participants.worker.ts") && file === "thread-participants-worker.mjs"));
   assert.ok(OWNER_WORKERS.some(([entry, file]) => entry.endsWith("plugins/login-admission/src/login-admission.worker.ts") && file === "login-admission-worker.mjs"));
-  for (const name of ["scripts/packaging/package-web-server.mjs", "scripts/packaging/package-headless-linux.mjs", "scripts/packaging/package-relay.mjs", "apps/opencraft-daemon/build.mjs"]) {
+  for (const name of ["scripts/packaging/package-web-server.mjs", "scripts/packaging/package-headless-linux.mjs", "apps/opencraft-daemon/build.mjs"]) {
     const source = await readFile(join(root, name), "utf8");
     assert.match(source, /await buildOwnerWorkers\(/, `${name} builds the owner Workers`);
   }
+  // Relay starts only the owners its bundles name; the package checks each one shipped.
+  const relay = await readFile(join(root, "scripts/packaging/package-relay.mjs"), "utf8");
+  assert.match(relay, /await buildStartedOwnerWorkers\(output\);\s*await verifySiblingFiles\(output\);/u);
 });
 
 // A Host bundles the assistant supervisor; offline memory browsing starts its
