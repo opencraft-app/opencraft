@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { SOURCE_FALLBACK_SIBLINGS, verifySiblingFiles } from './verify-sibling-files.mjs';
-import { buildOwnerWorkers } from './owner-workers.mjs';
+import { buildOwnerWorkers, buildStartedOwnerWorkers } from './owner-workers.mjs';
 import { buildTerminalOwnerRuntime } from './package-terminal-runtime.mjs';
 import { buildConnectedAgentHistoryRuntime } from './package-connected-agent-history-runtime.mjs';
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
@@ -238,6 +238,10 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
     await verifySiblingFiles(join(packageRoot, 'execution'), { nested: ['codex-bridge'], optional: { ...SOURCE_FALLBACK_SIBLINGS,
       'personal-git-worker.mjs': 'built into runtime/; the headless gateway is given that path (headless-gateway-application.mjs)' } });
   }
+  // The Relay and admin entries in runtime/ start only a few owners (the Hub state);
+  // build those beside them and check every runtime bundle's siblings shipped.
+  await buildStartedOwnerWorkers(join(packageRoot, 'runtime'));
+  await verifySiblingFiles(join(packageRoot, 'runtime'), { optional: SOURCE_FALLBACK_SIBLINGS });
   await chmod(join(packageRoot, 'runtime/cli.mjs'), 0o755);
   const complete = completeRuntime || (fullRelease && !fullRelease.template.updater.bridge);
   if (complete) {
