@@ -43,7 +43,7 @@
 
 所有子任务均已结束，没有仍在运行的研发任务。
 
-**08:53 状态**：#582、#583、#585、#589、#590 在合并队列／CI 中（#583 已再次合入 main 解决定时器行冲突）；**#584**（platform 真实失败）与 **#587**（gitleaks 仍报 1 处）需人工接手，均已在 PR 留言。
+**08:53 状态**：#582、#583、#585、#589、#590 在合并队列／CI 中（#583 已再次合入 main 解决定时器行冲突）；**#584**（platform 真实失败；本地在 e0d9ad4e4 上跑 platform 组：test:projects 29/29、test:actors 207/207、test:thread-lifecycle 293/293、test:tasks 91/91、test:codex-core 342/342 全过；test:agent-bridge 首次 351/1 失败、复跑通过（偶发，未复现）；未跑 test:cloud-desktop、test:hub-network、check:startup:cache——下一步优先看完整 CI 日志里这三项与 agent-bridge）与 **#587**（gitleaks：第二处命中为 `account-core-do.scenarios.ts` 的 `CONTRIBUTED_KEY = "synthetic-contributed-key-1"`，已改为低熵占位 `sentinel-key` 并推送，AC workerd 14/14，待 CI 确认），均已在 PR 留言。
 
 ## 4. 已知问题与必须跟进
 
