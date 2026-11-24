@@ -17,7 +17,7 @@ import { humanAuthFixture } from '../support/human-auth-fixture';
 import { openServerCoreOwner } from '@opencraft/storage-node/server-owner';
 import { MembershipStore } from '@opencraft/access-control';
 import { IdentityWrites, type IdentityWriteOwner } from '@opencraft/access-control/identity-writes';
-import { createCommitFenceBuffer } from '@opencraft/access-control/commit-fence';
+import { createCommitFenceBuffer, sharedMemoryCommitFence } from '@opencraft/access-control/commit-fence/shared-memory';
 import type { LocalAccountRepository } from '@opencraft/identity-core/local-account';
 
 const password = 'plugin-fixture-passphrase';
@@ -156,7 +156,7 @@ async function ownerFixture(t: test.TestContext) {
   const actors = new ActorStore(storage);
   const accounts = new HumanAccounts(storage, actors);
   const members = new MembershipStore(storage);
-  const writes = new IdentityWrites(storage.call, actors, accounts, identityFence, members);
+  const writes = new IdentityWrites(storage.call, actors, accounts, sharedMemoryCommitFence(identityFence), members);
   const localAccounts = new LocalAccountServerPlugin(accounts.localAccountRepository, createNodePasswordHasher());
   accounts.registerLocalAccounts(localAccounts);
   localAccounts.useOwnerWrites(writes);

@@ -11,6 +11,9 @@
     "./store-file": "./src/store-file.ts",
     "./document-hub-store": "./src/document-hub-store.ts",
     "./open": "./src/open.ts",
+    "./state-port": "./src/state-port.ts",
+    "./state-port-node": "./src/state-port-node.ts",
+    "./state-port-document": "./src/state-port-document.ts",
     "./enrollment": "./src/enrollment.ts"
   },
   "dependencies": {

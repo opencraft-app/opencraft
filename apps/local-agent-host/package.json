@@ -26,6 +26,7 @@
     "./model-config/repository": "./src/model-config/repository.ts",
     "./model-config/speech": "./src/model-config/speech.ts",
     "./machine-identity": "./src/machine-identity.ts",
+    "./machine-identity-document": "./src/machine-identity-document.ts",
     "./ordinary-conversation-owner": "./src/ordinary-conversation-owner.ts",
     "./ordinary-workspace-store": "./src/ordinary-workspace-store.ts",
     "./ordinary-workspace-compute": "./src/ordinary-workspace-compute.ts",

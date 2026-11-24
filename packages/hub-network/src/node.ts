@@ -3,10 +3,10 @@ import { Duplex } from 'node:stream';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import WebSocket, { WebSocketServer } from 'ws';
 import { bridgeRelayDuplex, relayDuplex, relayIdleDeadline } from '@opencraft/relay-protocol/node';
-import { AssertionProvider, type IdentityProvider, type IdentityRequest } from '@opencraft/identity-core/node';
+import { AssertionProvider, type IdentityRequest } from '@opencraft/identity-core/node';
 import { MAX_STREAMS } from '@opencraft/relay-protocol';
 import { HUB_CONTROL_PATH, HUB_DATA_PATH, HUB_PROTOCOL, MAX_HOPS, publicOrigin, transportEndpoint, validHubId,
-  type HubNetworkSnapshot, type HubRoute, type IdentityAuthority } from './contract.js';
+  type HubNetworkSnapshot, type HubNodeIdentity, type HubRoute, type IdentityAuthority } from './contract.js';
 import { authority, digest, hubId, parseInvitation, random, signed, verified, type Invitation, type InvitePayload, type Peer, type State, type HubStateOwner } from './store.js';
 import { HubRouting } from './routing.js';
 import { createLocalIngress } from './local-ingress.js';
@@ -29,7 +29,7 @@ export async function readCommand(req: IncomingMessage): Promise<Record<string, 
   let bytes = 0, body = ''; for await (const chunk of req) { bytes += chunk.length; if (bytes > 65_536) throw new Error('Command too large'); body += chunk; }
   const input = JSON.parse(body); if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Invalid command'); return input;
 }
-export class HubNetwork implements IdentityProvider {
+export class HubNetwork implements HubNodeIdentity {
   readonly store: HubStateOwner;
   readonly routing: HubRouting;
   readonly links = new Map<string, Link>();
@@ -74,6 +74,10 @@ export class HubNetwork implements IdentityProvider {
     return p && s.authority?.providers.includes(p.provider) ? p : null;
   }
   trustedOrigin(req: IdentityRequest) { return this.authenticate(req) ? this.store.state.origin : null; }
+  /** The committed public origin ('' until published); changes with operator commands. */
+  get origin(): string { return this.store.state.origin; }
+  /** The accepted identity authority, or null; changes with operator commands. */
+  get authority(): IdentityAuthority | null { return this.store.state.authority; }
   snapshot(): HubNetworkSnapshot {
     const s = this.store.state;
     return { schemaVersion: 1, revision: s.revision, hubId: this.store.id, name: s.name, endpoint: s.endpoint, origin: s.origin,

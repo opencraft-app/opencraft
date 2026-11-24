@@ -14,6 +14,8 @@ import {
 } from "@opencraft/storage-node/server-composition";
 import { migrateServerSqlDatabase } from "@opencraft/storage-node/server-sql";
 import { InstallationCoreDomain, type InstallationCoreMethod } from "./installation-core-domain.js";
+import { durableObjectStateDocumentStore } from "@opencraft/storage-cloudflare/state";
+import { InstallationRootInputsDomain, type InstallationRootInputsMethod } from "./installation-root-inputs-domain.js";
 
 interface Env {
   /** Test only: install the first N published migrations, to exercise an upgrade across restarts. */
@@ -28,6 +30,7 @@ const failure = (error: unknown) => (error instanceof Error ? `${error.name}: ${
 
 export class InstallationCore extends DurableObject<Env> {
   #domain: InstallationCoreDomain | undefined;
+  #inputs: InstallationRootInputsDomain | undefined;
   #failure: unknown;
 
   constructor(ctx: DurableObjectState, env: Env) {
@@ -49,6 +52,11 @@ export class InstallationCore extends DurableObject<Env> {
           ownedByRuntime: (name) => name.startsWith("_cf_"),
         });
         this.#domain = new InstallationCoreDomain({ database: handle.database, outcome: handle.outcome });
+        // Root inputs: the object's own state documents and the same SQL owner (gateway-split §4.1.1).
+        this.#inputs = new InstallationRootInputsDomain(
+          durableObjectStateDocumentStore(ctx.storage as unknown as DurableObjectStorage, { prefix: "installation/" }),
+          { database: handle.database, outcome: handle.outcome },
+        );
       } catch (error) {
         this.#failure = error;
       }
@@ -66,6 +74,13 @@ export class InstallationCore extends DurableObject<Env> {
     return (domain[method] as (...values: unknown[]) => unknown).apply(domain, args);
   }
 
+  /** RPC: one root input port method by name (installation-root-inputs-domain.ts). */
+  inputs(method: InstallationRootInputsMethod, args: unknown[]): unknown {
+    this.#open();
+    const inputs = this.#inputs!;
+    return (inputs[method] as (...values: unknown[]) => unknown).apply(inputs, args);
+  }
+
   /** Test probe: rewrite one ledger checksum in place, as tampering or a changed published migration would. */
   tamperLedger(version: number): number {
     const domain = this.#open();
@@ -81,13 +96,17 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const { object, method, args } = (await request.json()) as {
       object: string;
-      method: InstallationCoreMethod | "tamperLedger";
+      method: InstallationCoreMethod | "tamperLedger" | `inputs.${InstallationRootInputsMethod}`;
       args: unknown[];
     };
     const stub = env.CORE.get(env.CORE.idFromName(object));
     try {
       const value =
-        method === "tamperLedger" ? await stub.tamperLedger(args[0] as number) : await stub.call(method, args);
+        method === "tamperLedger"
+          ? await stub.tamperLedger(args[0] as number)
+          : method.startsWith("inputs.")
+            ? await stub.inputs(method.slice("inputs.".length) as InstallationRootInputsMethod, args)
+            : await stub.call(method as InstallationCoreMethod, args);
       return Response.json({ ok: true, value });
     } catch (error) {
       return Response.json({ ok: false, error: failure(error) });

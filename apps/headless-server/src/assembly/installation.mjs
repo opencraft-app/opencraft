@@ -36,9 +36,14 @@ import { actorSshKeysHttp } from "../actor-ssh-keys-http.ts";
  * the capability signing key, MCP apps, server information, personal model
  * defaults and SSH keys, and Turn push subscriptions.
  *
- * It receives the core SQL owner (`serverStorage`, already open) and that
- * owner's identity commit fence; every runtime-specific construction (the
- * owner itself, the Hub controller, private files, the password hasher, the
+ * It receives the core SQL owner (`serverStorage`, already open) and the
+ * authorizer side of that owner's identity commit fence (a
+ * `@opencraft/access-control/commit-fence` port). Root inputs arrive as
+ * values read through runtime-neutral ports (gateway-split §4.1.1): the
+ * Hub node only as its `HubNodeIdentity` view, the machine identity and the
+ * Human login and relay configurations already parsed. Every runtime-specific
+ * construction (the owner itself, the Hub controller and its state port,
+ * private files, the password hasher, the
  * login admission store, stores opened by path, key material, document
  * stores and the push delivery service) is supplied by the composition root
  * as a value or a factory called at its original moment. Creating it opens nothing. The root
@@ -69,7 +74,7 @@ export function assembleInstallation({ serverStorage, identityFence, isHuman }) 
         humanConfiguration?.setupTokenFile ||
         accessMemberProviders?.length ||
         relayConfiguration ||
-        hub.node?.store.state.origin
+        hub?.origin
       )
         membership = new MembershipStore(serverStorage);
       return membership;
@@ -108,7 +113,7 @@ export function assembleInstallation({ serverStorage, identityFence, isHuman }) 
           membership,
           relayConfiguration,
           workspaceExecution,
-          hubAuthority: hub.node?.store.state.authority ?? null,
+          hubAuthority: hub?.authority ?? null,
           resolveIdentity: (request) => instanceAccess?.authenticate(request) ?? null,
           getInstanceAccess: () => instanceAccess,
           machineIdentity,
@@ -143,7 +148,7 @@ export function assembleInstallation({ serverStorage, identityFence, isHuman }) 
         !identity?.providers.length &&
         !relayConfiguration &&
         !humanConfiguration &&
-        !hub.node?.store.state.authority
+        !hub?.authority
       )
         throw new Error("Authenticated membership requires an identity provider");
       // This identity authority is persistent even without an external human identity provider.
@@ -151,7 +156,7 @@ export function assembleInstallation({ serverStorage, identityFence, isHuman }) 
       const externalProviders = [
         ...(identity?.providers ?? []),
         ...(relayConfiguration ? [relayConfiguration.provider] : []),
-        ...(hub.node ? [hub.node] : []),
+        ...(hub ? [hub] : []),
       ];
       const externalHuman = (request) => {
         const identities = externalProviders.map((provider) => provider.authenticate(request)).filter(Boolean);

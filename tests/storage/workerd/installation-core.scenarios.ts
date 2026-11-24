@@ -6,10 +6,18 @@
 // tests/storage/installation-core-workerd.test.ts (Miniflare) and by the real
 // Cloudflare rehearsal (scripts/cloudflare/rehearsal.ts).
 import assert from "node:assert/strict";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { openServerDatabase, SERVER_MIGRATIONS } from "@opencraft/storage-node/server";
 import { InstallationCoreDomain, type InstallationCoreMethod } from "./installation-core-domain.ts";
+import {
+  InstallationRootInputsDomain,
+  type InstallationRootInputsMethod,
+} from "./installation-root-inputs-domain.ts";
+import { memoryStateDocumentStore } from "@opencraft/document-storage/state";
+import { parseHumanAuthConfiguration } from "@opencraft/access-control/human-auth-configuration";
+import { parseHubControllerConfiguration } from "@opencraft/hub-network/state-port";
+import { readDaemonMachineIdentity } from "../../../apps/opencraft-daemon/src/machine-identity.ts";
 import type { WorkerInstance, WorkerRuntime, WorkerScenario, WorkerSpec } from "../../cloudflare/worker-runtime.ts";
 
 export const INSTALLATION_CORE_WORKER: WorkerSpec = {
@@ -28,7 +36,10 @@ const start = (runtime: WorkerRuntime, persist?: string, migrationLimit?: number
     ...(migrationLimit ? { vars: { MIGRATION_LIMIT: migrationLimit } } : {}),
   });
 
-type Call = (method: InstallationCoreMethod | "tamperLedger", ...args: unknown[]) => Promise<unknown>;
+type Call = (
+  method: InstallationCoreMethod | "tamperLedger" | `inputs.${InstallationRootInputsMethod}`,
+  ...args: unknown[]
+) => Promise<unknown>;
 function client(instance: WorkerInstance, object = `core-${++sequence}`): Call {
   return async (method, ...args) => {
     const response = await instance.fetch("http://core/", {
@@ -302,4 +313,130 @@ export const INSTALLATION_CORE_SCENARIOS: readonly WorkerScenario[] = [
       assert.equal(steps["revoked token refused"]!.value, null);
     },
   },
+  // Root input ports (gateway-split §4.1.1): what a Node root reads from data
+  // directory files comes from the object's own state documents here.
+  {
+    name: "root inputs: the machine identity is created once in the object's state and survives a restart",
+    async run({ runtime, scratch }) {
+      const persist = `machine-${++sequence}`;
+      const object = "machine";
+      const first = await start(runtime, persist);
+      const call = client(first, object);
+      const named = (await call("inputs.machineIdentity", "  Fixture machine  ")) as Outcome<Machine>;
+      assert.ok(named.ok, JSON.stringify(named));
+      assert.deepEqual({ ...named.value, machineId: "*" }, { machineId: "*", name: "Fixture machine", platform: "linux" });
+      assert.deepEqual(await call("inputs.machineIdentityTwice"), {
+        ok: true,
+        value: [named.value.machineId, named.value.machineId],
+      });
+      await runtime.stop(first);
+      const second = await start(runtime, persist);
+      const again = client(second, object);
+      assert.deepEqual(await again("inputs.machineIdentity"), {
+        ok: true,
+        value: { machineId: named.value.machineId, name: "installation-core", platform: "linux" },
+      });
+      // Validation is the Node owner's: the same machine name rule and the same corrupted-ID refusal.
+      const directory = await mkdtemp(join(scratch, "node-machine-"));
+      const nodeError = await readDaemonMachineIdentity(directory, "x".repeat(65)).then(
+        () => "accepted",
+        (error: Error) => `${error.name}: ${error.message}`,
+      );
+      assert.deepEqual(await again("inputs.machineIdentity", "x".repeat(65)), { ok: false, error: nodeError });
+      await writeFile(join(directory, "machine-id"), "nope\n");
+      const nodeCorrupt = await readDaemonMachineIdentity(directory).then(
+        () => "accepted",
+        (error: Error) => `${error.name}: ${error.message}`,
+      );
+      await again("inputs.corruptMachineIdentity");
+      assert.deepEqual(await again("inputs.machineIdentity"), { ok: false, error: nodeCorrupt });
+      await runtime.stop(second);
+    },
+  },
+  {
+    name: "root inputs: the Hub node state is created once, saved durably and keeps its identity across a restart",
+    async run({ runtime }) {
+      const persist = `hub-${++sequence}`;
+      const object = "hub";
+      const first = await start(runtime, persist);
+      const call = client(first, object);
+      const created = (await call("inputs.hubNode")) as Outcome<HubNode>;
+      assert.ok(created.ok, JSON.stringify(created));
+      assert.match(created.value.hubId, /^hub-[a-f0-9]{40}$/u);
+      assert.deepEqual({ ...created.value, hubId: "*" }, { hubId: "*", revision: 0, origin: "" });
+      assert.deepEqual(await call("inputs.hubNode", "https://hub.example"), {
+        ok: true,
+        value: { hubId: created.value.hubId, revision: 1, origin: "https://hub.example" },
+      });
+      const foreign = (await call("inputs.hubForeignSave")) as Outcome<string>;
+      assert.equal(foreign.ok, false);
+      assert.match((foreign as { error: string }).error, /another Hub identity/);
+      await runtime.stop(first);
+      const second = await start(runtime, persist);
+      assert.deepEqual(await client(second, object)("inputs.hubNode"), {
+        ok: true,
+        value: { hubId: created.value.hubId, revision: 1, origin: "https://hub.example" },
+      });
+      await runtime.stop(second);
+    },
+  },
+  {
+    name: "root inputs: configuration values are validated exactly as the Node root validates its files",
+    async run({ runtime }) {
+      const call = client(await start(runtime));
+      const node = <T>(action: () => T): Outcome<T> => {
+        try {
+          return { ok: true, value: JSON.parse(JSON.stringify(action())) };
+        } catch (error) {
+          return { ok: false, error: `${(error as Error).name}: ${(error as Error).message}` };
+        }
+      };
+      const human = { origin: "https://login.example", local: true, oidc: [] };
+      for (const input of [human, { ...human, origin: "http://login.example" }, { ...human, extra: true }])
+        assert.deepEqual(
+          await call("inputs.humanAuthConfiguration", input),
+          node(() => parseHumanAuthConfiguration(input)),
+        );
+      const controller = { schemaVersion: 1, endpoint: "http://127.0.0.1:9", credential: "k".repeat(43) };
+      for (const input of [controller, { ...controller, endpoint: "https://hub.example" }, { ...controller, schemaVersion: 2 }])
+        assert.deepEqual(
+          await call("inputs.hubController", input),
+          node(() => parseHubControllerConfiguration(input)),
+        );
+      // Dialing out to a relay is Node-only (§4.2); this root has none.
+      assert.deepEqual(await call("inputs.relayConnection"), { ok: true, value: null });
+    },
+  },
+  {
+    name: "root inputs: identity writes commit on the object's own thread through the same-thread commit fence",
+    async run({ runtime, scratch }) {
+      const workerd = await client(await start(runtime))("inputs.fencedAdministration");
+      const database = await openServerDatabase(await mkdtemp(join(scratch, "node-fence-")));
+      let local: unknown;
+      try {
+        local = await new InstallationRootInputsDomain(memoryStateDocumentStore(), database).fencedAdministration();
+      } finally {
+        await database.close();
+      }
+      assert.deepEqual(workerd, {
+        approved: "session",
+        operatorEnabled: false,
+        revoked: "CommitFenceDenied: Authorization changed before the write committed",
+        sessions: ["approved"],
+      });
+      assert.deepEqual(workerd, local, "the same calls give the same outcome on node:sqlite");
+    },
+  },
 ];
+
+type Outcome<T> = { ok: true; value: T } | { ok: false; error: string };
+interface Machine {
+  machineId: string;
+  name: string;
+  platform: string;
+}
+interface HubNode {
+  hubId: string;
+  revision: number;
+  origin: string;
+}

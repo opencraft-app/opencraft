@@ -1,34 +1,33 @@
 /**
- * A commit fence lets a storage owner Worker ask the network thread to recheck
- * an authorization immediately before it commits, while the owner holds the
- * database writer lock. The Worker blocks on the answer (it may block; the
- * network thread never does) and refuses the write unless the network thread
- * approved that exact request in time.
+ * Commit fence port (runtime-neutral; gateway-split §4.1.1 "根输入端口").
  *
- * The network thread may defer an answer, e.g. until its projection applied
- * every write the owner committed before the request; the Worker keeps
- * blocking until its timeout, and a late answer is never taken for a later
- * request.
+ * A storage owner asks the authorizer (the side that holds the authority
+ * projection) to recheck an authorization immediately before it commits, while
+ * the owner holds its writer. The owner refuses the write unless that exact
+ * request was approved in time.
  *
- * Layout: [state, request token, approval, answered token].
+ * Two adapters implement it:
+ *  - `sharedMemoryCommitFence` (`./commit-fence/shared-memory`): the owner runs
+ *    on another thread and blocks on shared memory until the authorizer's
+ *    event loop answered (the Node single-writer Worker).
+ *  - `sameThreadCommitFence` (below): the owner and the authorizer run on one
+ *    thread and one event loop (a single-writer object such as a Durable
+ *    Object), so the recheck is a direct synchronous call.
  */
-const IDLE = 0,
-  REQUEST = 1,
-  ANSWER = 2;
-// Available in every supported Node; declared here until the lib target includes ES2024.
-const waitAsync = (
-  Atomics as unknown as {
-    waitAsync(
-      array: Int32Array,
-      index: number,
-      value: number,
-    ): { async: false; value: string } | { async: true; value: Promise<string> };
-  }
-).waitAsync;
-const STATE = 0,
-  TOKEN = 1,
-  APPROVED = 2,
-  ANSWERED = 3;
+
+/** The authorizer's answer for one request; a promise defers it until it settles (a rejection denies). */
+export type CommitFenceCheck = (token: number) => boolean | Promise<boolean>;
+
+export interface CommitFence {
+  /** Authorizer side: answers each request with `check(token)` until the returned function stops it. */
+  serve(check: CommitFenceCheck): () => void;
+  /**
+   * Owner side, called inside the writer's transaction: returns when the
+   * authorizer approved `token` in time and throws `CommitFenceDenied`
+   * otherwise, so the write rolls back.
+   */
+  pass(token: number): void;
+}
 
 export class CommitFenceDenied extends Error {
   constructor() {
@@ -37,70 +36,48 @@ export class CommitFenceDenied extends Error {
   }
 }
 
+const isThenable = (value: unknown): value is PromiseLike<unknown> =>
+  value !== null && typeof value === "object" && typeof (value as { then?: unknown }).then === "function";
+
 /**
- * Network-thread side: answers each fence request with `check(token)`. A check
- * that returns a promise defers the answer until it settles; a rejection denies.
+ * The fence for an owner that writes on the authorizer's own thread.
+ *
+ * Correctness. `pass` runs inside the owner's synchronous transaction on the
+ * one thread that also runs every authority change, so nothing can change the
+ * authority between the check and the commit: a synchronous `true` here is at
+ * least as strong as the cross-thread fence's answer under the writer lock.
+ * A deferred answer (the authorizer has not applied an earlier owner commit
+ * yet) cannot be awaited without yielding inside the transaction, so it
+ * denies — exactly what the cross-thread fence does when no answer arrives in
+ * time. A missing or failing authorizer denies too.
+ *
+ * The recheck is not redundant on one thread: the authorizer's pre-check
+ * happens when the write is issued, and the owner may run it only after
+ * earlier queued writes (for example a revocation) committed, so the fence is
+ * a real check, never a no-op.
  */
-export function serveCommitFence(
-  buffer: SharedArrayBuffer,
-  check: (token: number) => boolean | Promise<boolean>,
-): () => void {
-  const state = new Int32Array(buffer);
-  let stopped = false;
-  void (async () => {
-    while (!stopped) {
-      const value = Atomics.load(state, STATE);
-      if (value === REQUEST) {
-        const token = Atomics.load(state, TOKEN);
-        let approved = false;
-        try {
-          const verdict = check(token);
-          approved = (typeof verdict === "boolean" ? verdict : await verdict) === true;
-        } catch {
-          /* A failing check denies. */
-        }
-        if (stopped) break;
-        // A deferred answer is for this request only: the Worker may have timed
-        // out meanwhile and asked again with another token.
-        if (Atomics.load(state, STATE) !== REQUEST || Atomics.load(state, TOKEN) !== token) continue;
-        Atomics.store(state, APPROVED, approved ? 1 : 0);
-        Atomics.store(state, ANSWERED, token);
-        Atomics.compareExchange(state, STATE, REQUEST, ANSWER);
-        Atomics.notify(state, STATE);
-        continue;
+export function sameThreadCommitFence(): CommitFence {
+  let current: CommitFenceCheck | null = null;
+  return {
+    serve(check) {
+      if (current) throw new Error("A commit fence has one authorizer");
+      current = check;
+      return () => {
+        if (current === check) current = null;
+      };
+    },
+    pass(token) {
+      let approved = false;
+      try {
+        const verdict = current?.(token);
+        if (isThenable(verdict))
+          // Not an answer in time; settle it quietly, the request is denied.
+          verdict.then(undefined, () => undefined);
+        else approved = verdict === true;
+      } catch {
+        /* A failing check denies. */
       }
-      const wait = waitAsync(state, STATE, value);
-      if (wait.async) await wait.value;
-    }
-  })();
-  return () => {
-    stopped = true;
-    Atomics.notify(state, STATE);
+      if (!approved) throw new CommitFenceDenied();
+    },
   };
-}
-
-/**
- * Worker side: blocks until the network thread answered `token`, and throws
- * unless it approved. A missing or late answer denies; the caller's write
- * then rolls back.
- */
-export function commitFence(buffer: SharedArrayBuffer, timeoutMs = 2_000): (token: number) => void {
-  const state = new Int32Array(buffer);
-  return (token) => {
-    Atomics.store(state, TOKEN, token);
-    Atomics.store(state, STATE, REQUEST);
-    Atomics.notify(state, STATE);
-    Atomics.wait(state, STATE, REQUEST, timeoutMs);
-    const approved =
-      Atomics.load(state, STATE) === ANSWER &&
-      Atomics.load(state, ANSWERED) === token &&
-      Atomics.load(state, APPROVED) === 1;
-    Atomics.store(state, STATE, IDLE);
-    Atomics.notify(state, STATE);
-    if (!approved) throw new CommitFenceDenied();
-  };
-}
-
-export function createCommitFenceBuffer(): SharedArrayBuffer {
-  return new SharedArrayBuffer(4 * Int32Array.BYTES_PER_ELEMENT);
 }

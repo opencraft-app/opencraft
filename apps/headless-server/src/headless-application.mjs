@@ -81,7 +81,6 @@ import { createWebSocketExecutionTurnInspector } from "@opencraft/opencraft-daem
 import { AgentDriverTransport, AgentDriverSession } from "@opencraft/opencraft-daemon/agent-driver-transport";
 import { WebSocketTransport } from "@opencraft/appserver-transport-websocket";
 import { WebSocket } from 'ws';
-import { readDaemonMachineIdentity } from "@opencraft/opencraft-daemon/machine-identity";
 import { readSshCodexServerBindings, createSshCodexEngineAdapter } from "@opencraft/opencraft-daemon/ssh-codex-connections";
 import { HostFileDownloads } from "@opencraft/opencraft-daemon/host-file-downloads";
 import { startLocalAgentHost } from "@opencraft/local-agent-host";
@@ -112,9 +111,8 @@ import { ImChannelsAppServer } from './im-channels-appserver.mjs';
 import { CHANNELS_HOST_ID } from '@opencraft/appserver-protocol/channels';
 import { createNodePasswordHasher } from '@opencraft/plugin-local-account/password-hash-node';
 import { readPrivateJson } from '@opencraft/identity-core/node';
-import { readHumanAuthConfiguration } from '@opencraft/access-control/human-auth';
-import { createCommitFenceBuffer } from '@opencraft/access-control/commit-fence';
-import { loadRelayConnection } from '@opencraft/plugin-relay-connect/server';
+import { createCommitFenceBuffer, sharedMemoryCommitFence } from '@opencraft/access-control/commit-fence/shared-memory';
+import { nodeRootInputs } from './assembly/root-inputs-node.mjs';
 import { validateLoginAdmission, environmentLaunchOwner, environmentDeliveryOptions } from "./headless-identity.mjs";
 import { openLoginAdmissionPolicy } from '@opencraft/plugin-login-admission/server';
 import { startHeadlessRuntimePlugins, validateRuntimePluginOptions } from "./runtime-plugins.mjs";
@@ -363,6 +361,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   const productPluginAssets = await prepareProductPluginRelease({ releaseRoot: root, webRoot,
     cacheDirectory: process.env.OPENCRAFT_PRODUCT_PLUGIN_CACHE_DIRECTORY || join(dataDirectory, 'product-plugin-packs'),
     metadata: releaseManifest.productPlugins ?? null });
+  // The identity commit fence's shared buffer: the core owner Worker passes it,
+  // this thread serves it (the commit fence port's shared-memory adapter).
   const identityFence = createCommitFenceBuffer();
   // Installed before the storage owners: the Server core owner Worker (which runs
   // orchestration) receives the communication module, and every later owner reads
@@ -378,7 +378,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   // Identity, admission, collaboration and deployment-level services over the
   // core SQL owner; creating it opens nothing, each step and disposer keeps
   // its original position.
-  const installation = assembleInstallation({ serverStorage, identityFence,
+  const installation = assembleInstallation({ serverStorage, identityFence: sharedMemoryCommitFence(identityFence),
     isHuman: principal => composition.isHuman?.(principal) });
   const orchestrationStorage = installation.openOrchestrationStorage();
   const releaseLock = async () => { await installation.closeOrchestrationStorage(); await serverStorage.close(); releaseExtensions(); };
@@ -503,19 +503,22 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   try {
     const ingressConfiguration = options.sshConfig ? await loadSshIngressConfiguration(options.sshConfig) : null;
     // Invalid configured credentials fail startup before any execution resource is created.
-    const relayConfiguration = options.relayConnectFile ? await loadRelayConnection(options.relayConnectFile, composition.relayAssertionOptions) : null;
-    const humanConfiguration = options.humanAuthConfig ? await readHumanAuthConfiguration(options.humanAuthConfig) : null;
+    // Root inputs through their port; the Node adapter reads the same files, each at its original moment.
+    const rootInputs = nodeRootInputs({ dataDirectory, machineName: options.machineName, humanAuthConfig: options.humanAuthConfig,
+      relayConnectFile: options.relayConnectFile, relayAssertionOptions: composition.relayAssertionOptions });
+    const relayConfiguration = await rootInputs.relayConnection();
+    const humanConfiguration = await rootInputs.humanAuthConfiguration();
     const imConfiguration = await readImConfiguration(options.imConfigFile);
-    hubController = await createHubController(join(dataDirectory, 'hub-network-controller.json'), join(dataDirectory, 'hub-network.json'));
-    const membership = installation.openMembership({ hub: hubController, accessControl: options.accessControl,
+    hubController = await createHubController(rootInputs.hubState);
+    const membership = installation.openMembership({ hub: hubController.node, accessControl: options.accessControl,
       accessMemberProviders: options.accessMemberProviders, humanConfiguration, relayConfiguration });
-    const machineIdentity = await readDaemonMachineIdentity(dataDirectory, options.machineName);
+    const machineIdentity = await rootInputs.machineIdentity();
     account = assembleAccount({ dataDirectory, codexCoreEndpoint: options.codexCoreEndpoint, codexCoreAuthToken: options.codexCoreAuthToken });
     const { modelPolicyPath } = account;
     const { actorStore, identity, environmentDelivered } = await installation.openIdentity({
       // The Node data directory reaches only the identity composition, first as before.
       createIdentity: composition.createIdentity && (input => composition.createIdentity({ dataDirectory, ...input })),
-      hub: hubController, machineIdentity, relayConfiguration, workspaceExecution, sshIngressEnabled: !!ingressConfiguration,
+      hub: hubController.node, machineIdentity, relayConfiguration, workspaceExecution, sshIngressEnabled: !!ingressConfiguration,
       environmentDelivery: options.environmentDelivery, environmentIssuer: options.environmentIssuer,
       engineHostDescriptor: options.engineHostDescriptor, capabilities });
     // One installation has one ENV owner; configuring two fails here. An
@@ -541,7 +544,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     if (!workspaceExecution && identity?.codexWorkspaceRouting !== undefined)
       throw new Error('Identity workspace routing requires matched Core configuration');
     const { humanAccounts, humanAuth, accountApplication, loginAdmission, instanceAccess } = await installation.openAdmission({
-      hub: hubController, relayConfiguration, humanConfiguration, accessMemberProviders: options.accessMemberProviders,
+      hub: hubController.node, relayConfiguration, humanConfiguration, accessMemberProviders: options.accessMemberProviders,
       createPasswordHasher: createNodePasswordHasher,
       readSetupToken: humanConfiguration?.setupTokenFile ? () => readPrivateJson(humanConfiguration.setupTokenFile) : undefined,
       openLoginAdmission: loginAdmissionScope
@@ -676,9 +679,9 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     // Configuration, never missing request credentials, selects the anonymous authority.
     const anonymousDeployment = !membership && !humanConfiguration && !composition.createIdentity
       && !relayConfiguration && !!hubController.node
-      && !hubController.node.store.state.origin && !hubController.node.store.state.authority;
+      && !hubController.node.origin && !hubController.node.authority;
     const operator = deploymentOperator(actorStore, anonymousDeployment, () => !serverSpaces.initialized
-      && !hubController.node.store.state.origin && !hubController.node.store.state.authority);
+      && !hubController.node.origin && !hubController.node.authority);
     const anonymousHandoff = () => !!operator.context();
     const signExecutionCli = session => executionCliSourceToken(lateCapabilityKey.get(), session);
     const anonymousDriver = (transport, hostId) => anonymousDeployment

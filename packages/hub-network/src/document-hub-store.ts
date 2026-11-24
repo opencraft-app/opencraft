@@ -14,7 +14,8 @@ export interface HubStateDocument {
 }
 
 async function initialState(): Promise<State> {
-  const pair = await promisify(generateKeyPair)("ed25519");
+  // Explicit (empty) options: runtimes whose node:crypto requires the three-argument form accept it too.
+  const pair = await promisify(generateKeyPair)("ed25519", {});
   return {
     schemaVersion: 1,
     revision: 0,

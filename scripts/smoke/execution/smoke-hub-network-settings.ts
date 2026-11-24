@@ -8,12 +8,13 @@ import { createServer } from 'vite';
 import { chromium } from '@playwright/test';
 import { openLocalHubNetwork } from '../../../packages/hub-network/src/store-file.js';
 import { createHubController } from "../../../packages/hub-network/src/controller";
+import { nodeHubStatePort } from "../../../packages/hub-network/src/state-port-node";
 
 const output = resolve(process.env.OPENCRAFT_HUB_SMOKE_DIRECTORY ?? '.local/hub-network-settings'); await mkdir(output, { recursive: true });
 const directory = await mkdtemp(join(output, 'private-')), cleanups: (() => unknown)[] = [];
 let operator: string | null = '["fixture","administrator"]', failReads = false;
 try {
-  const controller = await createHubController(join(directory, 'controller.json'), join(directory, 'node.json')); cleanups.push(() => controller.close());
+  const controller = await createHubController(nodeHubStatePort({ controllerFile: join(directory, 'controller.json'), stateFile: join(directory, 'node.json') })); cleanups.push(() => controller.close());
   const pair = generateKeyPairSync('ed25519'), other = await openLocalHubNetwork(join(directory, 'other.json'), { authority: { issuer: 'fixture-login', publicKey: pair.publicKey.export({ format: 'pem', type: 'spki' }).toString(), providers: ['enterprise-identity'] } }); cleanups.push(() => other.close());
   const peer = createHttpServer((_req, res) => { res.writeHead(404); res.end(); }); peer.on('upgrade', (req, socket, head) => { if (!other.handleUpgrade(req, socket, head)) socket.destroy(); });
   peer.listen(0, '127.0.0.1'); await once(peer, 'listening'); const peerPort = (peer.address() as { port: number }).port; other.start(peerPort);

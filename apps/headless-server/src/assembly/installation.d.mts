@@ -4,6 +4,8 @@ import type { ActorAccess } from "@opencraft/access-control/actor-access";
 import type { HumanAccounts } from "@opencraft/access-control/human-accounts";
 import type { HumanAuth, HumanAuthConfiguration } from "@opencraft/access-control/human-auth";
 import type { IdentityWrites } from "@opencraft/access-control/identity-writes";
+import type { CommitFence } from "@opencraft/access-control/commit-fence";
+import type { HubNodeIdentity } from "@opencraft/hub-network";
 import type { Principal } from "@opencraft/identity-core";
 import type { IdentityProvider, IdentityRequest } from "@opencraft/identity-core/node";
 import type { PasswordHasher } from "@opencraft/plugin-local-account/password-hash";
@@ -28,11 +30,12 @@ export type InstallationSqlOwner = ConstructorParameters<typeof ActorStore>[0] &
   readonly call: ConstructorParameters<typeof IdentityWrites>[0];
 };
 
-/** The Hub node state identity and admission read; the composition root constructs the controller. */
-export interface InstallationHub {
-  readonly node?:
-    (IdentityProvider & { readonly store: { readonly state: { origin?: unknown; authority?: unknown } } }) | null;
-}
+/**
+ * The installation's own Hub node as identity and admission read it (null
+ * without one: a remote controller or no Hub). The root opens the node over
+ * the Hub state port; the installation reads only this view.
+ */
+export type InstallationHub = HubNodeIdentity | null;
 
 /** A configured outbound relay; its provider verifies relayed people. */
 export interface InstallationRelay {
@@ -255,8 +258,12 @@ export interface InstallationAssembly {
 
 export function assembleInstallation(options: {
   serverStorage: InstallationSqlOwner;
-  /** The commit fence the core SQL owner was opened with. */
-  identityFence: SharedArrayBuffer;
+  /**
+   * The authorizer side of the commit fence the core SQL owner's identity
+   * writes pass (shared-memory for the Node owner Worker, same-thread for an
+   * owner on this thread).
+   */
+  identityFence: CommitFence;
   /** The composition's qualification of a verified external principal; `undefined` means a person. */
   isHuman(principal: Principal): boolean | undefined;
 }): InstallationAssembly;

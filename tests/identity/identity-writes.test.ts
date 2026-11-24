@@ -8,8 +8,10 @@ import { openServerCoreOwner } from "@opencraft/storage-node/server-owner";
 import { ActorStore } from "@opencraft/access-control/actors";
 import { HumanAccounts } from "@opencraft/access-control/human-accounts";
 import { MembershipStore } from "@opencraft/access-control";
-import { IdentityWrites, type IdentityWriteOwner } from "@opencraft/access-control/identity-writes";
-import { createCommitFenceBuffer, serveCommitFence } from "@opencraft/access-control/commit-fence";
+import { IdentityWriteOwner, IdentityWrites } from "@opencraft/access-control/identity-writes";
+import { CommitFenceDenied, sameThreadCommitFence, type CommitFence } from "@opencraft/access-control/commit-fence";
+import { openServerDatabase } from "@opencraft/storage-node/server";
+import { createCommitFenceBuffer, serveCommitFence, sharedMemoryCommitFence } from "@opencraft/access-control/commit-fence/shared-memory";
 import type { OwnerCalls } from "@opencraft/worker-owner";
 
 const entry = new URL("../../apps/headless-server/src/server-core-worker.mjs", import.meta.url);
@@ -33,7 +35,7 @@ async function fixture(
   const actors = new ActorStore(storage);
   const accounts = new HumanAccounts(storage, actors);
   const members = new MembershipStore(storage);
-  const writes = new IdentityWrites(deliver(storage.call, identityFence), actors, accounts, identityFence, members);
+  const writes = new IdentityWrites(deliver(storage.call, identityFence), actors, accounts, sharedMemoryCommitFence(identityFence), members);
   t.after(async () => {
     writes.close();
     members.close();
@@ -290,4 +292,117 @@ test("authenticating a principal without a legacy alias publishes no membership 
   members.bindLegacyAlias({ ...principal("renamed"), aliases: ["old-name"] });
   assert.equal(changes, 1, "a real legacy alias still moves");
   assert.equal(members.role(principal("renamed")), "member");
+});
+
+// Commit fence port, same-thread adapter (gateway-split §4.1.1): the owner and
+// the authorizer share one thread and one database, as in a single-writer object.
+/**
+ * `queued`: each owner call runs on a later turn, after the previous reply
+ * reached this thread (an owner queue). Otherwise each call runs synchronously
+ * as it is issued, before the previous reply was applied here.
+ */
+async function sameThreadFixture(t: test.TestContext, fence: CommitFence, queued = true) {
+  const directory = await mkdtemp(join(tmpdir(), "identity-writes-same-thread-"));
+  const database = await openServerDatabase(directory);
+  const owner = new IdentityWriteOwner(database, fence);
+  let tail: Promise<unknown> = Promise.resolve();
+  const invoke = (method: PropertyKey, args: unknown[]) =>
+    new Promise((resolve) => resolve((owner[method as keyof IdentityWriteOwner] as (...a: unknown[]) => unknown)(...args)));
+  const calls = new Proxy({} as Calls, {
+    get: (_target, method) =>
+      (...args: unknown[]) => {
+        if (!queued) return invoke(method, args);
+        const run = tail.then(() => new Promise((resolve) => setTimeout(resolve, 0))).then(() => invoke(method, args));
+        tail = run.then(
+          () => undefined,
+          () => undefined,
+        );
+        return run;
+      },
+  });
+  const actors = new ActorStore(database);
+  const accounts = new HumanAccounts(database, actors);
+  const members = new MembershipStore(database);
+  const writes = new IdentityWrites(calls, actors, accounts, fence, members);
+  t.after(async () => {
+    writes.close();
+    members.close();
+    accounts.close();
+    actors.close();
+    owner.close();
+    await database.close();
+    await rm(directory, { recursive: true, force: true });
+  });
+  return { actors, writes };
+}
+
+/** Admin disables operator; operator's write was issued with operator's authority before that committed. */
+async function revokedWhileQueued(fence: CommitFence, queued = true) {
+  return async (t: test.TestContext) => {
+    const { actors, writes } = await sameThreadFixture(t, fence, queued);
+    const { login: admin } = await writes.issueLogin(principal("admin"));
+    const { login: operator } = await writes.issueLogin(principal("operator"));
+    const sessions = () => actors.list().filter((actor) => actor.kind === "session").length;
+    const disable = writes.setEnabled(
+      () => actors.isCurrent(admin.context),
+      operator.context.actorId,
+      false,
+      admin.context.actorId,
+    );
+    const create = writes.createSession(() => actors.isCurrent(operator.context), "late", operator.context.actorId);
+    // In the same turn, a write whose authority nothing revoked.
+    const unrelated = queued
+      ? undefined
+      : writes.createSession(() => actors.isCurrent(admin.context), "same-turn", admin.context.actorId);
+    return { actors, writes, admin, disable, create, unrelated, sessions };
+  };
+}
+
+test("same-thread commit fence: approved administration commits; authority revoked by an earlier queued write commits nothing", async (t) => {
+  const run = await revokedWhileQueued(sameThreadCommitFence());
+  const { actors, writes, admin, disable, create, sessions } = await run(t);
+  await disable;
+  await assert.rejects(create, CommitFenceDenied);
+  assert.equal(sessions(), 0, "no session committed");
+  const allowed = () => actors.isCurrent(admin.context);
+  const session = await writes.createSession(allowed, "bot", admin.context.actorId);
+  assert.equal(actors.get(session.id)?.kind, "session", "the fence keeps approving current authority");
+});
+
+test("same-thread commit fence: the recheck is load-bearing, a fence that skipped it would commit the revoked write", async (t) => {
+  const skipping: CommitFence = { serve: () => () => undefined, pass: () => undefined };
+  const run = await revokedWhileQueued(skipping);
+  const { disable, create, sessions } = await run(t);
+  await disable;
+  await create;
+  assert.equal(sessions(), 1, "without the recheck the operator's stale authority committed");
+});
+
+test("same-thread commit fence: a deferred answer cannot be awaited inside the transaction and denies", async (t) => {
+  // Owner calls run as they are issued: the operator's write reaches the fence
+  // before this thread applied the committed revocation, so the check defers.
+  const run = await revokedWhileQueued(sameThreadCommitFence(), false);
+  const { actors, writes, admin, disable, create, unrelated, sessions } = await run(t);
+  await disable;
+  await assert.rejects(create, CommitFenceDenied);
+  await assert.rejects(unrelated!, CommitFenceDenied, "fails closed, like a cross-thread answer that never arrived");
+  assert.equal(sessions(), 0);
+  await writes.createSession(() => actors.isCurrent(admin.context), "next-turn", admin.context.actorId);
+  assert.equal(sessions(), 1, "once the reply was applied, the fence answers synchronously");
+});
+
+test("same-thread commit fence: no authorizer or a failing check denies; one authorizer per fence", () => {
+  const fence = sameThreadCommitFence();
+  assert.throws(() => fence.pass(1), CommitFenceDenied);
+  const stop = fence.serve((token) => {
+    if (token === 3) throw new Error("check failed");
+    return token === 2;
+  });
+  assert.throws(() => fence.serve(() => true), /one authorizer/);
+  assert.throws(() => fence.pass(1), CommitFenceDenied);
+  fence.pass(2);
+  assert.throws(() => fence.pass(3), CommitFenceDenied);
+  stop();
+  assert.throws(() => fence.pass(2), CommitFenceDenied, "a stopped authorizer answers nothing");
+  fence.serve(() => true)();
 });

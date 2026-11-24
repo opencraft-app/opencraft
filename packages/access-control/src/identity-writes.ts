@@ -1,11 +1,11 @@
 import type { OwnerCalls } from "@opencraft/worker-owner";
-import type { ServerDatabase } from "@opencraft/storage-node/server";
+import type { ServerDatabaseHandle } from "@opencraft/storage-node/server-repository";
 import type { Principal } from "@opencraft/identity-core";
 import type { ActorContext } from "@opencraft/identity-core/actors";
 import { ActorStore } from "./actors.js";
 import { HumanAccounts, type HumanLogin } from "./human-accounts.js";
 import { MembershipStore, type MemberRole } from "./index.js";
-import { commitFence, serveCommitFence } from "./commit-fence.js";
+import type { CommitFence } from "./commit-fence.js";
 import type {
   LocalAccountPasswordExpectation,
   LocalAccountPasswordUpgrades,
@@ -33,30 +33,33 @@ export interface IdentityWriteOwnerOptions {
  * Each such write therefore takes the writer lock first, then asks the calling
  * thread through the commit fence to recheck that authority, and mutates only
  * if it was approved. No authority can commit a change while the lock is held.
+ * The owner sees only the commit fence port: the shared-memory fence when it
+ * runs in the Node owner Worker, the same-thread fence when it runs on the
+ * authorizer's own thread.
  */
 export class IdentityWriteOwner {
   readonly #actors: ActorStore;
   readonly #accounts: HumanAccounts;
   readonly #members: MembershipStore;
-  readonly #fence: ((token: number) => void) | null;
+  readonly #fence: CommitFence | null;
   readonly #options: IdentityWriteOwnerOptions;
   constructor(
-    private readonly owner: ServerDatabase,
-    fence?: SharedArrayBuffer,
+    private readonly owner: ServerDatabaseHandle,
+    fence?: CommitFence,
     options: IdentityWriteOwnerOptions = {},
   ) {
     this.#options = options;
     this.#actors = new ActorStore(owner, Date.now, { permissionProjection: false });
     this.#accounts = new HumanAccounts(owner, this.#actors);
     this.#members = new MembershipStore(owner, { permissionProjection: false });
-    this.#fence = fence ? commitFence(fence) : null;
+    this.#fence = fence ?? null;
   }
   /** Runs `write` under the writer lock, after the caller re-approved `token`. */
   #fenced<T>(token: number, write: () => T): T {
     const fence = this.#fence;
     if (!fence) throw new Error("Actor administration requires a commit fence");
     return this.owner.database.transaction(() => {
-      fence(token);
+      fence.pass(token);
       return write();
     });
   }
@@ -190,12 +193,12 @@ export class IdentityWrites implements LocalAccountPasswordUpgrades {
     readonly actors: ActorStore,
     /** Absent when this installation has no human login. */
     readonly accounts: HumanAccounts | undefined,
-    /** The buffer the owner's `IdentityWriteOwner` was given. */
-    fence: SharedArrayBuffer,
+    /** The commit fence whose owner side the `IdentityWriteOwner` passes. */
+    fence: CommitFence,
     /** Absent when this installation has no instance membership. */
     readonly members?: MembershipStore,
   ) {
-    this.#stopFence = serveCommitFence(fence, (token) => {
+    this.#stopFence = fence.serve((token) => {
       const check = () => this.#checks.get(token)?.() === true;
       if (!this.#awaitsEarlier(token)) return check();
       return new Promise<boolean>((resolve) => this.#waiting.set(token, resolve)).then((ready) => ready && check());

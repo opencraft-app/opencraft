@@ -8,6 +8,7 @@ import { ModelGatewayStore } from "@opencraft/account-pool-host";
 import { projectModelCatalog } from "@opencraft/model-usage-policy/transport";
 import { CapabilityBindings } from "@opencraft/session-capabilities/bindings";
 import { IdentityWriteOwner, identityWriteMethods } from "@opencraft/access-control/identity-writes";
+import { sharedMemoryCommitFence } from "@opencraft/access-control/commit-fence/shared-memory";
 import { localAccountPasswordUpgrade } from "@opencraft/access-control/local-account-upgrade-owner";
 import { orchestrationRuntimeOwnerMethods } from "@opencraft/access-control/orchestration-runtime-domain";
 import { serverSpacesOwnerMethods } from "@opencraft/access-control/server-spaces-domain";
@@ -22,8 +23,9 @@ if (typeof extensionModule === "string") installCommunicationExtension((await im
 serveServerCoreOwner((owner, data) => {
   const notes = new ThreadNoteStore(owner);
   const capabilityBindings = new CapabilityBindings(owner);
-  // The commit fence lets the network thread recheck Actor administration under this writer lock.
-  const identity = new IdentityWriteOwner(owner, data.identityFence, {
+  // The commit fence lets the network thread recheck Actor administration under
+  // this writer lock; the shared buffer crosses to this Worker as data.
+  const identity = new IdentityWriteOwner(owner, data.identityFence ? sharedMemoryCommitFence(data.identityFence) : undefined, {
     upgradeLocalPassword: localAccountPasswordUpgrade(owner.database),
   });
   // Orchestration runtime, communication and automation ledgers, and the Server

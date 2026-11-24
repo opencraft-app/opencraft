@@ -11,6 +11,7 @@
     "./actors": "./src/actors.ts",
     "./actor-access": "./src/actor-access.ts",
     "./human-auth": "./src/human-auth.ts",
+    "./human-auth-configuration": "./src/human-auth-configuration.ts",
     "./human-accounts": "./src/human-accounts.ts",
     "./account-management": "./src/account-management.ts",
     "./actor-policy": "./src/actor-policy.ts",
@@ -33,6 +34,7 @@
     "./identity-writes": "./src/identity-writes.ts",
     "./local-account-upgrade-owner": "./src/local-account-upgrade-owner.ts",
     "./commit-fence": "./src/commit-fence.ts",
+    "./commit-fence/shared-memory": "./src/commit-fence-shared-memory.ts",
     "./native-channels": "./src/native-channels.ts",
     "./personal-assistants": "./src/personal-assistants.ts"
   },

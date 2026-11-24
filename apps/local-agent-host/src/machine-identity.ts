@@ -5,18 +5,15 @@ import { link, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { hostname } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { parseRuntimeMachineIdentity, type RuntimeMachineIdentity } from "@opencraft/appserver-protocol";
+import { configuredMachineName } from "./machine-identity-document.js";
 
 const execFileAsync = promisify(execFile);
 
-/** A deployment may name the machine; the name never changes machineId. */
-function configuredMachineName(value: string | undefined): string | null {
-  const name = value?.trim() ?? "";
-  if (name === "") return null;
-  if (name.length > 64 || /\p{Cc}/u.test(name)) throw new Error("--machine-name must be at most 64 characters without control characters");
-  return name;
-}
-
-/** dataDirectory is supplied by the canonical directory resolver/explicit CLI. */
+/**
+ * Node owner of the machine identity: `<dataDirectory>/machine-id`, created
+ * once (exclusive temporary file, mode 0600, hard-linked into place) and never
+ * rewritten. dataDirectory is supplied by the canonical directory resolver/explicit CLI.
+ */
 export async function readHostMachineIdentity(dataDirectory: string, machineName?: string): Promise<RuntimeMachineIdentity> {
   const configured = configuredMachineName(machineName);
   if (!isAbsolute(dataDirectory)) throw new Error("Host data directory must be absolute");

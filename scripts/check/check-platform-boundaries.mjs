@@ -162,6 +162,26 @@ for (const file of ["packages/http-exchange/src/index.ts", "packages/http-exchan
   }]);
 }
 
+// Installation root input ports (gateway-split §4.1.1): the installation module
+// and the runtime-neutral ports and document adapters it is fed through never
+// reach Node built-ins, files or the Node owners directly; the Node adapters
+// (root-inputs-node.mjs, hub-network state-port-node.ts, the shared-memory
+// commit fence) are the only place they are constructed.
+for (const file of [
+  "apps/headless-server/src/assembly/installation.mjs",
+  "apps/headless-server/src/assembly/root-inputs.ts",
+  "packages/access-control/src/commit-fence.ts",
+  "packages/access-control/src/human-auth-configuration.ts",
+  "packages/hub-network/src/state-port.ts",
+  "packages/hub-network/src/state-port-document.ts",
+  "apps/local-agent-host/src/machine-identity-document.ts",
+]) {
+  checkFiles("installation root input port", file, [{
+    pattern: /(?:from\s*|import\s*|require\(\s*)["'](?:node:|ws["']|@opencraft\/sqlite-node|@opencraft\/worker-owner|@opencraft\/hub-network\/(?:controller|open|node|state-port-node|store-file)["']|@opencraft\/access-control\/commit-fence\/shared-memory|@opencraft\/opencraft-daemon\/machine-identity|@opencraft\/local-agent-host\/machine-identity["'])|\bBuffer\b|\bprocess\./m,
+    message: "must stay runtime-neutral; Node files, Workers and owners belong in the Node adapters",
+  }]);
+}
+
 for (const directory of ['packages/identity-core/src', 'packages/access-control/src', 'packages/relay-protocol/src', 'packages/hub-network/src']) {
   checkFiles('identity/authorization core', directory, [{
     pattern: /(?:from\s*|import\s*)["'](?:@opencraft\/plugin-|[^"']*\/plugins\/)/m,

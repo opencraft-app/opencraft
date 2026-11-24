@@ -11,11 +11,14 @@ import { HubNetwork } from '../../packages/hub-network/src/node';
 import { HubStateFile, openLocalHubNetwork } from '../../packages/hub-network/src/store-file.js';
 import { HUB_CONTROL_PATH, HUB_PROTOCOL, MAX_HOPS } from '../../packages/hub-network/src/contract';
 import { HubRouting } from '../../packages/hub-network/src/routing';
-import { MemoryHubStore, parseInvitation, signed } from '../../packages/hub-network/src/store';
-import { documentHubStore } from '../../packages/hub-network/src/document-hub-store';
+import { MemoryHubStore, parseInvitation, signed, type State } from '../../packages/hub-network/src/store';
+import { documentHubStore, HUB_STATE_DOCUMENT } from '../../packages/hub-network/src/document-hub-store';
 import { memoryStateDocumentStore } from '@opencraft/document-storage/state';
 import { createHubController } from '../../packages/hub-network/src/controller';
-import { openHubNetwork } from '../../packages/hub-network/src/open';
+import { nodeHubStatePort } from '../../packages/hub-network/src/state-port-node';
+import { openHubNetwork, openHubNode } from '../../packages/hub-network/src/open';
+import { documentHubStatePort } from '../../packages/hub-network/src/state-port-document';
+import { parseHubControllerConfiguration } from '../../packages/hub-network/src/state-port';
 import { createRelayServer } from '../../apps/relay-server/src/server';
 import { AssertionSigner } from '../../packages/identity-core/src/node';
 import { MembershipStore, InstanceAccess } from '../../packages/access-control/src/index';
@@ -71,6 +74,52 @@ test('Hub state documents keep one identity and existing compact state files', a
   const owner = await stateOwner(path); assert.equal(owner.store.state.publicKey, first.publicKey, 'the existing node keeps its identity'); await owner.close();
   await chmod(path, 0o644);
   await assert.rejects(HubStateFile.open(path), /private/);
+});
+
+// Hub state port (gateway-split §4.1.1): the controller and the Hub node see
+// only the port; the Node adapter keeps the two files, the document adapter a
+// StateDocumentStore whose owner is the single writer.
+test('Hub state port: both adapters give the controller the same node, durable saves and controller validation', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'hub-state-port-')); t.after(() => rm(dir, { recursive: true, force: true }));
+  const controllerFile = join(dir, 'hub-network-controller.json'), stateFile = join(dir, 'hub-network.json');
+  const pair = keys(), authority = { issuer: 'port-login', publicKey: pair.publicKey, providers: ['enterprise-identity'] };
+  const configure = (node: HubNetwork) => node.apply({ revision: node.store.state.revision, action: 'configure', name: 'Port Hub', endpoint: '', origin: 'https://port.test', accepting: false, forwarding: false }, 'test-administrator');
+  const documents = memoryStateDocumentStore();
+  for (const [label, port, read] of [
+    ['node', nodeHubStatePort({ controllerFile, stateFile }), async () => JSON.parse(await readFile(stateFile, 'utf8'))],
+    ['document', documentHubStatePort(documents), () => documents.read(HUB_STATE_DOCUMENT)],
+  ] as const) {
+    assert.equal(await port.readController(), null, `${label}: no remote controller`);
+    let opened = await openHubNode(await port.openNode(), { authority });
+    assert.deepEqual((await read() as State).authority, authority, `${label}: the authority accepted at open is saved`);
+    await configure(opened.node);
+    assert.deepEqual([opened.node.origin, opened.node.authority], ['https://port.test', authority], `${label}: the installation's view`);
+    assert.equal((await read() as State).origin, 'https://port.test', `${label}: acknowledged after the writer saved it`);
+    const id = opened.node.store.id;
+    await opened.close();
+    opened = await openHubNode(await port.openNode());
+    try { assert.deepEqual([opened.node.store.id, opened.node.origin], [id, 'https://port.test'], `${label}: reopened`); } finally { await opened.close(); }
+  }
+  assert.equal((await stat(stateFile)).mode & 0o777, 0o600, 'the Node state file stays owner-only');
+  // A state of another Hub identity is refused by both writers.
+  const writer = await documentHubStatePort(documents).openNode();
+  await assert.rejects(writer.save({ ...writer.state, ...keys(), revision: writer.state.revision + 1 }), /Invalid Hub state|another Hub identity/);
+  await writer.close();
+  await assert.rejects(writer.save(writer.state), /closed/);
+  // The remote controller configuration: the same validation for the file and for an installed value.
+  const valid = { schemaVersion: 1, endpoint: 'http://127.0.0.1:9', credential: 'k'.repeat(43) };
+  await writeFile(controllerFile, JSON.stringify(valid), { mode: 0o600 });
+  assert.deepEqual(await nodeHubStatePort({ controllerFile, stateFile }).readController(), { endpoint: valid.endpoint, credential: valid.credential });
+  assert.deepEqual(await documentHubStatePort(documents, { controller: valid }).readController(), { endpoint: valid.endpoint, credential: valid.credential });
+  for (const [input, error] of [[{ ...valid, endpoint: 'https://hub.example' }, /requires loopback/], [{ ...valid, extra: 1 }, /Invalid Hub controller/], [{ ...valid, credential: 'short' }, /Invalid Hub controller/]] as const) {
+    assert.throws(() => parseHubControllerConfiguration(input), error);
+    await assert.rejects(documentHubStatePort(documents, { controller: input }).readController(), error);
+  }
+  await chmod(controllerFile, 0o644);
+  await assert.rejects(nodeHubStatePort({ controllerFile, stateFile }).readController(), /owner-only/);
+  const controller = await createHubController(documentHubStatePort(documents, { controller: valid }));
+  assert.equal(controller.node, null, 'a remote controller replaces the local node');
+  await controller.close();
 });
 
 test('three real Hub nodes stream HTTP and WS; target owns membership; withdraw and reconnect preserve identity', async t => {
@@ -159,7 +208,7 @@ test('three real Hub nodes stream HTTP and WS; target owns membership; withdraw 
 
 test('settings require instance administrator, same-origin JSON and retain true operator audit', async t => {
   const dir = await mkdtemp(join(tmpdir(), 'hub-admin-')); t.after(() => rm(dir, { recursive: true, force: true }));
-  const controller = await createHubController(join(dir, 'controller.json'), join(dir, 'node.json')); t.after(() => controller.close());
+  const controller = await createHubController(nodeHubStatePort({ controllerFile: join(dir, 'controller.json'), stateFile: join(dir, 'node.json') })); t.after(() => controller.close());
   let current: string | null = null;
   const server = createServer(async (req, res) => { if (!await controller.handle(req, res, () => current)) { res.writeHead(404); res.end(); } });
   const port = await listen(server), origin = `http://127.0.0.1:${port}`; t.after(() => new Promise<void>(r => { server.close(() => r()); server.closeAllConnections(); }));

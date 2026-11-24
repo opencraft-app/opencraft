@@ -1,3 +1,5 @@
+import type { IdentityProvider } from '@opencraft/identity-core/node';
+
 /** Hub identity is stable across addresses, sockets and relay paths. */
 export const HUB_PROTOCOL = 'opencraft-hub.v1';
 export const HUB_CONTROL_PATH = '/__opencraft_hub/control';
@@ -5,6 +7,16 @@ export const HUB_DATA_PATH = '/__opencraft_hub/data';
 export const HUB_SETTINGS_PATH = '/__opencraft_hub/settings';
 export const MAX_HOPS = 8;
 export interface IdentityAuthority { issuer: string; publicKey: string; providers: string[]; }
+/**
+ * What an installation reads from its own Hub node: an identity provider for
+ * assertions of the Hub's accepted identity authority, and the node's committed
+ * public origin ('' until published) and authority. Both change with operator
+ * commands, so readers read them when they need them.
+ */
+export interface HubNodeIdentity extends IdentityProvider {
+  readonly origin: string;
+  readonly authority: IdentityAuthority | null;
+}
 export interface HubService { hubId: string; publicKey: string; origin: string; authority: IdentityAuthority; signature: string; }
 export interface HubRoute { service: HubService; path: string[]; }
 export interface HubPeerView { id: string; hubId: string | null; name: string; endpoint: string | null; direction: 'incoming' | 'outgoing'; connected: boolean; allowTransit: boolean; origins: string[]; }
