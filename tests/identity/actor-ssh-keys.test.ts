@@ -25,6 +25,7 @@ import { ACTOR_SSH_KEYS_PATH, actorSshKeysHttp } from "../../apps/headless-serve
 import { humanActorAccess } from "../../apps/headless-server/src/account-model-defaults-http.ts";
 import { importActorSshKeys, parseSshKeyImport } from "../../apps/headless-server/src/actor-ssh-key-import.ts";
 import { generateEd25519KeyPair } from "../support/ssh-ed25519.mjs";
+import { serveNodeHttpExchange } from "@opencraft/http-exchange/node";
 
 const blobOf = (publicKey: string) => Buffer.from(publicKey.split(" ")[1]!, "base64");
 const principal = (subject: string): Principal => ({
@@ -418,7 +419,7 @@ async function route(t: test.TestContext): Promise<RouteFixture> {
     sshLogin: true,
   });
   const server = createServer((request, response) => {
-    void handler(request, response).then((handled) => {
+    void serveNodeHttpExchange(request, response, handler).then((handled) => {
       if (!handled) {
         response.writeHead(404);
         response.end();

@@ -10,7 +10,8 @@ import { createWorkbenchWebServer } from '../../apps/headless-server/src/serve-w
 import { buildHeadlessBundle } from '../../scripts/packaging/package-headless-linux.mjs';
 import { loadLocalMachineAccess } from '../../apps/headless-server/src/local-machine-access.mjs';
 import { randomBytes } from 'node:crypto';
-import { networkInterfaces } from 'node:os';
+import { networkInterfaces, tmpdir } from 'node:os';
+import { request as httpRequest } from 'node:http';
 import { WebSocket, WebSocketServer } from 'ws';
 import { once } from 'node:events';
 import { Worker } from 'node:worker_threads';
@@ -21,6 +22,8 @@ import { executionHostIssuer } from '../../scripts/container-deployment/executio
 import { ownedCleanup } from '../support/owned-cleanup.mjs';
 import { ActorSshKeys } from '../../apps/headless-server/src/actor-ssh-keys.ts';
 import { createHeadlessLifecycle, createLateBinding } from '../../apps/headless-server/src/assembly/lifecycle.mjs';
+import { startObserve } from '../../apps/observability-service/service.mjs';
+import { fakeOwnerWake, fakeWakeClock } from '../support/fake-wake-clock.ts';
 
 async function fixture(t) {
   const runtime = fileURLToPath(new URL('../../.runtime/', import.meta.url));
@@ -511,6 +514,20 @@ test('anonymous handoff is selected by deployment configuration on both real RPC
   }
 });
 
+test('deployment-level periodic owners run on the injected owner wake-up and shutdown disarms all of them', async t => {
+  const f = await fixture(t), clock = fakeWakeClock(0), periods = [];
+  const wake = fakeOwnerWake(clock);
+  const ownerWake = { now: wake.now, timer: callback => { const timer = wake.timer(callback); return { arm(at) { periods.push(at - clock.now); timer.arm(at); }, cancel: () => timer.cancel() }; } };
+  const app = await startHeadlessServer({ ...f.options, ownerWake }); f.own(() => app.close());
+  // Conversation resource retries (5 s) and resource reconciliation (60 s) are armed; nothing runs on a global interval.
+  assert.ok(periods.includes(5_000) && periods.includes(60_000), JSON.stringify(periods));
+  assert.ok(clock.pending >= 2);
+  clock.elapse(60_000);
+  assert.ok(periods.filter(period => period === 60_000).length >= 2, 'reconciliation re-arms one period after it ran');
+  await app.close();
+  assert.equal(clock.pending, 0, 'closing the deployment leaves no owner wake-up armed');
+});
+
 test('anonymous installation can subsequently initialize its first real administrator', async t => {
   const f = await fixture(t);
   const anonymous = await startHeadlessServer(f.options);await anonymous.close();
@@ -752,4 +769,200 @@ test('model policy and model gateway routes follow instance admission on a real 
   const persisted = await read(reopened.url + '/__opencraft_model_policy', { cookie: owner });
   assert.equal(persisted.status, 200, JSON.stringify(persisted.body));
   assert.deepEqual({ revision: persisted.body.revision, rules: persisted.body.rules }, { revision: 1, rules });
+});
+
+// Node-local services (gateway-split §4.1.1): each is wired from its deployment
+// configuration on a real Headless server and released by `close`.
+async function withEnvironment(name, value, operation) {
+  const previous = process.env[name];
+  process.env[name] = value;
+  try { return await operation(); } finally { if (previous === undefined) delete process.env[name]; else process.env[name] = previous; }
+}
+
+test('node-local observation ingress is mounted from its private configuration and reports a planned restart', { timeout: 30_000 }, async t => {
+  const f = await fixture(t);
+  // Unix socket paths stay short; the private directory closes after the server.
+  const sockets = await mkdtemp(join(tmpdir(), 'oc-node-local-observe-')), cleanup = ownedCleanup(t);
+  cleanup.last(() => rm(sockets, { recursive: true, force: true }));
+  const observe = await startObserve({ directory: sockets, deploymentId: 'node-local', metricsPort: 0 }); cleanup.own(() => observe.close());
+  const capabilities = url => fetch(url + '/__opencraft_observe/capabilities').then(response => response.json());
+
+  // A configuration that is not owner-only is refused; the workbench starts without the ingress.
+  const shared = join(sockets, 'shared.json');
+  await writeFile(shared, JSON.stringify({ socketPath: observe.socketPath, grafanaSocket: join(sockets, 'grafana.sock'), pseudonymKey: '1'.repeat(64) }), { mode: 0o644 });
+  const written = [], write = process.stderr.write;
+  process.stderr.write = function (chunk, ...rest) { written.push(String(chunk)); return write.call(this, chunk, ...rest); };
+  let degraded;
+  try { degraded = await withEnvironment('OPENCRAFT_OBSERVE_INGRESS_CONFIG', shared, () => startHeadlessServer(f.options)); }
+  finally { process.stderr.write = write; }
+  assert.ok(written.some(line => line.includes('Observability configuration unavailable')));
+  assert.deepEqual(await capabilities(degraded.url), { available: false, telemetry: false }, 'the Web fallback answers without the ingress');
+  await degraded.close();
+
+  const config = join(sockets, 'observe.json');
+  await writeFile(config, JSON.stringify({ socketPath: observe.socketPath, grafanaSocket: join(sockets, 'grafana.sock'), pseudonymKey: '1'.repeat(64) }), { mode: 0o600 });
+  const app = await withEnvironment('OPENCRAFT_OBSERVE_INGRESS_CONFIG', config, () => startHeadlessServer(f.options));
+  f.own(() => app.close());
+  assert.deepEqual(await capabilities(app.url), { available: false, telemetry: false, entry: null }, 'the configured ingress answers anonymous requests');
+  const since = Date.now();
+  // The Web close reports the update through the still-open ingress before it is retired.
+  await app.close({ updateId: 'node-local-update', buildId: 'node-local-build' });
+  const receipt = observe.store.events(since - 1, Date.now() + 1, Date.now()).find(row => row.kind === 'lifecycle' && row.producerId === 'node-local-update');
+  assert.equal(receipt?.lifecycle, 'deployment');
+  // Closing released the data directory.
+  const reopened = await startHeadlessServer(f.options); f.own(() => reopened.close());
+});
+
+test('node-local availability notification listens on its private socket and close removes it', { timeout: 30_000 }, async t => {
+  const f = await fixture(t);
+  const sockets = await mkdtemp(join(tmpdir(), 'oc-node-local-notify-')), cleanup = ownedCleanup(t);
+  cleanup.last(() => rm(sockets, { recursive: true, force: true }));
+  const token = 'n'.repeat(40), tokenFile = join(sockets, 'token');
+  await writeFile(tokenFile, token, { mode: 0o600 });
+  const settings = { socketPath: join(sockets, 'notify.sock'), tokenFile, receiptsFile: join(sockets, 'receipts'), channelId: 'wecom', senderId: 'operator', actorId: 'human' };
+  const notify = authorization => new Promise((resolve, reject) => {
+    const outgoing = httpRequest({ socketPath: settings.socketPath, path: '/notify', method: 'POST', headers: { authorization } }, response => {
+      let text = ''; response.on('data', chunk => { text += chunk; }); response.on('end', () => resolve({ status: response.statusCode, body: JSON.parse(text) }));
+    });
+    outgoing.on('error', reject);
+    outgoing.end(JSON.stringify({ incidentId: 'incident', kind: 'alert', site: 'local', hostId: 'local-codex', engine: 'codex', errorCode: 'initialize' }));
+  });
+
+  // An unreadable configuration is reported and the server starts without the listener.
+  const warnings = [], warn = console.warn;
+  console.warn = (...args) => { warnings.push(args.join(' ')); };
+  let degraded;
+  try { degraded = await withEnvironment('OPENCRAFT_AVAILABILITY_NOTIFICATION_CONFIG', join(sockets, 'missing.json'), () => startHeadlessServer(f.options)); }
+  finally { console.warn = warn; }
+  assert.ok(warnings.includes('[availability-notification] startup-unavailable'));
+  await degraded.close();
+
+  const config = join(sockets, 'notify.json');
+  await writeFile(config, JSON.stringify(settings), { mode: 0o600 });
+  const app = await withEnvironment('OPENCRAFT_AVAILABILITY_NOTIFICATION_CONFIG', config, () => startHeadlessServer(f.options));
+  f.own(() => app.close());
+  assert.equal((await notify('Bearer wrong')).status, 401);
+  // The IM service is read through its late port: without a bound operator channel nothing is sent.
+  assert.deepEqual(await notify('Bearer ' + token), { status: 503, body: { error: 'notification_unavailable' } });
+  await app.close();
+  await assert.rejects(stat(settings.socketPath), { code: 'ENOENT' }, 'close retires the notification socket');
+});
+
+test('local desktop without a verified observer fails startup and rollback releases the data lock', { timeout: 30_000 }, async t => {
+  const f = await fixture(t);
+  await assert.rejects(startHeadlessServer({ ...f.options, localDesktop: true }));
+  const app = await startHeadlessServer(f.options); f.own(() => app.close());
+  assert.equal((await fetch(app.url + '/')).status, 200);
+});
+
+test('installation identity: the identity composition receives its inputs, isHuman filters external principals, and its disposers keep their shutdown order', { timeout: 30_000 }, async t => {
+  const f = await fixture(t), order = [];
+  const principal = subject => ({ provider: 'fixture-directory', subject, displayName: subject, expiresAt: Date.now() + 60_000 });
+  let inputs;
+  const app = await startHeadlessServer({ ...f.options, accessMemberProviders: ['fixture-directory'] }, {
+    createIdentity: async input => {
+      inputs = input;
+      return { providers: [{ authenticate: request => request.headers['x-fixture-subject'] ? principal(request.headers['x-fixture-subject']) : null }],
+        executionEnvironment: { close() { order.push('execution-environment'); } },
+        close() { order.push('identity'); } };
+    },
+    isHuman: candidate => candidate.subject !== 'service-account',
+    close() { order.push('composition'); },
+  }); f.own(() => app.close());
+  assert.deepEqual(Object.keys(inputs), ['dataDirectory', 'membership', 'relayConfiguration', 'workspaceExecution', 'hubAuthority',
+    'resolveIdentity', 'getInstanceAccess', 'machineIdentity', 'actors', 'sshIngressEnabled']);
+  assert.equal(inputs.dataDirectory, f.options.dataDirectory);
+  assert.equal(typeof inputs.membership?.actorMembership, 'function', 'accepted member providers enable instance membership');
+  assert.deepEqual([inputs.relayConfiguration, inputs.workspaceExecution, inputs.hubAuthority, inputs.sshIngressEnabled], [null, undefined, null, false]);
+  assert.equal(typeof inputs.machineIdentity.machineId, 'string');
+  assert.equal(typeof inputs.actors.findHuman, 'function');
+  // Instance access is constructed after the identity composition; its late reads see it.
+  assert.equal(typeof inputs.getInstanceAccess()?.authenticate, 'function');
+  assert.equal(inputs.resolveIdentity({ headers: { 'x-fixture-subject': 'alice' } })?.subject, 'alice');
+  assert.equal(inputs.resolveIdentity({ headers: {} }), null);
+  // The composition's qualification decides which verified principals are people.
+  const me = await fetch(app.url + '/__opencraft_actors/me', { headers: { 'x-fixture-subject': 'alice' } });
+  assert.equal(me.status, 200); assert.equal((await me.json()).actor.kind, 'human');
+  assert.equal((await fetch(app.url + '/__opencraft_actors/me', { headers: { 'x-fixture-subject': 'service-account' } })).status, 401);
+  await app.close();
+  assert.deepEqual(order, ['execution-environment', 'identity', 'composition']);
+});
+
+test('installation admission: a malformed setup token or login admission without membership fails startup and rollback releases the data lock', { timeout: 30_000 }, async t => {
+  const f = await fixture(t);
+  const tokenPath = join(f.root, 'malformed-setup-token'), configPath = join(f.root, 'human-auth.json');
+  await writeFile(tokenPath, JSON.stringify({ token: 'too-short' }), { mode: 0o600 });
+  await writeFile(configPath, JSON.stringify({ origin: 'http://127.0.0.1:1', local: true, oidc: [], setupTokenFile: tokenPath }), { mode: 0o600 });
+  await assert.rejects(startHeadlessServer({ ...f.options, humanAuthConfig: configPath }), /Invalid private setup token file/);
+  await assert.rejects(startHeadlessServer(f.options, { loginAdmission: { provider: 'fixture-directory', attribute: 'login' } }),
+    /Login admission requires instance access/);
+  assert.equal(f.starts(), 0, 'admission fails before any execution host starts');
+  const app = await startHeadlessServer(f.options); f.own(() => app.close());
+  assert.equal((await fetch(app.url)).status, 200);
+});
+
+test('installation services: collaboration, connectors, server information and push follow the signed-in Human and persist across a restart', { timeout: 60_000 }, async t => {
+  const f = await fixture(t);
+  const probe = await startHeadlessServer(f.options); await probe.close();
+  const proof = randomBytes(32).toString('base64url');
+  const proofPath = join(f.root, 'setup-token'), configPath = join(f.root, 'human-auth.json');
+  await writeFile(proofPath, JSON.stringify({ token: proof }), { mode: 0o600 });
+  await writeFile(configPath, JSON.stringify({ origin: probe.url, local: true, oidc: [], setupTokenFile: proofPath }), { mode: 0o600 });
+  const options = { ...f.options, port: Number(new URL(probe.url).port), humanAuthConfig: configPath };
+  let app = await startHeadlessServer(options); f.own(() => app.close());
+  const json = { origin: app.url, 'content-type': 'application/json' };
+  const setup = await fetch(app.url + '/__opencraft_account/setup', { method: 'POST', headers: json,
+    body: JSON.stringify({ proof, mode: 'web', username: 'owner', password: 'Fixture-account-password-42' }) });
+  assert.equal(setup.status, 200, await setup.text());
+  const owner = setup.headers.get('set-cookie')?.split(';')[0];
+  const ownerId = (await fetch(app.url + '/__opencraft_account/status', { headers: { cookie: owner } }).then(r => r.json())).actor.id;
+
+  // Collaboration answers the signed-in Actor only.
+  assert.equal((await fetch(app.url + '/__opencraft_actors/collaboration/inbox')).status, 401);
+  const inbox = await fetch(app.url + '/__opencraft_actors/collaboration/inbox', { headers: { cookie: owner } });
+  assert.equal(inbox.status, 200, await inbox.clone().text());
+  assert.deepEqual(await inbox.json(), { messages: [] });
+  // Connectors publish the installation's execution servers for both local hosts.
+  const connectors = await fetch(app.url + '/__opencraft_connectors', { headers: { cookie: owner } }).then(r => r.json());
+  assert.equal(connectors.protocolVersion, 1);
+  assert.deepEqual(Object.keys(connectors.hosts).sort(), ['local-codex', 'opencraft-server']);
+  assert.match(connectors.hosts['local-codex'], /^server:[^:]+:codex$/u);
+  assert.equal(connectors.hosts['opencraft-server'], connectors.hosts['local-codex'].replace(/:codex$/u, ':dsh'));
+  // Server information: anonymous refused, the administrator manages it.
+  const information = app.url + '/__opencraft_server_information';
+  assert.equal((await fetch(information)).status, 401);
+  assert.deepEqual(await fetch(information, { headers: { cookie: owner } }).then(r => r.json()),
+    { revision: 0, publicUrl: '', actorId: ownerId, canManage: true });
+  const saved = await fetch(information, { method: 'POST', headers: { ...json, cookie: owner },
+    body: JSON.stringify({ revision: 0, publicUrl: 'https://opencraft.example/team', expectedActorId: ownerId }) });
+  assert.equal(saved.status, 200, await saved.clone().text());
+  // Push subscriptions answer the signed-in Human for both local hosts.
+  assert.equal((await fetch(app.url + '/__opencraft_push')).status, 401);
+  const push = await fetch(app.url + '/__opencraft_push', { headers: { cookie: owner } }).then(r => r.json());
+  assert.equal(push.available, true); assert.equal(push.actorId, ownerId);
+  assert.deepEqual(push.hosts, ['local-codex', 'opencraft-server']);
+  // Each deployment-level store reports its storage outcome.
+  const storage = (await fetch(app.url + '/__opencraft_health').then(r => r.json())).storage.map(row => row.name);
+  for (const name of ['server-core', 'web-push', 'mcp-apps']) assert.ok(storage.includes(name), name);
+
+  // Close releases every writer before the lock; a restart reads the same state.
+  await app.close();
+  app = await startHeadlessServer(options);
+  assert.deepEqual(await fetch(information, { headers: { cookie: owner } }).then(r => r.json()),
+    { revision: 1, publicUrl: 'https://opencraft.example/team', actorId: ownerId, canManage: true });
+  assert.equal((await fetch(app.url + '/__opencraft_push', { headers: { cookie: owner } }).then(r => r.json())).publicKey, push.publicKey);
+});
+
+test('installation services: a startup failure after they opened closes every installation writer and releases the data lock', { timeout: 30_000 }, async t => {
+  const f = await fixture(t);
+  let missing;
+  await assert.rejects(startHeadlessServer({ ...f.options, createWebServer: async options => {
+    missing = ['actorCollaborationService', 'connectorService', 'serverInformationService', 'turnPushService', 'mcpAppsService',
+      'accountModelDefaultsService', 'actorSshKeysService'].filter(key => !options[key]);
+    throw new Error('fixture web failure');
+  } }), /fixture web failure/);
+  // Every installation service is open by the time the Web server is created.
+  assert.deepEqual(missing, []);
+  const app = await startHeadlessServer(f.options); f.own(() => app.close());
+  assert.equal((await fetch(app.url)).status, 200);
 });

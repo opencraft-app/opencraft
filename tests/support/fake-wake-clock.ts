@@ -1,3 +1,4 @@
+import { boundedWakeTimer, type OwnerWake } from "@opencraft/owner-wake";
 import type { WakeClock } from "@opencraft/workspace-host";
 
 export const MINUTE = 60_000,
@@ -32,6 +33,10 @@ export function fakeWakeClock(start = 1800000000000) {
     get now() {
       return wall;
     },
+    /** Time elapsed on the monotonic clock pending delays run on. */
+    get monotonic() {
+      return monotonic;
+    },
     get pending() {
       return pending.size;
     },
@@ -54,6 +59,52 @@ export function fakeWakeClock(start = 1800000000000) {
     /** Sets the wall clock without any monotonic time passing. */
     jump(delta: number) {
       wall += delta;
+    },
+  };
+}
+
+/** The owner wake-up port over a {@link fakeWakeClock}, as `timeoutOwnerWake` builds it over real timeouts. */
+export function fakeOwnerWake(fake: ReturnType<typeof fakeWakeClock>): OwnerWake {
+  return { now: () => fake.now, timer: (wake) => boundedWakeTimer(fake.clock, wake) };
+}
+
+/** As {@link fakeOwnerWake} on the monotonic clock, as the default `timeoutOwnerWake()` is. */
+export function fakeMonotonicOwnerWake(fake: ReturnType<typeof fakeWakeClock>): OwnerWake {
+  const now = () => fake.monotonic;
+  return { now, timer: (wake) => boundedWakeTimer({ now, after: fake.clock.after }, wake) };
+}
+
+/**
+ * A runtime with one alarm (a Durable Object): `fire` is what the runtime does when the alarm time has come, and
+ * owners share it through `mergedOwnerWake`. `armed` is the alarm time, or null.
+ */
+export function fakeAlarm(fake: ReturnType<typeof fakeWakeClock>) {
+  let callback: (() => void) | null = null;
+  const state = { armed: null as number | null, sets: 0 };
+  const wake: OwnerWake = {
+    now: () => fake.now,
+    timer(onAlarm) {
+      callback = onAlarm;
+      return {
+        arm(at) {
+          state.armed = at;
+          state.sets++;
+        },
+        cancel() {
+          state.armed = null;
+        },
+      };
+    },
+  };
+  return {
+    wake,
+    state,
+    /** Fires the alarm if its time has come on the wall clock, as the runtime does. */
+    fire() {
+      if (state.armed === null || state.armed > fake.now) return false;
+      state.armed = null;
+      callback?.();
+      return true;
     },
   };
 }

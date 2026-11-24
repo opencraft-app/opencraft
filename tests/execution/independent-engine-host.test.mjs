@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startIndependentEngineHost } from '../../scripts/server-deployment/engine-host.mjs';
 import { attachEngineHost } from '../../apps/headless-server/src/server-deployment/engine-host-client.mjs';
+import { observeNativeExecutionProcess } from '../../packages/execution-environment/src/native-execution-origin.ts';
 import { ModelConfigurationRepository } from '../../apps/local-agent-host/src/model-config/repository.ts';
 
 async function fixture(t, overrides = {}) {
@@ -39,7 +40,10 @@ test('gateway attachment close leaves the independent execution owner available'
   const f = await fixture(t);
   const client = await f.attach();
   assert.equal((await client.getIdentity()).pid, process.pid);
-  assert.equal((await client.getExecutionIdentity("pi_fixture")).pid,process.pid);
+  const reported=await client.getExecutionIdentity("pi_fixture");
+  assert.equal(reported.pid,process.pid);
+  // The engine Host attests itself; the incarnation is the report, not a client-side /proc read.
+  assert.equal(reported.incarnation,(await observeNativeExecutionProcess(process.pid)).incarnation);
   await assert.rejects(client.getExecutionIdentity("acp_unknown"));
   await client.close();
   assert.equal((await (await f.attach()).getIdentity()).pid, process.pid);

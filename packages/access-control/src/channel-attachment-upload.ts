@@ -1,11 +1,13 @@
 import { CHANNEL_ATTACHMENT_LIMIT, validChannelAttachment } from '@opencraft/appserver-protocol';
 import type { ActorContext } from '@opencraft/identity-core/actors';
 import type { Collaboration } from './collaboration';
+import { decodeBase64, encodeBase64 } from './portable-crypto.js';
 
-type Upload = { actorId:string; fingerprint:string; bytes:Buffer; offset:number; touched:number; complete?:boolean };
+type Upload = { actorId:string; fingerprint:string; bytes:Uint8Array; offset:number; touched:number; complete?:boolean };
 const stores = new WeakMap<Collaboration,Map<string,Upload>>();
 const CHUNK = 64 * 1024, BUDGET = 64 * 1024 * 1024, TTL = 15 * 60_000;
 function fail(code:string):never {throw Object.assign(Error(code),{code});}
+const sameBytes=(a:Uint8Array,b:Uint8Array)=>a.length===b.length&&a.every((value,index)=>value===b[index]);
 /** Bounded process-local transfer state. The existing sendAttachment transaction
  * remains the authority for immutable content, message identity and delivery. */
 export function receiveChannelAttachment(service:Collaboration,c:ActorContext,p:Record<string,unknown>) {
@@ -16,8 +18,8 @@ export function receiveChannelAttachment(service:Collaboration,c:ActorContext,p:
     ||typeof total!=='number'||!Number.isSafeInteger(total)||total<0||total>CHANNEL_ATTACHMENT_LIMIT
     ||typeof offset!=='number'||!Number.isSafeInteger(offset)||offset<0
     ||typeof base64!=='string'||base64.length>Math.ceil(CHUNK/3)*4)fail('invalid_input');
-  const bytes=Buffer.from(base64 as string,'base64');
-  if(bytes.toString('base64')!==base64||bytes.length>CHUNK||offset+bytes.length>total||(bytes.length===0&&total!==0))fail('invalid_input');
+  const bytes=decodeBase64(base64 as string);
+  if(encodeBase64(bytes)!==base64||bytes.length>CHUNK||offset+bytes.length>total||(bytes.length===0&&total!==0))fail('invalid_input');
   if(!service.channels.get(c,channelId).canSend)fail('channel_denied');
   const key=JSON.stringify([c.actorId,c.generation,channelId,clientMessageId]);
   const fingerprint=JSON.stringify([channelId,clientMessageId,name,type,text??null,total]);
@@ -32,13 +34,13 @@ export function receiveChannelAttachment(service:Collaboration,c:ActorContext,p:
       const retired=[...uploads].filter(([,u])=>u.complete).sort((a,b)=>a[1].touched-b[1].touched)[0];
       if(!retired)fail('channel_upload_capacity');uploads.delete(retired[0]);
     }
-    upload={actorId:c.actorId,fingerprint,bytes:Buffer.alloc(total),offset:0,touched:now};uploads.set(key,upload);
+    upload={actorId:c.actorId,fingerprint,bytes:new Uint8Array(total),offset:0,touched:now};uploads.set(key,upload);
   }
   if(upload.fingerprint!==fingerprint)fail('idempotency_conflict');
   if(offset>upload.offset)fail('channel_upload_offset');
   if(offset<upload.offset){
-    if(offset+bytes.length>upload.offset||!upload.bytes.subarray(offset,offset+bytes.length).equals(bytes))fail('idempotency_conflict');
-  }else{bytes.copy(upload.bytes,offset);upload.offset+=bytes.length;}
+    if(offset+bytes.length>upload.offset||!sameBytes(upload.bytes.subarray(offset,offset+bytes.length),bytes))fail('idempotency_conflict');
+  }else{upload.bytes.set(bytes,offset);upload.offset+=bytes.length;}
   upload.touched=now;
   const nextOffset=offset+bytes.length;
   if(nextOffset!==total)return {nextOffset};

@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:http";
-import test from "node:test";
+import test, { after } from "node:test";
 import { createModels } from "@earendil-works/pi-ai";
 import { fauxProvider, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
@@ -19,11 +19,21 @@ function fixtureModels(responses: Parameters<ReturnType<typeof fauxProvider>["se
   const models = createModels(); models.setProvider(faux.provider);
   return { faux, models: Object.assign(models, { getAvailableSnapshot: () => faux.models }) as unknown as ModelRuntime };
 }
+// A test's `t.after` hooks run in registration order, so an engine reopened over a
+// fixture directory closes after the fixture's own hook. Remove directories only once
+// every test has closed its owners; never delete a live owner's database.
+const directories: string[] = [];
+after(() => Promise.all(directories.splice(0).map(directory => rm(directory, { recursive: true, force: true }))));
+async function temporaryDirectory(prefix: string) {
+  const directory = await mkdtemp(join(tmpdir(), prefix));
+  directories.push(directory);
+  return directory;
+}
 async function fixture(t: test.TestContext, responses: Parameters<typeof fixtureModels>[0], tokensPerSecond?: number) {
-  const directory = await mkdtemp(join(tmpdir(), "opencraft-pi-durable-"));
+  const directory = await temporaryDirectory("opencraft-pi-durable-");
   const { models, faux } = fixtureModels(responses, tokensPerSecond);
   const engine = new PiEngine({ directory, cwd: directory, models });
-  t.after(async () => { await engine.close(); await rm(directory, { recursive: true, force: true }); });
+  t.after(() => engine.close());
   return { directory, engine, faux };
 }
 function completed(engine: PiEngine) {
@@ -422,7 +432,7 @@ test("Pi native input metadata, context, thinking, identity and timing survive r
 });
 
 test("Pi applies saved defaults and durable resume overrides, rejects unsupported semantics", async t => {
-  const directory = await mkdtemp(join(tmpdir(), "pi-config-contract-")); t.after(() => rm(directory, { recursive: true, force: true }));
+  const directory = await temporaryDirectory("pi-config-contract-");
   const other = join(directory, "other"); const { mkdir } = await import("node:fs/promises"); await mkdir(other);
   const faux = fauxProvider({ models: [{ id: "first", reasoning: true }, { id: "second", reasoning: true }] });
   const runtime = createModels(); runtime.setProvider(faux.provider);
@@ -576,7 +586,7 @@ test("Pi native compaction and passive context writes never invent user Turns", 
   const { BACKGROUND_CONTEXT: context } = await import("@earendil-works/chord/context");
   const { writeFile } = await import("node:fs/promises");
   const { randomUUID } = await import("node:crypto");
-  const directory = await mkdtemp(join(tmpdir(), "pi-native-compaction-")); t.after(() => rm(directory, { recursive: true, force: true }));
+  const directory = await temporaryDirectory("pi-native-compaction-");
   const { models } = fixtureModels([fauxAssistantMessage("first answer"), fauxAssistantMessage("second answer"),
     fauxAssistantMessage("native compaction summary"), fauxAssistantMessage("third answer")]);
   const id = `pi_${randomUUID()}`, file = join(directory, `${id}.sqlite`);

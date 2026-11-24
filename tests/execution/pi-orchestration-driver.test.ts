@@ -3,7 +3,7 @@ import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
-import lockfile from "proper-lockfile";
+import { acquireProcessWriter } from "@opencraft/sqlite-node";
 import { createModels } from "@earendil-works/pi-ai";
 import { fauxProvider, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
@@ -67,7 +67,7 @@ test("Pi child allocation reconciles one durable identity across concurrent call
   t.after(() => successor.close());
   const reconciled = await successor.request("opencraft/orchestration/create", { operationId: "create-one", settings }, owner);
   assert.equal(reconciled.threadId, first.threadId);
-  assert.equal((await readdir(directory)).filter(file => /^pi_.*\.json$/u.test(file)).length, 1);
+  assert.equal((await readdir(directory)).filter(file => /^pi_[a-f0-9-]+\.json$/u.test(file)).length, 1);
   await assert.rejects(successor.request("opencraft/orchestration/create", { operationId: "new-operation", settings }, owner), /Host changed/);
   await assert.rejects(successor.request("opencraft/orchestration/create", { operationId: "create-one", settings: { ...settings, cwd: tmpdir() } }, owner), /different settings/);
   assert.deepEqual(await successor.request("opencraft/orchestration/ack", { operationId: "create-one" }, owner), { acknowledged: true });
@@ -83,10 +83,11 @@ test("Pi prepare reads source settings without native execution and rejects perm
   reopened.setOrchestration({ tools: THREAD_ORCHESTRATION_TOOLS, async call() { return toolResult; } });
   t.after(() => reopened.close());
   const path = join(directory, `${child.thread.id}.sqlite`), original = await readFile(path);
-  const release = await lockfile.lock(path, { realpath: false, retries: 0 });
+  // Another live writer owns the native session database.
+  const release = acquireProcessWriter(`${path}.lock`);
   let settings;
   try { settings = await reopened.request("opencraft/orchestration/prepare", { operationId: "read-only", threadId: child.thread.id, arguments: {} }, owner); }
-  finally { await release(); }
+  finally { release(); }
   assert.equal(settings.cwd, directory); assert.equal(settings.model, piModel("faux", "faux-1"));
   assert.deepEqual(await readFile(path), original);
   await assert.rejects(reopened.request("opencraft/orchestration/prepare", { operationId: "escape", threadId: child.thread.id, arguments: { cwd: ".." } }, owner), /exceeds/);

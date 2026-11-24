@@ -1,6 +1,14 @@
-import type { IncomingMessage, ServerResponse } from "node:http";
+import {
+  HttpBodyTooLarge,
+  decodeUtf8,
+  jsonResponse,
+  requestUrl,
+  type HttpExchangeRequest,
+  type HttpExchangeResponse,
+  type HttpRequestView,
+} from "@opencraft/http-exchange";
 import { parseThreadReadReceipts, THREAD_READ_RECEIPT_MERGE_LIMIT } from "@opencraft/workbench-runtime";
-import { sameOriginJsonRequest, type AccountModelDefaultsAccess } from "./account-model-defaults-http.js";
+import type { AccountModelDefaultsAccess } from "./account-model-defaults-http.js";
 
 /** Cross-device read state of the signed-in human Actor; see docs/architecture/platform/identity-and-access.md. */
 export const THREAD_READ_RECEIPTS_PATH = "/__opencraft_thread_reads";
@@ -33,19 +41,18 @@ function receipts(value: unknown, limit: number): string[] {
   }
 }
 
-async function body(request: IncomingMessage): Promise<Record<string, unknown>> {
-  let size = 0;
-  const chunks: Buffer[] = [];
-  for await (const chunk of request) {
-    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    size += bytes.length;
+async function body(request: HttpExchangeRequest<unknown>): Promise<Record<string, unknown>> {
+  let bytes: Uint8Array;
+  try {
     // 128 receipts of at most 2 KiB each, with room for the envelope.
-    if (size > 300_000) throw new RequestError(413, "too_large");
-    chunks.push(bytes);
+    bytes = await request.readBody(300_000);
+  } catch (error) {
+    if (error instanceof HttpBodyTooLarge) throw new RequestError(413, "too_large");
+    throw error;
   }
   let value: unknown;
   try {
-    value = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    value = JSON.parse(decodeUtf8(bytes));
   } catch {
     throw invalid();
   }
@@ -59,28 +66,26 @@ async function body(request: IncomingMessage): Promise<Record<string, unknown>> 
  * `POST {receipts, expectedActorId}` adds receipts; nothing removes or replaces one. The
  * expected Actor only fences an account change; it never selects whose receipts are used.
  */
-export function threadReadReceiptsHttp(
+export function threadReadReceiptsHttp<R = HttpRequestView>(
   storage: ThreadReadReceiptStorage,
-  access: (request: IncomingMessage) => AccountModelDefaultsAccess,
+  access: (request: R) => AccountModelDefaultsAccess,
 ) {
-  return async (request: IncomingMessage, response: ServerResponse): Promise<boolean> => {
-    const url = new URL(request.url ?? "/", "http://thread-reads.invalid");
-    if (url.pathname !== THREAD_READ_RECEIPTS_PATH) return false;
-    const send = (status: number, value: unknown) => {
-      response.writeHead(status, {
-        "content-type": "application/json; charset=utf-8",
-        "cache-control": "private, no-store",
-        "x-content-type-options": "nosniff",
-      });
-      response.end(JSON.stringify(value));
-    };
+  return async (exchange: HttpExchangeRequest<R>): Promise<HttpExchangeResponse | null> => {
+    const url = requestUrl(exchange);
+    if (url.pathname !== THREAD_READ_RECEIPTS_PATH) return null;
+    const request = exchange.identity;
+    const send = (status: number, value: unknown) =>
+      jsonResponse(status, value, [
+        ["content-type", "application/json; charset=utf-8"],
+        ["cache-control", "private, no-store"],
+        ["x-content-type-options", "nosniff"],
+      ]);
     try {
       const initial = access(request);
       if ("denied" in initial) {
-        send(initial.denied, {
+        return send(initial.denied, {
           error: initial.denied === 401 ? "human_authentication_required" : "instance_access_denied",
         });
-        return true;
       }
       const actorId = initial.actorId;
       // Admission and the signed-in Actor are rechecked after every await.
@@ -93,32 +98,34 @@ export function threadReadReceiptsHttp(
           );
         if (latest.actorId !== actorId) throw new RequestError(409, "account_changed");
       };
-      if (request.method === "GET") {
-        if (!url.searchParams.has("expectedActorId")) {
-          send(200, { actorId });
-          return true;
-        }
+      if (exchange.method === "GET") {
+        if (!url.searchParams.has("expectedActorId")) return send(200, { actorId });
         if (url.searchParams.get("expectedActorId") !== actorId) throw new RequestError(409, "account_changed");
         const rawAfter = url.searchParams.get("after") ?? "0";
         if (!/^(0|[1-9]\d{0,15})$/u.test(rawAfter) || !Number.isSafeInteger(Number(rawAfter))) throw invalid();
         const page = await storage.readThreadReadReceipts(actorId, Number(rawAfter));
         current();
-        send(200, {
+        return send(200, {
           actorId,
           cursor: page.cursor,
           receipts: page.receipts.map((receipt) => JSON.stringify(receipt)),
         });
-        return true;
       }
-      if (request.method !== "POST") {
-        send(405, { error: "method_not_allowed" });
-        return true;
+      if (exchange.method !== "POST") return send(405, { error: "method_not_allowed" });
+      // Same rule as the model defaults route: the trusted origin or this request's own host.
+      const origin = exchange.headers.origin;
+      if (
+        typeof origin !== "string" ||
+        !(
+          origin === initial.origin ||
+          ["http:", "https:"].some((protocol) => origin === protocol + "//" + exchange.headers.host)
+        ) ||
+        exchange.headers["sec-fetch-site"] === "cross-site" ||
+        exchange.headers["content-type"]?.split(";")[0] !== "application/json"
+      ) {
+        return send(403, { error: "same_origin_required" });
       }
-      if (!sameOriginJsonRequest(request, initial.origin)) {
-        send(403, { error: "same_origin_required" });
-        return true;
-      }
-      const input = await body(request);
+      const input = await body(exchange);
       if (Object.keys(input).some((field) => field !== "receipts" && field !== "expectedActorId")) throw invalid();
       const accepted = receipts(input.receipts, THREAD_READ_RECEIPT_MERGE_LIMIT);
       if (input.expectedActorId !== actorId) throw new RequestError(409, "account_changed");
@@ -128,12 +135,11 @@ export function threadReadReceiptsHttp(
         accepted.map((receipt) => JSON.parse(receipt) as Identity),
       );
       current();
-      send(200, { actorId, cursor: result.cursor, receipts: accepted });
+      return send(200, { actorId, cursor: result.cursor, receipts: accepted });
     } catch (error) {
-      if (error instanceof RequestError) send(error.status, { error: error.code });
+      if (error instanceof RequestError) return send(error.status, { error: error.code });
       // Storage or Worker failure fails closed; nothing is read or written elsewhere.
-      else send(503, { error: "read_receipts_unavailable" });
+      return send(503, { error: "read_receipts_unavailable" });
     }
-    return true;
   };
 }

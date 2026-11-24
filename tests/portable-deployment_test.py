@@ -233,6 +233,10 @@ class Safety(unittest.TestCase):
             lambda s: s['proxy'].update(image='app:latest'),
             lambda s: s['gateway'].update(build={'context':'/old/machine'}),
             lambda s: s['hands'].update(privileged=True),
+            # Execution identity is reported over workspace endpoints, never read from another role's /proc.
+            lambda s: s['gateway'].update(pid='host'),
+            lambda s: s['brain'].update(pid='host'),
+            lambda s: s['hands'].update(pid='service:brain'),
             lambda s: s['gateway']['volumes'].pop(),
             lambda s: s['gateway']['volumes'][1].update(source='/other'),
             lambda s: s['brain']['volumes'][0].update(source='/'),

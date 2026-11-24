@@ -14,6 +14,7 @@ import {
   accountModelDefaultsHttp,
   humanActorAccess,
 } from "../../apps/headless-server/src/account-model-defaults-http.ts";
+import { serveNodeHttpExchange } from "@opencraft/http-exchange/node";
 
 const selection = { model: "provider/model", effort: "high", serviceTier: "priority" };
 
@@ -114,7 +115,7 @@ async function routeFixture(t: test.TestContext, options: { storage?: Parameters
     trustedOrigin: () => null,
   }));
   const server = createServer((request, response) => {
-    void handler(request, response).then((handled) => { if (!handled) { response.writeHead(404); response.end(); } });
+    void serveNodeHttpExchange(request, response, handler).then((handled) => { if (!handled) { response.writeHead(404); response.end(); } });
   });
   server.listen(0, "127.0.0.1");
   await once(server, "listening");

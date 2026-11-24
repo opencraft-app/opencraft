@@ -13,6 +13,9 @@ export interface CodexCoreHealth {
   readonly nativeSocket: string;
   /** Present only when a separate runtime owner is configured. */
   readonly appServerPid?: number;
+  /** The native child's incarnation, attested by the runtime owner in its own PID namespace.
+   * `pid`, `codexPid` and `appServerPid` are only meaningful inside that namespace. */
+  readonly executionIncarnation?: string;
   readonly environmentVariablesVersion?: 1;
   /** The owner opens opaque ENV launch capsules itself (no plaintext from the adapter). */
   readonly environmentLaunchVersion?: 1;
@@ -133,6 +136,7 @@ export class CodexCoreControlClient {
     if (!value || value.protocolVersion !== CODEX_CORE_PROTOCOL_VERSION
       || !Number.isSafeInteger(value.pid) || !Number.isSafeInteger(value.codexPid)
       || (value.appServerPid !== undefined && (!Number.isSafeInteger(value.appServerPid) || value.appServerPid < 1))
+      || value.executionIncarnation !== undefined && (typeof value.executionIncarnation !== "string" || !value.executionIncarnation || value.executionIncarnation.length > 512)
       || value.threadTitleToolVersion !== undefined && value.threadTitleToolVersion !== 1
       || value.callbackIncarnation !== undefined && (typeof value.callbackIncarnation !== "string" || !value.callbackIncarnation)
       || value.callbackProtocolVersion !== undefined && (value.callbackProtocolVersion !== 1 || !Number.isSafeInteger(value.pendingCallbacks) || value.pendingCallbacks! < 0

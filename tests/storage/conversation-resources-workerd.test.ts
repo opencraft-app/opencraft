@@ -169,3 +169,26 @@ test("conversation resource rows: an older Server contract upgrades across a res
   await assert.rejects(client(miniflare, "upgrade")("ledger"), /unavailable/);
   await stop(miniflare);
 });
+
+test("conversation resource cleanup retries run on the object alarm and resume on a fresh instance after eviction", async () => {
+  const miniflare = start();
+  const call = client(miniflare, "lifecycle");
+  const archived = await call("lifecycleArchive");
+  assert.deepEqual(archived.rows, [row("archived-thread", "archived", 1, ["browser"])], "the failed owner stays pending");
+  assert.equal(typeof archived.alarm, "number", "the retry period arms the single alarm");
+  assert.ok(archived.alarm - archived.now <= 1_000, "the alarm follows the earliest owner (retries), not the 60 s one");
+  await call("evict").catch(() => undefined);
+  await call("lifecycleHeal");
+  let settled: any;
+  for (let attempt = 0; attempt < 250; attempt++) {
+    settled = await call("lifecycleState");
+    if (settled.rows[0]?.pending.length === 0) break;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  assert.deepEqual(settled.rows, [row("archived-thread", "archived", 1, [])], "a retry on the alarm released the owner");
+  assert.notEqual(settled.instance, archived.instance, "eviction replaced the instance that armed the alarm");
+  assert.ok(settled.alarms >= 1, "the alarm ran on the instance built after eviction");
+  assert.ok(settled.attempts >= 1);
+  assert.equal(typeof settled.alarm, "number", "the reopened owners re-armed the alarm");
+  await stop(miniflare);
+});

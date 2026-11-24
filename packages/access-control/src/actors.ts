@@ -1,6 +1,6 @@
 import { AuthorityChanges } from "./authority-changes.js";
 import { PermissionReadCache, withPermissionWrite } from "./permission-read-cache.js";
-import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { hexToBytes, randomToken, randomUUID, sha256, sha256Hex, timingSafeEqualBytes } from './portable-crypto.js';
 import type { SqlDatabase } from '@opencraft/sql';
 import type { DatabaseOutcome } from "@opencraft/sqlite-node";
 import { openServerRepository, type ServerDatabaseSource } from "@opencraft/storage-node/server-repository";
@@ -320,9 +320,9 @@ export class ActorStore {
       || expiresAt > this.now() + 30 * 86400_000) throw new Error('Invalid session credential');
     return this.#transaction(() => {
       const credentialId = randomUUID();
-      const token = `${TOKEN_PREFIX}${this.authority}.${credentialId}.${randomBytes(32).toString('base64url')}`;
+      const token = `${TOKEN_PREFIX}${this.authority}.${credentialId}.${randomToken(32)}`;
       this.#db.prepare('INSERT INTO actor_credentials VALUES(?,?,?,?,?,1)')
-        .run(credentialId, id, createHash('sha256').update(token).digest('hex'), a.generation, expiresAt);
+        .run(credentialId, id, sha256Hex(token), a.generation, expiresAt);
       this.#audit(operator, id, 'issue-credential', credentialId);
       return { credentialId, token, expiresAt };
     });
@@ -341,7 +341,7 @@ export class ActorStore {
     if (parts.length !== 4 || `${parts[0]}.` !== TOKEN_PREFIX || parts[1] !== this.authority
       || !/^[0-9a-f-]{36}$/u.test(parts[2]!) || !/^[A-Za-z0-9_-]{43}$/u.test(parts[3]!)) return null;
     const row = this.#db.prepare('SELECT * FROM actor_credentials WHERE id=?').get(parts[2]!);
-    if (!row || !timingSafeEqual(Buffer.from(row.digest as string, 'hex'), createHash('sha256').update(token).digest())) return null;
+    if (!row || !timingSafeEqualBytes(hexToBytes(row.digest as string), sha256(token))) return null;
     const context = Object.freeze({ actorId: row.actor_id as string, credentialId: row.id as string,
       generation: row.generation as number, expiresAt: row.expires_at as number });
     return this.isCurrent(context) ? context : null;

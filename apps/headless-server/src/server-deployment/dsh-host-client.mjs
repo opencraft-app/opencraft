@@ -71,10 +71,20 @@ async function readDshHost(read, expectedDataDirectory, expectedMachineId) {
   const health = await response.json();
   if (!response.ok || health.ok !== true || health.engine !== 'dsh' || health.pid !== descriptor.pid
     // A Host bridges DSH only when it is installed; without it the Host runs with no native engine.
-    || (health.enginePid !== null && (!Number.isSafeInteger(health.enginePid) || health.enginePid < 1)))
+    || (health.enginePid !== null && (!Number.isSafeInteger(health.enginePid) || health.enginePid < 1))
+    || (health.engineIncarnation !== undefined && health.engineIncarnation !== null
+      && (typeof health.engineIncarnation !== 'string' || !health.engineIncarnation || health.engineIncarnation.length > 512)))
     throw new Error('Independent DSH Host is unavailable');
+  // PIDs are the Host's own namespace; only the reported incarnation is comparable here.
   return { websocketUrl: descriptor.websocketUrl, storageOutcomes: health.storage, hostInputs: health.hostInputs === 1,
-    identity: { pid: health.pid, enginePid: health.enginePid } };
+    identity: { pid: health.pid, enginePid: health.enginePid },
+    engineExecution: health.enginePid === null || !health.engineIncarnation ? null : { pid: health.enginePid, incarnation: health.engineIncarnation } };
+}
+
+/** Runs one owner read through the source's placement fence when it has one (a Gateway's
+ * workspace endpoint: the same agent incarnation before and after), else directly. */
+export function fencedRead(source, operation) {
+  return typeof source?.fence === 'function' ? source.fence(operation) : operation();
 }
 
 export async function attachDshHost(source, expectedDataDirectory, expectedMachineId) {
@@ -100,11 +110,14 @@ export async function attachDshHost(source, expectedDataDirectory, expectedMachi
       || receipt.turnId !== null && typeof receipt.turnId !== 'string')) throw new Error('Invalid DSH input receipt');
     return receipt;
   };
-  return { ...await read(),
+  const { engineExecution: _initialEngine, ...initial } = await read();
+  return { ...initial,
     inputs: { receipt: (threadId,inputId) => input('receipt',threadId,inputId),
       submit: async (threadId,inputId,text,canAdmit) => await canAdmit() ? input('submit',threadId,inputId,text) : null },
     resolveWebsocketUrl: async () => (await read()).websocketUrl,
     getIdentity: async () => (await read()).identity,
+    /** The engine process holding DSH executions, as the Host reports it; null when none. */
+    engineExecutionIdentity: async () => (await fencedRead(source, read)).engineExecution,
     async close() {} };
 }
 

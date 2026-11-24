@@ -285,6 +285,13 @@ descriptor), persists `{receipt, agentIncarnation}` through a WorkspaceHost stor
 before use, resolves an endpoint name to the first environment whose agent publishes
 it, and rebinds once when a relay cannot start (stale binding). `observe()` re-probes
 and reports a changed incarnation. It never replays bytes.
+`fenced(endpoint, operation)` runs one owner read (an execution-identity report) and
+returns it only when the agent's `control` probe before and after both name the bound
+incarnation; otherwise it releases the binding (the next use rebinds and persists the
+new incarnation) and rejects `SANDBOX_UNAVAILABLE`. Execution leases therefore depend
+only on what the agent and the owner report over the provider's channel; no consumer
+shares the environment's PID namespace or reads its `/proc` (the endpoint conformance
+suite runs this for every harness).
 
 | Provider | Process channel | `receipt.instanceId` | `attach` |
 | --- | --- | --- | --- |

@@ -3,7 +3,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { openManagedDatabase, sqliteTransaction, SqliteLifecycleError, durableJson, assertRecoveryState } from "@opencraft/sqlite-node";
-import { SERVER_LEGACY_MIGRATIONS, serverLegacyOptions, type ServerStoreId } from "./legacy.js";
+import { SERVER_LEGACY_MIGRATIONS, type ServerStoreId } from "./legacy.js";
+import { serverLegacyOptions } from "./legacy-options.js";
 
 import {serverMigrationComposition} from "./migration-composition.js";
 

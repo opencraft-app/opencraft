@@ -35,7 +35,7 @@ export class PiOwnerHandoff {
     const files = [];
     const visit = async (path, relative, attachments = false) => {
       for (const entry of (await readdir(path, { withFileTypes: true })).sort((a,b) => a.name.localeCompare(b.name))) {
-        if (entry.name === 'handoff-cache' || entry.name.endsWith('.lock') || entry.name === 'host-handoff.json') continue;
+        if (entry.name === 'handoff-cache' || entry.name.endsWith('.lock') || entry.name.endsWith('.lock.owner.json') || entry.name === 'host-handoff.json') continue;
         if (this.credentialsExternal && relative === 'models' && entry.name === 'credentials.json') continue;
         const file = join(path, entry.name), name = join(relative, entry.name), stat = await lstat(file);
         if (stat.isSymbolicLink() || !stat.isDirectory() && !stat.isFile()) throw new Error('Unknown Pi store entry');

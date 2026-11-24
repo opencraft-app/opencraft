@@ -1,4 +1,12 @@
-import type { IncomingMessage, ServerResponse } from "node:http";
+import {
+  HttpBodyTooLarge,
+  decodeUtf8,
+  jsonResponse,
+  requestUrl,
+  type HttpExchangeRequest,
+  type HttpExchangeResponse,
+  type HttpRequestView,
+} from "@opencraft/http-exchange";
 import {
   parseAccountModelSelection,
   validateModelDefaultsHost,
@@ -33,15 +41,15 @@ interface AuthenticatedContext {
  * Resolves the Actor from the verified login only. A Session credential is not a
  * person, and an Actor without current instance admission is refused.
  */
-export function humanActorAccess<C extends AuthenticatedContext>(authority: {
-  authenticate(request: IncomingMessage): C | null;
+export function humanActorAccess<C extends AuthenticatedContext, R = HttpRequestView>(authority: {
+  authenticate(request: R): C | null;
   /** A verified login whose person the authentication itself refused (e.g. revoked membership). */
-  refused?(request: IncomingMessage): boolean;
+  refused?(request: R): boolean;
   isCurrentHuman(context: C): boolean;
   /** Absent when the installation has no instance admission. */
   admits?: ((actorId: string) => boolean) | null;
-  trustedOrigin(request: IncomingMessage): string | null;
-}): (request: IncomingMessage) => AccountModelDefaultsAccess {
+  trustedOrigin(request: R): string | null;
+}): (request: R) => AccountModelDefaultsAccess {
   return (request) => {
     const context = authority.authenticate(request);
     if (!context) return { denied: authority.refused?.(request) ? 403 : 401 };
@@ -49,18 +57,6 @@ export function humanActorAccess<C extends AuthenticatedContext>(authority: {
     if (authority.admits && !authority.admits(context.actorId)) return { denied: 403 };
     return { actorId: context.actorId, origin: authority.trustedOrigin(request) };
   };
-}
-
-/** A browser write from this server's own origin with a JSON body; cross-site forms and fetches are refused. */
-export function sameOriginJsonRequest(request: IncomingMessage, trustedOrigin: string | null): boolean {
-  const origin = request.headers.origin;
-  return (
-    typeof origin === "string" &&
-    (origin === trustedOrigin ||
-      ["http:", "https:"].some((protocol) => origin === protocol + "//" + request.headers.host)) &&
-    request.headers["sec-fetch-site"] !== "cross-site" &&
-    request.headers["content-type"]?.split(";")[0] === "application/json"
-  );
 }
 
 class RequestError extends Error {
@@ -90,18 +86,17 @@ function host(value: unknown): string {
   return value;
 }
 
-async function body(request: IncomingMessage): Promise<Record<string, unknown>> {
-  let size = 0;
-  const chunks: Buffer[] = [];
-  for await (const chunk of request) {
-    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    size += bytes.length;
-    if (size > 8192) throw new RequestError(413, "too_large");
-    chunks.push(bytes);
+async function body(request: HttpExchangeRequest<unknown>): Promise<Record<string, unknown>> {
+  let bytes: Uint8Array;
+  try {
+    bytes = await request.readBody(8192);
+  } catch (error) {
+    if (error instanceof HttpBodyTooLarge) throw new RequestError(413, "too_large");
+    throw error;
   }
   let value: unknown;
   try {
-    value = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    value = JSON.parse(decodeUtf8(bytes));
   } catch {
     throw new RequestError(400, "invalid_model_defaults");
   }
@@ -116,28 +111,26 @@ async function body(request: IncomingMessage): Promise<Record<string, unknown>> 
  * replaces, that Actor's record for the Host with revision compare-and-set. The
  * expected Actor only fences an account change; it never selects whose record is used.
  */
-export function accountModelDefaultsHttp(
+export function accountModelDefaultsHttp<R = HttpRequestView>(
   storage: AccountModelDefaultsStorage,
-  access: (request: IncomingMessage) => AccountModelDefaultsAccess,
+  access: (request: R) => AccountModelDefaultsAccess,
 ) {
-  return async (request: IncomingMessage, response: ServerResponse): Promise<boolean> => {
-    const url = new URL(request.url ?? "/", "http://model-defaults.invalid");
-    if (url.pathname !== ACCOUNT_MODEL_DEFAULTS_PATH) return false;
-    const send = (status: number, value: unknown) => {
-      response.writeHead(status, {
-        "content-type": "application/json; charset=utf-8",
-        "cache-control": "private, no-store",
-        "x-content-type-options": "nosniff",
-      });
-      response.end(JSON.stringify(value));
-    };
+  return async (exchange: HttpExchangeRequest<R>): Promise<HttpExchangeResponse | null> => {
+    const url = requestUrl(exchange);
+    if (url.pathname !== ACCOUNT_MODEL_DEFAULTS_PATH) return null;
+    const request = exchange.identity;
+    const send = (status: number, value: unknown) =>
+      jsonResponse(status, value, [
+        ["content-type", "application/json; charset=utf-8"],
+        ["cache-control", "private, no-store"],
+        ["x-content-type-options", "nosniff"],
+      ]);
     try {
       const initial = access(request);
       if ("denied" in initial) {
-        send(initial.denied, {
+        return send(initial.denied, {
           error: initial.denied === 401 ? "human_authentication_required" : "instance_access_denied",
         });
-        return true;
       }
       const actorId = initial.actorId;
       // Admission and the signed-in Actor are rechecked after every await.
@@ -150,27 +143,28 @@ export function accountModelDefaultsHttp(
           );
         if (latest.actorId !== actorId) throw new RequestError(409, "account_changed");
       };
-      if (request.method === "GET") {
-        if (!url.searchParams.has("hostId")) {
-          send(200, { actorId });
-          return true;
-        }
+      if (exchange.method === "GET") {
+        if (!url.searchParams.has("hostId")) return send(200, { actorId });
         const hostId = host(url.searchParams.get("hostId"));
         if (url.searchParams.get("expectedActorId") !== actorId) throw new RequestError(409, "account_changed");
         const value = record(await storage.readAccountModelDefaults(actorId, hostId));
         current();
-        send(200, { actorId, ...value });
-        return true;
+        return send(200, { actorId, ...value });
       }
-      if (request.method !== "POST") {
-        send(405, { error: "method_not_allowed" });
-        return true;
+      if (exchange.method !== "POST") return send(405, { error: "method_not_allowed" });
+      const origin = exchange.headers.origin;
+      if (
+        typeof origin !== "string" ||
+        !(
+          origin === initial.origin ||
+          ["http:", "https:"].some((protocol) => origin === protocol + "//" + exchange.headers.host)
+        ) ||
+        exchange.headers["sec-fetch-site"] === "cross-site" ||
+        exchange.headers["content-type"]?.split(";")[0] !== "application/json"
+      ) {
+        return send(403, { error: "same_origin_required" });
       }
-      if (!sameOriginJsonRequest(request, initial.origin)) {
-        send(403, { error: "same_origin_required" });
-        return true;
-      }
-      const input = await body(request);
+      const input = await body(exchange);
       if (Object.keys(input).some((field) => !["hostId", "revision", "selection", "expectedActorId"].includes(field)))
         throw new RequestError(400, "invalid_model_defaults");
       const hostId = host(input.hostId);
@@ -193,12 +187,11 @@ export function accountModelDefaultsHttp(
       const value = record(result.record);
       current();
       if (!result.updated) throw new RequestError(409, "revision_conflict", value);
-      send(200, { actorId, ...value });
+      return send(200, { actorId, ...value });
     } catch (error) {
-      if (error instanceof RequestError) send(error.status, { error: error.code, ...(error.record ?? {}) });
+      if (error instanceof RequestError) return send(error.status, { error: error.code, ...(error.record ?? {}) });
       // Storage or Worker failure fails closed; nothing is read or written elsewhere.
-      else send(503, { error: "model_defaults_unavailable" });
+      return send(503, { error: "model_defaults_unavailable" });
     }
-    return true;
   };
 }

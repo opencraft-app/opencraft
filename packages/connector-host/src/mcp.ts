@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import type { ConnectorNativeTool } from "@opencraft/connector-core";
-import { ConnectorDatabase, ConnectorHostError, record, type StoredConnection } from "./store";
+import { ConnectorHostError, record, type SqlConnectorDatabase, type StoredConnection } from "./store";
 import { mcpEndpoint } from "./mcp-endpoints";
 import { connectorFetch } from "./network";
 import type { ConnectorOAuth } from "./oauth";
@@ -26,7 +26,7 @@ export const toolsDigest = (tools: readonly ConnectorNativeTool[]) => createHash
   .digest("hex");
 
 export class ConnectorMcp {
-  constructor(private readonly db: ConnectorDatabase, private readonly oauth: ConnectorOAuth,
+  constructor(private readonly db: SqlConnectorDatabase, private readonly oauth: ConnectorOAuth,
     private readonly endpoint = mcpEndpoint, private readonly fetchOverride?: typeof fetch) {}
   private async use<T>(id: string, work: (client: Client, row: StoredConnection) => Promise<T>, signal?: AbortSignal): Promise<T> {
     signal?.throwIfAborted();

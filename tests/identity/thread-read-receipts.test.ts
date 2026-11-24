@@ -8,6 +8,7 @@ import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 import { openServerCoreOwner, type ServerCoreStorage } from "@opencraft/storage-node/server-owner";
 import { ActorStore } from "@opencraft/access-control/actors";
+import { serveNodeHttpExchange } from "@opencraft/http-exchange/node";
 import type { Principal } from "@opencraft/identity-core";
 import { humanActorAccess } from "../../apps/headless-server/src/account-model-defaults-http.ts";
 import {
@@ -186,7 +187,7 @@ async function routeFixture(
     }),
   );
   const server = createServer((request, response) => {
-    void handler(request, response).then((handled) => {
+    void serveNodeHttpExchange(request, response, handler).then((handled) => {
       if (!handled) {
         response.writeHead(404);
         response.end();

@@ -1,4 +1,4 @@
-import { isAbsolute } from 'node:path';
+import { isAbsoluteHostPath } from './host-path.js';
 import { COLLABORATION_CAPABILITIES, CONVERSATION_TAIL_MAX_TURNS, type CollaborationCapabilities, type ConversationCreationLookup, type ConversationProjectPage, type ConversationModelPage, type ConversationExecutionOptions, isConversationInitialPermissionMode, type ConversationCreateTarget, type ConversationCreation, type ConversationHistory } from '@opencraft/appserver-protocol/collaboration';
 import type { TransportSubmissionContext } from '@opencraft/appserver-client/transport';
 import type { CrewContact } from './crew-contact.js';
@@ -14,12 +14,15 @@ import { PERSONAL_ASSISTANT_METHODS, type PersonalAssistantAccess, type Personal
 import { channelSyncCommand, enqueueChannelDelivery, channelImageType, type ChannelImage, type ChannelSyncCommand } from "./native-channel-sync.js";
 import type { ProjectAutomations } from './automation-runtime.js';
 import { AutomationError } from './automation.js';
-import { OrchestrationRuntimeWorker } from './orchestration-runtime-store.js';
+import type { OrchestrationRuntimeWorker } from './orchestration-runtime-store.js';
+// Node resolves the `node` condition (a companion Worker on a Node file); other runtimes get the neutral module.
+import { isOrchestrationRuntimeService, openOrchestrationRuntimeCompanion } from '@opencraft/access-control/orchestration-runtime-companion';
 import { updateExecutionRequest } from './execution-request-state.js';
 import { conversationRef, encodeConversationRef, parseConversationRef, type ConversationRef, type ConversationMetadata, type ConversationDiscovery, type ConversationServer, type ConversationReceipt, type ConversationLookup } from '@opencraft/appserver-protocol/collaboration';
 import { validChannelAttachment, CREW_OPERATION_TOOLS, type ChannelAttachment, type CrewOperation } from '@opencraft/appserver-protocol';
-import { randomUUID, createHash } from 'node:crypto';
-import type { IncomingMessage, ServerResponse } from 'node:http';
+import { randomUUID, sha256Hex, utf8ByteLength } from './portable-crypto.js';
+import { HttpBodyTooLarge, jsonResponse, requestUrl, type HttpExchangeRequest, type HttpExchangeResponse } from '@opencraft/http-exchange';
+import type { IdentityRequest } from '@opencraft/identity-core/node';
 import type { SqlDatabase } from '@opencraft/sql';
 import type { DatabaseOutcome } from "@opencraft/sqlite-node";
 import { openServerRepository, type ServerDatabaseSource } from "@opencraft/storage-node/server-repository";
@@ -98,7 +101,7 @@ function fields(body: Record<string, unknown>, keys: string[]) {
   if (Object.keys(body).some(key => !keys.includes(key))) throw new CollaborationError(400, 'unexpected_field');
 }
 export function actorChannelId(a: string, b: string): string {
-  return 'dm:' + createHash('sha256').update(JSON.stringify([a, b].sort())).digest('hex');
+  return 'dm:' + sha256Hex(JSON.stringify([a, b].sort()));
 }
 
 /** Single-Hub collaboration authority. Stores communication facts, never a second runnable queue. */
@@ -319,7 +322,7 @@ export class Collaboration {
     return id;
   }
   #dedupe(context: ActorContext, key: unknown, payload: unknown, create: () => { messageId: string | null; requestId: string | null }) {
-    const idempotencyKey = text(key, 128), fingerprint = createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+    const idempotencyKey = text(key, 128), fingerprint = sha256Hex(JSON.stringify(payload));
     return this.#transaction(() => {
       const prior = this.database.prepare('SELECT * FROM actor_send_keys WHERE actor_id=? AND idempotency_key=?').get(context.actorId, idempotencyKey);
       if (prior) {
@@ -477,7 +480,7 @@ export class Collaboration {
     const serverId = text(body.serverId), content = text(body.content, 16384), operationKey = creationOperationKey(body.operationKey);
     const projectId = body.projectId === undefined ? undefined : text(body.projectId);
     const cwd = body.cwd === undefined ? undefined : text(body.cwd, 4096);
-    if ((!projectId && !cwd) || (cwd && (!isAbsolute(cwd) || /[\x00-\x1f]/u.test(cwd))))
+    if ((!projectId && !cwd) || (cwd && (!isAbsoluteHostPath(cwd) || /[\x00-\x1f]/u.test(cwd))))
       throw new CollaborationError(400, 'invalid_creation_target');
     const initialPermissionMode = body.initialPermissionMode;
     if (initialPermissionMode !== undefined && !isConversationInitialPermissionMode(initialPermissionMode))
@@ -511,9 +514,9 @@ export class Collaboration {
   async #createWithReceipt(store: ServerCoreStorage["call"], target: ConversationCreateTarget, content: string,
     operationKey: string, trusted: TransportSubmissionContext, context: ActorContext, assertCurrent: () => void): Promise<ConversationCreation> {
     const key = { actorId: context.actorId, operationKey };
-    const fingerprint = createHash('sha256').update(JSON.stringify([
+    const fingerprint = sha256Hex(JSON.stringify([
       target.serverId, target.projectId ?? null, target.cwd ?? null, target.initialPermissionMode ?? 'read-only', content,
-    ])).digest('hex');
+    ]));
     const claim = await store.claimConversationCreation({ ...key, serverId: target.serverId, fingerprint });
     assertCurrent();
     if (claim.kind === 'conflict') throw new CollaborationError(409, 'idempotency_key_reused');
@@ -880,7 +883,7 @@ export class Collaboration {
       let value: unknown;
       try { value = await this.readConversation(context,ref,null,true); }
       catch { value = {reference,unavailable:true}; }
-      const size = Buffer.byteLength(JSON.stringify(value));
+      const size = utf8ByteLength(JSON.stringify(value));
       if (bytes + size > 25000) { reads.push({reference,readWithTool:true,truncated:true}); continue; }
       reads.push(value); bytes += size;
     }
@@ -973,7 +976,7 @@ export class Collaboration {
     const channelId = actorChannelId(context.actorId, target);
     if (reply && this.#message(reply)?.channel_id !== channelId) throw new CollaborationError(403, 'reply_not_visible');
     let created = false;
-    const result = this.#dedupe(context, body.idempotencyKey, ['message', target, content, reply, intent, ...(attachment?[attachment.name,attachment.type,createHash('sha256').update(attachment.bytes).digest('hex')]:[])], () => {
+    const result = this.#dedupe(context, body.idempotencyKey, ['message', target, content, reply, intent, ...(attachment?[attachment.name,attachment.type,sha256Hex(attachment.bytes)]:[])], () => {
       created = this.channels.registerDirect(channelId,context.actorId,target);
       const id = randomUUID(), now = this.now();
       const seq = Number(this.database.prepare('SELECT COALESCE(MAX(seq),0)+1 AS seq FROM actor_messages').get()!.seq);
@@ -1093,7 +1096,7 @@ export class Collaboration {
     if(['image/png','image/jpeg'].includes(attachment.type) && channelImageType(attachment.bytes.subarray(0,16))!==attachment.type)throw Error('invalid_input');
     const content=description || '[Attachment: '+attachment.name+']';
     const result=peer!==null ? this.send(context,{targetActorId:peer,content,idempotencyKey:key},attachment)
-      : this.#dedupe(context,key,['attachment',id,content,attachment.name,attachment.type,createHash('sha256').update(attachment.bytes).digest('hex')],()=>{
+      : this.#dedupe(context,key,['attachment',id,content,attachment.name,attachment.type,sha256Hex(attachment.bytes)],()=>{
         const messageId=randomUUID(),seq=Number(this.database.prepare('SELECT COALESCE(MAX(seq),0)+1 AS seq FROM actor_messages').get()!.seq);
         this.database.prepare("INSERT INTO actor_messages(id,seq,channel_id,author_id,target_kind,target_id,content,created_at,author_display_name) VALUES(?,?,?,?,'channel',?,?,?,?)")
           .run(messageId,seq,id,context.actorId,id,content,this.now(),this.actors.get(context.actorId)!.displayName);
@@ -1120,7 +1123,7 @@ export class Collaboration {
     const result = peer !== null
       ? this.send(context,{ targetActorId: peer, content: body, idempotencyKey: key,
         ...(reply ? { replyTo: reply } : {}), ...(wake.length ? { execution: { mode: 'queue' } } : {}) })
-      : this.#dedupe(context,key,['channel',id,body,reply,wake,...(mentionInput!==undefined?[["mentions",mentions]]:[]),...(image?[createHash('sha256').update(image.bytes).digest('hex')]:[])],() => {
+      : this.#dedupe(context,key,['channel',id,body,reply,wake,...(mentionInput!==undefined?[["mentions",mentions]]:[]),...(image?[sha256Hex(image.bytes)]:[])],() => {
         this.channels.assertWritable(context,id);
         if (reply && this.#message(reply)?.channel_id !== id) throw Error('channel_denied');
         const admittedMentions=admitChannelMentions(this,id,body,mentions);
@@ -1469,16 +1472,16 @@ export class Collaboration {
   /** The composition's runtime storage also serves communication (Headless: the
    * Server core owner); otherwise this service starts its own file-backed Worker. */
   #communicationStorage(): OrchestrationRuntimeWorker | undefined {
-    if (this.executionStorage instanceof OrchestrationRuntimeWorker) return this.executionStorage;
+    if (isOrchestrationRuntimeService(this.executionStorage)) return this.executionStorage;
     const path = this.#storageLocation;
     if (!path) return undefined;
-    return this.communicationStorage ??= new OrchestrationRuntimeWorker(path);
+    return this.communicationStorage ??= openOrchestrationRuntimeCompanion(path);
   }
   async #runtimeStorage() {
     if (!this.executionStorage) {
       const path = this.#storageLocation;
       if (!path) throw new Error('Execution polling requires file-backed Worker storage');
-      this.ownedExecutionStorage = new OrchestrationRuntimeWorker(path);
+      this.ownedExecutionStorage = openOrchestrationRuntimeCompanion(path);
       this.executionStorage = this.ownedExecutionStorage;
       await this.ownedExecutionStorage.start();
     }
@@ -1669,16 +1672,19 @@ export class CollaborationHttpApi {
   private personalAssistantResponse(context: ActorContext, operation: string, params: Record<string,unknown>) {
     return this.service.personalAssistant(context,'opencraft/personal-assistant/'+operation,params);
   }
-  async handle(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
-    const url = new URL(request.url ?? '/', 'http://actors.invalid'), prefix = '/__opencraft_actors/collaboration/';
-    if (!url.pathname.startsWith(prefix)) return false;
-    const send = (status: number, value: unknown) => { response.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'private, no-store', 'x-content-type-options': 'nosniff' }); response.end(JSON.stringify(value)); };
+  /** Runtime-neutral exchange handler; resolves null for routes it does not own. */
+  async handle(exchange: HttpExchangeRequest<IdentityRequest>): Promise<HttpExchangeResponse | null> {
+    const url = requestUrl(exchange), prefix = '/__opencraft_actors/collaboration/';
+    if (!url.pathname.startsWith(prefix)) return null;
+    const request = exchange.identity;
+    let reply: HttpExchangeResponse | undefined;
+    const send = (status: number, value: unknown) => { reply = jsonResponse(status, value, [['content-type', 'application/json'], ['cache-control', 'private, no-store'], ['x-content-type-options', 'nosniff']]); };
     try {
       const context = this.access.authenticate(request);
       if (!context) throw new CollaborationError(401, 'actor_authentication_required');
       const current = () => { const next = this.access.authenticate(request); if (!next || next.actorId !== context.actorId || next.generation !== context.generation) throw new CollaborationError(401, 'actor_authentication_required'); };
       const path = url.pathname.slice(prefix.length);
-      if (request.method === 'GET') {
+      if (exchange.method === 'GET') {
         const after = Number(url.searchParams.get('after') ?? 0), limit = Number(url.searchParams.get('limit') ?? 50);
         if (!Number.isSafeInteger(after) || after < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new CollaborationError(400, 'invalid_pagination');
         if (path === 'personal-assistant') { const result=await this.personalAssistantResponse(context,'get',{}); current(); send(200,result); }
@@ -1691,15 +1697,16 @@ export class CollaborationHttpApi {
           if (actorId !== context.actorId && !this.access.manages(request, context)) throw new CollaborationError(403, 'actor_management_denied');
           send(200, { binding: this.service.binding(actorId) });
         } else throw new CollaborationError(404, 'missing');
-        return true;
+        return reply!;
       }
-      if (request.method !== 'POST') throw new CollaborationError(405, 'method_not_allowed');
-      const origin = request.headers.origin, trusted = this.access.options.trustedOrigin?.(request);
-      if (request.headers['content-type']?.split(';')[0] !== 'application/json' || (context.credentialId === null && (typeof origin !== 'string' || (origin !== trusted && !['http:', 'https:'].some(s => origin === s + '//' + request.headers.host))))) throw new CollaborationError(403, 'matching_origin_required');
-      const chunks: Buffer[] = []; let size = 0;
-      for await (const chunk of request) { size += Buffer.byteLength(chunk); if (size > 65_536) throw new CollaborationError(413, 'body_too_large'); chunks.push(Buffer.from(chunk)); }
+      if (exchange.method !== 'POST') throw new CollaborationError(405, 'method_not_allowed');
+      const origin = exchange.headers.origin, trusted = this.access.options.trustedOrigin?.(request);
+      if (exchange.headers['content-type']?.split(';')[0] !== 'application/json' || (context.credentialId === null && (typeof origin !== 'string' || (origin !== trusted && !['http:', 'https:'].some(s => origin === s + '//' + exchange.headers.host))))) throw new CollaborationError(403, 'matching_origin_required');
+      let bytes: Uint8Array;
+      try { bytes = await exchange.readBody(65_536); }
+      catch (error) { if (error instanceof HttpBodyTooLarge) throw new CollaborationError(413, 'body_too_large'); throw error; }
       let body: Record<string, unknown>;
-      try { body = record(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)))); }
+      try { body = record(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))); }
       catch { throw new CollaborationError(400, 'invalid_body'); }
       current();
       if (path.startsWith('personal-assistant/')) { const result=await this.personalAssistantResponse(context,path.slice('personal-assistant/'.length),body); current(); send(200,result); }
@@ -1724,6 +1731,6 @@ export class CollaborationHttpApi {
       } else throw new CollaborationError(404, 'missing');
       void this.service.pump().catch(() => {});
     } catch (error) { send(error instanceof CollaborationError || error instanceof AutomationError ? error.status : 503, { error: error instanceof CollaborationError || error instanceof AutomationError ? error.code : 'collaboration_unavailable' }); }
-    return true;
+    return reply!;
   }
 }

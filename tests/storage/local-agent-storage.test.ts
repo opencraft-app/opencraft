@@ -3,6 +3,7 @@ import test from "node:test";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { acquireLocalAgentStorageOwner } from "../../apps/local-agent-host/src/storage/daemon-storage-owner.js";
+import { observeNativeExecutionProcess } from "../../packages/execution-environment/src/native-execution-origin.js";
 import { mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -77,6 +78,21 @@ test("unconfigured Host storage stays in memory", () => {
   const storage = openLocalAgentStorage();
   try { assert.ok(storage.summaries.every(item => item.status === "fresh" && !item.backupPath)); }
   finally { storage.close(); }
+});
+
+test("storage ownership is not held by a reused PID whose process birth differs", { skip: process.platform !== "linux" }, async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oc-storage-owner-reuse-"));
+  try {
+    // A restarted container repeats its PIDs: the recorded owner's PID is live again, as another process.
+    const live = (await observeNativeExecutionProcess(process.pid)).incarnation;
+    const stale = JSON.stringify(["process", "previous-boot-or-namespace", process.pid, "1"]);
+    await writeFile(join(directory, ".daemon-storage-owner.json"), JSON.stringify({ pid: process.pid, claim: "previous", incarnation: stale }));
+    const release = await acquireLocalAgentStorageOwner(directory);
+    await assert.rejects(acquireLocalAgentStorageOwner(directory), /already owned/, "the recorded birth is this live process");
+    await release();
+    await writeFile(join(directory, ".daemon-storage-owner.json"), JSON.stringify({ pid: process.pid, claim: "previous", incarnation: live }));
+    await assert.rejects(acquireLocalAgentStorageOwner(directory), /already owned/);
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
 test("storage ownership rejects a live process and can recover its claim after exit", async () => {

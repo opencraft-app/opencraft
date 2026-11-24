@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { decodeBase64, encodeBase64Url, randomUUID, utf8Decode } from './portable-crypto.js';
 import type { SqlDatabase } from '@opencraft/sql';
 import type { ActorInboxItem, ActorInboxPage } from '@opencraft/appserver-protocol/collaboration';
 
@@ -8,7 +8,7 @@ function invalidCursor(): never { throw Object.assign(new Error('invalid_inbox_c
 function decode(value: string): Cursor {
   if (value.length > 2048 || !/^[A-Za-z0-9_-]+$/.test(value)) return invalidCursor();
   let data: Cursor;
-  try { data = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')); } catch { return invalidCursor(); }
+  try { data = JSON.parse(utf8Decode(decodeBase64(value))); } catch { return invalidCursor(); }
   if (!data || typeof data.epoch !== 'string' || typeof data.actorId !== 'string'
     || !Number.isSafeInteger(data.generation) || !Number.isSafeInteger(data.revision) || data.revision < 0) return invalidCursor();
   return data;
@@ -85,7 +85,7 @@ export function syncActorInbox(db: SqlDatabase, request: InboxSyncRequest): Acto
     const hasMore = rows.length > limit, page = rows.slice(0, limit);
     const next = page.length ? Number(page[page.length - 1].revision) : after;
     const cursor: Cursor = { epoch: String(clock.epoch), actorId, generation, revision: next };
-    return { actorId, reset, hasMore, cursor: Buffer.from(JSON.stringify(cursor)).toString('base64url'),
+    return { actorId, reset, hasMore, cursor: encodeBase64Url(JSON.stringify(cursor)),
       changes: page.map(row => ({ channelId: String(row.channel_id), revision: String(row.revision),
         item: row.payload === null ? null : JSON.parse(String(row.payload)) as ActorInboxItem })) };
   });

@@ -29,6 +29,11 @@ export interface ResumeRequest { readonly v: typeof RESUME_PROTOCOL_VERSION }
 export interface ResumeAttempt extends ResumeRequest { readonly sessionId: string; readonly token: string; readonly received: number }
 export interface ResumeGrant extends ResumeRequest { readonly sessionId: string; readonly token: string; readonly detachMs: number }
 
+/** A resume store refuses a new session; resumption is optional, so the connection proceeds without it. */
+export class ResumeSessionCapacityError extends Error {
+  constructor() { super("Resume session capacity exhausted"); }
+}
+
 export type ResumeFailureReason = "unknown-session" | "identity" | "gap" | "busy" | "invalid" | "unsupported";
 
 const SESSION_ID = /^[a-f0-9]{32}$/u;

@@ -27,7 +27,7 @@ import { LocalAccountServerPlugin } from "@opencraft/plugin-local-account/server
 import { serveNodeHttpExchange } from "@opencraft/identity-core/http-exchange-node";
 import { createNodePasswordHasher } from "@opencraft/plugin-local-account/password-hash-node";
 import { parseArgon2id } from "@opencraft/plugin-local-account/password-hash";
-import type { WorkerRuntime, WorkerScenario, WorkerSpec } from "../../cloudflare/worker-runtime.ts";
+import type { WorkerInstance, WorkerRuntime, WorkerScenario, WorkerSpec } from "../../cloudflare/worker-runtime.ts";
 
 export const LOGIN_ENTRY_WORKER: WorkerSpec = {
   id: "login",
@@ -67,9 +67,11 @@ interface Controls {
   setEnabled(username: string, enabled: boolean): Promise<void>;
   grant(subject: string, role: MemberRole): Promise<void>;
   advance(milliseconds: number): Promise<void>;
+  derivations?(): Promise<number>;
 }
 interface Entry {
   readonly origin: string;
+  readonly instance?: WorkerInstance;
   request(
     path: string,
     init?: { body?: unknown; cookie?: string; headers?: Record<string, string> },
@@ -96,14 +98,18 @@ function init(
   };
 }
 
-async function workerdEntry(runtime: WorkerRuntime): Promise<Entry> {
-  // One instance per entry, as before; each also uses its own object.
+async function workerdEntry(
+  runtime: WorkerRuntime,
+  options: { persist?: string; object?: string } = {},
+): Promise<Entry> {
+  // One instance per entry, as before; each also uses its own object unless it restarts one.
   const instance = await runtime.start(LOGIN_ENTRY_WORKER, {
     localOrigin: LOCAL_ORIGIN,
     vars: (origin) => ({ ORIGIN: origin }),
+    ...(options.persist ? { persist: options.persist } : {}),
   });
   const ORIGIN = instance.origin;
-  const object = `login-${++sequence}`;
+  const object = options.object ?? `login-${++sequence}`;
   const call = async (method: string, ...args: unknown[]) => {
     const response = await instance.fetch(`${ORIGIN}/__test`, {
       method: "POST",
@@ -122,6 +128,7 @@ async function workerdEntry(runtime: WorkerRuntime): Promise<Entry> {
   };
   return {
     origin: ORIGIN,
+    instance,
     async request(path, options = {}) {
       const request = init(ORIGIN, options);
       const response = await instance.fetch(ORIGIN + path, {
@@ -139,6 +146,7 @@ async function workerdEntry(runtime: WorkerRuntime): Promise<Entry> {
       setEnabled: (username, enabled) => call("setEnabled", username, enabled),
       grant: (subject, role) => call("grant", subject, role),
       advance: (milliseconds) => call("advance", milliseconds),
+      derivations: () => call("derivations"),
     },
   };
 }
@@ -314,6 +322,70 @@ function normalize(steps: Record<string, Exchange>) {
   );
 }
 
+/**
+ * The attempt budget lives in the login object's storage: it refuses before
+ * any Argon2id derivation (known and unknown names alike), and a new runtime
+ * instance over the same storage (a restart: new isolate, empty memory) still
+ * refuses. Keys: client address (CF-Connecting-IP), submitted login name and
+ * a global ceiling (60 per minute; tests/identity/login-attempts.test.ts).
+ */
+const LOGIN_ATTEMPT_SCENARIO: WorkerScenario = {
+  name: "login attempt budget holds in Durable Object storage across requests and restarts",
+  async run({ runtime }) {
+    const persist = `login-attempts-${++sequence}`,
+      object = `login-attempts-${sequence}`;
+    // Cloudflare's edge sets CF-Connecting-IP itself; only Miniflare lets the test choose addresses.
+    const chooseAddress = runtime.kind === "miniflare";
+    const attempt = (entry: Entry, username: string, address = "203.0.113.1") =>
+      entry.request("/__opencraft_auth/local", {
+        body: { mode: "login", username, password: "wrong-passphrase-value" },
+        headers: { "cf-connecting-ip": address },
+      });
+    const throttled = (exchange: Exchange, label: string) => {
+      assert.equal(exchange.status, 429, label);
+      assert.deepEqual(exchange.body, { error: "try_later" }, label);
+    };
+    let entry = await workerdEntry(runtime, { persist, object });
+    try {
+      await entry.controls.createAccount("alice", PASSWORD);
+      const derived = await entry.controls.derivations!();
+      for (let n = 0; n < 12; n++)
+        assert.equal((await attempt(entry, n % 2 ? "alice" : "nobody")).status, 401, `attempt ${n + 1}`);
+      assert.equal(await entry.controls.derivations!(), derived + 12, "every admitted attempt derives once");
+      throttled(await attempt(entry, "alice"), "known name over the address budget");
+      throttled(await attempt(entry, "nobody"), "unknown name over the address budget");
+      assert.equal(await entry.controls.derivations!(), derived + 12, "no derivation once refused");
+
+      await runtime.stop(entry.instance!);
+      entry = await workerdEntry(runtime, { persist, object });
+      throttled(await attempt(entry, "alice"), "the budget survives a restart");
+      throttled(await attempt(entry, "nobody"), "unknown names too");
+      assert.equal(await entry.controls.derivations!(), derived + 12, "no derivation after the restart");
+
+      if (chooseAddress) {
+        // Per-name budget across addresses: each name already took 6 admitted attempts above.
+        for (let n = 0; n < 6; n++)
+          assert.equal((await attempt(entry, "Alice", `198.51.100.${n + 1}`)).status, 401, `alice ${n + 7}`);
+        throttled(await attempt(entry, "alice", "198.51.100.200"), "known name over its budget from a new address");
+        for (let n = 0; n < 6; n++)
+          assert.equal((await attempt(entry, "nobody", `198.51.100.${n + 1}`)).status, 401, `nobody ${n + 7}`);
+        throttled(await attempt(entry, "NOBODY", "198.51.100.201"), "unknown name over its budget from a new address");
+        assert.equal(await entry.controls.derivations!(), derived + 24, "refusals derive nothing");
+      }
+
+      await entry.controls.advance(61_000);
+      assert.equal((await attempt(entry, "alice")).status, 401, "a new window admits again");
+      const login = await entry.request("/__opencraft_auth/local", {
+        body: { mode: "login", username: "alice", password: PASSWORD },
+        headers: { "cf-connecting-ip": "203.0.113.1" },
+      });
+      assert.equal(login.status, 200);
+    } finally {
+      await runtime.stop(entry.instance!);
+    }
+  },
+};
+
 export const LOGIN_ENTRY_SCENARIOS: readonly WorkerScenario[] = [
   {
     name: "Argon2id records made by Node verify in workerd and the other way round",
@@ -429,4 +501,5 @@ export const LOGIN_ENTRY_SCENARIOS: readonly WorkerScenario[] = [
       expect("expired session", 401);
     },
   },
+  LOGIN_ATTEMPT_SCENARIO,
 ];

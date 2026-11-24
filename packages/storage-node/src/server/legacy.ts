@@ -1,6 +1,5 @@
 import { SERVER_MIGRATIONS } from './migrations.generated.js';
 import type { Migration } from "@opencraft/sqlite-node";
-import { createMissingLegacyObjects } from "@opencraft/sqlite-node";
 
 // Published owner SQL is immutable, including whitespace and historical names.
 // Public and downstream journals have different append order. Resolve the
@@ -236,9 +235,3 @@ export const SERVER_LEGACY_MIGRATIONS = {
 
 } as const satisfies Record<string, readonly Migration[]>;
 export type ServerStoreId = keyof typeof SERVER_LEGACY_MIGRATIONS;
-
-export function serverLegacyOptions(store: ServerStoreId) {
-  const migrations = SERVER_LEGACY_MIGRATIONS[store];
-  return { migrations, legacyPolicy: store === "memberships" ? "reject-unknown" as const : "reject" as const,
-    ...(store === "memberships" ? { legacyMigration: createMissingLegacyObjects(migrations.map(m => m.sql).join("\n")) } : {}) };
-}

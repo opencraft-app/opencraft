@@ -18,12 +18,14 @@ import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import WebSocket, { WebSocketServer } from "ws";
-import { createWebSocketSender } from "@opencraft/relay-protocol/websocket-sender";
-import { serveNodeHttpExchange } from "@opencraft/identity-core/http-exchange-node";
-import { RESUME_ACK_DELAY_MS, isAcknowledgement, isResumeAttempt, isSequence, parseResumeAttempt } from "@opencraft/app-host-resume";
-import { ResumeRegistry, ResumeSessionCapacityError } from "@opencraft/app-host-resume/server";
+import { serveNodeHttpExchange } from "@opencraft/http-exchange/node";
+import { ResumeRegistry } from "@opencraft/app-host-resume/server";
+import { acceptAppHostClientSession } from "@opencraft/client-session/app-host";
 import { trackSocketHeartbeat } from "./websocket-heartbeat.mjs";
 import { appHostWebSocketOptions } from "./apphost-websocket-options.mjs";
+import { acceptWsSessionSocket } from "./session-socket-ws.mjs";
+
+export { APP_HOST_HEARTBEAT_MS, appHostFrameRejection } from "@opencraft/client-session/app-host";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const contentTypes = new Map([
@@ -280,34 +282,6 @@ function bridgeAppServerSocket(client, request, options) {
 }
 
 
-// Return bounded, allowlisted metadata only: never echo an untrusted frame value.
-export const APP_HOST_HEARTBEAT_MS = 10_000;
-const APP_HOST_HEARTBEAT_MAX_BUFFERED = 1024 * 1024;
-const APP_HOST_HEARTBEAT_FRAME = JSON.stringify({ type: "connection/heartbeat" });
-
-export function appHostFrameRejection(message) {
-  if (!message || typeof message !== "object" || Array.isArray(message)) return { reason: "not-object" };
-  const types = ["hello", "connection/probe", "host/connect", "host/send", "host/disconnect"];
-  const messageType = types.includes(message.type) ? message.type : "unknown";
-  const reject = (reason, extra = {}) => ({ reason, messageType, ...extra });
-  const validId = value => typeof value === "string" && value.length > 0 && value.length <= 4096;
-  if (message.type === "hello") {
-    if (message.protocolVersion !== APP_HOST_PROTOCOL_VERSION) return reject("protocol-version", {
-      receivedProtocolVersion: Number.isSafeInteger(message.protocolVersion) && message.protocolVersion >= 0
-        ? message.protocolVersion : "invalid",
-    });
-    return validId(message.rendererId) ? null : reject("renderer-id");
-  }
-  if (!validId(message.requestId)) return reject("request-id");
-  if (message.type === "connection/probe") return null;
-  if (!validId(message.hostId)) return reject("host-id");
-  if (!validId(message.leaseId)) return reject("lease-id");
-  if (message.type === "host/connect") return null;
-  if (message.type !== "host/send" && message.type !== "host/disconnect") return reject("message-type");
-  if (!Number.isSafeInteger(message.generation) || message.generation < 0) return reject("generation");
-  return message.type === "host/disconnect" || typeof message.frame === "string" ? null : reject("frame-type");
-}
-
 const appHostAttemptPattern = /^(?:[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}|client-[0-9]{10,15}-[a-z0-9]{1,20})$/iu;
 const appHostFailureKinds = new Set(["socket-error", "socket-close", "handshake-timeout", "probe-timeout", "liveness-timeout", "invalid-response"]);
 const appHostPhases = new Set(["connecting", "socket-open", "ready"]);
@@ -356,314 +330,6 @@ function validAppHostDiagnostic(report) {
     && (report.networkState === undefined || ["online", "offline", "unknown"].includes(report.networkState))
     && (report.wasClean === undefined || [0, 1].includes(report.wasClean))
     && (report.closeCode === undefined || (Number.isInteger(report.closeCode) && report.closeCode >= 0 && report.closeCode <= 4999));
-}
-
-// A socket that died abnormally may come back within the detach window.
-// Normal closes, policy closes and server-initiated closes end the session.
-const APP_HOST_DETACHABLE_CLOSE_CODES = new Set([1001, 1005, 1006]);
-
-/**
- * App Host WebSocket bridge. With `resume` (registry, identity, route,
- * deadline) and a client that asks for it, the App Host connection outlives
- * its socket for a short window and frames are numbered so a reconnecting
- * client continues the same session. Without it, behavior is unchanged: the
- * connection ends with its socket.
- */
-// Mark explicit application closures only. ws also calls close() internally to
-// echo a peer's close frame; intercepting close() mistakes that echo for a
-// server-initiated policy close and destroys sessions during route replacement.
-const appHostServerClosedSockets = new WeakSet();
-function closeAppHostSocket(client, ...args) {
-  appHostServerClosedSockets.add(client);
-  client.close(...args);
-}
-
-function bridgeAppHostSocket(client, appHostServer, logDiagnostic, authorize = () => true, submissionContext = { sender: null }, resume = null) {
-  const wire = {
-    client, send: createWebSocketSender(client), authorize, logDiagnostic, route: resume?.route ?? null,
-    heartbeatRequested: false, heartbeatTimer: null,
-    frameSequence: 0, probeSequence: 0, lastProbeObservedAt: -Infinity, probes: new Map(),
-    session: null,
-  };
-  // A close the server initiated (revocation, expiry, policy) never leaves a resumable session,
-  // even when terminate() makes the reported code look abnormal.
-  const probeDetail = probe => ({ probeSequence: probe.sequence, eventAtMs: Date.now(),
-    elapsedMs: Math.max(0, performance.now() - probe.started),
-    readyState: wire.client.readyState, bufferedBytes: wire.client.bufferedAmount });
-  const frameContext = () => ({ frameSequence: wire.frameSequence, phase: wire.session === null ? "awaiting-hello" : "ready" });
-  const stopHeartbeat = () => { if (wire.heartbeatTimer !== null) clearInterval(wire.heartbeatTimer); wire.heartbeatTimer = null; };
-  // Opt-in liveness: a client that asks for heartbeats judges the route by the
-  // age of its last received frame instead of a slow, foreground-only probe.
-  const startHeartbeat = () => {
-    if (wire.heartbeatTimer !== null) return;
-    wire.heartbeatTimer = setInterval(() => {
-      if (wire.client.readyState !== WebSocket.OPEN) { stopHeartbeat(); return; }
-      // A congested socket already proves nothing new; do not grow its queue.
-      if (wire.client.bufferedAmount > APP_HOST_HEARTBEAT_MAX_BUFFERED) return;
-      wire.send(APP_HOST_HEARTBEAT_FRAME);
-    }, APP_HOST_HEARTBEAT_MS);
-    wire.heartbeatTimer.unref?.();
-  };
-  const protocolError = (reason) => {
-    logDiagnostic("invalid-frame", { code: 1008, ...frameContext(), reason });
-    closeAppHostSocket(client, 1008, "Invalid App Host request");
-    wire.session?.resumable?.end("protocol-error");
-  };
-
-  /** Shared state of one App Host connection; outlives sockets only when resumable. */
-  const createSession = () => {
-    const session = {
-      wire: null, connection: null, listeners: new Set(), pendingConnects: new Set(),
-      authorize, resumable: null, sequencing: false, heartbeat: false, ackTimer: null, route: resume?.route ?? null,
-      port: null, authority: null,
-    };
-    const current = () => session.wire;
-    session.port = {
-      postMessage(message) {
-        if (session.resumable?.isEnded) return;
-        const active = current();
-        if (!session.authorize(message)) {
-          if (active) closeAppHostSocket(active.client, 1008, "Connection access expired");
-          else session.resumable?.end("access-expired");
-          return;
-        }
-        if (message?.type === "ready") {
-          const capabilities = { ...message.capabilities };
-          if (active?.heartbeatRequested) { capabilities.heartbeatMs = APP_HOST_HEARTBEAT_MS; session.heartbeat = true; }
-          if (session.resumable) capabilities.resume = session.resumable.grant();
-          message = { ...message, capabilities };
-          if (session.heartbeat && active) active.startHeartbeat();
-        }
-        if (message?.type === "response" && session.pendingConnects.delete(message.requestId)) {
-          active?.logDiagnostic("host-connect", { ok: message.ok === true });
-        }
-        let frame;
-        if (session.sequencing) {
-          // Numbered and retained (as UTF-8 bytes, off the V8 heap) until acknowledged.
-          const link = session.resumable.link, seq = link.next();
-          frame = JSON.stringify({ ...message, seq });
-          const bytes = Buffer.byteLength(frame);
-          link.retain(seq, bytes > link.maxBytes ? null : Buffer.from(frame), bytes);
-        } else frame = JSON.stringify(message);
-        if (message?.type === "ready" && session.resumable) session.sequencing = true;
-        if (!active || active.client.readyState !== WebSocket.OPEN) return;
-        const probe = message?.type === "response" ? active.probes.get(message.requestId) : undefined;
-        if (probe) {
-          active.probes.delete(message.requestId);
-          const responseMs = Math.max(0, performance.now() - probe.started);
-          active.logDiagnostic("probe-response", { ...active.probeDetail(probe), responseMs, ok: message.ok === true });
-          active.send(frame, error => {
-            // A completed local write does not acknowledge browser receipt.
-            active.logDiagnostic("probe-written", { ...active.probeDetail(probe), responseMs, ok: !error });
-          });
-        } else active.send(frame);
-      },
-      subscribe(listener) {
-        session.listeners.add(listener);
-        return () => session.listeners.delete(listener);
-      },
-      start() {},
-      close() {
-        const active = current();
-        if (active && active.client.readyState === WebSocket.OPEN) closeAppHostSocket(active.client, 1000, "App Host closed");
-        session.resumable?.end("connection-closed");
-      },
-    };
-    session.adoptAuthority = authority => {
-      const old = session.authority;
-      session.authority = authority;
-      authority?.hold(reason => {
-        const active = session.wire;
-        if (active) { active.client.removeAllListeners('message'); closeAppHostSocket(active.client, 1008, reason); active.client.terminate(); }
-        session.end(reason === "Identity access expired" ? "access-expired" : "access-revoked");
-      });
-      if (old !== authority) old?.release();
-    };
-    session.end = reason => {
-      if (session.resumable) session.resumable.end(reason);
-      else session.connection?.close();
-    };
-    session.scheduleAck = () => {
-      const due = session.resumable?.link.acknowledgementDue;
-      if (!due) return;
-      const flush = () => {
-        session.ackTimer = null;
-        const active = current();
-        if (!active || active.client.readyState !== WebSocket.OPEN || session.resumable.isEnded) return;
-        active.send(JSON.stringify({ type: "connection/ack", received: session.resumable.link.acknowledged() }));
-      };
-      if (due === "now") { if (session.ackTimer !== null) clearTimeout(session.ackTimer); flush(); }
-      else if (session.ackTimer === null) { session.ackTimer = setTimeout(flush, RESUME_ACK_DELAY_MS); session.ackTimer.unref?.(); }
-    };
-    return session;
-  };
-  wire.probeDetail = probeDetail;
-  wire.startHeartbeat = startHeartbeat;
-
-  const adopt = (session, attempt, heartbeatRequested) => {
-    const replay = session.resumable.link.replay(attempt.received);
-    if (replay === null) return false;
-    const previous = session.wire;
-    if (previous) { previous.session = null; previous.client.terminate(); }
-    session.resumable.attach();
-    session.wire = wire; wire.session = session;
-    session.authorize = authorize;
-    session.adoptAuthority(resume.authority);
-    // Authority closures of the original upgrade follow the live socket and request.
-    if (session.route && resume.route && session.route !== resume.route) Object.assign(session.route, resume.route);
-    wire.heartbeatRequested = heartbeatRequested;
-    wire.send(JSON.stringify({ type: "connection/resumed", received: session.resumable.link.received }));
-    for (const frame of replay) wire.send(frame.data.toString("utf8"));
-    if (session.heartbeat && heartbeatRequested) startHeartbeat();
-    return replay.length;
-  };
-
-  client.on("message", (raw, isBinary) => {
-    if (client.readyState !== WebSocket.OPEN || appHostServerClosedSockets.has(client)) return;
-    wire.frameSequence += 1;
-    if (isBinary) { logDiagnostic("invalid-frame", { code: 1003, reason: "binary", ...frameContext() }); closeAppHostSocket(client, 1003, "Text frames required"); return; }
-    let message;
-    try { message = JSON.parse(raw.toString()); }
-    catch { logDiagnostic("invalid-frame", { code: 1003, reason: "json", ...frameContext() }); closeAppHostSocket(client, 1003, "Invalid App Host frame"); return; }
-    const session = wire.session;
-    if (session?.resumable?.isEnded) { closeAppHostSocket(client, 1000, "App Host session ended"); return; }
-    if (message && typeof message === "object" && !Array.isArray(message)) {
-      if (message.type === "connection/ack") {
-        if (!session?.resumable || !isAcknowledgement(message.received) || !session.resumable.link.acknowledge(message.received)) protocolError("acknowledgement");
-        return;
-      }
-      if (message.type === "connection/end") {
-        if (session?.resumable) session.resumable.end("client-end");
-        closeAppHostSocket(client, 1000, "App Host session ended");
-        return;
-      }
-    }
-    let seq;
-    if (message && typeof message === "object" && "seq" in message) {
-      if (!session?.sequencing || !isSequence(message.seq)) { protocolError("sequence"); return; }
-      ({ seq, ...message } = message);
-    }
-    if (session && (message?.type === "hello" || (session.sequencing && seq === undefined))) {
-      protocolError("sequence-required"); return;
-    }
-    const rejection = appHostFrameRejection(message);
-    if (rejection !== null) {
-      logDiagnostic("invalid-frame", { code: 1008, ...frameContext(), ...rejection });
-      if (rejection.reason === "protocol-version" && client.readyState === WebSocket.OPEN) {
-        wire.send(JSON.stringify({ type: "fatal", error: {
-          code: "APP_HOST_PROTOCOL_MISMATCH",
-          message: "Client and server versions are incompatible. Update or reload the client to reconnect.",
-          retryable: false,
-        } }), () => closeAppHostSocket(client, 1008, "Invalid App Host request"));
-        return;
-      }
-      wire.session?.resumable?.end("protocol-error");
-      closeAppHostSocket(client, 1008, "Invalid App Host request");
-      return;
-    }
-    if (message.type === "connection/probe") {
-      const started = performance.now();
-      const sequence = ++wire.probeSequence;
-      // Observe normal five-second probes, bounded even for a flooding peer.
-      if (started - wire.lastProbeObservedAt >= 1000 && wire.probes.size < 8 && !wire.probes.has(message.requestId)) {
-        wire.lastProbeObservedAt = started;
-        const probe = { sequence, started };
-        wire.probes.set(message.requestId, probe);
-        logDiagnostic("probe-received", { ...probeDetail(probe), frameSequence: wire.frameSequence });
-      }
-    }
-    if (seq !== undefined) {
-      const arrival = wire.session.resumable.link.accept(seq, raw.length);
-      if (arrival === "duplicate") return;
-      if (arrival === "gap") { protocolError("sequence-gap"); return; }
-      wire.session.scheduleAck();
-    }
-    if (!authorize(message)) {
-      const probe = wire.probes.get(message.requestId);
-      if (probe) {
-        wire.probes.delete(message.requestId);
-        logDiagnostic("probe-rejected", { ...probeDetail(probe), reason: "access" });
-      }
-      const denied = { type: "response", requestId: message.requestId, ok: false,
-        error: submissionContext.actorContext?.credentialId
-          ? { code: "CHANNEL_SCOPE_REQUIRED", message: "This credential can only access Channels", retryable: false }
-          : { code: "SSH_ACCESS_REQUIRED", message: "Unlock remote connections in settings", retryable: false } };
-      // A denied operation still occupies its valid transport sequence, but never
-      // reaches Host dispatch. Reply through the same retained logical owner.
-      if (wire.session) wire.session.port.postMessage(denied);
-      else wire.send(JSON.stringify(denied));
-      return;
-    }
-    if (wire.session === null) {
-      if (message?.type !== "hello" || typeof message.rendererId !== "string" || !message.rendererId) {
-        logDiagnostic("hello-required", { code: 1008, ...frameContext(), messageType: message.type });
-        closeAppHostSocket(client, 1008, "App Host hello required");
-        return;
-      }
-      const heartbeatRequested = message.heartbeat === true;
-      const requested = resume && message.resume !== undefined ? parseResumeAttempt(message.resume) : null;
-      if (requested && isResumeAttempt(requested)) {
-        const found = resume.registry.find(requested, JSON.stringify([resume.identity, message.rendererId]));
-        let reason = "failure" in found ? found.failure : null, replayed = 0;
-        if (reason === null) {
-          const adopted = adopt(found.session.payload, requested, heartbeatRequested);
-          if (adopted === false) { reason = "gap"; found.session.end("gap"); }
-          else replayed = adopted;
-        }
-        if (reason !== null) {
-          logDiagnostic("resume-rejected", { reason });
-          wire.send(JSON.stringify({ type: "connection/resume-failed", reason }), () => closeAppHostSocket(client, 1000, "App Host session not resumable"));
-          return;
-        }
-        logDiagnostic("resume-accepted", { replayedFrames: replayed, ...resume.registry.stats });
-        return;
-      }
-      const session = createSession();
-      wire.session = session; session.wire = wire;
-      wire.heartbeatRequested = heartbeatRequested;
-      if (requested && resume) {
-        try { session.resumable = resume.registry.create(JSON.stringify([resume.identity, message.rendererId]), session, reason => {
-          if (session.ackTimer !== null) clearTimeout(session.ackTimer);
-          session.ackTimer = null;
-          session.authority?.release(); session.authority = null;
-          try { session.connection?.close(); }
-          finally { if (session.wire?.client.readyState === WebSocket.OPEN) closeAppHostSocket(session.wire.client, 1000, "App Host session ended"); }
-          if (reason !== "connection-closed" && reason !== "client-end") logDiagnostic("resume-ended", { reason });
-        }); } catch (error) {
-          if (!(error instanceof ResumeSessionCapacityError)) { closeAppHostSocket(client, 1011, "App Host unavailable"); return; }
-          // Resumption is optional: registry saturation cannot evict another owner or deny a fresh legacy connection.
-          logDiagnostic("resume-unavailable", { reason: "capacity" });
-        }
-      }
-      if (session.resumable) session.adoptAuthority(resume.authority);
-      try { session.connection = appHostServer.accept(session.port, message.rendererId, submissionContext); }
-      catch { logDiagnostic("hello-rejected", { code: 1011 }); session.resumable?.end("accept-failed"); closeAppHostSocket(client, 1011, "App Host unavailable"); return; }
-      logDiagnostic("hello-accepted", { frameSequence: wire.frameSequence, receivedProtocolVersion: message.protocolVersion,
-        ...(session.resumable ? { resumable: 1 } : {}) });
-    }
-    const active = wire.session;
-    if (message.type === "host/connect") active.pendingConnects.add(message.requestId);
-    for (const listener of active.listeners) listener(message);
-  });
-  client.once("close", code => {
-    stopHeartbeat();
-    for (const probe of wire.probes.values()) logDiagnostic("probe-abandoned", probeDetail(probe));
-    wire.probes.clear();
-    const session = wire.session;
-    if (!session || session.wire !== wire) return;
-    session.wire = null;
-    if (session.resumable && !session.resumable.isEnded && session.sequencing && !appHostServerClosedSockets.has(client) && APP_HOST_DETACHABLE_CLOSE_CODES.has(code)) {
-      session.resumable.detach(resume.deadline ?? Infinity);
-      logDiagnostic("resume-detached", { code, ...resume.registry.stats });
-      return;
-    }
-    session.end("socket-closed");
-  });
-  client.once("error", () => {
-    // A resumable session decides on the following close; others end now.
-    const session = wire.session;
-    if (session && session.wire === wire && !session.resumable) session.connection?.close();
-  });
 }
 
 
@@ -793,6 +459,8 @@ export async function createWorkbenchWebServer({
   hubService = null,
   speechPublicAccess = process.env.OPENCRAFT_SPEECH_PUBLIC_ACCESS === "1",
   webSocketHeartbeatIntervalMs = 15_000,
+  // Owner wake-up port for gateway-owned periodic work and client-session wake-ups (gateway-split.md §4.2).
+  ownerWake = undefined,
   onAppHostDiagnostic = diagnostic => console.info("[opencraft apphost connection]", JSON.stringify(diagnostic)),
   ...unknownOptions
 } = {}) {
@@ -815,7 +483,7 @@ export async function createWorkbenchWebServer({
   };
   const runtimeReports = [];
   const htmlPreviews = typeof fileDownloads?.readPreview === 'function'
-    ? new HtmlFilePreviews((...args) => fileDownloads.readPreview(...args)) : null;
+    ? new HtmlFilePreviews((...args) => fileDownloads.readPreview(...args), { wake: ownerWake }) : null;
   let lastImRejection = {key: "", at: 0};
   const imRejectionCodes = new Set([
     "authentication_required", "instance_access_denied", "actor_access_denied",
@@ -892,7 +560,7 @@ export async function createWorkbenchWebServer({
         sendJson(response, 404, { error: 'missing' }); return;
       }
       if (url.pathname.startsWith('/__opencraft_actors/collaboration/')) {
-        if (actorCollaborationService && await actorCollaborationService.handle(request, response)) return;
+        if (actorCollaborationService && await serveNodeHttpExchange(request, response, exchange => actorCollaborationService.handle(exchange))) return;
         sendJson(response, 404, { error: 'missing' }); return;
       }
       // Actor API has its own verified admission. A Session credential is never a
@@ -906,22 +574,22 @@ export async function createWorkbenchWebServer({
         sendJson(response, 404, { error: "missing" }); return;
       }
       if (url.pathname === '/__opencraft_server_information') {
-        if (serverInformationService && await serverInformationService(request, response)) return;
+        if (serverInformationService && await serveNodeHttpExchange(request, response, serverInformationService)) return;
         sendJson(response, 404, { error: 'missing' }); return;
       }
       // Personal model defaults verify the signed-in human Actor and its admission themselves.
       if (url.pathname === '/__opencraft_model_defaults') {
-        if (accountModelDefaultsService && await accountModelDefaultsService(request, response)) return;
+        if (accountModelDefaultsService && await serveNodeHttpExchange(request, response, accountModelDefaultsService)) return;
         sendJson(response, 404, { error: 'missing' }); return;
       }
       // Cross-device read receipts verify the signed-in human Actor and its admission themselves.
       if (url.pathname === '/__opencraft_thread_reads') {
-        if (threadReadReceiptsService && await threadReadReceiptsService(request, response)) return;
+        if (threadReadReceiptsService && await serveNodeHttpExchange(request, response, threadReadReceiptsService)) return;
         sendJson(response, 404, { error: 'missing' }); return;
       }
       // Personal SSH keys verify the signed-in human Actor and its admission themselves.
       if (url.pathname === '/__opencraft_ssh_keys' || url.pathname.startsWith('/__opencraft_ssh_keys/')) {
-        if (actorSshKeysService && await actorSshKeysService(request, response)) return;
+        if (actorSshKeysService && await serveNodeHttpExchange(request, response, actorSshKeysService)) return;
         sendJson(response, 404, { error: 'missing' }); return;
       }
       if ((url.pathname === '/__opencraft_push' || url.pathname === '/__opencraft_notifications')) {
@@ -992,7 +660,7 @@ export async function createWorkbenchWebServer({
         if (request.method !== "GET") { sendJson(response, 405, { error: "method_not_allowed" }); return; }
         response.writeHead(204, { "cache-control": "private, no-store" }); response.end(); return;
       }
-      if (modelPolicyService && await modelPolicyService(request, response)) return;
+      if (modelPolicyService && await serveNodeHttpExchange(request, response, modelPolicyService)) return;
       if (identityService && await identityService.handle(request, response)) return;
       if (url.pathname.startsWith("/__opencraft_speech/")) {
         if (speechService === null) {
@@ -1302,7 +970,7 @@ export async function createWorkbenchWebServer({
       const cleanups = [];
       let active = true, retained = false, timer;
       const physicalRetire = reason => {
-        client.removeAllListeners('message'); closeAppHostSocket(client, 1008, reason); client.terminate();
+        client.removeAllListeners('message'); client.close(1008, reason); client.terminate();
       };
       let retireOwner = physicalRetire;
       const authority = {
@@ -1372,21 +1040,21 @@ export async function createWorkbenchWebServer({
           privateSockets.delete(client);
           logAppHost("closed", { code, active: activeAppHostSockets.size });
         });
-        bridgeAppHostSocket(client, appHostServer, logAppHost, message => {
+        acceptWsSessionSocket(client, socket => acceptAppHostClientSession(socket, { appHostServer, diagnostic: logAppHost, wake: ownerWake, authorize: message => {
           // The anonymous channel cannot guess a remote ID. Private sockets
           // bind the server-validated cookie, never the renderer-supplied ID.
           if (closing || !actorAllowed() || admissionDeadline <= Date.now() || (principal && !accessService.role(principal))) return false;
           if (channelSession) return message.hostId === undefined || message.hostId === CHANNELS_HOST_ID;
           if (privateConnection) return sshManagement.authorized(request);
           return !sshManagement || !message.hostId?.startsWith("ssh:");
-        }, submissionContext, appHostResume === null ? null : {
+        }, submissionContext, resume: appHostResume === null ? null : {
           registry: appHostResume,
           // Exact route, Actor, credential and execution identity; no renderer authority.
           identity: JSON.stringify([pathname, ownerId, actor ?? null,
             channelSession?.context.credentialId ?? null, submissionContext.executionPrincipal ?? null,
             submissionContext.sender ?? null, submissionContext.validUntil ?? null, localAdmission]),
           route, authority, deadline: admissionDeadline,
-        });
+        } }));
       });
       return;
     }

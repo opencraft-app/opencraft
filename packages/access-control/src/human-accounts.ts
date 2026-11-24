@@ -1,5 +1,5 @@
 import { AuthorityChanges } from "./authority-changes.js";
-import { createHash, randomBytes } from 'node:crypto';
+import { randomToken, sha256Hex } from './portable-crypto.js';
 import type { SqlDatabase } from '@opencraft/sql';
 import type { DatabaseOutcome } from "@opencraft/sqlite-node";
 import { openServerRepository, type ServerDatabaseSource } from "@opencraft/storage-node/server-repository";
@@ -9,7 +9,7 @@ import type { ActorStore } from './actors.js';
 import type { LocalAccountProvider, LocalAccountRecord, LocalAccountRepository } from '@opencraft/identity-core/local-account';
 
 
-const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
+const hashToken = (token: string) => sha256Hex(token);
 export interface HumanLogin {
   readonly digest: string;
   readonly principal: Principal;
@@ -102,7 +102,7 @@ export class HumanAccounts {
     if (!context) throw new Error('Human unavailable');
     const expiresAt = Math.min(verified.expiresAt, this.now() + 8 * 3600_000);
     const principal = parsePrincipal({ ...verified, expiresAt });
-    const token = randomBytes(32).toString('base64url'), digest = hashToken(token), createdAt = this.now();
+    const token = randomToken(32), digest = hashToken(token), createdAt = this.now();
     this.#db.prepare('DELETE FROM human_logins WHERE expires_at<=?').run(createdAt);
     this.#db.prepare('INSERT INTO human_logins VALUES(?,?,?,?,?,?,?)')
       .run(digest, JSON.stringify(principal), context.actorId, context.generation, accountVersion, createdAt, expiresAt);

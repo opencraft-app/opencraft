@@ -34,7 +34,9 @@ test('Headless preserves captured ownership and restores readiness only with nat
   }));
   const start=async()=>{
     app=await startHeadlessServer({root,webRoot,dataDirectory,port:0,
-      startAgentHost:async()=>({websocketUrl:`ws://127.0.0.1:${native.address().port}/rpc`,getIdentity:async()=>({enginePid:process.pid}),async close(){}}),
+      startAgentHost:async()=>({websocketUrl:`ws://127.0.0.1:${native.address().port}/rpc`,getIdentity:async()=>({enginePid:process.pid}),
+        // The Host reports its engine's identity, attested in its own PID namespace.
+        engineExecutionIdentity:async()=>nativeProcess,async close(){}}),
       createWebServer:async options=>{host=options.appHostServer;return createWorkbenchWebServer(options);}});
     owner=new DatabaseSync(join(dataDirectory,'thread-identities/opencraft-server/thread-identity.sqlite'),{readOnly:true});
   };

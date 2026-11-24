@@ -54,6 +54,7 @@ import type { ProfileSkillsMethod } from "@opencraft/appserver-protocol";
 import { DshProfileSkillsHandler } from "./dsh-profile-skills.js";
 import { SkillCatalogRefresh } from "./skills/catalog-refresh.js";
 import { OPENCRAFT_ATTACHMENT_STAGING_EXTENSION } from "@opencraft/appserver-protocol";
+import { observeNativeExecutionProcess, type ExecutionProcessIdentity } from "@opencraft/execution-environment/native-execution-origin";
 import { AgentOnboardingService, createOnboardingDeps } from "./agent-onboarding.js";
 import { ConnectedAgentHost } from "./connected-agents.js";
 import { BridgeEngineProvider, type BridgeEngineProviderOptions } from "./bridge-engine-provider.js";
@@ -627,6 +628,11 @@ export async function startLocalAgentHost(options: {
   const projectDirectory = options.projectStorageDirectory ?? options.modelStorageDirectory ?? options.dataDirectory;
   const projects = new ProjectRepository(projectDirectory ? fileStateDocumentStore(projectDirectory) : memoryStateDocumentStore());
   const token = options.token ?? randomBytes(24).toString("base64url");
+  /** The DSH engine child, observed by its parent in this PID namespace. */
+  const engineExecutionIdentity = async (): Promise<ExecutionProcessIdentity | null> => {
+    const pid = supervisor.processId;
+    return pid && process.platform === "linux" ? observeNativeExecutionProcess(pid) : null;
+  };
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
     response.setHeader("cache-control", "no-store");
@@ -635,8 +641,13 @@ export async function startLocalAgentHost(options: {
       void handleHostInput(request, response, token, options.ownerHandoff ? rawInputs : inputs, options.authorizeHostInput, options.ownerHandoff); return;
     }
     if (url.pathname === "/health") {
-      response.statusCode = engineStatus === "ready" ? 200 : 503;
-      response.end(`${JSON.stringify({ ok: engineStatus === "ready", engine: "dsh", pid: process.pid, enginePid: supervisor.processId, status: engineStatus, hostInputs: 1, storage: storageSummaries })}\n`);
+      // The engine's incarnation is attested here, in this Host's PID namespace; a client
+      // (possibly in another container) compares it and never reads `enginePid` itself.
+      void engineExecutionIdentity().catch(() => null).then(identity => {
+        response.statusCode = engineStatus === "ready" ? 200 : 503;
+        response.end(`${JSON.stringify({ ok: engineStatus === "ready", engine: "dsh", pid: process.pid, enginePid: supervisor.processId,
+          engineIncarnation: identity?.pid === supervisor.processId ? identity.incarnation : null, status: engineStatus, hostInputs: 1, storage: storageSummaries })}\n`);
+      });
       return;
     }
     response.statusCode = 404;
@@ -1170,6 +1181,7 @@ export async function startLocalAgentHost(options: {
     get storageOutcomes() { return storageSummaries; },
     get dshUrl() { return client.baseUrl; },
     get engineProcessId() { return supervisor.processId; },
+    engineExecutionIdentity,
     get engineState() { return engineStatus; },
     restartEngine: (automatic = false) => restartEngine(automatic),
     async close(): Promise<void> {

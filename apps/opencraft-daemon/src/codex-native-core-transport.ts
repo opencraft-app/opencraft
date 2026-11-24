@@ -1,6 +1,5 @@
 import { CodexCoreReadIsolation, isIsolatedCoreRead } from "./codex-core-read-isolation";
 import { CodexCoreSocket } from "./codex-core-socket";
-import { observeStandaloneCodexExecution } from "./native-execution-origin";
 import { CodexCoreControlClient } from "@opencraft/account-pool-host";
 import type { DuplexTransport, TransportStatus } from "@opencraft/appserver-client/transport";
 
@@ -13,6 +12,16 @@ export interface CodexRuntimeEndpoints {
   /** A function when the credential belongs to the runtime owner's incarnation. */
   readonly token: string | (() => Promise<string>);
   readonly nativeSocket?: string;
+  /** Runs one owner read inside the environment's current agent incarnation: the result
+   * is returned only when the same agent was bound before and after (a WorkspaceHost's
+   * placement fence). Absent for an owner on this machine. */
+  readonly fence?: <T>(operation: () => Promise<T>) => Promise<T>;
+}
+
+/** The runtime owner attests its native child in its own PID namespace and reports the
+ * incarnation; this Host never reads the owner's process tree. Missing means unknown. */
+export function reportedCodexExecution(health: { executionIncarnation?: string }): string | undefined {
+  return typeof health.executionIncarnation === "string" && health.executionIncarnation ? health.executionIncarnation : undefined;
 }
 
 /** A raw native connection: Host routing and overlays stay in CodexEngineAdapter.
@@ -44,10 +53,7 @@ export class CodexNativeCoreTransport implements DuplexTransport {
       callbackLaneId,
       health: async signal => {
         const health = await this.health(signal, "native");
-        this.standaloneExecution = undefined;
-        if (process.platform === "linux") {
-          this.standaloneExecution = (await observeStandaloneCodexExecution(health)).incarnation;
-        }
+        this.standaloneExecution = reportedCodexExecution(health);
         this.callbackReady = health.callbackProtocolVersion === 1 && !!callbackLaneId;
         this.titleToolReady = health.threadTitleToolVersion === 1;
         this.ownerIncarnation = health.callbackIncarnation ?? null;
@@ -63,7 +69,8 @@ export class CodexNativeCoreTransport implements DuplexTransport {
     if (!runtime) return this.control.health(signal, observation);
     const token = typeof runtime.token === "function" ? await runtime.token() : runtime.token;
     if (this.runtimeClient?.token !== token) this.runtimeClient = { token, client: new CodexCoreControlClient(runtime.endpoint, token) };
-    const health = await this.runtimeClient.client.health(signal, observation);
+    const client = this.runtimeClient.client;
+    const health = runtime.fence ? await runtime.fence(() => client.health(signal, observation)) : await client.health(signal, observation);
     return runtime.nativeSocket ? { ...health, nativeSocket: runtime.nativeSocket } : health;
   }
   get status(): TransportStatus { return this.connection.status; }

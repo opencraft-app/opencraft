@@ -9,6 +9,7 @@ import { HostFileDownloads } from "../../apps/opencraft-daemon/src/host-file-dow
 import { HtmlFilePreviews } from "../../apps/headless-server/src/html-file-previews.mjs";
 import { createWorkbenchWebServer } from "../../apps/headless-server/src/serve-workbench-web.mjs";
 import { isHeadlessBackendPath } from "../../apps/headless-server/src/web-deployment/headless-backend.mjs";
+import { fakeOwnerWake, fakeWakeClock } from "../support/fake-wake-clock.ts";
 
 async function fixture(t: test.TestContext, gateway = false, remote = false) {
   const directory = await mkdtemp(join(tmpdir(), "opencraft-html-preview-"));
@@ -118,4 +119,18 @@ test('real gateway preserves issuer admission while preview cookie never admits 
 test('managed supervisor forwards all preview routes to the authority backend',()=>{
  for(const path of ['/__opencraft_preview/','/__opencraft_preview/tickets','/__opencraft_preview/redeem','/__opencraft_preview/s/abc/document'])assert.equal(isHeadlessBackendPath(path),true);
  assert.equal(isHeadlessBackendPath('/__opencraft_preview-else'),false);
+});
+
+test('expired preview records are pruned every 30 s on the owner wake-up until close',()=>{
+  const fake = fakeWakeClock(0), pruned: number[] = [];
+  class Observed extends HtmlFilePreviews { prune() { pruned.push(fake.now); super.prune(); } }
+  const previews = new Observed(async () => { throw Error('unused'); }, { wake: fakeOwnerWake(fake) });
+  fake.elapse(29_999);
+  assert.deepEqual(pruned,[]);
+  fake.elapse(60_001);
+  assert.deepEqual(pruned,[30_000,60_000,90_000]);
+  previews.close();
+  assert.equal(fake.pending,0);
+  fake.elapse(60_000);
+  assert.deepEqual(pruned,[30_000,60_000,90_000]);
 });

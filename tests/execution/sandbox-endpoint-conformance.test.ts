@@ -395,6 +395,93 @@ for (const make of await harnesses()) {
       },
     );
 
+    await t.test("an owner report is attributed only to the agent incarnation bound before and after it", async () => {
+      // The agent's incarnation is the only restart evidence; nothing reads the environment's processes.
+      // A separate harness: the named `control` endpoint above is still published in the first one.
+      const own = await make();
+      const ownPool = await createSandboxPool(
+        { id: "fenced", capacity: own.resources, defaults: own.resources },
+        own.backend,
+      );
+      let agent = "a".repeat(32);
+      const control = await own.listen((socket) => {
+        let text = "";
+        socket.on("data", (data) => {
+          text += data;
+          if (!text.includes("\n")) return;
+          socket.end(
+            JSON.stringify({
+              protocol: 1,
+              type: "healthy",
+              state: "ready",
+              roles: ["brain"],
+              incarnation: { id: agent, evidence: "e", startedAt: new Date(0).toISOString() },
+              endpoints: ["pi"],
+            }) + "\n",
+          );
+        });
+        socket.on("error", () => {});
+      }, "control");
+      await own.listen(echo, "pi");
+      const records = new Map<string, WorkspacePlacementRecord>(),
+        events: string[] = [];
+      const runtime = createWorkspaceRuntime({
+        workspaceId: "default",
+        owner: "conformance",
+        onEvent: (event) => events.push(event.type),
+        environments: [
+          {
+            address: parseSandboxEnvironmentUri(`${own.backend.id}://fenced`),
+            pool: ownPool,
+            python: own.python,
+            endpointDirectory: control.slice(0, control.lastIndexOf("/")),
+          },
+        ],
+        store: {
+          read: async (address) => records.get(address.target),
+          write: async (address, record) => {
+            records.set(address.target, record);
+          },
+        },
+      });
+      const pi = parseWorkspaceEndpointUri("workspace://default/endpoints/pi");
+      const unavailable = (e: unknown) => e instanceof SandboxFault && e.code === "SANDBOX_UNAVAILABLE";
+      try {
+        assert.equal(await runtime.fenced(pi, async () => "report from a"), "report from a");
+        // The agent restarts while its owner answers: the answer is not attributed to either.
+        await assert.rejects(
+          runtime.fenced(pi, async () => {
+            agent = "b".repeat(32);
+            return "report across a restart";
+          }),
+          unavailable,
+        );
+        assert.equal(events.at(-1), "released");
+        // The next read binds the new incarnation (persisted) and is attributed to it.
+        assert.equal(await runtime.fenced(pi, async () => "report from b"), "report from b");
+        assert.equal(records.get("fenced")?.agentIncarnation, "b".repeat(32));
+        // A restart before the read is caught before the owner is asked at all.
+        agent = "c".repeat(32);
+        let asked = false;
+        await assert.rejects(
+          runtime.fenced(pi, async () => {
+            asked = true;
+            return "never";
+          }),
+          unavailable,
+        );
+        assert.equal(asked, false);
+        await assert.rejects(
+          runtime.fenced(parseWorkspaceEndpointUri("workspace://other/endpoints/pi"), async () => "x"),
+          (e: unknown) => e instanceof SandboxFault && e.code === "SANDBOX_POLICY",
+        );
+      } finally {
+        await runtime.close();
+        await ownPool.close().catch(() => {});
+        await own.dispose();
+      }
+    });
+
     await t.test("contract validation: attached is pipe-only and invalid targets never spawn", async () => {
       const sandbox = await createSandbox(pool, { owner: "conformance" });
       const count = h.commands.length;

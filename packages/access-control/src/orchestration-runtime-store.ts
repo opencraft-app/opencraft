@@ -3,6 +3,7 @@ import type { ChannelSyncCommand, ChannelSyncResult } from "./native-channel-syn
 import type { CommunicationCommand, CommunicationResult } from './communication-command.js';
 import { AutomationError } from './automation.js';
 import { Worker } from 'node:worker_threads';
+import { markOrchestrationRuntimeService } from './orchestration-runtime-companion.js';
 import type { ThreadAccessPolicy } from './thread-access.js';
 import type { ConversationRef, ThreadOrchestrationSnapshot } from '@opencraft/appserver-protocol/collaboration';
 import type { ParentNotification, WaitTicket } from './orchestration-ledger.js';
@@ -44,6 +45,7 @@ export class OrchestrationRuntimeWorker implements OrchestrationRuntimeStorage {
   private stopping = false;
   private nextId = 0;
   constructor(source: string | OrchestrationRuntimeOwner) {
+    markOrchestrationRuntimeService(this);
     if (typeof source !== 'string') {
       this.owner = source;
       this.ready = Promise.resolve();

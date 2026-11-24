@@ -71,7 +71,7 @@ OpenCraft 自有 SQLite 共两类，全部经 `openManagedDatabase` 打开并在
 - `ordinary-workspaces.sqlite`（`apps/local-agent-host/src/ordinary-workspace-store.ts`）：直接用 `DatabaseSync` 与 `CREATE TABLE IF NOT EXISTS`，违反“运行时建表只由迁移执行”的规则，是待迁移的存量。
 - `assistant.sqlite`（`apps/personal-assistant`）：自管 `user_version`，升级前另存 `schema<N>-before-coordination.sqlite`。
 - 引擎私有库（Pi 的 `pi_<id>.sqlite`、Codex 原生 `queue_1.sqlite`、`CODEX_HOME` 与 DSH 目录下的原生库）由引擎自己升级；OpenCraft 只读或按既有搬运语义访问。
-- 锁文件（`.codex-writer.sqlite`、`.codex-runtime.sqlite`、`.codex-routing-owner.sqlite`、`schema-lock.sqlite`、`.opencraft-owned-storage-lock.sqlite`、`*.writer`、`server.lock`）只用于互斥，没有业务表。
+- 锁文件（`.codex-writer.sqlite`、`.codex-runtime.sqlite`、`.codex-routing-owner.sqlite`、`schema-lock.sqlite`、`.opencraft-owned-storage-lock.sqlite`、`*.writer`、`server.lock`、Pi 的 `pi_<id>.sqlite.lock`）只用于互斥，没有业务表。Pi 会话库的唯一写者经 `acquireProcessWriter` 持有 `pi_<id>.sqlite.lock`：进程存活期间（即使事件循环长时间停顿）从不过期，进程退出即释放，没有可被判定为 stale 的刷新计时器；旧版 proper-lockfile 目录租约只在 mtime 远超其刷新周期（60s）后才被转换。
 
 客户端 IndexedDB 另有独立版本号，不走 SQLite 账本：`opencraft-host-connections` v2，`opencraft-sidebar-layout`、`opencraft-appserver-replica`、UI 偏好、扩展文档、客户端资源与 blob 库均为 v1。
 
@@ -123,7 +123,7 @@ OpenCraft 自有 SQLite 共两类，全部经 `openManagedDatabase` 打开并在
 | `opencraft-threads.sqlite` | daemon 内 Local Agent Host：[thread-catalog](../../../apps/local-agent-host/src/thread-catalog.ts) | Host `dataDirectory` | 人工标题、归档、关系与配置 |
 | `opencraft-executions.sqlite` | daemon 内 Local Agent Host：[dsh-execution-authority](../../../apps/local-agent-host/src/dsh-execution-authority.ts) | Host `dataDirectory` | epoch、执行日志、输入及队列 |
 | `opencraft-host-documents.sqlite` | daemon 内 Local Agent Host：[document-storage/sqlite](../../../packages/document-storage/src/sqlite.ts) | Host `dataDirectory` | Host 通用文档；与 client-local 物理分离 |
-| `opencraft-managed-connectors.sqlite` | daemon 内 Local Agent Host：[connector-host/store](../../../packages/connector-host/src/store.ts) | Host `dataDirectory` | 实例、凭据与 OAuth 事务 |
+| `opencraft-managed-connectors.sqlite` | daemon 内 Local Agent Host：[connector-host/node-store](../../../packages/connector-host/src/node-store.ts)（领域 `SqlConnectorDatabase` 在 `store.ts`，经 `SqlDatabase` 端口） | Host `dataDirectory` | 实例、凭据与 OAuth 事务 |
 | `account-pool.sqlite` | 独立 codex-core：[account-pool-host/store](../../../packages/account-pool-host/src/store.ts)、[account service](../../../packages/account-pool-host/src/codex-account-service.ts) | codex-core `dataDirectory` | 账户元数据、亲和性与配额；secret 文件由同一 owner 管理 |
 | `tasks.sqlite` | [TasksSqliteStore](../../../plugins/tasks/src/sqlite.ts)；Local Agent 启动 owner / Codex 功能私有 owner | 原 Host 目录；各实例各自独占，不跨目录合库 | Tasks、关联、revision/CAS；原 `tasks-rows` v1 SQL/hash 不变 |
 | `opencraft-host-state.sqlite`（旧目录沿用 `codex-host-queue.sqlite`） | [OpenCraftHostStateDatabase](../../../apps/opencraft-daemon/src/opencraft-host-state-database.ts)；CodexEngineAdapter | 原 Codex 目录；SSH 为原 `ssh-servers/<binding hash>` 目录 | durable queue、message_senders、企业身份 presence/state/completion 与远端会话目录/同步水位共用一个迁移/连接/事务 owner |
@@ -234,7 +234,7 @@ journal 后关闭连接，确认没有 sidecar，制作并校验 SHA-256 恢复�
 |---|---|---|
 | session-routing | 原 owner 用 IF NOT EXISTS 分别建两表，并按列探测补 intent；已声明上节转换 | 原映射/全部 generation 坐标、无 intent 与缺表 pending、重复打开、拒绝不完整发布 |
 | executions | [DshExecutionAuthority](../../../apps/local-agent-host/src/dsh-execution-authority.ts) 原建两个输入表，HyperNode journal/queue initializeSchema 原文补其他表与三个索引；显式允许这些已知对象的缺失，不改镜像原文 | [execution 测试](../../../tests/execution/dsh-execution-authority.test.ts)：缺 queue-state 或 actor 索引仍保留消息 ID 投影、submission、未消费队列、仍存在的暂停状态、epoch 递增；previous-boot fencing 仍终结旧执行，重复打开不再转换 |
-| managed-connectors | [ConnectorDatabase](../../../packages/connector-host/src/store.ts) 原 IF NOT EXISTS 建三表；显式补缺辅助表，已有表/约束必须合法，原重启取消 pending OAuth 仍执行 | [connector 测试](../../../tests/extensions/platform-connectors-host.test.ts)：缺 OAuth 表仍保留连接 revision/title、凭据与 OAuth 数据；缺 credentials 表只创建空表，不猜造秘密，保留已有 instance；未知索引/错误 FK 不接纳 |
+| managed-connectors | [ConnectorDatabase](../../../packages/connector-host/src/node-store.ts) 原 IF NOT EXISTS 建三表；显式补缺辅助表，已有表/约束必须合法，原重启取消 pending OAuth 仍执行 | [connector 测试](../../../tests/extensions/platform-connectors-host.test.ts)：缺 OAuth 表仍保留连接 revision/title、凭据与 OAuth 数据；缺 credentials 表只创建空表，不猜造秘密，保留已有 instance；未知索引/错误 FK 不接纳 |
 | threads | 原单表，完整旧记录自动 adopted；空库 fresh 已覆盖，无其他有源码证据的缺对象变体需要转换 | [thread-catalog 测试](../../../tests/chat/thread-catalog.test.ts) 与独立旧构造器 fixture 证明记录保留；不加兼容回调 |
 | host-documents | 原 extension_records 已有 v1 账本；未知库/缺表原本拒绝，不能当已知 legacy 放宽 | [SQLite 测试](../../../tests/storage/sqlite-node.test.ts) 覆盖原账本 up-to-date、文档保留与缺域表拒绝；不加兼容回调 |
 

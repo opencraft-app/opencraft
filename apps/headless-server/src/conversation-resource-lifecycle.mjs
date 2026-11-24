@@ -1,3 +1,5 @@
+import { periodicOwnerWork, timeoutOwnerWake } from "@opencraft/owner-wake";
+
 const keyOf = (hostId, threadId) => JSON.stringify([hostId, threadId]);
 const valid = value => typeof value === 'string' && value.length > 0 && value.length <= 1024;
 /** Durable projection of acknowledged engine lifecycle events. It owns resource
@@ -30,7 +32,9 @@ export class ConversationResourceLifecycle {
     } catch (error) { await lifecycle.close(); throw error; }
   }
 
-  constructor(storage, owners, { retryMs = 5000, diagnose = () => {}, saved, dependencies = {} } = {}) {
+  /** `wake` is the owner wake-up port (gateway-split.md §4.2); the retry pass re-reads committed rows, so the
+   * period need not survive the owner. */
+  constructor(storage, owners, { retryMs = 5000, diagnose = () => {}, saved, dependencies = {}, wake = timeoutOwnerWake() } = {}) {
     this.storage = storage; this.owners = owners; this.diagnose = diagnose;
     this.dependencies = {};
     for (const [name,after] of Object.entries(dependencies)) {
@@ -59,7 +63,7 @@ export class ConversationResourceLifecycle {
     }
     // Losing the owner fences every bound conversation, as a failed write does.
     this.unsubscribe = storage?.onUnavailable?.(() => { this.poisoned = true; }) ?? (() => {});
-    this.timer = setInterval(() => this.retry(), retryMs); this.timer.unref();
+    this.retrying = periodicOwnerWork(wake, retryMs, () => this.retry());
   }
   /** Commits the rows a change computes from the committed rows when its turn comes. */
   commit(change) {
@@ -191,7 +195,7 @@ export class ConversationResourceLifecycle {
     this.flights.set(key, run); return run;
   }
   async close() {
-    this.closed = true; clearInterval(this.timer); this.unsubscribe?.();
+    this.closed = true; this.retrying.close(); this.unsubscribe?.();
     await Promise.allSettled([...this.flights.values(), ...this.reconciliations.values(), this.writing]);
   }
 }

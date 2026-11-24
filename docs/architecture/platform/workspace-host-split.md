@@ -2,7 +2,7 @@
 
 [Architecture index](../README.md) · [存储端口](storage-ports.md) · [可选 Cloudflare 部署](cloudflare-deployment.md) · [执行所有权](../execution/execution-ownership.md) · [中断 Turn 恢复](../execution/interrupted-turn-recovery.md) · [Assets 工作区](../execution/workspace-assets.md) · [Docker 三角色部署](../../../deploy/docker/README.md)
 
-状态：**设计；第 2、3、4a、4b、4c 步已实施，第 7a 步的 `sandbox-cloudflare` provider 已实现（WorkspaceHost DO 装配与部署未做），其余为提议。** §3.7 的持久化与空闲契约是已定设计、未实现。 对应[存储端口](storage-ports.md)第 4 阶段。下文"现状"以引用的源码行为准（2026-11 核对）；"目标"与"步骤"中未标注"已实现"的均为提议；§8 记录已定决定与仍待决的问题。Node／Docker 自托管是一等公民：每一步都必须先在 Docker 上独立成立，Cloudflare 只是后续可选装配。
+状态：**设计；第 2、3、4a、4b、4c 步与第 5a 步的执行租约部分（P4-5）已实施，第 7a 步的 `sandbox-cloudflare` provider 已实现（WorkspaceHost DO 装配与部署未做），其余为提议。** §3.7 的持久化与空闲契约是已定设计、未实现。 对应[存储端口](storage-ports.md)第 4 阶段。下文"现状"以引用的源码行为准（2026-11 核对）；"目标"与"步骤"中未标注"已实现"的均为提议；§8 记录已定决定与仍待决的问题。Node／Docker 自托管是一等公民：每一步都必须先在 Docker 上独立成立，Cloudflare 只是后续可选装配。
 
 ## 1. 目的与范围
 
@@ -16,7 +16,7 @@
 
 ## 2. 现状所有权
 
-Docker 部署（`deploy/docker/compose.yaml`）有 `gateway`、`brain`、`hands` 三个容器（可选第四个 `proxy`，`compose.proxy.yaml`）。三者共享同一 `$DATA`（`OPENCRAFT_DATA_DIR`）与 `/workspace` 绑定挂载；`network_mode: host`（compose.yaml:9）；`brain` 与 `gateway` 为 `pid: host`（compose.yaml:77、145）。README 说明原因：执行租约恢复经 `/proc` 校验真实进程出生，私有描述符公布 loopback 端点（deploy/docker/README.md:226-230）。
+Docker 部署（`deploy/docker/compose.yaml`）有 `gateway`、`brain`、`hands` 三个容器（可选第四个 `proxy`，`compose.proxy.yaml`）。三者共享同一 `$DATA`（`OPENCRAFT_DATA_DIR`）与 `/workspace` 绑定挂载；`network_mode: host`（compose.yaml:9），README 说明原因是私有描述符公布 loopback 端点。各服务保留各自的 PID 命名空间：原先 `brain` 与 `gateway` 的 `pid: host` 只为执行租约经 `/proc` 校验进程出生，P4-5（§3.4）改为所有者经端点上报后已删除，`deploy.py` 拒绝任何 `pid:` 设置。
 
 "目标 owner"列：**AC**＝AccountCore，**IC**＝InstallationCore，**WH**＝每工作区 WorkspaceHost，**容器**＝工作区容器内的引擎运行时。
 
@@ -49,8 +49,8 @@ Docker 部署（`deploy/docker/compose.yaml`）有 `gateway`、`brain`、`hands`
 | Gateway→Core | UDS `$DATA/run/codex-core.sock`＋`daemon.token` | gateway | scripts/container-deployment/paths.mjs:45-47；gateway-application.mjs:14-17、36-37 | WH 经端点访问（§3.3） |
 | Gateway→Pi/DSH | 私有描述符 `run/engine-host.json`、`run/dsh-host.json`（loopback URL＋token） | gateway | paths.mjs:48-51；gateway-application.mjs:15-16、34-35 | 同上 |
 | 回调通道 | 原生 `native.sock` 上的 orchestration callback lane，断开窗口默认 15 s | brain codex-core | app-server.ts:48；apps/codex-core/src/orchestration-callback-lane.ts:374 | 同上 |
-| 跨容器 `/proc` 校验 | gateway 读取 brain 的 `codexPid`／引擎 PID 计算化身 | gateway | codex-engine-adapter.ts:558-568；apps/opencraft-daemon/src/codex-native-core-transport.ts:34；headless-application.mjs:885-894；packages/execution-environment/src/native-execution-origin.ts:10-54 | 由 `workspace-agent` 上报的化身替代（§3.4） |
-| Git 身份来源 | gateway 读取 `/proc/<pid>/cmdline`、children、`exe` 认定 Git 请求来源 | gateway | apps/headless-server/src/git-identity-origin.ts:24-62 | `workspace-agent` 在容器内校验，WH 签发短期 Git 凭据（§3.4，§8.3 决定 6） |
+| 执行进程化身 | 所有者在自身 PID 命名空间内证明化身并经端点上报（AppServer health `executionIncarnation`、DSH Host `/health` `engineIncarnation`、Engine／ACP Host `/execution-origin` `incarnation`）；Gateway 只比较上报值，经 `WorkspaceRuntime.fenced` 归属到同一 agent 化身 | 各所有者（brain） | native-execution-origin.ts（`observeNativeExecutionProcess`／`observeOwnedChildExecution` 只供所有者自用，`reportedExecutionProcess` 校验上报）；codex-native-core-transport.ts；engine-host-client.mjs；dsh-host-client.mjs | 已完成（P4-5，§3.4）；原 Gateway 跨容器 `/proc` 读取已删除 |
+| Git 身份来源 | `GitIdentityBroker`／`createGitOriginResolver` 读取 `/proc/<pid>/cmdline`、children、`exe` 认定 Git 请求来源；当前没有任何装配实例化它（只有测试与打包脚本引用），Docker 部署不依赖它 | 未装配 | apps/headless-server/src/git-identity-origin.ts、git-identity-broker.ts | 装配时须在容器内运行（`workspace-agent`），WH 签发短期 Git 凭据（§3.4，§8.3 决定 6） |
 | Codex Generation Router（已删除） | 原 `codex-generations.sqlite`＋`.codex-routing-owner.sqlite` 与每代独立 `CODEX_HOME` | 原 systemd 部署的 codex-core | 已随 systemd 完整发布装配删除 | 见 §3.5 |
 
 另外两点与"Brain 按工作区"直接相关：
@@ -109,7 +109,7 @@ Brain 与 Hands 放在哪里**是部署配置**：WorkspaceHost 只依赖[沙盒
 | Hands 终端／文件／浏览器 | 同上，各自 owner socket | Gateway 直连 `execution/terminal.sock`、`files.sock`、浏览器 `owner.sock` | hands-application.mjs:28、37；paths.mjs:37-43；gateway-application.mjs:32-33 |
 | Hands 化身 | `exec-owner.sock` probe 帧 `healthy{incarnation}` | Brain 轮询，变化即重启 AppServer | hands-unix.ts:195；host.mjs:113-118、138-160 |
 
-**跨容器依赖。** `network_mode: host` 与 `pid: host`（deploy/docker/compose.yaml:9、110、188）支撑：（1）Gateway 用 health 中的 `codexPid` 读 `/proc` 计算原生化身（apps/opencraft-daemon/src/codex-native-core-transport.ts:31-35；packages/execution-environment/src/native-execution-origin.ts:10-38）；（2）Pi/DSH 经 `/execution-origin` 返回 PID 再由 Gateway 读 `/proc`（engine-host.mjs:183-200；headless-application.mjs:893-899）；（3）Git 身份 broker 以 SO_PEERCRED 取对端 PID 并沿 `/proc` 树校验（packages/execution-environment/src/git-identity-ipc.ts:11-27；apps/headless-server/src/git-identity-broker.ts:24-36；git-identity-origin.ts:24-38）；（4）各 loopback URL。
+**跨容器依赖（P4-5 之前）。** `network_mode: host` 与 `pid: host` 曾支撑：（1）Gateway 用 health 中的 `codexPid` 读 `/proc` 计算原生化身（apps/opencraft-daemon/src/codex-native-core-transport.ts:31-35；packages/execution-environment/src/native-execution-origin.ts:10-38）；（2）Pi/DSH 经 `/execution-origin` 返回 PID 再由 Gateway 读 `/proc`（engine-host.mjs:183-200；headless-application.mjs:893-899）；（3）Git 身份 broker 以 SO_PEERCRED 取对端 PID 并沿 `/proc` 树校验（packages/execution-environment/src/git-identity-ipc.ts:11-27；apps/headless-server/src/git-identity-broker.ts:24-36；git-identity-origin.ts:24-38）；（4）各 loopback URL。P4-5 后（1）（2）改为所有者上报（§3.4），（3）没有装配，`pid: host` 已删除，只剩（4）依赖 host 网络。
 
 **容器→Gateway 方向的连接（常被忽略）。** AppServer 连 Gateway 的工作区授权 socket（app-server.ts:153-154）；Pi/DSH 连 Gateway 的 session-capability MCP `http://127.0.0.1/mcp`，签名密钥读 `$DATA/session-capabilities.json`（packages/session-capabilities/src/remote.ts:28-34；engine-host.mjs:80）；DSH 任务目录连 `codex-core.sock`（host.mjs:89）；执行进程连 Git broker；引擎连模型代理（`proxy-callers/*.json`）。
 
@@ -127,7 +127,7 @@ Brain 与 Hands 放在哪里**是部署配置**：WorkspaceHost 只依赖[沙盒
 | Gateway 读 `$DATA/run/*.json`、`*.sock`、loopback | WH 经 `SandboxEnvironment` 打开**命名端点**的字节流 | `openSandboxEndpoint`（第 4a 步）；`json-rpc-bridge` 的私有本地监听模式 |
 | AppServer 经 Gateway loopback 连 exec-server | 同容器：AppServer 的 sandbox runner 在容器内直接 spawn exec-server（同 `include_local=false` 约束） | `configureCodexExecutionSandbox`（codex-core/src/execution-sandbox.ts:18） |
 | 容器→Gateway：授权 socket、session-capability MCP、Git broker、任务目录 | 容器内 `workspace-agent` 提供这些 UDS，经一条**反向 RPC 进程流**转给 WH | 现有请求/应答协议不变，只换端点 |
-| Gateway 读 `/proc` 得化身；Git broker 读 `/proc` 树 | `workspace-agent` 在容器内计算并签名上报；Git peer 校验在容器内完成 | `observeNativeExecutionProcess`、`readGitProcess` 原样搬进容器 |
+| Gateway 读 `/proc` 得化身；Git broker 读 `/proc` 树 | 所有者在容器内计算化身并经自身端点上报，Gateway 以 agent 化身围住每次上报（P4-5 已实现）；Git peer 校验在容器内完成（broker 尚未装配） | `observeNativeExecutionProcess` 留在所有者进程内；`readGitProcess` 待 broker 装配时搬进容器 |
 | 化身来自 `bootId+pid+startTicks` 与 `hands-incarnation` 探测 | `{environmentInstanceId, agentIncarnation, leaseEpoch}`；environment 实例来自 provider receipt | E2B `onCreated` receipt（providers.ts） |
 | `CODEX_HOME=$DATA/codex/runtime`，共享 `$DATA` | 工作区私有卷：`/workspace` 之外的 `/var/lib/opencraft-workspace/{codex,pi,agent}` | `PersistentWorkspaceProvider.privateVolumeId` |
 | broker 任一进程传输失败即回收整个环境 | **attached** 进程（中继）断开只结束该进程与该连接；Brain 不随 WH 断开而死 | **第 4a 步已实现**：`SandboxCommand.attached` |
@@ -190,7 +190,7 @@ idle: 按 §3.7.2 判定 → drain →（captured）捕获快照 → backend.sle
 close: drain →（captured）捕获快照 → env.close()（删除实例；内容真源是 Git，§3.7.1）
 ```
 
-执行租约身份＝`[environmentInstanceId, agentIncarnation, 原生进程化身(容器内计算)]`，不再读宿主 `/proc`。旧格式租约按 §3.4 规则失效。
+执行租约身份＝所有者在容器内计算的原生进程化身，只在同一 agent 化身前后围住的上报中被接受（P4-5，§3.4）；Gateway 不再读任何 `/proc`。租约字符串格式未变，见 §3.4 的理由。
 
 **不重放未确认输入。** 端点连接不做重传。每个变更请求带现有幂等身份（`inputId`、`clientUserMessageId`、callback id）；连接断开时，未收到确认的变更在 WH 侧标记为 unconfirmed，重连后由所有者查询原生状态对账（沿用[中断 Turn 恢复](../execution/interrupted-turn-recovery.md)与 callback lane 15 s 断开窗口语义），而不是重发。只读请求可在重连后由调用方重新发起。
 
@@ -220,14 +220,19 @@ close: drain →（captured）捕获快照 → env.close()（删除实例；内�
 
 ### 3.4 去除 `pid: host`
 
-跨容器 `/proc` 读取的用途与替代（第 5a 步）：
+跨容器 `/proc` 读取的用途与替代（第 5a 步执行租约部分＝P4-5，已实现 2026-11-24）：
 
-| 用途 | 现状 | 替代 |
+| 用途 | P4-5 之前 | 现状 |
 | --- | --- | --- |
-| Codex 原生进程化身 | Gateway 用 `health.codexPid` 读 `/proc`（native-execution-origin.ts:32-54） | 容器内 `workspace-agent` 计算并经 `control` 端点签名上报；WH 以 `[environmentInstanceId, agentIncarnation, 原生化身]` 作为执行租约身份 |
-| Pi/DSH 执行化身 | headless-application.mjs:885-894 | 同上，由 engine-host／dsh-host 在容器内计算 |
-| AppServer runtime 锁的 `/proc` 扫描 | 扫描全部进程（codex-writer-lock.ts:21-40） | 不变，但只需容器自身 PID 命名空间，因为 `CODEX_HOME` 已是容器私有 |
-| Git 身份来源 | Gateway 读 `/proc/<pid>/cmdline`、children、exe（git-identity-origin.ts:24-62） | `readGitProcess` 校验移入容器内 `workspace-agent`，结果经反向端点交给 WH；WH 签发单次、短期、按仓库限定的 Git 凭据（决定 6）。不得用"信任容器自报"降低现有校验强度：校验代码与今天相同，只是在容器 PID 命名空间内运行 |
+| Codex 原生进程化身 | Gateway 用 `health.codexPid`／`appServerPid` 读 `/proc`，校验父子关系与出生时间 | AppServer 每次 `/health`、`/native-health` 在自身命名空间内以 `observeOwnedChildExecution` 证明其直接原生子进程并上报 `executionIncarnation`（Linux 上证明失败即 503）；`CodexNativeCoreTransport`、`CodexEngineAdapter` 的 Git 检查只用上报值（`reportedCodexExecution`），缺失即未知 |
+| Pi/DSH/ACP 执行化身 | Engine Host `/execution-origin` 只回 PID，`headless-application` 读 `/proc` | `/execution-origin` 同时回 `incarnation`：Engine Host 证明自身，DSH Host `/health` 上报 `engineIncarnation`（父进程证明 DSH 引擎子进程），ACP Host 证明其 ACP 子进程；`headless-application` 只保留进程内 Pi 的自我观察，其余一律取上报（`reportedExecutionProcess` 校验） |
+| 上报归属 | 无 | Gateway 的 `default` 工作区为引擎描述符与 `codexRuntime` 附带 `fence`＝`WorkspaceRuntime.fenced(endpoint, op)`：上报前后各经 `control` `probe` 一次，两次都等于已绑定的 agent 化身才接受；不等则释放绑定（下次使用重新绑定并持久化新化身）并以 `SANDBOX_UNAVAILABLE` 拒绝 |
+| AppServer runtime 锁的 `/proc` 扫描 | 扫描全部进程（codex-writer-lock.ts:21-40） | 不变，只需容器自身 PID 命名空间，因为 `CODEX_HOME` 已是容器私有 |
+| Git 身份来源 | `git-identity-origin.ts` 读 `/proc/<pid>/cmdline`、children、exe | 该 broker 当前没有装配（只有测试与打包引用），不阻塞删除 `pid: host`。装配时 `readGitProcess` 校验在容器内运行，结果经反向端点交给 WH；WH 签发单次、短期、按仓库限定的 Git 凭据（决定 6）。不得用"信任容器自报"降低校验强度 |
+
+**P4-5 的隔离论证。** 执行租约的 `engine_incarnation` 仍是所有者在自身 PID 命名空间内算出的 `["process", bootId, pid, startTicks]`：同一命名空间、同一次启动内 `(pid, startTicks)` 唯一，PID 重用必然换 `startTicks`；容器重建是新的命名空间，其进程的 `startTicks` 晚于旧持有者。agent 化身（每次启动随机 128 位）不并入该字符串，而是围住每次上报：一份上报只有在前后两次 `probe` 都看到同一已绑定化身时才被采纳，所以重启中途的回答不归属于任何一方，重启后的所有者只能以新的进程化身出现，旧租约按 `bindExactInput` 的不等即挂起规则变为未知、走恢复。不把 agent 化身拼进租约字符串的理由：Git 授予、ENV 准入等检查在所有者进程内用同一函数比较自身化身，它们没有到 agent `control` 的通道；拼接会让这些比较全部失败。因此租约字符串格式不变，已持久化租约在升级后继续有效（同一 Brain 容器内的值相同）。本机（非容器）路径使用同一契约：本机 DSH Host／Engine Host 一样上报，进程内 Pi 观察自身，Gateway 领域代码中没有单独的 `/proc` 分支。
+
+**仍读 `/proc` 但不跨命名空间的位置。** 所有者自证（上表）；执行租约启动时钟 `linuxBootClock` 读 `/proc/sys/kernel/random/boot_id` 与 `/proc/uptime`（内核全局，不受 PID 命名空间影响；DO 装配时由容器 `control` 提供，见 §4.1）；可观测性入口 `observability-ingress.mjs` 按 health 中的 PID 采样 RSS／CPU，只用于 systemd 部署的 Headless，容器 Gateway 未配置它，若配置会采到本命名空间的同号进程（待改为由所有者上报资源样本）。
 
 `workspace-agent` 的化身随其进程启动生成（随机 128 位，并携带容器内 boot 与进程出生证据摘要）；`leaseEpoch` 由 WH 在持久状态中单调递增并在每次接纳新化身时提交。容器拒绝 epoch 落后的连接；WH 拒绝化身未登记的容器。化身字符串格式会变化（今天是 `["process", bootId, pid, startTicks]`），所以已持久化的执行租约与 Git 来源租约在切换时视为旧化身：按现有规则失效并走恢复，不做格式转换。
 
@@ -254,7 +259,7 @@ Generation Router 只在 systemd 完整发布装配中运行，用于 Codex 引�
 | 环境 URI `<provider>://<target>` | 无（不经过放置） | `static-docker://brain static-docker://hands`（已实现，Gateway `OPENCRAFT_WORKSPACE_ENVIRONMENTS`） | `docker-provisioner://<镜像别名>`（已实现：`acceptsTarget` 只接受部署的别名白名单，provisioner 再校验；Gateway `OPENCRAFT_WORKSPACE_PROVISIONED_ENVIRONMENTS`） | `e2b://<模板>`（已实现：provider `acceptsTarget`；生产装配仍按 Bot 配置的 templateId 选择，未改为读 URI） | `cloudflare://<容器类>`（已实现：provider 只接受其所在 DO 的容器类） |
 | 端点 URI `workspace://<id>/endpoints/<name>`＋`createWorkspaceRuntime` | 不使用 | Gateway `default` 工作区的全部 Brain／Hands 端点（已实现） | 同左（未实现） | 一致性测试中经 E2B 适配器夹具解析（已实现）；生产 E2B 浏览器 owner 仍用 `{unix}` 目标，未接入 WorkspaceRuntime | WH DO 直接持有 runtime（设计） |
 | receipt／`attach` | 不使用 | receipt＝agent 化身；Gateway 重启按 receipt 续接，化身不同即视为新环境（已实现，真实 Docker 验证） | receipt＝`<容器 ID>:<agent 化身>`；Gateway 重启按 receipt 续接（已实现，真实 Docker 验证） | receipt＝sandbox id，`attach`＝固定 SDK 2.64 的 `Sandbox.connect`（已实现，夹具验证；真实 E2B 未运行；SDK 的 connect 可能恢复已暂停实例，这不是新建） | receipt＝`<start 标签中的化身>.<boot id>.<CLOUDFLARE_PLACEMENT_ID>`，不是 DO 名；`attach`＝容器运行且标签、boot id、placement 一致（已实现，真实 DO 重置后验证）；agent 化身仍由 WorkspaceRuntime 经 `control` 比对 |
-| 化身观察 | 本机 owner 直接监督 | `control` 端点 `probe`（化身、角色、端点名）＋`describe`（凭据、引擎描述符），WorkspaceRuntime 持久化并在变化时报告（已实现）；执行租约身份仍读 `/proc`（第 5a 步） | 同左（未实现） | 同左（未实现：E2B 模板尚无 agent） | 同左（设计） |
+| 化身观察 | 本机 owner 直接监督；执行化身由本机 Host 上报（同一契约） | `control` 端点 `probe`（化身、角色、端点名）＋`describe`（凭据、引擎描述符），WorkspaceRuntime 持久化并在变化时报告（已实现）；执行租约身份取所有者经端点上报的化身，`WorkspaceRuntime.fenced` 以前后两次 `probe` 归属到同一 agent 化身，Compose 无 `pid: host`（P4-5 已实现） | 同左（`fenced` 已实现并经一致性套件验证；provisioned 工作区当前只服务 Hands 端点，不承载执行租约） | 同左（`fenced` 经 E2B 夹具验证；E2B 模板尚无 agent） | 同左（`fenced` 经 Cloudflare 夹具验证；DO 装配未做） |
 | 存储端口（SQL／State／Blob／Secret） | Node 适配器（`nodeSqlDatabase`、`fileStateDocumentStore` 等，已实现） | 同左（已实现） | 同左（已实现） | WH 侧同 Docker；容器内只有工作区卷 | `@opencraft/storage-cloudflare`（workerd 一致性测试通过，未接入部署） |
 | 唤醒端口 `OwnerWakeTimer`（定时任务、中断恢复、provider 重试） | `boundedWakeTimer`（已实现） | 同左（已实现） | 同左（已实现） | 同左（WH 侧） | DO alarm（workerd 测试原型驱动中断恢复与 provider 重试；未接入部署） |
 | 端点 `openSandboxEndpoint`＋`attached` | 不使用（本机 owner 直接连接本机 socket） | Gateway 到 codex-control／codex-native／pi／dsh／terminal／files／browser 全部经它（已实现，第 4c 步） | 同 `static-docker`，经同一 link（已实现；真实容器一致性 11 项通过） | 浏览器中继已使用（broker `attached`，已实现；真实 E2B 冒烟未运行） | `container.exec`＋broker 承载中继（已实现，真实 4 MiB 往返一致）；原始 TCP `connectEndpoint` 未做（契约无该位置） |
@@ -454,7 +459,7 @@ $DATA/workspaces/<id>/brain/ 容器私有：codex/runtime（CODEX_HOME）、agen
 | 4b | `workspace-agent`：host.mjs 改为在容器私有 run 目录发布 UDS（不写 `$DATA/run`），引擎 host 改听 UDS；提供 `control` 与命名端点（名称白名单）；持有终端 PTY；关键子进程失败即整体退出；仍跑在现 `brain` 容器 | 端点到达方式与部署无关 | 现有容器冒烟（scripts/smoke/server/smoke-container.mjs）不变通过；端点名白名单拒绝任意路径；WH 断开后 PTY 仍在。**已实现（2026-11-23）**，见下文"第 4b 步现状"；"引擎 host 改听 UDS"移入第 4c 步 |
 | 4c | `static-docker` provider：`workspace-agent` 在私有挂载 UDS 上服务 broker；Pi/DSH 改听容器私有 UDS 并登记端点 `pi`/`dsh`；Gateway 的 `default` WH 改经该 provider＋命名端点访问 codex-control/native、Pi、DSH、terminal、files、browser，删除描述符读取（gateway-application.mjs:14-17、34-43） | 去掉私有描述符与 loopback 依赖 | 真实 Docker：Gateway 重建后续接同一化身；断开时未确认变更不重发（held-promise＋丢 ack）；callback lane 15 s 窗口语义不变。**已实现（2026-11-23）**，见下文"第 4c 步现状"；held-promise＋丢 ack 的定向测试与 15 s 窗口的真实测量未做 |
 | 4d | 反向 RPC 进程：授权 socket、session-capability MCP、任务目录改经它；签名密钥留 WH，容器只拿短期 token | 容器不再连 Gateway loopback | 撤销授权后容器内请求被拒；WH 断开期间请求失败而非排队 |
-| 5a | 化身与 Git peer 校验移入 `workspace-agent`，经 `control` 签名上报；删除 Gateway 的 `/proc` 读取；Git 凭据改为单次／短期、按仓库限定 | 删除 `pid: host` 依赖 | PID 重用测试；Git 来源租约在新格式下通过、旧格式失效走恢复；容器内无长期 Git 凭据 |
+| 5a | 化身与 Git peer 校验移入 `workspace-agent`，经 `control` 签名上报；删除 Gateway 的 `/proc` 读取；Git 凭据改为单次／短期、按仓库限定 | 删除 `pid: host` 依赖 | PID 重用测试；Git 来源租约在新格式下通过、旧格式失效走恢复；容器内无长期 Git 凭据。**执行租约部分已实现（P4-5，2026-11-24）**，见下文"P4-5 现状"；Git 部分未做（broker 未装配） |
 | 5b | 合并 `hands` 进 `brain` 为单个 `workspace` 容器；AppServer 容器内直接 spawn exec-server；删除 `hands-unix` 固定向量路径与 `pid: host`、`network_mode: host`（先 Brain＋Hands，浏览器可选、不在本里程碑） | 一个工作区一个容器 | 真实 Docker：去掉两项后执行租约、Git、恢复、终端冒烟；`/proc` 不可见检查；模型请求经私有网络到 AC 代理 |
 | 5c | `CODEX_HOME`、Pi、DSH 数据移到工作区私有卷（与第 6 步冷迁移合并执行） | 共享 `$DATA` 不再被 Brain 写入 | 从上一版本数据目录升级、中途 kill 重跑、回退演练 |
 | 6 | 冷迁移到 `$DATA/workspaces/default/` | 共享 `$DATA` 不再被 Brain 写入 | 从上一版本真实数据目录升级、中途 kill 后重跑、回退演练 |
@@ -505,13 +510,22 @@ $DATA/workspaces/<id>/brain/ 容器私有：codex/runtime（CODEX_HOME）、agen
 
 - **AccountCore（§5，不属于 4c）**：`run/codex-core.sock`、`daemon.token`（Gateway、Brain 仍以它访问账号 Core）与 `proxy-callers/`。
 - **第 4d 步**：Brain 到 Gateway 的反向请求（工作区授权 socket、session-capability MCP `http://127.0.0.1/mcp` 与 `$DATA/session-capabilities.json`、Git broker）仍经 loopback／共享目录；`/__opencraft_health` 仍回显 appServer 目标（既有行为）。
-- **第 5a 步**：执行租约与 Git 来源仍读 `/proc`（`pid: host` 仍需要）；化身已经可经 `control` 读到，尚未进入租约身份。
+- **第 5a 步**：执行租约部分已完成（P4-5，见下文"P4-5 现状"）；Git 来源 broker 尚未装配，单次／短期 Git 凭据未做。
 - **第 5b 步**：Brain 经 `execution/exec-owner.sock`（`hands-unix`）到 Hands；`network_mode: host`；两个环境 URI 合并为一个。
 - **第 5c 步／第 6 步**：`CODEX_HOME`、Pi、DSH 数据仍在共享 `$DATA`；Gateway 仍挂载整个 `$DATA`（服务器核心需要），只是不再读 Brain／Hands 的描述符与 socket。
 - **未做**：held-promise＋丢 ack 的定向测试；callback lane 15 s 窗口的真实测量；真实 E2B（含 `Sandbox.connect`）冒烟；Electron／Cloudflare 只在 §3.6 给出映射（docker-provisioner 见第 7b 步现状）。
 - **Cloudflare 探测得出的契约项**（状态表见 [execution-sandbox](../execution/execution-sandbox.md#provider-lifecycle-obligations-from-the-cloudflare-containers-probe)）：receipt＝化身 id、端点传输需背压与半关闭、PID 1 处理 SIGTERM、broker 在 stdin EOF 时 killpg 已满足；其余列为下文"Cloudflare provider 前置项"。
 
 **后续顺序（2026-11-23）。** 4c 已完成（0c77df3）。下一步依次为：（1）`sandbox-cloudflare` provider（7a，同一一致性套件；provider 已实现，见 §3.6"实现现状"）；（2）`docker-provisioner`（7b，与 7a 同为第 7 步多工作区的实现）；（3）WorkspaceHost 合库（账本按 schema id 区分，推荐方案，待实施）；（4）4d、5a、5b、5c。
+
+**P4-5 现状（2026-11-24，第 5a 步的执行租约部分）。** 执行身份经通道上报，Compose 不再有 `pid: host`（§3.4 的表与隔离论证）。
+
+- **契约。** `@opencraft/execution-environment/native-execution-origin`：`ExecutionProcessIdentity {pid, incarnation}`（PID 只在所有者命名空间内有意义）；`reportedExecutionProcess` 校验上报；`observeNativeExecutionProcess`、`observeOwnedChildExecution` 只供所有者自证。所有者：AppServer／合并 Core 的 health `executionIncarnation`；DSH Host `/health` `engineIncarnation`；Engine Host 与 ACP Host 的 `/execution-origin` `incarnation`。消费者：`CodexNativeCoreTransport`、`CodexEngineAdapter`（Git 检查）、`engine-host-client`、`dsh-host-client`、`headless-application` 的 `resolveExecutionNative`（只改该函数；进程内 Pi 仍自我观察）。
+- **归属。** `WorkspaceRuntime.fenced(endpoint, op)`（provider 无关，在 `@opencraft/sandbox`）；`gateway-workspace.mjs` 把它作为 `fence` 挂在 `pi`、`dsh` 描述符源与 `codexRuntime` 上，客户端经 `fencedRead` 使用；本机路径没有 `fence`，直接读取。
+- **部署守卫。** `deploy/docker/compose.yaml` 删除两处 `pid: host`；`deploy.py validate` 拒绝任何服务的 `pid:`；tests/server/container-deployment.test.mjs 断言所有 Compose 文件无 `pid:`、四个服务渲染后无 `pid`，并以源码守卫禁止 Gateway 侧客户端读取 `/proc`；tests/portable-deployment_test.py 增加三种 `pid` 变异。
+- **测试。** tests/execution/sandbox-endpoint-conformance.test.ts 新增"上报只归属于前后都绑定的 agent 化身"（in-process、本地子进程、E2B 夹具、static-docker link、Cloudflare 夹具全部通过）；tests/execution/execution-identity-report.test.ts：经真实 WorkspaceRuntime 的 Engine Host／DSH Host 上报，PID 取 2^22+7（本命名空间不可能存在），agent 在上报中途重启即拒绝，重启后同一 PID 以新化身出现时旧租约变为 unknown；真实 DSH、Engine Host、ACP Host 测试断言上报化身等于所有者自证值。
+- **真实 Docker（2026-11-24，cgroup v1，宿主机打包的当前源码镜像）。** `smoke-container.mjs` 通过：四个服务 `PidMode` 均为空；Gateway 的 `/proc` 只有自身进程（含其 Codex bridge），看不到 Brain 的 AppServer／Engine Host／DSH Host；Gateway `/health` 的 `core.executionIncarnation` 等于在 Brain 容器内对 `codexPid` 独立计算的值；终端经 Gateway 端点在 Hands 中运行；Gateway 重建后 Brain／Hands 进程不变；Brain 停启后新化身、新 `executionIncarnation`（Brain 的 PID 在新命名空间内重复，原断言"`appServerPid` 必须变化"改为比较化身）；kill Brain 的 engine-host 后容器以新 agent 化身恢复。删除 `pid: host` 暴露的另一处 PID 依赖：DSH Host 的存储 owner 记录 `.daemon-storage-owner.json` 只按 PID 判活，Brain 重启后同号 PID 属于另一进程而被误判为活着，DSH Host 反复启动失败；记录现携带进程化身，PID 活着但出生不同即视为过期（跨命名空间互斥仍由 `owner-writer.lock` 的 flock 保证），见 tests/storage/local-agent-storage.test.ts。
+- **剩余。** Git 来源 broker（未装配）与单次 Git 凭据；`network_mode: host`（第 5b 步）；可观测性入口按 PID 采样资源（容器 Gateway 未启用）；执行租约启动时钟在 DO 装配时需由 `control` 提供。
 
 **第 7b 步现状（2026-11-23）。** 多工作区的第一个实现：`docker-provisioner`。
 
@@ -592,6 +606,6 @@ $DATA/workspaces/<id>/brain/ 容器私有：codex/runtime（CODEX_HOME）、agen
 
 - `$DATA/codex` 并非只属于 Gateway：同一目录同时是账号 Core 数据根（`account-pool.sqlite`、`.codex-writer.sqlite`）、Brain AppServer runtime 根（`.codex-runtime.sqlite`、`runtime/`＝`CODEX_HOME`）与 Gateway Host overlays 根（host.mjs:122；proxy-core.mjs:13；headless-application.mjs:1099）。三个 owner 以三把不同的锁共存于一个目录，迁移必须逐项区分。
 - 模型凭据不只在账号 Core：`$DATA/models/credentials.json` 被 Gateway、Pi、DSH 共同读取；`proxy` 模式也未覆盖所有 provider。
-- `pid: host` 的依赖不止执行租约：Gateway 的 Git 身份来源校验也读取 Brain 进程的 `/proc`。
+- 早期调查认为 `pid: host` 的依赖不止执行租约（Gateway 的 Git 身份来源校验也读取 Brain 进程的 `/proc`）。复核（P4-5）：`GitIdentityBroker` 没有任何装配实例化，Docker 部署中只有执行租约依赖它，P4-5 后已删除。
 - 15 s 是 Brain 侧 callback lane 的断开窗口（orchestration-callback-lane.ts:374），不是 Gateway 的重连间隔。
 - 已存在多 `CODEX_HOME` 机制（Generation Router）与按工作区 Hands 路由（`resolveWorkspace`），本设计应复用其语义而非另造。

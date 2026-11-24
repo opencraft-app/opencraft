@@ -57,6 +57,7 @@ import {connectWebSocketAppHost} from '/apps/workbench-web/src/runtime/websocket
 import {createChannelsRpc} from '/apps/workbench-web/src/runtime/channels-rpc.ts';
 import {CHANNELS_HOST_ID} from '/packages/appserver-protocol/src/channels.ts';
 import '/apps/workbench-web/src/styles/app.scss';
+import {serveNodeHttpExchange} from '@opencraft/http-exchange/node';
 initializeAppearanceTheme();
 const application=await createWebWorkbenchApplication({hostProfileMode:'configured',navigationMode:'memory',clientProduct:createSmokeClientProduct()});
 const wire=connectWebSocketAppHost();
@@ -71,7 +72,7 @@ const server=await createServer({configFile:false,root:process.cwd(),cacheDir:'.
  configureServer(vite){vite.middlewares.use((req,res,next)=>{
   if(req.url==='/'){res.setHeader('content-type','text/html');res.end('<html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="app"></div><script type="module" src="/native-channel-proof.tsx"></script></body></html>');}
   else if(req.url?.startsWith('/__opencraft_im')){void im.handle(req,res,()=>true).catch(next);}
-  else if(req.url?.startsWith('/__opencraft_actors/collaboration/'))void api.handle(req,res);
+  else if(req.url?.startsWith('/__opencraft_actors/collaboration/'))void serveNodeHttpExchange(req,res,exchange=>api.handle(exchange));
   else next();
  });}
  }]});

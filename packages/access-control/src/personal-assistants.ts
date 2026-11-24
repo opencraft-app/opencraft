@@ -1,4 +1,4 @@
-import { randomUUID, createHash } from 'node:crypto';
+import { encodeBase64, randomUUID, sha256Hex } from './portable-crypto.js';
 import type { SqlDatabase } from '@opencraft/sql';
 import type { ActorContext, Actor } from '@opencraft/identity-core/actors';
 import type { PersonalAssistant, PersonalAssistantAccess } from '@opencraft/appserver-protocol';
@@ -51,7 +51,7 @@ export class PersonalAssistants {
     if(!message)fail();
     const file=this.db.prepare('SELECT name,mime AS type,length(bytes) AS size,substr(bytes,?,65536) AS bytes FROM actor_channel_attachments WHERE message_id=?').get(Number(offset)+1,id);
     if(file&&Number(offset)>Number(file.size))fail('invalid_input',400);
-    return file ? {name:file.name,type:file.type,size:file.size,next:Number(offset)+65536<Number(file.size)?Number(offset)+65536:null,base64:Buffer.from(file.bytes as Uint8Array).toString('base64')} : null;
+    return file ? {name:file.name,type:file.type,size:file.size,next:Number(offset)+65536<Number(file.size)?Number(offset)+65536:null,base64:encodeBase64(file.bytes as Uint8Array)} : null;
   }
   reply(c: ActorContext, p: Record<string, unknown>) {
     fields(p,['id','text']);const r=this.row(c);
@@ -170,7 +170,7 @@ export class PersonalAssistants {
       const name=bounded(p.name).trim();if(!name||name.length>80)fail('invalid_input',400);
       if(typeof p.duties!=='string'||p.duties.length>2000||/[\x00-\x08\x0b\x0c\x0e-\x1f]/u.test(p.duties))fail('invalid_input',400);
       const environment=this.environment(p.environment),key=bounded(p.clientRequestId);
-      const fingerprint=createHash('sha256').update(JSON.stringify([name,p.duties,environment])).digest('hex');
+      const fingerprint=sha256Hex(JSON.stringify([name,p.duties,environment]));
       const prior=this.db.prepare('SELECT * FROM personal_assistants WHERE owner_human_id=? AND create_key=?').get(c.actorId,key);
       if(prior){if(prior.create_fingerprint!==fingerprint||prior.owner_generation!==c.generation)fail('idempotency_key_reused',409);return this.status(prior);}
       if(Number(this.db.prepare('SELECT count(*) AS n FROM personal_assistants WHERE owner_human_id=?').get(c.actorId)!.n)>=32)fail('assistant_limit',409);

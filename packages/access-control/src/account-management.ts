@@ -1,5 +1,5 @@
 import { isDeploymentOperator } from "./deployment-operator.js";
-import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { randomToken, randomUUID, sha256Hex } from './portable-crypto.js';
 import type { SqlDatabase } from '@opencraft/sql';
 import type { DatabaseOutcome } from "@opencraft/sqlite-node";
 import { openServerRepository, type ServerDatabaseSource } from "@opencraft/storage-node/server-repository";
@@ -12,7 +12,7 @@ import type { HumanAccounts } from './human-accounts.js';
 import type { MembershipStore } from './index.js';
 
 
-const digest = (value: string) => createHash('sha256').update(value).digest('hex');
+const digest = (value: string) => sha256Hex(value);
 export class AccountManagementError extends Error {
   constructor(readonly code: string, readonly status: number) { super(code); }
 }
@@ -118,7 +118,7 @@ export class HumanAccountManagement {
   }
   invite(context: ActorContext) {
     this.requireAdministrator(context); check(this.status().state === 'complete', 'setup_required');
-    const code = randomBytes(32).toString('base64url'), expiresAt = this.now() + 86400_000;
+    const code = randomToken(32), expiresAt = this.now() + 86400_000;
     this.#db.prepare("DELETE FROM account_invitations WHERE expires_at<=? AND state='new'").run(this.now());
     check((this.#db.prepare("SELECT COUNT(*) AS count FROM account_invitations WHERE state<>'used' AND expires_at>?").get(this.now())!.count as number) < 1000, 'too_many_invitations', 429);
     this.#db.prepare("INSERT INTO account_invitations VALUES(?,?,'new',NULL,?,NULL,?)").run(digest(code), expiresAt, randomUUID(), context.actorId);

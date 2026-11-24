@@ -1,3 +1,4 @@
+import { utf8ByteLength } from './portable-crypto.js';
 let writeDepth = 0;
 const dirty = new Set<PermissionReadCache>();
 const owners = new WeakMap<object, Set<PermissionReadCache>>();
@@ -42,13 +43,13 @@ export class PermissionReadCache {
     if (this.closed) throw new Error("Permission repository is closed");
     const rows = new Map<string, unknown>(); let bytes = 0;
     for (const [key, row] of this.load()) {
-      bytes += Buffer.byteLength(key) + Buffer.byteLength(JSON.stringify(row));
+      bytes += utf8ByteLength(key) + utf8ByteLength(JSON.stringify(row));
       if (rows.size >= (this.options.entries ?? 100_000) || bytes > (this.options.bytes ?? 32 * 1024 * 1024)) throw new Error("Permission projection exceeds its memory budget");
       rows.set(key, row);
     }
     return rows;
   }
-  publish(rows: Map<string, unknown>): void { this.rows = rows; this.bytes=[...rows].reduce((n,[key,row])=>n+Buffer.byteLength(key)+Buffer.byteLength(JSON.stringify(row)),0); this.valid = true; }
+  publish(rows: Map<string, unknown>): void { this.rows = rows; this.bytes=[...rows].reduce((n,[key,row])=>n+utf8ByteLength(key)+utf8ByteLength(JSON.stringify(row)),0); this.valid = true; }
   invalidate(): void { this.valid = false; }
   get<T>(key: string, readDuringWrite: () => T): T {
     if (this.closed) throw new Error("Permission repository is closed");
@@ -61,7 +62,7 @@ export class PermissionReadCache {
    * existing permission/generation. Existing identities still use owner mutations. */
   seedMissing(key: string, row: unknown): void {
     if (this.closed || !this.valid || this.options.enabled === false || this.rows.has(key)) return;
-    const size=Buffer.byteLength(key)+Buffer.byteLength(JSON.stringify(row));
+    const size=utf8ByteLength(key)+utf8ByteLength(JSON.stringify(row));
     if(this.rows.size>=(this.options.entries??100_000)||this.bytes+size>(this.options.bytes??32*1024*1024)) {
       this.invalidate();throw Error('Permission projection exceeds its memory budget');
     }
@@ -80,7 +81,7 @@ export class PermissionReadCache {
     if(this.closed||!this.valid||this.options.enabled===false)return;
     const key=JSON.stringify(['actor',id]),row=this.rows.get(key) as Record<string,unknown>|undefined;
     if(!row||row.kind!=='session'||revision<=(this.presentationRevisions.get(id)??-1))return;
-    const next={...row,display_name:displayName},delta=Buffer.byteLength(JSON.stringify(next))-Buffer.byteLength(JSON.stringify(row));
+    const next={...row,display_name:displayName},delta=utf8ByteLength(JSON.stringify(next))-utf8ByteLength(JSON.stringify(row));
     if(this.bytes+delta>(this.options.bytes??32*1024*1024))throw Error('Permission projection exceeds its memory budget');
     this.rows.set(key,next);this.bytes+=delta;this.presentationRevisions.set(id,revision);
   }

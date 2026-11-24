@@ -1,0 +1,19 @@
+{
+  "name": "@opencraft/client-session",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/socket.ts",
+    "./memory": "./src/memory.ts",
+    "./app-host": "./src/app-host.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opencraft/app-host-protocol": "0.1.0",
+    "@opencraft/app-host-resume": "0.1.0",
+    "@opencraft/owner-wake": "0.1.0"
+  }
+}
