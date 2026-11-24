@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { openManagedDatabase } from "@opencraft/sqlite-node";
 import { TASKS, type TasksRequestPort, type TaskArchivePage } from "@opencraft/appserver-protocol";
-import { TasksSqliteStore, tasksMigrations } from "../../plugins/tasks/src/sqlite";
+import { TasksSqliteStore, tasksMigrations } from "../../plugins/tasks/src/node-store";
 import { tasksV1Migration } from "../../plugins/tasks/src/v1-schema";
 import { TasksService } from "../../plugins/tasks/src/server";
 import { TasksArchiveController } from "../../plugins/tasks/src/archive-controller";

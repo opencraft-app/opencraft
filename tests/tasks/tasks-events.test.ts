@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { TASKS, TASK_KINDS, type TaskDetail, type TaskEvent, type TaskEventsPage } from "@opencraft/appserver-protocol";
 import { TasksService } from "../../plugins/tasks/src/server";
-import { TasksSqliteStore } from "../../plugins/tasks/src/sqlite";
+import { TasksSqliteStore } from "../../plugins/tasks/src/node-store";
 const content = { title: "Ship", description: "Body", projectId: null, projectServerId: null };
 test("progress has stable global IDs, trusted provenance, content-independent revision and exact reconciliation beyond page one", async () => {
   const root = await mkdtemp(join(tmpdir(), "tasks-events-"));
