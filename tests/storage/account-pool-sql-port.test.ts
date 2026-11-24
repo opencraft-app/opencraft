@@ -6,6 +6,13 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { applySqlMigrations, hashSqlMigrations } from "@opencraft/sql/migrations";
+import { isMigrationLedgerObject } from "@opencraft/sql/schema-ledgers";
+import { recordSealer } from "@opencraft/secret-storage/sealed-records";
+import { migrateModelPolicySqlDatabase } from "@opencraft/model-usage-policy/sql-owner";
+import {
+  openAccountPoolSqlStorage,
+  ownedByAccountPoolSchemas,
+} from "../../packages/account-pool-host/src/account-pool-sql-owner.ts";
 import { nodeSqlDatabase, resolveStoreMigrations, schemaFingerprint } from "@opencraft/sqlite-node";
 import {
   ACCOUNT_POOL_MIGRATIONS,
@@ -85,6 +92,26 @@ const factories: Record<string, Factory> = {
       async close() {
         pool.close();
         await rm(root, { recursive: true, force: true });
+      },
+    };
+  },
+  // The AccountCore Durable Object's layout: the pool's chains beside the policy's in one database,
+  // credential records sealed in the same SQL (tests/storage/schema-ledgers.test.ts covers the chains).
+  async "shared database + schema ledgers + sealed SQL credential records"(settings) {
+    const connection = new DatabaseSync(":memory:");
+    connection.exec("PRAGMA foreign_keys=ON");
+    const database = nodeSqlDatabase(connection);
+    migrateModelPolicySqlDatabase(database, {
+      ownedByRuntime: (name) => isMigrationLedgerObject(name) || ownedByAccountPoolSchemas(name),
+    });
+    const storage = openAccountPoolSqlStorage(database, recordSealer(`k1.${"A".repeat(43)}`));
+    let closed = false;
+    const pool = new AccountPool({ ...storage, close: () => ((closed = true), connection.close()) }, settings);
+    return {
+      pool,
+      schema: () => schemaFingerprint(connection),
+      async close() {
+        if (!closed) pool.close();
       },
     };
   },
@@ -275,7 +302,11 @@ test("a failed credential write rolls back the account row through the SQL port 
 });
 
 test("the lean ledger path yields the same schema as the managed Node owner", async () => {
-  const [file, lean] = await Promise.all(Object.values(factories).map((factory) => factory({})));
+  const [file, lean] = await Promise.all(
+    ["node file owner (AccountPoolStore)", "nodeSqlDatabase + lean ledger + memory credentials"].map((name) =>
+      factories[name]!({}),
+    ),
+  );
   try {
     assert.equal(lean!.schema(), file!.schema());
   } finally {

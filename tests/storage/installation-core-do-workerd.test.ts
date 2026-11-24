@@ -44,6 +44,10 @@ const NODE_OWNERS = [
   "packages/account-pool-host/src/store.ts",
   "packages/account-pool-host/src/model-gateway-store.ts",
   "packages/account-pool-host/src/codex-core-control.ts",
+  "packages/account-pool-host/src/codex-auth-file.ts",
+  "packages/account-pool-host/src/codex-account-service.ts",
+  "packages/account-pool-host/src/codex-proxy.ts",
+  "packages/account-pool-host/src/server.ts",
   "packages/document-storage/src/state-file.ts",
   "packages/secret-storage/src/file.ts",
   "apps/headless-server/src/assembly/account-node.mjs",
@@ -72,7 +76,11 @@ test(`${ENTRY} reaches no Node owner implementation`, async () => {
   });
   const inputs = Object.keys(result.metafile.inputs);
   assert.deepEqual(
-    inputs.filter((input) => NODE_OWNERS.some((owner) => input.includes(owner))),
+    // The generated migration registry is pure data the account pool reads its published chain from.
+    inputs.filter(
+      (input) =>
+        NODE_OWNERS.some((owner) => input.includes(owner)) && input !== "packages/sqlite-node/src/store-migrations.generated.ts",
+    ),
     [],
   );
   // The same composition as the Node root: the installation module, the shared routes and owner domains.

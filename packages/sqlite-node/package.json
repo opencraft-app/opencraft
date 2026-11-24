@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./writer-lock": "./src/writer-lock.ts",
-    "./locks": "./src/locks.ts"
+    "./locks": "./src/locks.ts",
+    "./store-migrations-data": "./src/store-migrations.generated.ts"
   },
   "scripts": { "typecheck": "tsc --noEmit" },
   "dependencies": { "@opencraft/sql": "0.1.0", "@opencraft/worker-owner": "0.1.0" }
