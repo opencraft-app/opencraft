@@ -104,7 +104,7 @@ Node 上 `opencraft-server.sqlite` 的编排运行时与 Server space 已在核�
 - **边缘 Worker**：静态资源与发布清单、Client DO 与 WorkspaceHost 路由、模型出口；现有入口只把 IC 自有路由转发给对象，其余一律 404。
 - **其余 installation 步骤的 DO 装配**：`openServerInformation`（只需 DO 状态文档，可作为下一步）、`openPersonalServices`、`openCapabilityBindings`／`openCapabilitySigningKey`（`KeyMaterial` 已有 DO 适配器）、`openSpaces`、`openCollaboration`（需要 workspace-host 的 `conversationExecution` 与 App Host 迟绑定）、`openConnectors`、`openMcpApps`、`openTurnPush`。同线程核心 owner 已提供这些步骤需要的全部 owner 方法，`Collaboration` HTTP API 随 `openCollaboration` 接入，共享路由表中它们的路由在对象未装配时与 Node 缺席服务一样回答 404 `missing`。
 - **OIDC**：流程状态在 `HumanAuth` 内存中，需写入 DO storage 并保持一次性消费（[登录入口原型结果](gateway-split.md#34-登录入口原型结果)）；discovery 与 ID Token 验签未在 workerd 中跑通。
-- **登录准入**（`plugins/login-admission`）仍是 Node Worker＋SQLite owner，需 SQL 端口版本；Hub 节点身份（`HubNodeIdentity`）与 RelayHub 未装配；身份组合（下游产品）未装配。
+- **登录准入**（`plugins/login-admission`）未装配：其存储 `SqlLoginAdmissionStore` 已在 SQL 端口上，IC 可在自身 SQL 上装配（[存储端口 §3.7](storage-ports.md)）；管理员 `admit` 函数的求值仍经 `@opencraft/javascript-runtime` 的 `node:worker_threads` 隔离，DO 上的执行方式待定。Hub 节点身份（`HubNodeIdentity`）与 RelayHub 未装配；身份组合（下游产品）未装配。
 - **投影发布**给边缘 Worker 与 Client DO；`WorkspaceHost` 的协作。`AccountCore` 的账号路由授权已经由 IC 回答（内部账号授权交换，5.6）。
 - DO 版迁移后 schema 校验（DO 内不能另开 `:memory:` 库）；备份与恢复改用 PITR 的运维流程；IC 自己的 `SecretStore` 用途（若有）同样需经 `sealedSecretStore` 密封（AC 已这样做，见 5.6）；`ActorStore` 显式策略。
 - **真实 Cloudflare 复核**：正式 DO 场景已加入 `cf:rehearsal` 的 `installation-core-do` 分组，尚未在真实账号上运行；SQL 语义、CPU 与冷启动、alarm 精度、并发登录下的排队（Argon2id 每次 0.3–0.9 s CPU，§7.4）以及把哈希移到无状态 Worker 的评估。Workers Free 计划不可用。

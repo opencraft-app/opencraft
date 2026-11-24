@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { openManagedDatabase, SqliteLifecycleError } from "@opencraft/sqlite-node";
-import { TasksSqliteStore, tasksMigrations } from "../../plugins/tasks/src/sqlite";
+import { TasksSqliteStore, tasksMigrations } from "../../plugins/tasks/src/node-store";
 import { tasksV1Migration } from "../../plugins/tasks/src/v1-schema";
 import { tasksArchiveMigration } from "../../plugins/tasks/src/archive-schema";
 const content = { title: "Retain", description: "Body", projectId: null, projectServerId: null };

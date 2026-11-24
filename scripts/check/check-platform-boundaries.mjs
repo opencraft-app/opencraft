@@ -202,6 +202,14 @@ for (const file of [
   }]);
 }
 
+// The workspace-host assembly module (gateway-split §4.1.1) receives every
+// runtime-specific construction (Workers, processes, files, listeners, sockets)
+// from the composition root as a factory; the module itself reaches none.
+checkFiles("workspace-host assembly", "apps/headless-server/src/assembly/workspace-host.mjs", [{
+  pattern: /(?:from\s*|import\s*|require\(\s*)["'](?:node:|ws["']|@opencraft\/sqlite-node|@opencraft\/worker-owner|@opencraft\/sandbox-node)|\bBuffer\b|\bprocess\./m,
+  message: "must stay runtime-neutral; Workers, processes, files and listeners are root factories",
+}]);
+
 for (const directory of ['packages/identity-core/src', 'packages/access-control/src', 'packages/relay-protocol/src', 'packages/hub-network/src']) {
   checkFiles('identity/authorization core', directory, [{
     pattern: /(?:from\s*|import\s*)["'](?:@opencraft\/plugin-|[^"']*\/plugins\/)/m,
