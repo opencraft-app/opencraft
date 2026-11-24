@@ -6,7 +6,10 @@ import { openPackageVfs } from "@opencraft/runtime-plugin-host/package-vfs";
 import { boundedFile, checkedDirectory } from "@opencraft/runtime-plugin-host/store";
 import { prepareProductServerMigrations } from "@opencraft/storage-node/server-composition";
 import { verifyExtensionFamilies } from "@opencraft/storage-node/server";
-import { loadHeadlessExtensions, validateHeadlessExtensions } from "../../apps/headless-server/src/headless-extensions.mjs";
+import {
+  loadHeadlessExtensions,
+  validateHeadlessExtensions,
+} from "../../apps/headless-server/src/headless-extensions.mjs";
 import { validateLoginAdmission } from "../../apps/headless-server/src/headless-identity.mjs";
 import { validateCodexWorkspaceHooks } from "../../apps/headless-server/src/codex-workspace-hooks.mjs";
 import { validateRuntimePluginOptions } from "../../apps/headless-server/src/runtime-plugins.mjs";
@@ -14,12 +17,24 @@ import { validateRuntimePluginOptions } from "../../apps/headless-server/src/run
 export const CHECK_GATEWAY_COMPOSITION = "--check-gateway-composition";
 const entry = "composition.mjs";
 const functions = new Set([
-  "close", "createIdentity", "isHuman", "createChannelSync", "createChannelSyncs", "selectHostFiles",
-  "selectHostTerminalService", "workspaceOutputIdentity", "createCodexWorkspaceHooks",
+  "close",
+  "createIdentity",
+  "isHuman",
+  "createChannelSync",
+  "createChannelSyncs",
+  "selectHostFiles",
+  "selectHostTerminalService",
+  "workspaceOutputIdentity",
+  "createCodexWorkspaceHooks",
 ]);
 const objects = new Set([
-  "extensions", "runtimePlugins", "loginAdmission", "relayAssertionOptions",
-  "channelSync", "personalAssistantHost", "serverMigrations",
+  "extensions",
+  "runtimePlugins",
+  "loginAdmission",
+  "relayAssertionOptions",
+  "channelSync",
+  "personalAssistantHost",
+  "serverMigrations",
 ]);
 const plain = (value) =>
   value && typeof value === "object" && [Object.prototype, null].includes(Object.getPrototypeOf(value));
@@ -31,7 +46,7 @@ export async function loadGatewayComposition(env = process.env) {
   if (!source || !isAbsolute(source) || resolve(source) !== source || source === "/" || sha256 === undefined)
     throw Error("Configure an absolute Gateway composition directory and its manifest SHA-256");
   await checkedDirectory(source);
-  if (await realpath(source) !== source) throw Error("Gateway composition directory must be canonical");
+  if ((await realpath(source)) !== source) throw Error("Gateway composition directory must be canonical");
   const vfs = await openPackageVfs({
     sha256,
     async readFile(path, limit) {
@@ -58,13 +73,18 @@ export async function loadGatewayComposition(env = process.env) {
     const composition = await module.createGatewayComposition();
     if (!plain(composition)) throw Error("Gateway composition must be a plain object");
     for (const [name, value] of Object.entries(composition)) {
-      const valid = functions.has(name) ? typeof value === "function"
-        : name === "channelSyncs" ? Array.isArray(value) : objects.has(name) && plain(value);
-      if (!valid)
-        throw Error("Invalid Gateway composition property: " + name);
+      const valid = functions.has(name)
+        ? typeof value === "function"
+        : name === "channelSyncs"
+          ? Array.isArray(value)
+          : objects.has(name) && plain(value);
+      if (!valid) throw Error("Invalid Gateway composition property: " + name);
     }
-    if (["channelSync", "channelSyncs", "createChannelSync", "createChannelSyncs"]
-      .filter(name => Object.hasOwn(composition, name)).length > 1)
+    if (
+      ["channelSync", "channelSyncs", "createChannelSync", "createChannelSyncs"].filter((name) =>
+        Object.hasOwn(composition, name),
+      ).length > 1
+    )
       throw Error("Conflicting Gateway channel composition");
     for (const { kind, url } of validateHeadlessExtensions(composition.extensions)) {
       const path = new URL(url);
@@ -81,7 +101,9 @@ export async function loadGatewayComposition(env = process.env) {
       composition: {
         ...composition,
         close() {
-          return closing ??= Promise.resolve().then(() => composition.close?.()).finally(release);
+          return (closing ??= Promise.resolve()
+            .then(() => composition.close?.())
+            .finally(release));
         },
       },
     };

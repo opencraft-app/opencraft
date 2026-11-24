@@ -10,7 +10,9 @@ export function encodePackageManifest(files: readonly PackageFile[]): Uint8Array
 export function openPackageVfs(options: {
   readonly sha256: string;
   readFile(path: string, maxBytes: number): Uint8Array | Promise<Uint8Array>;
-}): Promise<Readonly<{
-  listFiles(): string[];
-  readFile(path: string): Uint8Array;
-}>>;
+}): Promise<
+  Readonly<{
+    listFiles(): string[];
+    readFile(path: string): Uint8Array;
+  }>
+>;

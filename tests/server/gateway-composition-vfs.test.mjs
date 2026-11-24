@@ -42,7 +42,9 @@ async function fixture(t, api = 1, extra = {}) {
   await writeFile(join(directory, "manifest.json"), manifest);
   const sha256 = await packageDigest(Buffer.from(manifest));
   return {
-    directory, files, sha256,
+    directory,
+    files,
+    sha256,
     env: { OPENCRAFT_GATEWAY_COMPOSITION_DIRECTORY: directory, OPENCRAFT_GATEWAY_COMPOSITION_SHA256: sha256 },
   };
 }
@@ -58,22 +60,30 @@ test("optional Gateway configuration loads a verified entry and relative sidecar
     await loaded.composition.close();
   }
   for (let attempt = 0; attempt < 2; attempt++) {
-    const result = await run(process.execPath, ["--import", "tsx", gateway, "--check-gateway-composition"],
-      { env: { ...process.env, ...pack.env } });
+    const result = await run(process.execPath, ["--import", "tsx", gateway, "--check-gateway-composition"], {
+      env: { ...process.env, ...pack.env },
+    });
     assert.deepEqual(JSON.parse(result.stdout), { gatewayCompositionSha256: pack.sha256 });
   }
 });
 
 test("configured Gateway refuses a missing digest, mismatched manifest or incompatible API", async (t) => {
   const pack = await fixture(t, 2);
-  await assert.rejects(loadGatewayComposition({ OPENCRAFT_GATEWAY_COMPOSITION_DIRECTORY: pack.directory }),
-    /directory and its manifest SHA-256/);
-  await assert.rejects(loadGatewayComposition({ ...pack.env, OPENCRAFT_GATEWAY_COMPOSITION_SHA256: "a".repeat(64) }),
-    /SHA-256 mismatch: manifest.json/);
+  await assert.rejects(
+    loadGatewayComposition({ OPENCRAFT_GATEWAY_COMPOSITION_DIRECTORY: pack.directory }),
+    /directory and its manifest SHA-256/,
+  );
+  await assert.rejects(
+    loadGatewayComposition({ ...pack.env, OPENCRAFT_GATEWAY_COMPOSITION_SHA256: "a".repeat(64) }),
+    /SHA-256 mismatch: manifest.json/,
+  );
   await assert.rejects(loadGatewayComposition(pack.env), /Incompatible Gateway composition API/);
-  await assert.rejects(run(process.execPath, ["--import", "tsx", gateway], {
-    env: { ...process.env, ...pack.env },
-  }), /Incompatible Gateway composition API/);
+  await assert.rejects(
+    run(process.execPath, ["--import", "tsx", gateway], {
+      env: { ...process.env, ...pack.env },
+    }),
+    /Incompatible Gateway composition API/,
+  );
 });
 
 test("Gateway refuses changed or linked files listed by the verified manifest", async (t) => {
@@ -93,13 +103,20 @@ test("Gateway preflight checks the independently pinned Web release", async (t) 
   const web = join(root, "web");
   await mkdir(web);
   await writeFile(join(web, "index.html"), "<!doctype html><title>Product</title>");
-  await writeFile(join(web, "version.json"), JSON.stringify({
-    schemaVersion: 1, buildId: "product-web", headlessServer: true, headlessHostId: "opencraft-server",
-  }));
+  await writeFile(
+    join(web, "version.json"),
+    JSON.stringify({
+      schemaVersion: 1,
+      buildId: "product-web",
+      headlessServer: true,
+      headlessHostId: "opencraft-server",
+    }),
+  );
   const manifest = JSON.stringify({ schemaVersion: 1, files: await webReleaseFiles(root) });
   await writeFile(join(root, "manifest.json"), manifest);
   const env = {
-    ...process.env, ...pack.env,
+    ...process.env,
+    ...pack.env,
     OPENCRAFT_GATEWAY_WEB_RELEASE_DIRECTORY: root,
     OPENCRAFT_GATEWAY_WEB_RELEASE_SHA256: await packageDigest(Buffer.from(manifest)),
   };
@@ -116,53 +133,92 @@ test("Gateway preflight imports extensions and checks private migrations without
       extensions: { communication: { module: new URL("./extension.mjs", import.meta.url) } },
     });`;
   const missing = await fixture(t, 1, { "composition.mjs": extensionEntry });
-  const broken = await fixture(t, 1, { "composition.mjs": extensionEntry, "extension.mjs": "export const other = true;" });
-  const invalidSql = await fixture(t, 1, { "composition.mjs": `export const gatewayCompositionApi = 1;
+  const broken = await fixture(t, 1, {
+    "composition.mjs": extensionEntry,
+    "extension.mjs": "export const other = true;",
+  });
+  const invalidSql = await fixture(t, 1, {
+    "composition.mjs": `export const gatewayCompositionApi = 1;
     export const createGatewayComposition = () => ({ serverMigrations: { extensions: [{
       id: "fixture", objectPrefix: "fixture_",
       migrations: [{ version: 1, name: "out_of_scope", sql: "CREATE TABLE outside_scope (id INTEGER)" }],
-    }] } });` });
-  const coreOverride = await fixture(t, 1, { "composition.mjs": `export const gatewayCompositionApi = 1;
-    export const createGatewayComposition = () => ({ serverMigrations: { canonical: [] } });` });
-  for (const [pack, expected] of [[missing, /extension must be listed in the composition manifest/],
-    [broken, /does not export communicationExtension/], [invalidSql, /not authorized|outside its ownership/],
-    [coreOverride, /Invalid product Server migrations/]]) {
-    await assert.rejects(run(process.execPath, ["--import", "tsx", gateway, "--check-gateway-composition"],
-      { env: { ...process.env, ...pack.env } }), expected);
+    }] } });`,
+  });
+  const coreOverride = await fixture(t, 1, {
+    "composition.mjs": `export const gatewayCompositionApi = 1;
+    export const createGatewayComposition = () => ({ serverMigrations: { canonical: [] } });`,
+  });
+  for (const [pack, expected] of [
+    [missing, /extension must be listed in the composition manifest/],
+    [broken, /does not export communicationExtension/],
+    [invalidSql, /not authorized|outside its ownership/],
+    [coreOverride, /Invalid product Server migrations/],
+  ]) {
+    await assert.rejects(
+      run(process.execPath, ["--import", "tsx", gateway, "--check-gateway-composition"], {
+        env: { ...process.env, ...pack.env },
+      }),
+      expected,
+    );
   }
 });
 
 test("Headless startup passes verified product migrations to its worker and keeps legacy rows", async (t) => {
-  const migration = { version: 1, name: "fixture_settings", sql: "CREATE TABLE fixture_settings (id INTEGER PRIMARY KEY, value TEXT)" };
+  const migration = {
+    version: 1,
+    name: "fixture_settings",
+    sql: "CREATE TABLE fixture_settings (id INTEGER PRIMARY KEY, value TEXT)",
+  };
   const legacy = [...SERVER_MIGRATIONS, { ...migration, version: SERVER_MIGRATIONS.length + 1 }];
   const serverMigrations = {
     extensions: [{ id: "fixture", objectPrefix: "fixture_", migrations: [migration] }],
-    lineages: [{ id: "fixture-legacy", migrations: legacy, adopts: [
-      ...SERVER_MIGRATIONS.map(({ version }) => [{ family: "core", version }]),
-      [{ family: "fixture", version: 1 }],
-    ] }],
+    lineages: [
+      {
+        id: "fixture-legacy",
+        migrations: legacy,
+        adopts: [
+          ...SERVER_MIGRATIONS.map(({ version }) => [{ family: "core", version }]),
+          [{ family: "fixture", version: 1 }],
+        ],
+      },
+    ],
   };
-  const pack = await fixture(t, 1, { "composition.mjs": `export const gatewayCompositionApi = 1;
-    export const createGatewayComposition = () => ({ serverMigrations: ${JSON.stringify(serverMigrations)} });` });
+  const pack = await fixture(t, 1, {
+    "composition.mjs": `export const gatewayCompositionApi = 1;
+    export const createGatewayComposition = () => ({ serverMigrations: ${JSON.stringify(serverMigrations)} });`,
+  });
   const root = await mkdtemp(join(await realpath(tmpdir()), "composition-data-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const dataDirectory = join(root, "data"), webRoot = join(root, "web");
+  const dataDirectory = join(root, "data"),
+    webRoot = join(root, "web");
   await mkdir(dataDirectory, { mode: 0o700 });
   await mkdir(webRoot);
   await writeFile(join(webRoot, "index.html"), "<!doctype html><title>Test</title>");
-  await writeFile(join(webRoot, "version.json"), JSON.stringify({
-    schemaVersion: 1, buildId: "composition-test", headlessServer: true, headlessHostId: "opencraft-server",
-  }));
+  await writeFile(
+    join(webRoot, "version.json"),
+    JSON.stringify({
+      schemaVersion: 1,
+      buildId: "composition-test",
+      headlessServer: true,
+      headlessHostId: "opencraft-server",
+    }),
+  );
   const path = join(dataDirectory, "opencraft-server.sqlite");
   const seeded = openManagedDatabase({ path, migrations: legacy, legacyPolicy: "reject" });
   seeded.database.exec("INSERT INTO fixture_settings VALUES (1, 'kept')");
   seeded.database.close();
   const selected = await loadGatewayComposition(pack.env);
   try {
-    const app = await startHeadlessServer({
-      root, webRoot, dataDirectory, port: 0,
-      startAgentHost: async () => ({ websocketUrl: "ws://127.0.0.1:9/rpc", close: async () => {} }),
-    }, selected.composition);
+    const app = await startHeadlessServer(
+      {
+        root,
+        webRoot,
+        dataDirectory,
+        port: 0,
+        startAgentHost: async () => ({ websocketUrl: "ws://127.0.0.1:9/rpc", close: async () => {} }),
+      },
+      selected.composition,
+    );
     await app.close();
   } finally {
     await selected.composition.close();
@@ -170,8 +226,14 @@ test("Headless startup passes verified product migrations to its worker and keep
   const migrated = new DatabaseSync(path, { readOnly: true });
   try {
     assert.equal(migrated.prepare("SELECT value FROM fixture_settings WHERE id = 1").get().value, "kept");
-    assert.equal(migrated.prepare("SELECT max(version) AS version FROM schema_migrations").get().version, SERVER_MIGRATIONS.length);
-    assert.equal(migrated.prepare("SELECT version FROM schema_extension_migrations WHERE family = 'fixture'").get().version, 1);
+    assert.equal(
+      migrated.prepare("SELECT max(version) AS version FROM schema_migrations").get().version,
+      SERVER_MIGRATIONS.length,
+    );
+    assert.equal(
+      migrated.prepare("SELECT version FROM schema_extension_migrations WHERE family = 'fixture'").get().version,
+      1,
+    );
   } finally {
     migrated.close();
   }
@@ -214,9 +276,16 @@ test("a Durable Object loads a dynamic Worker through the same package VFS from 
       `,
       resolveDir: import.meta.dirname,
     },
-    bundle: true, platform: "neutral", format: "esm", write: false, metafile: true,
+    bundle: true,
+    platform: "neutral",
+    format: "esm",
+    write: false,
+    metafile: true,
   });
-  assert.deepEqual(Object.values(result.metafile.outputs).flatMap(output => output.imports), []);
+  assert.deepEqual(
+    Object.values(result.metafile.outputs).flatMap((output) => output.imports),
+    [],
+  );
   const miniflare = new Miniflare({
     modules: [{ type: "ESModule", path: "worker.mjs", contents: result.outputFiles[0].text }],
     compatibilityDate: "2026-07-30",

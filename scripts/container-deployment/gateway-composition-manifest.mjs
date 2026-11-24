@@ -21,6 +21,6 @@ async function scan(directory, prefix = "") {
   }
 }
 await scan(root);
-if (!files.some(file => file.path === "composition.mjs")) throw Error("Missing composition.mjs");
-files.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
+if (!files.some((file) => file.path === "composition.mjs")) throw Error("Missing composition.mjs");
+files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 process.stdout.write(encodePackageManifest(files));
