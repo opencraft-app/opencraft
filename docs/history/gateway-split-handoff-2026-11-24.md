@@ -45,6 +45,8 @@
 
 **08:53 状态**：#582、#583、#585、#589、#590 在合并队列／CI 中（#583 已再次合入 main 解决定时器行冲突）；**#584**（platform 真实失败；本地在 e0d9ad4e4 上跑 platform 组：test:projects 29/29、test:actors 207/207、test:thread-lifecycle 293/293、test:tasks 91/91、test:codex-core 342/342 全过；test:agent-bridge 首次 351/1 失败、复跑通过（偶发，未复现）；未跑 test:cloud-desktop、test:hub-network、check:startup:cache——下一步优先看完整 CI 日志里这三项与 agent-bridge）与 **#587**（gitleaks：第二处命中为 `account-core-do.scenarios.ts` 的 `CONTRIBUTED_KEY = "synthetic-contributed-key-1"`，已改为低熵占位 `sentinel-key` 并推送，AC workerd 14/14，待 CI 确认），均已在 PR 留言。
 
+**09:05 追加**：#582 在合并队列中 CI 失败被移出（`CI_FAILURE`，原因未查，可能来自同批其他 PR）；#585 因 `MERGE_CONFLICT` 被移出（未处理；用 #581 尖端 `dedd50c` 为基准三方合并的做法见下）。两者都需要接手处理后重新 `enable_pr_auto_merge`。
+
 ## 4. 已知问题与必须跟进
 
 1. **迁移族收敛已在 #589 完成**（下述为背景）。**#587 与 #589 必然冲突**：#587 的网关链仍经 `schema-ledgers` 声明（集中在 `modelGatewaySqlSchema()`），后合并的一方需把它改为 `accountPoolSqlSchemas()` 中的一个族。原三套机制：
