@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { SOURCE_FALLBACK_SIBLINGS, verifySiblingFiles } from './verify-sibling-files.mjs';
-import { buildOwnerWorkers } from './owner-workers.mjs';
+import { buildOwnerWorkers, buildStartedOwnerWorkers } from './owner-workers.mjs';
 import { buildTerminalOwnerRuntime } from './package-terminal-runtime.mjs';
 import { buildConnectedAgentHistoryRuntime } from './package-connected-agent-history-runtime.mjs';
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
@@ -126,9 +126,6 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
       define: { 'process.env.OPENCRAFT_RELAY_SOURCE_REVISION': JSON.stringify(web.sourceRevision ?? null), 'process.env.OPENCRAFT_RELAY_BUILD_ID': JSON.stringify(web.buildId) },
       banner: { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" } });
   }
-  // hub-admin and relay-cluster-admin open the Hub state (its Worker) and update state
-  // documents (the lock Worker); both start beside the bundle that names them.
-  await buildOwnerWorkers(join(packageRoot, 'runtime'), { only: ['hub-state-worker.mjs', 'lock-worker.mjs'] });
   // Product-owned files referenced through import.meta.url must ship before sealing.
   for (const { source, target } of additionalRuntimeAssets) {
     const destination = resolve(packageRoot, 'runtime', target);
@@ -241,6 +238,10 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
     await verifySiblingFiles(join(packageRoot, 'execution'), { nested: ['codex-bridge'], optional: { ...SOURCE_FALLBACK_SIBLINGS,
       'personal-git-worker.mjs': 'built into runtime/; the headless gateway is given that path (headless-gateway-application.mjs)' } });
   }
+  // Build the owners needed by the runtime bundles, including the Hub state
+  // Worker and its lock Worker, then verify every runtime sibling reference.
+  await buildStartedOwnerWorkers(join(packageRoot, 'runtime'));
+  await verifySiblingFiles(join(packageRoot, 'runtime'), { optional: SOURCE_FALLBACK_SIBLINGS });
   await chmod(join(packageRoot, 'runtime/cli.mjs'), 0o755);
   const complete = completeRuntime || (fullRelease && !fullRelease.template.updater.bridge);
   if (complete) {

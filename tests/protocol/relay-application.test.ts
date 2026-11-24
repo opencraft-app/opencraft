@@ -2,12 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, request, type IncomingHttpHeaders } from 'node:http';
 import { once } from 'node:events';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, rm, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createPublicKey, generateKeyPairSync, randomBytes } from 'node:crypto';
 import { build } from 'esbuild';
-import { buildOwnerWorkers } from '../../scripts/packaging/owner-workers.mjs';
+import { spawn } from 'node:child_process';
+import { OWNER_WORKERS, buildStartedOwnerWorkers } from '../../scripts/packaging/owner-workers.mjs';
+import { packageRelay } from '../../scripts/packaging/package-relay.mjs';
+import { verifySiblingFiles } from '../../scripts/packaging/verify-sibling-files.mjs';
 import { pathToFileURL } from 'node:url';
 import { parseRelayConfiguration, startRelayApplication, type RelayComposition } from '../../apps/relay-server/src/application';
 import { AssertionProvider } from '../../packages/identity-core/src/node';
@@ -136,7 +139,9 @@ test('generic independently bundled application has no enterprise implementation
   const bundle = join(dir, 'application.mjs');
   const result = await build({ entryPoints: ['apps/relay-server/src/application.ts'], outfile: bundle, bundle: true, metafile: true,
     platform: 'node', format: 'esm', target: 'node24', banner: { js: "import {createRequire} from 'node:module';const require=createRequire(import.meta.url);" } });
-  await buildOwnerWorkers(dir);
+  // The Hub state owner uses the lock Worker to write its state document.
+  assert.deepEqual(await buildStartedOwnerWorkers(dir), ['hub-state-worker.mjs', 'lock-worker.mjs']);
+  assert.deepEqual(await verifySiblingFiles(dir), []);
   const sourceRoots = ['apps/relay-server/src/', 'packages/', 'node_modules/'];
   assert.deepEqual(Object.keys(result.metafile!.inputs).filter(path => !sourceRoots.some(root => path.startsWith(root))), [],
     'Standalone Relay bundles only its own application, shared packages and dependencies');
@@ -146,4 +151,31 @@ test('generic independently bundled application has no enterprise implementation
   const app = await standalone({ schemaVersion: 1, host: '127.0.0.1', port, routes: [], hubNetwork: { stateFile: join(dir, 'hub.json'), operatorCredentialFile: operator } });
   t.after(() => app.close()); assert.equal((await get(port, '/__opencraft_relay/health')).status, 200);
   assert.equal((await get(port)).status, 403); await app.close(); await assert.rejects(get(port));
+});
+
+test('the Relay package ships the owner Workers its bundles start and runs from them', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'relay-package-')); t.after(() => rm(dir, { recursive: true, force: true }));
+  const output = join(dir, 'relay');
+  // A Server owner left by an older package would name Workers Relay never ships.
+  await packageRelay({ output });
+  await writeFile(join(output, 'server-core-worker.mjs'), 'new Worker(new URL("./orchestration-runtime-worker.mjs", import.meta.url));');
+  await packageRelay({ output });
+  const owners = new Set(OWNER_WORKERS.map(([, file]: [string, string]) => file));
+  assert.deepEqual((await readdir(output)).filter(name => owners.has(name)).sort(), ['hub-state-worker.mjs', 'lock-worker.mjs']);
+  assert.deepEqual(await verifySiblingFiles(output), []);
+  const operator = join(dir, 'operator.json'); await writeFile(operator, JSON.stringify({ credential: token() }), { mode: 0o600 });
+  const port = await freePort(), config = join(dir, 'relay.json');
+  await writeFile(config, JSON.stringify({ schemaVersion: 1, host: '127.0.0.1', port, routes: [], hubNetwork: { stateFile: join(dir, 'hub.json'), operatorCredentialFile: operator } }), { mode: 0o600 });
+  const child = spawn(process.execPath, [join(output, 'relay.mjs'), config], { stdio: ['ignore', 'pipe', 'pipe'] });
+  t.after(() => { child.kill('SIGKILL'); });
+  let log = '';
+  child.stdout.setEncoding('utf8').on('data', chunk => { log += chunk; });
+  child.stderr.setEncoding('utf8').on('data', chunk => { log += chunk; });
+  await new Promise<void>((resolve, reject) => {
+    const ready = () => { if (log.includes('OpenCraft relay ready')) { child.stdout.off('data', ready); resolve(); } };
+    child.stdout.on('data', ready);
+    child.once('exit', code => reject(new Error(`Packaged Relay exited (${code}): ${log}`)));
+  });
+  assert.equal((await get(port, '/__opencraft_relay/health')).status, 200);
+  child.kill('SIGTERM'); await once(child, 'exit');
 });

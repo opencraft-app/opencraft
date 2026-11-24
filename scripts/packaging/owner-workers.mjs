@@ -1,9 +1,12 @@
 // Workers that own blocking IO for network processes (@opencraft/worker-owner).
-// A bundled caller starts `<name>-worker.mjs` beside itself, so every package
-// that bundles a network process builds this whole list next to its bundle.
+// A bundled caller starts `<name>-worker.mjs` beside itself. A package whose
+// bundles run the Server builds this whole list next to them; Relay, which
+// starts only a few owners, builds just those (`buildStartedOwnerWorkers`).
 import { build } from "esbuild";
+import { readdir, readFile } from "node:fs/promises";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { siblingReferences } from "./verify-sibling-files.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -35,5 +38,27 @@ export async function buildOwnerWorkers(directory, { target = "node24", only } =
       logLevel: "warning",
       banner: { js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" },
     });
+  }
+}
+
+/**
+ * Builds only the owner Workers that the bundles already in `directory` start,
+ * then those the built Workers start in turn. An owner no bundle starts is not
+ * shipped, so the files it would start are not needed either. Returns the files built.
+ */
+export async function buildStartedOwnerWorkers(directory, { target = "node24" } = {}) {
+  const built = [];
+  for (;;) {
+    const present = new Set(await readdir(directory));
+    const started = new Set();
+    for (const name of present) {
+      if (!/\.(?:mjs|cjs|js)$/u.test(name)) continue;
+      for (const sibling of siblingReferences(await readFile(join(directory, name), "utf8")))
+        if (!present.has(sibling)) started.add(sibling);
+    }
+    const only = OWNER_WORKERS.map(([, file]) => file).filter((file) => started.has(file));
+    if (!only.length) return built;
+    await buildOwnerWorkers(directory, { target, only });
+    built.push(...only);
   }
 }

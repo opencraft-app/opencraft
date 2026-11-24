@@ -186,6 +186,10 @@ npm run build:relay -- /absolute/output/relay
 node /absolute/output/relay/relay.mjs /absolute/private/relay.json
 ```
 
+The output ships the owner Workers its entries start, including the Hub state
+Worker (`hub-state-worker.mjs`) and its state document lock Worker
+(`lock-worker.mjs`). Packaging fails when a bundle names a missing sibling file.
+
 All JSON configurations below must be owner-only regular files (0600), with absolute paths. Generate an Ed25519 key pair and independent random 32-byte base64url enrollment credentials using your deployment secret tooling. Never commit actual keys, tokens, sessions or configurations. A minimal core transit configuration is:
 
 ```json
