@@ -575,7 +575,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     const desktop = await nodeLocal.startDesktop({ enabled: options.localDesktop, control: options.desktopControl, access: desktopAccess });
     const connectorService = installation.openConnectors({
       createConnectors: ({ access, hosts, admitted, resolveServer }) => new HeadlessConnectors(join(dataDirectory, "connectors"), access,
-        hosts, capabilities, admitted, undefined, resolveServer),
+        hosts, capabilities, admitted, undefined, resolveServer, ownerWake),
       machineId: machineIdentity.machineId, defaultEngine: options.defaultEngine ?? (engines.includes("dsh") ? "dsh" : "pi"), conversationExecution });
     const { remoteBrowser, browserCapabilities } = workspaceHost.openBrowser({
       createRemoteBrowser: browserOptions => new RemoteBrowserService({ root, dataDirectory,
@@ -898,7 +898,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     const { accountModelDefaultsService, threadReadReceiptsService, personalSshKeys, actorSshKeysService } = await installation.openPersonalServices({ sshLogin: !!ingressConfiguration });
     const turnPush = lateTurnPush.bind(await installation.openTurnPush({
       openStore: () => openPushStore(join(dataDirectory, 'web-push.sqlite')),
-      createService: (store, pushOptions) => new TurnPushService(store, pushOptions),
+      createService: (store, pushOptions) => new TurnPushService(store, { ...pushOptions, wake: ownerWake }),
       appHost: lateAppHost, imPlugins: lateImPlugins, conversationExecution }));
     await turnPush.initialize();
     const sshManagement = lateSshManagement.bind(await nodeLocal.openSshManagement({
