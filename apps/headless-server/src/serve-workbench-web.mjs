@@ -1128,7 +1128,11 @@ export async function createWorkbenchWebServer({
       websocketServer.close();
       desktopWebSockets.close();
       return Promise.all([receipt, requestsClosed, new Promise((resolvePromise, reject) => {
-        server.close((error) => error ? reject(error) : resolvePromise());
+        server.close((error) => {
+          // Startup can roll back before this HTTP listener opens.
+          if (error && error.code !== "ERR_SERVER_NOT_RUNNING") reject(error);
+          else resolvePromise();
+        });
       })]).then(() => undefined);
     },
   };

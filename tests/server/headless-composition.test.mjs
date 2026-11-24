@@ -1354,6 +1354,10 @@ test('edge: the Web release, runtime plugins and service table reach the Web ser
   order.length = 0;
   await assert.rejects(startHeadlessServer({ ...options, ...g.options, isolateBrowserStorage: true, createWebServer: options.createWebServer, listenHost: '10.0.0.1' }, composition), /Invalid listener host/);
   assert.deepEqual(order, ['web', 'runtime-plugins', 'composition']);
+  // The unstarted HTTP listener must not prevent the data directory writer from releasing.
+  const recovered = await startHeadlessServer(g.options);
+  g.own(() => recovered.close());
+  assert.equal((await fetch(recovered.url)).status, 200);
 });
 
 test('account inputs: the policy database, model configuration and credentials stay in their data directory files, bytes and modes unchanged', { timeout: 60_000 }, async t => {
