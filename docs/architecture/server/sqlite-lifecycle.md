@@ -71,7 +71,11 @@ OpenCraft 自有 SQLite 共两类，全部经 `openManagedDatabase` 打开并在
 - `ordinary-workspaces.sqlite`（`apps/local-agent-host/src/ordinary-workspace-store.ts`）：直接用 `DatabaseSync` 与 `CREATE TABLE IF NOT EXISTS`，违反“运行时建表只由迁移执行”的规则，是待迁移的存量。
 - `assistant.sqlite`（`apps/personal-assistant`）：自管 `user_version`，升级前另存 `schema<N>-before-coordination.sqlite`。
 - 引擎私有库（Pi 的 `pi_<id>.sqlite`、Codex 原生 `queue_1.sqlite`、`CODEX_HOME` 与 DSH 目录下的原生库）由引擎自己升级；OpenCraft 只读或按既有搬运语义访问。
-- 锁文件（`.codex-writer.sqlite`、`.codex-runtime.sqlite`、`.codex-routing-owner.sqlite`、`schema-lock.sqlite`、`.opencraft-owned-storage-lock.sqlite`、`*.writer`、`server.lock`、Pi 的 `pi_<id>.sqlite.lock`）只用于互斥，没有业务表。Pi 会话库的唯一写者经 `acquireProcessWriter` 持有 `pi_<id>.sqlite.lock`：进程存活期间（即使事件循环长时间停顿）从不过期，进程退出即释放，没有可被判定为 stale 的刷新计时器；旧版 proper-lockfile 目录租约只在 mtime 远超其刷新周期（60s）后才被转换。
+- 锁文件（`.codex-writer.sqlite`、`.codex-runtime.sqlite`、`.codex-routing-owner.sqlite`、`schema-lock.sqlite`、`.opencraft-owned-storage-lock.sqlite`、`*.writer`、`server.lock`、Pi 的 `pi_<id>.sqlite.lock`、Pi owner 的 `pi-owner.lock`、ACP owner 的 `acp-owner.lock`）只用于互斥，没有业务表。这三类 owner 锁都经 `@opencraft/sqlite-node` 的 `acquireOwnerLock`（基于 `acquireProcessWriter` 的内核单写者，旁有 `<lock>.owner.json` 进程身份）持有：进程存活期间（即使事件循环长时间停顿或被 SIGSTOP）从不过期，进程退出即释放，没有可被判定为 stale 或在定时器里抛 `ECOMPROMISED` 的刷新计时器；同进程第二写者同样以 `ELOCKED` 拒绝。锁路径沿用旧版 proper-lockfile 租约的路径但变为普通文件，旧版 mkdir 锁者既无法获取也无法删除；旧版目录租约只在 mtime 远超其刷新周期（60s）后才被转换，新鲜目录仍按占用拒绝。
+  - `pi_<id>.sqlite.lock`：每个 Pi 会话库一个写者（`PiDurableSession`）。
+  - `pi-owner.lock`（Pi 数据目录）：Headless 进程内 Pi 引擎与独立 engine host（`scripts/server-deployment/engine-host.mjs`）共用，同一数据目录只允许其一持有 Pi owner；engine host 另以 `pi-writer.lock`（flock）排除第二个 engine host。
+  - `acp-owner.lock`（ACP 数据目录）：独立 ACP host（`scripts/server-deployment/acp-host.mjs`）持有，另以 `acp-writer.lock`（flock）排除第二个 ACP host。
+  - 新旧版本混跑时：新版不会因旧版 owner 停顿而接管其新鲜目录租约；旧版遇到新版的普通文件锁时 mkdir 失败且无法删除，因而也不会接管。
 
 客户端 IndexedDB 另有独立版本号，不走 SQLite 账本：`opencraft-host-connections` v2，`opencraft-sidebar-layout`、`opencraft-appserver-replica`、UI 偏好、扩展文档、客户端资源与 blob 库均为 v1。
 

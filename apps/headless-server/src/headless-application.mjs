@@ -51,8 +51,8 @@ import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { acquireOwnerLock } from "@opencraft/sqlite-node/writer-lock";
 
-import lockfile from "proper-lockfile";
 import { loadSshIngressConfiguration } from "@opencraft/ssh-http-ingress/server";
 
 import { openMcpAppsService } from "@opencraft/mcp-apps/node";
@@ -641,7 +641,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       }),
       attachIndependentEngine: options.engineHostDescriptor ? () => attachEngineHost(options.engineHostDescriptor, dataDirectory, machineIdentity.machineId,
         engines, defaultEngine) : undefined,
-      acquirePiOwner: () => lockfile.lock(join(dataDirectory, "pi-owner"), {realpath:false,retries:0}),
+      // Shared with the independent engine host: one in-process or independent Pi owner per data directory.
+      acquirePiOwner: () => acquireOwnerLock(join(dataDirectory, "pi-owner.lock")),
       createPiEngine: async ({ executionCli, executionGit, sessionCapabilities }) => {
         const piModels = await createPiModelConfiguration(new ModelConfigurationRepository(fileStateDocumentStore(join(dataDirectory, "models"))), new ModelCredentialRepository(fileSecretStore(join(dataDirectory, "models"))), fileStateDocumentStore(join(dataDirectory, "pi")));
         const piAttachments=new LocalAttachmentStagingService(join(dataDirectory,"agent","attachments"),join(dataDirectory,"artifacts"));
