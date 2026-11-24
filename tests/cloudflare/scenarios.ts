@@ -4,9 +4,11 @@
 import type { WorkerScenario } from "./worker-runtime.ts";
 import { STORAGE_PORTS_SCENARIOS } from "../storage/workerd/storage-ports.scenarios.ts";
 import { INSTALLATION_CORE_SCENARIOS } from "../storage/workerd/installation-core.scenarios.ts";
+import { INSTALLATION_CORE_DO_SCENARIOS } from "../storage/workerd/installation-core-do.scenarios.ts";
 import { WORKSPACE_HOST_SCENARIOS } from "../storage/workerd/workspace-host.scenarios.ts";
 import { DEPLOYMENT_STORE_SCENARIOS } from "../storage/workerd/deployment-stores.scenarios.ts";
 import { INSTALLATION_STORE_SCENARIOS } from "../storage/workerd/installation-stores.scenarios.ts";
+import { WORKSPACE_STORE_SCENARIOS } from "../storage/workerd/workspace-stores.scenarios.ts";
 import { LOGIN_ENTRY_SCENARIOS } from "../identity/workerd/login-entry.scenarios.ts";
 import { HTTP_EXCHANGE_SCENARIOS } from "../server/workerd/http-exchange.scenarios.ts";
 import { CLIENT_DO_SCENARIOS } from "../protocol/workerd/client-do.scenarios.ts";
@@ -26,6 +28,11 @@ export const SCENARIO_GROUPS: readonly ScenarioGroup[] = [
     scenarios: INSTALLATION_CORE_SCENARIOS,
   },
   {
+    id: "installation-core-do",
+    label: "InstallationCore Durable Object (installation module, front door, Node parity, eviction, alarm watches)",
+    scenarios: INSTALLATION_CORE_DO_SCENARIOS,
+  },
+  {
     id: "workspace-host",
     label: "WorkspaceHost stores (five migration chains, domain operations, alarm owners)",
     scenarios: WORKSPACE_HOST_SCENARIOS,
@@ -39,6 +46,11 @@ export const SCENARIO_GROUPS: readonly ScenarioGroup[] = [
     id: "installation-stores",
     label: "InstallationCore stores (admission projection, Server spaces, orchestration runtime on DO SQL)",
     scenarios: INSTALLATION_STORE_SCENARIOS,
+  },
+  {
+    id: "workspace-stores",
+    label: "WorkspaceHost stores (thread directory, employee Git vault on DO SQL)",
+    scenarios: WORKSPACE_STORE_SCENARIOS,
   },
   { id: "login-entry", label: "Login entry (Argon2id, HumanAuth on DO SQL)", scenarios: LOGIN_ENTRY_SCENARIOS },
   {

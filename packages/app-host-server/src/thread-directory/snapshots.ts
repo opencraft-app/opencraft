@@ -1,7 +1,7 @@
-import { randomUUID } from "node:crypto";
 import type { Thread } from "@opencraft/appserver-protocol/generated/v2";
 import { CATALOG_SNAPSHOT_EXPIRED, CATALOG_MERKLE_CURSOR, catalogMerkle, createCatalogMerklePager, type CatalogMerkleNode, type ThreadCatalogCheckpoint } from "@opencraft/appserver-protocol";
 
+const randomUUID = () => crypto.randomUUID();
 export const SNAPSHOT_CURSOR = "opencraft-catalog-snapshot-v1:";
 export const SNAPSHOT_START = SNAPSHOT_CURSOR + "start";
 type Key = readonly [number, string];

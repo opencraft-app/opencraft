@@ -19,6 +19,8 @@ import type { CapabilityBindingProjection } from "@opencraft/session-capabilitie
 import type { KeyMaterial } from "@opencraft/secret-storage";
 import type { StateDocumentStore } from "@opencraft/document-storage/state";
 import type { TurnPushOptions, TurnPushService } from "@opencraft/web-push-node";
+import type { LoginAttemptLimiter } from "@opencraft/identity-core/login-attempts";
+import type { OwnerWake } from "@opencraft/owner-wake";
 import type { ActorSshKeys } from "../actor-ssh-keys.ts";
 import type { LateBinding } from "./lifecycle.mjs";
 
@@ -155,6 +157,11 @@ export interface InstallationAssembly {
     readSetupToken: (() => Promise<unknown>) | undefined;
     /** Opens the core login admission policy; absent unless the composition enables it. */
     openLoginAdmission: (() => Promise<NonNullable<InstallationAdmission["loginAdmission"]>>) | undefined;
+    /**
+     * Where login, setup and invitation attempts are counted; absent keeps this
+     * process's memory (the Node root). A single-writer owner passes its durable ledger.
+     */
+    loginAttempts?: LoginAttemptLimiter;
   }): Promise<InstallationAdmission>;
   /** Actor access over the admitted Human authority; identity owners commit through the identity writes. */
   openActorAccess(): ActorAccess;
@@ -266,4 +273,9 @@ export function assembleInstallation(options: {
   identityFence: CommitFence;
   /** The composition's qualification of a verified external principal; `undefined` means a person. */
   isHuman(principal: Principal): boolean | undefined;
+  /**
+   * Drives the instance and Actor access watches; absent keeps the runtime's
+   * own timeouts (the Node root). A single-alarm owner passes its merged alarm.
+   */
+  ownerWake?: OwnerWake;
 }): InstallationAssembly;

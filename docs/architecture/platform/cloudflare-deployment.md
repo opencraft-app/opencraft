@@ -2,7 +2,7 @@
 
 [Architecture index](../README.md) · [存储端口](storage-ports.md) · [执行沙盒](../execution/execution-sandbox.md) · [Docker 三角色部署](../../../deploy/docker/README.md)
 
-状态：目标设计。Cloudflare Containers 的平台能力已做真实探测（2026-11-23，结论见[工作区拆分 §3.6](workspace-host-split.md#36-部署形态统一建模)）；`sandbox-cloudflare` provider 已实现并在真实 Cloudflare 上预演通过（第 7.5 节），但还没有 WorkspaceHost DO 装配。只有存储端口的 Cloudflare 适配器已在本地 workerd 中通过一致性测试（见[存储端口第 6 节](storage-ports.md#6-cloudflare-适配器第-5-阶段本地-workerd-验证)），`InstallationCore`（见第 5 节）与 `RelayHub`（见第 6 节）各有一个仅限测试的本地 workerd 原型；本页不代表任何 Cloudflare 组件已可部署。Node 自托管（Docker／systemd／Electron）始终是一等公民；Cloudflare 是部署装配选项之一，不替换 Node 路径。
+状态：目标设计。Cloudflare Containers 的平台能力已做真实探测（2026-11-23，结论见[工作区拆分 §3.6](workspace-host-split.md#36-部署形态统一建模)）；`sandbox-cloudflare` provider 已实现并在真实 Cloudflare 上预演通过（第 7.5 节），但还没有 WorkspaceHost DO 装配。存储端口的 Cloudflare 适配器已在本地 workerd 中通过一致性测试（见[存储端口第 6 节](storage-ports.md#6-cloudflare-适配器第-5-阶段本地-workerd-验证)）；`InstallationCore` 已有正式 DO 装配（身份与准入部分，本地 workerd 验证，Wrangler 模板未部署，见第 5 节），`RelayHub` 仍是仅限测试的本地 workerd 原型（见第 6 节）；本页不代表任何 Cloudflare 组件已在真实账号上部署或可用于生产。Node 自托管（Docker／systemd／Electron）始终是一等公民；Cloudflare 是部署装配选项之一，不替换 Node 路径。
 
 ## 1. 现状约束
 
@@ -59,14 +59,19 @@
 
 单实例资源上限为 4 vCPU／12 GiB／20 GB 磁盘，满足当前默认 4 vCPU／8 GiB 契约（自定义实例类型实测被接受）。仍待验证：镜像大小与架构、浏览器沙盒、HTTPS 出站拦截。
 
-## 5. InstallationCore 原型状态
+## 5. InstallationCore 状态
 
-状态：**仅测试原型，本地 workerd 验证**。`tests/storage/workerd/installation-core-worker.ts` 是一个 SQLite-backed DO，由 `npm run test:installation-core:workerd`（`tests/storage/installation-core-workerd.test.ts`）经 esbuild（`workerd` 导出条件）打包、在 Miniflare（`workerd@1.20260730.1`，兼容日期 `2026-07-30`，`nodejs_compat`）中运行；无网络、无 Cloudflare 账号，未加入 `gate`；同一组场景另由 `npm run cf:rehearsal` 在真实 Cloudflare 上运行过（第 7 节）。它不放进包里：还没有部署装配、路由、认证前门与投影分发，正式包会成为无人消费的运行时形态。DO 外壳只有几十行，迁移与领域代码全部来自生产包。
+状态（2026-11-24）：**正式 DO 装配（身份与准入部分），本地 workerd 验证，未部署到真实 Cloudflare**。`InstallationCore` 类在 `apps/headless-server/src/cloudflare/installation-core.ts`，部署入口 `worker.ts`，结构绑定 `bindings.ts`，Wrangler 模板 `deploy/cloudflare/wrangler.installation-core.jsonc`；装配方式见 5.5。它与 Node 根调用同一个 installation 模块（`apps/headless-server/src/assembly/installation.mjs`）的同一组 `open*` 步骤，不在 DO 里另写领域代码。验证：`npm run test:installation-core:workerd`（`tests/storage/installation-core-workerd.test.ts` 的迁移与端口场景，加上 `tests/storage/installation-core-do-workerd.test.ts` 的正式 DO 场景）经 esbuild（`workerd` 导出条件）打包、在 Miniflare（`workerd@1.20260730.1`，兼容日期 `2026-07-30`，`nodejs_compat`）中运行，已在 `npm test`、`gate` 与 CI `core-tests`；无网络、无 Cloudflare 账号。原测试原型 `tests/storage/workerd/installation-core-worker.ts` 保留为迁移与领域端口的对照夹具；迁移场景另由 `npm run cf:rehearsal` 在真实 Cloudflare 上运行过（第 7 节），正式 DO 分组尚未在真实账号上运行。
 
 ### 5.1 已证明
 
-- **精简生命周期**：DO 在 `blockConcurrencyWhile` 内执行 `migrateServerSqlDatabase(durableObjectSqlDatabase(ctx.storage))`（`@opencraft/storage-node/server-sql`），只做账本校验、checksum 拒绝和按序迁移（每个迁移一次 `transaction()`）；不含进程锁、`VACUUM INTO` 备份、`ATTACH` 旧六库导入、替代谱系采纳与 `:memory:` 校验器（见[存储端口 3.1](storage-ports.md#31-sqldatabase)）。账本规则与 Node `openManagedDatabase` 是同一份实现（`@opencraft/sql/migrations`）。有对象但无账本的库被拒绝而非采纳（`_cf_` 前缀的 workerd 内部表除外）。打开失败时对象保持关闭，之后每个调用都失败，不读旧状态。
-- **测试覆盖**：新对象应用全部 22 个已发布 Server 迁移，schema（含触发器）与 node:sqlite 全新库逐项相同；在持久化存储上重启后结果为 `up-to-date`，账本逐行不变；改写一行 checksum 后重启被拒绝；只装前 5 个迁移的"旧版本"对象重启后只补后续迁移，已有账本行不变、最终 schema 与 Node 相同；新版本迁移过的对象被旧版本以 `newer-schema` 拒绝；`ActorStore`（`resolveHuman`、`createSession`、`issueCredential`、`authenticateSession`、撤销、停用）、`MembershipStore`／`InstanceAccess`（授予、撤销、认证、角色与准入状态、撤销修订号）与 `ThreadAccessStore`（创建、`set` 的 CAS、`allows`／`allowsActor`）经 DO RPC 的结果在归一化随机 ID、密钥和时间后，与同一调用序列在临时目录 node:sqlite owner 上的结果完全相同。
+- **精简生命周期**：DO 在 `blockConcurrencyWhile` 内执行 `migrateServerSqlDatabase(durableObjectSqlDatabase(ctx.storage))`（`@opencraft/storage-node/server-sql`），只做账本校验、checksum 拒绝和按序迁移（每个迁移一次 `transaction()`）；不含进程锁、`VACUUM INTO` 备份、`ATTACH` 旧六库导入、替代谱系采纳与 `:memory:` 校验器（见[存储端口 3.1](storage-ports.md#31-sqldatabase)）。账本规则与 Node `openManagedDatabase` 是同一份实现（`@opencraft/sql/migrations`）。有对象但无账本的库被拒绝而非采纳（`_cf_` 前缀的 workerd 内部表除外）。打开失败时对象保持关闭，之后每个请求都以 503 `installation_unavailable` 拒绝，不读旧状态。
+- **迁移与领域端口（原型夹具）**：新对象应用全部 22 个已发布 Server 迁移，schema（含触发器）与 node:sqlite 全新库逐项相同；在持久化存储上重启后结果为 `up-to-date`，账本逐行不变；改写一行 checksum 后重启被拒绝；只装前 5 个迁移的"旧版本"对象重启后只补后续迁移，已有账本行不变、最终 schema 与 Node 相同；新版本迁移过的对象被旧版本以 `newer-schema` 拒绝；`ActorStore`、`MembershipStore`／`InstanceAccess` 与 `ThreadAccessStore` 经 DO RPC 的结果在归一化随机 ID、密钥和时间后，与同一调用序列在临时目录 node:sqlite owner 上的结果完全相同。
+- **正式 DO 与 Node 同一调用序列**（`installation-core-do.scenarios.ts`）：同一组 38 个 HTTP 请求分别打到正式 DO（Miniflare）与 Node `startHeadlessServer`（公开监听 `0.0.0.0`＋`accessControl`，同一 Human 登录配置与 setup 凭证），归一化 ID、token、时间与 origin 后状态码、`cache-control`／`content-type`／`x-content-type-options`／`location`、`Set-Cookie` 形状与 JSON 正文逐项相同：匿名会话 401、匿名 Actor 401、浏览器得到拒绝页；错误凭证 setup 403、setup 200 并签发会话、`/__opencraft_account/status` 管理员；`/__opencraft_access/session` 角色；邀请与接受（201）；成员不能管理成员（403）、管理员列出成员；错误密码与未知用户 401、跨源 403、多余字段 400；同一成员第二次登录；Actor Session bearer 访问非 Actor 路由 403；成员不能更改成员资格（403）；管理员撤销成员后成员两个登录的 Actor API 401、实例会话 403，重新登录可认证但不被准入；重启后管理员会话仍有效、被撤销者仍被拒绝、`/setup` 303、再次 setup 409；登出后 401、再登录 200。
+- **驱逐后重建**：`ctx.abort()`（与平台驱逐一样不触发任何事件）后的下一个请求重新构造对象：登录、成员表与 setup 状态不变；驱逐后写入的撤权经重建的 owner 提交，再次驱逐后仍生效。
+- **定时撤销在 alarm 上**：`InstanceAccess.watch` 在对象唯一 alarm 上布置（`mergedOwnerWake`），准入期间每 500 ms 重新布置且不撤销；管理员撤销成员后，下一次 alarm 复查撤销该 watch；关闭的 watch 删除 alarm。
+- **打开被拒绝**：畸形 setup 凭证（Node 启动以 `Invalid private setup token file` 拒绝）使对象保持关闭，所有路由 503，重启后仍然如此。
+- **中立打包**：部署入口不触及任何 Node owner 实现（`sqlite-node`、`worker-owner`、`identity-core/node`、Hub 的 Node 端口与文件存储、共享内存提交栅栏、Node Server owner 与旧日志、`model-usage-policy`、`account-pool-host`、Node 密码哈希、`login-admission`、Node 根、网关与 `root-inputs-node`）；只触及 `nodejs_compat` 提供的 `node:crypto`、`node:util`、`node:path`、`node:url`、`node:fs/promises`、`node:timers/promises`、`node:worker_threads`（后五个来自 installation 模块中协作步骤的静态导入，DO 不调用这些步骤，见 5.2）。Wrangler 模板与入口、类名、绑定、兼容日期和标志一致由同一测试检查。
 - **已发布迁移在 DO 中可执行，无需改动**：`--> statement-breakpoint` 是 SQL 注释，DO 的多语句 `exec` 依次执行全部语句；`0005_native_channels` 的 `CREATE TRIGGER … BEGIN … END` 被当作 schema 接受，不被当作事务控制拒绝；`ALTER TABLE … ADD`、`INSERT … SELECT`、`randomblob()` 正常。当前 22 个迁移不含 `PRAGMA`、`ATTACH`、`VACUUM` 或 drizzle 表重建。外键：node:sqlite 的 owner 连接默认开启外键，DO 也默认开启，两者一致（Node 的借用连接可关闭外键，DO 中不存在借用连接）。本地 workerd 接受 `PRAGMA foreign_keys=OFF`，若将来出现 drizzle 表重建式迁移，需在真实 Cloudflare 上复核该 PRAGMA 后才可依赖。
 
 ### 5.2 Node 专属依赖
@@ -74,24 +79,58 @@
 | 依赖 | 来源 | 处理 |
 | --- | --- | --- |
 | `node:sqlite`、`node:fs`、`node:path` | `@opencraft/storage-node/server-repository` 的文件打开路径 | 隔离：该导出增加 `workerd` 条件，指向只接受 owner 句柄的 `repository.workerd.ts`；共享的借用逻辑在 `repository-handle.ts`，Node 实现行为不变 |
-| `node:crypto`（`createHash`、`randomBytes`、`randomUUID`、`timingSafeEqual`） | `actors.ts`、迁移组合与 checksum | `nodejs_compat` 下可用，凭据签发与校验已在测试中运行 |
-| 全局 `Buffer` | `permission-read-cache.ts`、`actors.ts` | `nodejs_compat` 下可用 |
-| `process.env` | `ActorStore` 未传 `policy` 时读取 `OPENCRAFT_ACTOR_POLICY` | `nodejs_compat` 下可读（为空即人类策略）；正式装配应显式传入 `policy` |
-| `setInterval(...).unref()` | `InstanceAccess.watch` | 探针确认可用；原型未调用。DO 中定时撤销应改由 alarm 或连接 owner 承担 |
-| `node:http` 请求与流式读取 | `InstanceAccess.handle` 的成员管理接口 | 仅类型导入，原型未调用；DO 前门应以 `fetch`／RPC 重新装配 |
-| `worker_threads`、`isMainThread` 断言、`SharedArrayBuffer`＋`Atomics` 提交栅栏 | `identity-writes.ts`、`commit-fence.ts`、`automation-ledger.ts`、`orchestration-runtime-store.ts`、`server-spaces-runtime.ts` | 未被原型打包：DO 直接在唯一 owner 上构造领域类 |
+| `node:crypto`（`createHash`、`randomBytes`、`randomUUID`、`timingSafeEqual`） | 迁移组合与 checksum、`HumanAuth`、本地账号插件与账号页、协作步骤 | `nodejs_compat` 下可用，凭据签发与校验已在测试中运行 |
+| 全局 `Buffer` | `permission-read-cache.ts` | `nodejs_compat` 下可用（G3b 后 IC 领域模块不再使用） |
+| `process.env` | `ActorStore` 未传 `policy` 时读取 `OPENCRAFT_ACTOR_POLICY` | `nodejs_compat` 下为空即人类策略，与 Node 未配置时相同；Node 根与 DO 都未显式传入，仍是后续项 |
+| `setInterval(...).unref()` | `InstanceAccess.watch`、`ActorAccess.watch` | **已改**：两者经 `@opencraft/owner-wake` 的 `periodicOwnerWork`（500 ms）；默认 `timeoutOwnerWake()`，Node 时序不变；`assembleInstallation({ ownerWake })` 传入时用之，DO 传入合并后的 alarm |
+| `node:http` 请求与流式读取 | `InstanceAccess.handle`、`HumanAuth`、本地账号、`ActorAccess` | **已改**：DO 前门经 `@opencraft/http-exchange/fetch` 调用同一处理器；路由表与准入闸门与 Node 共享（5.5） |
+| 私有文件（setup 凭证、Human 登录配置） | `readPrivateJson` | **已改**：setup 凭证来自 secret 绑定，登录配置来自 var，均经与 Node 相同的校验（5.5） |
+| Node 原生 Argon2id | `createNodePasswordHasher` | **已改**：DO 用纯 JS `password-hash-portable`，PHC 记录双向互通（§7.4 的 CPU 结论） |
+| `worker_threads`、`isMainThread` 断言、`SharedArrayBuffer`＋`Atomics` 提交栅栏 | 核心 owner Worker、`identity-writes.ts` 的跨线程栅栏、`orchestration-runtime-store.ts`、`server-spaces-runtime.ts` | **已改**：DO 用同线程核心 owner 与 `sameThreadCommitFence`（5.5），不创建 Worker；`ServerSpacesRuntime`／`OrchestrationRuntimeWorker` 所在模块仍被 installation 模块静态导入 `node:worker_threads`／`node:url`，DO 不调用这些步骤 |
+| 按路径读取策略库 | `projectModelCatalog`、`filterGatewayModelCatalog` | 留在 Node owner Worker（`server-core-worker.mjs`），不进入共享 owner 领域 |
 
 ### 5.3 单一 owner 的含义
 
 Node 上 `opencraft-server.sqlite` 的编排运行时与 Server space 已在核心 owner Worker 的连接上执行，剩余的第二条连接是网络线程过渡连接（见[服务器核心 owner](../server/server-core-owner.md)）。DO 中只有一个 owner 与一个 `SqlDatabase`，这意味着：
 
 - 没有跨连接锁等待与 `busy_timeout`；也不再需要把其他连接的提交转发给 owner 以刷新权限投影——所有写入都经同一连接对象，`AuthorityChanges`／`PermissionReadCache` 的分组天然覆盖全部写入。
-- 提交栅栏不再需要：授权复核与写入在同一同步回合、同一 `transaction()` 内完成，DO 输入门保证期间没有其他请求交错。正式实现应以此替代 `IdentityWrites` 的 Worker＋栅栏路径，而不是移植 `Atomics`。
-- `ServerDatabaseHandle` 没有 `location`，`Collaboration` 无法按文件启动伴随 Worker；编排与空间领域由同一 DO 直接执行（Node 已用 `orchestrationRuntimeDomain`／`serverSpacesDomain` 在 owner 连接上这样做），所有 Server 核心工作在一个 DO 线程上串行，与认证热路径争用 CPU。是否把无事务耦合的领域拆到其他 DO，需按 CPU 与时延实测决定。
+- 提交栅栏不再需要跨线程：授权复核与写入在同一同步回合、同一 `transaction()` 内完成，DO 输入门保证期间没有其他请求交错。正式装配以同线程核心 owner（`sameThreadServerCore`）与 `sameThreadCommitFence` 替代 `IdentityWrites` 的 Worker＋共享内存栅栏路径，没有移植 `Atomics`。owner 调用先进先出、一次一个、参数与结果按结构化克隆传递，并且每个调用在上一个应答送达发起方（`IdentityWrites` 已应用该结果）之后的宏任务中才执行，否则同线程栅栏会把"尚未应用的更早提交"判为延迟应答而拒绝。
+- `ServerDatabaseHandle` 没有 `location`，`Collaboration` 无法按文件启动伴随 Worker；编排与空间领域由同一 DO 直接执行（Node 已用 `orchestrationRuntimeDomain`／`serverSpacesDomain` 在 owner 连接上这样做，同线程 owner 与 Node owner Worker 现在共用 `server-core-domains.mjs` 这一份组合），所有 Server 核心工作在一个 DO 线程上串行，与认证热路径争用 CPU。是否把无事务耦合的领域拆到其他 DO，需按 CPU 与时延实测决定。
 
 ### 5.4 生产 InstallationCore 仍缺
 
-部署装配（wrangler 配置、绑定、边缘 Worker 路由）；认证前门（OIDC／本地账号经 `fetch`，替代 Node HTTP 的 `IdentityProvider`）；投影发布给边缘 Worker 与 Client DO；`Collaboration`、编排、空间、自动化等其余领域的 DO 装配；`AccountCore` 与 `WorkspaceHost` 的协作；DO 版迁移后 schema 校验（DO 内不能另开 `:memory:` 库）；备份与恢复改用 PITR 的运维流程；`SecretStore` 的信封加密；真实 Cloudflare 上的 SQL 语义、CPU 与冷启动复核。
+已完成（2026-11-24）：IC 的 DO 装配中身份与准入部分（成员、Actors、Human 登录与本地账号、实例准入、Actor 访问与身份写入）；认证前门（本地账号登录与 setup、邀请与接受、会话、Actor API、实例准入与成员管理）；Wrangler 模板（未部署）。仍缺：
+
+- **边缘 Worker**：静态资源与发布清单、Client DO 与 WorkspaceHost 路由、模型出口；现有入口只把 IC 自有路由转发给对象，其余一律 404。
+- **其余 installation 步骤的 DO 装配**：`openServerInformation`（只需 DO 状态文档，可作为下一步）、`openPersonalServices`、`openCapabilityBindings`／`openCapabilitySigningKey`（`KeyMaterial` 已有 DO 适配器）、`openSpaces`、`openCollaboration`（需要 workspace-host 的 `conversationExecution` 与 App Host 迟绑定）、`openConnectors`、`openMcpApps`、`openTurnPush`。同线程核心 owner 已提供这些步骤需要的全部 owner 方法，`Collaboration` HTTP API 随 `openCollaboration` 接入，共享路由表中它们的路由在对象未装配时与 Node 缺席服务一样回答 404 `missing`。
+- **OIDC**：流程状态在 `HumanAuth` 内存中，需写入 DO storage 并保持一次性消费（[登录入口原型结果](gateway-split.md#34-登录入口原型结果)）；discovery 与 ID Token 验签未在 workerd 中跑通。
+- **登录准入**（`plugins/login-admission`）仍是 Node Worker＋SQLite owner，需 SQL 端口版本；Hub 节点身份（`HubNodeIdentity`）与 RelayHub 未装配；身份组合（下游产品）未装配。
+- **投影发布**给边缘 Worker 与 Client DO；`AccountCore` 与 `WorkspaceHost` 的协作。
+- DO 版迁移后 schema 校验（DO 内不能另开 `:memory:` 库）；备份与恢复改用 PITR 的运维流程；`SecretStore` 的信封加密；`ActorStore` 显式策略。
+- **真实 Cloudflare 复核**：正式 DO 场景已加入 `cf:rehearsal` 的 `installation-core-do` 分组，尚未在真实账号上运行；SQL 语义、CPU 与冷启动、alarm 精度、并发登录下的排队（Argon2id 每次 0.3–0.9 s CPU，§7.4）以及把哈希移到无状态 Worker 的评估。Workers Free 计划不可用。
+
+### 5.5 正式装配（2026-11-24）
+
+**位置与理由。** DO 类与入口在 `apps/headless-server/src/cloudflare/`，与 Node 组合根（`headless-application.mjs`）和它们共同调用的 installation 模块、根输入端口（`src/assembly/`）同在 Headless 服务这一 owner 下。按[网关拆分 §4.1](gateway-split.md#41-组合根按角色分开owner-共享)，每个 DO 类是一个小组合根，调用同一模块的中立适配；它不能放进 `packages/`：共享包不得导入应用（`check:boundaries` 的 "must not import from an app host"），`@opencraft/storage-cloudflare` 只依赖契约包（[存储端口第 6 节](storage-ports.md#6-cloudflare-适配器第-5-阶段本地-workerd-验证)），而 installation 模块属于 Headless 组合。目录按平台命名是因为它是部署装配（平台适配层），领域与契约不按平台命名。类不导入 `cloudflare:*`：它是带 `fetch`／`alarm` 的普通 DO 类，运行时结构类型在 `bindings.ts`，因此随 `@opencraft/headless-server` 一起类型检查；前门是 fetch，不需要 RPC。`check:boundaries` 对该目录、同线程 owner、共享 owner 领域与路由表施加与根输入端口相同的中立规则。
+
+**打开顺序。** 构造函数在 `blockConcurrencyWhile` 内：迁移 DO SQL；`documentRootInputs`（对象状态文档 `installation/` 前缀；Human 登录配置与机器名来自绑定）；`sameThreadCommitFence()`；`sameThreadServerCore(handle, { identityFence })`；`assembleInstallation({ serverStorage, identityFence, isHuman, ownerWake: mergedOwnerWake(alarm) })`；然后按 Node 根的顺序调用 `relayConnection`、`humanAuthConfiguration`、`openMembership`（`accessControl: true`：公开部署始终经实例成员准入）、`machineIdentity`、`openIdentity`、`openAdmission`、`openActorAccess`。任何一步失败都按具名 disposer 回滚并保持关闭。
+
+| Node 专属输入 | Node 根 | InstallationCore |
+| --- | --- | --- |
+| 核心 SQL owner | `openServerCoreOwner`：Worker、写者锁、迁移与旧库导入 | `sameThreadServerCore`（`src/assembly/server-core-same-thread.ts`）：同一份 owner 领域（`src/server-core-domains.mjs`，Node owner Worker 也由它组合）与存储方法（`@opencraft/storage-node/server-core-methods`，`serveServerCoreOwner` 也由它组合）；先进先出、克隆参数与结果、应答送达后才执行下一调用 |
+| 身份提交栅栏 | `sharedMemoryCommitFence` | `sameThreadCommitFence` |
+| 根输入 | `nodeRootInputs`（私有文件、`machine-id`、Hub 状态文件） | `documentRootInputs`；`OPENCRAFT_HUMAN_AUTH`（var，JSON，同一 `parseHumanAuthConfiguration`）、`OPENCRAFT_MACHINE_NAME`；relay 恒为 `null`；Hub 不装配（`hub: null`） |
+| `createPasswordHasher` | `createNodePasswordHasher`（`node:crypto.argon2`） | `createPortablePasswordHasher`（纯 JS `@noble/hashes` Argon2id，同参数 PHC 记录，§7.4） |
+| `readSetupToken` | `readPrivateJson(setupTokenFile)` | secret `OPENCRAFT_SETUP_TOKEN` 作为 `{ token }`，同一校验 |
+| `openLoginAdmission` | `openLoginAdmissionPolicy`（Worker＋SQLite，下游组合启用） | 不装配（5.4） |
+| 登录、setup 与邀请尝试计数 | 进程内存（默认，未传入） | `openAdmission({ loginAttempts })` 新增的可选输入：`stateLoginAttemptLimiter` 位于对象状态（`login-attempts/`），`HumanAuth` 与 `LocalAccountApplication` 共用 |
+| 访问 watch 的定时复查 | `timeoutOwnerWake()`（默认，未传入） | `assembleInstallation({ ownerWake })` 新增的可选输入：对象唯一 alarm 经 `mergedOwnerWake`，`alarm()` 唤醒到期的 owner 工作，各自从状态重新推导 |
+
+**前门。** `src/installation-routes.ts` 是 Node 网关与对象共用的路由定义：installation 服务的路径归属（`/setup`、`/__opencraft_account*`、`/__opencraft_auth*`、`/__opencraft_actors/collaboration/*`、`/__opencraft_actors*`、服务器信息、个人模型默认值、已读回执、个人 SSH key）、服务缺席或拒绝时的 404 `missing`、准入闸门（Actor Session bearer 访问非 Actor 路由 403、未准入 401／403 的 JSON 或拒绝页、已识别但未准入的 Human 不降级为匿名 403）与应答内容。`serve-workbench-web.mjs` 消费同一张表与闸门，只保留自己的帧写法（JSON 经 `sendJson` 带 `Content-Length`，拒绝页分块），原始字节不变（`headless-composition` 的 "installation routes" 用例在抽取前后都通过）。对象的顺序与 Node 相同：`InstanceAccess.prepare` → 共享路由 → 闸门 → `/__opencraft_access/*`（`InstanceAccess.handle`）；客户端地址取边缘可信的 `CF-Connecting-IP`。入口 Worker 只把共享路由与 `/__opencraft_access/*` 转发到名为 `installation` 的唯一对象。
+
+**关闭与驱逐。** 具名 disposer 按 Node 关闭第 11 步的顺序（身份组合、登录准入、账号应用、账号管理、`HumanAuth`、Human 账号、身份写入、Actors、成员），最后排空并关闭同线程核心 owner；打开失败时与 `close()` 时执行，逐个结算、汇总失败。平台驱逐不产生事件：DO 内存被丢弃，持久状态已按事务提交，下一事件重新构造并重新打开（驱逐场景见 5.1）。
+
+**部署装配。** `deploy/cloudflare/wrangler.installation-core.jsonc` 是模板：入口 `apps/headless-server/src/cloudflare/worker.ts`（Wrangler 以 `workerd` 条件打包），`nodejs_compat`，兼容日期与测试相同，DO 绑定 `INSTALLATION_CORE`（类 `InstallationCore`，`new_sqlite_classes` 迁移），var 只有登录配置与机器名，setup 凭证经 `wrangler secret put`。仓库内任何校验或构建都不部署它。
 
 ## 6. RelayHub 原型结果
 
@@ -184,12 +223,13 @@ CLOUDFLARE_ACCOUNT_ID=<32 位十六进制> CLOUDFLARE_API_TOKEN=<Workers Scripts
 | --- | --- | --- | --- | --- | --- |
 | storage-ports（DO SQL、state／secrets／keys、R2 blob 含上传会话、范围读、摘要、已存在拒绝、SQL 语义探针） | 37 | 37 通过 | 37 通过 | 1.5 s | 27 s |
 | installation-core（22 个 Server 迁移、schema 等价、重启／篡改／新旧版本、领域 RPC 与 Node owner 对照） | 7 | 7 | 7 | 1.9 s | 62 s |
+| installation-core-do（正式 DO：与 Node 同一调用序列、驱逐、alarm 上的 watch、打开被拒；2026-11-24 加入） | 4 | 未运行 | 未运行 | — | — |
 | workspace-host（五条迁移链、领域操作与 `nodeSqlDatabase` 对照、v13–v17 升级、alarm owner） | 13 | 13 | 13 | 2.2 s | 23 s |
 | login-entry（Argon2id 双向互验、fetch 登录入口与 Node HTTP 入口对照） | 2 | 2 | 2 | 6.4 s | 26 s |
 | client-do（可休眠 socket、恢复游标、驱逐与重启、alarm 回收） | 9 | 9 | 9 | 3.2 s | 70 s |
 | relay-hub（控制链路、512 流预算、预约到期、1008、替换、吞吐） | 6 | 6 | 5（修正后 6） | 2.1 s | 68 s |
 
-Cloudflare 侧耗时主要是部署（首个版本约 3 s，`immediate` 重启约 8 s）和公网往返，不代表运行时性能。
+Cloudflare 侧耗时主要是部署（首个版本约 3 s，`immediate` 重启约 8 s）和公网往返，不代表运行时性能。`installation-core-do` 分组在本次运行之后加入，需要账号凭据，尚未在真实 Cloudflare 上运行（Miniflare 下 4／4 通过）。
 
 ### 7.3 与 Miniflare 的差异
 

@@ -7,7 +7,8 @@
     ".": "./src/index.ts",
     "./interactions": "./src/interactions.ts",
     "./thread-catalog": "./src/thread-catalog.ts",
-    "./thread-directory": "./src/thread-directory/index.ts"
+    "./thread-directory": "./src/thread-directory/node.ts",
+    "./thread-directory/domain": "./src/thread-directory/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

@@ -92,6 +92,7 @@
     "@opencraft/session-capabilities": "0.1.0",
     "@opencraft/sqlite-node": "0.1.0",
     "@opencraft/ssh-http-ingress": "0.1.0",
+    "@opencraft/storage-cloudflare": "0.1.0",
     "@opencraft/storage-node": "0.1.0",
     "@opencraft/web-push-node": "0.1.0",
     "@opencraft/workbench-runtime": "0.1.0",
