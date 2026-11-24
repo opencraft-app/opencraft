@@ -4,6 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./actor-ssh-key-import": "./src/actor-ssh-key-import.ts",
+    "./actor-ssh-keys": "./src/actor-ssh-keys.ts",
     "./assets-execution-records": "./src/assets-execution-records.ts",
     "./human-login-page": "./src/human-login-page.ts",
     "./personal-mcp-provider": "./src/personal-mcp-provider.ts",

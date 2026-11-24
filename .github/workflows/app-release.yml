@@ -84,6 +84,10 @@ jobs:
   ios_testflight:
     needs: tag
     uses: ./.github/workflows/ios-testflight.yml
+    # External testers get every release once Apple approves it.
+    with:
+      distribute: true
+      release_tag: ${{ inputs.tag }}
     # Named forwarding, as for macOS; the called job resolves ios-testflight values.
     secrets:
       ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}

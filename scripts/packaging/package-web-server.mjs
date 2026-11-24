@@ -120,7 +120,7 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
   }
   // Independent relay/admin entry points travel with the same fixed-source artifact;
   // they remain inactive unless the operator configures a separate deployment.
-  for (const [entry, name] of [[resolve(relayEntry), 'relay'], ...['access-admin', 'hub-admin', 'human-account', 'relay-cluster-admin'].map(name => [join(repositoryRoot, `scripts/admin/${name}.ts`), name])]) {
+  for (const [entry, name] of [[resolve(relayEntry), 'relay'], ...['access-admin', 'hub-admin', 'human-account', 'relay-cluster-admin', 'ssh-keys'].map(name => [join(repositoryRoot, `scripts/admin/${name}.ts`), name])]) {
     await build({ nodePaths: [join(repositoryRoot, "node_modules")], entryPoints: [entry], outfile: join(packageRoot, `runtime/${name}.mjs`), bundle: true,
       platform: 'node', format: 'esm', target: 'node24',
       define: { 'process.env.OPENCRAFT_RELAY_SOURCE_REVISION': JSON.stringify(web.sourceRevision ?? null), 'process.env.OPENCRAFT_RELAY_BUILD_ID': JSON.stringify(web.buildId) },

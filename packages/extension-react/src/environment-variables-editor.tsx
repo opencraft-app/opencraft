@@ -62,26 +62,27 @@ export function EnvironmentVariablesEditor({ port, labels: l, reportError, onSta
   };
   const edit = (item?: EnvironmentVariableView) => { setSaveError(null); setValidation(null); setDraft({ original: item?.name ?? null, name: item?.name ?? '', value: item ? item.value : '', secret: item?.secret ?? true }); };
   const own = new Set(document?.variables.map(item => item.name));
+  const inherited = document?.inherited.filter(item => !own.has(item.name)) ?? [];
+  // The scope control is the only member of its group, so the row label alone
+  // names it; a section heading repeating the same word would be redundant.
   return <SettingsPanel title={l.title}>
-    <SettingsSection title={l.scope} description={l.description}>
-      <SettingsGroup><SettingsRow layout="stacked" label={l.scope} htmlFor={`${id}-scope`}>
-        <SettingsSelect id={`${id}-scope`} value={projectId ?? ''} disabled={!!pending || !!draft || !document}
-          onChange={event => setProjectId(event.currentTarget.value || null)}>
-          <option value="">{l.allProjects}</option>
-          {document?.projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
-        </SettingsSelect>
-      </SettingsRow></SettingsGroup>
-    </SettingsSection>
+    <SettingsGroup><SettingsRow layout="stacked" label={l.scope} description={l.description} htmlFor={`${id}-scope`}>
+      <SettingsSelect id={`${id}-scope`} value={projectId ?? ''} disabled={!!pending || !!draft || !document}
+        onChange={event => setProjectId(event.currentTarget.value || null)}>
+        <option value="">{l.allProjects}</option>
+        {document?.projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
+      </SettingsSelect>
+    </SettingsRow></SettingsGroup>
     <SettingsSection title={l.variables} action={<SettingsButton disabled={!document || !!pending || !!draft} onClick={() => edit()}>{l.add}</SettingsButton>}>
       {!document ? <SettingsNotice>{failed ? l.failed : l.loading}</SettingsNotice> : <SettingsGroup>
-        {document.variables.length === 0 && !draft ? <SettingsRow label={l.empty} /> : null}
+        {document.variables.length === 0 && inherited.length === 0 && !draft ? <SettingsRow label={l.empty} /> : null}
         {document.variables.map(item => <SettingsListItem key={item.name} label={item.name}
           description={item.secret ? '••••••••' : item.value} actions={<>
             <SettingsButton variant="quiet" disabled={!!pending || !!draft} onClick={() => edit(item)} aria-label={`${l.edit} ${item.name}`}>{l.edit}</SettingsButton>
             <SettingsButton variant="quiet" disabled={!!pending || !!draft} loading={pending === item.name}
               onClick={() => { void save(document.variables.filter(value => value.name !== item.name), item.name); }} aria-label={`${l.remove} ${item.name}`}>{l.remove}</SettingsButton>
           </>} />)}
-        {document.inherited.filter(item => !own.has(item.name)).map(item => <SettingsListItem key={`inherited:${item.name}`} label={item.name}
+        {inherited.map(item => <SettingsListItem key={`inherited:${item.name}`} label={item.name}
           description={item.secret ? '••••••••' : item.value} metadata={l.inherited} />)}
       </SettingsGroup>}
       {saveError ? <SettingsNotice tone="error" role="alert">{saveError}</SettingsNotice> : null}

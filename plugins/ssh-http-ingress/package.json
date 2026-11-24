@@ -4,7 +4,11 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./server": "./src/index.mjs"
+    "./server": "./src/index.mjs",
+    "./keys": "./src/keys.mjs"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "ssh2": "1.17.0"

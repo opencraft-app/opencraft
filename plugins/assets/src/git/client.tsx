@@ -139,6 +139,10 @@ export function GithubConnectionForm({
   const conflict = Object.entries(controller.operationCodes).some(
     ([key, code]) => key.startsWith(HOST + ":") && code === "conflict",
   );
+  const readError = controller.operationErrors.read ?? "";
+  // An open dialog owns the feedback for its action (see SshConnectionForm).
+  const feedback = [dialog ? "" : readError, error].filter(Boolean).join(" ");
+  const dialogError = dialog === "reload" ? readError || error : error || readError;
   function adopt(row: NonNullable<typeof status>) {
     setBaseline(row);
     setDraft({
@@ -295,8 +299,8 @@ export function GithubConnectionForm({
               {f("loadLatest")}
             </SettingsButton>
           ) : null}
-          <span id={id + "-status"} role={error ? "alert" : "status"}>
-            {error || (saved && !dirty ? f("saved") : dirty || !status ? reason : "")}
+          <span id={id + "-status"} role={feedback ? "alert" : "status"}>
+            {feedback || (saved && !dirty ? f("saved") : dirty || !status ? reason : "")}
           </span>
         </SettingsActions>
       </form>
@@ -398,16 +402,11 @@ export function GithubConnectionForm({
               <AlertDialog.Description>
                 {f(dialog === "clear" ? "clearAbout" : "loadLatestAbout")}
               </AlertDialog.Description>
-              {error || controller.operationErrors.read ? (
-                <SettingsNotice tone="error">{error || controller.operationErrors.read}</SettingsNotice>
-              ) : null}
+              {dialogError ? <SettingsNotice tone="error">{dialogError}</SettingsNotice> : null}
             </SettingsPanel>
           </AlertDialog.Content>
         </AlertDialog.Portal>
       </AlertDialog.Root>
-      {controller.operationErrors.read ? (
-        <SettingsNotice tone="error">{controller.operationErrors.read}</SettingsNotice>
-      ) : null}
     </SettingsSection>
   );
 }

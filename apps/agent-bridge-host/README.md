@@ -1,6 +1,9 @@
 # Independent Agent Bridge Host (P1b)
 
-Opt-in Node execution owner; no existing engine route imports this application.
+Node execution owner for pinned provider bridges. The desktop runs builtin Codex
+through it by default (the daemon's Codex bridge stack; `OPENCRAFT_CODEX_BRIDGE=0`
+returns to the legacy local adapter); other providers (Claude Code, Cursor, ACP)
+remain opt-in.
 P1a owns the protocol, grammar, assembler and AppServer projection. This application
 owns the sandbox pool, pinned generations, command custody and durable delivery.
 
@@ -38,6 +41,10 @@ or new user-facing capability is registered.
 - `POST /generation/activate`: `{id, expected}`. Sandbox startup and P1a initialize
   must succeed before committing the new default. A configuration change needs
   a new generation ID. Only new `session/create` routes use the new default.
+  An idle Thread moves to the current generation at its next turn. A generation
+  every route has left is retired, and its provider process closed, once its
+  outbox is acknowledged: right after the move, or at the acknowledgement that
+  drains it.
 - `POST /command`: `{commandId, serverId, threadId, method, params}`. First commit
   command ID, deterministic SHA-256 of the complete command, original execution
   epoch, route and state; then return the durable `registered` admission receipt.

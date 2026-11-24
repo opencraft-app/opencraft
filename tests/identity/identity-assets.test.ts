@@ -18,7 +18,7 @@ const PLAIN = "synthetic-plain-region";
 
 /** A composition with its own login provider (not HumanAuth) and the headless
  * vault Worker. Logins live in a map; a cookie names one. */
-async function fixture(t: test.TestContext) {
+async function fixture(t: test.TestContext, originOf?: (request: IncomingMessage, origin: string) => string) {
   const root = await mkdtemp(join(tmpdir(), "identity-assets-")),
     directory = join(root, "data");
   const storage = await openServerDatabase(directory),
@@ -55,7 +55,7 @@ async function fixture(t: test.TestContext) {
   let origin = "";
   const service = openIdentityAssets({
     port: recorded,
-    origin: () => origin,
+    origin: (request) => (originOf ? originOf(request, origin) : origin),
     actors,
     membership: members,
     access,
@@ -330,4 +330,22 @@ test("a retired request permit fences the Worker before its ENV write", async (t
     code: "forbidden",
   });
   assert.equal((await f.owner.store.environmentList(proof, { projectId: null })).revision, 0);
+});
+
+test("the origin is read per request, so a composition can derive it from a verified request", async (t) => {
+  // Stand-in for an origin only a trusted proxy assertion on each request carries.
+  const seen: IncomingMessage[] = [];
+  const f = await fixture(t, (request, origin) => {
+    seen.push(request);
+    return request.headers["x-fixture-trusted"] === "1" ? origin : "https://elsewhere.invalid";
+  });
+  const trusted = { "x-fixture-trusted": "1" };
+  const status = await f.request("/__opencraft_assets/status", undefined, trusted);
+  assert.equal(status.status, 200);
+  assert.equal((await status.json()).scope, f.scope);
+  assert.equal((await f.request("/__opencraft_assets/configurations", undefined, trusted)).status, 200);
+  assert.ok(seen.length > 0 && seen.every((request) => typeof request.headers.host === "string"));
+  // Without the per-request assertion the pinned origin does not match the host.
+  assert.equal((await f.request("/__opencraft_assets/status")).status, 403);
+  assert.equal((await f.request("/__opencraft_assets/configurations")).status, 403);
 });

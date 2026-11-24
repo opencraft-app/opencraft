@@ -88,8 +88,8 @@ export async function buildHeadlessBundle(output, { headlessEntry = join(reposit
   });
 }
 
-export function buildHumanAccountBundle(output) {
-  return build({ entryPoints: [join(repositoryRoot, 'scripts/admin/human-account.ts')], outfile: output,
+export function buildHumanAccountBundle(output, entry = 'human-account') {
+  return build({ entryPoints: [join(repositoryRoot, `scripts/admin/${entry}.ts`)], outfile: output,
     bundle: true, platform: 'node', format: 'esm', target: 'node26',
     banner: { js: "import { createRequire as createOpenCraftRequire } from 'node:module'; const require = createOpenCraftRequire(import.meta.url);" } });
 }
@@ -204,6 +204,7 @@ export async function packageHeadlessLinux(composition = {}) {
     await buildConversationCli(join(stage, 'runtime/opencraft-cli.mjs'));
     await writeFile(join(stage, 'bin/opencraft'), '#!/bin/sh\nexec "$(dirname "$0")/node" "$(dirname "$0")/../runtime/opencraft-cli.mjs" "$@"\n', { mode: 0o755 });
     await buildHumanAccountBundle(join(stage, 'runtime/human-account.mjs'));
+    await buildHumanAccountBundle(join(stage, 'runtime/ssh-keys.mjs'), 'ssh-keys');
     // Engine sandboxes run commands through this runner, started from beside the server bundle.
     await build({ entryPoints: [join(repositoryRoot, 'scripts/server-deployment/sandbox-command.mjs')], outfile: join(stage, 'runtime/sandbox-command.mjs'),
       bundle: true, platform: 'node', format: 'esm', target: 'node26', logLevel: 'warning',

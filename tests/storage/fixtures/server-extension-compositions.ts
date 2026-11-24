@@ -49,7 +49,8 @@ const steps = [
     { family: "core", version: 21 },
     { family: "core", version: 22 },
   ]),
-  ...[23, 24, 25].map(coreStep),
+  // The lineage reaches the current core head, so a fully seeded copy needs adoption only.
+  ...Array.from({ length: base.canonical.length - 22 }, (_, index) => coreStep(23 + index)),
 ].map((entry, index) => ({ ...entry, name: `${String(index).padStart(4, "0")}_${entry.name}` }));
 
 export const PRIVATE_LINEAGE_ID = "fixture-private-linear";

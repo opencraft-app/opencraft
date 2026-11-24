@@ -12,8 +12,9 @@ import { HostWorkspaceCatalogTransport } from './host-workspace-catalog-transpor
 import { createCodexWorkspaceHooks, validateCodexWorkspaceHooks, hasCodexWorkspaceHooks, configuredWorkspaceExecution, workspaceLifecycleRouting } from './codex-workspace-hooks.mjs';
 import { ServerInformationStore, serverInformationHttp } from './server-information.mjs';
 import { accountModelDefaultsHttp, humanActorAccess } from './account-model-defaults-http.ts';
-import { configuredModelGatewayPath, modelGatewayHttp, CodexCoreControlClient } from "@opencraft/account-pool-host";
-import { gatewayContributions } from "@opencraft/local-agent-host/model-config";
+import { ActorSshKeys, composeSshAccess, installationSshKeyAuthority } from './actor-ssh-keys.ts';
+import { actorSshKeysHttp } from './actor-ssh-keys-http.ts';
+import { configuredModelGatewayPath, CodexCoreControlClient } from "@opencraft/account-pool-host";
 import { createAssistantModelSource } from '@opencraft/local-agent-host/model-config/assistant';
 import { createWorkspaceBotProvider } from './workspaces/bot-client.js';
 import { createPersonalAssistantHost } from '@opencraft/personal-assistant/host';
@@ -33,9 +34,9 @@ import { resolveCodexPermissions } from '@opencraft/opencraft-daemon/codex-bridg
 import { codexBridgeConversationTools, codexBridgeCreationTools } from '@opencraft/opencraft-daemon/codex-bridge-conversation-tools';
 import { openServerCoreOwner } from "@opencraft/storage-node/server-owner";
 import { ownerEntry } from '@opencraft/worker-owner';
-import { ModelPolicyStore } from '@opencraft/model-usage-policy';
-import { modelPolicyHttp } from '@opencraft/model-usage-policy/http';
 import { ModelPolicyTransport } from '@opencraft/model-usage-policy/transport';
+import { assembleAccount } from './assembly/account.mjs';
+import { createHeadlessLifecycle, createLateBinding } from './assembly/lifecycle.mjs';
 import { startAvailabilityNotification } from './availability-notification.mjs';
 import { ExecutionEnvironmentTransport } from './execution-environment-transport.ts';
 import { EnvironmentMetadataTransport } from './environment-metadata-transport.ts';
@@ -112,8 +113,6 @@ import { LocalDesktopService } from "@opencraft/local-agent-host/desktop";
 import { createNativeObserver, localDesktopMachineIdentity } from "@opencraft/local-agent-host/desktop-native";
 import { createNativeDesktopControl } from "@opencraft/local-agent-host/desktop/native-control";
 import { ModelConfigurationRepository, ModelCredentialRepository } from "@opencraft/local-agent-host/model-config/repository";
-import { SpeechModelConfiguration } from "@opencraft/local-agent-host/model-config/speech";
-import { SpeechTranscriptionService } from "./speech-transcription-service.mjs";
 import { MembershipStore, InstanceAccess } from '@opencraft/access-control';
 import { ActorStore } from '@opencraft/access-control/actors';
 import { ThreadAccessStore, ThreadAccessSession } from '@opencraft/access-control/thread-access';
@@ -329,19 +328,19 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   if (options.codexRuntime !== undefined && (!options.codexCoreEndpoint || !isAbsolute(options.codexRuntime.endpoint ?? '')
     || !['string', 'function'].includes(typeof options.codexRuntime.token) || options.codexRuntime.nativeSocket !== undefined && !isAbsolute(options.codexRuntime.nativeSocket)))
     throw new Error('Codex runtime endpoints require absolute private sockets beside the account Core');
-  let codexAgentBridge=options.codexAgentBridge??await readCodexBridgeConfiguration(options.codexAgentBridgeFile);
+  const configuredCodexBridge=options.codexAgentBridge??await readCodexBridgeConfiguration(options.codexAgentBridgeFile);
   // The server's own Codex Engine Host: every Codex Thread runs through the provider bridge,
   // new ones from creation, existing ones from their next turn (their IDs and history kept).
   // Its provider takes broker auth from the account Core; with a workspace-owned Codex runtime
   // it reaches native Codex through that runtime's native endpoint instead of the Core's health.
-  if(options.codexBridgePrograms!==undefined&&(codexAgentBridge||!options.codexCoreEndpoint||!isAbsolute(options.codexBridgePrograms)))
+  if(options.codexBridgePrograms!==undefined&&(configuredCodexBridge||!options.codexCoreEndpoint||!isAbsolute(options.codexBridgePrograms)))
     throw new Error('A server Codex Engine Host requires an existing Core endpoint and no external bridge configuration');
   if(options.codexBridgePrograms!==undefined&&options.codexRuntime!==undefined&&options.codexRuntime.nativeSocket===undefined)
     throw new Error('A server Codex Engine Host needs the workspace Codex runtime native endpoint');
   let codexEngineHost;
   const agentBridge=options.agentBridge??(options.agentBridgeFile?await readPrivateJson(options.agentBridgeFile):undefined);
   if(agentBridge!==undefined&&(!agentBridge||typeof agentBridge!=='object'||Array.isArray(agentBridge)))throw new Error('Invalid private agent bridge configuration');
-  if(codexAgentBridge&&!options.codexCoreEndpoint)throw new Error('Codex bridge requires an existing Core endpoint');
+  if(configuredCodexBridge&&!options.codexCoreEndpoint)throw new Error('Codex bridge requires an existing Core endpoint');
   const localAccess = await loadLocalMachineAccess(options.localAccessFile);
   if (composition.createIdentity !== undefined && typeof composition.createIdentity !== "function") throw new Error("Invalid Headless identity factory");
   if (composition.selectHostTerminalService !== undefined && typeof composition.selectHostTerminalService !== "function") throw new Error("Invalid Headless terminal selector");
@@ -407,19 +406,17 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let dshAgent;
   let releasePiOwner;
   let web;
-  let appHostServer;
-  let sshManagement;
+  let personalSshKeys;
   let fileDownloads;
   let desktop;
   let identity;
   let agentIdentity;
-  let executionDatabase, executionStore, executionRecovery;
-  let resolveExecutionNative = async () => null;
+  let executionDatabase, executionRecovery;
   let mcpApps;
   let ingress;
   let instanceAccess;
   let loginAdmission;
-  let modelPolicy;
+  let account;
   let membership;
   let assetsService;
   let assetsStorage;
@@ -453,7 +450,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let identityWrites;
   let humanAccounts;
   let localAccountPlugin;
-  let imPlugins, availabilityNotification;
+  let availabilityNotification;
   let connectorService;
   const capabilities = new SessionCapabilities();
   let capabilityMcp;
@@ -469,71 +466,82 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let codexReadiness;
   let usageQueries;
   let remoteBrowser;
-  let conversationResources;
   let resourceReconciliationTimer;
   let browserCapabilities;
   const remoteExecutionAuthorities = new Map();
   let observability;
-  let turnPush;
   let connectedExecutionCli;
   let runtimePlugins;
-  let closing = null;
-  const close = (update = null) => {
-    if (closing !== null) return closing;
-    // Publish the shared promise before invoking any disposer (including a
-    // synchronous failure or reentrant close). Retire listeners before stores.
-    closing = Promise.resolve().then(async () => {
-      const results = [];
-      const settle = async disposers => {
-        results.push(...await Promise.allSettled(disposers.map(dispose => Promise.resolve().then(dispose))));
-      };
-      capabilitiesReadyResolve();
-      clearInterval(resourceReconciliationTimer);
-      await settle([() => conversationResources?.close()]);
-      let entryClosing;
-      const closeEntry = () => entryClosing ??= settle([
-        () => hubController?.close(), () => relay?.close(), () => ingress?.close(), () => sshNativeRpc?.close(),
-        () => codexReadiness?.close(), () => usageQueries?.close(), async () => { withdrawGitStatus?.(); await browserCapabilities?.close(); await remoteBrowser?.close(); },
-        () => fileDownloads?.close(), () => desktop?.close(), () => turnPush?.close(),
-        () => availabilityNotification?.close(), () => imPlugins?.close(),
-      ]);
-      await settle([() => web?.close(update, closeEntry)]);
-      // Custom Web adapters need not implement the optional carrier phase.
-      await closeEntry();
-      // Plugins stop after the listener stopped accepting and before any owner
-      // their authority or handlers may still call (admission, identity, stores).
-      await settle([() => runtimePlugins?.close()]);
-      await settle([() => observability?.close()]);
-      await settle([() => projectAutomations?.close()]);
-      await settle([() => threadOrchestration?.close()]);
-      await settle([() => personalAssistantHost?.close()]);
-      await settle([() => appHostServer?.close()]);
-      await settle([() => codexEngineHost?.close()]);
-      for (const service of terminalServices.values()) service.close();
-      terminalServices.clear();
-      fileSystem?.close();
-      await settle([() => threadOrchestration?.close(), () => connectorService?.close(), () => actorCollaboration?.close(), () => threadAccess?.close(), () => serverSpaces?.close()]);
-      await settle([() => orchestrationStorage.close()]);
-      await settle([() => agent?.close(), async () => (await dshAgent?.catch(() => undefined))?.close(), () => connectedExecutionCli?.close(), () => capabilityMcp?.close()]);
-      if (releasePiOwner) await settle([() => releasePiOwner()]);
-      await settle([() => executionRecovery?.close(), () => agentIdentity?.close()]);
-      // Each writer finishes before the root kernel lock is released. A failed
-      // disposer is reported, but must not skip the remaining flushes.
-      for (const dispose of [() => executionDatabase?.close(),
-        () => modelPolicy?.close(), () => mcpApps?.close(), () => sshManagement?.close(), () => identity?.executionEnvironment?.close(), () => identity?.close?.(), () => loginAdmission?.close(),
+  // Explicit ports for shutdown state and for values constructed after the
+  // closures that read them; assembly modules receive these instead of the
+  // root's bindings (docs/architecture/platform/gateway-split.md §4.1.1).
+  const lifecycle = createHeadlessLifecycle();
+  const lateAppHost = createLateBinding('App Host server');
+  const lateConversationResources = createLateBinding('Conversation resource lifecycle');
+  // The execution lease store and the native process observer, bound together.
+  const lateExecutionObservation = createLateBinding('Execution observation');
+  const lateCapabilityKey = createLateBinding('Capability signing key');
+  const lateStartDsh = createLateBinding('DSH engine start');
+  // A configured external bridge is known now; the server's own Engine Host
+  // publishes its bridge only once it has started.
+  const lateCodexBridge = createLateBinding('Codex agent bridge');
+  if (options.codexBridgePrograms === undefined) lateCodexBridge.bind(configuredCodexBridge);
+  const lateTurnPush = createLateBinding('Turn push');
+  const lateSshManagement = createLateBinding('SSH management');
+  const lateImPlugins = createLateBinding('IM plugins');
+  // The lifecycle publishes the shared promise before invoking any disposer
+  // (including a synchronous failure or reentrant close). Retire listeners before stores.
+  const close = (update = null) => lifecycle.shutdown(async () => {
+    const results = [];
+    const settle = async disposers => {
+      results.push(...await Promise.allSettled(disposers.map(dispose => Promise.resolve().then(dispose))));
+    };
+    capabilitiesReadyResolve();
+    clearInterval(resourceReconciliationTimer);
+    await settle([() => lateConversationResources.current()?.close()]);
+    let entryClosing;
+    const closeEntry = () => entryClosing ??= settle([
+      () => hubController?.close(), () => relay?.close(), () => ingress?.close(), () => sshNativeRpc?.close(),
+      () => codexReadiness?.close(), () => usageQueries?.close(), async () => { withdrawGitStatus?.(); await browserCapabilities?.close(); await remoteBrowser?.close(); },
+      () => fileDownloads?.close(), () => desktop?.close(), () => lateTurnPush.current()?.close(),
+      () => availabilityNotification?.close(), () => lateImPlugins.current()?.close(),
+    ]);
+    await settle([() => web?.close(update, closeEntry)]);
+    // Custom Web adapters need not implement the optional carrier phase.
+    await closeEntry();
+    // Plugins stop after the listener stopped accepting and before any owner
+    // their authority or handlers may still call (admission, identity, stores).
+    await settle([() => runtimePlugins?.close()]);
+    await settle([() => personalSshKeys?.close()]);
+    await settle([() => observability?.close()]);
+    await settle([() => projectAutomations?.close()]);
+    await settle([() => threadOrchestration?.close()]);
+    await settle([() => personalAssistantHost?.close()]);
+    await settle([() => lateAppHost.current()?.close()]);
+    await settle([() => codexEngineHost?.close()]);
+    for (const service of terminalServices.values()) service.close();
+    terminalServices.clear();
+    fileSystem?.close();
+    await settle([() => threadOrchestration?.close(), () => connectorService?.close(), () => actorCollaboration?.close(), () => threadAccess?.close(), () => serverSpaces?.close()]);
+    await settle([() => orchestrationStorage.close()]);
+    await settle([() => agent?.close(), async () => (await dshAgent?.catch(() => undefined))?.close(), () => connectedExecutionCli?.close(), () => capabilityMcp?.close()]);
+    if (releasePiOwner) await settle([() => releasePiOwner()]);
+    await settle([() => executionRecovery?.close(), () => agentIdentity?.close()]);
+    // Each writer finishes before the root kernel lock is released. A failed
+    // disposer is reported, but must not skip the remaining flushes.
+    for (const dispose of [() => executionDatabase?.close(),
+      () => account?.close(), () => mcpApps?.close(), () => lateSshManagement.current()?.close(), () => identity?.executionEnvironment?.close(), () => identity?.close?.(), () => loginAdmission?.close(),
 
-        () => ownedWorkspaceRouting?.close(), () => installedBotProvider?.close(), () => botAdmission?.close(), () => humanGitExecution?.close(), () => assetsService?.close(), () => assetsStorage?.close(), () => composition.close?.(), () => accountApplication?.close(), () => accountManagement?.close(), () => humanAuth?.close(), () => humanAccounts?.close(),
-        () => identityWrites?.close(), () => capabilityBindings?.close(), () => actorStore?.close(), () => membership?.close()]) {
-        await settle([dispose]);
-      }
-      const failures = results.filter((result) => result.status === "rejected").map((result) => result.reason);
-      // A rejected flush is not a release receipt. The gateway exits nonzero;
-      // only actual process death then releases the kernel writer lock.
-      if (failures.length > 0) throw new AggregateError(failures, "OpenCraft server shutdown failed");
-      await releaseLock();
-    });
-    return closing;
-  };
+      () => ownedWorkspaceRouting?.close(), () => installedBotProvider?.close(), () => botAdmission?.close(), () => humanGitExecution?.close(), () => assetsService?.close(), () => assetsStorage?.close(), () => composition.close?.(), () => accountApplication?.close(), () => accountManagement?.close(), () => humanAuth?.close(), () => humanAccounts?.close(),
+      () => identityWrites?.close(), () => capabilityBindings?.close(), () => actorStore?.close(), () => membership?.close()]) {
+      await settle([dispose]);
+    }
+    const failures = results.filter((result) => result.status === "rejected").map((result) => result.reason);
+    // A rejected flush is not a release receipt. The gateway exits nonzero;
+    // only actual process death then releases the kernel writer lock.
+    if (failures.length > 0) throw new AggregateError(failures, "OpenCraft server shutdown failed");
+    await releaseLock();
+  });
   try {
     const ingressConfiguration = options.sshConfig ? await loadSshIngressConfiguration(options.sshConfig) : null;
     // Invalid configured credentials fail startup before any execution resource is created.
@@ -544,8 +552,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     if (options.accessControl || humanConfiguration?.setupTokenFile || options.accessMemberProviders?.length || relayConfiguration || hubController.node?.store.state.origin)
       membership = new MembershipStore(serverStorage);
     const machineIdentity = await readDaemonMachineIdentity(dataDirectory, options.machineName);
-    const modelPolicyPath = join(dataDirectory, 'model-usage-policy.sqlite');
-    modelPolicy = new ModelPolicyStore(modelPolicyPath);
+    account = assembleAccount({ dataDirectory, codexCoreEndpoint: options.codexCoreEndpoint, codexCoreAuthToken: options.codexCoreAuthToken });
+    const { modelPolicyPath } = account;
     // Identity adapters can bind their own credentials to this stable Human authority.
     actorStore = new ActorStore(serverStorage);
     // ENV delivery is a deployment setting independent of the vault owner:
@@ -659,7 +667,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         if (!assetsStorage.workspaceExecution) throw Error('Assets Native execution owner unavailable');
         ownedWorkspaceRouting = await openWorkspaceExecutionService({port:assetsStorage.store,
           actors:actorStore, access:instanceAccess, ...workspaceExecution,
-          assertThreadActive:threadId=>{if(!conversationResources)throw Error('Workspace lifecycle is starting');conversationResources.assertActive('local-codex',threadId);},
+          assertThreadActive:threadId=>{const resources=lateConversationResources.current();if(!resources)throw Error('Workspace lifecycle is starting');resources.assertActive('local-codex',threadId);},
           onCleanupUnconfirmed:()=>console.warn('workspace_cleanup_unconfirmed')});
         workspaceRouting = ownedWorkspaceRouting;
       }
@@ -668,15 +676,15 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     // admitted, and the lease is active for the live native process.
     const authorizeExecutionHandoff=scope=>{
       const actorId=scope.account.slice('actor:'.length),actor=actorStore.get(actorId);
-      return !closing&&actor?.enabled===true&&actor.kind==='human'&&actor.generation===scope.actorGeneration&&instanceAccess.admitsActor(actorId);
+      return !lifecycle.closing()&&actor?.enabled===true&&actor.kind==='human'&&actor.generation===scope.actorGeneration&&instanceAccess.admitsActor(actorId);
     };
     const inspectExecutionHandoff=async handoff=>{
-      const native=await resolveExecutionNative?.(handoff.scope.threadId);
-      if(closing||!executionRecovery||!native||native.incarnation!==handoff.native.incarnation)return false;
+      const native=await lateExecutionObservation.current()?.resolveNative(handoff.scope.threadId);
+      if(lifecycle.closing()||!executionRecovery||!native||native.incarnation!==handoff.native.incarnation)return false;
       const state=await executionRecovery.inspect({threadId:handoff.scope.threadId,inputId:handoff.scope.inputId,
         executionId:handoff.scope.executionId,generation:handoff.scope.leaseGeneration,turnId:handoff.native.turnId,
         engineIncarnation:handoff.native.incarnation,principal:null,ownership:'unknown',admittedAtMs:0,endedAtMs:null});
-      return state==='active'&&!closing&&(await resolveExecutionNative(handoff.scope.threadId))?.incarnation===native.incarnation;
+      return state==='active'&&!lifecycle.closing()&&(await lateExecutionObservation.get().resolveNative(handoff.scope.threadId))?.incarnation===native.incarnation;
     };
     if (humanAuth && instanceAccess && !identity?.assistantEnvironmentConfigurationManaged) {
       assetsService = await openHumanAssets({ directory: dataDirectory, auth: humanAuth, actors: actorStore, access: instanceAccess,
@@ -715,7 +723,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       // The composition owns the durable read; core keeps the live checks.
       if (!instanceAccess) throw new Error('Environment delivery requires Human instance authority');
       environmentHandoff = createEnvironmentAdmissionHandoff({ admission: locator => identityLaunch.admission(locator),
-        authorize: authorizeExecutionHandoff, inspect: inspectExecutionHandoff, closed: () => closing });
+        authorize: authorizeExecutionHandoff, inspect: inspectExecutionHandoff, closed: lifecycle.closing });
     } else if (environmentLaunch && humanGitExecution) environmentHandoff = locator => humanGitExecution.handoff(locator);
     // Codex: the split Codex Core receives creation and Turn ENV sealed for
     // core's durable records, and the adapter's Git owner hands off grants.
@@ -764,14 +772,16 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       throw new Error('Environment delivery requires the independent Pi engine host');
     let piEngine;
     let independentEngine;
-    const conversationExecution = createRoutedConversationExecution(() => appHostServer, {machineId:machineIdentity.machineId,engines,modelCatalog:true,
+    const conversationExecution = createRoutedConversationExecution(() => lateAppHost.current(), {machineId:machineIdentity.machineId,engines,modelCatalog:true,
       connectedAgentsOwner: engines.includes('dsh') ? 'dsh' : undefined,
       getInputs:async engine => {
-        const inputs = engine !== 'dsh' ? (independentEngine?.inputs ?? (engine === 'pi' ? piEngine?.inputs : undefined)) : (await startDsh()).inputs;
+        const inputs = engine !== 'dsh' ? (independentEngine?.inputs ?? (engine === 'pi' ? piEngine?.inputs : undefined)) : (await lateStartDsh.get()()).inputs;
         if (!inputs) return undefined;
         return {receipt: (...args) => inputs.receipt(...args), submit: async (threadId,inputId,text,canAdmit) => {
-          if (!executionStore) throw new Error('Execution ownership unavailable');
-          const native = await resolveExecutionNative(threadId);
+          const observation = lateExecutionObservation.current();
+          if (!observation) throw new Error('Execution ownership unavailable');
+          const {store: executionStore} = observation;
+          const native = await observation.resolveNative(threadId);
           return inputs.submit(threadId,inputId,text,async () => {
             if (!await canAdmit()) return false;
             // This explicit Host input is an agent, schedule or goal, not the
@@ -796,7 +806,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     const operator = deploymentOperator(actorStore, anonymousDeployment, () => !serverSpaces.initialized
       && !hubController.node.store.state.origin && !hubController.node.store.state.authority);
     const anonymousHandoff = () => !!operator.context();
-    const signExecutionCli = session => executionCliSourceToken(capabilityKey, session);
+    const signExecutionCli = session => executionCliSourceToken(lateCapabilityKey.get(), session);
     const anonymousDriver = (transport, hostId) => anonymousDeployment
       ? new AgentDriverTransport(transport, actorCollaboration,
         threadId => conversationExecution.serverForHost(hostId, threadId), signExecutionCli, operator.context)
@@ -812,7 +822,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         return accessServerForHost(target, threadId);
       }, context.actorContext, emit, async threadId => {
         if (context.actorContext && identity?.isThreadCreator && await identity.isThreadCreator(hostId, threadId, context,
-          (method, params) => callConversationHost(appHostServer,{hostId,threadId:''},'thread-creator',method,params)))
+          (method, params) => callConversationHost(lateAppHost.current(),{hostId,threadId:''},'thread-creator',method,params)))
           threadAccess.created(accessServerForHost(hostId,threadId),threadId,context.actorContext);
       }, () => {
         context.resourceOwner?.assertCurrent();
@@ -827,7 +837,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         id=>conversationExecution.serverForHost(hostId,id),emit,createThreadPolicySession(hostId,context,emit),(serverId,threadId)=>threadAccess.allows(serverId,threadId,context.actorContext),()=>{
           context.resourceOwner?.assertCurrent();
           if(!actorStore.isCurrent(context.actorContext)||instanceAccess&&!instanceAccess.admitsActor(context.actorContext.actorId))throw new Error('Server access expired');
-        },threadId=>callConversationHost(appHostServer,{hostId,threadId:''},'server-space-history','thread/read',{threadId,includeTurns:false}));
+        },threadId=>callConversationHost(lateAppHost.current(),{hostId,threadId:''},'server-space-history','thread/read',{threadId,includeTurns:false}));
       return {
         async receive(frame){
           if(!serverSpaces.initialized&&instanceAccess?.admitsActor(context.actorContext.actorId)&&membership.actorMembership(context.actorContext.actorId)?.role==='admin')
@@ -842,7 +852,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     // Inbox team commands go to the Server space ledger, the only writer of team membership.
     actorCollaboration.attachSpaces({command:(context,command)=>serverSpaces.command(context,command)});
 
-    threadOrchestration = new ThreadOrchestrationBroker(actorCollaboration, createThreadOrchestrationExecution(() => appHostServer, {
+    threadOrchestration = new ThreadOrchestrationBroker(actorCollaboration, createThreadOrchestrationExecution(() => lateAppHost.current(), {
       enabled: ['codex', ...engines.filter(engine => engine !== 'dsh')], prepared: id => actorCollaboration.spawnPreparation(id),
     }), Date.now, orchestrationStorage);
     threadOrchestration.enableAssistantThreads(threadAccess);
@@ -851,10 +861,10 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       if (serverSpaces.initialized) await serverSpaces.inherit(parent, child);
       threadAccess.acceptCreated(await orchestrationStorage.inheritChildCreator(parent, child));
     };
-    threadOrchestration.legacySchedule=async threadId=>{const serverId=conversationExecution.serverForThread(threadId),hostId=conversationExecution.hostForServer(serverId);return (await callConversationHost(appHostServer,{hostId,threadId},'automation-schedule-inspect','opencraft/schedules/read',{threadId})).schedule;};
+    threadOrchestration.legacySchedule=async threadId=>{const serverId=conversationExecution.serverForThread(threadId),hostId=conversationExecution.hostForServer(serverId);return (await callConversationHost(lateAppHost.current(),{hostId,threadId},'automation-schedule-inspect','opencraft/schedules/read',{threadId})).schedule;};
     // The server's own Engine Host starts later (after the capability listener); automations reach it when they run.
     projectAutomations=createProjectAutomations(orchestrationStorage,threadOrchestration,actorCollaboration,
-      options.codexBridgePrograms!==undefined?{get url(){return codexAgentBridge?.url??'http://127.0.0.1:1/';},get token(){return codexAgentBridge?.token??'';}}:codexAgentBridge);
+      options.codexBridgePrograms!==undefined?{get url(){return lateCodexBridge.current()?.url??'http://127.0.0.1:1/';},get token(){return lateCodexBridge.current()?.token??'';}}:lateCodexBridge.get());
     actorCollaborationApi=new CollaborationHttpApi(actorCollaboration,actorAccess,projectAutomations);
     await projectAutomations.start();
     actorCollaboration.start();
@@ -884,13 +894,13 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     workspaceRouting?.connectBrowserRouting?.({ service: remoteBrowser,
       assertThreadAccess: ({ownerId, hostId, threadId}) => {
         const serverId = threadId === null ? null : conversationExecution.serverForHost(hostId, threadId);
-        if (closing || !actorStore.get(ownerId)?.enabled || !instanceAccess?.admitsActor(ownerId)
+        if (lifecycle.closing() || !actorStore.get(ownerId)?.enabled || !instanceAccess?.admitsActor(ownerId)
           || (threadId !== null && !threadAccess.allowsActor(serverId, threadId, ownerId)))
           throw Error('Browser conversation authority revoked');
       },
     });
     const authorizeBrowserExecution = (context, serverId, threadId) => {
-        if (closing || !actorStore.isCurrent(context) || actorStore.get(context.actorId)?.kind !== 'human'
+        if (lifecycle.closing() || !actorStore.isCurrent(context) || actorStore.get(context.actorId)?.kind !== 'human'
           || instanceAccess && !instanceAccess.admitsActor(context.actorId) || !threadAccess.allows(serverId, threadId, context))
           throw new Error('Browser execution authority revoked');
     };
@@ -903,7 +913,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       authorize: authorizeBrowserExecution,
       owner: context => anonymousDeployment && operator.owns(context.actorId) ? 'local-anonymous' : context.actorId,
       currentTurn: async (hostId, threadId, context) => {
-        return readConversationCurrentTurn(appHostServer, { hostId, threadId }, { sender: null, actorContext: context });
+        return readConversationCurrentTurn(lateAppHost.current(), { hostId, threadId }, { sender: null, actorContext: context });
       },
     }));
     // Providers read the run's Host, verified human Actor and active lease from
@@ -930,7 +940,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     // Opaque ENV delivery needs the same live Actor/lease handoff as Git; a
     // configured vault owner without it fails here, not at every command.
     if (environmentLaunch && !environmentHandoff) throw new Error('Environment delivery requires execution admission');
-    const capabilityKey=await capabilitySigningKey(fileKeyMaterial(dataDirectory));
+    const capabilityKey=lateCapabilityKey.bind(await capabilitySigningKey(fileKeyMaterial(dataDirectory)));
     capabilityMcp = new SessionCapabilityMcp(capabilities, capabilityKey, capabilityBindings, {
       descriptorPath:join(dataDirectory,'session-capabilities.json'), retainEndpoint: true,
       cliDirectory:options.threadCliDirectory ?? join(dataDirectory,'thread-cli'),
@@ -946,7 +956,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       },
       ...(environmentLaunch ? {hostEnvironment:createHostEnvironmentLaunch({port:environmentLaunch,
         handoff:environmentHandoff,
-        routes:session=>!closing&&session.serverId===conversationExecution.serverForHost('opencraft-server',session.threadId)
+        routes:session=>!lifecycle.closing()&&session.serverId===conversationExecution.serverForHost('opencraft-server',session.threadId)
           &&conversationExecution.hostForServer(session.serverId)==='opencraft-server'})} : {}),
       authorizeExecution:async session=>{
         if(session.serverId!==conversationExecution.serverForThread(session.threadId))throw new CollaborationError(403,'execution_delegation_required');
@@ -982,13 +992,13 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         cli:{directory:join(dataDirectory,'codex-bridge','cli'),signingKey:join(dataDirectory,'session-capabilities.key'),endpoint:capabilityMcp.cliEndpoint},
         serverId:`server:${machineIdentity.machineId}:codex`,
         log:line=>console.error(line)});
-      codexAgentBridge=codexEngineHost.bridge;
+      lateCodexBridge.bind(codexEngineHost.bridge);
     }
     const bridgeSessionMcp=createBridgeSessionMcp(capabilityMcp,
       threadId=>({serverId:conversationExecution.serverForThread(threadId),threadId}),
       session=>capabilities.refresh(session));
     const startAgent = options.startAgentHost ?? startLocalAgentHost;
-    const startDsh = () => dshAgent ??= startAgent({
+    const startDsh = lateStartDsh.bind(() => dshAgent ??= startAgent({
       executionCli: connectedExecutionCli,
       modelPolicyPath,
       nativePi: !engines.includes("pi"),
@@ -1013,6 +1023,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       taskSkillDirectories: [join(dataDirectory, "codex/runtime/skills")],
       taskServerId: "opencraft-server",
       taskConversationCatalog: (serverId, search, limit, cursor) => {
+        const appHostServer = lateAppHost.current();
         if (serverId !== "local-codex" || !appHostServer) throw new Error("Task conversation server is unavailable");
         return readTaskCodexConversations(appHostServer, search, limit, cursor);
       },
@@ -1029,7 +1040,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           ...(typeof row.generation === 'string' ? { generation: row.generation } : {}),
           gateway: { url: row.url, token: row.token, serverId: row.serverId, inboxPath: row.inboxPath } };
       })() } } : {}),
-    }).catch(error => {dshAgent=undefined;throw error;});
+    }).catch(error => {dshAgent=undefined;throw error;}));
     if (options.engineHostDescriptor) {
       independentEngine = await attachEngineHost(options.engineHostDescriptor, dataDirectory, machineIdentity.machineId,
         engines, options.defaultEngine ?? (engines.includes("dsh") ? "dsh" : "pi"));
@@ -1066,15 +1077,16 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       directory: join(dataDirectory, "thread-identities", "opencraft-server"),
       resolveTarget: async () => agent.resolveWebsocketUrl ? await agent.resolveWebsocketUrl() : agent.websocketUrl,
       createMetadata: createThreadMetadata,
-      resolveExecutionNative: threadId => resolveExecutionNative(threadId),
+      resolveExecutionNative: async threadId => lateExecutionObservation.current()?.resolveNative(threadId) ?? null,
     });
+    let executionStore;
     if (agentIdentity) executionStore = agentIdentity.executions;
     else {
       executionDatabase = new ThreadIdentityDatabase(join(dataDirectory,'thread-identities','opencraft-server'));
       executionStore = new ExecutionLeaseStore(executionDatabase.database);
     }
     executionStore.suspend();
-    resolveExecutionNative = async threadId => {
+    const resolveExecutionNative = async threadId => {
       try {
         let pid;
         if (agent.getExecutionIdentity) pid = (await agent.getExecutionIdentity(threadId)).pid;
@@ -1086,6 +1098,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         return pid ? await observeNativeExecutionProcess(pid) : null;
       } catch { return null; }
     };
+    lateExecutionObservation.bind({ store: executionStore, resolveNative: resolveExecutionNative });
     executionRecovery = await createWebSocketExecutionTurnInspector(async () => agent.resolveWebsocketUrl ? agent.resolveWebsocketUrl() : agent.websocketUrl);
     // A finite read-only reconciliation restores the original pre-send lease,
     // including tools born before Gateway loss; failure stays unknown.
@@ -1133,7 +1146,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     // One workspace lifecycle owner: core's own routing, or identity routing
     // that carries the lifecycle members. Without them, no workspace owner.
     const workspaceLifecycle = workspaceLifecycleRouting(ownedWorkspaceRouting, identity?.codexWorkspaceRouting);
-    conversationResources = await ConversationResourceLifecycle.open(serverStorage, {
+    const conversationResources = lateConversationResources.bind(await ConversationResourceLifecycle.open(serverStorage, {
       terminal: async row => {
         if (options.terminalOwner) {
           if (!remoteBrowser) throw Error('Resource bindings are starting');
@@ -1149,7 +1162,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       ...(workspaceLifecycle ? {workspace:row=>workspaceLifecycle.releaseConversation(row)} : {}),
     }, { diagnose: value => console.warn('[conversation-resources]', JSON.stringify(value)),
       ...(workspaceLifecycle ? {dependencies:{workspace:['browser']},replayOwners:['browser','workspace']} : {}),
-    });
+    }));
     if (remoteBrowser) remoteBrowser.conversationLifecycle = conversationResources;
     const resourceAuthority = context => {
       context.resourceOwner?.assertCurrent();
@@ -1185,7 +1198,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         }, tool, args, signal),
       }, createCodexTransport);
     };
-    appHostServer = new AppHostServer({
+    const appHostServer = lateAppHost.bind(new AppHostServer({
       createRpcAccessSession: createThreadAccessSession,
       logicalClientRouting: true,
       physicalHostLifetime: "server",
@@ -1204,7 +1217,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         const remote = remoteServers.get(hostId);
         if (remote) return new MachineIdentityTransport(null, "Codex", () => createRemoteCodexTransport(remote, hostId));
         if (hostId.startsWith("ssh:")) {
-          const binding = sshManagement.store.binding(hostId);
+          const binding = lateSshManagement.get().store.binding(hostId);
           return new MachineIdentityTransport(null, "Codex", () => createRemoteCodexTransport(binding, hostId));
         }
         if (hostId !== "local-codex") throw new Error(`Unknown server Host ${hostId}`);
@@ -1255,7 +1268,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
             workerFile: options.gitWorkerFile ?? fileURLToPath(new URL('./personal-git-worker.mjs', import.meta.url)),
             authorize: scope => {
               const actorId = scope.account.slice('actor:'.length), actor = actorStore.get(actorId);
-              return !closing && actor?.enabled === true && actor.kind === 'human'
+              return !lifecycle.closing() && actor?.enabled === true && actor.kind === 'human'
                 && actor.generation === scope.actorGeneration && instanceAccess.admitsActor(actorId);
             },
           })} : {}),
@@ -1317,7 +1330,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           ...createCodexWorkspaceHooks(workspaceRouting ?? composition, hostId),
           nativeCodexHomeDirectory: join(dataDirectory, "native-codex"),
           desktop,
-        }), codexAgentBridge, {
+        }), lateCodexBridge.get(), {
           admit:async (threadId,inputId,input,context)=>{
             if(context.collaborationRequestId) {
               if(inputId!=='actor-input:'+context.collaborationRequestId)throw Error('Invalid admitted input');
@@ -1385,11 +1398,12 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         if (['local-codex', 'opencraft-server'].includes(hostId))
           scopedTransport = new ConversationResourceTransport(scopedTransport, hostId, conversationResources);
         return ['local-codex', 'opencraft-server'].includes(hostId) ? new PushObservationTransport(scopedTransport, value => {
+          const turnPush = lateTurnPush.current();
           if (!turnPush || actorStore.get(value.actorId)?.kind !== 'human') return;
           void Promise.resolve(turnPush.store.watch(value.actorId, conversationExecution.serverForHost(hostId, value.threadId), hostId, value.threadId, value.inputId)).catch(() => {});
         }) : scopedTransport;
       },
-    });
+    }));
     const serverInformation = new ServerInformationStore(fileStateDocumentStore(dataDirectory));
     const serverInformationService = serverInformationHttp(serverInformation, request => {
       const context = actorAccess.authenticate(request);
@@ -1399,19 +1413,31 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       return { actorId: context.actorId, administrator: !!principal && actorStore.findHuman(principal)?.id === context.actorId && instanceAccess.role(principal) === 'admin',
         origin: actorAccess.options.trustedOrigin?.(request) ?? null };
     });
-    const accountModelDefaultsService = accountModelDefaultsHttp(serverStorage.call, humanActorAccess({
+    const signedInHuman = humanActorAccess({
       authenticate: request => actorAccess.authenticate(request),
       refused: request => actorAccess.legacyAdmissionStatus(request) === 403,
       isCurrentHuman: context => actorStore.isCurrent(context) && actorStore.get(context.actorId)?.kind === 'human',
       admits: instanceAccess ? actorId => instanceAccess.admitsActor(actorId) : null,
       trustedOrigin: request => actorAccess.options.trustedOrigin?.(request) ?? null,
-    }));
-    turnPush = new TurnPushService(await openPushStore(join(dataDirectory, 'web-push.sqlite')), {
+    });
+    const accountModelDefaultsService = accountModelDefaultsHttp(serverStorage.call, signedInHuman);
+    // Personal SSH keys: committed by the owner Worker, read from this thread's projection.
+    const sshKeyAuthority = installationSshKeyAuthority({ actors: actorStore, access: instanceAccess });
+    personalSshKeys = await ActorSshKeys.open(serverStorage.call, sshKeyAuthority);
+    serverStorage.onUnavailable(error => personalSshKeys?.fail(error));
+    const actorSshKeysService = actorSshKeysHttp(personalSshKeys, {
+      access: signedInHuman,
+      administrator: (_request, actorId) => sshKeyAuthority.administrator(actorId),
+      isHuman: actorId => actorStore.get(actorId)?.kind === 'human',
+      sshLogin: !!ingressConfiguration,
+    });
+    const turnPush = lateTurnPush.bind(new TurnPushService(await openPushStore(join(dataDirectory, 'web-push.sqlite')), {
       hosts: ['local-codex', 'opencraft-server'],
       publicBaseUrl: async () => (await serverInformation.read()).publicUrl,
       defaultTarget: identity?.notificationDefaultTarget,
-      imTargets: async binding => imPlugins?.notificationTargets(binding.context.actorId) ?? [],
+      imTargets: async binding => lateImPlugins.current()?.notificationTargets(binding.context.actorId) ?? [],
       sendIm: async (binding,target,message) => {
+        const imPlugins=lateImPlugins.current();
         if(!imPlugins)throw Error('notification_unavailable');
         const send=imPlugins.prepareDirectNotification(target.channelId,target.senderId,binding.context.actorId);
         await send([message.title,message.body,message.url].join('\n'),message.id);
@@ -1427,17 +1453,17 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       trustedOrigin: request => actorAccess.options.trustedOrigin?.(request) ?? null,
       canRead: (actorId, hostId, threadId) => threadAccess.allowsActor(conversationExecution.serverForHost(hostId, threadId), threadId, actorId),
       read: (hostId, method, params) => callConversationHost(appHostServer, {hostId, threadId:params.threadId}, 'push-history', method, params, undefined, 10_000),
-    });
+    }));
     await turnPush.initialize();
     // Local anonymous features remain usable. Public remote access is enabled
     // only with explicit operator opt-in; all remote sockets require a session.
-    if (host === "127.0.0.1" || options.sshPublicAccess) sshManagement = await SshManagement.open({
+    const sshManagement = lateSshManagement.bind(host === "127.0.0.1" || options.sshPublicAccess ? await SshManagement.open({
       directory: join(dataDirectory, "ssh"), publicAccess: options.sshPublicAccess, accessFile: options.sshAccessFile,
       accessMode: options.sshRequireAccessKey || options.sshAccessFile ? "access-key" : "shared",
       resetConnection: id => appHostServer.resetHost(id), connectionState: id => appHostServer.hostState(id),
       connectConnection: (id, assertAdmission) => appHostServer.ensureHostConnected(id, assertAdmission),
       legacyServers: sshServers.map(binding => binding.descriptor),
-    });
+    }) : undefined);
     try {
       observability = await createObservabilityIngress(process.env.OPENCRAFT_OBSERVE_INGRESS_CONFIG, { access: instanceAccess, actors: actorStore, executionHealth: options.getExecutionHealth });
     } catch {
@@ -1490,7 +1516,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       resolveAppServerTarget: agent.resolveWebsocketUrl,
       appServerIdentity: agentIdentity ?? null,
       mcpAppsService: mcpApps,
-      getImService: () => imPlugins,
+      getImService: () => lateImPlugins.current(),
       connectorService,
       loopbackOnly: host === "127.0.0.1",
       localAccess,
@@ -1498,9 +1524,12 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       sshServerDescriptors: sshServers.map(binding => binding.descriptor),
       sshManagement,
       fileDownloads,
-      getPluginHealth: () => ({...(imPlugins ? {'opencraft.im':imPlugins.states()} : {}),...(turnPush ? {'opencraft.push':turnPush.health} : {}),
-        ...(runtimePlugins ? {'opencraft.runtime-plugins':runtimePlugins.health()} : {})}),
-      getStorageOutcomes: () => [
+      getPluginHealth: () => {
+        const imPlugins = lateImPlugins.current();
+        return {...(imPlugins ? {'opencraft.im':imPlugins.states()} : {}),...(turnPush ? {'opencraft.push':turnPush.health} : {}),
+          ...(runtimePlugins ? {'opencraft.runtime-plugins':runtimePlugins.health()} : {})};
+      },
+      getStorageOutcomes: () => { const imPlugins = lateImPlugins.current(); return [
         { name: 'server-core', status: serverStorage.outcome.status, appliedVersion: serverStorage.outcome.appliedVersion,
           movedAside: false, productVersion: serverStorage.contract.productVersion, contractHash: serverStorage.contract.hash },
         ...(imPlugins ? [{name:'im-switchboard',status:imPlugins.outcome.status,appliedVersion:imPlugins.outcome.appliedVersion,movedAside:imPlugins.outcome.movedAsidePaths.length>0}] : []),
@@ -1517,36 +1546,10 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         ...(sshManagement ? [{ name: "ssh-connections", status: sshManagement.store.outcome.status,
           appliedVersion: sshManagement.store.outcome.appliedVersion, backupPath: sshManagement.store.outcome.backupPath,
           movedAside: sshManagement.store.outcome.movedAsidePaths.length > 0 }] : []),
-      ],
+      ]; },
       desktopService: desktop ?? null,
       desktopAccess,
-      modelPolicyService: (() => {
-        const gatewayPath = configuredModelGatewayPath();
-        const contributions=gatewayPath?gatewayContributions(join(dataDirectory,"models"),gatewayPath):null;
-        const subscriptionCore=options.codexCoreEndpoint&&options.codexCoreAuthToken?new CodexCoreControlClient(options.codexCoreEndpoint,options.codexCoreAuthToken):null;
-        const gateway = gatewayPath ? modelGatewayHttp({path:gatewayPath,
-          ...contributions,
-          subscription:subscriptionCore?async(actor,input,assertCurrent)=>{
-            assertCurrent();
-            const result=await subscriptionCore.accountRequest('opencraft/codex/accounts/personal/'+input.operation,{actor,sessionId:input.sessionId});
-            assertCurrent();
-            if(result.status==='complete')return {status:'complete',...await contributions.connectSubscription(actor,result.connection,assertCurrent)};
-            return result;
-          }:undefined,
-          authority: request => {
-            const context = actorAccess.authenticate(request);
-            if (!context || actorStore.get(context.actorId)?.kind !== 'human') return null;
-            const principal = instanceAccess?.authenticate(request);
-            return {actor:context.actorId,administrator:!!principal && instanceAccess.role(principal)==='admin',
-              origin:actorAccess.options.trustedOrigin?.(request) ?? null};
-          }}) : null;
-        const policy = modelPolicyHttp(modelPolicy, request => {
-        const principal=instanceAccess?.authenticate(request);
-        if(!principal || !instanceAccess.role(principal)) return null;
-        return {actor:JSON.stringify([principal.provider,principal.subject]),administrator:instanceAccess.role(principal)==='admin',origin:instanceAccess.trustedOrigin(request)};
-        });
-        return async (request,response) => gateway && await gateway(request,response) || await policy(request,response);
-      })(),
+      modelPolicyService: account.createHttpService({ actorAccess, actorStore, instanceAccess }),
       assetsService,
       identityService: identity?.service ?? null,
       ...(runtimePlugins ? { runtimePluginService: runtimePlugins } : {}),
@@ -1557,18 +1560,18 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       turnPushService: turnPush,
       serverInformationService,
       accountModelDefaultsService,
+      actorSshKeysService,
       authService: humanAuth ?? null,
       accountService: accountApplication ?? null,
       hubService: hubController,
       remoteBrowserService: remoteBrowser,
-      speechService: new SpeechTranscriptionService({ configuration: new SpeechModelConfiguration(
-        new ModelConfigurationRepository(fileStateDocumentStore(join(dataDirectory, "models"))), new ModelCredentialRepository(fileSecretStore(join(dataDirectory, "models")))) }),
+      speechService: account.createSpeechService(),
     });
     conversationResources.retry();
     const reconciledResourceHosts = new Map();
     let resourceInventoryRunning = false;
     const reconcileResources = async () => {
-      if (closing || resourceInventoryRunning) return;
+      if (lifecycle.closing() || resourceInventoryRunning) return;
       resourceInventoryRunning = true;
       try {
         const scopes = [...await remoteBrowser.threadScopes(), ...(workspaceLifecycle?.conversationScopes() ?? []),
@@ -1583,7 +1586,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
             { archived: true, cursor, limit: 200 }, undefined, 10_000));
           if (ok) reconciledResourceHosts.set(hostId, revision);
         }
-      } catch { if (!closing) console.warn('[conversation-resources] inventory unavailable; will retry'); }
+      } catch { if (!lifecycle.closing()) console.warn('[conversation-resources] inventory unavailable; will retry'); }
       finally { resourceInventoryRunning = false; }
     };
     void reconcileResources();
@@ -1594,10 +1597,12 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     if (ingressConfiguration) {
       const privateAddress = await web.listen({ host: "127.0.0.1", port: 0 });
       sshNativeRpc = await createSshNativeRpcGateway(appHostServer);
+      const sshAccess = composeSshAccess(identity?.sshAccess, personalSshKeys);
       ingress = createSshHttpIngress({ ...ingressConfiguration, httpPort: privateAddress.port,
-        ...(identity?.sshAccess ? {
-          resolveAuthorizedKeys: username => identity.sshAccess.publicKeys(username),
-          authorizeSession: (username, key) => identity.sshAccess.authorize(username, key),
+        // An identity composition's own keys first, then each person's registered keys.
+        ...(sshAccess ? {
+          resolveAuthorizedKeys: (username, key) => sshAccess.publicKeys(username, key),
+          authorizeSession: (username, key) => sshAccess.authorize(username, key),
           createNativeSession: authorization => createSshNativeRpcGateway(appHostServer, authorization),
         } : {}),
         codexPort: sshNativeRpc.port, codexControl: createSshCodexControl(appHostServer,
@@ -1626,8 +1631,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       codexBinary:options.codexExecutable ?? join(root,'runtime/codex/bin/codex'),
       // Explicit local preview composition only (scripts/dev/preview-crew.ts); the CLI never sets it.
       ...(composition.personalAssistantHost ?? {})});
-    imPlugins = await startImPlugins(imConfiguration,{dataDirectory,capabilities,prepareCapabilities: tools => capabilityMcp.prepare(tools),actors:actorStore,collaboration:actorCollaboration,actorAccess,getAppHost:() => appHostServer,admittedActor:actorId => !instanceAccess || instanceAccess.admitsActor(actorId),...await createChannelSyncDependencies(composition,channelSyncContext({collaboration:actorCollaboration,relayConnectFile:relayConfiguration ? options.relayConnectFile : undefined}))});
-    try { availabilityNotification = await startAvailabilityNotification(process.env.OPENCRAFT_AVAILABILITY_NOTIFICATION_CONFIG, () => imPlugins); }
+    lateImPlugins.bind(await startImPlugins(imConfiguration,{dataDirectory,capabilities,prepareCapabilities: tools => capabilityMcp.prepare(tools),actors:actorStore,collaboration:actorCollaboration,actorAccess,getAppHost:() => appHostServer,admittedActor:actorId => !instanceAccess || instanceAccess.admitsActor(actorId),...await createChannelSyncDependencies(composition,channelSyncContext({collaboration:actorCollaboration,relayConnectFile:relayConfiguration ? options.relayConnectFile : undefined}))}));
+    try { availabilityNotification = await startAvailabilityNotification(process.env.OPENCRAFT_AVAILABILITY_NOTIFICATION_CONFIG, () => lateImPlugins.current()); }
     catch { console.warn('[availability-notification] startup-unavailable'); }
     capabilitiesReadyResolve();
     return { url: `http://127.0.0.1:${address.port}`, listenHost, listenPort: address.port, close };

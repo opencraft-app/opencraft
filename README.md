@@ -1,65 +1,81 @@
 <div align="center">
 
-<img src="apps/workbench-web/public/opencraft-icon.svg" width="80" height="80" alt="OpenCraft 标志" />
+<img src="apps/workbench-web/public/opencraft-icon.svg" width="80" height="80" alt="OpenCraft logo" />
 
 # OpenCraft
 
 ### Anyone Agents Anywhere
 
-**每个人的 Agent，连接每一个地方。**
+**Connect your agents. Share what they can do.**
 
-接入运行在不同地方的 Agent，让你选择的人也能使用它们。
+Connect the agents you run, wherever they live, and make them available to the people you choose.
 
-[简体中文](README.md) · [English](README.en.md)
+[English](README.md) · [简体中文](README.zh-CN.md)
 
-[![构建](https://github.com/opencraft-app/opencraft/actions/workflows/build-matrix.yml/badge.svg)](https://github.com/opencraft-app/opencraft/actions/workflows/build-matrix.yml) [![安全检查](https://github.com/opencraft-app/opencraft/actions/workflows/security.yml/badge.svg)](https://github.com/opencraft-app/opencraft/actions/workflows/security.yml) [![许可证：MIT-0](https://img.shields.io/badge/License-MIT--0-64748b)](LICENSE) [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)](https://github.com/topics/typescript)
+[![Build](https://github.com/opencraft-app/opencraft/actions/workflows/build-matrix.yml/badge.svg)](https://github.com/opencraft-app/opencraft/actions/workflows/build-matrix.yml) [![Security](https://github.com/opencraft-app/opencraft/actions/workflows/security.yml/badge.svg)](https://github.com/opencraft-app/opencraft/actions/workflows/security.yml) [![License: MIT-0](https://img.shields.io/badge/License-MIT--0-64748b)](LICENSE) [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)](https://github.com/topics/typescript)
 
-[![AI Agents](https://img.shields.io/badge/AI_Agents-18181b)](https://github.com/topics/ai-agents) [![ACP](https://img.shields.io/badge/ACP-18181b)](plugins/acp-engine/README.md) [![MCP](https://img.shields.io/badge/MCP-18181b)](docs/architecture/execution/session-capabilities.md) [![自主部署](https://img.shields.io/badge/Self_Hosted-18181b)](deploy/docker/README.md) [![协作](https://img.shields.io/badge/Collaboration-18181b)](docs/architecture/identity/actor-collaboration-api.md)
+[![AI Agents](https://img.shields.io/badge/AI_Agents-18181b)](https://github.com/topics/ai-agents) [![ACP](https://img.shields.io/badge/ACP-18181b)](plugins/acp-engine/README.md) [![MCP](https://img.shields.io/badge/MCP-18181b)](docs/architecture/execution/session-capabilities.md) [![Self Hosted](https://img.shields.io/badge/Self_Hosted-18181b)](deploy/docker/README.md) [![Collaboration](https://img.shields.io/badge/Collaboration-18181b)](docs/architecture/identity/actor-collaboration-api.md)
 
-[快速开始](#快速开始) · [可以用来做什么](#可以用来做什么) · [文档导航](#文档导航) · [参与贡献](CONTRIBUTING.md)
+[Install](#install) · [Get started](#get-started) · [What you can do](#what-you-can-do) · [Documentation](#documentation) · [Contribute](CONTRIBUTING.md)
 
 </div>
 
-## 我们的理念
+## The idea
 
-OpenCraft 是一个开源 Agent 工作台，围绕 **Anyone Agents Anywhere** 构建。
-你的 Agent 可以运行在自己的电脑、远程开发机，或自主部署的服务器上。
-我们希望让这些 Agent 在一个共同的工作台中发挥作用，也让你能把它们开放给别人使用。
+OpenCraft is an open-source Agent workbench built around **Anyone Agents Anywhere**.
+An Agent might run on your laptop, a remote development machine, or a server you manage.
+Our goal is to give those agents a common place to work—and let you share access to them with other people.
 
-- **Anyone · 任何人**：每个人都应该能够拥有、使用和分享 Agent。
-- **Agents · 你的智能伙伴**：接入已经在用的 Agent，配置自己的模型服务，或为自定义运行时开发适配。
-- **Anywhere · 任何地方**：连接不同机器上的 Agent，通过浏览器、桌面或手机使用同一个工作台。
+- **Anyone** — Anyone should be able to own, use and share an Agent.
+- **Agents** — Bring your existing agents, connect your model providers, or build an integration for your own runtime.
+- **Anywhere** — Reach agents across machines and use the workbench from the browser, desktop or mobile.
 
-### 接入你的 Agent，把它的能力分享出去
+### Connect yours. Share its capabilities.
 
-1. **接入**：让 Agent 继续在原来的地方运行，由执行 Host 保管环境与凭据。
-2. **授权**：选择可以协作的人或 Agent，明确开放哪些访问权限。
-3. **协作**：通过对话和执行请求开展工作，保留清晰的归属与权限边界。
+1. **Connect** an Agent where it already runs, keeping its environment and credentials with its execution Host.
+2. **Authorize** the people or agents you want to work with, choosing the access you grant.
+3. **Collaborate** through conversations and execution requests, with ownership and permissions kept explicit.
 
-我们的愿景是：你接入的 Agent，都可以成为能分享给他人使用的能力。
-它可以是你的个人编程助手、团队的专项 Agent，也可以是你运营的一项服务。
-分享的是使用能力，接收者无需取得 Agent 的底层凭据。
+The vision is broad: an Agent you connect should be something you can offer to others,
+whether it is your personal coding assistant, a team's specialist, or a service you operate.
+Sharing means granting access to its capabilities; recipients do not need to inherit its credentials.
 
-## 可以用来做什么
+## What you can do
 
-| 能力 | OpenCraft 中的体验 |
+| Capability | In OpenCraft |
 | --- | --- |
-| **接入已有 Agent** | 连接已安装的 Codex、Cursor，检查登录状态、发现原生模型，选择实际支持的推理档位与 Fast 设置；其他运行时通过对应适配器接入。 |
-| **使用自己的模型服务** | 在模型设置中配置 API 端点与凭据，由执行 Host 持有凭据。 |
-| **跨机器工作** | 连接本地与远程执行 Host，按所选 Host 管理工作目录、会话及保存的状态。 |
-| **保持对话连续** | 恢复已支持的原生历史、保留草稿、查看工具活动与已上报的 Token 用量，在一个工作台里发送任务或停止执行。 |
-| **构建协作流程** | 使用经过认证的主体消息、接收／已读回执与显式授权；当前单 Hub 执行桥接支持绑定的本地 Codex 会话。 |
-| **扩展工作台** | 通过现有扩展边界接入客户端插件、MCP 工具与 Host 侧能力。 |
-| **选择使用方式** | 使用浏览器或 Electron 桌面端；公开 Expo 应用在手机端打包复用同一套 Web 工作台。 |
+| **Bring an existing Agent** | Connect installed Codex and Cursor agents, check sign-in, discover native models, and select supported reasoning and Fast settings. Other runtimes connect through their adapters. |
+| **Use your model providers** | Configure API endpoints and credentials through model settings. The execution Host owns the credentials. |
+| **Work across machines** | Connect local and remote execution Hosts, with workspaces, conversations and saved state scoped to the selected Host. |
+| **Keep conversations continuous** | Restore supported native history, keep drafts, inspect tool activity and reported token usage, and send or stop work from one workbench. |
+| **Build collaboration** | Use authenticated Actor messaging, delivery/read receipts and explicit grants. The current single-Hub execution bridge supports bound local Codex sessions. |
+| **Extend the workbench** | Add client extensions, MCP tools and Host-side capabilities through their existing integration boundaries. |
+| **Choose your client** | Use the browser or Electron desktop app; the public Expo app packages the shared Web Workbench for mobile. |
 
-**当前范围。** 每种适配器只提供实际接通的能力。首期主体协作闭环位于单个 Hub；
-跨 Hub 分享 Agent、任意 Agent 的通用即插即用接入，是我们推进的方向。
-已实现能力及具体范围见[主体协作接口](docs/architecture/identity/actor-collaboration-api.md)、
-[主体与 Hub 设计](docs/architecture/identity/actor-collaboration.md)和[执行契约](docs/architecture/execution/execution-ownership.md)。
+**Current scope.** Each adapter exposes its actual capabilities. The first Actor collaboration loop
+is single-Hub. Broader cross-Hub Agent sharing and a universal plug-and-play bridge for every Agent
+remain development goals. See the [implemented collaboration API](docs/architecture/identity/actor-collaboration-api.md),
+[identity and Hub design](docs/architecture/identity/actor-collaboration.md), and
+[execution contracts](docs/architecture/execution/execution-ownership.md).
 
-## 快速开始
+## Install
 
-使用 **Node.js 26.7.0** 和 **npm 11**，仓库通过 [`.nvmrc`](.nvmrc) 固定 Node 版本。
+Download the latest version from [Releases](https://github.com/opencraft-app/opencraft/releases). Betas are marked Pre-release.
+
+| Platform | Download |
+| --- | --- |
+| macOS (Apple silicon and Intel) | `OpenCraft-<version>-universal.dmg`, signed and notarized by Apple |
+| Windows x64 | `OpenCraft-Setup-<version>-x64.exe`, not yet signed: confirm the system prompt on first run |
+| Linux x64 | `OpenCraft-<version>-linux-x86_64.AppImage` |
+| Android | `OpenCraft-<version>-android-arm64.apk` |
+| iOS | TestFlight public beta coming soon; or sign `OpenCraft-<version>-ios-unsigned.ipa` with your own Apple ID |
+| Server | `docker pull ghcr.io/opencraft-app/opencraft-server:<version>`, see the [Docker deployment guide](deploy/docker/README.md); or the Linux archive `OpenCraft-server-<version>-linux-amd64.tar.gz` |
+
+Every release includes `SHA256SUMS.txt` and `release-manifest.json` to verify the downloaded files.
+
+## Get started
+
+Use **Node.js 26.7.0** and **npm 11**. The repository pins Node in [`.nvmrc`](.nvmrc).
 
 ```bash
 git clone https://github.com/opencraft-app/opencraft.git
@@ -69,48 +85,48 @@ npm ci
 npm run dev
 ```
 
-打开终端打印的网址，连接已安装的 **Codex** 或 **Cursor**，
-也可以在设置中配置自己的模型服务。本地开发无需 OpenCraft 账号。
+Open the printed URL. Connect an installed **Codex** or **Cursor** agent,
+or configure a model provider in Settings. Local development requires no OpenCraft account.
 
-`npm run dev` 会同时启动本地执行服务和 Web。开发数据保存在
-`~/.opencraft/dev-local`，模型凭据由执行 Host 保管。
+`npm run dev` starts local execution and Web together. Development data persists in
+`~/.opencraft/dev-local`; model credentials stay with the execution Host.
 
-| 接下来想做什么 | 从这里开始 |
+| Your next step | Start here |
 | --- | --- |
-| 使用 Docker Compose 部署 | [Docker 部署指南](deploy/docker/README.md) |
-| 安装或管理自主部署的网站 | [Web 部署与更新](docs/operations/web-deployment.md) |
-| 开发或打包桌面应用 | [开发指南](docs/develop/development.md#desktop-with-the-bundled-local-agent) |
-| 运行 Expo 或构建手机端 | [手机端指南](apps/mobile/README.md) |
-| 配置 Host 或自定义构建 | [开发与构建指南](docs/develop/development.md) |
+| Run with Docker Compose | [Docker deployment](deploy/docker/README.md) |
+| Install or manage a self-hosted website | [Web deployment and updates](docs/operations/web-deployment.md) |
+| Develop or package the desktop app | [Development guide](docs/develop/development.md#desktop-with-the-bundled-local-agent) |
+| Run Expo or build for mobile | [Mobile guide](apps/mobile/README.md) |
+| Connect Hosts or customize a build | [Development and build guide](docs/develop/development.md) |
 
-## 文档导航
+## Documentation
 
-| 想了解 | 相关文档 |
+| For | Read |
 | --- | --- |
-| 项目全貌 | [文档索引](docs/README.md) · [仓库布局](docs/develop/repository-layout.md) |
-| Agent 身份、权限与协作 | [主体与 Hub 设计](docs/architecture/identity/actor-collaboration.md) · [主体协作接口](docs/architecture/identity/actor-collaboration-api.md) · [服务器登录](docs/architecture/identity/server-authentication.md) |
-| 执行与能力接入 | [执行所有权](docs/architecture/execution/execution-ownership.md) · [会话能力](docs/architecture/execution/session-capabilities.md) · [插件架构](docs/architecture/extensions/plugin-architecture.md) |
-| 开发扩展 | [扩展开发指南](docs/develop/extension-development.md) · [可运行示例](examples/extensions/README.md) |
-| 架构与设计 | [平台架构](docs/architecture/README.md) · [界面设计](design.md) · [构建矩阵](docs/develop/build-matrix.md) |
+| A tour of the project | [Documentation index](docs/README.md) · [Repository layout](docs/develop/repository-layout.md) |
+| Agent identity, access and collaboration | [Actor and Hub design](docs/architecture/identity/actor-collaboration.md) · [Collaboration API](docs/architecture/identity/actor-collaboration-api.md) · [Server authentication](docs/architecture/identity/server-authentication.md) |
+| Execution and integration | [Execution ownership](docs/architecture/execution/execution-ownership.md) · [Session capabilities](docs/architecture/execution/session-capabilities.md) · [Plugin architecture](docs/architecture/extensions/plugin-architecture.md) |
+| Building an extension | [Extension development](docs/develop/extension-development.md) · [Runnable example](examples/extensions/README.md) |
+| Architecture and design | [Platform architecture](docs/architecture/README.md) · [Interface design](design.md) · [Build matrix](docs/develop/build-matrix.md) |
 
-## 一起建设
+## Build with us
 
-让更多 Agent 被连接，让更多人用上它们。
-欢迎贡献 Agent 适配、协作能力、客户端体验、文档与示例。
+Help make more agents reachable and useful to more people.
+Contributions to adapters, collaboration, client experiences, documentation and examples are welcome.
 
-- [反馈问题或提出想法](https://github.com/opencraft-app/opencraft/issues)。
-- 修改共享核心前，阅读[贡献指南](CONTRIBUTING.md)。
-- 产品专用身份、品牌和服务通过[下游装配](docs/history/upstream-transition.md)接入。
-- 安全漏洞请按 [SECURITY.md](SECURITY.md) 中的流程私密报告。
+- [Report a problem or propose an idea](https://github.com/opencraft-app/opencraft/issues).
+- Follow the [contribution guide](CONTRIBUTING.md) for changes to the shared core.
+- Build product-specific identity, branding and services through [downstream composition](docs/history/upstream-transition.md).
+- Report security vulnerabilities through the private process in [SECURITY.md](SECURITY.md).
 
-## 开源许可
+## License
 
-OpenCraft 原创贡献采用 [MIT-0](LICENSE) 许可。
-第三方组件保留各自的许可证与必要声明。
+Original OpenCraft contributions are licensed under [MIT-0](LICENSE).
+Third-party components retain their own licenses and required notices.
 
 <div align="center">
 
 **Anyone Agents Anywhere**<br />
-接入你拥有的 Agent，分享它能做到的事。
+Connect what you run. Share what it can do.
 
 </div>

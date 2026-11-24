@@ -41,8 +41,12 @@ export interface IdentityAssetsOptions extends OpenActorAdmissionOptions {
   /** The composition's authentication of one request, or `null`. */
   resolveRequest(request: IncomingMessage): IdentityAssetsRequest | null;
   readonly port: IdentityAssetsPort;
-  /** The trusted public origin; every route is pinned to its host. */
-  origin(): string;
+  /**
+   * The trusted public origin of this request; every route is pinned to its
+   * host. A composition that learns its origin per request (for example from a
+   * verified proxy assertion) derives it from `request`.
+   */
+  origin(request: IncomingMessage): string;
   /** Only principals of this provider are admitted. */
   readonly provider?: string;
   /** Non-secret Git provider metadata the status route advertises. */
@@ -81,7 +85,7 @@ export function openIdentityAssets(options: IdentityAssetsOptions) {
   const pending = new Set<() => void>();
   const pinned = (request: IncomingMessage) => {
     try {
-      const origin = new URL(options.origin());
+      const origin = new URL(options.origin(request));
       return (
         !closed &&
         ["http:", "https:"].includes(origin.protocol) &&
@@ -142,9 +146,9 @@ export function openIdentityAssets(options: IdentityAssetsOptions) {
   // response closes or the login changes, and the Worker checks it.
   const withPermit = (proof: WorkspaceActorAdmission, permit: Int32Array<SharedArrayBuffer>) =>
     Object.freeze({ ...proof, requestPermit: permit });
-  const authority = (admitted: Admitted): AssetRequestAuthority => ({
+  const authority = (admitted: Admitted, request: IncomingMessage): AssetRequestAuthority => ({
     scope: admitted.scope,
-    origin: options.origin(),
+    origin: options.origin(request),
     expiresAt: admitted.proof.expiresAt,
     // Advisory only: the Worker decides both from the proof's committed role.
     allowCustomEndpoints: false,
@@ -165,7 +169,7 @@ export function openIdentityAssets(options: IdentityAssetsOptions) {
             snapshot: (asset) => read(withPermit(admitted!.proof, asset.permit)),
             update: (asset, input) => write(withPermit(admitted!.proof, asset.permit), input),
           },
-          () => (admitted ? authority(admitted) : null),
+          () => (admitted ? authority(admitted, request) : null),
           path,
         )(request, response);
       } finally {

@@ -2830,6 +2830,15 @@ svg[data-sidebar-toggle-icon-state] {
   > .settings-control-row__label { flex: 0 0 auto; @include typography.role(body, primary); }
   &[data-tone="danger"] { justify-content: center; > .settings-control-row__label { color: var(--color-text-danger, #e5484d); } }
 }
+// A group clips its rows to its own radius, so an outside keyboard ring would be
+// cut down to a stray edge. Inside a group the shared ring is drawn inset and
+// the outer rows follow the group's corners; the modality gate stays the
+// global focus owner's.
+.settings-control-group > .settings-control-row.settings-navigation-row {
+  outline-offset: calc(-1 * var(--width-control-focus-ring));
+  &:first-child { border-start-start-radius: inherit; border-start-end-radius: inherit; }
+  &:last-child { border-end-start-radius: inherit; border-end-end-radius: inherit; }
+}
 .settings-navigation-row__value {
   display: flex;
   align-items: center;

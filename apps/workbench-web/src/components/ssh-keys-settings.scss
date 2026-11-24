@@ -1,0 +1,42 @@
+@use "@opencraft/design-system/typography-mixins.web" as typography;
+
+.ssh-keys-settings {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--gap-token-settings-sections);
+
+  .settings-control-row__value { min-width: 0; }
+  // A fingerprint is compared character by character: wrap it, never truncate it.
+  .settings-control-list-item__copy > small { overflow: visible; white-space: normal; }
+
+  .ssh-keys-settings__fingerprint {
+    @include typography.role(code, secondary);
+    overflow: visible;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+
+.ssh-keys-settings__key {
+  @include typography.role(code);
+  width: 100%;
+  min-height: 80px;
+  resize: vertical;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ssh-keys-settings__form {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+// A reserved two-line validation slot: a refusal never moves the actions below it,
+// also at phone width.
+.ssh-keys-settings__error {
+  @include typography.role(caption, danger);
+  min-height: calc(2 * var(--typography-caption-line-height));
+  margin: 6px 0;
+}

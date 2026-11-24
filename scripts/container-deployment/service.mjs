@@ -84,8 +84,8 @@ async function main() {
   const service = process.argv[2];
   // Brain and Hands both run the workspace agent; native-hands.mjs is the (product
   // composable) agent entry with the Hands and browser roles.
-  const entries = { brain: ['workspace-agent.mjs', '--role', 'brain'], hands: ['native-hands.mjs'], gateway: ['container-gateway.mjs'], proxy: ['proxy-host.mjs'] };
-  if (!Object.hasOwn(entries, service)) throw new Error('Usage: container-service.mjs brain|hands|gateway|proxy [arguments]');
+  const entries = { brain: ['workspace-agent.mjs', '--role', 'brain'], hands: ['native-hands.mjs'], gateway: ['container-gateway.mjs'], proxy: ['proxy-host.mjs'], provisioner: ['provisioner.mjs'] };
+  if (!Object.hasOwn(entries, service)) throw new Error('Usage: container-service.mjs brain|hands|gateway|proxy|provisioner [arguments]');
   const directory = process.env.OPENCRAFT_LOG_DIR;
   if (!directory || !isAbsolute(directory)) throw new Error('Set OPENCRAFT_LOG_DIR to an absolute path');
   const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');

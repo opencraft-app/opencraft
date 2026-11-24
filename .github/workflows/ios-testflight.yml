@@ -15,6 +15,10 @@ on:
         description: Wait for and require external TestFlight availability after uploading
         type: boolean
         default: true
+      distribute:
+        description: Add the uploaded (or check_build) build to the external group and submit it for beta review
+        type: boolean
+        default: false
   # The app release uploads its build here. Beta review can take hours, so a
   # release does not wait for external availability.
   workflow_call:
@@ -22,6 +26,13 @@ on:
       check_availability:
         type: boolean
         default: false
+      distribute:
+        type: boolean
+        default: false
+      release_tag:
+        description: Release whose notes the build's "What to Test" links to
+        type: string
+        default: ""
     outputs:
       version:
         description: Marketing version of the uploaded build
@@ -240,3 +251,36 @@ jobs:
           path: ${{ runner.temp }}/testflight-status.json
           retention-days: 30
           if-no-files-found: warn
+
+  # Beta review can take hours, so this does not wait for it, and a failure here
+  # does not fail the release: the status job and a later dispatch report it.
+  distribute:
+    needs: build
+    if: >-
+      !cancelled() && inputs.distribute && github.repository == 'opencraft-app/opencraft' &&
+      github.ref == 'refs/heads/main' &&
+      (inputs.check_build || needs.build.result == 'success')
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: ios-testflight
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Add the build to the external group and submit it for beta review
+        env:
+          APP_STORE_APP_ID: ${{ vars.OPENCRAFT_IOS_APP_STORE_APP_ID }}
+          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+          ASC_API_PRIVATE_KEY_BASE64: ${{ secrets.ASC_API_PRIVATE_KEY_BASE64 }}
+          IOS_VERSION: ${{ inputs.check_build && inputs.check_version || needs.build.outputs.version }}
+          IOS_BUILD_NUMBER: ${{ inputs.check_build || needs.build.outputs.number }}
+          OPENCRAFT_TESTFLIGHT_GROUP: ${{ vars.OPENCRAFT_TESTFLIGHT_GROUP }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          TESTFLIGHT_STATUS_FILE: ${{ runner.temp }}/testflight-distribution.json
+        run: node scripts/release/testflight-ios.mjs distribute

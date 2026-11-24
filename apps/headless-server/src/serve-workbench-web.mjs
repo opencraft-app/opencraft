@@ -782,6 +782,7 @@ export async function createWorkbenchWebServer({
   turnPushService = null,
   serverInformationService = null,
   accountModelDefaultsService = null,
+  actorSshKeysService = null,
   authService = null,
   accountService = null,
   observability = null,
@@ -910,6 +911,11 @@ export async function createWorkbenchWebServer({
       // Personal model defaults verify the signed-in human Actor and its admission themselves.
       if (url.pathname === '/__opencraft_model_defaults') {
         if (accountModelDefaultsService && await accountModelDefaultsService(request, response)) return;
+        sendJson(response, 404, { error: 'missing' }); return;
+      }
+      // Personal SSH keys verify the signed-in human Actor and its admission themselves.
+      if (url.pathname === '/__opencraft_ssh_keys' || url.pathname.startsWith('/__opencraft_ssh_keys/')) {
+        if (actorSshKeysService && await actorSshKeysService(request, response)) return;
         sendJson(response, 404, { error: 'missing' }); return;
       }
       if ((url.pathname === '/__opencraft_push' || url.pathname === '/__opencraft_notifications')) {

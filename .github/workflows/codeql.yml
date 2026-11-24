@@ -22,7 +22,8 @@ jobs:
     # Private-repository Code Security is not enabled; run automatically on publication.
     if: github.event.repository.private == false
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # A full analysis of main took about 19 minutes before the codebase grew past 20.
+    timeout-minutes: 45
     permissions:
       contents: read
       actions: read

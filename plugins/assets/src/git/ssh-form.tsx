@@ -64,6 +64,7 @@ export function SshConnectionForm({
   const conflict = Object.entries(controller.operationCodes).some(
     ([k, code]) => k.startsWith(prefix) && code === "conflict",
   );
+  const readError = controller.operationErrors.read ?? "";
   function adopt(row: GitConnectionStatus) {
     setBaseline(row);
     setDraft({
@@ -157,8 +158,12 @@ export function SshConnectionForm({
   const copy = dialog ? dialogCopy[dialog] : null;
   // Before a key exists, generating it is the primary task and also stores the
   // identity; afterwards identity edits are saved on their own.
-  const hint = error
-    ? error
+  // An open dialog owns the feedback for its action: a failed read is reported
+  // there, not drawn behind the modal. Once closed, the form status slot shows it.
+  const feedback = [dialog ? "" : readError, error].filter(Boolean).join(" ");
+  const dialogError = dialog === "reload" ? readError || error : error || readError;
+  const hint = feedback
+    ? feedback
     : saved && !dirty
       ? f("saved")
       : status && reason && (dirty || !key)
@@ -261,7 +266,7 @@ export function SshConnectionForm({
               {f("loadLatest")}
             </SettingsButton>
           ) : null}
-          <span id={id + "-status"} role={error ? "alert" : "status"}>
+          <span id={id + "-status"} role={feedback ? "alert" : "status"}>
             {hint}
           </span>
         </SettingsActions>
@@ -332,16 +337,11 @@ export function SshConnectionForm({
               }
             >
               <AlertDialog.Description>{copy?.about}</AlertDialog.Description>
-              {error || controller.operationErrors.read ? (
-                <SettingsNotice tone="error">{error || controller.operationErrors.read}</SettingsNotice>
-              ) : null}
+              {dialogError ? <SettingsNotice tone="error">{dialogError}</SettingsNotice> : null}
             </SettingsPanel>
           </AlertDialog.Content>
         </AlertDialog.Portal>
       </AlertDialog.Root>
-      {controller.operationErrors.read ? (
-        <SettingsNotice tone="error">{controller.operationErrors.read}</SettingsNotice>
-      ) : null}
     </SettingsSection>
   );
 }

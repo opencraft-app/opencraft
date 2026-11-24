@@ -19,6 +19,8 @@ import { publishEnvironmentIssuer } from '@opencraft/execution-environment/envir
 import { deploymentPaths } from '../../scripts/container-deployment/paths.mjs';
 import { executionHostIssuer } from '../../scripts/container-deployment/execution-hosts.mjs';
 import { ownedCleanup } from '../support/owned-cleanup.mjs';
+import { ActorSshKeys } from '../../apps/headless-server/src/actor-ssh-keys.ts';
+import { createHeadlessLifecycle, createLateBinding } from '../../apps/headless-server/src/assembly/lifecycle.mjs';
 
 async function fixture(t) {
   const runtime = fileURLToPath(new URL('../../.runtime/', import.meta.url));
@@ -408,6 +410,57 @@ test('a disposal failure settles other resources but retains the writer until pr
   await assert.rejects(startHeadlessServer(f.options), { code: 'ELOCKED' });
 });
 
+test('composition-root ports: closing flips when shutdown starts, late bindings bind once', async () => {
+  const lifecycle = createHeadlessLifecycle();
+  let runs = 0, seen;
+  assert.equal(lifecycle.closing(), false);
+  const first = lifecycle.shutdown(async () => { runs++; seen = lifecycle.closing(); });
+  assert.equal(lifecycle.closing(), true, 'closing is published before the disposer runs');
+  assert.equal(runs, 0);
+  assert.equal(lifecycle.shutdown(async () => { runs++; }), first);
+  await first;
+  assert.deepEqual({ runs, seen }, { runs: 1, seen: true });
+
+  const late = createLateBinding('Fixture port');
+  assert.equal(late.current(), undefined);
+  assert.throws(() => late.get(), /Fixture port is not available yet/);
+  const value = { id: 1 };
+  assert.equal(late.bind(value), value);
+  assert.equal(late.get(), value);
+  assert.equal(late.current(), value);
+  assert.throws(() => late.bind({ id: 2 }), /Fixture port is already bound/);
+  const absent = createLateBinding('Absent port');
+  absent.bind(undefined);
+  assert.equal(absent.get(), undefined, 'an intentionally absent service is bound as undefined');
+});
+
+test('a throwing personal SSH key disposer is settled and every later close step still runs', async t => {
+  const f = await fixture(t);
+  // Force the one synchronous disposer to throw on this server only; the prototype is restored before cleanup.
+  const close = ActorSshKeys.prototype.close;
+  t.after(() => { ActorSshKeys.prototype.close = close; });
+  let thrown = 0;
+  ActorSshKeys.prototype.close = function () { thrown++; close.call(this); throw new Error('fixture SSH key disposal failure'); };
+  let identityCloses = 0, compositionCloses = 0;
+  const app = await startHeadlessServer(f.options, {
+    createIdentity: async () => ({ providers: [], close() { identityCloses++; } }),
+    close() { compositionCloses++; },
+  });
+  const policyWal = join(f.options.dataDirectory, 'model-usage-policy.sqlite-wal');
+  assert.equal((await stat(policyWal)).isFile(), true, 'the open policy writer keeps a WAL');
+  // The failure is collected with the others instead of skipping the remaining steps.
+  const failure = await app.close().then(() => null, error => error);
+  assert.ok(failure instanceof AggregateError, `close rejects with the collected failures, not ${failure}`);
+  assert.deepEqual(failure.errors.map(error => error.message), ['fixture SSH key disposal failure']);
+  assert.equal(thrown, 1);
+  // Steps after the SSH keys ran: writers flushed and the identity and composition closed.
+  await assert.rejects(stat(policyWal), { code: 'ENOENT' });
+  assert.equal(identityCloses, 1);
+  assert.equal(compositionCloses, 1);
+  // A rejected flush is not a release receipt: the writer lock stays held until process exit.
+  await assert.rejects(startHeadlessServer(f.options), { code: 'ELOCKED' });
+});
+
 test('anonymous handoff is selected by deployment configuration on both real RPC ingress paths', async t => {
   for (const identityConfigured of [false,true]) {
     await t.test(identityConfigured ? 'identity adapter with anonymous request' : 'anonymous installation', async t => {
@@ -520,4 +573,137 @@ test('personal model defaults follow the signed-in Actor and instance admission 
     body: JSON.stringify({ actorId: memberId, role: 'member', enabled: false }) });
   assert.equal(revoked.status, 200, await revoked.clone().text());
   assert.equal((await fetch(path, { headers: { cookie: member } })).status, 403);
+});
+
+test('personal SSH keys sign people in over the real SSH ingress and follow membership revocation', { timeout: 60_000 }, async t => {
+  const { default: ssh2 } = await import('ssh2');
+  const { generateEd25519KeyPair } = await import('../support/ssh-ed25519.mjs');
+  const f = await fixture(t);
+  const host = generateEd25519KeyPair(), operator = generateEd25519KeyPair(), personal = generateEd25519KeyPair();
+  const hostKeyFile = join(f.root, 'ssh-host-key'), sshConfig = join(f.root, 'ssh.json');
+  await writeFile(hostKeyFile, host.private, { mode: 0o600 });
+  await writeFile(sshConfig, JSON.stringify({ hostKeyFile, authorizedKeys: { operator: [operator.public] } }), { mode: 0o600 });
+  const probe = await startHeadlessServer(f.options); await probe.close();
+  const proof = randomBytes(32).toString('base64url');
+  const proofPath = join(f.root, 'setup-token'), configPath = join(f.root, 'human-auth.json');
+  await writeFile(proofPath, JSON.stringify({ token: proof }), { mode: 0o600 });
+  await writeFile(configPath, JSON.stringify({ origin: probe.url, local: true, oidc: [], setupTokenFile: proofPath }), { mode: 0o600 });
+  const app = await startHeadlessServer({ ...f.options, port: Number(new URL(probe.url).port), humanAuthConfig: configPath, sshConfig }); f.own(() => app.close());
+  const path = app.url + '/__opencraft_ssh_keys';
+  const json = { origin: app.url, 'content-type': 'application/json' };
+  assert.equal((await fetch(path)).status, 401);
+  const setup = await fetch(app.url + '/__opencraft_account/setup', { method: 'POST', headers: json,
+    body: JSON.stringify({ proof, mode: 'web', username: 'owner', password: 'Fixture-account-password-42' }) });
+  assert.equal(setup.status, 200, await setup.text());
+  const owner = setup.headers.get('set-cookie')?.split(';')[0];
+  const invitation = await fetch(app.url + '/__opencraft_account/invitations', { method: 'POST', headers: { ...json, cookie: owner }, body: '{}' }).then(r => r.json());
+  const accepted = await fetch(app.url + '/__opencraft_account/accept', { method: 'POST', headers: json,
+    body: JSON.stringify({ code: invitation.code, username: 'member', password: 'Fixture-member-password-42' }) });
+  assert.equal(accepted.status, 201, await accepted.clone().text());
+  const member = accepted.headers.get('set-cookie')?.split(';')[0];
+  const listed = await fetch(path, { headers: { cookie: member } }).then(r => r.json());
+  assert.deepEqual({ sshLogin: listed.sshLogin, keys: listed.keys, administrator: listed.administrator }, { sshLogin: true, keys: [], administrator: false });
+  const memberId = listed.actorId;
+  const added = await fetch(path, { method: 'POST', headers: { ...json, cookie: member }, body: JSON.stringify({ publicKey: personal.public + ' member@laptop', expectedActorId: memberId }) });
+  assert.equal(added.status, 201, await added.clone().text());
+  const ownerView = await fetch(path + '?' + new URLSearchParams({ actorId: memberId }), { headers: { cookie: owner } }).then(r => r.json());
+  assert.equal(ownerView.administrator, true);
+  assert.deepEqual(ownerView.keys.map(key => key.name), ['member@laptop']);
+
+  const clients = [];
+  t.after(() => { for (const client of clients) client.destroy(); });
+  const connect = privateKey => new Promise((resolve, reject) => {
+    const client = new ssh2.Client(); clients.push(client);
+    client.once('ready', () => resolve(client)); client.once('error', reject);
+    client.connect({ host: '127.0.0.1', port: Number(new URL(app.url).port), username: 'member', privateKey, readyTimeout: 3000 });
+  });
+  const session = await connect(personal.private);
+  await assert.rejects(new Promise((resolve, reject) => session.exec('opencraft app-server proxy', (error, stream) => error ? reject(error) : resolve(stream))),
+    /Unable to exec/, 'a personal key never enters the unscoped legacy bridge');
+  const closed = once(session, 'close');
+  const revoked = await fetch(app.url + '/__opencraft_account/members', { method: 'POST', headers: { ...json, cookie: owner },
+    body: JSON.stringify({ actorId: memberId, role: 'member', enabled: false }) });
+  assert.equal(revoked.status, 200, await revoked.clone().text());
+  await closed;
+  await assert.rejects(connect(personal.private), /authentication/);
+  assert.deepEqual((await fetch(path + '?' + new URLSearchParams({ actorId: memberId }), { headers: { cookie: owner } }).then(r => r.json())).keys, [],
+    'membership revocation durably revokes the key');
+});
+
+test('model policy and model gateway routes follow instance admission on a real Headless server, and close releases the policy writer', { timeout: 60_000 }, async t => {
+  const f = await fixture(t);
+  // The gateway route exists only when a deployment names its database; restore it after every server closed.
+  const previousGateway = process.env.OPENCRAFT_MODEL_GATEWAY_DATABASE;
+  process.env.OPENCRAFT_MODEL_GATEWAY_DATABASE = join(f.root, 'model-gateway.sqlite');
+  t.after(() => {
+    if (previousGateway === undefined) delete process.env.OPENCRAFT_MODEL_GATEWAY_DATABASE;
+    else process.env.OPENCRAFT_MODEL_GATEWAY_DATABASE = previousGateway;
+  });
+  const probe = await startHeadlessServer(f.options); await probe.close();
+  const proof = randomBytes(32).toString('base64url');
+  const proofPath = join(f.root, 'setup-token'), configPath = join(f.root, 'human-auth.json');
+  await writeFile(proofPath, JSON.stringify({ token: proof }), { mode: 0o600 });
+  await writeFile(configPath, JSON.stringify({ origin: probe.url, local: true, oidc: [], setupTokenFile: proofPath }), { mode: 0o600 });
+  const options = { ...f.options, port: Number(new URL(probe.url).port), humanAuthConfig: configPath };
+  const app = await startHeadlessServer(options); f.own(() => app.close());
+  const policyPath = app.url + '/__opencraft_model_policy', gatewayPath = app.url + '/__opencraft_model_gateway';
+  const json = { origin: app.url, 'content-type': 'application/json' };
+  const read = async (url, headers = {}) => { const response = await fetch(url, { headers }); return { status: response.status, body: await response.json() }; };
+
+  // Unauthenticated requests are refused before either route runs.
+  assert.deepEqual(await read(policyPath), { status: 401, body: { error: 'authentication_required' } });
+  assert.deepEqual(await read(gatewayPath), { status: 401, body: { error: 'authentication_required' } });
+
+  const setup = await fetch(app.url + '/__opencraft_account/setup', { method: 'POST', headers: json,
+    body: JSON.stringify({ proof, mode: 'web', username: 'owner', password: 'Fixture-account-password-42' }) });
+  assert.equal(setup.status, 200, await setup.text());
+  const owner = setup.headers.get('set-cookie')?.split(';')[0];
+  const ownerId = (await fetch(app.url + '/__opencraft_account/status', { headers: { cookie: owner } }).then(r => r.json())).actor.id;
+
+  // The administrator reads and writes the policy and manages the gateway.
+  const initial = await read(policyPath, { cookie: owner });
+  assert.equal(initial.status, 200, JSON.stringify(initial.body));
+  assert.deepEqual({ canManage: initial.body.canManage, revision: initial.body.revision, rules: initial.body.rules }, { canManage: true, revision: 0, rules: [] });
+  const rules = [{ engine: 'codex', model: 'fixture-blocked-model' }];
+  const written = await fetch(policyPath, { method: 'POST', headers: { ...json, cookie: owner }, body: JSON.stringify({ revision: 0, rules }) });
+  assert.equal(written.status, 200, await written.clone().text());
+  assert.deepEqual((await written.json()).rules, rules);
+  const ownerGateway = await read(gatewayPath, { cookie: owner });
+  assert.equal(ownerGateway.status, 200, JSON.stringify(ownerGateway.body));
+  assert.equal(ownerGateway.body.canManage, true);
+  assert.equal(ownerGateway.body.subscriptionAvailable, false, 'no Core endpoint, so no personal subscription');
+
+  // An admitted member reads without management rights and cannot write or read another Actor.
+  const invitation = await fetch(app.url + '/__opencraft_account/invitations', { method: 'POST', headers: { ...json, cookie: owner }, body: '{}' }).then(r => r.json());
+  const accepted = await fetch(app.url + '/__opencraft_account/accept', { method: 'POST', headers: json,
+    body: JSON.stringify({ code: invitation.code, username: 'member', password: 'Fixture-member-password-42' }) });
+  assert.equal(accepted.status, 201, await accepted.clone().text());
+  const member = accepted.headers.get('set-cookie')?.split(';')[0];
+  assert.deepEqual(await read(policyPath, { cookie: member }), { status: 200, body: { canManage: false } });
+  const refused = await fetch(policyPath, { method: 'POST', headers: { ...json, cookie: member }, body: JSON.stringify({ revision: 1, rules: [] }) });
+  assert.deepEqual({ status: refused.status, body: await refused.json() }, { status: 403, body: { error: 'administrator_required' } });
+  const memberGateway = await read(gatewayPath, { cookie: member });
+  assert.equal(memberGateway.status, 200, JSON.stringify(memberGateway.body));
+  assert.equal(memberGateway.body.canManage, false);
+  assert.deepEqual(await read(gatewayPath + '?' + new URLSearchParams({ actor: ownerId }), { cookie: member }), { status: 403, body: { error: 'gateway_forbidden' } });
+  const configure = await fetch(gatewayPath, { method: 'POST', headers: { ...json, cookie: member },
+    body: JSON.stringify({ action: 'configure', actor: ownerId, monthlyTokens: 1, requestTokens: 1, concurrency: 1, revision: 0 }) });
+  assert.deepEqual({ status: configure.status, body: await configure.json() }, { status: 403, body: { error: 'gateway_operation_forbidden' } });
+  const memberId = (await fetch(app.url + '/__opencraft_account/status', { headers: { cookie: member } }).then(r => r.json())).actor.id;
+  const revoked = await fetch(app.url + '/__opencraft_account/members', { method: 'POST', headers: { ...json, cookie: owner },
+    body: JSON.stringify({ actorId: memberId, role: 'member', enabled: false }) });
+  assert.equal(revoked.status, 200, await revoked.clone().text());
+  assert.equal((await fetch(policyPath, { headers: { cookie: member } })).status, 403, 'a revoked member is no longer admitted');
+  assert.equal((await fetch(gatewayPath, { headers: { cookie: member } })).status, 403, 'a revoked member is no longer admitted');
+
+  // Close releases the policy database: its WAL is checkpointed away, and the
+  // same data directory reopens with the written policy.
+  const policyWal = join(f.options.dataDirectory, 'model-usage-policy.sqlite-wal');
+  assert.equal((await stat(policyWal)).isFile(), true, 'the open policy writer keeps a WAL');
+  await app.close();
+  await assert.rejects(stat(policyWal), { code: 'ENOENT' });
+  const reopened = await startHeadlessServer(options); f.own(() => reopened.close());
+  const persisted = await read(reopened.url + '/__opencraft_model_policy', { cookie: owner });
+  assert.equal(persisted.status, 200, JSON.stringify(persisted.body));
+  assert.deepEqual({ revision: persisted.body.revision, rules: persisted.body.rules }, { revision: 1, rules });
 });

@@ -54,6 +54,13 @@ cannot enter the legacy unscoped HTTP bridge. Static SSH configuration remains
 available independently; no provider-specific credential policy is built into
 core.
 
+Core also ships its own resolver: [personal SSH keys](personal-ssh-keys.md).
+Each Human registers public keys in Settings or through the HTTP API, operators
+use the offline `ssh-keys` tool, and every change is audited. The ingress asks an
+identity adapter's `sshAccess` first and personal keys second; it passes the
+offered key blob as a second `publicKeys` argument so a key-indexed resolver need
+not list every key.
+
 ## 自部署账号插件
 
 ### Headless composition contract

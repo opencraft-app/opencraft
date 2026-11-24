@@ -11,9 +11,9 @@ import { isSandboxEndpointName, type SandboxEndpointName } from "./endpoint.js";
  *   client holds only this URI; which environment and which transport serve it
  *   is decided by the workspace composition and its provider.
  * - `<provider>://<target>` selects where a workspace environment runs: the scheme
- *   is a registered provider id (`static-docker`, `e2b`, later
- *   `docker-provisioner`, `cloudflare`) and the target is that provider's opaque
- *   selector (Compose service, template, container class). Changing deployment
+ *   is a registered provider id (`static-docker`, `e2b`,
+ *   `docker-provisioner`, later `cloudflare`) and the target is that provider's opaque
+ *   selector (Compose service, template, image alias, container class). Changing deployment
  *   form is changing this one value.
  *
  * Grammar is deliberately narrower than RFC 3986: lowercase ASCII schemes, no

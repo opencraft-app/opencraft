@@ -97,7 +97,9 @@ test('SIGKILL leaves only a socket, never a plaintext signing key', async t => {
   t.after(() => { child.kill('SIGKILL'); });
   await once(child.stdout, 'data'); child.kill('SIGKILL'); await once(child, 'close');
   const files = await readdir(root, { recursive: true });
-  assert.equal(files.some(p => /key|pem/i.test(p)), false);
+  // Only the signer's own runtime directory (random `sign-XXXXXX`) and its socket may remain; a
+  // keyword match on these names would also hit random suffixes such as `sign-xKeY12`.
+  for (const entry of files) assert.match(String(entry), /^sign-[A-Za-z0-9]{6}(?:\/agent\.sock)?$/u);
   for (const entry of files) {
     const info = await stat(join(root, entry));
     assert.equal(info.isFile(), false); assert.equal(info.isDirectory() || info.isSocket(), true);

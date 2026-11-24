@@ -203,6 +203,14 @@ export interface WorkspaceRuntime {
       readonly endpoints: readonly SandboxEndpointName[];
     }[]
   >;
+  /** Idle sleep (§3.7.2): every bound environment whose provider can sleep is stopped and
+   * unbound (its receipt stays recorded); the others stay resident. The next `connect`,
+   * `describe` or `observe` wakes it through `attach` or `create`. */
+  sleep(): Promise<readonly { readonly environment: string; readonly slept: boolean }[]>;
+  /** Removes the workspace's provider instances and their retained caches (§3.7.1: content
+   * truth is Git) and forgets their receipts. Rejects SANDBOX_UNAVAILABLE, keeping the
+   * receipts, when a provider cannot discard (a Compose-declared environment). */
+  discard(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -390,6 +398,40 @@ export function createWorkspaceRuntime(options: {
         results.push({ environment: slot.name, incarnation: agent.incarnation.id, endpoints: agent.endpoints });
       }
       return results;
+    },
+    async sleep() {
+      if (closed) throw fault("SANDBOX_CLOSED", "Workspace runtime is closed");
+      const results = [];
+      for (const slot of slots) {
+        await slot.opening?.catch(() => {});
+        const value = slot.current;
+        if (!value?.sandbox.sleep) {
+          results.push({ environment: slot.name, slept: false });
+          continue;
+        }
+        slot.current = undefined;
+        await value.sandbox.sleep();
+        emit({ type: "released", environment: slot.name, reason: "sleep" });
+        results.push({ environment: slot.name, slept: true });
+      }
+      return results;
+    },
+    async discard() {
+      if (closed) throw fault("SANDBOX_CLOSED", "Workspace runtime is closed");
+      const records = [];
+      for (const slot of slots) {
+        await slot.opening?.catch(() => {});
+        const record = await options.store.read(slot.binding.address);
+        if (record?.receipt && !slot.binding.pool.discardSandbox)
+          throw fault("SANDBOX_UNAVAILABLE", `${slot.name} cannot discard its instance`);
+        records.push({ slot, receipt: record?.receipt });
+      }
+      for (const { slot, receipt } of records) {
+        if (slot.current) await release(slot, slot.current, "discard");
+        if (receipt) await slot.binding.pool.discardSandbox!({ owner: options.owner, receipt });
+        await options.store.write(slot.binding.address, {});
+        emit({ type: "released", environment: slot.name, reason: "discarded" });
+      }
     },
     async close() {
       closed = true;

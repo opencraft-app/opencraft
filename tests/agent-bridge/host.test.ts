@@ -1055,9 +1055,9 @@ test("an idle Thread moves to the current provider generation at its next turn, 
     if (Object.keys(state.state.openTurns ?? {}).length === 0) break;
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
-  // The gateway has delivered everything the old generation produced.
+  // The gateway has not acknowledged what the old generation produced yet.
   const delivered = await host.events(0, 256);
-  if (delivered.length) await host.ack(Math.max(...delivered.map((event: any) => event.seq)));
+  assert.ok(delivered.length > 0, "the first turn left events in the old generation's outbox");
   await host.accept({
     ...command("second"),
     method: "turn/start",
@@ -1070,13 +1070,15 @@ test("an idle Thread moves to the current provider generation at its next turn, 
     'adopt:native-["server-1","thread-1"]@new',
     "second",
   ]);
+  const retired = async () =>
+    (await host.snapshot()).generations.find((row: any) => row.id === "old").retired;
   const snapshot = await host.snapshot();
   assert.equal(snapshot.routes.find((row: any) => row.route === '["server-1","thread-1"]').generation, "new");
-  assert.equal(
-    snapshot.generations.find((row: any) => row.id === "old").retired,
-    1,
-    "a generation nothing uses any more is retired",
-  );
+  assert.equal(await retired(), 0, "a generation with unacknowledged events stays until they are delivered");
+  // Acknowledging the old generation's events drains it; nothing else uses it, so it is retired.
+  const all = await host.events(0, 256);
+  await host.ack(Math.max(...all.map((event: any) => event.seq)));
+  assert.equal(await retired(), 1, "a generation nothing uses any more is retired once its events are acknowledged");
 });
 
 test("after an update, a Thread whose old provider cannot hand it over moves on its first use after the restart", async (t) => {
