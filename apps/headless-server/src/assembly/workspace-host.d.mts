@@ -292,6 +292,42 @@ export interface WorkspaceHostAssembly {
     remoteServers: ReadonlyMap<string, { connection: unknown }>;
     sshManagement: { store: { binding(hostId: string): { connection: unknown } | null | undefined } } | undefined;
   }): T;
+  /**
+   * The workspace-host layers of the local Hosts' App Host transports; the root
+   * applies `scopeExecution`, then its model gateway settings layer, then
+   * `scopeResources`, then its push observation.
+   */
+  openHostTransports(options: {
+    transports: {
+      executionEnvironment(transport: unknown, runtime: unknown, hostId: string): unknown;
+      environmentMetadata(transport: unknown, metadata: unknown, hostId: string): unknown;
+      workspaceCatalog(
+        transport: unknown,
+        readCatalog: (context: unknown) => unknown,
+        readFileScope: ((context: unknown, threadId: string) => unknown) | undefined,
+      ): unknown;
+      terminals(
+        transport: unknown,
+        service: unknown,
+        scope: (context: unknown, params: Record<string, unknown>) => Record<string, unknown>,
+        hostId: string,
+        select: ((scope: unknown, context: unknown, local: unknown) => unknown) | undefined,
+      ): unknown;
+      files(
+        transport: unknown,
+        files: unknown,
+        authority: (context: unknown) => void,
+        select: ((context: unknown, params: unknown, local: unknown) => unknown) | undefined,
+      ): unknown;
+      conversationResources(transport: unknown, hostId: string, resources: unknown): unknown;
+    };
+    /** The composition's per-request selectors, if any. */
+    selectHostTerminalService: ((...args: never[]) => unknown) | undefined;
+    selectHostFiles: ((...args: never[]) => unknown) | undefined;
+  }): {
+    scopeExecution(hostId: string, transport: unknown): unknown;
+    scopeResources(hostId: string, transport: unknown): unknown;
+  };
   /** Retries pending releases and starts the periodic archived-resource reconciliation. */
   startResourceReconciliation(options: { appHostServer: unknown; ownerWake: unknown }): void;
   maintainReadiness(appHostServer: unknown): void;

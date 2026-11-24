@@ -503,8 +503,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       readSetupToken: humanConfiguration?.setupTokenFile ? () => readPrivateJson(humanConfiguration.setupTokenFile) : undefined,
       openLoginAdmission: loginAdmissionScope
         ? () => openLoginAdmissionPolicy({ ...loginAdmissionScope, path: join(dataDirectory, 'login-admission.sqlite') }) : undefined });
-    const { assetsStorage, botAdmission, installedBotProvider, ownedWorkspaceRouting, workspaceRouting: deliveryRouting, assetsService,
-      gitExecutionOwner, humanGitExecution, environmentLaunch, environmentMetadata, codexEnvironmentLaunch } = await workspaceHost.openExecutionDelivery({
+    const { assetsStorage, botAdmission, installedBotProvider, workspaceRouting: deliveryRouting, assetsService,
+      gitExecutionOwner, humanGitExecution, environmentLaunch, codexEnvironmentLaunch } = await workspaceHost.openExecutionDelivery({
       identity, workspaceExecution, workspaceRouting, coreEnvironmentLaunch, environmentIssuer: options.environmentIssuer,
       terminalOwner: options.terminalOwner, machineIdentity, actorStore, instanceAccess, humanAuth, serverStorage,
       codexCoreEndpoint: options.codexCoreEndpoint, readAssistantSandboxConfig: () => process.env.OPENCRAFT_ASSISTANT_SANDBOX_CONFIG,
@@ -684,8 +684,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       serverId: `server:${machineIdentity.machineId}:codex`,
       ...(process.env.OPENCRAFT_TOKEN_USAGE_SOURCE === 'ledger' ? {} : {rollout:{nativeHome:join(dataDirectory,'codex','runtime')}}),
     }));
-    const unavailableFiles = {request:async()=>{throw Error('Local Hands files unavailable');}};
-    const { conversationResources, terminalService, resourceAuthority, terminalScope } = await workspaceHost.openConversationResources({
+    const { terminalService, resourceAuthority, terminalScope } = await workspaceHost.openConversationResources({
       createTerminalService: options.terminalOwner ? terminalOptions => createHandsTerminalService({ ...options.terminalOwner, ...terminalOptions }) : undefined,
       identity, actorStore, instanceAccess, serverStorage, ownerWake });
     // Trusted embedding may replace native startup without reconstructing or
@@ -697,6 +696,19 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       return createSshCodexEngineAdapter(binding, dataDirectory, createThreadMetadata, storageOpened(hostId), {
         executionAuthority: authority, nativeTool }, createCodexTransport);
     };
+    // The workspace-host layers of the local Hosts' transports, over the root's Node transport classes.
+    const hostTransports = workspaceHost.openHostTransports({
+      transports: {
+        executionEnvironment: (transport, runtime, hostId) => new ExecutionEnvironmentTransport(transport, runtime, hostId),
+        environmentMetadata: (transport, metadata, hostId) => new EnvironmentMetadataTransport(transport, metadata, hostId),
+        workspaceCatalog: (transport, readCatalog, readFileScope) => new HostWorkspaceCatalogTransport(transport, readCatalog, readFileScope),
+        terminals: (transport, service, scope, hostId, select) => new HostTerminalTransport(transport, service, scope,
+          composeHostTerminalSelector(hostId, service, select)),
+        files: (transport, files, authority, select) => new HostFileSystemTransport(transport, files, authority,
+          composeHostFileSelector(files, authority, select)),
+        conversationResources: (transport, hostId, resources) => new ConversationResourceTransport(transport, hostId, resources),
+      },
+      selectHostTerminalService: composition.selectHostTerminalService, selectHostFiles: composition.selectHostFiles });
     const appHostServer = lateAppHost.bind(new AppHostServer({
       createRpcAccessSession: createThreadAccessSession,
       logicalClientRouting: true,
@@ -862,14 +874,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
             codexPinsService(codexReader, clients, { toNative: id => codexRouting?.threadIdentities?.()?.toNative(id), toPublic: id => codexRouting?.threadIdentities?.()?.toPublic(id) }),
             { handles: () => false, request: () => null, close: () => codexReader.close() }] : [])])), mcpApps), hostId);
         })(), modelPolicyPath, hostId === 'opencraft-server' ? 'dsh' : 'codex', serverStorage.call.projectModelCatalog);
-        let scopedTransport = !['local-codex', 'opencraft-server'].includes(hostId) ? transport
-          : identity?.executionEnvironment ? new ExecutionEnvironmentTransport(transport, identity.executionEnvironment, hostId)
-            : environmentMetadata ? new EnvironmentMetadataTransport(transport, environmentMetadata, hostId) : transport;
-        if (hostId === 'local-codex' && workspaceRouting)
-          scopedTransport = new HostWorkspaceCatalogTransport(scopedTransport,
-            context => workspaceRouting.readCatalog(hostId, context),
-            typeof workspaceRouting.readFileScope === "function"
-              ? (context,threadId) => workspaceRouting.readFileScope(hostId,context,threadId) : undefined);
+        let scopedTransport = hostTransports.scopeExecution(hostId, transport);
         const gatewayPath=configuredModelGatewayPath();
         if(gatewayPath && ['local-codex','opencraft-server'].includes(hostId)) scopedTransport=new ModelGatewaySettingsTransport(scopedTransport,gatewayPath,join(dataDirectory,'models'),context=>{
           const actor=context.actorContext;
@@ -877,25 +882,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           const role=context.tokenUsageAuthority?.();
           return {actor:actor.actorId,administrator:role?.actorId===actor.actorId && role.administrator===true};
         });
-        if (['local-codex', 'opencraft-server'].includes(hostId)) {
-          const ordinary = hostId === 'local-codex' ? ownedWorkspaceRouting : undefined;
-          if (options.terminalOwner || ordinary)
-            scopedTransport = new HostTerminalTransport(scopedTransport, terminalService(hostId), terminalScope(hostId),
-              composeHostTerminalSelector(hostId, terminalService(hostId), ordinary
-                ? (scope,context,local)=>ordinary.selectHostTerminalService(hostId,scope,context,
-                  composition.selectHostTerminalService ? (s,c)=>composition.selectHostTerminalService(hostId,s,c,local) : local)
-                : composition.selectHostTerminalService ? (scope,context,local)=>composition.selectHostTerminalService(hostId,scope,context,local) : undefined));
-          if (fileSystem || ordinary) {
-            const localFiles = fileSystem ?? unavailableFiles;
-            scopedTransport = new HostFileSystemTransport(scopedTransport, localFiles, resourceAuthority,
-              composeHostFileSelector(localFiles, resourceAuthority, ordinary
-                ? (context,params,local)=>ordinary.selectHostFiles(hostId,context,params,
-                  composition.selectHostFiles ? (c,p)=>composition.selectHostFiles(hostId,c,p,local) : local)
-                : composition.selectHostFiles ? (context,params,local)=>composition.selectHostFiles(hostId,context,params,local) : undefined));
-          }
-        }
-        if (['local-codex', 'opencraft-server'].includes(hostId))
-          scopedTransport = new ConversationResourceTransport(scopedTransport, hostId, conversationResources);
+        scopedTransport = hostTransports.scopeResources(hostId, scopedTransport);
         return ['local-codex', 'opencraft-server'].includes(hostId) ? new PushObservationTransport(scopedTransport, value => {
           const turnPush = lateTurnPush.current();
           if (!turnPush || actorStore.get(value.actorId)?.kind !== 'human') return;

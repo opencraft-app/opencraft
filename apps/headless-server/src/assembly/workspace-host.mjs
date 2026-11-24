@@ -36,8 +36,9 @@ import { createBridgeSessionMcp } from "@opencraft/opencraft-daemon/bridge-execu
  * readiness. Second part: the routed conversation execution, the execution
  * engines (DSH, in-process Pi behind its owner lock, an independent Engine
  * Host), execution observation with the lease store and its bounded startup
- * reconciliation, the Hands terminal services and file owner, and the
- * conversation resource lifecycle with its periodic reconciliation.
+ * reconciliation, the Hands terminal services and file owner, the
+ * conversation resource lifecycle with its periodic reconciliation, and the
+ * workspace-host layers of the local Hosts' App Host transports.
  *
  * It receives the composition root's shutdown state, the shared capability
  * registry and the late-bound ports for values constructed after the
@@ -66,6 +67,7 @@ export function assembleWorkspaceHost({ lifecycle, capabilities, appHost, codexB
   const terminalServices = new Map();
   let assetsStorage, botAdmission, installedBotProvider, ownedWorkspaceRouting, workspaceRouting;
   let assetsService, gitExecutionOwner, humanGitExecution, withdrawGitStatus, environmentLaunch, environmentHandoff;
+  let executionIdentity, environmentMetadata, resourceAuthority, terminalScope;
   let remoteBrowser, browserCapabilities, authorizeBrowserExecution;
   let capabilityMcp, connectedExecutionCli, codexEngineHost;
   let usageQueries, fileDownloads, codexReadiness;
@@ -98,6 +100,7 @@ export function assembleWorkspaceHost({ lifecycle, capabilities, appHost, codexB
       createHumanGitExecution,
     }) {
       workspaceRouting = identityRouting;
+      executionIdentity = identity;
       // An identity product that owns configurations keeps its route and legacy partitions.
       // Never start a second resource writer alongside that composition.
       if (!identity?.assistantEnvironmentConfigurationManaged) {
@@ -230,7 +233,7 @@ export function assembleWorkspaceHost({ lifecycle, capabilities, appHost, codexB
         throw new Error("Environment delivery requires the sole vault owner");
       // A vault-owner port from the identity composition may bring its own
       // metadata port; core relays it exactly as for its own vault Worker.
-      const environmentMetadata = coreEnvironmentLaunch ? assetsStorage.environmentMetadata : identityLaunch?.metadata;
+      environmentMetadata = coreEnvironmentLaunch ? assetsStorage.environmentMetadata : identityLaunch?.metadata;
       if (coreEnvironmentLaunch && !environmentMetadata)
         throw new Error("Environment delivery requires the sole vault owner");
       // The same owner signs personal Git grants; Main never holds the vault key.
@@ -816,7 +819,7 @@ export function assembleWorkspaceHost({ lifecycle, capabilities, appHost, codexB
         ),
       );
       if (remoteBrowser) remoteBrowser.conversationLifecycle = resources;
-      const resourceAuthority = (context) => {
+      resourceAuthority = (context) => {
         context.resourceOwner?.assertCurrent();
         const actor = context.actorContext;
         if (
@@ -828,7 +831,7 @@ export function assembleWorkspaceHost({ lifecycle, capabilities, appHost, codexB
         )
           throw new Error("Host resource authority expired");
       };
-      const terminalScope = (hostId) => (context, params) => {
+      terminalScope = (hostId) => (context, params) => {
         resourceAuthority(context);
         const actor = context.actorContext;
         resources.assertActive(hostId, params.threadId);
@@ -845,6 +848,90 @@ export function assembleWorkspaceHost({ lifecycle, capabilities, appHost, codexB
         };
       };
       return { conversationResources: resources, terminalService, resourceAuthority, terminalScope };
+    },
+    /**
+     * The workspace-host layers of the local Hosts' App Host transports
+     * (`local-codex`, `opencraft-server`): execution environment or ENV
+     * metadata scoping and the workspace catalog, then (after the root's model
+     * gateway settings layer) the Hands terminal and file transports behind the
+     * resource authority and the conversation resource transport. The root
+     * supplies the transport classes, which are Node transports today.
+     */
+    openHostTransports({ transports, selectHostTerminalService, selectHostFiles }) {
+      const local = (hostId) => ["local-codex", "opencraft-server"].includes(hostId);
+      const unavailableFiles = {
+        request: async () => {
+          throw Error("Local Hands files unavailable");
+        },
+      };
+      return {
+        scopeExecution(hostId, transport) {
+          let scopedTransport = !local(hostId)
+            ? transport
+            : executionIdentity?.executionEnvironment
+              ? transports.executionEnvironment(transport, executionIdentity.executionEnvironment, hostId)
+              : environmentMetadata
+                ? transports.environmentMetadata(transport, environmentMetadata, hostId)
+                : transport;
+          if (hostId === "local-codex" && workspaceRouting)
+            scopedTransport = transports.workspaceCatalog(
+              scopedTransport,
+              (context) => workspaceRouting.readCatalog(hostId, context),
+              typeof workspaceRouting.readFileScope === "function"
+                ? (context, threadId) => workspaceRouting.readFileScope(hostId, context, threadId)
+                : undefined,
+            );
+          return scopedTransport;
+        },
+        scopeResources(hostId, transport) {
+          let scopedTransport = transport;
+          if (local(hostId)) {
+            const ordinary = hostId === "local-codex" ? ownedWorkspaceRouting : undefined;
+            if (createTerminalService || ordinary)
+              scopedTransport = transports.terminals(
+                scopedTransport,
+                terminalService(hostId),
+                terminalScope(hostId),
+                hostId,
+                ordinary
+                  ? (scope, context, localService) =>
+                      ordinary.selectHostTerminalService(
+                        hostId,
+                        scope,
+                        context,
+                        selectHostTerminalService
+                          ? (s, c) => selectHostTerminalService(hostId, s, c, localService)
+                          : localService,
+                      )
+                  : selectHostTerminalService
+                    ? (scope, context, localService) => selectHostTerminalService(hostId, scope, context, localService)
+                    : undefined,
+              );
+            if (fileSystem || ordinary) {
+              const localFiles = fileSystem ?? unavailableFiles;
+              scopedTransport = transports.files(
+                scopedTransport,
+                localFiles,
+                resourceAuthority,
+                ordinary
+                  ? (context, params, localBinding) =>
+                      ordinary.selectHostFiles(
+                        hostId,
+                        context,
+                        params,
+                        selectHostFiles ? (c, p) => selectHostFiles(hostId, c, p, localBinding) : localBinding,
+                      )
+                  : selectHostFiles
+                    ? (context, params, localBinding) => selectHostFiles(hostId, context, params, localBinding)
+                    : undefined,
+              );
+            }
+          }
+          if (local(hostId))
+            scopedTransport = transports.conversationResources(scopedTransport, hostId, conversationResources.get());
+          return scopedTransport;
+        },
+      };
     },
     /**
      * File downloads for each Host: the local file owner, the server's own
