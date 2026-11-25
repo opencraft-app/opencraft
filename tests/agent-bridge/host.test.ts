@@ -1003,6 +1003,91 @@ test("after a restart, a provider that adopts sessions takes back the recorded o
   assert.equal((await sent()).filter((row) => row.startsWith("adopt:")).length, 1);
 });
 
+test("a lost Codex attachment recovers once for concurrent new requests without replaying a dispatched input", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "codex-attachment-"));
+  const executions = join(root, "executions"),
+    launches = join(root, "launches"),
+    unavailable = join(root, "native-unavailable");
+  await writeFile(executions, "");
+  const artifact = resolve("tests/agent-bridge/fixtures/queue-bridge.mjs");
+  const provider = {
+    ...declaration,
+    providerId: "codex",
+    capabilities: { ...declaration.capabilities, adoption: true, history: true },
+  };
+  const handshake = negotiateHandshake({ protocolVersion: 1, grammarRange: { min: 1, max: 1 } }, provider);
+  assert(handshake.ok);
+  const host = await BridgeHost.open({
+    path: join(root, "host.db"),
+    policy,
+    backend: localTestBackend(),
+    requestTimeoutMs: 2_000,
+  });
+  t.after(async () => {
+    await host.close();
+    await rm(root, { recursive: true, force: true });
+  });
+  await host.add({
+    id: "codex-attachment",
+    artifact,
+    digest: createHash("sha256")
+      .update(await readFile(artifact))
+      .digest("hex"),
+    provider,
+    launch: {
+      command: [process.execPath, artifact],
+      cwd: root,
+      env: {
+        HANDSHAKE: JSON.stringify(handshake.result),
+        EXECUTIONS: executions,
+        BRIDGE_LAUNCHES: launches,
+        NATIVE_UNAVAILABLE: unavailable,
+        DROP_NATIVE_ON_INPUT: "interrupted-input",
+      },
+    },
+  });
+  await host.activate("codex-attachment", "");
+  await host.accept(command("old-session"));
+  const original = await accepted(host, "old-session");
+
+  await writeFile(unavailable, "");
+  const inFlight = command("interrupted-command", "turn/start", {
+    native: { clientUserMessageId: "interrupted-input", input: [{ type: "text", text: "one" }] },
+  });
+  await host.accept(inFlight);
+  await until(
+    () => host.query(inFlight.commandId),
+    (receipt) => receipt?.state === "unknown",
+  );
+
+  await host.accept(command("during-outage", "session/create", {}, "second-thread"));
+  const unavailableReceipt = await until(
+    () => host.query("during-outage"),
+    (receipt) => receipt?.state === "rejected",
+  );
+  assert.equal((unavailableReceipt?.response as any).error.message, "Codex provider attachment is unavailable");
+  assert.equal((await host.accept(inFlight)).state, "unknown");
+
+  await rm(unavailable);
+  await delay(1_050);
+  const history = host.observe({
+    serverId: "server-1",
+    threadId: "thread-1",
+    method: "history/read",
+    params: { view: "thread" },
+  });
+  const next = host.accept(command("after-reconnect", "session/create", {}, "second-thread"));
+  const [historyResult] = await Promise.all([history, next]);
+  assert.equal((historyResult as any).thread.id, 'native-["server-1","thread-1"]');
+  assert.equal((await accepted(host, "after-reconnect"))?.epoch, original?.epoch);
+  assert.equal((await readFile(launches, "utf8")).trim().split("\n").length, 3);
+  assert.deepEqual((await readFile(executions, "utf8")).trim().split("\n"), [
+    "interrupted-input",
+    'adopt:native-["server-1","thread-1"]',
+  ]);
+  assert.equal((await host.query(inFlight.commandId))?.state, "unknown");
+});
+
 test("an idle Thread moves to the current provider generation at its next turn, so provider updates reach it", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "bridge-migrate-"));
   const executions = join(root, "executions");

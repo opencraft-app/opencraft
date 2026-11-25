@@ -92,7 +92,13 @@ replace any generation with retained bindings automatically, since surviving
 native processes cannot yet be attested or resumed by this foundation.
 
 EOF and close drain callbacks already received even if their acknowledgements
-can no longer be sent.
+can no longer be sent. If the Codex provider loses its connection to the
+independently owned AppServer, the next Host operation can recreate that
+attachment after confirmed sandbox cleanup. Concurrent operations share the
+replacement. Existing idle sessions are rebound from their recorded native
+identities, and unknown command receipts keep their original custody. An
+unsuccessful reconnection leaves the Host available for later attempts with a
+short cooldown.
 
 Callbacks sent as requests use their stable bridge request ID for transactional
 dedup and receive an ack only after commit. Repeated IDs with changed bodies are

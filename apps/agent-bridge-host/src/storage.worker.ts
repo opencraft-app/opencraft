@@ -152,6 +152,10 @@ const operations: Record<string, (args: any) => any> = {
     return { receipt: receipt(command.commandId), fresh: true };
   }),
   observationRoute: ({ route }: any) => ({ generation: get('SELECT generation FROM routes WHERE route=?', route)?.generation ?? null, epoch: Number(meta('epoch')) }),
+  restorableRoutes: ({ generation }: any) => all(
+    'SELECT routes.route FROM routes JOIN native_sessions USING(route) WHERE routes.generation=? AND native_sessions.restorable=1',
+    generation,
+  ).map(row => row.route),
   threadState: ({ route }: any) => ({ state: checkpoint(route), nativeSession: get('SELECT * FROM native_sessions WHERE route=?', route) ?? null }),
   query: ({ id }: any) => receipt(id),
   dispatch: ({ id }: any) => tx(() => {
