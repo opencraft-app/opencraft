@@ -8,9 +8,10 @@ configured multi-user installations bootstrap their already admitted human
 members into the historical default space rather than withdrawing existing
 access.
 
-The left-edge Server drawer lives below the complete Workbench page. It starts
-closed, reveals on a rightward drag from the left edge or an explicit edge
-control, and closes on a leftward drag, outside-page click or Escape. One Shell
+The left-edge Server drawer is available in internal developer mode and lives
+below the complete Workbench page. It starts closed, reveals on a rightward
+drag from the left edge or an explicit edge control, and closes on a leftward
+drag, outside-page click or Escape. One Shell
 motion owner drives page translation and drawer depth. The conversation/sidebar
 subtrees remain mounted; nested management forms retain their controlled drafts.
 Server selection is remembered by Host and account display scope through

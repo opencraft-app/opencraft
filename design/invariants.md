@@ -373,8 +373,9 @@ PWA sidebar and page capacity share the dynamic viewport bound, including the st
 
 ## Server drawer under the page
 
-The Server selector is a closed-by-default left-edge underlay below the complete
-Workbench page, not a persistent Sidebar row. Shell owns gesture arbitration,
+The Server selector is available in internal developer mode as a
+closed-by-default left-edge underlay below the complete Workbench page.
+Shell owns gesture arbitration,
 foreground displacement, shadows, portal coordinates, focus and input blocking.
 A Server switch changes collaboration scope, not the Native engine Server or
 human identity. Chat, its drafts and runtime remain mounted. See

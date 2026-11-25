@@ -2337,7 +2337,7 @@ export function App({
             <span>{intl.formatMessage({ id: "navigation.conversationFailed", defaultMessage: "Could not open the conversation. Your previous conversation is still available." })}</span>
             <Button size="sm" variant="ghost" onClick={() => { void workbenchNavigation.selectConversation(navigationTransition.location).catch(() => undefined); }}>{intl.formatMessage({ id: "sidebar.search.retry", defaultMessage: "Retry" })}</Button>
           </> : null}
-          serverDrawer={serverSpaces.unavailable ? undefined : {
+          serverDrawer={!internalDeveloperMode || serverSpaces.unavailable ? undefined : {
             open:serverDrawerOpen,onOpenChange:setServerDrawerOpen,
             label:intl.formatMessage({id:'serverSpaces.title',defaultMessage:'Servers'}),
             closeLabel:intl.formatMessage({id:'serverSpaces.closeDrawer',defaultMessage:'Close Servers'}),
