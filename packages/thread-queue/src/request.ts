@@ -87,6 +87,7 @@ export async function threadQueueRequest<S>(
               clientUserMessageId: row.clientUserMessageId,
               state: row.state,
               targetTurnId: row.targetTurnId,
+              delivery: row.delivery,
             }
           : null,
       };

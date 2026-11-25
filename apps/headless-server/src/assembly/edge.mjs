@@ -16,8 +16,11 @@
  * disposer for something never opened resolves without effect.
  */
 export function assembleEdge() {
-  let runtimePlugins, web;
+  let runtimePlugins, serviceIngress, web;
   return {
+    async startServiceIngress(start) {
+      if (start) serviceIngress = await start();
+    },
     /** Starts the runtime plugins when configured (`start` is undefined otherwise); resolves the host or undefined. */
     async startRuntimePlugins(start) {
       if (start) runtimePlugins = await start();
@@ -198,6 +201,7 @@ export function assembleEdge() {
         modelPolicyService: account.createHttpService({ actorAccess, actorStore, instanceAccess }),
         assetsService,
         identityService: identity?.service ?? null,
+        ...(serviceIngress ? { serviceIngress } : {}),
         ...(runtimePlugins ? { runtimePluginService: runtimePlugins } : {}),
         accessService: instanceAccess ?? null,
         actorService: actorAccess,
@@ -232,5 +236,6 @@ export function assembleEdge() {
     closeWeb: (update, closeEntry) => web?.close(update, closeEntry),
     /** Shutdown step 4, after the entry phase and before the personal SSH keys. */
     closeRuntimePlugins: () => runtimePlugins?.close(),
+    closeServiceIngress: () => serviceIngress?.close?.(),
   };
 }

@@ -1,4 +1,4 @@
-import { inputExecutionEnded, type InputCompletion } from "@opencraft/appserver-protocol";
+import { inputExecutionEnded, parseInputDeliveryReceipt, type InputCompletion } from "@opencraft/appserver-protocol";
 import type { HostQueuedSubmission } from "./opencraft-host-queue.js";
 import type { InputDeliveryStore } from "./input-delivery-store.js";
 
@@ -27,12 +27,35 @@ export async function readInputCompletion(
     deliveries.finish(threadId, turnId, String(turn.status));
     delivery = deliveries.receipt(threadId, row.clientUserMessageId, turnId);
   }
+  return readCompletionItems(turnId, delivery.execution as "completed" | "failed" | "interrupted",
+    cursor => readItems(threadId, turnId, cursor));
+}
+
+/** The bridge's queue owner supplies native admission and terminal evidence. */
+export async function readQueuedInputCompletion(
+  row: { state: string; targetTurnId: string | null; delivery?: unknown },
+  readItems: (turnId: string, cursor: string | null) => Promise<unknown>,
+): Promise<InputCompletion> {
+  const turnId = row.targetTurnId;
+  const delivery = parseInputDeliveryReceipt(row.delivery);
+  if (row.state === "discarded" || !turnId || turnId === "unknown" || !delivery
+    || delivery.targetTurnId !== turnId || delivery.nativeAdmission !== "accepted" || !inputExecutionEnded(delivery))
+    return { version: 1, turnId, status: "unknown", text: "", truncated: false };
+  return readCompletionItems(turnId, delivery.execution as "completed" | "failed" | "interrupted",
+    cursor => readItems(turnId, cursor));
+}
+
+async function readCompletionItems(
+  turnId: string,
+  status: "completed" | "failed" | "interrupted",
+  readItems: (cursor: string | null) => Promise<unknown>,
+): Promise<InputCompletion> {
   let cursor: string | null = null;
   const seen = new Set<string>();
   let summary = "", truncated = false;
   // Bounded, exact-Turn reads only. Never infer results from the latest Thread.
   for (let page = 0; page < 5; page++) {
-    const response = object(await readItems(threadId, turnId, cursor));
+    const response = object(await readItems(cursor));
     if (!Array.isArray(response.data) || !(response.nextCursor == null || typeof response.nextCursor === "string"))
       throw new Error("Invalid native completion Item page");
     for (const entry of response.data) {
@@ -52,5 +75,5 @@ export async function readInputCompletion(
     seen.add(cursor);
     if (page === 4 || summary.length >= 16000) { truncated = true; break; }
   }
-  return {version:1,turnId,status:delivery.execution as "completed" | "failed" | "interrupted",text:summary,truncated};
+  return {version:1,turnId,status,text:summary,truncated};
 }

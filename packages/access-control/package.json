@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./external-conversation": "./src/external-conversation.ts",
     "./membership-revocation": "./src/membership-revocation.ts",
     "./actor-admission": "./src/actor-admission.ts",
     "./actor-admission-reader": "./src/actor-admission-reader.ts",

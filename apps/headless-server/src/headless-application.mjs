@@ -4,6 +4,7 @@ import {openWorkspaceExecutionService} from './workspaces/execution-service.js';
 import {openHeadlessAssetsStorage} from './headless-assets-storage.js';
 import {humanGitRuntimeDirectory,createHumanGitExecution} from './human-git-execution.js';
 import { openHumanAssets } from '@opencraft/plugin-local-account/assets-server';
+import { externalConversationPort, openServiceIngress } from './service-ingress.mjs';
 import { readPublishedEnvironmentIssuer } from '@opencraft/execution-environment/environment-issuer-publication';
 import {workspaceTurnOutputContext} from './workspace-turn-output-context.mjs';
 import { restoreWorkspaceQueuedContext } from '@opencraft/opencraft-daemon/workspace-queued-context';
@@ -301,6 +302,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   if(configuredCodexBridge&&!options.codexCoreEndpoint)throw new Error('Codex bridge requires an existing Core endpoint');
   const localAccess = await loadLocalMachineAccess(options.localAccessFile);
   if (composition.createIdentity !== undefined && typeof composition.createIdentity !== "function") throw new Error("Invalid Headless identity factory");
+  if (composition.createServiceIngress !== undefined && typeof composition.createServiceIngress !== "function") throw new Error("Invalid Headless service ingress factory");
   if (composition.selectHostTerminalService !== undefined && typeof composition.selectHostTerminalService !== "function") throw new Error("Invalid Headless terminal selector");
   if (composition.selectHostFiles !== undefined && typeof composition.selectHostFiles !== "function") throw new Error("Invalid Headless workspace file selector");
   if(composition.workspaceOutputIdentity!==undefined&&typeof composition.workspaceOutputIdentity!=='function')throw Error('Invalid Headless workspace output identity selector');
@@ -429,6 +431,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     // Plugins stop after the listener stopped accepting and before any owner
     // their authority or handlers may still call (admission, identity, stores).
     await settle([edge.closeRuntimePlugins]);
+    await settle([edge.closeServiceIngress]);
     await settle([installation.closePersonalSshKeys]);
     await settle([nodeLocal.closeObservability]);
     await settle([installation.closeProjectAutomations]);
@@ -887,6 +890,9 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       { dataDirectory, fileSystemOwner: options.fileSystemOwner, instanceAccess, authService: humanAuth }) : undefined);
     // The Web server: the route table and its socket are Node constructions; the
     // edge module assembles their options from every module's services.
+    await edge.startServiceIngress(composition.createServiceIngress && (() => openServiceIngress(composition.createServiceIngress, {
+      conversation: externalConversationPort(orchestrationStorage, conversationExecution),
+    })));
     await edge.openWeb({ createWebServer: options.createWebServer ?? createWorkbenchWebServer,
       webRoot, userPluginDirectory, productPluginAssets, workbenchAssetsPlugin: options.workbenchAssetsPlugin,
       webRelease, isolateBrowserStorage: options.isolateBrowserStorage, machineIdentity,

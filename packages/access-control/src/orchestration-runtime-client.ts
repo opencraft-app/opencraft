@@ -8,6 +8,7 @@ import type { ParentNotification, WaitTicket } from "./orchestration-ledger.js";
 import type { ExecutionRequestState } from "./execution-request-state.js";
 import type { AssistantThreadAllocation } from "./assistant-thread-store.js";
 import type { PersonalAssistants } from "./personal-assistants.js";
+import type { ExternalConversationRequest, ExternalConversationResult } from "./external-conversation.js";
 import {
   automationRequest,
   type AssistantAdmission,
@@ -85,6 +86,9 @@ export class OrchestrationRuntimeClient implements OrchestrationRuntimeStorage {
     }
   }
 
+  externalConversation(input: ExternalConversationRequest): Promise<ExternalConversationResult> {
+    return this.request("externalConversation", input);
+  }
   inheritChildCreator(parent: ConversationRef, child: ConversationRef): Promise<ThreadAccessPolicy> {
     return this.request("inheritChildCreator", { parent, child });
   }

@@ -2,6 +2,22 @@
 
 [Architecture index](plugin-architecture.md) · [Documentation index](../../README.md)
 
+### Authenticated service ingress
+
+Trusted Headless composition may opt into `createServiceIngress({conversation})`.
+Its bounded, explicit path set is dispatched before browser admission; the adapter
+must authenticate its service callers. It cannot claim core control routes. The
+edge drains requests and closes the ingress before identity and storage owners.
+Absent composition installs no routes and preserves existing browser admission.
+
+The external conversation port verifies a configured Session Actor credential,
+installation and Server-space membership, plus explicit read/send/queue grants on
+every storage-owner operation. It uses the existing durable collaboration input
+and idempotency ledger. Native completion reads recheck authorization before
+publishing the exact input-associated Turn's output. The port confers no identity
+management or arbitrary engine access. See the opt-in [A2A server plugin](../../../plugins/a2a/README.md)
+for the HTTP adapter, Relay composition, polling contract and verification scope.
+
 ### 服务端请求身份端口
 
 通用 HTTP/WS 网关只消费 `@opencraft/app-host-server` 的受信装配端口

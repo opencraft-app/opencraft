@@ -23,6 +23,7 @@ const functions = new Set([
   "isHuman",
   "createChannelSync",
   "createChannelSyncs",
+  "createServiceIngress",
   "selectHostFiles",
   "selectHostTerminalService",
   "workspaceOutputIdentity",

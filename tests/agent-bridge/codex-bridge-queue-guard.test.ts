@@ -114,3 +114,16 @@ test("bridge queue: collaboration receipts come from the Host queue rows", async
     result: { receipt: null },
   });
 });
+
+test("bridge completion is requested only after trusted Actor admission", async () => {
+  const row = { id: "q", clientUserMessageId: "actor-input:r", state: "delivered", targetTurnId: "turn" };
+  const check = collaborationQueueGuard({});
+  let reads = 0;
+  const completion = { version: 1 as const, turnId: "turn", status: "completed" as const, text: "Exact reply", truncated: false };
+  const read = async () => { reads++; return completion; };
+  await assert.rejects(check("thread", "thread/queue/collaborationReceipt", { includeCompletion: true }, {}, async () => row, read), /Trusted Actor admission/u);
+  assert.equal(reads, 0);
+  const result = await check("thread", "thread/queue/collaborationReceipt", { includeCompletion: true }, { collaborationRequestId: "r" }, async () => row, read);
+  assert.deepEqual(result, { result: { receipt: { id: "q", state: "delivered", targetTurnId: "turn", completion } } });
+  assert.equal(reads, 1);
+});

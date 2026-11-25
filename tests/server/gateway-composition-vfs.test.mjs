@@ -70,6 +70,26 @@ test("optional Gateway configuration loads a verified entry and relative sidecar
   }
 });
 
+test("verified Gateway composition accepts the opt-in service ingress factory", async (t) => {
+  const pack = await fixture(t, 1, {
+    "composition.mjs": `export const gatewayCompositionApi = 1;
+      export function createGatewayComposition() {
+        return { createServiceIngress: ports => ports.conversation };
+      }`,
+  });
+  const selected = await loadGatewayComposition(pack.env);
+  t.after(() => selected.composition.close());
+  const conversation = () => {};
+  assert.equal(selected.composition.createServiceIngress({ conversation }), conversation);
+  const invalid = await fixture(t, 1, {
+    "composition.mjs": `export const gatewayCompositionApi = 1;
+      export function createGatewayComposition() {
+        return { createServiceIngress: {} };
+      }`,
+  });
+  await assert.rejects(loadGatewayComposition(invalid.env), /Invalid Gateway composition property: createServiceIngress/u);
+});
+
 test("a locked VFS can add a Workbench Assets plugin without replacing Web or bypassing admission", async (t) => {
   const entry = "workbench/assets-plugin.mjs";
   const code = "export default { apiVersion: 1, create: () => ({}) };";
