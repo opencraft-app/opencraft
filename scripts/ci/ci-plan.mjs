@@ -98,6 +98,46 @@ export function planChanges(paths, { event = 'pull_request', unknownDiff = false
   };
 }
 
+function isInternalMainPullRequest(eventName, event) {
+  const repository = event?.repository;
+  const pull = event?.pull_request;
+  return eventName === 'pull_request'
+    && repository?.full_name === 'opencraft-app/opencraft'
+    && Number.isSafeInteger(repository.id)
+    && repository.id > 0
+    && pull?.base?.ref === 'main'
+    && pull.base.repo?.id === repository.id
+    && pull.head?.repo?.id === repository.id
+    && ['OWNER', 'MEMBER'].includes(pull.author_association);
+}
+
+function affectsValidation(path) {
+  return /^(?:\.github|config|deploy|scripts\/(?:ci|check|packaging|release)|tests\/(?:support|tooling))\//.test(path)
+    || /(?:^|\/)(?:package(?:-lock)?\.json|tsconfig[^/]*\.json|\.npmrc|\.nvmrc|\.gitleaks\.toml)$/.test(path);
+}
+
+export function planRun(paths, { eventName, event, unknownDiff = false, fullMatrix = false }) {
+  const plan = planChanges(paths, { event: eventName, unknownDiff, fullMatrix });
+  const fastPr = !unknownDiff && isInternalMainPullRequest(eventName, event)
+    && !plan.website && !plan.headlessPackage && !plan.audits.length && !paths.some(affectsValidation);
+  if (!fastPr) return { ...plan, fastPr, quickTests: [] };
+
+  const quickTests = [];
+  if (plan.targets.includes('web-browser')) quickTests.push('chat');
+  if (plan.headlessTests) quickTests.push('appserver-client');
+  if (plan.managedWeb || paths.some(path => /^apps\/(?:desktop|mobile)\//.test(path))) quickTests.push('startup');
+  if (plan.extensions) quickTests.push('extensions');
+  return {
+    ...plan,
+    targets: [],
+    managedWeb: false,
+    headlessTests: false,
+    extensions: false,
+    fastPr,
+    quickTests,
+  };
+}
+
 export function changedPaths(eventName, event, cwd = process.cwd()) {
   if (eventName === 'workflow_dispatch' || eventName === 'schedule') return [];
   const [base, head] = eventName === 'pull_request' ? [event.pull_request?.base?.sha, event.pull_request?.head?.sha]
@@ -122,8 +162,9 @@ function main() {
   try { paths = changedPaths(eventName, event); }
   catch { unknownDiff = true; console.warn('Diff unavailable; selecting Web and server validation.'); }
   const fullMatrix = process.env.CI_FULL_MATRIX === 'true';
-  const plan = planChanges(paths, { event: eventName, unknownDiff, fullMatrix });
+  const plan = planRun(paths, { eventName, event, unknownDiff, fullMatrix });
   const outputs = {
+    'fast-pr': plan.fastPr, 'quick-tests': JSON.stringify(plan.quickTests),
     targets: JSON.stringify(plan.targets), audits: JSON.stringify(plan.audits),
     website: plan.website, 'website-only': plan.websiteOnly,
     'has-builds': plan.targets.length > 0, 'has-audits': plan.audits.length > 0,
@@ -133,7 +174,7 @@ function main() {
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT,
     Object.entries(outputs).map(([key, value]) => `${key}=${value}\n`).join(''));
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY,
-    `## Selected CI work\n\n- Portable builds: ${plan.targets.join(', ') || 'none'}\n- Website: ${plan.website}\n- Dependency audits: ${plan.audits.join(', ') || 'none'}\n- Managed Web: ${plan.managedWeb}\n- Extension contracts: ${plan.extensions}\n- Server tests: ${plan.headlessTests}\n- Server archive: ${plan.headlessPackage}\n- macOS native compile: ${plan.native}\n- Full matrix requested: ${eventName === 'workflow_dispatch' && fullMatrix}\n- Diff unavailable: ${unknownDiff}\n`);
+    `## Selected CI work\n\n- Internal PR fast checks: ${plan.fastPr}\n- Quick test suites: ${plan.quickTests.join(', ') || 'none'}\n- Portable builds: ${plan.targets.join(', ') || 'none'}\n- Website: ${plan.website}\n- Dependency audits: ${plan.audits.join(', ') || 'none'}\n- Managed Web: ${plan.managedWeb}\n- Extension contracts: ${plan.extensions}\n- Server tests: ${plan.headlessTests}\n- Server archive: ${plan.headlessPackage}\n- macOS native compile: ${plan.native}\n- Full matrix requested: ${eventName === 'workflow_dispatch' && fullMatrix}\n- Diff unavailable: ${unknownDiff}\n`);
   console.log(JSON.stringify(plan, null, 2));
 }
 if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) main();

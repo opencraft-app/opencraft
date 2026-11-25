@@ -22,6 +22,7 @@ jobs:
     timeout-minutes: 10
     outputs:
       website-only: ${{ steps.select.outputs.website-only }}
+      fast-pr: ${{ steps.select.outputs.fast-pr }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -37,7 +38,8 @@ jobs:
     needs: [admission, plan]
     if: >-
       !cancelled() && needs.admission.result == 'success' && (needs.plan.result == 'skipped'
-      || (needs.plan.result == 'success' && needs.plan.outputs.website-only != 'true'))
+      || (needs.plan.result == 'success' && needs.plan.outputs.website-only != 'true'
+      && needs.plan.outputs.fast-pr != 'true'))
     strategy:
       fail-fast: false
       matrix:

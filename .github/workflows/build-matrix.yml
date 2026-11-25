@@ -58,9 +58,49 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm run build
 
+  quick-pr:
+    needs: plan
+    if: needs.plan.outputs.fast-pr == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - id: dependencies
+        run: npm ci --no-audit --no-fund
+      - run: npm run check:format -- --base HEAD^1
+        if: always() && steps.dependencies.outcome == 'success'
+      - run: npm run lint:changed -- --base HEAD^1
+        if: always() && steps.dependencies.outcome == 'success'
+      - run: npm run check:hover
+        if: always() && steps.dependencies.outcome == 'success'
+      - name: Enable test isolation
+        id: isolation
+        if: always() && steps.dependencies.outcome == 'success'
+        run: |
+          isolation_env="$(mktemp "$RUNNER_TEMP/opencraft-isolation.XXXXXX")"
+          printf 'export NODE_OPTIONS=%q\n' "--import $GITHUB_WORKSPACE/tests/support/test-isolation.mjs --test-global-setup=$GITHUB_WORKSPACE/tests/support/test-isolation-global.mjs" > "$isolation_env"
+          echo "BASH_ENV=$isolation_env" >> "$GITHUB_ENV"
+      - run: npm run test:hover-policy
+        if: always() && steps.isolation.outcome == 'success'
+      - run: npm run test:chat
+        if: always() && steps.isolation.outcome == 'success' && contains(fromJSON(needs.plan.outputs.quick-tests), 'chat')
+      - run: npm run test:appserver-client
+        if: always() && steps.isolation.outcome == 'success' && contains(fromJSON(needs.plan.outputs.quick-tests), 'appserver-client')
+      - run: npm run test:startup
+        if: always() && steps.isolation.outcome == 'success' && contains(fromJSON(needs.plan.outputs.quick-tests), 'startup')
+      - run: npm run test:extensions
+        if: always() && steps.isolation.outcome == 'success' && contains(fromJSON(needs.plan.outputs.quick-tests), 'extensions')
+
   hover-policy:
     needs: [admission, plan]
-    if: needs.plan.outputs.website-only != 'true'
+    if: needs.plan.outputs.website-only != 'true' && needs.plan.outputs.fast-pr != 'true'
     runs-on: ubuntu-latest
     # Slow system-package mirrors must leave time for the browser smoke checks.
     timeout-minutes: 30
@@ -522,7 +562,7 @@ jobs:
 
   build-checks:
     if: always()
-    needs: [admission, plan, website, portable, extensions, macos-native, macos-electron, linux-headless, headless-package, core-tests, gate-tests, hover-policy]
+    needs: [admission, plan, website, portable, extensions, macos-native, macos-electron, linux-headless, headless-package, core-tests, gate-tests, quick-pr, hover-policy]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -532,7 +572,9 @@ jobs:
           EXTENSIONS_SELECTED: ${{ needs.plan.outputs.extensions }}
           WEBSITE_SELECTED: ${{ needs.plan.outputs.website }}
           WEBSITE_RESULT: ${{ needs.website.result }}
-          HOVER_SELECTED: ${{ needs.plan.outputs.website-only != 'true' }}
+          QUICK_SELECTED: ${{ needs.plan.outputs.fast-pr }}
+          QUICK_RESULT: ${{ needs.quick-pr.result }}
+          HOVER_SELECTED: ${{ needs.plan.outputs.website-only != 'true' && needs.plan.outputs.fast-pr != 'true' }}
           HOVER_RESULT: ${{ needs.hover-policy.result }}
           ADMISSION_RESULT: ${{ needs.admission.result }}
           PLAN_RESULT: ${{ needs.plan.result }}
@@ -560,6 +602,7 @@ jobs:
             fi
           }
           require_selected "$WEBSITE_SELECTED" "$WEBSITE_RESULT"
+          require_selected "$QUICK_SELECTED" "$QUICK_RESULT"
           require_selected "$HOVER_SELECTED" "$HOVER_RESULT"
           require_selected "$EXTENSIONS_SELECTED" "$EXTENSIONS_RESULT"
           require_selected "$BUILD_SELECTED" "$BUILD_RESULT"

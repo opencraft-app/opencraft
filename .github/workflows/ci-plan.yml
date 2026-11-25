@@ -11,6 +11,10 @@ on:
         value: ${{ jobs.plan.outputs.website }}
       website-only:
         value: ${{ jobs.plan.outputs.website-only }}
+      fast-pr:
+        value: ${{ jobs.plan.outputs.fast-pr }}
+      quick-tests:
+        value: ${{ jobs.plan.outputs.quick-tests }}
       targets:
         value: ${{ jobs.plan.outputs.targets }}
       audits:
@@ -40,6 +44,8 @@ jobs:
     outputs:
       website: ${{ steps.select.outputs.website }}
       website-only: ${{ steps.select.outputs.website-only }}
+      fast-pr: ${{ steps.select.outputs.fast-pr }}
+      quick-tests: ${{ steps.select.outputs.quick-tests }}
       targets: ${{ steps.select.outputs.targets }}
       audits: ${{ steps.select.outputs.audits }}
       has-builds: ${{ steps.select.outputs.has-builds }}

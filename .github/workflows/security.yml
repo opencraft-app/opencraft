@@ -156,12 +156,20 @@ jobs:
           ADMISSION_RESULT: ${{ needs.admission.result }}
           PLAN_RESULT: ${{ needs.plan.result }}
           SECRETS_RESULT: ${{ needs.secrets.result }}
+          AUDIT_SELECTED: ${{ needs.plan.outputs.has-audits }}
           AUDIT_RESULT: ${{ needs.dependency-audit.result }}
+          WEB_SELECTED: ${{ needs.plan.outputs.managed-web }}
           WEB_RESULT: ${{ needs.managed-web.result }}
         run: |
           test "$ADMISSION_RESULT" = success
           test "$PLAN_RESULT" = success
           test "$SECRETS_RESULT" = success
-          for result in "$AUDIT_RESULT" "$WEB_RESULT"; do
-            case "$result" in success|skipped) ;; *) exit 1 ;; esac
-          done
+          require_selected() {
+            if [ "$1" = true ]; then
+              test "$2" = success
+            else
+              test "$1" = false && test "$2" = skipped
+            fi
+          }
+          require_selected "$AUDIT_SELECTED" "$AUDIT_RESULT"
+          require_selected "$WEB_SELECTED" "$WEB_RESULT"

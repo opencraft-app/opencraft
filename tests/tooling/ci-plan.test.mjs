@@ -4,10 +4,69 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, renameSync, readFileSync
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
-import { changedPaths, planChanges, portableTargets } from "../../scripts/ci/ci-plan.mjs";
+import { changedPaths, planChanges, planRun, portableTargets } from "../../scripts/ci/ci-plan.mjs";
 
 const webTargets = ['web-browser'];
 const emptyPlan = { targets: [], audits: [], managedWeb: false, native: false, headlessTests: false, headlessPackage: false, extensions: false, website: false, websiteOnly: false };
+const repository = { id: 42, full_name: 'opencraft-app/opencraft' };
+const internalRequest = {
+  repository,
+  pull_request: { author_association: 'MEMBER', base: { ref: 'main', repo: repository }, head: { repo: repository } },
+};
+const planPullRequest = (paths, options = {}) => planRun(paths, { eventName: 'pull_request', event: internalRequest, ...options });
+
+test('internal PRs defer the selected full jobs to the merge queue and run affected quick suites', () => {
+  const paths = ['apps/workbench-web/src/runtime/example.ts', 'apps/local-agent-host/src/main.ts'];
+  assert.deepEqual(planPullRequest(paths), { ...emptyPlan, fastPr: true, quickTests: ['chat', 'appserver-client'] });
+  assert.deepEqual(planPullRequest(['apps/mobile/src/container.ts']), { ...emptyPlan, fastPr: true, quickTests: ['chat', 'startup'] });
+  assert.deepEqual(planPullRequest(['examples/extensions/example.ts']), { ...emptyPlan, fastPr: true, quickTests: ['extensions'] });
+  assert.deepEqual(planPullRequest(['docs/develop/example.md']), { ...emptyPlan, fastPr: true, quickTests: [] });
+
+  const group = planRun(paths, { eventName: 'merge_group', event: internalRequest });
+  assert.deepEqual(group, { ...planChanges(paths, { event: 'merge_group' }), fastPr: false, quickTests: [] });
+  assert.equal(group.headlessTests, true);
+  assert.deepEqual(group.targets, webTargets);
+  assert.equal(planRun(['packages/chat-core/src/index.ts'], { eventName: 'merge_group', event: {} }).managedWeb, true);
+});
+
+test('lightweight CI is limited to known organization members on canonical same-repository main PRs', () => {
+  const path = 'apps/workbench-web/src/a.ts';
+  const pull = internalRequest.pull_request;
+  for (const candidate of [
+    { ...pull, author_association: 'COLLABORATOR' },
+    { ...pull, author_association: 'CONTRIBUTOR' },
+    { ...pull, author_association: undefined },
+    { ...pull, head: { repo: { id: 99 } } },
+    { ...pull, head: { repo: null } },
+    { ...pull, base: { ...pull.base, ref: 'release' } },
+    { ...pull, base: { ...pull.base, repo: { id: 99 } } },
+  ]) {
+    const result = planPullRequest([path], { event: { repository, pull_request: candidate } });
+    assert.deepEqual(result, { ...planChanges([path]), fastPr: false, quickTests: [] });
+  }
+  assert.equal(planPullRequest([path], { event: { repository: { ...repository, full_name: 'fork/opencraft' }, pull_request: pull } }).fastPr, false);
+  assert.equal(planPullRequest([path], { event: { repository, pull_request: { ...pull, author_association: 'OWNER' } } }).fastPr, true);
+  const missingDiff = planPullRequest([], { unknownDiff: true });
+  assert.equal(missingDiff.fastPr, false);
+  assert.equal(missingDiff.headlessPackage, true);
+});
+
+test('website changes retain the dedicated website plan for internal PRs', () => {
+  for (const paths of [['website/static/site.css'], ['website/static/site.css', 'apps/workbench-web/src/runtime/example.ts']]) {
+    assert.deepEqual(planPullRequest(paths), { ...planChanges(paths), fastPr: false, quickTests: [] });
+  }
+});
+
+test('CI, dependency and server archive changes retain their existing PR checks', () => {
+  for (const path of [
+    '.github/workflows/build-matrix.yml', '.github/workflows/security.yml', '.gitleaks.toml',
+    'scripts/ci/check-contribution-admission.py', 'scripts/check/check-source-text-tests.mjs',
+    'tests/support/test-isolation.mjs', 'tests/tooling/ci-plan.test.mjs', 'config/build-matrix.json',
+    'apps/workbench-web/package.json', 'runtime/dsh/package-lock.json',
+    'packages/storage-node/src/index.ts', 'deploy/docker/Dockerfile',
+  ]) assert.deepEqual(planPullRequest([path]), { ...planChanges([path]), fastPr: false, quickTests: [] }, path);
+});
+
 test('selected targets exist in the build artifact contract', () => {
   const matrix = JSON.parse(readFileSync(new URL("../../config/build-matrix.json", import.meta.url), 'utf8'));
   for (const target of portableTargets) assert(matrix.targets.some(entry => entry.id === target), target);
@@ -170,6 +229,7 @@ test('CLI writes machine-readable outputs and falls back when a base commit is u
       const split = line.indexOf('='); return [line.slice(0, split), line.slice(split + 1)];
     }));
     assert.equal(values['has-builds'], 'true'); assert.equal(values['has-audits'], 'true');
+    assert.equal(values['fast-pr'], 'false'); assert.deepEqual(JSON.parse(values['quick-tests']), []);
     assert.deepEqual(JSON.parse(values.targets), webTargets);
     assert.equal(values.native, 'false');
     assert.equal(values['headless-tests'], 'true');
