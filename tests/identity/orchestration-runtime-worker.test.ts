@@ -101,6 +101,13 @@ test('due notifications expire only the selected elapsed authority, and a fresh 
     spawn('explicit-expired', 'later-spawn');
     const expiredWait = notice('explicit-expired');
     collaboration.notificationAuthority(expiredWait.batchId, 'expired-wait');
+    grant('automation-root', 3000);
+    grant('renewable-descendant', 3000);
+    owner.database.prepare('INSERT INTO opencraft_delegation_roots VALUES (?, ?)').run('renewable-descendant', 'automation-root');
+    owner.database.prepare('INSERT INTO automation_delegations VALUES (?, ?, ?)').run('automation-root', 'run', 'grant');
+    owner.database.prepare("INSERT INTO automation_runs VALUES ('run', 'fixture-automation', 1, 'entry', 'running', 1000, '{}')").run();
+    spawn('automation-child', 'renewable-descendant');
+    const renewable = notice('automation-child');
     const missing = notice('pending-without-authority');
     const delivered = notice('already-delivered');
     ledger.markNotificationsDelivered([delivered.batchId], 'notice-input');
@@ -114,7 +121,7 @@ test('due notifications expire only the selected elapsed authority, and a fresh 
     assert.equal(state(spawnExpired.batchId)?.state, 'pending');
 
     now = 3000;
-    const expectedDue = [liveWait.batchId, missing.batchId].sort();
+    const expectedDue = [liveWait.batchId, missing.batchId, renewable.batchId].sort();
     await forbidMainSql(async () => assert.deepEqual(await due(), expectedDue));
     assert.equal(state(spawnExpired.batchId)?.state, 'expired');
     assert.equal(state(expiredWait.batchId)?.state, 'expired');
@@ -137,6 +144,9 @@ test('due notifications expire only the selected elapsed authority, and a fresh 
       collaboration.notificationAuthority(spawnExpired.batchId, 'live-wait');
       assert.equal(collaboration.notificationDelegation(spawnExpired.batchId)?.id, 'live-wait');
       await forbidMainSql(async () => assert.deepEqual(await pending(), [...expectedDue, spawnExpired.batchId].sort()));
+      owner.database.prepare("UPDATE automation_runs SET state='completed' WHERE key='run'").run();
+      await forbidMainSql(async () => assert.deepEqual(await pending(), [liveWait.batchId, missing.batchId, spawnExpired.batchId].sort()));
+      assert.equal(state(renewable.batchId)?.state, 'expired');
     } finally {
       await reopened.close();
     }
