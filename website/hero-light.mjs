@@ -1,19 +1,45 @@
 import {
-  AdditiveBlending, BufferAttribute, BufferGeometry, CatmullRomCurve3,
-  OrthographicCamera, Points, Scene, ShaderMaterial, Vector3, WebGLRenderer,
-} from 'three';
+  AdditiveBlending,
+  BufferAttribute,
+  BufferGeometry,
+  CatmullRomCurve3,
+  OrthographicCamera,
+  Points,
+  Scene,
+  ShaderMaterial,
+  Vector3,
+  WebGLRenderer,
+} from "three";
 
 const imageWidth = 1536;
 const imageHeight = 1024;
 const tailLength = 6;
 const paths = [
-  [[513, 821], [586, 836], [700, 838], [821, 819], [944, 777], [1017, 730], [1035, 689], [1022, 658], [993, 638]],
-  [[1027, 590], [1084, 555], [1118, 519], [1134, 471], [1161, 434]],
-].map(points => new CatmullRomCurve3(points.map(([x, y]) => new Vector3(x - imageWidth / 2, imageHeight / 2 - y, 0))));
+  [
+    [513, 821],
+    [586, 836],
+    [700, 838],
+    [821, 819],
+    [944, 777],
+    [1017, 730],
+    [1035, 689],
+    [1022, 658],
+    [993, 638],
+  ],
+  [
+    [1027, 590],
+    [1084, 555],
+    [1118, 519],
+    [1134, 471],
+    [1161, 434],
+  ],
+].map(
+  (points) => new CatmullRomCurve3(points.map(([x, y]) => new Vector3(x - imageWidth / 2, imageHeight / 2 - y, 0))),
+);
 
 export function playHeroLight(figure, reducedMotion) {
-  const canvas = document.createElement('canvas');
-  const context = canvas.getContext('webgl2', { alpha: true, antialias: false, powerPreference: 'low-power' });
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("webgl2", { alpha: true, antialias: false, powerPreference: "low-power" });
   if (!context || reducedMotion.matches || document.hidden) return;
 
   const renderer = new WebGLRenderer({ canvas, context, alpha: true, antialias: false });
@@ -24,8 +50,8 @@ export function playHeroLight(figure, reducedMotion) {
   const count = paths.length * tailLength;
   const positions = new Float32Array(count * 3);
   const intensities = new Float32Array(count);
-  geometry.setAttribute('position', new BufferAttribute(positions, 3));
-  geometry.setAttribute('intensity', new BufferAttribute(intensities, 1));
+  geometry.setAttribute("position", new BufferAttribute(positions, 3));
+  geometry.setAttribute("intensity", new BufferAttribute(intensities, 1));
 
   const material = new ShaderMaterial({
     transparent: true,
@@ -56,7 +82,7 @@ export function playHeroLight(figure, reducedMotion) {
   const lights = new Points(geometry, material);
   lights.frustumCulled = false;
   scene.add(lights);
-  canvas.setAttribute('aria-hidden', 'true');
+  canvas.setAttribute("aria-hidden", "true");
   figure.append(canvas);
 
   function resize() {
