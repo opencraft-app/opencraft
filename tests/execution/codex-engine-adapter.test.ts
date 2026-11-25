@@ -2173,14 +2173,14 @@ for (const configured of [false, true]) test(`session refresh refuses unsupporte
   } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
 });
 
-for (const scenario of ["unloaded", "missing", "null"] as const) test(`session refresh refuses unknown sandbox permissions: ${scenario}`, async () => {
+for (const scenario of ["missing", "null"] as const) test(`session refresh refuses unknown sandbox permissions: ${scenario}`, async () => {
   const root = await mkdtemp(join(tmpdir(), "codex-tools-unknown-sandbox-"));
   const adapter = createRoutingAdapter(root, [], 0, undefined, undefined, undefined, false, undefined,
     async () => ({ url: "http://fixture/mcp" }));
   const internals = adapter as any, calls: string[] = [];
   internals.requestPhysical = async (method: string, params: any) => {
     calls.push(method + (params.config ? ":apply" : ""));
-    if (method === "thread/read") return { thread: { status: { type: scenario === "unloaded" ? "notLoaded" : "idle" } } };
+    if (method === "thread/read") return { thread: { status: { type: "idle" } } };
     if (method === "thread/resume" && !params.config) return scenario === "null" ? { sandbox: null } : {};
     return {};
   };
@@ -2193,7 +2193,7 @@ for (const scenario of ["unloaded", "missing", "null"] as const) test(`session r
     assert.match(error.message, /permissions cannot be verified/i);
     assert.equal(error.data.retryable, false);
     assert.equal(error.data.submissionOutcome, "rejected");
-    assert.deepEqual(calls, scenario === "unloaded" ? ["thread/read"] : ["thread/read", "thread/resume"]);
+    assert.deepEqual(calls, ["thread/read", "thread/resume"]);
     assert.equal(internals.sessionMcpConfigurations.has("thread"), false);
   } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
 });

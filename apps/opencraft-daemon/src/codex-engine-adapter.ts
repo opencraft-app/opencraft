@@ -4547,8 +4547,8 @@ export class CodexEngineAdapter implements DuplexTransport {
   private readonly sessionMcpCreations = new Map<string, SessionMcpCreation>();
   private readonly sessionMcpInitial = new Map<string, { reservation: SessionMcpCreation; inputId?: string }>();
   private readonly sessionMcpRetirements = new Map<string,
-    | { settings: RpcRecord; phase: "retiring" }
-    | { settings: RpcRecord; phase: "restoring"; configuration: unknown; environmentKey: string | undefined }
+    | { settings: RpcRecord | null; phase: "retiring" }
+    | { settings: RpcRecord | null; phase: "restoring"; configuration: unknown; environmentKey: string | undefined }
   >();
   private readonly sessionMcpConfigurations = new Map<string, unknown>();
   // A recovered creation attests its owner, but not a freshly applied configuration key.
@@ -4878,17 +4878,18 @@ export class CodexEngineAdapter implements DuplexTransport {
         && isDeepStrictEqual(retirement.configuration, configuration)
         && retirement.environmentKey === environment?.key && !delivered;
       stage = "capture-settings";
-      const live = retirement?.settings ?? (status === "notLoaded" ? {} : record(await request("thread/resume", { threadId, excludeTurns: true })));
+      // Cold resume uses the Native owner's saved settings, as Bridge adoption does.
+      // For older sessions without a saved profile Native uses its configured default.
+      const live = retirement ? retirement.settings : status === "notLoaded" ? null
+        : record(await request("thread/resume", { threadId, excludeTurns: true }));
       const resume: RpcRecord = {};
       for (const key of ["model", "modelProvider", "serviceTier", "cwd", "runtimeWorkspaceRoots", "approvalPolicy", "approvalsReviewer"])
-        if (live[key] !== undefined) resume[key] = live[key];
+        if (live?.[key] !== undefined) resume[key] = live[key];
       stage = "preserve-permissions";
-      const profile = string(record(live.activePermissionProfile).id);
+      const profile = string(record(live?.activePermissionProfile).id);
       if (profile) resume.permissions = profile;
-      else {
+      else if (live) {
         const sandbox = record(live.sandbox), modes: Record<string, string> = { dangerFullAccess: "danger-full-access", readOnly: "read-only", workspaceWrite: "workspace-write" };
-        // An unloaded Native owner cannot supply live settings. Omitting sandbox
-        // here would apply its current default, which may be more permissive.
         const mode = Object.hasOwn(modes, string(sandbox.type)) ? modes[string(sandbox.type)] : undefined;
         if (!mode) throw new Error("Cannot preserve this Codex sandbox while refreshing tools");
         resume.sandbox = mode;
@@ -4913,7 +4914,7 @@ export class CodexEngineAdapter implements DuplexTransport {
         }, ...(delivered ? { [ENVIRONMENT_LAUNCH_FIELD]: { locator: delivered.locator, key: delivered.key } } : {}) });
         this.sessionMcpRetirements.set(threadId, { settings: live, phase: "restoring", configuration, environmentKey: environment?.key });
       }
-      if (Object.keys(live).length) {
+      if (live) {
         const settings: RpcRecord = { threadId };
         if (profile) settings.permissions = profile;
         else if (live.sandbox) settings.sandboxPolicy = live.sandbox;
