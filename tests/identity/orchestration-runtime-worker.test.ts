@@ -9,7 +9,8 @@ import { openServerDatabase } from '../../packages/storage-node/src/server/index
 import { ThreadOrchestrationLedger, type ThreadRelation } from '../../packages/access-control/src/orchestration-ledger';
 import { OrchestrationRuntimeWorker } from '../../packages/access-control/src/orchestration-runtime-store';
 import { ThreadOrchestrationBroker } from '../../packages/access-control/src/thread-orchestration-broker';
-import type { Collaboration } from '../../packages/access-control/src/collaboration';
+import { Collaboration } from '../../packages/access-control/src/collaboration';
+import { ActorStore } from '../../packages/access-control/src/actors';
 const pause=(ms:number)=>new Promise(r=>setTimeout(r,ms));
 const snapshot={threadId:'child',rootTurnId:'root',turnId:'turn',state:'active' as const};
 function relation(threadId:string,parentThreadId:string|null=null):ThreadRelation{return {threadId,serverId:'fixture-server',driverKind:'codex',ownerActorId:'fixture-actor',parentThreadId,lifecycleOwnerThreadId:parentThreadId,forkedFromId:null,visibility:'visible',engineHostGeneration:null,nativeSessionId:null,runtimeStatus:'starting',rootTurnId:null,turnId:null,delegationRevision:1,autoExchangeDepth:0,hasDirectUserInput:false,userInputExcerpt:null};}
@@ -63,6 +64,86 @@ test('runtime and parent notification roll back together; the same observation c
  owner.database.exec('DROP TRIGGER fixture_reject_notice');await worker.observe(completed,3000);
  assert.equal(ledger.runtimeSnapshot('child')?.state,'completed');assert.equal(ledger.relation('child')?.runtimeStatus,'idle');
  assert.equal(Number(owner.database.prepare('SELECT count(*) AS n FROM opencraft_parent_notification_batches').get()!.n),1);
+});
+test('due notifications expire only the selected elapsed authority, and a fresh wait can revive a batch', async t => {
+  const { owner, worker, dir } = await fixture(t);
+  let now = 1000;
+  const actors = new ActorStore(owner, () => now);
+  const collaboration = new Collaboration(owner, actors, undefined, () => now);
+  try {
+    const actor = actors.resolveHuman({ provider: 'local', subject: 'notice-owner', displayName: 'Notice Owner', expiresAt: 60_000 })!;
+    const ledger = collaboration.orchestration;
+    const grant = (id: string, expiresAt: number) => {
+      owner.database.prepare('INSERT INTO conversation_authorities VALUES(?,?,NULL,?,?,?,NULL,?,?)')
+        .run(id, 'parent', id, actor.actorId, actor.generation, expiresAt, now);
+    };
+    const spawn = (child: string, id: string) => ledger.accept({
+      toolCallKey: `${child}:${id}`, delegationId: id, issuerActorId: actor.actorId, kind: 'spawn',
+      senderThreadId: 'parent', targetThreadId: child, clientMessageId: null, mode: 'start', arguments: {},
+    });
+    function notice(childThreadId: string) {
+      return ledger.queueNotification({
+        parentThreadId: 'parent', childThreadId, childRootTurnId: 'root', outcomeKind: 'completed',
+        hasDirectUserInput: false, userInputExcerpt: null, summary: { text: 'Preserve this notice' },
+      });
+    }
+
+    grant('first-spawn', 3000);
+    grant('later-spawn', 10_000);
+    grant('live-wait', 10_000);
+    grant('expired-wait', 3000);
+    spawn('spawn-expired', 'first-spawn');
+    spawn('spawn-expired', 'later-spawn');
+    const spawnExpired = notice('spawn-expired');
+    spawn('explicit-live', 'first-spawn');
+    const liveWait = notice('explicit-live');
+    collaboration.notificationAuthority(liveWait.batchId, 'live-wait');
+    spawn('explicit-expired', 'later-spawn');
+    const expiredWait = notice('explicit-expired');
+    collaboration.notificationAuthority(expiredWait.batchId, 'expired-wait');
+    const missing = notice('pending-without-authority');
+    const delivered = notice('already-delivered');
+    ledger.markNotificationsDelivered([delivered.batchId], 'notice-input');
+
+    const state = (batchId: string) => owner.database.prepare(
+      'SELECT state,summary_json,client_message_id FROM opencraft_parent_notification_batches WHERE batch_id=?',
+    ).get(batchId);
+    const due = async () => (await worker.work(now)).notifications.map(notice => notice.batchId).sort();
+    now = 2999;
+    await forbidMainSql(async () => assert.deepEqual(await due(), []));
+    assert.equal(state(spawnExpired.batchId)?.state, 'pending');
+
+    now = 3000;
+    const expectedDue = [liveWait.batchId, missing.batchId].sort();
+    await forbidMainSql(async () => assert.deepEqual(await due(), expectedDue));
+    assert.equal(state(spawnExpired.batchId)?.state, 'expired');
+    assert.equal(state(expiredWait.batchId)?.state, 'expired');
+    assert.equal(state(spawnExpired.batchId)?.summary_json, JSON.stringify(spawnExpired.summary));
+    assert.equal(state(delivered.batchId)?.client_message_id, 'notice-input');
+    assert.equal(collaboration.notificationDelegation(liveWait.batchId)?.id, 'live-wait');
+    assert.equal(collaboration.notificationDelegation(spawnExpired.batchId), null);
+
+    await worker.close();
+    const reopened = new OrchestrationRuntimeWorker(join(dir, 'opencraft-server.sqlite'));
+    await reopened.start();
+    try {
+      const version = owner.database.prepare('PRAGMA data_version').get()?.data_version;
+      const pending = async () => (await reopened.work(now)).notifications.map(notice => notice.batchId).sort();
+      await forbidMainSql(async () => assert.deepEqual(await pending(), expectedDue));
+      assert.equal(owner.database.prepare('PRAGMA data_version').get()?.data_version, version);
+
+      collaboration.notificationAuthority(expiredWait.batchId, 'live-wait');
+      assert.equal(state(expiredWait.batchId)?.state, 'expired', 'an existing explicit binding retains precedence');
+      collaboration.notificationAuthority(spawnExpired.batchId, 'live-wait');
+      assert.equal(collaboration.notificationDelegation(spawnExpired.batchId)?.id, 'live-wait');
+      await forbidMainSql(async () => assert.deepEqual(await pending(), [...expectedDue, spawnExpired.batchId].sort()));
+    } finally {
+      await reopened.close();
+    }
+  } finally {
+    await collaboration.close();
+    actors.close();
+  }
 });
 test('close drains transitions in FIFO order and restart recovers committed observations',async t=>{
  const {dir,owner,ledger,worker}=await fixture(t,true);

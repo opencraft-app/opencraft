@@ -30,7 +30,7 @@ import type { CreationReceipt, ServerCoreStorage } from '@opencraft/storage-node
 import type { ActorContext } from '@opencraft/identity-core/actors';
 import type { ActorStore } from './actors.js';
 import type { ActorAccess } from './actor-access.js';
-import { ThreadOrchestrationLedger } from './orchestration-ledger.js';
+import { notificationAuthorityIdSql, ThreadOrchestrationLedger } from './orchestration-ledger.js';
 import { type BoundedThreadDelegation, type OrchestrationMessageOrigin } from './orchestration-authority.js';
 import { communicationCommand, type CommunicationCommand } from './communication-command.js';
 import type { ActorInboxPage } from '@opencraft/appserver-protocol/collaboration';
@@ -819,10 +819,21 @@ export class Collaboration {
   queueOrchestrationAck(operationId:string):void {this.database.prepare('INSERT OR IGNORE INTO opencraft_orchestration_acks VALUES(?)').run(operationId);}
   pendingOrchestrationAcks():string[]{return this.database.prepare('SELECT operation_id FROM opencraft_orchestration_acks LIMIT 16').all().map(row=>String(row.operation_id));}
   acknowledgeOrchestration(operationId:string):void{this.database.prepare('DELETE FROM opencraft_orchestration_acks WHERE operation_id=?').run(operationId);}
-  notificationAuthority(batchId:string,authorityId:string):void{this.database.prepare('INSERT OR IGNORE INTO opencraft_notification_authorities VALUES(?,?)').run(batchId,authorityId);}
-  notificationDelegation(childThreadId: string,batchId?:string): BoundedThreadDelegation|null {
-    const explicit=batchId?this.database.prepare('SELECT a.* FROM conversation_authorities a JOIN opencraft_notification_authorities n ON n.authority_id=a.id WHERE n.batch_id=?').get(batchId):null;
-    const row=explicit??this.database.prepare("SELECT a.* FROM conversation_authorities a JOIN opencraft_orchestration_operations o ON o.delegation_id=a.id WHERE o.kind='spawn' AND o.target_thread_id=? ORDER BY o.created_at_ms LIMIT 1").get(childThreadId);
+  notificationAuthority(batchId: string, authorityId: string): void {
+    this.database.transaction(() => {
+      const inserted = this.database.prepare('INSERT OR IGNORE INTO opencraft_notification_authorities VALUES(?,?)').run(batchId, authorityId);
+      // A wait may bind a fresh explicit authority after a spawn authority expired.
+      if (Number(inserted.changes) === 1) {
+        this.database.prepare(`UPDATE opencraft_parent_notification_batches SET state='pending'
+          WHERE batch_id=? AND state='expired' AND EXISTS
+            (SELECT 1 FROM conversation_authorities WHERE id=? AND expires_at>?)`).run(batchId, authorityId, this.now());
+      }
+    });
+  }
+  notificationDelegation(batchId: string): BoundedThreadDelegation | null {
+    const row = this.database.prepare(`SELECT authority.* FROM opencraft_parent_notification_batches batch
+      JOIN conversation_authorities authority ON authority.id=${notificationAuthorityIdSql}
+      WHERE batch.batch_id=? AND batch.state='pending'`).get(batchId);
     if (!row || !this.#validDelegation(row)) return null;
     return {id:String(row.id),context:{actorId:String(row.actor_id),generation:Number(row.generation),credentialId:row.credential_id as string|null,expiresAt:Number(row.expires_at)},sourceThreadId:String(row.thread_id),expiresAtMs:Number(row.expires_at)};
   }
