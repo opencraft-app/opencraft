@@ -237,7 +237,7 @@ platforms, including for lockfiles, CI changes or an unreadable diff.
 
 | Changed area | Automatic validation |
 | --- | --- |
-| Root Markdown, README/AGENTS, `docs/`, `design/`, `.agents/` | No product build or server archive; secrets scan and upstream contract remain |
+| Root Markdown, README/AGENTS, `docs/`, `design/`, `.agents/`, Markdown under `taste/` | No product build or server archive; secrets scan and upstream contract remain |
 | Web renderer source or shared CSS/SCSS | Web browser build, typecheck and React runtime tests |
 | Expo application | Web compatibility build; native/Expo validation is opt-in |
 | Electron Main/Preload/native code, Daemon, local agent host, DSH runtime | Linux server regressions; desktop/native validation is opt-in |

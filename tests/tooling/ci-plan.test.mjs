@@ -26,6 +26,17 @@ test('docs-only and empty diffs need no build; main and weekly runs still audit 
     assert.equal(planChanges([], { event }).managedWeb, false);
   }
 });
+test('taste Markdown skips product jobs for PRs and merge groups', () => {
+  const docs = ['taste/conversation.md', 'taste/examples/session.md'];
+  for (const event of ['pull_request', 'merge_group']) {
+    assert.deepEqual(planChanges(docs, { event }), emptyPlan);
+    for (const source of ['taste/example.ts', 'packages/chat-core/src/index.ts']) {
+      assert.deepEqual(planChanges([...docs, source], { event }), {
+        ...emptyPlan, targets: webTargets, managedWeb: true, headlessTests: true,
+      }, source);
+    }
+  }
+});
 test('platform source never starts Electron, Expo or macOS builds automatically', () => {
   assert.deepEqual(planChanges(['apps/mobile/src/app.tsx']), { ...emptyPlan, targets: webTargets });
   for (const path of ['apps/local-agent-host/src/main.ts', 'apps/opencraft-daemon/src/index.ts',
