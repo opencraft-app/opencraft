@@ -6,15 +6,15 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 const workflow = readFileSync(new URL('../../.github/workflows/build-matrix.yml', import.meta.url), 'utf8');
-function job(name) {
-  const match = workflow.match(new RegExp(`^  ${name}:\\n([\\s\\S]*?)(?=^  [a-z][a-z-]*:|$(?![\\s\\S]))`, 'm'));
+function job(name, contents = workflow) {
+  const match = contents.match(new RegExp(`^  ${name}:\\n([\\s\\S]*?)(?=^  [a-z][a-z-]*:|$(?![\\s\\S]))`, 'm'));
   assert.ok(match, `Missing job: ${name}`);
   return match[1];
 }
 const gate = job('build-checks').match(/        run: \|\n([\s\S]*)/)[1].replace(/^          /gm, '');
 const selected = {
   EXTENSIONS_SELECTED: 'false', EXTENSIONS_RESULT: 'skipped',
-  HOVER_RESULT: 'success',
+  ADMISSION_RESULT: 'success', HOVER_RESULT: 'success',
   PLAN_RESULT: 'success', BUILD_SELECTED: 'true', BUILD_RESULT: 'success',
   NATIVE_SELECTED: 'false', NATIVE_RESULT: 'skipped', PACKAGE_SELECTED: 'false', PACKAGE_RESULT: 'skipped',
   HEADLESS_SELECTED: 'true', HEADLESS_RESULT: 'success', ARCHIVE_SELECTED: 'true', ARCHIVE_RESULT: 'success',
@@ -33,6 +33,7 @@ test('the real aggregate script accepts Web/server and documentation-only plans'
 });
 test('a selected build cannot pass by failing, cancelling, or being skipped', () => {
   for (const result of ['failure', 'cancelled', 'skipped', '']) {
+    assert.notEqual(check({ ADMISSION_RESULT: result }), 0, `admission: ${result}`);
     assert.notEqual(check({ PLAN_RESULT: result }), 0, `plan: ${result}`);
     assert.notEqual(check({ HOVER_RESULT: result }), 0, `hover: ${result}`);
     for (const name of ['BUILD', 'NATIVE', 'PACKAGE', 'HEADLESS', 'ARCHIVE', 'EXTENSIONS', 'CORE']) {
@@ -63,8 +64,9 @@ test('server regressions and the server archive run as parallel jobs', () => {
   assert.match(job('build-checks'), /needs: \[[^\]]*\bheadless-package\b[^\]]*\]/);
 });
 
-test('hover checks run independently of the build plan and scan failures', () => {
+test('hover checks run after admission independently of the build plan and scan failures', () => {
   const hover = job('hover-policy');
+  assert.match(hover, /^    needs: admission\n/);
   assert.doesNotMatch(hover, /needs: plan|if: needs\.plan/);
   assert.match(hover, /run: npm run check:hover/);
   assert.match(hover, /run: npm run test:hover-policy\n\s+if: always\(\) && steps\.dependencies\.outcome == 'success'/);
@@ -210,7 +212,21 @@ test('managed-web runs every suite exactly once across its parallel groups', () 
     assert.ok(suites.includes(suite), `${command} is not assigned to a matrix suite`);
     assert.match(condition, /^always\(\) && steps\.(dependencies|browser)\.outcome == 'success' && /, command);
   }
-  assert.match(security, /needs: \[plan, secrets, dependency-audit, managed-web\]/);
+  assert.match(security, /needs: \[admission, plan, secrets, dependency-audit, managed-web\]/);
+});
+
+test('contribution admission gates both required workflows before their first jobs', () => {
+  const security = readFileSync(new URL('../../.github/workflows/security.yml', import.meta.url), 'utf8');
+  for (const [contents, jobs] of [[workflow, ['plan', 'hover-policy']], [security, ['plan', 'secrets']]]) {
+    assert.match(job('admission', contents), /uses: \.\/\.github\/workflows\/contribution-admission\.yml/);
+    for (const name of jobs) assert.match(job(name, contents), /^    needs: admission\n/);
+  }
+  const gate = job('security-checks', security).match(/        run: \|\n([\s\S]*)/)[1].replace(/^          /gm, '');
+  const env = { ...process.env, PLAN_RESULT: 'success', SECRETS_RESULT: 'success', AUDIT_RESULT: 'skipped', WEB_RESULT: 'skipped' };
+  for (const result of ['success', 'failure', 'cancelled', 'skipped', '']) {
+    const status = spawnSync('bash', ['-e', '-c', gate], { env: { ...env, ADMISSION_RESULT: result } }).status;
+    assert.equal(status === 0, result === 'success', result);
+  }
 });
 
 test('the security workflow runs every downstream tooling Python suite', () => {

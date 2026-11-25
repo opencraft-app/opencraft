@@ -35,7 +35,11 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  admission:
+    uses: ./.github/workflows/contribution-admission.yml
+
   source:
+    needs: admission
     strategy:
       fail-fast: false
       matrix:

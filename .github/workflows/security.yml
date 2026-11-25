@@ -17,10 +17,15 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  admission:
+    uses: ./.github/workflows/contribution-admission.yml
+
   plan:
+    needs: admission
     uses: ./.github/workflows/ci-plan.yml
 
   secrets:
+    needs: admission
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -28,6 +33,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - run: python3 -B -m unittest discover -s scripts/tests -p test_contribution_admission.py
       - name: Install verified Gitleaks release
         env:
           GITLEAKS_VERSION: 8.30.1
@@ -141,17 +147,19 @@ jobs:
 
   security-checks:
     if: always()
-    needs: [plan, secrets, dependency-audit, managed-web]
+    needs: [admission, plan, secrets, dependency-audit, managed-web]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - name: Require selected security checks to succeed
         env:
+          ADMISSION_RESULT: ${{ needs.admission.result }}
           PLAN_RESULT: ${{ needs.plan.result }}
           SECRETS_RESULT: ${{ needs.secrets.result }}
           AUDIT_RESULT: ${{ needs.dependency-audit.result }}
           WEB_RESULT: ${{ needs.managed-web.result }}
         run: |
+          test "$ADMISSION_RESULT" = success
           test "$PLAN_RESULT" = success
           test "$SECRETS_RESULT" = success
           for result in "$AUDIT_RESULT" "$WEB_RESULT"; do

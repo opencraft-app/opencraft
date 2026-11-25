@@ -43,7 +43,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  admission:
+    uses: ./.github/workflows/contribution-admission.yml
+
   drill:
+    needs: admission
     runs-on: windows-2022
     timeout-minutes: 45
     defaults:
