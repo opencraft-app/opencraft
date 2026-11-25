@@ -360,6 +360,8 @@ export const opencraftOrchestrationOperations = sqliteTable("opencraft_orchestra
   quotaReserved: integer("quota_reserved").notNull().default(sql.raw("0")),
 }, table => [
   index("opencraft_orchestration_pending").on(table.state, table.createdAtMs),
+  index("opencraft_orchestration_spawn_target_created").on(table.targetThreadId, table.createdAtMs)
+    .where(sql`${table.kind} = 'spawn'`),
   uniqueIndex("opencraft_orchestration_operations_client_message_id_unique").on(table.clientMessageId),
   uniqueIndex("opencraft_orchestration_operations_idempotency_key_unique").on(table.idempotencyKey),
   uniqueIndex("opencraft_orchestration_operations_tool_call_key_unique").on(table.toolCallKey),

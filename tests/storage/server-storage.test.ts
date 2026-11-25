@@ -621,3 +621,47 @@ test("thread read receipts upgrade the preceding Server contract, keep its data 
   changed.close();
   await assert.rejects(openServerDatabase(root), { kind: "history-mismatch" });
 });
+
+test("spawn notification lookup uses its index after upgrading the populated v27 Server database", async t => {
+  const root = fixture(t), path = join(root, "opencraft-server.sqlite");
+  const priorVersion = 27;
+  const index = "opencraft_orchestration_spawn_target_created";
+  const query = `SELECT a.* FROM conversation_authorities a
+    JOIN opencraft_orchestration_operations o ON o.delegation_id=a.id
+    WHERE o.kind='spawn' AND o.target_thread_id=? ORDER BY o.created_at_ms LIMIT 1`;
+  const prior = openManagedDatabase({ path, migrations: SERVER_MIGRATIONS.slice(0, priorVersion) });
+  importServerData(prior.database, root, { productVersion: "0.2.0", hash: "previous-thread-read-receipts-contract" });
+  const authority = prior.database.prepare(`INSERT INTO conversation_authorities
+    (id, thread_id, actor_id, generation, expires_at, created_at)
+    VALUES (?, 'parent', 'fixture-actor', 1, 100, 1)`);
+  const operation = prior.database.prepare(`INSERT INTO opencraft_orchestration_operations
+    (operation_id, tool_call_key, fingerprint, arguments_json, delegation_id, issuer_actor_id, kind,
+     sender_thread_id, target_thread_id, mode, state, created_at_ms, updated_at_ms)
+    VALUES (?, ?, 'fixture', '{}', ?, 'fixture-actor', ?, 'parent', 'child', 'queue', 'completed', ?, 4)`);
+  for (const [id, kind, createdAt] of [["later", "spawn", 3], ["earlier", "spawn", 2], ["other", "message", 1]] as const) {
+    authority.run(id);
+    operation.run(id, id, id, kind, createdAt);
+  }
+  const lookup = prior.database.prepare(query).get("child");
+  assert.equal(lookup?.id, "earlier");
+  assert.equal(prior.database.prepare("SELECT 1 FROM sqlite_schema WHERE name=?").get(index), undefined);
+  const ledger = prior.database.prepare("SELECT * FROM schema_migrations ORDER BY version").all();
+  prior.database.close();
+
+  const owner = await openServerDatabase(root);
+  try {
+    assert.equal(owner.outcome.status, "migrated");
+    assert.equal(owner.outcome.appliedVersion, priorVersion + 1);
+    assert.deepEqual(owner.database.prepare("SELECT * FROM schema_migrations WHERE version<=? ORDER BY version").all(priorVersion), ledger);
+    assert.deepEqual(owner.database.prepare(query).get("child"), lookup);
+    assert.equal(owner.database.prepare(query).get("unknown-child"), undefined);
+    assert.equal(owner.database.prepare("SELECT count(*) AS n FROM opencraft_orchestration_operations").get()?.n, 3);
+    const plan = owner.database.prepare("EXPLAIN QUERY PLAN " + query).all("child");
+    assert.ok(plan.some(row => String(row.detail).includes(index)));
+  } finally { await owner.close(); }
+
+  const changed = new DatabaseSync(path);
+  changed.prepare("UPDATE schema_migrations SET checksum=? WHERE version=?").run("0".repeat(64), priorVersion + 1);
+  changed.close();
+  await assert.rejects(openServerDatabase(root), { kind: "history-mismatch" });
+});

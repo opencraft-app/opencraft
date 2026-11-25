@@ -1,0 +1,1 @@
+CREATE INDEX `opencraft_orchestration_spawn_target_created` ON `opencraft_orchestration_operations` (`target_thread_id`,`created_at_ms`) WHERE "opencraft_orchestration_operations"."kind" = 'spawn';
