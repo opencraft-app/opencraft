@@ -1,4 +1,4 @@
-import type { ChatRenderContext, ChatResourceDecision } from "./contracts";
+import type { ChatRenderContext, ChatResourceDecision, ChatResourceTargetSyntax } from "./contracts";
 
 /** A rendered image must not inherit the previous document's Host-loaded bytes. */
 export function chatMediaPresentationKey(
@@ -45,8 +45,8 @@ const mimeByExtension: Readonly<Record<string, string>> = Object.freeze({
 
 export type ChatMediaKind = "image" | "audio" | "video" | "pdf" | "file";
 
-export function chatMediaKind(path: string): ChatMediaKind {
-  const mime = chatMediaMimeType(path);
+export function chatMediaKind(path: string, syntax?: ChatResourceTargetSyntax): ChatMediaKind {
+  const mime = chatMediaMimeType(path, syntax);
   if (mime.startsWith("image/")) return "image";
   if (mime.startsWith("audio/")) return "audio";
   if (mime.startsWith("video/")) return "video";
@@ -54,7 +54,8 @@ export function chatMediaKind(path: string): ChatMediaKind {
 }
 
 /** File extension is only a display hint; platform decoders still validate bytes. */
-export function chatMediaMimeType(path: string): string {
-  const extension = /\.([a-z0-9]+)$/iu.exec(path.split(/[?#]/u, 1)[0] ?? path)?.[1]?.toLowerCase() ?? "";
+export function chatMediaMimeType(path: string, syntax: ChatResourceTargetSyntax = "url"): string {
+  const filename = syntax === "path" ? path : path.split(/[?#]/u, 1)[0] ?? path;
+  const extension = /\.([a-z0-9]+)$/iu.exec(filename)?.[1]?.toLowerCase() ?? "";
   return mimeByExtension[extension] ?? "application/octet-stream";
 }

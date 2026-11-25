@@ -61,7 +61,7 @@ export function deriveUserMessageWebLayout(block: UserMessageTimelineBlock): Use
     const mime = file.mimeType?.split(";", 1)[0]?.trim().toLowerCase();
     const image = mime && mime !== "application/octet-stream"
       ? mime.startsWith("image/")
-      : chatMediaKind(file.target) === "image" || chatMediaKind(file.name) === "image";
+      : chatMediaKind(file.target) === "image" || chatMediaKind(file.name, "path") === "image";
     if (!image) continue;
     imageFiles.add(file);
     if (imageSources.has(file.target)) continue;

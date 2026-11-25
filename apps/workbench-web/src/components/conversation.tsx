@@ -431,6 +431,7 @@ function Frame({
   activityCollapsedById,
   assistantPlan,
   frame,
+  inputText = "",
   onActivityCollapsedChange,
   onRetry,
   thinkingId,
@@ -443,6 +444,7 @@ function Frame({
   activityCollapsedById: Readonly<Record<string, boolean>>;
   assistantPlan: AssistantTurnPresentationPlan | null;
   frame: TimelineFrame;
+  inputText?: string;
   onActivityCollapsedChange: (id: string, collapsed: boolean) => void;
   onRetry?: () => void;
   thinkingId: string | null;
@@ -486,8 +488,14 @@ function Frame({
   const units = assistantPlan?.slots ?? [];
   const actions = visibleFrame.type === "assistant" ? assistantMessageActions(visibleFrame) : null;
   const assistantCopyText = actions?.completed ? actions.copyText : "";
+  const contributedActions = showActions && actions?.completed && visibleFrame.type === "assistant"
+    ? documentContext.renderAssistantActions?.({
+        turnId: String(visibleFrame.turnId),
+        itemIds: visibleFrame.blocks.flatMap(block => block.sourceItemIds),
+      })
+    : null;
   const showFork = documentContext.turnActions?.fork ?? documentContext.onForkTurn !== undefined;
-  const hasMessageActions = showFork || assistantCopyText.length > 0 || onRetry !== undefined || visibleFrame.hookStats !== null;
+  const hasMessageActions = showFork || assistantCopyText.length > 0 || onRetry !== undefined || visibleFrame.hookStats !== null || contributedActions != null;
   if (visibleFrame.type === "assistant"
     && units.length === 0
     && assistantPlan?.changeSummary == null
@@ -495,7 +503,7 @@ function Frame({
     && !hasMessageActions
     && actions?.sentAtMs == null) return null;
   const virtualizeSingleSlot = allowSingleSlotVirtualization;
-  return (
+  const content = (
     <div ref={frameRef} className={`thread-frame thread-frame--${visibleFrame.type}`} data-frame-key={visibleFrame.id}>
       {visibleFrame.type === "assistant"
         ? units.map((unit) => {
@@ -567,6 +575,7 @@ function Frame({
         // Turn reveals its affordances without adding height below the text.
         <div className="thread-message-actions" aria-hidden={!showActions || undefined}>
           {showActions ? <>
+          {contributedActions}
           {assistantCopyText.length > 0 ? <AssistantCopyButton value={assistantCopyText} getHtml={() => {
             const nodes = frameRef.current?.querySelectorAll<HTMLElement>("[data-assistant-copy-content] .opencraft-chat-document");
             return nodes?.length ? Array.from(nodes).map((node) => extractMarkdownElement(node).htmlText).join("\n") : null;
@@ -580,6 +589,10 @@ function Frame({
       ) : null}
     </div>
   );
+  const renderFrame = documentContext.renderAssistantFrame;
+  return visibleFrame.type === "assistant" && renderFrame
+    ? renderFrame({ frame: visibleFrame, inputText, children: content })
+    : content;
 }
 
 function Turn({
@@ -600,7 +613,7 @@ function Turn({
   turn: TimelineTurnView;
 }) {
   const intl = useIntl();
-  const forkTurn = useContext(ConversationDocumentContext).onForkTurn;
+  const { onForkTurn: forkTurn, renderAssistantFrame } = useContext(ConversationDocumentContext);
   const toolActivityPresenters = useContext(ToolActivityPresenterContext);
   const renderMcpApps = useContext(ConversationDocumentContext).mcpApps !== undefined;
   const toolActivityPresenterVersion = useSyncExternalStore(
@@ -639,6 +652,8 @@ function Turn({
           activityCollapsedById={activityCollapsedById}
           assistantPlan={presentation.assistant}
           frame={presentation.assistantFrame}
+          inputText={renderAssistantFrame ? presentation.userFrames.flatMap(frame => frame.blocks.flatMap(block =>
+            block.type === "user-message" ? [block.message] : [])).join("\n") : undefined}
           key={presentation.assistantFrame.id}
           onActivityCollapsedChange={onActivityCollapsedChange}
           onRetry={onRetry}

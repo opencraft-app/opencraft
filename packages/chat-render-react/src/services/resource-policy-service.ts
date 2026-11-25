@@ -4,6 +4,7 @@ import type {
   ChatRenderContext,
   ChatResourceDecision,
   ChatResourcePolicy,
+  ChatResourceTargetSyntax,
 } from "../contracts";
 
 declare module "@deepseek-ai/cordis" {
@@ -28,11 +29,11 @@ export class ChatResourcePolicyService extends Service {
     };
   }
 
-  resolve(target: string, context: ChatRenderContext): ChatResourceDecision {
+  resolve(target: string, context: ChatRenderContext, syntax: ChatResourceTargetSyntax = "path"): ChatResourceDecision {
     const policy = [...this.policies.values()]
-      .filter((candidate) => candidate.matches(target, context))
+      .filter((candidate) => candidate.matches(target, context, syntax))
       .sort((left, right) => right.priority - left.priority)[0];
-    if (policy !== undefined) return policy.resolve(target, context);
+    if (policy !== undefined) return policy.resolve(target, context, syntax);
     if (context.externalResourcePolicy === "restricted") {
       return { allowed: false, target: null, reason: "External resources are restricted" };
     }

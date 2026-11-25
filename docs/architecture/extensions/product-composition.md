@@ -234,3 +234,29 @@ and installed module URLs still restore independently. The background task is na
 The shared Assets view and its trusted account/provider ports are documented in
 [Assets catalog UI](assets-catalog.md). UI extraction does not itself enable a
 default account service, execution provider or desktop destination.
+
+### Conversation renderer presentation
+
+A trusted product may pass a `ConversationPresentationProvider` when it creates
+the Workbench application. Its optional assistant frame renderer receives the
+projected frame, same-turn user text and the default rendered subtree. Its
+assistant actions run for settled, authoritative turns and receive the stable
+Turn and source Item identifiers. Cached read-only turns never invoke the action
+provider. A recovery renderer receives the current presentation state and an
+existing scoped retry action when available. Access and required-update notices
+remain owned by the Workbench. These presentation ports supply no protocol,
+storage or execution authority; without a contribution the default UI remains
+the same.
+
+## Embedded host conversation actions
+
+Trusted embedded callers receive a current action binding from `App`.
+`openWorkspaceFile` accepts a filesystem path and routes it to the current
+conversation's resource panel and Host filesystem authority. Managed workspace
+files use the existing thread-scoped read port. `refreshWorkspaceFiles` targets
+the selected thread and refreshes its panel queries and Blob resources using the
+current Host generation. The embedding product chooses when to request refresh
+and can subscribe to the application-owned `TurnCompletionObserver`.
+`insertComposerMention` uses the current Composer's document and editor history.
+A product translating connectors into typed mentions owns their identifiers,
+labels, and protocol metadata.

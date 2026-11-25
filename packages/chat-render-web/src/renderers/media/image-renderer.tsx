@@ -30,7 +30,7 @@ export function createImageRenderer(resources: ChatResourcePolicyService) {
     // image renderer so it cannot weaken link navigation safety.
     const standardDecision = /^data:image\//iu.test(node.src)
       ? { allowed: true as const, kind: "external" as const, target: node.src }
-      : resources.resolve(node.src, context);
+      : resources.resolve(node.src, context, "url");
     const hostFile = standardDecision.allowed && standardDecision.kind === "external" && standardDecision.target !== null
       ? context.loadMediaSource?.resolveFileSource?.(standardDecision.target) : null;
     const decision = hostFile ? { allowed: true as const, kind: "file" as const, target: hostFile } : standardDecision;

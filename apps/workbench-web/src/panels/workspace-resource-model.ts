@@ -61,8 +61,8 @@ export function parseWorkspaceResource(resource: string): WorkspaceResourceLocat
   let path = withoutFragment;
   if (/^file:/iu.test(withoutFragment)) {
     const url = new URL(withoutFragment);
-    path = decodeURIComponent(url.pathname);
-    if (/^\/[a-z]:\//iu.test(path)) path = path.slice(1);
+    const urlPath = /^\/[a-z]:\//iu.test(url.pathname) ? url.pathname.slice(1) : url.pathname;
+    path = decodeURIComponent(urlPath);
   }
   return {
     path: path.replaceAll("\\", "/"),

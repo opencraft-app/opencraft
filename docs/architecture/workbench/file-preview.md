@@ -106,7 +106,7 @@ The built-in registry accepts an extension list and asynchronous `open` operatio
 returning an element, idempotent dispose and optional activation/theme/locale/link/failure hooks.
 An engine failure after readiness transitions the same session to a retryable
 failed state and releases the broken view; it cannot silently leave a ready blank.
-DOCX uses docx-preview 0.4.1, PPTX uses @aiden0z/pptx-renderer 1.3.0 and spreadsheets use
+DOCX uses docx-preview 0.4.1, PPTX uses @aiden0z/pptx-renderer 1.4.0 and spreadsheets use
 @extend-ai/react-xlsx 0.17.2 with explicitly read-only controls, Worker parsing and
 packaged WASM. XLSX sheet navigation remains available when the default toolbar
 is hidden. No global cross-origin-isolation header is required by these adapters.
@@ -198,3 +198,8 @@ Client closure cancels reconnects and releases the worker lease. Final failures
 log only a transport error code and retry count, never report URLs or credentials.
 This does not preserve in-memory preview sessions across a backend restart;
 a revoked/expired session still requires reopening the original file.
+
+
+Markdown links and image destinations resolve as URLs. Host paths and decoded
+filenames preserve literal URL delimiters while constructing resource URLs and
+inferring display MIME types. Host resource policies still admit each target.

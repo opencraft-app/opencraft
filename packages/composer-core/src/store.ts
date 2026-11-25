@@ -2,6 +2,7 @@ import {
   createEmptyComposerDocument,
   isComposerDocumentEmpty,
   type ComposerDocument,
+  type ComposerMentionInline,
 } from "./document";
 import type { ComposerDictationInteraction } from "./input-interaction";
 import {
@@ -99,6 +100,7 @@ export interface ComposerViewHandle {
   insertText(text: string): void;
   /** Append a literal quote and leave an editable paragraph after it. */
   appendQuote?(text: string): boolean;
+  insertMention?(mention: ComposerMentionInline): boolean;
   beginTransientTextInput(): ComposerTransientTextInput | null;
   undo(): void;
   redo(): void;
@@ -168,6 +170,7 @@ export interface ComposerController {
   insertText(text: string): void;
   /** False when the current View cannot accept a quote. Never submits. */
   appendQuote(text: string): boolean;
+  insertMention(mention: ComposerMentionInline): boolean;
   beginTransientTextInput(
     observer?: ComposerTransientTextInputObserver,
   ): ComposerTransientTextInput | null;
@@ -731,6 +734,9 @@ export function createComposerController(
     appendQuote: (text) => !disposed && transient === null
       && draft.lifecycle.phase !== "submitting" && text.trim().length > 0
       ? view?.appendQuote?.(text) ?? false : false,
+    insertMention: (mention) => !disposed && transient === null
+      && draft.lifecycle.phase !== "submitting" && Boolean(mention.id.trim() && mention.label.trim())
+      ? view?.insertMention?.(mention) ?? false : false,
     beginTransientTextInput(observer) {
       ensureOpen();
       const previous = transient;

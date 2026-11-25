@@ -1,5 +1,7 @@
 import React from "react";
 import type { AppServerWorkbenchSnapshot } from "@opencraft/workbench-runtime";
+import type { ConversationRecoveryRenderer } from "../runtime/conversation-presentation";
+import type { ConversationRecoveryDiagnostic } from "../runtime/conversation-recovery-diagnostic";
 import { Button } from '@opencraft/design-system-web/button';
 import { FormattedMessage } from "@opencraft/i18n/react";
 
@@ -53,24 +55,31 @@ function AccessRecovery({ accessFailure, onRetry }: AccessRecoveryProps) {
   </>;
 }
 
+interface RecoveryPresentationProps extends AccessRecoveryProps {
+  readonly failed: boolean;
+  readonly requiresUpdate?: boolean;
+  readonly reconnecting?: boolean;
+  readonly diagnostic?: ConversationRecoveryDiagnostic;
+  readonly renderRecovery?: ConversationRecoveryRenderer;
+}
+
 /** Routine recovery stays in its owner; manual admission failures need actions. */
-export function ConversationRecoveryEmptyState({ failed, requiresUpdate = false, accessFailure, onRetry }: {
-  readonly failed: boolean;
-  readonly requiresUpdate?: boolean;
-} & AccessRecoveryProps) {
+export function ConversationRecoveryEmptyState({ failed, requiresUpdate = false, accessFailure, onRetry,
+  reconnecting = false, diagnostic, renderRecovery,
+}: RecoveryPresentationProps) {
   if (failed && accessFailure) return <div className="conversation-recovery-empty-error thread-layout-width" role="alert"><AccessRecovery accessFailure={accessFailure} onRetry={onRetry} /></div>;
-  return failed && requiresUpdate
-    ? <div className="conversation-recovery-empty-error thread-layout-width" role="alert"><ClientUpdateRequired /></div>
-    : null;
+  if (failed && requiresUpdate) {
+    return <div className="conversation-recovery-empty-error thread-layout-width" role="alert"><ClientUpdateRequired /></div>;
+  }
+  return renderRecovery?.({ hasVisibleHistory: false, failed, reconnecting, requiresUpdate, diagnostic, onRetry }) ?? null;
 }
 
-export function ConversationRecoveryNotice({ failed, requiresUpdate = false, accessFailure, onRetry }: {
-  readonly failed: boolean;
-  readonly requiresUpdate?: boolean;
-} & AccessRecoveryProps) {
+export function ConversationRecoveryNotice({ failed, requiresUpdate = false, accessFailure, onRetry,
+  reconnecting = false, diagnostic, renderRecovery,
+}: RecoveryPresentationProps) {
   if (failed && accessFailure) return <div className="conversation-recovery-notice" role="alert"><AccessRecovery accessFailure={accessFailure} onRetry={onRetry} /></div>;
-  return failed && requiresUpdate
-    ? <div className="conversation-recovery-notice" role="alert"><ClientUpdateRequired /></div>
-    : null;
+  if (failed && requiresUpdate) {
+    return <div className="conversation-recovery-notice" role="alert"><ClientUpdateRequired /></div>;
+  }
+  return renderRecovery?.({ hasVisibleHistory: true, failed, reconnecting, requiresUpdate, diagnostic, onRetry }) ?? null;
 }
-

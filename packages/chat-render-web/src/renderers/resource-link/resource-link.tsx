@@ -144,7 +144,7 @@ function linkLabelText(nodes: Extract<ChatNodeRendererProps["node"], { kind: "li
 export function createLinkRenderer(resources: ChatResourcePolicyService) {
   return function LinkRenderer({ node, context, renderNodes }: ChatNodeRendererProps) {
     if (node.kind !== "link") return null;
-    const decision = resources.resolve(node.href, context);
+    const decision = resources.resolve(node.href, context, "url");
     const conversation = context.dialect === "user-message" && parseConversationRef(node.href) !== null;
     // Old native history retains the model-facing label. Project it at the
     // resource boundary without rewriting history or code examples.

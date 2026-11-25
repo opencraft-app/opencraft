@@ -61,6 +61,7 @@ import { WorkspaceDirectory } from "./workspace-directory";
 import { FileFolderArtwork as WorkspaceFolderIcon } from "@opencraft/design-system-web/action-icons";
 import { ChevronLeftIcon } from "@opencraft/design-system-web/action-icons";
 import { WorkspaceFileIcon } from "./workspace-file-icon";
+import { workspaceFileQueryKey, type WorkspaceQueryOwner } from "../embedded-chat/embedded-workspace-actions";
 import { WorkspaceFileTree } from "./workspace-file-tree";
 import { WorkspaceFilePath } from "./workspace-file-path";
 import { chatMediaKind } from "@opencraft/chat-render-react";
@@ -157,6 +158,7 @@ export function WorkspaceResourcePanel({ tab, ownerId = "standalone", active, pr
   const snapshot = useAppServerSnapshot();
   const rawThread = tab.durableRoute?.params.workspaceFileThreadId;
   const fileThreadId = typeof rawThread === 'string' && rawThread ? rawThread : undefined;
+  const queryOwner: WorkspaceQueryOwner = [ownerId, fileBlobResource(hostRuntime, snapshot.hostId, "").scope];
   const generation = hostRuntime.resources.host.getConnectionGeneration?.() ?? 0;
   const fileScope = useQuery({
     queryKey: ['workspace-file-scope',snapshot.hostId,fileThreadId,fileBlobResource(hostRuntime,snapshot.hostId,'').scope],
@@ -207,7 +209,7 @@ export function WorkspaceResourcePanel({ tab, ownerId = "standalone", active, pr
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirtyPaths.length]);
   const hasFilePreview = useFilePreviewAvailable(selectedPath);
-  const mediaKind = chatMediaKind(selectedPath);
+  const mediaKind = chatMediaKind(selectedPath, "path");
   const downloadUrl = isWorkspaceFileRuntime(runtime) ? null : fileDownloadUrl(snapshot.hostId, selectedPath);
   const setSourceView = (value: string | null) => { browser.source = value === null ? null : selectedPath; changed(); };
   const documentId = JSON.stringify(["file-preview", snapshot.hostId, selectedPath, fileBlobResource(runtime, snapshot.hostId, selectedPath).scope]);
@@ -255,7 +257,7 @@ export function WorkspaceResourcePanel({ tab, ownerId = "standalone", active, pr
   const search = useWorkspaceSearch(runtime.resources.fileSystem, roots, searchQuery, readScope, !previewOnly, searchSupported);
 
   const resource = useQuery<LoadedWorkspaceResource>({
-    queryKey: ["appserver-fs", snapshot.hostId, "resource", selectedPath, fileBlobResource(runtime, snapshot.hostId, selectedPath).scope, hasFilePreview, downloadUrl],
+    queryKey: [...workspaceFileQueryKey("resource", hostId, selectedPath, readScope, queryOwner), hasFilePreview, downloadUrl],
     queryFn: async ({ signal }) => {
       const metadata = await runtime.resources.fileSystem.getMetadata(selectedPath, signal);
       if (!metadata.isFile) {
@@ -278,7 +280,7 @@ export function WorkspaceResourcePanel({ tab, ownerId = "standalone", active, pr
       const lease = acquireFileBlob(blobs, runtime, snapshot.hostId, selectedPath, { signal, priority: 2 });
       let blob: Blob;
       try { blob = await lease.promise; } finally { lease.release(); }
-      const bytes = blob.size > MAX_EDITABLE_FILE_BYTES || hasFilePreview || chatMediaKind(selectedPath) !== "file"
+      const bytes = blob.size > MAX_EDITABLE_FILE_BYTES || hasFilePreview || chatMediaKind(selectedPath, "path") !== "file"
         ? null : new Uint8Array(await blob.arrayBuffer());
       return {
         blob,
@@ -394,6 +396,7 @@ export function WorkspaceResourcePanel({ tab, ownerId = "standalone", active, pr
           key={snapshot.hostId}
           fileSystem={runtime.resources.fileSystem}
           readScope={readScope}
+          queryOwner={queryOwner}
           session={browser}
           hidden={searchSupported && searchQuery.trim().length > 0}
           hostId={snapshot.hostId}
@@ -507,7 +510,7 @@ export function WorkspaceResourcePanel({ tab, ownerId = "standalone", active, pr
           <div className="workspace-file-viewer__state is-error"><AlertTriangle size={18} />{intl.formatMessage({ id: "files.readFailed", defaultMessage: "Could not read this file." })}<Button onClick={() => void resource.refetch()}>{intl.formatMessage({ id: "files.retry", defaultMessage: "Retry" })}</Button></div>
         ) : resource.data?.isDirectory ? (
           previewOnly ? <div className="workspace-file-viewer__state">{intl.formatMessage({ id: "panel.directoryHint", defaultMessage: "Choose a file link in the conversation to preview its contents." })}</div>
-          : <WorkspaceDirectory key={selectedPath} path={selectedPath} hostId={hostId} readScope={readScope}
+          : <WorkspaceDirectory key={selectedPath} path={selectedPath} hostId={hostId} readScope={readScope} queryOwner={queryOwner}
               fileSystem={runtime.resources.fileSystem} session={browser} onSelect={selectFile} />
         ) : resource.data?.previewTooLarge ? (
           <div className="workspace-file-viewer__state" role="status">

@@ -1,4 +1,4 @@
-import type { ChatRenderContext, ChatResourceDecision, ChatResourceKind } from "./contracts";
+import type { ChatRenderContext, ChatResourceDecision, ChatResourceKind, ChatResourceTargetSyntax } from "./contracts";
 import type { ChatResourcePolicyService } from "./services/resource-policy-service";
 
 const unsafeScheme = /^(?:javascript|vbscript|data):/iu;
@@ -20,14 +20,50 @@ function decision(kind: ChatResourceKind, target: string): ChatResourceDecision 
   return { allowed: true, kind, target };
 }
 
+/** Encode literal Host paths; Markdown URL destinations resolve separately. */
+function workspacePathUrl(path: string): string {
+  const windowsPath = windowsAbsolutePath.test(path);
+  const encodedPath = path.split("/").map((segment, index) =>
+    windowsPath && index === 0 ? segment : encodeURIComponent(segment),
+  ).join("/");
+  // Keep the drive as file-URL structure so parent resolution stops at its root.
+  return `file://${windowsPath ? "/" : ""}${encodedPath}`;
+}
+
 function workspaceTarget(target: string, cwd: string | null | undefined): string {
   if (fileScheme.test(target)) return target;
   if (windowsDrivePath.test(target) && !windowsAbsolutePath.test(target)) return target;
-  if (windowsAbsolutePath.test(target)) return `file:///${target.replace(/\\/gu, "/")}`;
-  if (posixAbsolutePath.test(target)) return `file://${target}`;
+  if (windowsAbsolutePath.test(target)) return workspacePathUrl(target.replace(/\\/gu, "/"));
+  if (posixAbsolutePath.test(target)) return workspacePathUrl(target);
   if (cwd == null || cwd.trim().length === 0) return target;
   const base = cwd.replace(/\\/gu, "/").replace(/\/+$/u, "");
-  return `file://${base}/${target.replace(/^\.\//u, "")}`;
+  return workspacePathUrl(`${base}/${target.replace(/^\.\//u, "")}`);
+}
+
+function workspaceUrlTarget(target: string, cwd: string | null | undefined): string | null {
+  if (windowsDrivePath.test(target) && !windowsAbsolutePath.test(target)) return target;
+  const absoluteWindowsPath = windowsAbsolutePath.test(target);
+  if (!fileScheme.test(target) && !absoluteWindowsPath && !posixAbsolutePath.test(target) && !cwd?.trim()) return target;
+  const base = cwd?.replace(/\\/gu, "/").replace(/\/+$/u, "") ?? "";
+  try {
+    const normalizedTarget = target.replace(/\\/gu, "/");
+    const windowsTarget = absoluteWindowsPath ? normalizedTarget
+      : /^\/[a-z]:\//iu.test(normalizedTarget) ? normalizedTarget.slice(1) : null;
+    const drive = windowsTarget?.slice(0, 2)
+      ?? (windowsAbsolutePath.test(`${base}/`) ? base.slice(0, 2) : null);
+    // Resolve inside the drive, then restore it: browser URL implementations can
+    // otherwise remove a file-URL drive segment when resolving above its root.
+    const url = windowsTarget !== null
+      ? new URL(windowsTarget.slice(2), "file:///")
+      : new URL(target, workspacePathUrl(`${drive === null ? base : base.slice(2)}/`));
+    // URL syntax must never turn an unknown scheme into a Host filename.
+    if (url.protocol !== "file:") return null;
+    decodeURIComponent(url.pathname); // Reject malformed escapes without a literal-path fallback.
+    if (fileScheme.test(target)) return url.href;
+    return drive === null ? url.href : `file:///${drive}${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    return null;
+  }
 }
 
 function stripModelResponseTracking(target: string): string {
@@ -61,6 +97,7 @@ function fileLocationTarget(target: string): { readonly path: string; readonly f
 export function resolveStandardChatResource(
   rawTarget: string,
   context: Pick<ChatRenderContext, "cwd" | "externalResourcePolicy">,
+  syntax: ChatResourceTargetSyntax = "path",
 ): ChatResourceDecision {
   const target = rawTarget.replaceAll(String.fromCharCode(96), "").trim();
   if (target.length === 0) return { allowed: false, kind: "blocked", target: null, reason: "Empty resource target" };
@@ -84,16 +121,21 @@ export function resolveStandardChatResource(
   if (resourceScheme.test(target)) return decision("resource", target);
   // A valid URI cannot become a workspace-relative file. Drive-relative
   // Windows paths (C:src/main.ts) remain file inputs, like absolute drives.
-  const location = fileLocationTarget(target);
+  const location = syntax === "url" && target.includes("#")
+    ? { path: target, fragment: "" }
+    : fileLocationTarget(target);
   const fileWithLocation = location.fragment !== "" && /^[^:/\\]+\.[a-z0-9]+$/iu.test(location.path);
   const scheme = fileWithLocation ? undefined : uriScheme.exec(target)?.[0].toLowerCase();
   if (scheme && !fileScheme.test(target) && !windowsDrivePath.test(target)) {
     return { allowed: false, kind: "blocked", target: null, reason: "Unregistered external protocol" };
   }
-  if (fileScheme.test(location.path) || windowsAbsolutePath.test(location.path) || posixAbsolutePath.test(location.path)) {
-    return decision("file", workspaceTarget(location.path, context.cwd) + location.fragment);
-  }
-  return decision("workspace-file", workspaceTarget(location.path, context.cwd) + location.fragment);
+  const resolved = syntax === "url"
+    ? workspaceUrlTarget(location.path, context.cwd)
+    : workspaceTarget(location.path, context.cwd);
+  if (resolved === null) return { allowed: false, kind: "blocked", target: null, reason: "Invalid workspace URL" };
+  const kind = fileScheme.test(location.path) || windowsAbsolutePath.test(location.path) || posixAbsolutePath.test(location.path)
+    ? "file" : "workspace-file";
+  return decision(kind, resolved + location.fragment);
 }
 
 /** Web and Native install the same last-resort policy, leaving higher-priority Host rules in control. */
