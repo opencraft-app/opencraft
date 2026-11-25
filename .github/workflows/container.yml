@@ -12,7 +12,28 @@ concurrency:
   group: container-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
+  plan:
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      website-only: ${{ steps.select.outputs.website-only }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - id: select
+        run: node scripts/ci/ci-plan.mjs
+
   docker-compose:
+    needs: plan
+    if: >-
+      !cancelled() && (needs.plan.result == 'skipped'
+      || (needs.plan.result == 'success' && needs.plan.outputs.website-only != 'true'))
     strategy:
       fail-fast: false
       matrix:

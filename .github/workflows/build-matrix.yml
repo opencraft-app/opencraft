@@ -34,7 +34,29 @@ jobs:
     with:
       full-matrix: ${{ github.event_name == 'workflow_dispatch' && (inputs.validation == 'full' || inputs.package_macos) }}
 
+  website:
+    needs: plan
+    if: needs.plan.outputs.website == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+
   hover-policy:
+    needs: plan
+    if: needs.plan.outputs.website-only != 'true'
     runs-on: ubuntu-latest
     # Slow system-package mirrors must leave time for the browser smoke checks.
     timeout-minutes: 30
@@ -496,7 +518,7 @@ jobs:
 
   build-checks:
     if: always()
-    needs: [plan, portable, extensions, macos-native, macos-electron, linux-headless, headless-package, core-tests, gate-tests, hover-policy]
+    needs: [plan, website, portable, extensions, macos-native, macos-electron, linux-headless, headless-package, core-tests, gate-tests, hover-policy]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -504,6 +526,9 @@ jobs:
         env:
           EXTENSIONS_RESULT: ${{ needs.extensions.result }}
           EXTENSIONS_SELECTED: ${{ needs.plan.outputs.extensions }}
+          WEBSITE_SELECTED: ${{ needs.plan.outputs.website }}
+          WEBSITE_RESULT: ${{ needs.website.result }}
+          HOVER_SELECTED: ${{ needs.plan.outputs.website-only != 'true' }}
           HOVER_RESULT: ${{ needs.hover-policy.result }}
           PLAN_RESULT: ${{ needs.plan.result }}
           BUILD_RESULT: ${{ needs.portable.result }}
@@ -521,7 +546,6 @@ jobs:
           GATE_RESULT: ${{ needs.gate-tests.result }}
         run: |
           test "$PLAN_RESULT" = success
-          test "$HOVER_RESULT" = success
           require_selected() {
             if [ "$1" = true ]; then
               test "$2" = success
@@ -529,6 +553,8 @@ jobs:
               test "$1" = false && test "$2" = skipped
             fi
           }
+          require_selected "$WEBSITE_SELECTED" "$WEBSITE_RESULT"
+          require_selected "$HOVER_SELECTED" "$HOVER_RESULT"
           require_selected "$EXTENSIONS_SELECTED" "$EXTENSIONS_RESULT"
           require_selected "$BUILD_SELECTED" "$BUILD_RESULT"
           require_selected "$NATIVE_SELECTED" "$NATIVE_RESULT"

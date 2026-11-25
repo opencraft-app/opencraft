@@ -7,6 +7,10 @@ on:
         type: boolean
         default: false
     outputs:
+      website:
+        value: ${{ jobs.plan.outputs.website }}
+      website-only:
+        value: ${{ jobs.plan.outputs.website-only }}
       targets:
         value: ${{ jobs.plan.outputs.targets }}
       audits:
@@ -34,6 +38,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     outputs:
+      website: ${{ steps.select.outputs.website }}
+      website-only: ${{ steps.select.outputs.website-only }}
       targets: ${{ steps.select.outputs.targets }}
       audits: ${{ steps.select.outputs.audits }}
       has-builds: ${{ steps.select.outputs.has-builds }}
