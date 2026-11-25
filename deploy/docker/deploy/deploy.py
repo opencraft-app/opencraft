@@ -671,6 +671,15 @@ console.log('Gateway health OK (local-codex ready through the Brain/Hands links)
     print('Verified four immutable images, health, files RPC from Hands/Brain/Gateway endpoint and authentication.')
 
 
+def check_tcp_ports(ports):
+    for port in ports:
+        with socket.socket() as probe:
+            if sys.platform == 'linux':
+                # Match the Linux server listeners' reuse of ports in TIME_WAIT.
+                probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            probe.bind(('0.0.0.0', port))
+
+
 def main():
     global PORTS
     if len(sys.argv) != 2 or sys.argv[1] not in ('config', 'init', 'pull', 'check', 'up', 'verify', 'stop'):
@@ -703,9 +712,7 @@ def main():
         print('Deployment preflight passed.'); return
     if action == 'up':
         if not compose('ps', '--status', 'running', '-q', capture=True).stdout.strip():
-            for port in PORTS:
-                with socket.socket() as probe:
-                    probe.bind(('0.0.0.0', port))
+            check_tcp_ports(PORTS)
         compose('up', '-d', '--no-build', '--wait', '--wait-timeout', '240')
     verify()
 

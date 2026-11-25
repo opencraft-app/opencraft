@@ -1,5 +1,8 @@
+import errno
 import importlib.util
 import os
+import socket
+import sys
 import tempfile
 import unittest
 from copy import deepcopy
@@ -46,6 +49,36 @@ def mount(service, target):
     return next(v for v in service['volumes'] if v['target'] == target)
 
 class Safety(unittest.TestCase):
+    def test_tcp_port_probe_rejects_an_active_listener(self):
+        with socket.socket() as listener:
+            listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            listener.bind(('127.0.0.1', 0))
+            listener.listen()
+            with self.assertRaises(OSError) as error:
+                deploy.check_tcp_ports([listener.getsockname()[1]])
+            self.assertEqual(error.exception.errno, errno.EADDRINUSE)
+
+    @unittest.skipUnless(sys.platform.startswith('linux'), 'Linux TCP address reuse')
+    def test_tcp_port_probe_accepts_time_wait_after_listener_stops(self):
+        with socket.socket() as listener:
+            listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            listener.bind(('127.0.0.1', 0))
+            listener.listen()
+            port = listener.getsockname()[1]
+            with socket.create_connection(('127.0.0.1', port), timeout=5) as client:
+                peer, _ = listener.accept()
+                with peer:
+                    peer.settimeout(5)
+                    # Send FIN from the server first so it owns TIME_WAIT.
+                    peer.shutdown(socket.SHUT_WR)
+                    self.assertEqual(client.recv(1), b'')
+                    client.shutdown(socket.SHUT_WR)
+                    self.assertEqual(peer.recv(1), b'')
+        with socket.socket() as old_probe, self.assertRaises(OSError) as error:
+            old_probe.bind(('0.0.0.0', port))
+        self.assertEqual(error.exception.errno, errno.EADDRINUSE)
+        deploy.check_tcp_ports([port])
+
     def test_workspace_socket_accepts_distinct_container_paths_and_requires_a_bind(self):
         config, release = fixture()
         gateway, brain = (config['services'][role] for role in ('gateway', 'brain'))
