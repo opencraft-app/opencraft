@@ -351,13 +351,16 @@ export async function runCodexRehearsal(options: {
   const origin = hostname(worker);
   const key = wrangler ? undefined : nonce();
   const setupToken = nonce();
+  // The restart inspection scans only for a disposable random fixture token.
+  // Host-provided model credentials never enter the fingerprinting path.
+  const fixtureToken = nonce();
+  const restartProof = restart ? createHash("sha256").update(fixtureToken).digest("hex") : undefined;
   const configured = externalProvider ?? {
     name: workersAi ? "Workers AI GPT-OSS 20B" : "Cloudflare rehearsal fixture",
     baseUrl: hostname(provider!) + "/v1",
     model: workersAi ? "gpt-oss-20b" : "gpt-5.4",
-    apiKey: nonce(),
+    apiKey: fixtureToken,
   };
-  const restartProof = restart ? createHash("sha256").update(configured.apiKey).digest("hex") : undefined;
   const controller = new AbortController();
   const { signal } = controller;
   const abort = () => controller.abort(new Error("Rehearsal interrupted"));
