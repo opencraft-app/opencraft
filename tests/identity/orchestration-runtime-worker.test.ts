@@ -64,6 +64,71 @@ test('runtime and parent notification roll back together; the same observation c
  assert.equal(ledger.runtimeSnapshot('child')?.state,'completed');assert.equal(ledger.relation('child')?.runtimeStatus,'idle');
  assert.equal(Number(owner.database.prepare('SELECT count(*) AS n FROM opencraft_parent_notification_batches').get()!.n),1);
 });
+
+test('the storage worker retires expired notices once and a later explicit wait can reactivate them', async t => {
+  const { dir, owner, worker } = await fixture(t);
+  const ledger = new ThreadOrchestrationLedger(owner.database, () => 1000);
+  const author = owner.database.prepare(`INSERT INTO conversation_authorities
+    (id, thread_id, actor_id, generation, expires_at, created_at)
+    VALUES (?, 'parent', 'fixture-actor', 1, ?, 1000)`);
+  author.run('expired', 3000);
+  author.run('current', 10_000);
+  author.run('renewable', 3000);
+  author.run('automation-root', 3000);
+  owner.database.prepare('INSERT INTO opencraft_delegation_roots VALUES (?, ?)').run('renewable', 'automation-root');
+  owner.database.prepare('INSERT INTO automation_delegations VALUES (?, ?, ?)').run('automation-root', 'run', 'grant');
+  owner.database.prepare("INSERT INTO automation_runs VALUES ('run', 'fixture-automation', 1, 'entry', 'running', 1000, '{}')").run();
+  const binding = owner.database.prepare('INSERT INTO opencraft_notification_authorities VALUES (?, ?)');
+  const notice = (childThreadId: string, delegationId?: string) => {
+    if (delegationId) {
+      ledger.accept({
+        toolCallKey: childThreadId, kind: 'spawn', delegationId, issuerActorId: 'fixture-actor',
+        senderThreadId: 'parent', targetThreadId: childThreadId, clientMessageId: null, mode: 'queue', arguments: {},
+      });
+    }
+    return ledger.queueNotification({
+      parentThreadId: 'parent', childThreadId, childRootTurnId: 'root', outcomeKind: 'completed',
+      hasDirectUserInput: false, userInputExcerpt: null, summary: { text: 'Done' },
+    }).batchId;
+  };
+  const expired = notice('expired-child', 'expired');
+  const overridden = notice('explicit-child', 'current');
+  binding.run(overridden, 'expired');
+  const renewed = notice('renewable-child', 'renewable');
+  const waiting = notice('unresolved-child');
+  const due = async (runtime: OrchestrationRuntimeWorker, now: number) => {
+    let ids: string[] = [];
+    await forbidMainSql(async () => { ids = (await runtime.work(now)).notifications.map(row => row.batchId); });
+    return new Set(ids);
+  };
+  assert.deepEqual(await due(worker, 2999), new Set());
+  assert.deepEqual(await due(worker, 3000), new Set([renewed, waiting]));
+  const state = owner.database.prepare("SELECT state FROM opencraft_parent_notification_batches WHERE batch_id=?");
+  assert.equal(state.get(expired)?.state, 'expired');
+  assert.equal(state.get(overridden)?.state, 'expired');
+  assert.equal(state.get(renewed)?.state, 'pending');
+  assert.equal(state.get(waiting)?.state, 'pending');
+  const version = owner.database.prepare('PRAGMA data_version');
+  const stamp = version.get()?.data_version;
+  assert.deepEqual(await due(worker, 3500), new Set([renewed, waiting]));
+  assert.equal(version.get()?.data_version, stamp);
+
+  await worker.close();
+  const replacement = new OrchestrationRuntimeWorker(join(dir, 'opencraft-server.sqlite'));
+  try {
+    assert.deepEqual(await due(replacement, 4000), new Set([renewed, waiting]));
+    binding.run(expired, 'current');
+    assert.deepEqual(await due(replacement, 4500), new Set([expired, renewed, waiting]));
+    assert.equal(state.get(expired)?.state, 'pending');
+    ledger.markNotificationsDelivered([expired], 'notice-input');
+    assert.deepEqual(await due(replacement, 5000), new Set([renewed, waiting]));
+    assert.equal(state.get(expired)?.state, 'delivered');
+    owner.database.prepare("UPDATE automation_runs SET state='completed' WHERE key='run'").run();
+    assert.deepEqual(await due(replacement, 5500), new Set([waiting]));
+    assert.equal(state.get(renewed)?.state, 'expired');
+  } finally { await replacement.close(); }
+});
+
 test('close drains transitions in FIFO order and restart recovers committed observations',async t=>{
  const {dir,owner,ledger,worker}=await fixture(t,true);
  const writes=[worker.observe(snapshot,1000),worker.observe({...snapshot,state:'completed'},2000),worker.observe({...snapshot,rootTurnId:'next',turnId:'next'},3000)];

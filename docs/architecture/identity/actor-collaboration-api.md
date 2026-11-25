@@ -138,6 +138,9 @@ parent terminal notification. Completion, exhausted, unconfirmed and explicit
 Native-confirmed user stop have durable per-root outcome deduplication. Stop intent alone cancels automatic retry but cannot publish a terminal outcome. Notice queue admission and
 marking its batches delivered share the collaboration transaction. Human input
 is retained in the notification so user instructions take precedence.
+The storage owner retires a due notice when its selected authority has expired
+and cannot be renewed by automation. A later explicit wait authority can make
+that same notice eligible again. Delivery still checks current authorization.
 
 Agent messages, parent notices and automatic continuations have durable exact
 `(threadId, clientMessageId)` provenance. Trusted usage submission uses that fact

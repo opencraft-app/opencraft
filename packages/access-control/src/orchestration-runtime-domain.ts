@@ -28,6 +28,7 @@ export function orchestrationRuntimeDomain(source: OrchestrationRuntimeSource) {
   const db = source.database;
   let communication: Collaboration | undefined;
   let actors: ActorStore | undefined;
+  let hasAutomation: boolean | undefined;
   const communicationService = () => {
     if (communication) return communication;
     communication = new Collaboration(
@@ -268,7 +269,53 @@ export function orchestrationRuntimeDomain(source: OrchestrationRuntimeSource) {
           ];
           break;
         case "work":
-          result = { waits: ledger.activeWaits(), notifications: ledger.dueNotifications() };
+          result = db.transaction(() => {
+            const { now } = payload;
+            // The legacy standalone collaboration store cannot issue renewable authorities.
+            hasAutomation ??= !!db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='automation_delegations'").get();
+            const canRenew = hasAutomation ? `
+              AND NOT EXISTS (
+                SELECT 1 FROM automation_delegations d
+                JOIN automation_runs r ON r.key=d.run_key
+                WHERE r.state IN ('admitted','running','unknown')
+                  AND d.authority_id=COALESCE(
+                    (SELECT root_authority_id FROM opencraft_delegation_roots WHERE authority_id=a.id), a.id
+                  )
+              )
+            ` : "";
+            // A later explicit wait can authorize a notice that previously had
+            // only an expired spawn delegation. Keep its original dedup key.
+            db.prepare(`
+              UPDATE opencraft_parent_notification_batches SET state='pending'
+              WHERE rowid IN (
+                SELECT b.rowid FROM opencraft_notification_authorities n
+                JOIN conversation_authorities a ON a.id=n.authority_id
+                CROSS JOIN opencraft_parent_notification_batches b
+                WHERE a.expires_at>? AND b.batch_id=n.batch_id AND b.state='expired'
+              )
+            `).run(now);
+            // Use the same precedence as notificationDelegation: explicit
+            // authority first, then the earliest spawn with a joined authority.
+            // Automation may extend the expiry of its root or descendants.
+            db.prepare(`
+              UPDATE opencraft_parent_notification_batches AS b SET state='expired'
+              WHERE b.state='pending' AND (b.deliver_after_ms<=? OR b.max_deadline_ms<=?)
+                AND EXISTS (
+                  SELECT 1 FROM conversation_authorities a
+                  WHERE a.id=COALESCE(
+                    (SELECT n.authority_id FROM opencraft_notification_authorities n
+                     JOIN conversation_authorities explicit ON explicit.id=n.authority_id
+                     WHERE n.batch_id=b.batch_id),
+                    (SELECT o.delegation_id FROM opencraft_orchestration_operations o
+                     JOIN conversation_authorities spawn ON spawn.id=o.delegation_id
+                     WHERE o.kind='spawn' AND o.target_thread_id=b.child_thread_id
+                     ORDER BY o.created_at_ms LIMIT 1)
+                  ) AND a.expires_at<=?
+                  ${canRenew}
+                )
+            `).run(now, now, now);
+            return { waits: ledger.activeWaits(), notifications: ledger.dueNotifications() };
+          });
           break;
         case "pendingAcks":
           result = db
