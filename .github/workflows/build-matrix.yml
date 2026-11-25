@@ -29,12 +29,17 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  admission:
+    uses: ./.github/workflows/contribution-admission.yml
+
   plan:
+    needs: admission
     uses: ./.github/workflows/ci-plan.yml
     with:
       full-matrix: ${{ github.event_name == 'workflow_dispatch' && (inputs.validation == 'full' || inputs.package_macos) }}
 
   hover-policy:
+    needs: admission
     runs-on: ubuntu-latest
     # Slow system-package mirrors must leave time for the browser smoke checks.
     timeout-minutes: 30
@@ -496,7 +501,7 @@ jobs:
 
   build-checks:
     if: always()
-    needs: [plan, portable, extensions, macos-native, macos-electron, linux-headless, headless-package, core-tests, gate-tests, hover-policy]
+    needs: [admission, plan, portable, extensions, macos-native, macos-electron, linux-headless, headless-package, core-tests, gate-tests, hover-policy]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -505,6 +510,7 @@ jobs:
           EXTENSIONS_RESULT: ${{ needs.extensions.result }}
           EXTENSIONS_SELECTED: ${{ needs.plan.outputs.extensions }}
           HOVER_RESULT: ${{ needs.hover-policy.result }}
+          ADMISSION_RESULT: ${{ needs.admission.result }}
           PLAN_RESULT: ${{ needs.plan.result }}
           BUILD_RESULT: ${{ needs.portable.result }}
           NATIVE_RESULT: ${{ needs.macos-native.result }}
@@ -520,6 +526,7 @@ jobs:
           CORE_SELECTED: ${{ needs.plan.outputs.has-builds == 'true' || needs.plan.outputs.headless-tests == 'true' }}
           GATE_RESULT: ${{ needs.gate-tests.result }}
         run: |
+          test "$ADMISSION_RESULT" = success
           test "$PLAN_RESULT" = success
           test "$HOVER_RESULT" = success
           require_selected() {

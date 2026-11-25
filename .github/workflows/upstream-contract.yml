@@ -15,7 +15,11 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  admission:
+    uses: ./.github/workflows/contribution-admission.yml
+
   upstream-contract:
+    needs: admission
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

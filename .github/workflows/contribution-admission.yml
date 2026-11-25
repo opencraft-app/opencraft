@@ -1,0 +1,26 @@
+name: Contribution admission
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        with:
+          fetch-depth: 0
+          sparse-checkout: scripts/ci/check-contribution-admission.py
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Check introduced commit identities
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+        run: python3 -B scripts/ci/check-contribution-admission.py "$BASE_SHA" "$HEAD_SHA"

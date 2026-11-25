@@ -12,6 +12,11 @@ should be upgraded or assessed against the current code before reporting.
 
 ## Repository checks
 
+- PR and merge queue workflows check the newly introduced commits before build
+  planning, tests and security scans. Author, committer and `Co-authored-by`
+  addresses ending in `@tencent.com` are rejected, case-insensitively.
+  The check uses the recorded Git identities and compares against the event's
+  base commit. The required `build-checks` and `security-checks` both require admission.
 - The `security` workflow scans every PR and main push with Gitleaks. PR dependency
   audits select changed npm installation roots; main pushes, weekly and manual
   runs audit all three roots. Managed Web regression/Playwright runs when update

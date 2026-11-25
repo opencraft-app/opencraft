@@ -18,7 +18,11 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  admission:
+    uses: ./.github/workflows/contribution-admission.yml
+
   analyze:
+    needs: admission
     # Private-repository Code Security is not enabled; run automatically on publication.
     if: github.event.repository.private == false
     runs-on: ubuntu-latest
