@@ -1,125 +1,69 @@
-import { communicationExtensionModule } from './communication-extension.js';
-import type { ChannelSyncCommand, ChannelSyncResult } from "./native-channel-sync.js";
-import type { CommunicationCommand, CommunicationResult } from './communication-command.js';
-import { AutomationError } from './automation.js';
-import { Worker } from 'node:worker_threads';
-import { markOrchestrationRuntimeService } from './orchestration-runtime-companion.js';
-import type { ThreadAccessPolicy } from './thread-access.js';
-import type { ConversationRef, ThreadOrchestrationSnapshot } from '@opencraft/appserver-protocol/collaboration';
-import type { ParentNotification, WaitTicket } from './orchestration-ledger.js';
-import type { ExecutionRequestState } from './execution-request-state.js';
-import type { AssistantThreadAllocation } from './assistant-thread-store.js';
-import type { PersonalAssistants } from './personal-assistants.js';
-import { automationRequest, type AssistantAdmission, type AutomationInput, type AutomationOperation, type AutomationResult,
-  type OrchestrationRuntimeMethod, type OrchestrationRuntimePayload, type OrchestrationRuntimeResult } from './orchestration-runtime-contract.js';
+import { Worker } from "node:worker_threads";
+import { communicationExtensionModule } from "./communication-extension.js";
+import {
+  OrchestrationRuntimeClient,
+  coreOrchestrationTransport,
+  orchestrationRuntimeFailure,
+  type OrchestrationRuntimeOwner,
+  type OrchestrationRuntimeTransport,
+} from "./orchestration-runtime-client.js";
+import type { OrchestrationRuntimeMethod } from "./orchestration-runtime-contract.js";
 
-export interface OrchestrationRuntimeStorage {
-  claimTitleWrite(operationId: string): Promise<boolean>;
-  finishTitleWrite(toolCallKey: string, result: unknown): Promise<void>;
-  observe(snapshot: ThreadOrchestrationSnapshot, now: number): Promise<void>;
-  targets(includeTerminal: boolean, now: number): Promise<string[]>;
-  work(now: number): Promise<{ waits: WaitTicket[]; notifications: ParentNotification[] }>;
-  pendingAcks(): Promise<string[]>;
-  acknowledge(operationId: string): Promise<void>;
-}
-/** The Server core owner's port for the orchestration runtime domain
- * (`orchestrationRuntimeOwnerMethods`), e.g. `openServerCoreOwner(...)`. */
-export interface OrchestrationRuntimeOwner {
-  readonly call: { orchestrationRuntime<M extends OrchestrationRuntimeMethod>(method: M, payload: OrchestrationRuntimePayload<M>): Promise<unknown> };
-}
-/**
- * Async port of the orchestration runtime storage. Given the Server core owner,
- * every command runs on the owner connection in FIFO order with the other
- * owner domains (Headless). Given a file path, a standalone child Worker
- * borrows the existing WAL database, never imports/migrates it, and must drain
- * before that owner releases its fence (tests and file-backed compositions).
- */
-export class OrchestrationRuntimeWorker implements OrchestrationRuntimeStorage {
-  private readonly worker?: Worker;
-  private readonly owner?: OrchestrationRuntimeOwner;
-  private readonly pending = new Map<number, { resolve(value: unknown): void; reject(error: Error): void }>();
-  private readonly inFlight = new Set<Promise<unknown>>();
-  private readonly ready: Promise<void>;
-  private failure?: Error;
-  private closing?: Promise<void>;
-  private stopping = false;
-  private nextId = 0;
+export type { OrchestrationRuntimeOwner, OrchestrationRuntimeStorage } from "./orchestration-runtime-client.js";
+
+/** File-backed adapter. The shared client also works with an existing owner. */
+export class OrchestrationRuntimeWorker extends OrchestrationRuntimeClient {
   constructor(source: string | OrchestrationRuntimeOwner) {
-    markOrchestrationRuntimeService(this);
-    if (typeof source !== 'string') {
-      this.owner = source;
-      this.ready = Promise.resolve();
-      return;
-    }
-    const path = source;
-    const worker = this.worker = new Worker(new URL('./orchestration-runtime-worker.mjs', import.meta.url), {workerData:{path,extensionModule:communicationExtensionModule()},execArgv:[]});
-    this.ready = new Promise<void>((resolve,reject)=>{
-      const failed=(error:Error)=>{this.failure??=error;reject(error);for(const request of this.pending.values())request.reject(error);this.pending.clear();};
-      worker.on('error',failed);
-      worker.on('exit',code=>{if(!this.stopping||code!==0||this.pending.size)failed(new Error('Orchestration storage worker exited'));});
-      worker.on('message',packet=>{
-        if(packet.type==='ready'){resolve();return;}
-        const request=this.pending.get(packet.id);if(!request)return;this.pending.delete(packet.id);
-        if(packet.error)request.reject(domainError(packet.error));
-        else request.resolve(packet.result);
-      });
-    });
-    void this.ready.catch(()=>{});
-  }
-  start(): Promise<void> { return this.ready; }
-  inheritChildCreator(parent:ConversationRef,child:ConversationRef):Promise<ThreadAccessPolicy>{
-    return this.request('inheritChildCreator',{parent,child});
-  }
-  claimTitleWrite(operationId:string):Promise<boolean>{return this.request('claimTitleWrite',{operationId});}
-  finishTitleWrite(toolCallKey:string,result:unknown):Promise<void>{return this.request('finishTitleWrite',{toolCallKey,result});}
-  /** The owner replies with the method's result from the shared contract; it crosses the port unchecked. */
-  private async request<M extends OrchestrationRuntimeMethod>(method: M, payload: OrchestrationRuntimePayload<M>): Promise<OrchestrationRuntimeResult<M>> {
-    if(this.stopping)throw new Error('Orchestration storage is closing');
-    await this.ready;if(this.failure)throw this.failure;
-    if((this.owner?this.inFlight.size:this.pending.size)>=(this.owner?256:128))throw new Error('Orchestration storage queue is full');
-    if(this.owner){
-      // The owner reply arrives after its transaction committed (or rolled back).
-      const call=this.owner.call.orchestrationRuntime(method,payload).catch(error=>{throw domainError(error);});
-      this.inFlight.add(call);void call.catch(()=>{}).finally(()=>this.inFlight.delete(call));
-      return call as Promise<OrchestrationRuntimeResult<M>>;
-    }
-    return this.post(method,payload) as Promise<OrchestrationRuntimeResult<M>>;
-  }
-  private post(method: OrchestrationRuntimeMethod|'close', payload: unknown): Promise<unknown> {
-    const id=++this.nextId;
-    return new Promise((resolve,reject)=>{
-      this.pending.set(id,{resolve,reject});
-      try{this.worker!.postMessage({id,method,payload});}catch(error){this.pending.delete(id);reject(error);}
-    });
-  }
-  automation<O extends AutomationOperation>(operation: O, input: AutomationInput<O>, now: number): Promise<AutomationResult<O>> {
-    return this.request('automation',automationRequest(operation,input,now)) as Promise<AutomationResult<O>>;
-  }
-  observe(snapshot:ThreadOrchestrationSnapshot,now:number):Promise<void>{return this.request('observe',{snapshot,now});}
-  targets(includeTerminal:boolean,now:number):Promise<string[]>{return this.request('targets',{includeTerminal,now});}
-  work(now:number):Promise<{waits:WaitTicket[];notifications:ParentNotification[]}>{return this.request('work',{now});}
-  pendingAcks():Promise<string[]>{return this.request('pendingAcks',{});}
-  acknowledge(operationId:string):Promise<void>{return this.request('acknowledge',{operationId});}
-  recordAssistantThreadAllocation(value:AssistantThreadAllocation):Promise<OrchestrationRuntimeResult<'assistantAllocation'>>{return this.request('assistantAllocation',value);}
-  assistantAdmissions():Promise<AssistantAdmission[]>{return this.request('assistantAdmissions',{});}
-  admission(threadId:string,inputId:string):Promise<Record<string,unknown>|null>{return this.request('admission',{threadId,inputId});}
-  executionAuthority(threadId:string,execution:{inputId?:string;turnId?:string}):Promise<Record<string,unknown>|null>{return this.request('executionAuthority',{threadId,execution});}
-  updateExecution(value:ExecutionRequestState):Promise<void>{return this.request('updateExecution',value);}
-  personalAssistantAssignments(after:string):Promise<ReturnType<PersonalAssistants['assignments']>>{return this.request('personalAssistantAssignments',{after});}
-  synchronizeChannels(command:ChannelSyncCommand):Promise<ChannelSyncResult>{return this.request('channelSync',command);}
-  communicate(command: CommunicationCommand): Promise<CommunicationResult> { return this.request('communication',command); }
-  close():Promise<void>{
-    return this.closing??=(async()=>{
-      this.stopping=true;
-      // The owner belongs to its composition: drain this port's calls, never close the owner.
-      if(this.owner){await Promise.allSettled([...this.inFlight]);return;}
-      try{await this.ready;if(this.failure)throw this.failure;await this.post('close',{});}finally{await this.worker!.terminate();}
-    })();
+    super(typeof source === "string" ? nodeOrchestrationTransport(source) : coreOrchestrationTransport(source));
   }
 }
-/** Rebuilds the automation error class callers match; other failures keep message and code. */
-function domainError(error: {message?: string; code?: unknown; status?: unknown}): Error {
-  if(typeof error.status==='number'&&typeof error.code==='string')return new AutomationError(error.code,error.status);
-  if(error instanceof Error)return error;
-  return Object.assign(new Error(error.message),{code:error.code});
+
+function nodeOrchestrationTransport(path: string): OrchestrationRuntimeTransport {
+  const pending = new Map<number, { resolve(value: unknown): void; reject(error: Error): void }>();
+  const worker = new Worker(new URL("./orchestration-runtime-worker.mjs", import.meta.url), {
+    workerData: { path, extensionModule: communicationExtensionModule() }, execArgv: [],
+  });
+  let failure: Error | undefined;
+  let stopping = false;
+  let nextId = 0;
+  const ready = new Promise<void>((resolve, reject) => {
+    const failed = (error: Error) => {
+      failure ??= error;
+      reject(error);
+      for (const request of pending.values()) request.reject(error);
+      pending.clear();
+    };
+    worker.on("error", failed);
+    worker.on("exit", code => {
+      if (!stopping || code !== 0 || pending.size) failed(new Error("Orchestration storage worker exited"));
+    });
+    worker.on("message", packet => {
+      if (packet.type === "ready") { resolve(); return; }
+      const request = pending.get(packet.id);
+      if (!request) return;
+      pending.delete(packet.id);
+      if (packet.error) request.reject(orchestrationRuntimeFailure(packet.error));
+      else request.resolve(packet.result);
+    });
+  });
+  void ready.catch(() => {});
+  const post = (method: OrchestrationRuntimeMethod | "close", payload: unknown) => {
+    if (failure) return Promise.reject(failure);
+    const id = ++nextId;
+    return new Promise<unknown>((resolve, reject) => {
+      pending.set(id, { resolve, reject });
+      try { worker.postMessage({ id, method, payload }); }
+      catch (error) { pending.delete(id); reject(error); }
+    });
+  };
+  return {
+    capacity: 128,
+    ready,
+    request: post,
+    async close() {
+      stopping = true;
+      try { await ready; await post("close", {}); }
+      finally { await worker.terminate(); }
+    },
+  };
 }

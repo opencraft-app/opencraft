@@ -33,6 +33,7 @@ export class CodexBridgeRuntime {
   constructor(
     private owner: CodexRuntimeOwner,
     private send: (message: BridgeWireMessage) => void,
+    private readonly nativeProjectless = false,
   ) {
     this.adapter = new CodexBridge(
       owner,
@@ -176,8 +177,10 @@ export class CodexBridgeRuntime {
         }
         // A fork inherits its source's workspace; only a new session must name one.
         const source = method === "session/fork" ? this.adapter.nativeSession(identifier(p.sourceThreadId)) : undefined;
-        // Absolute on this machine's platform (the provider runs beside native Codex): "/…" or "C:\\…".
-        if (!source && (typeof native.cwd !== "string" || !isAbsolute(native.cwd)))
+        // Workspace deployments may delegate projectless allocation to their fixed AppServer.
+        // Otherwise the provider requires an absolute cwd on this machine's platform.
+        const allocateInNative = this.nativeProjectless && native.cwd == null;
+        if (!source && !allocateInNative && (typeof native.cwd !== "string" || !isAbsolute(native.cwd)))
           throw new CodexBridgeError("invalid", "Explicit absolute workspace required");
         this.creating.add(threadId);
         try {
@@ -266,7 +269,9 @@ export class CodexBridgeRuntime {
         const nativeId = this.adapter.nativeSession(threadId);
         // Only this generation's bound session can resume; old legacy sessions
         // cannot be adopted by asking for an arbitrary native session ID.
-        return this.owner.request("thread/resume", { threadId: nativeId, excludeTurns: true });
+        if (p.excludeTurns !== undefined && typeof p.excludeTurns !== "boolean")
+          throw new CodexBridgeError("invalid", "Invalid resume history selection");
+        return this.owner.request("thread/resume", { threadId: nativeId, excludeTurns: p.excludeTurns ?? true });
       }
       case "session/close":
         await this.adapter.close(threadId);

@@ -145,6 +145,16 @@ async function sequence(backend: Backend) {
   const owner = new Browser(backend);
   const member = new Browser(backend);
   const memberAgain = new Browser(backend);
+  const serverInformation = "/__opencraft_server_information";
+  const publicUrl = "https://workbench.example.test/team";
+  const modelDefaults = "/__opencraft_model_defaults";
+  const threadReads = "/__opencraft_thread_reads";
+  const hostId = "local-codex";
+  const selection = { model: "fixture-model", effort: "high" };
+  const receipt = JSON.stringify([hostId, "thread", "turn"]);
+  const personalPath = (path: string, actorId: string, query: Record<string, string> = {}) =>
+    path + "?" + new URLSearchParams({ expectedActorId: actorId, ...query });
+  await record("anonymous server information", anonymous.call(serverInformation));
   await record("anonymous session", anonymous.call("/__opencraft_access/session"));
   await record("anonymous actor", anonymous.call("/__opencraft_actors/me"));
   await record(
@@ -173,6 +183,23 @@ async function sequence(backend: Backend) {
   await record("owner account status", owner.call("/__opencraft_account/status"));
   await record("owner session", owner.call("/__opencraft_access/session"));
   await record("owner actor", owner.call("/__opencraft_actors/me"));
+  const information = await owner.call(serverInformation);
+  assert.equal(information.status, 200);
+  const { actorId: ownerActorId } = (await information.clone().json()) as { actorId: string };
+  const ownerInformation = await observe("owner server information", information);
+  seen.push(ownerInformation);
+  const update = { revision: 0, publicUrl, expectedActorId: ownerActorId };
+  const saved = await record("owner saves server information", owner.call(serverInformation, update));
+  assert.deepEqual(saved.body, {
+    revision: 1, publicUrl, actorId: (ownerInformation.body as { actorId: string }).actorId, canManage: true,
+  });
+  await record("stale server information revision", owner.call(serverInformation, update));
+  const defaults = { hostId, revision: 0, selection, expectedActorId: ownerActorId };
+  const savedDefaults = await record("owner saves model defaults", owner.call(modelDefaults, defaults));
+  await record("stale model defaults revision", owner.call(modelDefaults, defaults));
+  const savedReads = await record("owner records a read receipt", owner.call(threadReads, {
+    receipts: [receipt], expectedActorId: ownerActorId,
+  }));
   const invitation = await owner.call("/__opencraft_account/invitations", {});
   const { code } = (await invitation.clone().json()) as { code: string };
   seen.push(await observe("invitation", invitation));
@@ -185,6 +212,18 @@ async function sequence(backend: Backend) {
   const memberActorId = ((await memberActor.clone().json()) as { actor: { id: string } }).actor.id;
   seen.push(await observe("member actor", memberActor));
   await record("member administers members", member.call("/__opencraft_access/members"));
+  const memberInformation = await record("member reads server information", member.call(serverInformation));
+  assert.equal((memberInformation.body as { canManage: boolean }).canManage, false);
+  await record("member cannot change server information", member.call(serverInformation, {
+    revision: 1, publicUrl: "https://other.example.test", expectedActorId: memberActorId,
+  }));
+  const memberDefaults = await record("member's model defaults are independent",
+    member.call(personalPath(modelDefaults, memberActorId, { hostId })));
+  assert.equal((memberDefaults.body as { selection: unknown }).selection, null);
+  const memberReads = await record("member's thread reads are independent",
+    member.call(personalPath(threadReads, memberActorId)));
+  assert.deepEqual((memberReads.body as { receipts: unknown }).receipts, []);
+  await record("member cannot use owner's receipt scope", member.call(personalPath(threadReads, ownerActorId)));
   await record("owner lists members", owner.call("/__opencraft_access/members"));
   await record(
     "wrong password",
@@ -229,6 +268,7 @@ async function sequence(backend: Backend) {
     owner.call("/__opencraft_access/members", { actorId: memberActorId, role: "member", enabled: false }),
   );
   await record("revoked member actor", member.call("/__opencraft_actors/me"));
+  await record("revoked member server information", member.call(serverInformation));
   await record("revoked member session", member.call("/__opencraft_access/session"));
   await record("revoked second login", memberAgain.call("/__opencraft_access/session"));
   await record(
@@ -238,6 +278,14 @@ async function sequence(backend: Backend) {
   await record("owner members after revocation", owner.call("/__opencraft_access/members"));
   await backend.restart();
   await record("owner actor after restart", owner.call("/__opencraft_actors/me"));
+  const restored = await record("server information after restart", owner.call(serverInformation));
+  assert.deepEqual(restored.body, saved.body);
+  const restoredDefaults = await record("model defaults after restart",
+    owner.call(personalPath(modelDefaults, ownerActorId, { hostId })));
+  const restoredReads = await record("thread reads after restart",
+    owner.call(personalPath(threadReads, ownerActorId)));
+  assert.deepEqual(restoredDefaults.body, savedDefaults.body);
+  assert.deepEqual(restoredReads.body, savedReads.body);
   await record("owner session after restart", owner.call("/__opencraft_access/session"));
   await record("revoked member after restart", member.call("/__opencraft_access/session"));
   await record("setup page after restart", anonymous.call("/setup"));
@@ -376,7 +424,7 @@ export async function login(backend: Backend) {
 
 export const INSTALLATION_CORE_DO_SCENARIOS: readonly WorkerScenario[] = [
   {
-    name: "the InstallationCore object and the Node Headless server answer one call sequence alike: setup, login, sessions, admission, revocation, restart",
+    name: "the InstallationCore object and the Node Headless server answer one call sequence alike: setup, login, admission, server information and restart",
     async run({ runtime, scratch, diagnostic }) {
       const node = await nodeBackend(scratch);
       let nodeRun: Awaited<ReturnType<typeof sequence>>;
@@ -398,6 +446,21 @@ export const INSTALLATION_CORE_DO_SCENARIOS: readonly WorkerScenario[] = [
       assert.deepEqual(
         [
           "owner session",
+          "anonymous server information",
+          "owner saves server information",
+          "stale server information revision",
+          "member reads server information",
+          "member cannot change server information",
+          "revoked member server information",
+          "server information after restart",
+          "owner saves model defaults",
+          "stale model defaults revision",
+          "owner records a read receipt",
+          "member's model defaults are independent",
+          "member's thread reads are independent",
+          "member cannot use owner's receipt scope",
+          "model defaults after restart",
+          "thread reads after restart",
           "member administers members",
           "revoke member",
           "revoked member session",
@@ -405,7 +468,7 @@ export const INSTALLATION_CORE_DO_SCENARIOS: readonly WorkerScenario[] = [
           "setup again",
           "logged out actor",
         ].map(status),
-        [200, 403, 200, 403, 200, 409, 401],
+        [200, 401, 200, 409, 200, 403, 401, 200, 200, 409, 200, 200, 200, 409, 200, 200, 403, 200, 403, 200, 409, 401],
       );
     },
   },
@@ -433,6 +496,64 @@ export const INSTALLATION_CORE_DO_SCENARIOS: readonly WorkerScenario[] = [
         await evict(object);
         assert.equal((await member.call("/__opencraft_access/session")).status, 403);
         assert.equal((await owner.call("/__opencraft_access/session")).status, 200);
+      } finally {
+        await object.close();
+      }
+    },
+  },
+  {
+    name: "InstallationCore admits Actor messages through the shared owner and keeps inbox cursors across eviction",
+    async run({ runtime }) {
+      const object = await objectBackend(runtime);
+      const collaboration = "/__opencraft_actors/collaboration/";
+      try {
+        assert.equal((await object.fetch(collaboration + "inbox/sync")).status, 401);
+        const { owner, member, memberId } = await login(object);
+        const ownerId = ((await (await owner.call("/__opencraft_actors/me")).json()) as { actor: { id: string } }).actor.id;
+        const inbox = async (cursor?: string) => {
+          const response = await member.call(collaboration + "inbox/sync" + (cursor ? "?cursor=" + encodeURIComponent(cursor) : ""));
+          assert.equal(response.status, 200, await response.clone().text());
+          return (await response.json()) as import("@opencraft/appserver-protocol/collaboration").ActorInboxPage;
+        };
+        const empty = await inbox();
+        assert.deepEqual(empty.changes, []);
+        const message = { targetActorId: memberId, content: "hello from the owner", idempotencyKey: "do-actor-message" };
+        assert.equal((await owner.call(collaboration + "messages", message)).status, 403);
+        assert.equal((await owner.call("/__opencraft_actors/grants", {
+          actorId: ownerId, resource: memberId, action: "message.send", enabled: true,
+        })).status, 200);
+        assert.equal((await owner.call(collaboration + "messages", message, { origin: "https://foreign.invalid" })).status, 403);
+        const send = async () => {
+          const response = await owner.call(collaboration + "messages", message);
+          assert.equal(response.status, 200, await response.clone().text());
+          return (await response.json()) as { messageId: string; requestId: string | null; replayed: boolean };
+        };
+        const sent = await send();
+        assert.equal(sent.requestId, null);
+        assert.equal(sent.replayed, false);
+        const result = await inbox(empty.cursor);
+        assert.equal(result.reset, false);
+        assert.equal(result.changes.length, 1);
+        assert.equal(result.changes[0]?.item?.latestMessage?.id, sent.messageId);
+        assert.equal(result.changes[0]?.item?.latestMessage?.authorId, ownerId);
+        assert.equal(result.changes[0]?.item?.latestMessage?.text, message.content);
+        assert.equal(result.changes[0]?.item?.unreadCount, 1);
+        const unsupported = await owner.call(collaboration + "messages", {
+          ...message, idempotencyKey: "do-actor-execution", execution: { mode: "queue" },
+        });
+        assert.equal(unsupported.status, 409);
+        assert.deepEqual(await unsupported.json(), { error: "execution_unavailable" });
+        assert.equal((await owner.call(collaboration + "personal-assistant")).status, 404);
+        await evict(object);
+        assert.deepEqual(await send(), { ...sent, replayed: true });
+        const resumed = await inbox(result.cursor);
+        assert.equal(resumed.reset, false);
+        assert.deepEqual(resumed.changes, []);
+        assert.equal((await inbox()).changes[0]?.item?.latestMessage?.id, sent.messageId);
+        assert.equal((await member.call(collaboration + "read", { messageId: sent.messageId })).status, 200);
+        assert.equal((await inbox(result.cursor)).changes[0]?.item?.unreadCount, 0);
+        assert.equal((await owner.call("/__opencraft_access/members", { actorId: memberId, role: "member", enabled: false })).status, 200);
+        assert.equal((await member.call(collaboration + "inbox/sync")).status, 401);
       } finally {
         await object.close();
       }

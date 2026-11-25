@@ -4,6 +4,8 @@ export const OPENCRAFT_METHOD_ACCESS_EXTENSION = "opencraft/method-access";
 export interface AppServerMethodAccess {
   readonly version: 1;
   readonly methods: readonly string[];
+  /** Whether native requests may include renderer-provided dynamic tools. */
+  readonly clientDynamicTools?: boolean;
 }
 
 export function parseAppServerMethodAccess(value: unknown): AppServerMethodAccess | null {
@@ -11,8 +13,10 @@ export function parseAppServerMethodAccess(value: unknown): AppServerMethodAcces
   const candidate = value as Record<string, unknown>;
   if (candidate.version !== 1 || !Array.isArray(candidate.methods)
     || candidate.methods.length > 512
-    || candidate.methods.some(method => typeof method !== "string" || !method || method.length > 128)) return null;
-  return { version: 1, methods: [...new Set(candidate.methods as string[])] };
+    || candidate.methods.some(method => typeof method !== "string" || !method || method.length > 128)
+    || (candidate.clientDynamicTools !== undefined && typeof candidate.clientDynamicTools !== "boolean")) return null;
+  return { version: 1, methods: [...new Set(candidate.methods as string[])],
+    ...(candidate.clientDynamicTools === undefined ? {} : { clientDynamicTools: candidate.clientDynamicTools }) };
 }
 
 /** Legacy Servers have no admission manifest; malformed manifests fail closed. */

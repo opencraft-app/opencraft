@@ -4,6 +4,10 @@
 
 下游 fork 若存在 `.agents/fork/AGENTS.md`，先读它：该文件只承载该 fork 的私有运维约定（如 Git 网关、发布桥与集成锁），由 fork 自行维护，不改写本文件的产品、代码与验证规则；fork 不应直接修改本文件。独立 checkout 中它不存在。
 
+## 代码样例必读
+
+每个 Agent（含主 Agent 和子 Agent）接手本仓库任务时，在开始分析、评审或修改前，读完 [taste/README.md](taste/README.md) 和其中列出的全部领域样例。同一任务读一遍即可。进入具体领域后继续遵循该领域的 owner 文档、目录规则和测试契约。
+
 ## 跨端产品与适配认知
 
 OpenCraft 同时面向触控设备与 PC：通过 Web DOM 和 React Native 技术，以移动 App、PWA 和 Web 形式覆盖手机、折叠设备、iPad 等触控设备；通过 Electron 提供桌面 App，同时提供 Web 桌面端。开发与设计必须同时考虑触控和鼠标／键盘操作，具体平台能力仍以实际实现为准。

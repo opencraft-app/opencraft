@@ -111,7 +111,7 @@
 ### 3.2 身份映射（不新增身份）
 
 - **Server 身份不变。** 今天 Server 身份是 `server:<machineId>:codex`／`server:<machineId>:<engine>`（`packages/access-control/src/runtime/conversation-execution.mjs:294-295`），`machineId` 来自部署的 daemon machine identity（HA:477）。Cloudflare 装配把该 machine identity 存在 IC，所有工作区共享同一个 Server 身份；Thread 稳定身份仍是 `(serverId, threadId)`。
-- **WH 是 Host placement，不是 Server。** execution-ownership.md 规定 Host 是部署载体，更换 Host 不改变 Server 或 Thread 身份。Thread→工作区由 `thread_placement` 投影解析（workspace-host-split §8.1，真源 WH，IC 持可重建投影），不进入 Client 可见的 Server 身份。
+- **WH 是 Host placement，不是 Server。** execution-ownership.md 规定 Host 是部署载体，更换 Host 不改变 Server 或 Thread 身份。Thread→工作区由 IC 的可重建投影解析，真源是 WorkspaceHost（workspace-host-split §8.1）。放置不进入 Client 可见的 Server 身份。IC 的持久投影与验证入口见 §3.3。
 - **`hostId` 保持逻辑路由。** Client 仍只看到 `local-codex`／`opencraft-server` 等路由；`legacyDirectServerProjectionFromHost()`（`packages/workbench-runtime/src/client-hub-server.ts:152`）的"一 Host 一 AppServer 路由"投影保持成立，因为每工作区放置发生在 Hub 侧，不暴露为新 Host。若将来要把工作区暴露给 Client，必须先替换该兼容投影，而不是在消费者里推断。
 - **协作状态不进 Client DO。** Client DO 只持有该客户端实例的身份、访问会话、逻辑路由、订阅与 resume 状态；Thread 执行、事件与队列由 WorkspaceHost 持有，频道、成员、协作命令与线程授权由 InstallationCore 持有。多人观看或协作同一对象时，各 Client DO 向同一共享 owner 订阅，由该 owner 扇出事件；这对应既有拓扑中多个 Client attachment 连接同一 Server。代价是多一跳与按观看者数量增长的扇出，而不是协作能力受限。对实时性要求更高的共享对象（例如多人同时编辑的笔记）可另设按对象划分的房间 DO，由客户端直连；这是扩展，不改变上述所有权。
 - **Hub 角色。** 在 Client/Hub/Server 拓扑中，EW＋Client DO 共同扮演 Hub（准入、路由、订阅、扇出）；RH 只承载 HubLink 级联与流预算。tenant 作用域以 installation 为界（问题 2），不从 socket 推断。
@@ -157,6 +157,19 @@
 - **未覆盖**：多 Host 逻辑路由、IC 线程授权、WH 日志截断与快照、背压与慢消费者、多个工作区的扇入、跨区域放置。
 
 **需在真实 Cloudflare 上确认。** hibernation 后唤醒 `webSocketMessage` 与 alarm 的冷启动延迟；跨 colo 的 WH→ClientDO RPC 延迟与 Client DO 放置（首个请求就近放置，用户移动后不迁移）；每事件 DO 请求与 storage 写入计费在流式输出下的量级；单 WH 扇出上限（并发出站子请求数、CPU 时间）；`ctx.abort()` 与平台驱逐、部署更新对 hibernatable socket 的实际影响；alarm 的触发精度与重试语义。
+
+**生产准入接缝（本地 workerd 验证）。** 边缘 Worker 只有装配私有 `CLIENT` 绑定时才转发 `/apphost`。浏览器升级必须来自部署同源，并提供独立的 `client-instance`，该值在同一逻辑客户端的物理重连间保持稳定。`attempt` 仍只标识单次连接尝试。InstallationCore 先核实现有 Human 登录与安装准入，再经私有绑定返回 Actor、代次、过期时间和当前登录摘要。Worker 用这些身份与客户端实例选择对象，只转发经验证的附着信息。Client 可用登录摘要向 InstallationCore 重新确认该次登录及成员资格，原始 cookie 与 bearer 不进入 Client。测试使用真实 AppHost 帧、真实 InstallationCore 和测试 Client／Host transport，验证同实例换 socket 后续接、运行时重启后对象身份保持、切换账号／登录后隔离，以及登出或撤权后拒绝。Web Workbench 在同一个 App Host 客户端作用域中一直传递该实例 ID，包括物理续接和重新握手。正式 Client DO 的 Codex 读取接线见下。WorkspaceHost 的事件日志和跨驱逐游标恢复仍待装配。
+
+**Thread 放置投影与私有读取。** InstallationCore 的投影按稳定 `(serverId, threadId)` 保存 workspace 地址和 owner 的提交版本，使用已有 StateDocumentStore 的原子更新。发布仅接受选定 WorkspaceHost 已确认的当前记录。跨工作区发布拒绝，删除保留版本围栏，重复发布可以重试。读取只处理正向放置，与 WorkspaceHost 复核确认后应用当前登录、成员和 Thread／Spaces 读权限。未知 Thread、删除和不再匹配源的记录均无路由。正常的 ThreadAccess 默认策略继续适用其原有消费者。私有读取结果表达放置与版本，下一跳仍须重验该版本及操作级授权。
+
+WorkspaceHost 在原生 Codex 创建或 fork 回执后提交归属。InstallationCore 使用该记录与实际 Thread／Spaces 授权。本地 workerd 覆盖生产 DO 装配，容器端使用协议替身。私有发布与读取路径始终不从边缘转发。
+
+**Codex Client DO 读取。** 本地装配在 `CLIENT` 绑定上使用 `ClientDO`，通过原有 `/apphost` 协议提供 `local-codex` 的 `thread/read`。InstallationCore 由安装的 machine id 确定 Server 身份。WorkspaceHost 复核归属版本和当前授权后，用独立的私有 native lane 执行该读取，并在返回前再次检查。Client DO 在交付结果前复核归属和授权。新连接替换同一已登录客户端实例的旧 socket，并取得新的 Host lease。客户端可重新发起读取。只读装配声明执行不可用。文本 Turn 的本地装配见下。交互回执、帧续传及跨容器恢复待接。默认 Wrangler 模板保持按绑定启用，尚未启用 Client DO。
+
+**创建 Codex Thread。** 本地部署可用 `OPENCRAFT_WORKSPACE_CODEX_DEFAULT` 选择 §5.2 的固定工作区。InstallationCore 用安装的 machine id 打开 WorkspaceHost，并按现有 `myself` Space 成员资格授权。该入口接受无项目的持久创建，采用原生 Host 默认设置与 legacy 历史，目录、权限和其他执行参数由服务器持有。InstallationCore 按确切登录和浏览器请求 ID 固定操作归属。WorkspaceHost 在发送 native 创建前持久化操作状态，再提交 native 结果和 Thread 归属。InstallationCore 复核归属后写入 Space 分配及 Thread 授权，完成后才向客户端返回。同一登录和 Client 实例用同一请求 ID 重试时复用已提交的结果。无法确定结果时保留发送记录并返回未确认，避免再创建一次。原生明确报告首条输入前尚无历史时，读取可使用同一空闲 Thread 的元数据来呈现空历史。
+
+
+**本地 Codex Turn。** 默认工作区的文本 `turn/start` 经 InstallationCore 检查当前登录、Thread 作者、Space 成员资格、执行权限和归属。WorkspaceHost 在原生发送前登记确切输入及执行租约。创建和首次运行共享 WorkspaceHost 的原生连接，保留 Native 对未落盘 Thread 的事件订阅。同一输入和未确认的执行不重放。模型 egress 只在当前授权 Turn 内接受配置 provider 的 Models／Responses 路径，由 WorkspaceHost 注入 AccountCore 短期租约。Provider 凭据只在账号出口兑换，SSE 保持流式。浏览器仅接收已授权 Thread／Turn 的文本增量与状态。云端部署使用私有 WorkerEntrypoint 拦截容器对指定模型主机的 HTTP 请求，启动前注册，工作区重新接管容器时重新绑定。通用出网关闭，拦截入口仅经持有容器的平台调用。该路径当前未接工具审批、客户端断线后事件续传或中断的原生 Turn 对账。
 
 ### 3.4 登录入口原型结果
 

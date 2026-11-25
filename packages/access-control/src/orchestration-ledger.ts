@@ -36,6 +36,19 @@ export interface ParentNotification {
   outcomeKind: ChildOutcome; hasDirectUserInput: boolean; userInputExcerpt: string | null; summary: unknown;
   firstQueuedAtMs: number; deliverAfterMs: number; maxDeadlineMs: number; clientMessageId: string | null;
 }
+
+/** The explicit wait authority takes precedence over the first spawn authority.
+ * Both delivery and expiration use the same lookup against the batch row. */
+export const notificationAuthorityIdSql = `COALESCE(
+  (SELECT authority.id FROM opencraft_notification_authorities binding
+    JOIN conversation_authorities authority ON authority.id=binding.authority_id
+    WHERE binding.batch_id=batch.batch_id),
+  (SELECT authority.id FROM opencraft_orchestration_operations operation
+    JOIN conversation_authorities authority ON authority.id=operation.delegation_id
+    WHERE operation.kind='spawn' AND operation.target_thread_id=batch.child_thread_id
+    ORDER BY operation.created_at_ms, operation.rowid LIMIT 1)
+)`;
+
 /** Stable hashing ignores JSON object property order while retaining array order. */
 export function canonical(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonical);

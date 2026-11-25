@@ -7,6 +7,7 @@ import WebSocket from "ws";
 import { createConversationKey } from "@opencraft/chat-core";
 import { createConversationOutbox, SubmissionNotDispatchedError, type ConversationOutboxEntry } from "@opencraft/chat-runtime";
 import { APP_HOST_PROTOCOL_VERSION } from "@opencraft/app-host-protocol/version";
+import { APP_HOST_CLIENT_INSTANCE_PARAMETER } from "@opencraft/app-host-protocol/routing";
 import { createWorkbenchWebServer } from "../../apps/headless-server/src/serve-workbench-web.mjs";
 import { connectWebSocketAppHost, type AppHostRecoveryEvents } from "../../apps/workbench-web/src/runtime/websocket-app-host";
 
@@ -99,6 +100,11 @@ test("a dropped socket is resumed transparently: no fatal, no new lease, output 
   assert.deepEqual(f.failures, [], "no failure was reported");
   assert.equal(connection.received.filter(m => m.type === "host/connect").length, 1, "the lease was not renewed");
   assert.equal(connection.received.filter(m => m.type === "host/send").length, 1, "the queued request arrived once");
+  const originalUrl = new URL(f.sockets[0]!.url);
+  const resumedUrl = new URL(f.sockets[1]!.url);
+  assert.ok(originalUrl.searchParams.get(APP_HOST_CLIENT_INSTANCE_PARAMETER));
+  assert.equal(resumedUrl.searchParams.get(APP_HOST_CLIENT_INSTANCE_PARAMETER), originalUrl.searchParams.get(APP_HOST_CLIENT_INSTANCE_PARAMETER));
+  assert.notEqual(resumedUrl.searchParams.get("attempt"), originalUrl.searchParams.get("attempt"));
   // Later output still flows over the resumed socket.
   f.stream(connection, 7, 7);
   await until(() => f.frames.length === 7);

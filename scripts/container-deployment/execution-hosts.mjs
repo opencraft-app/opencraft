@@ -7,7 +7,7 @@ import { resolveEnvironmentIssuer, watchEnvironmentIssuer } from "../server-depl
  * external proxy; the embedded account Core (restore path) forwards health with the
  * account token, so that mode keeps one token. */
 export function appServerControlTokenFile(paths) {
-  return paths.proxyMode === "external" ? paths.appServerTokenFile : paths.tokenPath;
+  return paths.proxyMode === "embedded" ? paths.tokenPath : paths.appServerTokenFile;
 }
 
 /** Pi engine host configuration (agent-private). `issuer` is set only with ENV delivery. */
@@ -17,7 +17,7 @@ export function engineHostConfiguration(paths, root, issuer) {
     socketPath: paths.engineSocket,
     dataDirectory: paths.dataDirectory,
     runtimeDirectory: paths.runtimeDirectory,
-    engines: ["dsh", "pi"],
+    engines: paths.proxyMode === "workspace-egress" ? ["pi"] : ["dsh", "pi"],
     defaultEngine: "pi",
     executionContext: paths.executionContext,
     gitWorkerFile: join(root, "runtime", "personal-git-worker.mjs"),

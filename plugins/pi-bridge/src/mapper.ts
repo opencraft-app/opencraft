@@ -67,7 +67,7 @@ function toolOutput(item: Value): string | null {
   return null;
 }
 
-function itemShape(item: Value): ItemShape | null {
+function itemShape(item: Value): Exclude<ItemShape, { kind: "fileChange" }> | null {
   if (item.type === "userMessage") {
     return {
       kind: "userMessage",

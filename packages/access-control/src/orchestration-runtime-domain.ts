@@ -6,7 +6,7 @@ import { ActorStore } from "./actors.js";
 import { Collaboration } from "./collaboration.js";
 import { attachCrewRules } from "./crew-work.js";
 import { communicationCommand } from "./communication-command.js";
-import { ThreadOrchestrationLedger } from "./orchestration-ledger.js";
+import { notificationAuthorityIdSql, ThreadOrchestrationLedger } from "./orchestration-ledger.js";
 import { AutomationLedger } from "./automation-ledger.js";
 import { updateExecutionRequest } from "./execution-request-state.js";
 import type { ServerDatabaseSource } from "@opencraft/storage-node/server-repository";
@@ -267,9 +267,16 @@ export function orchestrationRuntimeDomain(source: OrchestrationRuntimeSource) {
             ]),
           ];
           break;
-        case "work":
+        case "work": {
+          const { now } = payload;
+          // An absent authority may still arrive, so only a known expiration is terminal.
+          db.prepare(`UPDATE opencraft_parent_notification_batches AS batch SET state='expired'
+            WHERE batch.state='pending' AND (batch.deliver_after_ms<=? OR batch.max_deadline_ms<=?)
+              AND (SELECT expires_at FROM conversation_authorities WHERE id=${notificationAuthorityIdSql})<=?`
+          ).run(now, now, now);
           result = { waits: ledger.activeWaits(), notifications: ledger.dueNotifications() };
           break;
+        }
         case "pendingAcks":
           result = db
             .prepare("SELECT operation_id FROM opencraft_orchestration_acks LIMIT 16")

@@ -65,11 +65,47 @@ const text = (value: unknown): value is string =>
 const expiry = (value: unknown): value is number | null =>
   value === null || (Number.isSafeInteger(value) && (value as number) >= 0);
 
+function exactRecord(value: unknown, keys: readonly string[]): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value) &&
+    Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
+}
+
+/** Validate the maintenance executor's input before creating a native profile. */
+export function parseAccountRenewalRequest(value: unknown): AccountRenewalRequest {
+  if (
+    !exactRecord(value, ["provider", "upstreamAccountId", "reason", "secret"]) ||
+    value.provider !== "codex" ||
+    !text(value.upstreamAccountId) ||
+    (value.reason !== "expired" && value.reason !== "unauthorized") ||
+    !exactRecord(value.secret, ["accessToken", "refreshToken", "idToken", "expiresAt"]) ||
+    !text(value.secret.accessToken) ||
+    !text(value.secret.refreshToken) ||
+    !(value.secret.idToken === null || text(value.secret.idToken)) ||
+    !expiry(value.secret.expiresAt)
+  )
+    throw new TypeError("Invalid account renewal request");
+  return {
+    provider: value.provider,
+    upstreamAccountId: value.upstreamAccountId,
+    reason: value.reason,
+    secret: {
+      accessToken: value.secret.accessToken,
+      refreshToken: value.secret.refreshToken,
+      idToken: value.secret.idToken,
+      expiresAt: value.secret.expiresAt,
+    },
+  };
+}
+
+export function isAccountRenewalFailure(code: unknown): code is CodexAccountFailureCode {
+  return FAILURE_CODES.includes(code as CodexAccountFailureCode);
+}
+
 /** Validates an executor answer at the owner's side; throws on anything else. */
 export function parseAccountRenewalResponse(value: unknown): AccountRenewalResponse {
   const answer = value as Record<string, unknown> | null;
-  if (answer?.status === "failed" && FAILURE_CODES.includes(answer.code as CodexAccountFailureCode))
-    return { status: "failed", code: answer.code as CodexAccountFailureCode };
+  if (answer?.status === "failed" && isAccountRenewalFailure(answer.code))
+    return { status: "failed", code: answer.code };
   const secret = answer?.secret as Record<string, unknown> | undefined;
   if (
     answer?.status !== "renewed" ||

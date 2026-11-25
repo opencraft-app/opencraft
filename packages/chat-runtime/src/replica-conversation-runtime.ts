@@ -58,6 +58,8 @@ export interface ReplicaConversationRuntimeConfig {
   readonly outbox?: ConversationOutboxStorage;
   readonly localOutbox?: ConversationOutbox;
   readonly canDispatchOutbox?: (intent?: SubmitIntent) => boolean;
+  /** The current Host admits an explicit new Turn before its history is available. */
+  readonly canStartTurnWithoutHistory?: (intent: SubmitIntent) => boolean;
   /** Compatibility retry while a connected Codex Host does not own capacity continuation. */
   readonly canAutoContinueCapacity?: () => boolean;
   readonly replica: ConversationReplicaReader;
@@ -1859,9 +1861,13 @@ export function createReplicaConversationRuntime(
   let releaseOutbox: (() => void) | undefined;
   if (config.outbox || config.localOutbox) {
     const dispatch = {
-      ready: () => snapshot.authoritative && snapshot.phase === "live" && config.canDispatchOutbox?.() !== false,
+      ready: (intent?: SubmitIntent) => (snapshot.authoritative && snapshot.phase === "live"
+        || !!intent && config.canStartTurnWithoutHistory?.(intent) === true) && config.canDispatchOutbox?.(intent) !== false,
       blocked: () => [...pendingSubmissions.values(), ...queued.values()].some(item => item.state === "unknown"),
-      send: submitOnline, sender: config.getSubmissionSender, publish,
+      send: (intent: SubmitIntent, options: { readonly canDispatch: () => boolean }) =>
+        submitOnline(intent.target.type === "enqueue-follow-up" && config.canStartTurnWithoutHistory?.(intent)
+          ? { ...intent, target: { type: "existing-thread", key: intent.target.key } } : intent, options),
+      sender: config.getSubmissionSender, publish,
       retire: (ids: readonly string[]) => { for (const id of ids) { queued.delete(id); pendingSubmissions.delete(id); } },
     };
     if (config.localOutbox) {

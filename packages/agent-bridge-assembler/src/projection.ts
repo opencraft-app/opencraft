@@ -92,9 +92,15 @@ function toThreadItem(item: CanonicalItem): ThreadItem {
         questions: null,
       };
     case "reasoning":
-      return { type: "reasoning", id: item.itemId, summary: [], content: [shape.text] };
+      return { type: "reasoning", id: item.itemId, summary: [...(shape.summary ?? [])], content: [...(shape.content ?? [shape.text])] };
     case "plan":
       return { type: "plan", id: item.itemId, text: shape.text };
+    case "fileChange":
+      return { type: "fileChange", id: item.itemId, status: shape.status, changes: shape.changes.map(change => ({
+        path: change.path,
+        diff: change.diff,
+        kind: change.kind.type === "update" ? { type: "update", move_path: change.kind.move_path } : { type: change.kind.type },
+      })) };
     case "tool":
       // A generic provider tool is an existing dynamicToolCall, not a command.
       return {
@@ -122,8 +128,8 @@ function toThreadItem(item: CanonicalItem): ThreadItem {
         status: shape.status,
         commandActions: [],
         aggregatedOutput: shape.output ?? null,
-        exitCode: null,
-        durationMs: null,
+        exitCode: shape.exitCode ?? null,
+        durationMs: shape.durationMs ?? null,
       };
   }
 }

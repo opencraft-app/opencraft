@@ -27,6 +27,11 @@ import type {
 } from "@opencraft/sandbox-cloudflare/bindings";
 import { brokerSource } from "@opencraft/sandbox/broker";
 import { endpointRelaySource } from "@opencraft/sandbox/endpoint";
+import { SIDE_CHAT_INSTRUCTIONS, type ProcessSnapshot } from "@opencraft/appserver-protocol";
+import type { Project } from "@opencraft/appserver-protocol/generated/v2";
+import {
+  encodeTerminalOwnerFrame, terminalOwnerFrameReader, TERMINAL_OWNER_PROTOCOL,
+} from "../../../apps/local-agent-host/src/terminal-owner-wire.ts";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -55,6 +60,7 @@ export interface EngineTurn {
   id: string;
   status: "inProgress" | "completed" | "interrupted" | "failed";
   inputId: string | null;
+  steered?: { type: "userMessage"; id: string; clientId: string; content: unknown[] }[];
 }
 /** Every input an Engine Host accepted, across incarnations (what the test asserts never repeats). */
 export interface EngineInput {
@@ -65,28 +71,52 @@ export interface EngineInput {
   readonly turnId: string;
 }
 
+type ContainerExit = { code: number } | { reason: unknown };
 interface Instance {
   readonly boot: string;
   readonly placement: string;
   readonly options: ContainerStartOptions;
   stopped: boolean;
-  settle(outcome: { code: number } | { reason: unknown }): void;
-  readonly monitor: Promise<void>;
+  outcome?: ContainerExit;
+  readonly monitors: Set<(outcome: ContainerExit) => void>;
   readonly execs: Set<{ stop(code: number): void; eof(): void }>;
-  agent: { id: string; startedAt: string; token: string; turns: Map<string, EngineTurn[]>; next: number };
+  agent: ReturnType<typeof newAgent>;
 }
 
 const newAgent = () => ({
   id: hex(16),
   startedAt: new Date().toISOString(),
   token: hex(24),
+  fileToken: hex(32),
   turns: new Map<string, EngineTurn[]>(),
+  provisionalCodexThreads: new Set<string>(),
+  archivedCodexThreads: new Set<string>(),
+  codexThreadNames: new Map<string, string>(),
+  codexHistoryModes: new Map<string, "legacy" | "paginated">(),
+  forkOrigins: new Map<string, string>(),
+  sideChats: new Set<string>(),
+  bridgeOutboxId: hex(16),
+  bridgeAck: 0,
+  bridgeEvents: [{
+    seq: 1, route: JSON.stringify(["fixture-server", "fixture-thread"]), generation: "fixture-generation",
+    payload: { method: "thread/name/updated", params: { threadName: "Workspace Bridge" } } as unknown,
+  }],
+  bridgeCommands: new Map<string, unknown>(),
+  bridgeThreads: new Map<string, { id: string; cwd: string; ephemeral: false; historyMode: string; status: { type: string }; turns: unknown[] }>(),
+  pendingApprovals: new Map<string, { threadId: string; turn: EngineTurn; lane: string }>(),
+  terminals: new Map<string, { owner: string; snapshot: ProcessSnapshot }>(),
+  files: new Map<string, string>(),
+  projects: new Map<string, Project>(),
+  threadProjects: new Map<string, { projectId: string; cwd: string }>(),
+  terminalObservers: new Set<(value: unknown) => void>(),
+  retiredTerminals: new Set<string>(),
   next: 0,
 });
 
 export class ContainerDouble implements DurableObjectContainer {
   readonly images = Object.freeze({ workspace: "registry.example.test/opencraft-workspace@sha256:" + "0".repeat(64) });
   readonly starts: ContainerStartOptions[] = [];
+  readonly modelIntercepts: { host: string; running: boolean }[] = [];
   readonly timeouts: number[] = [];
   readonly inputs: EngineInput[] = [];
   destroys = 0;
@@ -94,6 +124,51 @@ export class ContainerDouble implements DurableObjectContainer {
   readonly served: string[] = [];
   #current: Instance | undefined;
   #last: Instance | undefined;
+  readonly #snapshots = new Map<string, Pick<ReturnType<typeof newAgent>,
+    "turns" | "archivedCodexThreads" | "codexThreadNames" | "codexHistoryModes" | "forkOrigins" | "sideChats" |
+    "projects" | "threadProjects" | "bridgeOutboxId" | "bridgeAck" | "bridgeEvents" | "bridgeThreads" | "bridgeCommands">>();
+  oversizedNextCodexPage = false;
+  dropNextCodexStartReply = false;
+  holdNextCodexTurnReply = false;
+  rejectNextCodexInitialize = false;
+  rejectNextSnapshot = false;
+  terminalCleanupUnavailable = false;
+  #modelEgress?: { host: string; entry: { fetch(request: Request): Promise<Response> } };
+
+  async interceptOutboundHttp(host: string, entry: { fetch(request: Request): Promise<Response> }): Promise<void> {
+    this.modelIntercepts.push({ host, running: this.running });
+    this.#modelEgress = { host, entry };
+  }
+
+  async modelRequest(method: string, route: string): Promise<Response> {
+    const intercept = this.#modelEgress;
+    const origin = this.#current?.options.env?.OPENCRAFT_CODEX_EGRESS_ORIGIN;
+    const provider = this.#current?.options.env?.OPENCRAFT_CODEX_EGRESS_PROVIDER;
+    if (!origin || !provider || !intercept) return new Response(null, { status: 503 });
+    return intercept.entry.fetch(new Request(new URL(`/__opencraft_egress/${encodeURIComponent(provider)}/${route}`, origin), { method }));
+  }
+  #codexReadGate: PromiseWithResolvers<void> | null = null;
+  #codexStartGate: PromiseWithResolvers<void> | null = null;
+
+  pauseCodexStarts(): void {
+    this.#codexStartGate ??= Promise.withResolvers<void>();
+  }
+
+  releaseCodexStarts(): void {
+    const gate = this.#codexStartGate;
+    this.#codexStartGate = null;
+    gate?.resolve();
+  }
+
+  pauseCodexReads(): void {
+    this.#codexReadGate ??= Promise.withResolvers<void>();
+  }
+
+  releaseCodexReads(): void {
+    const gate = this.#codexReadGate;
+    this.#codexReadGate = null;
+    gate?.resolve();
+  }
 
   get running() {
     return !!this.#current && !this.#current.stopped;
@@ -102,42 +177,59 @@ export class ContainerDouble implements DurableObjectContainer {
     return this.#current?.agent.id;
   }
 
+  publishBridgeTitle(title: string) {
+    const agent = this.#current?.agent;
+    if (!this.running || !agent || !title) throw new Error("Bridge fixture is unavailable");
+    agent.bridgeEvents.push({ ...agent.bridgeEvents[0]!, seq: agent.bridgeEvents.length + 1,
+      payload: { method: "thread/name/updated", params: { threadName: title } } });
+  }
+
   start(options: ContainerStartOptions): void {
     if (this.running) throw new Error("Container is already running");
-    if (!options.image || typeof options.enableInternet !== "boolean") throw new RangeError("Invalid start options");
-    let settle!: Instance["settle"];
-    const monitor = new Promise<void>((resolve, reject) => {
-      settle = (outcome) => {
-        if ("code" in outcome)
-          outcome.code === 0
-            ? resolve()
-            : reject(
-                Object.assign(new Error(`Container exited with code ${outcome.code}`), { exitCode: outcome.code }),
-              );
-        else outcome.reason === undefined ? resolve() : reject(outcome.reason);
-      };
-    });
-    void monitor.catch(() => {});
+    const saved = options.containerSnapshot && this.#snapshots.get(options.containerSnapshot.id);
+    if (!(options.image || saved) || typeof options.enableInternet !== "boolean") throw new RangeError("Invalid start options");
     this.starts.push(options);
     this.#current = this.#last = {
       boot: crypto.randomUUID(),
       placement: hex(16),
       options,
       stopped: false,
-      settle,
-      monitor,
+      monitors: new Set(),
       execs: new Set(),
-      agent: newAgent(),
+      agent: { ...newAgent(), ...structuredClone(saved || {}) },
     };
   }
   async inspect(): Promise<ContainerInfo | null> {
     const current = this.#current;
-    return current && !current.stopped ? { image: current.options.image, labels: { ...current.options.labels } } : null;
+    return current && !current.stopped ? { image: current.options.image ?? "", labels: { ...current.options.labels } } : null;
+  }
+  async snapshotContainer() {
+    if (this.rejectNextSnapshot) {
+      this.rejectNextSnapshot = false;
+      throw new Error("Container snapshot unavailable");
+    }
+    const current = this.#current;
+    if (!current || current.stopped) throw new Error("Container is not running");
+    const id = crypto.randomUUID();
+    const { turns, archivedCodexThreads, codexThreadNames, codexHistoryModes, forkOrigins, sideChats,
+      projects, threadProjects, bridgeOutboxId, bridgeAck, bridgeEvents, bridgeThreads, bridgeCommands } = current.agent;
+    this.#snapshots.set(id, structuredClone({ turns, archivedCodexThreads, codexThreadNames, codexHistoryModes, forkOrigins, sideChats,
+      projects, threadProjects, bridgeOutboxId, bridgeAck, bridgeEvents, bridgeThreads, bridgeCommands }));
+    return { id, size: current.agent.turns.size };
   }
   monitor(): Promise<void> {
     const instance = this.#current ?? this.#last;
     if (!instance) throw new Error("This Durable Object has no container");
-    return instance.monitor;
+    return new Promise<void>((resolve, reject) => {
+      const settle = (outcome: ContainerExit) => {
+        if ("code" in outcome && outcome.code !== 0)
+          reject(Object.assign(new Error(`Container exited with code ${outcome.code}`), { exitCode: outcome.code }));
+        else if ("reason" in outcome && outcome.reason !== undefined) reject(outcome.reason);
+        else resolve();
+      };
+      if (instance.outcome) settle(instance.outcome);
+      else instance.monitors.add(settle);
+    });
   }
   async setInactivityTimeout(durationMs: number): Promise<void> {
     if (!(durationMs > 0) || durationMs > 6 * 3600_000) throw new RangeError("Invalid inactivity timeout");
@@ -161,6 +253,7 @@ export class ContainerDouble implements DurableObjectContainer {
   /** A Durable Object reset: exec handles are gone, so every broker reads EOF on its control input. */
   resetDurableObject(): void {
     for (const exec of this.#current?.execs ?? []) exec.eof();
+    this.#current?.monitors.clear();
   }
   /** Ends every running Turn of the current engine as completed. */
   completeTurns(): number {
@@ -173,10 +266,13 @@ export class ContainerDouble implements DurableObjectContainer {
         }
     return count;
   }
-  #stop(instance: Instance, outcome: { code: number } | { reason: unknown }) {
+  #stop(instance: Instance, outcome: ContainerExit) {
     instance.stopped = true;
+    instance.outcome = outcome;
+    if (this.#current === instance) this.#modelEgress = undefined;
     for (const exec of [...instance.execs]) exec.stop(137);
-    instance.settle(outcome);
+    for (const settle of instance.monitors) settle(outcome);
+    instance.monitors.clear();
   }
 
   async exec(command: string[], options: ContainerExecOptions = {}): Promise<ContainerExecProcess> {
@@ -293,7 +389,11 @@ export class ContainerDouble implements DurableObjectContainer {
   /** The agent's named endpoints. */
   #endpoint(instance: Instance, name: string): ((peer: Peer) => Owner) | undefined {
     if (name === "control") return (peer) => this.#control(instance, peer);
-    if (name === "pi") return (peer) => this.#engineHost(instance, peer);
+    if (name === "terminal") return (peer) => this.#terminal(instance, peer);
+    if (name === "codex-bridge" && instance.options.env?.OPENCRAFT_WORKSPACE_CODEX_BRIDGE_ENDPOINT === "true")
+      return (peer) => this.#engineHost(instance, peer, name);
+    if (name === "pi" || name === "codex-control" || name === "codex-native" || name === "files")
+      return (peer) => this.#engineHost(instance, peer, name);
     return undefined;
   }
 
@@ -306,6 +406,7 @@ export class ContainerDouble implements DurableObjectContainer {
         if (end < 0) return;
         const request = JSON.parse(text.slice(0, end));
         const agent = instance.agent;
+        const bridge = instance.options.env?.OPENCRAFT_WORKSPACE_CODEX_BRIDGE_ENDPOINT === "true";
         const answer =
           request.type === "probe"
             ? {
@@ -314,7 +415,7 @@ export class ContainerDouble implements DurableObjectContainer {
                 state: "ready",
                 roles: ["workspace"],
                 incarnation: { id: agent.id, evidence: `double:${instance.boot}`, startedAt: agent.startedAt },
-                endpoints: ["control", "pi"],
+                endpoints: ["control", "pi", "codex-control", "codex-native", "terminal", "files", ...(bridge ? ["codex-bridge"] : [])],
                 endpointGeneration: 0,
               }
             : request.type === "describe" && request.name === "pi"
@@ -333,7 +434,14 @@ export class ContainerDouble implements DurableObjectContainer {
                     dataDirectory: "/var/lib/opencraft-workspace/pi",
                   },
                 }
-              : { protocol: 1, type: "error" };
+              : request.type === "describe" && (["codex-control", "terminal", "files"].includes(request.name) || (bridge && request.name === "codex-bridge"))
+                ? {
+                    protocol: 1,
+                    type: "endpoint",
+                    name: request.name,
+                    descriptor: { token: request.name === "files" ? agent.fileToken : agent.token },
+                  }
+                : { protocol: 1, type: "error" };
         peer.send(encoder.encode(JSON.stringify(answer) + "\n"));
         peer.end();
       },
@@ -341,9 +449,89 @@ export class ContainerDouble implements DurableObjectContainer {
     };
   }
 
+  #terminal(instance: Instance, peer: Peer): Owner {
+    let attached = false;
+    const send = (value: unknown) => peer.send(encodeTerminalOwnerFrame(value));
+    const { terminals, terminalObservers, retiredTerminals } = instance.agent;
+    const notify = (value: unknown) => { for (const observe of terminalObservers) observe(value); };
+    const exit = (snapshot: ProcessSnapshot) => {
+      if (snapshot.phase !== "running") return;
+      snapshot.phase = "exited";
+      snapshot.exitCode = 0;
+      notify({ method: "process/exited", params: { processHandle: snapshot.processHandle, exitCode: 0 } });
+    };
+    const data = terminalOwnerFrameReader(value => {
+      const request = value as {
+        type?: string; token?: string; protocol?: number; id: number; method: string;
+        params: {
+          processHandle?: string; deltaBase64: string; afterSequence: number; cwd: string; command: string[];
+          resourceOwnerId?: string; activate?: boolean; aliases?: { owner: string; resourceOwnerId: string }[];
+        };
+        identity: { owner: string; lifecycleAuthority?: boolean; scope: { threadId: string | null; projectId: string | null } };
+      };
+      if (!attached) {
+        if (request.type !== "attach" || request.token !== instance.agent.token || request.protocol !== TERMINAL_OWNER_PROTOCOL)
+          return peer.end();
+        attached = true;
+        terminalObservers.add(send);
+        return send({ type: "attached", protocol: TERMINAL_OWNER_PROTOCOL, terminalAdmission: 1 });
+      }
+      const { id, method, params, identity } = request;
+      const { processHandle } = params;
+      this.served.push(`terminal ${method}`);
+      const answer = (result: unknown) => send({ id, result });
+      const matches = (terminal: { owner: string; snapshot: ProcessSnapshot }) => terminal.owner === identity.owner &&
+        (!identity.scope.threadId || terminal.snapshot.context?.threadId === identity.scope.threadId);
+      if (method === "process/releaseThread") {
+        const { threadId } = identity.scope;
+        if (!threadId || !identity.lifecycleAuthority || this.terminalCleanupUnavailable) return send({ id, error: "unavailable" });
+        if (params.activate) retiredTerminals.delete(threadId);
+        else {
+          retiredTerminals.add(threadId);
+          for (const { owner, snapshot } of terminals.values()) {
+            const context = snapshot.context;
+            if (context?.threadId === threadId || (context?.threadId === null &&
+              params.aliases?.some(alias => alias.owner === owner && alias.resourceOwnerId === context.resourceOwnerId))) exit(snapshot);
+          }
+        }
+        return answer({ pending: 0 });
+      }
+      if (method === "process/list") {
+        return answer({ processes: [...terminals.values()].filter(matches).map(({ snapshot: { output: _output, ...metadata } }) => metadata) });
+      }
+      if (!processHandle) return send({ id, error: "invalid" });
+      if (method === "process/spawn" && !terminals.has(processHandle)) {
+        if (identity.scope.threadId && retiredTerminals.has(identity.scope.threadId)) return send({ id, error: "archived" });
+        terminals.set(processHandle, { owner: identity.owner, snapshot: {
+          processHandle, phase: "running", exitCode: null, nextSequence: 0, truncated: false, output: [],
+          context: { ...identity.scope, resourceOwnerId: params.resourceOwnerId ?? null, cwd: params.cwd, shell: params.command[0]! },
+        } });
+        return answer({ processHandle });
+      }
+      const terminal = terminals.get(processHandle);
+      if (!terminal || !matches(terminal)) return send({ id, error: "missing" });
+      const { snapshot } = terminal;
+      if (method === "process/attach") {
+        return answer({ ...snapshot, output: snapshot.output.filter(output => output.sequence > params.afterSequence) });
+      }
+      answer({});
+      if (method === "process/writeStdin") {
+        const output = { processHandle, sequence: ++snapshot.nextSequence, stream: "stdout" as const, deltaBase64: params.deltaBase64 };
+        snapshot.output.push(output);
+        notify({ method: "process/outputDelta", params: output });
+      }
+      if (method === "process/kill") exit(snapshot);
+    });
+    return { data, end: () => { terminalObservers.delete(send); peer.end(); } };
+  }
+
   /** The Engine Host on its private socket: control routes over HTTP/1.1, App Server JSON-RPC over WebSocket. */
-  #engineHost(instance: Instance, peer: Peer): Owner {
+  #engineHost(instance: Instance, peer: Peer, name: "pi" | "codex-control" | "codex-native" | "codex-bridge" | "files"): Owner {
     const agent = instance.agent;
+    const nativeSubscriptions = new Set<string>();
+    const nativeStreams = new Map<string, AbortController>();
+    const { pendingApprovals } = agent;
+    let nativeLane = "";
     let buffer = new Uint8Array(0),
       socket = false;
     const respond = (status: number, value: unknown) => {
@@ -361,8 +549,79 @@ export class ContainerDouble implements DurableObjectContainer {
     const lastTurn = (threadId: string) => agent.turns.get(threadId)?.at(-1) ?? null;
     const route = (method: string, target: string, headers: Map<string, string>, body: string) => {
       const url = new URL(target, "http://engine.invalid");
-      this.served.push(`${method} ${url.pathname}`);
-      if (headers.get("authorization") !== `Bearer ${agent.token}`) return respond(401, { error: "unauthorized" });
+      this.served.push(`${name === "codex-bridge" ? "bridge " : ""}${method} ${url.pathname}`);
+      const token = name === "files" ? agent.fileToken : agent.token;
+      if (headers.get("authorization") !== `Bearer ${token}`) return respond(401, { error: "unauthorized" });
+      if (name === "codex-bridge") {
+        if (method === "GET" && url.pathname === "/health")
+          return respond(200, { pid: 43, incarnation: `bridge:${agent.id}`, generations: [] });
+        if (method === "GET" && url.pathname === "/snapshot")
+          return respond(200, { ack: agent.bridgeAck, routes: [...agent.bridgeThreads.keys()].map(route => ({ route })),
+            nativeSessions: [...agent.bridgeThreads].map(([route, thread]) => ({ route, native_id: thread.id, restorable: 1 })), interactions: [] });
+        if (method === "GET" && url.pathname === "/events" && url.searchParams.get("fenced") === "1") {
+          const cursor = Number(url.searchParams.get("cursor"));
+          if (cursor < agent.bridgeAck || cursor > agent.bridgeEvents.length) return respond(409, { error: "invalid cursor" });
+          return respond(200, { outboxId: agent.bridgeOutboxId, acknowledged: agent.bridgeAck, high: agent.bridgeEvents.length,
+            events: agent.bridgeEvents.slice(cursor) });
+        }
+        if (method === "POST" && url.pathname === "/ack") {
+          const { outboxId, cursor } = JSON.parse(body);
+          if (outboxId !== agent.bridgeOutboxId || cursor < agent.bridgeAck || cursor > agent.bridgeEvents.length)
+            return respond(409, { error: "invalid acknowledgement" });
+          agent.bridgeAck = cursor;
+          return respond(200, null);
+        }
+        if (method === "POST" && url.pathname === "/command") {
+          const call = JSON.parse(body);
+          const key = JSON.stringify([call.serverId, call.threadId]);
+          if (call.method !== "session/create") return respond(404, { error: "missing" });
+          const thread = { id: crypto.randomUUID(), ephemeral: false as const, cwd: "/workspace",
+            historyMode: call.params.native.historyMode, status: { type: "idle" }, turns: [] };
+          agent.bridgeThreads.set(key, thread);
+          agent.bridgeEvents.push({ seq: agent.bridgeEvents.length + 1, route: key, generation: "fixture-generation",
+            payload: { method: "thread/identity", params: { providerThreadId: thread.id } } });
+          agent.bridgeCommands.set(call.commandId, { state: "accepted", response: { result: { thread, model: "m", cwd: thread.cwd } } });
+          return respond(200, { state: "registered", commandId: call.commandId });
+        }
+        if (method === "GET" && url.pathname === "/command")
+          return respond(200, agent.bridgeCommands.get(url.searchParams.get("id") ?? "") ?? null);
+        if (method === "POST" && url.pathname === "/observe") {
+          const { threadId, serverId } = JSON.parse(body);
+          const thread = agent.bridgeThreads.get(JSON.stringify([serverId, threadId]));
+          return thread ? respond(200, { thread }) : respond(404, { error: "missing" });
+        }
+        return respond(404, { error: "missing" });
+      }
+      if (name === "files") {
+        if (method !== "POST" || url.pathname !== "/workspace/rpc") return respond(404, { error: "missing" });
+        const { method: operation, params: { path, dataBase64 } } = JSON.parse(body);
+        if (operation === "fs/writeFile") {
+          agent.files.set(path, dataBase64);
+          return respond(200, { result: {} });
+        }
+        if (operation === "fs/readFile" && agent.files.has(path))
+          return respond(200, { result: { dataBase64: agent.files.get(path) } });
+        if (operation === "fs/readDirectory")
+          return respond(200, { result: { entries: [{ fileName: "demo", isDirectory: true, isFile: false }] } });
+        if (operation === "fs/getMetadata") {
+          const isSymlink = path.endsWith("/link");
+          return respond(200, { result: { isDirectory: !isSymlink, isFile: false, isSymlink, createdAtMs: 1000, modifiedAtMs: 1000 } });
+        }
+        return respond(404, { error: "missing" });
+      }
+      if (name === "codex-control") {
+        if (method !== "GET" || !["/health", "/native-health"].includes(url.pathname))
+          return respond(404, { error: "missing" });
+        return respond(200, {
+          protocolVersion: 1,
+          pid: 40,
+          codexPid: 41,
+          executionIncarnation: `codex-process:${agent.id}`,
+          callbackProtocolVersion: 1,
+          callbackIncarnation: `codex-callback:${agent.id}`,
+          threadTitleToolVersion: 1,
+        });
+      }
       if (method === "GET" && url.pathname === "/health")
         return respond(200, {
           ok: true,
@@ -398,35 +657,395 @@ export class ContainerDouble implements DurableObjectContainer {
       const head = size < 126 ? new Uint8Array([0x81, size]) : new Uint8Array([0x81, 126, size >>> 8, size & 0xff]);
       peer.send(concat(head, payload));
     };
+    const offerApproval = (id: string, threadId: string, turnId: string) => {
+      frameOut(JSON.stringify({ id, method: "item/commandExecution/requestApproval",
+        params: { threadId, turnId, itemId: "test-approval", command: "printf smoke" },
+        __opencraftInteractionKey: `human:${id}`, __opencraftInteractionState: "pending" }));
+    };
     const rpc = (text: string) => {
       const message = JSON.parse(text);
+      if (message.method === "initialized" && nativeLane) {
+        for (const [id, approval] of pendingApprovals) {
+          if (approval.lane !== nativeLane) continue;
+          nativeSubscriptions.add(approval.threadId);
+          offerApproval(id, approval.threadId, approval.turn.id);
+        }
+      }
       if (message.id === undefined) return;
+      if (name === "codex-native" && message.method === undefined) {
+        const approval = pendingApprovals.get(message.id);
+        if (!approval || approval.lane !== nativeLane || message.__opencraftInteractionKey !== `human:${message.id}` ||
+          message.result?.decision !== "accept") return;
+        this.served.push("native approval reply");
+        pendingApprovals.delete(message.id);
+        const { threadId, turn } = approval;
+        nativeStreams.delete(turn.id);
+        frameOut(JSON.stringify({ method: "serverRequest/resolved", params: { threadId, requestId: message.id } }));
+        turn.status = "completed";
+        frameOut(JSON.stringify({ method: "turn/completed", params: { threadId, turn } }));
+        return;
+      }
       this.served.push(`rpc ${message.method}`);
+      if (name === "codex-native" && message.method === "initialize" && this.rejectNextCodexInitialize) {
+        this.rejectNextCodexInitialize = false;
+        frameOut(JSON.stringify({ id: message.id, error: { code: -32603, message: "initialization failed" } }));
+        return;
+      }
+      const codexThreadSettings = {
+        model: "m", modelProvider: "opencraft", cwd: "/workspace", runtimeWorkspaceRoots: [],
+        approvalsReviewer: "user", approvalPolicy: "on-request", sandbox: { type: "workspaceWrite" },
+      };
+      if (name === "codex-native" && message.method === "project/create") {
+        const { name, roots, metadata = {}, idempotencyKey } = message.params;
+        const prior = agent.projects.get(idempotencyKey);
+        if (prior && JSON.stringify(prior.roots) !== JSON.stringify(roots)) {
+          frameOut(JSON.stringify({ id: message.id, error: { code: -32602, message: "Project request reused" } }));
+          return;
+        }
+        const project = prior ?? { id: crypto.randomUUID(), name, roots, metadata, position: agent.projects.size,
+          createdAt: 1, updatedAt: 1, recencyAt: null };
+        agent.projects.set(idempotencyKey, project);
+        frameOut(JSON.stringify({ id: message.id, result: { project } }));
+        return;
+      }
+      if (name === "codex-native" && message.method === "project/list") {
+        const { cursor, limit } = message.params;
+        const offset = cursor === null ? 0 : Number(cursor);
+        const projects = [...agent.projects.values()];
+        const data = projects.slice(offset, offset + limit);
+        frameOut(JSON.stringify({ id: message.id, result: { data,
+          nextCursor: offset + data.length < projects.length ? String(offset + data.length) : null } }));
+        return;
+      }
+      if (name === "codex-native" && ["thread/start", "thread/fork"].includes(message.method)) {
+        if (message.params?.fail) {
+          frameOut(JSON.stringify({ id: message.id, error: { code: -32603, message: "creation failed" } }));
+          return;
+        }
+        const origin = message.method === "thread/fork" ? message.params?.threadId as string | undefined : undefined;
+        const historyMode = (origin ? agent.codexHistoryModes.get(origin) : message.params?.historyMode) === "paginated"
+          ? "paginated" : "legacy";
+        const original = origin ? agent.turns.get(origin) ?? [] : [];
+        const { lastTurnId, beforeTurnId } = message.params ?? {};
+        const anchor = lastTurnId ?? beforeTurnId;
+        const end = anchor === undefined ? original.length : original.findIndex(turn => turn.id === anchor);
+        if (end < 0) {
+          frameOut(JSON.stringify({ id: message.id, error: { code: -32602, message: "Unknown fork anchor" } }));
+          return;
+        }
+        const id = crypto.randomUUID();
+        const project = origin ? agent.threadProjects.get(origin) : message.params?.projectId
+          ? { projectId: message.params.projectId, cwd: message.params.cwd } : undefined;
+        if (project) agent.threadProjects.set(id, project);
+        const thread = { id, ephemeral: message.params?.ephemeral === true, historyMode, ...project,
+          forkedFromId: origin ?? null, turns: [] };
+        if (!thread.ephemeral) agent.turns.set(thread.id, structuredClone(original.slice(0, end + (lastTurnId ? 1 : 0))));
+        if (origin) {
+          agent.forkOrigins.set(thread.id, origin);
+          agent.codexHistoryModes.set(thread.id, historyMode);
+          if (message.params.developerInstructions === SIDE_CHAT_INSTRUCTIONS && message.params.deferGoalContinuation === true)
+            agent.sideChats.add(thread.id);
+        }
+        if (message.method === "thread/start" && !thread.ephemeral) {
+          agent.codexHistoryModes.set(thread.id, historyMode);
+          if (message.params?.historyMode) agent.provisionalCodexThreads.add(thread.id);
+        }
+        if (this.dropNextCodexStartReply) {
+          this.dropNextCodexStartReply = false;
+          peer.end();
+          return;
+        }
+        const reply = () => {
+          nativeSubscriptions.add(thread.id);
+          frameOut(JSON.stringify({ method: "thread/started", params: { thread } }));
+          frameOut(JSON.stringify({ id: message.id, result: { thread, ...codexThreadSettings } }));
+        };
+        if (message.method === "thread/start" && this.#codexStartGate) {
+          void this.#codexStartGate.promise.then(reply).catch(() => {});
+        } else reply();
+        return;
+      }
+      if (name === "codex-native" && message.method === "thread/list") {
+        const { cursor, limit, archived, sortDirection, searchTerm } = message.params;
+        const rows = [...agent.turns.keys()].flatMap((id, index) => {
+          const name = agent.codexThreadNames.get(id) ?? `Fixture ${id}`;
+          if (agent.provisionalCodexThreads.has(id) || agent.archivedCodexThreads.has(id) !== archived ||
+            (searchTerm && !name.includes(searchTerm))) return [];
+          return [{
+            id, name, cwd: "/workspace", ...agent.threadProjects.get(id), historyMode: "legacy", modelProvider: "opencraft",
+            createdAt: index + 1, updatedAt: index + 1, ephemeral: false, status: { type: "idle" },
+            turns: [{ id: "private-history-payload" }],
+          }];
+        });
+        if (sortDirection === "desc") rows.reverse();
+        const start = cursor ? rows.findIndex(row => cursor === `after:${row.id}`) + 1 : 0;
+        const data = rows.slice(start, start + limit);
+        frameOut(JSON.stringify({ id: message.id, result: { data,
+          nextCursor: start + data.length < rows.length ? `after:${data.at(-1)!.id}` : null,
+          backwardsCursor: data.length ? `after:${data[0]!.id}` : null,
+        } }));
+        return;
+      }
+      if (name === "codex-native" && ["thread/name/set", "thread/archive", "thread/unarchive"].includes(message.method)) {
+        const { threadId, name } = message.params;
+        if (!agent.turns.has(threadId)) {
+          frameOut(JSON.stringify({ id: message.id, error: { code: -32600, message: "Thread not found" } }));
+          return;
+        }
+        let result: unknown = {};
+        if (message.method === "thread/name/set") {
+          agent.codexThreadNames.set(threadId, name);
+          if (name === "Unconfirmed fixture title") result = { unexpected: true };
+        } else if (message.method === "thread/archive") {
+          agent.provisionalCodexThreads.delete(threadId);
+          agent.archivedCodexThreads.add(threadId);
+        } else {
+          agent.archivedCodexThreads.delete(threadId);
+          result = { thread: { id: threadId, name: agent.codexThreadNames.get(threadId), cwd: "/workspace",
+            createdAt: 1, updatedAt: 2, historyMode: "legacy", ephemeral: false, status: { type: "notLoaded" }, turns: [] } };
+        }
+        frameOut(JSON.stringify({ id: message.id, result }));
+        return;
+      }
+      if (name === "codex-native" && message.method === "thread/read" && message.params.includeTurns &&
+          agent.provisionalCodexThreads.has(message.params.threadId)) {
+        frameOut(JSON.stringify({
+          id: message.id,
+          error: {
+            code: -32600,
+            message: `thread ${message.params.threadId} is not materialized yet; includeTurns is unavailable before first user message`,
+          },
+        }));
+        return;
+      }
+      if (name === "codex-native" && message.method === "thread/resume" &&
+          agent.provisionalCodexThreads.has(message.params.threadId)) {
+        frameOut(JSON.stringify({
+          id: message.id,
+          error: { code: -32600, message: `no rollout found for thread id ${message.params.threadId}` },
+        }));
+        return;
+      }
+      if (name === "codex-native" && message.method === "thread/resume")
+        nativeSubscriptions.add(message.params.threadId);
+      if (name === "codex-native" && message.method === "thread/settings/update") {
+        const { threadId, collaborationMode } = message.params;
+        if (agent.sideChats.has(threadId) && nativeSubscriptions.has(threadId) &&
+          collaborationMode?.settings.developer_instructions === SIDE_CHAT_INSTRUCTIONS) {
+          frameOut(JSON.stringify({ id: message.id, result: {} }));
+        } else {
+          frameOut(JSON.stringify({ id: message.id, error: { code: -32602, message: "Missing side chat boundary" } }));
+        }
+        return;
+      }
+      if (name === "codex-native" && message.method === "turn/steer") {
+        const { threadId, expectedTurnId, clientUserMessageId, input } = message.params;
+        const turn = lastTurn(threadId);
+        if (!turn || turn.id !== expectedTurnId || turn.status !== "inProgress" || !nativeSubscriptions.has(threadId)) {
+          frameOut(JSON.stringify({ id: message.id, error: { code: -32600, message: "no active turn to steer" } }));
+          return;
+        }
+        const item = { type: "userMessage" as const, id: crypto.randomUUID(), clientId: clientUserMessageId, content: input };
+        (turn.steered ??= []).push(item);
+        frameOut(JSON.stringify({ method: "item/completed", params: { threadId, turnId: turn.id, completedAtMs: 1050, item } }));
+        frameOut(JSON.stringify({ id: message.id, result: { turnId: clientUserMessageId === "unknown-steer" ? "wrong-receipt" : turn.id } }));
+        return;
+      }
+      if (name === "codex-native" && message.method === "turn/interrupt") {
+        const { threadId, turnId } = message.params;
+        const turn = lastTurn(threadId);
+        const stream = nativeStreams.get(turnId);
+        if (turn?.id !== turnId || turn.status !== "inProgress" || !stream) {
+          frameOut(JSON.stringify({ id: message.id, error: { code: -32602, message: "Turn is not running" } }));
+          return;
+        }
+        turn.status = "interrupted";
+        stream.abort();
+        frameOut(JSON.stringify({ method: "turn/completed", params: { threadId, turn } }));
+        setTimeout(() => frameOut(JSON.stringify({ id: message.id, result: {} })), 50);
+        return;
+      }
+      if (name === "codex-native" && message.method === "turn/start") {
+        const { threadId, clientUserMessageId, input } = message.params;
+        if (agent.sideChats.has(threadId) &&
+          message.params.collaborationMode?.settings.developer_instructions !== SIDE_CHAT_INSTRUCTIONS) {
+          frameOut(JSON.stringify({ id: message.id, error: { code: -32602, message: "Side chat policy missing from Turn" } }));
+          return;
+        }
+        const turn: EngineTurn = { id: crypto.randomUUID(), status: "inProgress", inputId: clientUserMessageId };
+        const abort = new AbortController();
+        nativeStreams.set(turn.id, abort);
+        agent.provisionalCodexThreads.delete(threadId);
+        agent.turns.set(threadId, [...(agent.turns.get(threadId) ?? []), turn]);
+        if (this.holdNextCodexTurnReply) {
+          this.holdNextCodexTurnReply = false;
+          return;
+        }
+        const notify = (method: string, params: object) => {
+          if (nativeSubscriptions.has(threadId)) frameOut(JSON.stringify({ method, params }));
+        };
+        notify("turn/started", { threadId, turn });
+        frameOut(JSON.stringify({ id: message.id, result: { turn } }));
+        if (input.some((item: { text: string }) => item.text === "test-native-approval")) {
+          const id = `approval:${turn.id}`;
+          pendingApprovals.set(id, { threadId, turn, lane: nativeLane });
+          frameOut(JSON.stringify({ id, method: "item/commandExecution/requestApproval",
+            params: { threadId: "foreign-thread", turnId: turn.id, itemId: "foreign-approval" } }));
+          offerApproval(id, threadId, turn.id);
+          return;
+        }
+        const stream = async () => {
+          try {
+            const origin = instance.options.env?.OPENCRAFT_CODEX_EGRESS_ORIGIN;
+            const provider = instance.options.env?.OPENCRAFT_CODEX_EGRESS_PROVIDER;
+            const intercept = this.#modelEgress;
+            if (!origin || !provider || !intercept || new URL(origin).hostname !== intercept.host)
+              throw new Error("No model intercept");
+            const response = await intercept.entry.fetch(new Request(
+              new URL("/__opencraft_egress/" + encodeURIComponent(provider) + "/responses", origin),
+              { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer container-token" },
+                signal: abort.signal, body: JSON.stringify({ model: "m", input, stream: true }) },
+            ));
+            if (!response.ok || !response.body) throw new Error("Invalid model response");
+            const reader = response.body.getReader();
+            if (abort.signal.aborted) return void await reader.cancel();
+            abort.signal.addEventListener("abort", () => void reader.cancel().catch(() => {}), { once: true });
+            const utf8 = new TextDecoder();
+            let partial = "";
+            const itemId = `command:${turn.id}`;
+            const itemScope = { threadId, turnId: turn.id };
+            const command = {
+              type: "commandExecution", id: itemId, command: "printf fixture", cwd: "/workspace",
+              source: "agent", status: "inProgress", processId: "native-pty",
+              commandActions: [{ type: "unknown", command: "printf fixture" }],
+            };
+            if (clientUserMessageId === "once") {
+              notify("item/started", { ...itemScope, threadId: "foreign-thread", startedAtMs: 1000, item: command });
+              notify("item/started", { ...itemScope, startedAtMs: 1000, item: command });
+              notify("item/commandExecution/outputDelta", { ...itemScope, turnId: "foreign-turn", itemId, delta: "foreign" });
+              notify("item/commandExecution/outputDelta", { ...itemScope, itemId, delta: "fixture output\n" });
+              const reasoning = { ...itemScope, itemId: "reasoning", delta: "Checking workspace" };
+              notify("item/reasoning/summaryTextDelta", { ...reasoning, summaryIndex: 1_000_000 });
+              notify("item/reasoning/summaryTextDelta", { ...reasoning, summaryIndex: 0 });
+              const plan = { ...itemScope, explanation: null, plan: [{ step: "Check workspace", status: "completed" }] };
+              notify("turn/plan/updated", { ...plan, turnId: "foreign-turn" });
+              notify("turn/plan/updated", plan);
+              const patch = { ...itemScope, itemId: "file-change", changes: [
+                { path: "result.txt", kind: { type: "add" }, diff: "+updated\n" },
+              ] };
+              notify("item/fileChange/patchUpdated", { ...patch, threadId: "foreign-thread" });
+              notify("item/fileChange/patchUpdated", patch);
+              const usage = { inputTokens: 8, cachedInputTokens: 0, cacheWriteInputTokens: 0,
+                outputTokens: 4, reasoningOutputTokens: 0, totalTokens: 12 };
+              notify("thread/tokenUsage/updated", { ...itemScope, tokenUsage: { last: usage, total: usage, modelContextWindow: 4096 } });
+            }
+            for (;;) {
+              const chunk = await reader.read();
+              if (chunk.done) break;
+              partial += utf8.decode(chunk.value, { stream: true });
+              let at: number;
+              while ((at = partial.indexOf("\n\n")) >= 0) {
+                const event = partial.slice(0, at);
+                partial = partial.slice(at + 2);
+                const data = event.split("\n").find((line) => line.startsWith("data: "));
+                if (!data) continue;
+                const value = JSON.parse(data.slice(6));
+                if (value.type === "response.output_text.delta") {
+                  notify("item/agentMessage/delta", { threadId: "foreign-thread", turnId: turn.id, itemId: "message", delta: "foreign" });
+                  notify("item/agentMessage/delta", { threadId, turnId: turn.id, itemId: "message", delta: value.delta });
+                }
+              }
+            }
+            if (!abort.signal.aborted) {
+              if (clientUserMessageId === "once") notify("item/completed", {
+                ...itemScope, completedAtMs: 1100,
+                item: { ...command, status: "completed", aggregatedOutput: "fixture output\n", exitCode: 0, durationMs: 100 },
+              });
+              turn.status = "completed";
+            }
+          } catch {
+            if (!abort.signal.aborted) turn.status = "failed";
+          } finally {
+            nativeStreams.delete(turn.id);
+            if (!abort.signal.aborted) notify("turn/completed", { threadId, turn });
+          }
+        };
+        void stream().catch(() => {});
+        return;
+      }
       const turnsOf = (threadId: string) => agent.turns.get(threadId) ?? [];
+      if (name === "codex-native" && ["thread/turns/list", "thread/items/list"].includes(message.method)) {
+        const { threadId, turnId, limit, cursor, sortDirection, itemsView } = message.params;
+        const turns = message.method === "thread/turns/list";
+        if (agent.provisionalCodexThreads.has(threadId)) {
+          frameOut(JSON.stringify({ id: message.id, error: { code: -32600,
+            message: `thread ${threadId} is not materialized yet; ${message.method} is unavailable before first user message` } }));
+          return;
+        }
+        if (!turns && agent.codexHistoryModes.get(threadId) !== "paginated") {
+          frameOut(JSON.stringify({ id: message.id, error: { code: -32601, message: "thread/items/list is not supported yet" } }));
+          return;
+        }
+        const items = (turn: EngineTurn) => [...(turn.inputId ? [{ id: "user-" + turn.id, type: "userMessage",
+          clientId: turn.inputId }] : []), ...(turn.steered ?? [])];
+        const all = turns ? turnsOf(threadId).map(turn => ({ id: turn.id, status: turn.status, itemsView,
+          items: itemsView === "notLoaded" ? [] : items(turn) }))
+          : turnsOf(threadId).filter(turn => turnId === undefined || turn.id === turnId)
+            .flatMap(turn => items(turn).map(item => ({ turnId: turn.id, item })));
+        if (sortDirection === "desc") all.reverse();
+        const offset = cursor === null ? 0 : Number(cursor);
+        const data = all.slice(offset, offset + limit);
+        if (this.oversizedNextCodexPage) {
+          this.oversizedNextCodexPage = false;
+          const header = new Uint8Array(10);
+          header.set([0x81, 127]);
+          new DataView(header.buffer).setBigUint64(2, BigInt(4 * 1024 * 1024 + 1));
+          peer.send(header);
+          return;
+        }
+        frameOut(JSON.stringify({ id: message.id, result: {
+          data, nextCursor: offset + limit < all.length ? String(offset + limit) : null,
+          backwardsCursor: data.length ? String(offset) : null,
+        } }));
+        return;
+      }
       const result =
         message.method === "initialize"
-          ? { userAgent: "engine-host-double" }
+          ? { userAgent: name === "codex-native" ? "codex-double" : "engine-host-double" }
+          : message.method === "model/list"
+            ? { data: ["m", "not-configured"].map(model => ({ id: model, model, displayName: model,
+                inputModalities: ["text"], isDefault: model === "m", supportedReasoningEfforts: [], defaultReasoningEffort: null })),
+                nextCursor: null }
           : message.method === "thread/turns/list"
             ? { data: turnsOf(message.params.threadId).slice(-1).reverse() }
-            : message.method === "thread/read"
+            : (message.method === "thread/read" || message.method === "thread/resume")
               ? {
+                  ...(message.method === "thread/resume" ? codexThreadSettings : {}),
                   thread: {
                     id: message.params.threadId,
-                    turns: turnsOf(message.params.threadId).map((turn) => ({
+                    cwd: "/workspace",
+                    ...agent.threadProjects.get(message.params.threadId),
+                    name: agent.codexThreadNames.get(message.params.threadId),
+                    historyMode: agent.codexHistoryModes.get(message.params.threadId),
+                    forkedFromId: agent.forkOrigins.get(message.params.threadId) ?? null,
+                    ephemeral: false,
+                    status: { type: "idle" },
+                    turns: (message.params.excludeTurns ? [] : turnsOf(message.params.threadId)).map((turn) => ({
                       id: turn.id,
                       status: turn.status,
-                      items: turn.inputId ? [{ type: "userMessage", clientId: turn.inputId }] : [],
+                      items: [...(turn.inputId ? [{ type: "userMessage", clientId: turn.inputId }] : []), ...(turn.steered ?? [])],
                     })),
                   },
                 }
               : undefined;
-      frameOut(
-        JSON.stringify(
-          result === undefined
-            ? { id: message.id, error: { code: -32601, message: "missing" } }
-            : { id: message.id, result },
-        ),
+      const reply = JSON.stringify(
+        result === undefined
+          ? { id: message.id, error: { code: -32601, message: "missing" } }
+          : { id: message.id, result },
       );
+      if (name === "codex-native" && message.method === "thread/read" && this.#codexReadGate) {
+        void this.#codexReadGate.promise.then(() => frameOut(reply)).catch(() => {});
+      } else frameOut(reply);
     };
     const frames = () => {
       for (;;) {
@@ -463,7 +1082,12 @@ export class ContainerDouble implements DurableObjectContainer {
         );
         if (headers.get("upgrade")?.toLowerCase() === "websocket") {
           const url = new URL(target!, "http://engine.invalid");
-          if (url.searchParams.get("token") !== agent.token) return respond(401, { error: "unauthorized" });
+          if (name === "codex-native") {
+            if (url.pathname !== "/") return respond(400, { error: "invalid_native_endpoint" });
+            nativeLane = url.searchParams.get("opencraftLane") ?? "";
+            this.served.push(nativeLane ? `codex lane ${nativeLane}` : "codex one-shot connection");
+          } else if (url.searchParams.get("token") !== agent.token)
+            return respond(401, { error: "unauthorized" });
           socket = true;
           buffer = buffer.slice(encoder.encode(text.slice(0, headEnd + 4)).byteLength);
           void crypto.subtle

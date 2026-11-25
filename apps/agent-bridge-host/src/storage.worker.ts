@@ -3,11 +3,12 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { createHash } from 'node:crypto';
 import { openManagedDatabase, acquireProcessWriter, sqliteTransaction, nodeSqlDatabase } from '@opencraft/sqlite-node';
-import { projectToAppServer, assemble, createAssemblerState, type AssemblerState, type CanonicalInputState } from '@opencraft/agent-bridge-assembler';
+import { assemble, createAssemblerState, type AssemblerState, type CanonicalInputState } from '@opencraft/agent-bridge-assembler';
 import { BRIDGE_THREAD_NOTIFICATIONS, parseThreadDeltaParams } from '@opencraft/agent-bridge-protocol';
 import { ThreadQueueStore } from '@opencraft/thread-queue';
 import { migrations } from './migrations.js';
-import type { Receipt, Generation, OutboxEvent } from './types.js';
+import { BridgeInboxRefusal, createBridgeInboxStore } from './inbox-store.js';
+import type { Receipt, Generation, OutboxEvent, OutboxFence } from './types.js';
 /** Commands that bring a Thread route into existence, and that end its native session. */
 const CREATES: readonly string[] = ['session/create', 'session/fork', 'session/adopt'];
 const ENDS: readonly string[] = ['session/close', 'session/delete'];
@@ -29,13 +30,16 @@ class Refusal extends Error {}
 const require = (condition: unknown, message: string): void => { if (!condition) throw new Refusal(message); };
 let failed = false;
 if (workerData.role === 'host') tx(() => {
+  run("INSERT OR IGNORE INTO meta VALUES ('outbox-id',lower(hex(randomblob(16))))");
   setMeta('epoch', Number(meta('epoch')) + 1);
   run("UPDATE commands SET state='unknown' WHERE state='dispatching'");
   run("UPDATE automation_scripts SET state='unknown' WHERE state IN ('admitted','running')");
 });
+const sql = nodeSqlDatabase(db);
+const inbox = createBridgeInboxStore(sql);
 // Queued follow-up input of bridge Threads, keyed by Host route. Inputs left
 // mid-dispatch by the previous process become unknown, as commands do.
-const queue = workerData.role === 'host' ? new ThreadQueueStore(nodeSqlDatabase(db)) : null;
+const queue = workerData.role === 'host' ? new ThreadQueueStore(sql) : null;
 const QUEUE_METHODS = new Set(['add', 'list', 'find', 'findByClientId', 'firstAwaitingAdmission', 'update', 'delete', 'reorder', 'claim', 'settle',
   'requestRetry', 'resumeRequestedRetry', 'discardUnknown', 'discardThread', 'recordInput', 'finishTurn', 'receipt', 'pendingThreads', 'maintenanceCounts', 'interruptExecution']);
 const receipt = (id: string): Receipt | null => {
@@ -43,8 +47,13 @@ const receipt = (id: string): Receipt | null => {
   return row ? { commandId: row.id, digest: row.digest, epoch: row.epoch, route: row.route, generation: row.generation, method: row.method, state: row.state,
     ...(row.response ? { response: JSON.parse(row.response) } : {}) } : null;
 };
-const events = (table: 'outbox' | 'inbox', cursor: number, limit = 256): OutboxEvent[] => all(`SELECT * FROM ${table} WHERE seq>? ORDER BY seq LIMIT ?`, cursor, limit)
-  .map(row => ({ ...row, payload: JSON.parse(row.payload), ...(row.projection ? { projection: JSON.parse(row.projection) } : {}) }));
+const events = (cursor: number, limit: number): OutboxEvent[] => all('SELECT * FROM outbox WHERE seq>? ORDER BY seq LIMIT ?', cursor, limit)
+  .map(row => ({ ...row, payload: JSON.parse(row.payload) }));
+const outboxFence = (): OutboxFence => ({
+  outboxId: meta('outbox-id'),
+  acknowledged: Number(meta('ack')),
+  high: Number(get("SELECT coalesce((SELECT seq FROM sqlite_sequence WHERE name='outbox'),0) AS high").high),
+});
 const checkpoint = (route: string): AssemblerState => {
   const row = get('SELECT state FROM checkpoints WHERE route=?', route);
   return row ? JSON.parse(row.state) : createAssemblerState(1);
@@ -152,6 +161,10 @@ const operations: Record<string, (args: any) => any> = {
     return { receipt: receipt(command.commandId), fresh: true };
   }),
   observationRoute: ({ route }: any) => ({ generation: get('SELECT generation FROM routes WHERE route=?', route)?.generation ?? null, epoch: Number(meta('epoch')) }),
+  restorableRoutes: ({ generation }: any) => all(
+    'SELECT routes.route FROM routes JOIN native_sessions USING(route) WHERE routes.generation=? AND native_sessions.restorable=1',
+    generation,
+  ).map(row => row.route),
   threadState: ({ route }: any) => ({ state: checkpoint(route), nativeSession: get('SELECT * FROM native_sessions WHERE route=?', route) ?? null }),
   query: ({ id }: any) => receipt(id),
   dispatch: ({ id }: any) => tx(() => {
@@ -214,14 +227,17 @@ const operations: Record<string, (args: any) => any> = {
     }
     run('INSERT INTO callbacks VALUES (?,?,?)', generation, id, digest);
   }),
-  events: ({ cursor, limit }: any) => {
-    require(Number.isSafeInteger(cursor) && cursor >= Number(meta('ack')), 'Cursor is before acknowledged retention');
+  events: ({ cursor, limit, fenced = false }: { cursor: number; limit: number; fenced?: boolean }) => {
+    const fence = outboxFence();
+    require(Number.isSafeInteger(cursor) && cursor >= fence.acknowledged && cursor <= fence.high, 'Cursor is outside retained outbox');
     require(Number.isSafeInteger(limit) && limit > 0 && limit <= 256, 'Invalid page limit');
-    return events('outbox', cursor, limit);
+    const batch = events(cursor, limit);
+    return fenced ? { ...fence, events: batch } : batch;
   },
-  ack: ({ cursor }: any) => tx(() => {
-    const high = Number(get("SELECT coalesce((SELECT seq FROM sqlite_sequence WHERE name='outbox'),0) AS high").high);
-    require(Number.isSafeInteger(cursor) && cursor >= Number(meta('ack')) && cursor <= high, 'Invalid acknowledgement');
+  ack: ({ cursor, outboxId }: { cursor: number; outboxId?: string }) => tx(() => {
+    const fence = outboxFence();
+    require(outboxId === undefined || outboxId === fence.outboxId, 'Outbox identity changed');
+    require(Number.isSafeInteger(cursor) && cursor >= fence.acknowledged && cursor <= fence.high, 'Invalid acknowledgement');
     setMeta('ack', cursor); run('DELETE FROM outbox WHERE seq<=?', cursor);
   }),
   abandon: ({ route, id }: any) => tx(() => {
@@ -247,26 +263,9 @@ const operations: Record<string, (args: any) => any> = {
     require(!get('SELECT 1 FROM outbox WHERE generation=?', id), 'Generation events remain unacknowledged');
     run('UPDATE generations SET retired=1 WHERE id=?', id);
   }),
-  inbox: ({ batch }: { batch: OutboxEvent[] }) => tx(() => {
-    let cursor = Number(meta('ack'));
-    const inserted: OutboxEvent[] = [];
-    for (const row of batch) {
-      if (row.seq <= cursor) {
-        const old = get('SELECT * FROM inbox WHERE seq=?', row.seq);
-        require(old && old.route === row.route && old.generation === row.generation && old.payload === JSON.stringify(row.payload), 'Conflicting replay');
-        continue;
-      }
-      require(row.seq === cursor + 1, 'Outbox sequence gap');
-      const payload = row.payload as any;
-      const projection = payload?.kind === 'canonical'
-        ? projectToAppServer([{ ...payload.event, threadId: JSON.parse(row.route)[1] }], { steerEvidenceDeclared: false, schemaVersion: 1 }) : [];
-      run('INSERT INTO inbox VALUES (?,?,?,?,?)', row.seq, row.route, row.generation, JSON.stringify(row.payload), JSON.stringify(projection));
-      cursor = row.seq; inserted.push(row);
-    }
-    setMeta('ack', cursor); return { cursor, inserted };
-  }),
-  inboxRead: ({ cursor = 0 }: any) => events('inbox', cursor),
-  cursor: () => Number(meta('ack')),
+  inbox: ({ batch }: { batch: OutboxEvent[] }) => inbox.apply(batch),
+  inboxRead: ({ cursor = 0 }: { cursor?: number }) => inbox.read(cursor),
+  cursor: () => inbox.cursor(),
   close: () => { db.close(); release(); },
 };
 parentPort!.on('message', ({ id, op, args }) => {
@@ -277,7 +276,7 @@ parentPort!.on('message', ({ id, op, args }) => {
     parentPort!.postMessage({ id, value });
   } catch (error) {
     // Report the original failure: closing an already closed database must not replace it.
-    if (!(error instanceof Refusal)) { failed = true; try { if (db.isOpen) db.close(); } catch { /* keep the original */ } try { release(); } catch { /* keep the original */ } }
+    if (!(error instanceof Refusal || error instanceof BridgeInboxRefusal)) { failed = true; try { if (db.isOpen) db.close(); } catch { /* keep the original */ } try { release(); } catch { /* keep the original */ } }
     parentPort!.postMessage({ id, error: error instanceof Error ? error.message : 'Storage failure', fatal: failed });
   }
 });

@@ -297,6 +297,8 @@ Generation Router 只在 systemd 完整发布装配中运行，用于 Codex 引�
 
 本节对所有 provider 成立（§3.6 规则）：领域代码只看能力声明，不判断是 Docker、E2B 还是 Cloudflare。
 
+Cloudflare Codex 工作区可由运维显式休眠，也可由 WorkspaceHost 的 alarm 在空闲时休眠。WorkspaceRuntime 通过沙盒池捕获、提交快照引用，再停止原环境。捕获或提交失败时保留运行中的容器。新用量通过现有放置入口恢复同一镜像的快照，资源约束与新建相同，并产生新化身。本路径只保护已写入磁盘的原生历史。周期性捕获、跨镜像迁移和下述 Git 对账仍属目标设计。
+
 #### 3.7.1 持久化契约
 
 - **Git 是工作区内容的持久真源。** 已提交并推送到工作区登记远端的内容是唯一保证存活的工作区内容；容器／沙盒（含其磁盘、卷与 `CODEX_HOME` 之外的工作目录）是**可重建缓存**。Docker、E2B、Cloudflare 同一语义。
@@ -344,9 +346,9 @@ interface SandboxBackend {
   2. 没有附着的端点连接（本地监听或 WH DO 上的客户端连接，含已附着终端；断开的终端会话不阻止休眠，休眠结束其 PTY，与化身变化一致）；
   3. 没有在空闲时长内到期的 owner 唤醒：中断恢复无待处理行，provider 重试无在窗口内到期的 `waiting` 行，定时任务的下一次到期不早于判定时刻＋空闲时长。
 - **休眠不影响唤醒。** 定时任务、中断恢复、provider 重试的 `OwnerWakeTimer`（§4.3）都在 WH 侧（Node owner 定时器／DO alarm），不在容器内，因此环境休眠后照常到期。到期推进需要引擎时，经 `WorkspaceRuntime.connect` 按需打开环境：先 `attach(receipt)`（E2B 的 `Sandbox.connect` 恢复已暂停实例；Docker 启动已停止容器；Cloudflare 在 DO 内重新 `start`），失败则按 3.7.1 恢复快照或新建。化身是否变化由 agent `control` 报告决定，不按 provider 类型推断（E2B pause／resume 可能保持同一化身，Docker stop／start 与 Cloudflare 重启必为新化身）。空闲判定本身也用同一唤醒端口的一个 owner 定时器。
-- **provider 映射**（`sleep` 的实现）：Docker（`docker-provisioner`）`docker stop`，卷保留；E2B `pause`；Cloudflare 由 WH DO 先按需捕获快照再停止容器，同时把容器 inactivity timeout 设为同一空闲时长作为兜底，且**每次 DO 构造都重设**（重启后不保留）。兜底停止或平台早停（探测中单样本早于设定）都走"环境丢失"路径，不影响正确性。常驻在 Cloudflare 上要求 WH DO 保持挂起的 `monitor()`，费用见 §3.6 探测结论（约 75 美元／月）。
+- **provider 映射**（`sleep` 的实现）：Docker（`docker-provisioner`）`docker stop`，卷保留；E2B `pause`；Cloudflare 由 WH DO 停止容器。配置快照的 Codex 工作区先提交快照引用，再停止容器。其他空闲工作区可用容器 inactivity timeout 兜底，并在每次 DO 构造时重设。兜底停止或平台早停都走环境丢失路径。
 - DO 只有一个 alarm：WH DO 把定时任务、中断恢复、provider 重试与空闲判定的唤醒合并到最早时刻，这是 DO 适配器的义务，领域代码仍各自持有 `OwnerWakeTimer`。
-- **实现现状（2026-11-24）。** Cloudflare WH DO 已按本节判定空闲（无对外端点连接、无恢复中的行、引擎上报无进行中 Turn，判定自身的读取不算使用），经 `WorkspaceRuntime.sleep()` 停止容器，空闲、中断恢复与租约续期共用对象 alarm，`OPENCRAFT_WORKSPACE_IDLE=resident` 为常驻（[cloudflare-deployment §5.7](cloudflare-deployment.md#57-workspacehost-状态)）。快照捕获、定时任务与 provider 重试的空闲条件、Node WH 的空闲判定未实现。
+- **实现现状（2026-11-24）。** Cloudflare WH DO 已按本节判定空闲（无对外端点连接、无恢复中的行、引擎上报无进行中 Turn，判定自身的读取不算使用），经 `WorkspaceRuntime.sleep()` 停止容器，空闲、中断恢复与租约续期共用对象 alarm，`OPENCRAFT_WORKSPACE_IDLE=resident` 为常驻（[cloudflare-deployment §5.7](cloudflare-deployment.md#57-workspacehost-状态)）。启用 Codex 快照时，空闲期限跨 DO 驱逐保留，关停与显式休眠共用快照路径。定时任务与 provider 重试的空闲条件、Node WH 的空闲判定属于后续工作。
 
 ## 4. Codex Host 状态拆分
 
@@ -546,7 +548,7 @@ $DATA/workspaces/<id>/brain/ 容器私有：codex/runtime（CODEX_HOME）、agen
 2. **agent 侧进程回收**（broker 承载的进程已满足：每个 exec 都是读控制输入的 broker，句柄丢失即 EOF→killpg；`workspace-agent` 在 link／端点连接结束时回收其直接子进程仍未做）：DO 重置时 exec 的 stdin 不一定 EOF（不读 stdin 的进程成孤儿），`workspace-agent` 在 link／端点连接结束时主动回收对应进程 session，不依赖 stdin EOF。
 3. **对已退出进程 kill 的防护**（Cloudflare backend 已实现：只对 `exitCode` 未落定的 exec 发信号；broker 内 killpg 的 PID 复用检查未改）：kill 前确认进程仍属同一 session 且未退出，已退出即视为终止已确认，避免误杀 PID 复用的进程或把已退出报告为清理失败。
 4. **可选原生 `connectEndpoint(target)`**（未做：契约无该位置，中继已满足一致性套件）：backend 能直接连接容器内端点时优先于中继（Cloudflare 原始 TCP：agent 在一个端口上按连接前导行路由到对应 UDS）；不能连接时回退中继，语义（背压、半关闭、无重放）相同。
-5. **每次 DO 重启重设 inactivity timeout**（§3.7.2），并在构造中按化身比对 `attach`（已实现：backend 初始化、start、attach 时设置；`armCloudflareContainerTimeout` 供 DO 构造调用；attach 按标签＋boot id＋placement 比对）。
+5. **每次 DO 重启重设已配置的 inactivity timeout**（§3.7.2），并在构造中按化身比对 `attach`（已实现：backend 初始化、start、attach 时设置；`armCloudflareContainerTimeout` 供 DO 构造调用；attach 按标签＋boot id＋placement 比对）。
 
 补充步骤（Generation Router 的后继，排在第 7 步之后）：WorkspaceHost 固定工作区容器镜像版本，升级时新 Thread 使用新镜像、旧容器排空后退役；验收覆盖进行中 Turn 不被中断、未确认输入不重放、故障停止（见 3.5 节）。
 

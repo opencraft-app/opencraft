@@ -5,6 +5,24 @@ export const OPENCRAFT_TERMINAL_RESTORE_EXTENSION = "opencraft/terminal-restore"
 /** Host/Hands terminal capability, independent of the selected engine. */
 export const OPENCRAFT_TERMINAL_EXTENSION = "opencraft/terminal";
 
+export function supportsTerminalDraftScope(extensions: Readonly<Record<string, unknown>> | null | undefined): boolean {
+  const capability = extensions?.[OPENCRAFT_TERMINAL_EXTENSION];
+  return typeof capability === "object" && capability !== null &&
+    "version" in capability && capability.version === 1 &&
+    "draftScopeOnThreadStart" in capability && capability.draftScopeOnThreadStart === true;
+}
+
+export function isTerminalResourceScopeId(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 512 && !/[\x00-\x1f\x7f]/u.test(value);
+}
+export const HOST_TERMINAL_METHODS = [
+  "process/spawn", "process/attach", "process/list", "process/writeStdin", "process/resizePty", "process/kill",
+] as const satisfies readonly (keyof AppServerProcessMethodMap)[];
+
+export function isHostTerminalMethod(method: string): method is typeof HOST_TERMINAL_METHODS[number] {
+  return (HOST_TERMINAL_METHODS as readonly string[]).includes(method);
+}
+
 /** Admission alone is not feature support. Legacy native servers lack attach/list. */
 export function supportsTerminalMethod(
   extensions: Readonly<Record<string, unknown>> | null | undefined,

@@ -103,7 +103,7 @@
     "serve:web:static": "node scripts/dev/serve-workbench-web-cli.mjs",
     "package:headless:linux:amd64": "node scripts/packaging/package-headless-linux.mjs",
     "package:container": "node scripts/packaging/package-container.mjs",
-    "test:container": "node --import tsx --test tests/server/container-deployment.test.mjs tests/server/environment-issuer-supervision.test.mjs tests/server/hands-owner-roles.test.mjs tests/server/hands-owner-privileges.test.mjs tests/server/root-hands.test.mjs tests/server/container-service.test.mjs tests/server/upgrade-environment.test.mjs tests/server/workspace-agent.test.mjs tests/server/gateway-workspace.test.mjs tests/server/gateway-composition-vfs.test.mjs tests/server/runtime-plugin-executor.test.mjs tests/server/docker-provisioner.test.mjs",
+    "test:container": "node --import tsx --test tests/server/container-deployment.test.mjs tests/server/model-proxy-service.test.mjs tests/server/environment-issuer-supervision.test.mjs tests/server/hands-owner-roles.test.mjs tests/server/hands-owner-privileges.test.mjs tests/server/root-hands.test.mjs tests/server/container-service.test.mjs tests/server/upgrade-environment.test.mjs tests/server/workspace-agent.test.mjs tests/server/gateway-workspace.test.mjs tests/server/gateway-composition-vfs.test.mjs tests/server/runtime-plugin-executor.test.mjs tests/server/docker-provisioner.test.mjs",
     "smoke:container": "node scripts/smoke/server/smoke-container.mjs",
     "smoke:upgrade:environment": "node scripts/smoke/server/smoke-upgrade-environment.mjs",
     "smoke:upgrade": "node scripts/smoke/server/smoke-upgrade.mjs",
@@ -251,9 +251,10 @@
     "test:storage-ports": "tsx --test tests/storage/sql-port-node.test.ts tests/storage/state-documents.test.ts tests/storage/storage-ports-node.test.ts tests/storage/account-pool-sql-port.test.ts tests/storage/account-pool-sql-owner.test.ts tests/storage/credential-egress.test.ts tests/storage/workspace-host-sql-port.test.ts tests/storage/account-core-ports.test.ts tests/storage/sql-migration-families.test.ts tests/storage/model-gateway-sql-port.test.ts",
     "test:storage-ports:workerd": "tsx --test tests/storage/storage-ports-workerd.test.ts tests/storage/conversation-resources-workerd.test.ts tests/storage/deployment-stores-workerd.test.ts tests/storage/installation-stores-workerd.test.ts tests/storage/workspace-stores-workerd.test.ts tests/storage/extension-stores-workerd.test.ts",
     "cf:rehearsal": "node --use-env-proxy --import tsx scripts/cloudflare/rehearsal.ts",
+    "cf:preview": "python3 scripts/cloudflare/preview-lock.py",
     "test:installation-core:workerd": "tsx --test tests/storage/installation-core-workerd.test.ts tests/storage/installation-core-do-workerd.test.ts",
     "test:account-core:workerd": "tsx --test tests/storage/account-core-do-workerd.test.ts",
-    "test:client-do:workerd": "tsx --test tests/protocol/client-do-workerd.test.ts",
+    "test:client-do:workerd": "tsx --test tests/protocol/client-do-workerd.test.ts tests/protocol/client-admission-workerd.test.ts tests/protocol/thread-placement-workerd.test.ts",
     "test:relay-hub:workerd": "tsx --test tests/protocol/relay-hub-workerd.test.ts",
     "test:workspace-host:workerd": "tsx --test tests/storage/workspace-host-workerd.test.ts tests/storage/workspace-host-do-workerd.test.ts",
     "test:login-entry:workerd": "tsx --test tests/identity/login-entry-workerd.test.ts",
@@ -404,6 +405,7 @@
     "ws": "^8.23.0",
     "@typescript-eslint/eslint-plugin": "8.73.0",
     "prettier": "3.10.1",
+    "mime-types": "3.0.2",
     "miniflare": "4.20260730.0"
   },
   "overrides": {

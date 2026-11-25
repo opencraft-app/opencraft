@@ -1,4 +1,4 @@
-import { createWorkbenchChunkGroups, type WorkbenchChunkGroupOptions } from "./code-splitting-groups.vite";
+import { createWorkbenchChunkGroups, startupChunking, type WorkbenchChunkGroupOptions } from "./code-splitting-groups.vite";
 import { resolveWorkbenchPresentation, type WorkbenchPresentationOptions } from "./src/workbench-presentation";
 import browserslistToEsbuild from "browserslist-to-esbuild";
 import { browserTargets } from "../../config/browser-compatibility.mjs";
@@ -69,6 +69,8 @@ export function createWorkbenchWebConfig(
   const includeBuiltinAgentsPlugin = isElectronRenderer || (features.builtinAgents ?? true);
   const includeHeadlessModelServices = process.env.OPENCRAFT_HEADLESS_SERVER_BUILD === "true";
   const releaseMinification = process.env.OPENCRAFT_RELEASE_MINIFY === "standard";
+  const startupChunks = releaseMinification && !isElectronRenderer && !isEmbeddedWorkbenchBuild
+    ? startupChunking(features.startupResourcePolicy) : undefined;
   if (includeHeadlessModelServices) {
     let hosts: unknown;
     try { hosts = JSON.parse(process.env.VITE_APPSERVER_HOSTS_JSON ?? "null"); }
@@ -399,8 +401,9 @@ export function createWorkbenchWebConfig(
       )] : []),
       releaseMetadata(webRelease),
       productPublicAssets(workspaceRoot, process.env.OPENCRAFT_PRODUCT_PUBLIC_DIR),
+      ...(startupChunks ? [startupChunks.plugin] : []),
       ...(!isElectronRenderer ? [startupResources(features.startupResourcePolicy)] : []),
-      ...(!isElectronRenderer && !isEmbeddedWorkbenchBuild ? [startupResourceHints(features.startupResourcePolicy)] : []),
+      ...(!isElectronRenderer && !isEmbeddedWorkbenchBuild ? [startupResourceHints(features.startupResourcePolicy, !!startupChunks)] : []),
       ...(!isElectronRenderer && !isEmbeddedWorkbenchBuild ? [optionalWebAssets()] : []),
       ...(!isEmbeddedWorkbenchBuild ? [previewBridgeAsset()] : []),
       ...(!isElectronRenderer && !isEmbeddedWorkbenchBuild ? [offlineShell(webRelease.buildId)] : []),
@@ -525,13 +528,16 @@ export function createWorkbenchWebConfig(
           // Explicit groups can create chunk cycles; preserve source ESM order.
           strictExecutionOrder: true,
           // Isolate stable third-party runtime from application/plugin hash churn.
-          codeSplitting: { groups: createWorkbenchChunkGroups(features) },
+          codeSplitting: { groups: createWorkbenchChunkGroups(features, startupChunks?.group) },
           entryFileNames: releaseMinification ? "assets/a-[hash].js" : "assets/[name]-[hash].js",
+          // Shared chunks can be named after many consumers. Keep a readable
+          // prefix without repeating the entire consumer list in each import.
+          chunkFileNames: releaseMinification ? "assets/a-[hash].js"
+            : ({ name }) => `assets/${name.slice(0, 40)}-[hash].js`,
           ...(releaseMinification ? {
           // Hardened releases expose only opaque content identities. Human
           // chunk/module names remain available in source builds and private
           // observability metadata, never in the public asset topology.
-          chunkFileNames: "assets/a-[hash].js",
           assetFileNames: "assets/a-[hash][extname]",
           } : {}),
         },

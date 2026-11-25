@@ -1,10 +1,9 @@
 import React from "react";
-import type { ConversationRecoveryDiagnostic } from "../runtime/conversation-recovery-diagnostic";
+import type { AppServerWorkbenchSnapshot } from "@opencraft/workbench-runtime";
 import { Button } from '@opencraft/design-system-web/button';
 import { FormattedMessage } from "@opencraft/i18n/react";
 
 
-import { type ConversationRecoveryPresentation } from "@opencraft/chat-core";
 export { conversationRecoveryPresentation, type ConversationRecoveryPresentation } from "@opencraft/chat-core";
 export type ConversationUnavailableReason = "archived" | "not-found";
 
@@ -18,40 +17,17 @@ export function conversationArchivePresentation(
   return { showHistory: true, banner: "none" };
 }
 
-/** Initial connection/history loading is routine, not evidence of instability. */
-export function conversationRecoveryIsUnstable(
-  presentation: ConversationRecoveryPresentation,
-  diagnostic?: ConversationRecoveryDiagnostic,
-): boolean {
-  if (presentation === "none") return false;
-  return presentation.endsWith("-error")
-    || diagnostic?.runtime === "reconnecting"
-    || diagnostic?.recovery !== undefined
-    || diagnostic?.progress?.lastFailure !== undefined;
-}
-
-/** Intermediate errors can still belong to an active automatic retry. */
-export function conversationRecoveryIsPending(
-  presentation: ConversationRecoveryPresentation,
-  diagnostic?: ConversationRecoveryDiagnostic,
-  requiresUpdate = false,
-): boolean {
-  if (presentation === "none" || requiresUpdate) return false;
-  const stage = diagnostic?.progress?.stage;
-  if (stage === "failed" || stage === "blocked") return false;
-  if (presentation.endsWith("-loading")) return true;
-  return stage !== undefined;
-}
-
-/** Host recovery also paints before a Thread lease exists or while cached history is retained. */
-export function connectionRecoveryIsPending(
-  phase: string,
-  diagnostic?: ConversationRecoveryDiagnostic,
-  requiresUpdate = false,
-): boolean {
-  if (requiresUpdate) return false;
-  if (phase === "connecting" || phase === "reconnecting") return true;
-  return phase === "error" && conversationRecoveryIsPending("cold-error", diagnostic);
+/** Use Host-owned progress even when the conversation has its own recovery in flight. */
+export function composerConnectionFeedback(
+  { phase, recovery }: Pick<AppServerWorkbenchSnapshot, "phase" | "recovery">,
+  requiresAction = false,
+) {
+  const stage = recovery?.stage;
+  return {
+    warning: phase === "reconnecting" || phase === "error",
+    pending: !requiresAction && (phase === "connecting" || phase === "reconnecting"
+      || (phase === "error" && stage !== undefined && stage !== "failed" && stage !== "blocked")),
+  };
 }
 
 function ClientUpdateRequired() {

@@ -59,9 +59,9 @@ function submission(row: Record<string, unknown>): ExecutionSubmission {
   const p = row.principal_json === null ? null : JSON.parse(String(row.principal_json)) as ExecutionPrincipal;
   return { principal: p ? Object.freeze({ ...p }) : null, ownership: row.ownership as ExecutionSubmission["ownership"] };
 }
-const SELECT = `SELECT l.*,s.principal_json,s.ownership,s.admission FROM execution_leases l
+export const executionLeaseSelect = `SELECT l.*,s.principal_json,s.ownership,s.admission FROM execution_leases l
   JOIN execution_submissions s ON s.thread_id=l.thread_id AND s.input_id=l.input_id`;
-function lease(row: Record<string, unknown>): ExecutionLease {
+export function executionLeaseFromRow(row: Record<string, unknown>): ExecutionLease {
   return Object.freeze({ ...submission(row), threadId: String(row.thread_id), inputId: String(row.input_id),
     executionId: String(row.execution_id), generation: Number(row.generation), turnId: row.turn_id as string | null,
     engineIncarnation: row.engine_incarnation as string | null, admittedAtMs: Number(row.admitted_at_ms),
@@ -69,7 +69,7 @@ function lease(row: Record<string, unknown>): ExecutionLease {
 }
 function resolution(row: Record<string, unknown> | undefined): ExecutionLeaseResolution {
   if (!row || row.state === "pending" || row.state === "unknown" || row.ownership === "unknown" || row.admission !== "accepted") return { status: "unknown" };
-  const value = lease(row);
+  const value = executionLeaseFromRow(row);
   if (row.state !== "active") return { status: "expired", lease: value };
   return { status: row.ownership === "unowned" ? "unowned" : "active", lease: value };
 }
@@ -96,7 +96,7 @@ export class ExecutionLeaseReader {
    * this machine's Linux clock, another host (a WorkspaceHost Durable Object) supplies the container's. */
   constructor(database: SqlConnection, protected readonly bootClock: ExecutionBootClock = linuxBootClock) { this.db = sqlPort(database); }
   resolve(input: { threadId: string; executionId: string; generation?: number }): ExecutionLeaseResolution {
-    const row = this.db.prepare(`${SELECT} WHERE l.thread_id=? AND l.execution_id=?`).get(text(input.threadId), text(input.executionId));
+    const row = this.db.prepare(`${executionLeaseSelect} WHERE l.thread_id=? AND l.execution_id=?`).get(text(input.threadId), text(input.executionId));
     if (row && input.generation !== undefined && row.generation !== input.generation) return { status: "unknown" };
     return resolution(row);
   }
@@ -113,7 +113,7 @@ export class ExecutionLeaseReader {
       // Include the stored clock's own /proc/uptime quantization. Old rows and
       // another machine boot cannot silently downgrade to wall-clock matching.
       const margin=error+10;
-      const candidates=this.db.prepare(`${SELECT} WHERE l.thread_id=? AND l.boot_id=? AND l.state!='rejected'
+      const candidates=this.db.prepare(`${executionLeaseSelect} WHERE l.thread_id=? AND l.boot_id=? AND l.state!='rejected'
         AND l.admitted_at_boot_ms<=? AND (l.ended_at_boot_ms IS NULL OR l.ended_at_boot_ms>=?)`)
         .all(input.threadId,input.bootId,birth!+margin,birth!-margin);
       if (candidates.length!==1) return {status:"unknown"};
@@ -124,7 +124,7 @@ export class ExecutionLeaseReader {
         || candidate.ended_at_ms!==null && candidate.ended_at_boot_ms===null) return {status:"unknown"};
       return resolution(candidate);
     }
-    const rows = this.db.prepare(`${SELECT} WHERE l.thread_id=? AND l.state!='rejected' AND l.admitted_at_ms<=?
+    const rows = this.db.prepare(`${executionLeaseSelect} WHERE l.thread_id=? AND l.state!='rejected' AND l.admitted_at_ms<=?
       AND (l.ended_at_ms IS NULL OR l.ended_at_ms>=?)`).all(input.threadId, at + error, at - error);
     if (rows.length !== 1) return { status: "unknown" };
     const row = rows[0]!;

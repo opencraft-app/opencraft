@@ -1,4 +1,4 @@
-import { DEFAULT_SANDBOX_RESOURCES, FULL_SANDBOX_ENFORCEMENT, SandboxCreationFault, SandboxFault, type Sandbox, type SandboxBackend, type SandboxCommand, type SandboxEnvironment, type SandboxLoss, type SandboxPoolPolicy, type SandboxReceipt, type SandboxResources } from "./contract.js";
+import { DEFAULT_SANDBOX_RESOURCES, FULL_SANDBOX_ENFORCEMENT, SandboxCreationFault, SandboxFault, type Sandbox, type SandboxBackend, type SandboxCommand, type SandboxEnvironment, type SandboxLoss, type SandboxPoolPolicy, type SandboxReceipt, type SandboxResources, type SandboxSnapshotRef } from "./contract.js";
 export * from "./contract.js";
 export * from "./endpoint.js";
 export * from "./uri.js";
@@ -39,8 +39,19 @@ const lossOf = (loss: SandboxLoss | undefined): SandboxLoss => Object.freeze({
   ...(loss && Number.isSafeInteger(loss.code) ? { code: loss.code } : {}) });
 const validReceipt = (value: SandboxReceipt | undefined, backend: string) => !!value && value.backend === backend
   && typeof value.instanceId === "string" && value.instanceId.length > 0 && value.instanceId.length <= 256 && !value.instanceId.includes("\0");
+function validateSnapshot(value: SandboxSnapshotRef, backend: string): SandboxSnapshotRef {
+  if (!value || value.backend !== backend ||
+    typeof value.id !== "string" || !value.id || value.id.length > 512 || /[\x00-\x1f\x7f]/u.test(value.id) ||
+    typeof value.image !== "string" || !value.image || value.image.length > 1024 || /[\x00-\x1f\x7f]/u.test(value.image) ||
+    !positive(value.takenAt) || (value.expiresAt !== undefined && (!positive(value.expiresAt) || value.expiresAt <= value.takenAt)))
+    throw fault("SANDBOX_UNAVAILABLE", "Invalid sandbox snapshot reference");
+  return Object.freeze({ backend, id: value.id, image: value.image, takenAt: value.takenAt,
+    ...(value.expiresAt === undefined ? {} : { expiresAt: value.expiresAt }) });
+}
+type ProvisionSource = { receipt?: SandboxReceipt; snapshot?: SandboxSnapshotRef };
+interface Admission { owner: string; resources?: Partial<SandboxResources>; signal?: AbortSignal }
 interface Request {
-  owner: string; resources: SandboxResources; receipt?: SandboxReceipt; signal?: AbortSignal; controller: AbortController;
+  owner: string; resources: SandboxResources; receipt?: SandboxReceipt; snapshot?: SandboxSnapshotRef; signal?: AbortSignal; controller: AbortController;
   resolve(sandbox: Sandbox): void; reject(error: unknown): void; cancel(): void;
 }
 export interface SandboxPool {
@@ -49,6 +60,7 @@ export interface SandboxPool {
    * and budget as create). Rejects SANDBOX_UNAVAILABLE when the backend has no attach,
    * the receipt is another backend's, or the instance cannot be proven the same. */
   attachSandbox(options: { owner: string; receipt: SandboxReceipt; resources?: Partial<SandboxResources>; signal?: AbortSignal }): Promise<Sandbox>;
+  restoreSandbox?(options: Admission & { snapshot: SandboxSnapshotRef }): Promise<Sandbox>;
   /** Remove the instance a receipt names and its retained cache (`SandboxBackend.discard`).
    * Rejects SANDBOX_UNAVAILABLE when the backend cannot discard or the receipt is another
    * backend's. The caller closes any sandbox bound to that instance first. */
@@ -92,7 +104,11 @@ export async function createSandboxPool(input: SandboxPoolPolicy, backend: Sandb
         request.reject(error instanceof SandboxFault ? error : fault("SANDBOX_UNAVAILABLE", "Sandbox instance could not be re-attached"));
         return;
       }
-    } else try { environment = await backend.create(identity, request.resources, request.controller.signal); }
+    } else try {
+      environment = await (request.snapshot
+        ? backend.restoreSnapshot!(identity, request.snapshot, request.resources, request.controller.signal)
+        : backend.create(identity, request.resources, request.controller.signal));
+    }
     catch (error) {
       if (error instanceof SandboxCreationFault && error.outcome === "not-created") { release(request.resources); request.reject(error); }
       else { uncertain = true; request.reject(new SandboxCreationFault("unknown", identity)); }
@@ -148,6 +164,16 @@ export async function createSandboxPool(input: SandboxPoolPolicy, backend: Sandb
           active.delete(sandbox); release(request.resources);
         })();
       } } : {}),
+      ...(backend.captureSnapshot && backend.restoreSnapshot ? { async captureSnapshot(signal?: AbortSignal) {
+        if (closed || ended || signal?.aborted) throw fault("SANDBOX_CLOSED", "Sandbox is closed");
+        const capture = backend.captureSnapshot!(environment, signal ?? initializationController.signal);
+        executions.add(capture);
+        try {
+          const snapshot = validateSnapshot(await capture, backend.id);
+          if (closed || ended || signal?.aborted) throw fault("SANDBOX_CLOSED", "Sandbox closed during snapshot capture");
+          return snapshot;
+        } finally { executions.delete(capture); }
+      } } : {}),
     };
     active.add(sandbox);
     const mismatch = dimensions.some(k => effective[k] !== request.resources[k]);
@@ -169,7 +195,7 @@ export async function createSandboxPool(input: SandboxPoolPolicy, backend: Sandb
       void operation.finally(() => { starting.delete(request); request.signal?.removeEventListener("abort", request.cancel); }).catch(() => {});
     }
   };
-  const admit = (options: { owner: string; resources?: Partial<SandboxResources>; signal?: AbortSignal }, receipt?: SandboxReceipt): Promise<Sandbox> => {
+  const admit = (options: Admission, source?: ProvisionSource): Promise<Sandbox> => {
     if (closed) return Promise.reject(fault("SANDBOX_CLOSED", "Sandbox pool is closed"));
     if (typeof options.owner !== "string" || !options.owner.trim() || options.owner.length > 256 || options.owner.includes("\0")) return Promise.reject(fault("SANDBOX_POLICY", "Sandbox requires an execution owner"));
     let selected: SandboxResources;
@@ -178,7 +204,7 @@ export async function createSandboxPool(input: SandboxPoolPolicy, backend: Sandb
     if (options.signal?.aborted) return Promise.reject(fault("SANDBOX_CLOSED", "Sandbox creation was cancelled"));
     if ((!fits(selected) || queued.length) && queued.length >= (policy.queueLimit ?? 128)) return Promise.reject(fault("SANDBOX_CAPACITY", "Sandbox admission queue is full"));
     return new Promise<Sandbox>((resolve, reject) => {
-      const request: Request = { owner: options.owner, resources: selected, ...(receipt ? { receipt } : {}), signal: options.signal, controller: new AbortController(), resolve, reject, cancel() {
+      const request: Request = { owner: options.owner, resources: selected, ...source, signal: options.signal, controller: new AbortController(), resolve, reject, cancel() {
         request.controller.abort();
         const i = queued.indexOf(request);
         if (i < 0) return;
@@ -190,8 +216,12 @@ export async function createSandboxPool(input: SandboxPoolPolicy, backend: Sandb
   };
   return {
     createSandbox: options => admit(options),
-    attachSandbox: options => validReceipt(options.receipt, backend.id) ? admit(options, options.receipt)
+    attachSandbox: options => validReceipt(options.receipt, backend.id) ? admit(options, { receipt: options.receipt })
       : Promise.reject(fault("SANDBOX_UNAVAILABLE", "Sandbox backend cannot re-attach this receipt")),
+    ...(backend.captureSnapshot && backend.restoreSnapshot ? { async restoreSandbox(options: Admission & { snapshot: SandboxSnapshotRef }) {
+      const snapshot = validateSnapshot(options.snapshot, backend.id);
+      return admit(options, { snapshot });
+    } } : {}),
     async discardSandbox(options) {
       if (closed) throw fault("SANDBOX_CLOSED", "Sandbox pool is closed");
       if (!backend.discard || !validReceipt(options?.receipt, backend.id)) throw fault("SANDBOX_UNAVAILABLE", "Sandbox backend cannot discard this receipt");

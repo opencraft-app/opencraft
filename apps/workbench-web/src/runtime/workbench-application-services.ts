@@ -1,3 +1,5 @@
+import { endpointLabel, type WebHostDefinition } from "./web-host-definition";
+export { parseWebHostDefinitions, type WebHostDefinition } from "./web-host-definition";
 import type { BrowserDraftRecovery } from "./browser-draft-recovery";
 import type { ChannelSearchRegistry } from './channel-search-contribution';
 import { parseConversationRef } from "@opencraft/appserver-protocol/collaboration";
@@ -208,16 +210,12 @@ export function currentWorkbenchPlatform(): "web" | "electron" {
     .opencraftDesktop?.kind === "electron" ? "electron" : "web";
 }
 
-export interface WebHostDefinition extends HostRuntimeDescriptor {
-  readonly url: string;
-}
-
 export function hostDefinitionProfile(host: WebHostDefinition): HostConnectionProfile {
   return {
     hostId: host.hostId,
     displayName: host.label,
     providerId: "opencraft.websocket",
-    providerConfig: { url: host.url },
+    providerConfig: { url: host.url, ...(host.appHost ? { appHost: true } : {}) },
     providerConfigVersion: 1,
     hostKind: host.kind,
     enabled: true,
@@ -237,22 +235,25 @@ export async function refreshBundledHostProfiles(
 ): Promise<void> {
   for (const definition of definitions) {
     const current = store.getSnapshot().profiles.find((profile) => profile.hostId === definition.hostId);
-    const providerUrl = current?.providerConfig !== null
+    const config = current?.providerConfig !== null
       && typeof current?.providerConfig === "object"
       && !Array.isArray(current.providerConfig)
-      ? (current.providerConfig as { readonly url?: unknown }).url
+      ? current.providerConfig as { readonly url?: unknown; readonly appHost?: unknown }
       : null;
+    const providerUrl = config?.url;
     if (current === undefined || current.providerId !== "opencraft.websocket") continue;
     const refreshEndpoint = typeof providerUrl === "string" && serverEndpointNeedsRefresh(providerUrl, definition.url);
     const refreshRoots = current.workspaceBrowseRoots.length === 0 && definition.workspaceBrowseRoots.length > 0;
+    const refreshProtocol = (providerUrl === definition.url || refreshEndpoint) && config?.appHost !== definition.appHost;
     // A stale/custom endpoint must not prevent an independent deployment-owned
     // capability repair. Older browser profiles may retain an absolute endpoint
     // while still missing the workspace roots introduced by a newer release.
     if (providerUrl !== definition.url && !refreshEndpoint && !refreshRoots) continue;
-    if (!refreshEndpoint && !refreshRoots) continue;
+    if (!refreshEndpoint && !refreshRoots && !refreshProtocol) continue;
     await store.put({
       ...current,
-      ...(refreshEndpoint ? { providerConfig: { ...current.providerConfig as object, url: definition.url } } : {}),
+      ...(refreshProtocol ? { providerConfig: hostDefinitionProfile(definition).providerConfig }
+        : refreshEndpoint ? { providerConfig: { ...current.providerConfig as object, url: definition.url } } : {}),
       ...(refreshRoots ? { workspaceBrowseRoots: definition.workspaceBrowseRoots } : {}),
       revision: current.revision + 1,
     });
@@ -269,88 +270,6 @@ export function profileDescriptor(profile: HostConnectionProfile): HostRuntimeDe
     executionLocation: profile.executionLocation,
     workspaceBrowseRoots: profile.workspaceBrowseRoots,
   };
-}
-
-export function endpointLabel(url: string): string {
-  try {
-    return new URL(url, window.location.href).host;
-  } catch {
-    return url;
-  }
-}
-
-export const hostKinds = new Set<HostRuntimeDescriptor["kind"]>([
-  "local",
-  "remote-ssh",
-  "durable",
-  "remote-control",
-  "wsl",
-]);
-
-export function parseWebHostDefinitions(
-  raw: string | undefined,
-): readonly WebHostDefinition[] {
-  if (raw === undefined || raw.trim().length === 0) return [];
-  let value: unknown;
-  try {
-    value = JSON.parse(raw) as unknown;
-  } catch {
-    throw new Error("VITE_APPSERVER_HOSTS_JSON must be valid JSON");
-  }
-  if (!Array.isArray(value) || value.length === 0) {
-    throw new Error("VITE_APPSERVER_HOSTS_JSON must contain at least one Host");
-  }
-  const ids = new Set<string>();
-  return value.map((candidate, index): WebHostDefinition => {
-    if (typeof candidate !== "object" || candidate === null) {
-      throw new Error(`Host definition ${index} must be an object`);
-    }
-    const record = candidate as Record<string, unknown>;
-    const hostId = typeof record.hostId === "string" ? record.hostId.trim() : "";
-    const label = typeof record.label === "string" ? record.label.trim() : "";
-    const url = typeof record.url === "string" ? record.url.trim() : "";
-    const kind = record.kind;
-    const transportEndpoint = typeof record.transportEndpoint === "string"
-      && record.transportEndpoint.trim().length > 0
-      ? record.transportEndpoint.trim()
-      : endpointLabel(url);
-    const executionLocation = typeof record.executionLocation === "string"
-      && record.executionLocation.trim().length > 0
-      ? record.executionLocation.trim()
-      : null;
-    const workspaceBrowseRoots = Array.isArray(record.workspaceBrowseRoots)
-      ? record.workspaceBrowseRoots.flatMap((root) =>
-          typeof root === "string" && root.trim().length > 0 ? [root.trim()] : [])
-      : [];
-    if (hostId.length === 0 || label.length === 0 || url.length === 0) {
-      throw new Error(`Host definition ${index} requires hostId, label and url`);
-    }
-    const parsedUrl = new URL(serverUrl(url), window.location.href);
-    const sameOriginPath = url.startsWith("/") && !url.startsWith("//");
-    if (sameOriginPath) {
-      parsedUrl.protocol = parsedUrl.protocol === "https:" ? "wss:" : "ws:";
-    }
-    if (parsedUrl.protocol !== "ws:" && parsedUrl.protocol !== "wss:") {
-      throw new Error(`Host definition ${hostId} must use ws: or wss:`);
-    }
-    if (parsedUrl.username.length > 0 || parsedUrl.password.length > 0) {
-      throw new Error(`Host definition ${hostId} must not embed credentials in its URL`);
-    }
-    if (ids.has(hostId)) throw new Error(`Duplicate Host definition ${hostId}`);
-    ids.add(hostId);
-    if (typeof kind !== "string" || !hostKinds.has(kind as HostRuntimeDescriptor["kind"])) {
-      throw new Error(`Host definition ${hostId} has an unsupported kind`);
-    }
-    return {
-      hostId,
-      label,
-      transportEndpoint,
-      executionLocation,
-      workspaceBrowseRoots,
-      url: sameOriginPath ? parsedUrl.href : url,
-      kind: kind as HostRuntimeDescriptor["kind"],
-    };
-  });
 }
 
 export function activeThreadStorageKey(hostId: string, accountScope?: string): string {
@@ -524,6 +443,7 @@ export interface WebWorkbenchSupervisorOptions {
   readonly ephemeralHostProfiles?: readonly HostConnectionProfile[];
   /** Embedded products keep the outer page URL under their host's authority. */
   readonly navigationMode?: "browser" | "memory";
+  readonly deploymentAppHost?: Promise<import("./deployment-app-host-startup").PreparedDeploymentAppHost>;
   /** Embedded products may supply one explicit Host without directory discovery. */
   readonly hostProfileMode?: "environment" | "configured";
   readonly modelSelectionPolicy?: import("@opencraft/composer-core").ModelSelectionPolicy;

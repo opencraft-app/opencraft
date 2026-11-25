@@ -7,6 +7,8 @@ export interface ConfiguredModel {
   contextWindow?: number;
   maxTokens?: number;
   input?: ("text" | "image")[];
+  /** The Responses provider accepts native freeform tool declarations and calls. */
+  customToolCalls?: true;
   reasoningEfforts?: false | Partial<Record<"off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", string | null>>;
 }
 export interface ConfiguredProvider {
@@ -48,7 +50,7 @@ export function validateModelDocument(value: unknown): asserts value is ModelDoc
     if(p.baseUrl){let url:URL;try{url=new URL(p.baseUrl)}catch{throw new Error('模型地址无效')}if(!['http:','https:'].includes(url.protocol)||url.username||url.password||url.search||url.hash)throw new Error('模型地址不得包含认证或查询信息');}
     const models=new Set<string>();
     for(const m of p.models){
-      fields(m,['id','type','name','enabled','contextWindow','maxTokens','input','reasoningEfforts']);
+      fields(m,['id','type','name','enabled','contextWindow','maxTokens','input','reasoningEfforts','customToolCalls']);
       if(typeof m.id!=='string'||!m.id.trim()||models.has(m.id)||typeof m.enabled!=='boolean')throw new Error('模型 ID 无效或重复');
       models.add(m.id);
       if(m.type!==undefined&&m.type!=='chat'&&m.type!=='asr')throw new Error('模型用途无效');
@@ -58,6 +60,7 @@ export function validateModelDocument(value: unknown): asserts value is ModelDoc
       for(const key of ['contextWindow','maxTokens'])if(m[key]!==undefined&&(!Number.isSafeInteger(m[key])||Number(m[key])<=0))throw new Error('模型限制无效');
       if(m.contextWindow!==undefined&&m.maxTokens!==undefined&&Number(m.maxTokens)>Number(m.contextWindow))throw new Error('输出限制超过上下文');
       if(m.input!==undefined&&(!Array.isArray(m.input)||!m.input.includes('text')||m.input.some(v=>v!=='text'&&v!=='image')))throw new Error('模型输入类型无效');
+      if(m.customToolCalls!==undefined&&(m.customToolCalls!==true||p.protocol!=='openai-responses'||m.type==='asr'))throw new Error('自由格式工具需要 Responses 聊天模型');
       if(m.reasoningEfforts!==undefined&&m.reasoningEfforts!==false){
         const levels=m.reasoningEfforts;
         if(!plain(levels)||!Object.keys(levels).some(level=>level!=='off')||Object.entries(levels).some(([level,wire])=>

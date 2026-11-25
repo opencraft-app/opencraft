@@ -11,6 +11,7 @@ with the area that owns them; a task's working notes are not project entry point
 | `package.json`, `package-lock.json`, `tsconfig*.json`, `postcss.config.mjs`, root dotfiles | Workspace manifests, shared TypeScript settings and automatically discovered configuration |
 | `apps/`, `packages/`, `plugins/` | Platform applications, shared contracts and bundled integrations |
 | `docs/` | `architecture/` design and ownership topics grouped by domain (platform, execution, identity, chat-ui, workbench, extensions, server, browser, mobile), `develop/` contributor and build guides, `operations/` deployment and operations, `history/` migration records and retired designs; start at [the index](../README.md) |
+| [`taste/`](../../taste/README.md) | Required agent reading with concise code examples and review standards by domain |
 | `design.md`, `design/` | UI authoring entry, interaction specifications and topic-specific implementation records |
 | `config/` | Explicitly loaded tool configuration, versioned baselines and [repository metadata](../../config/catalog-info.yaml) |
 | `scripts/`, `tests/` | Development/build utilities, [tests grouped by domain](../../tests/README.md), [domain smoke checks](../../scripts/smoke/README.md) and browser fixtures |

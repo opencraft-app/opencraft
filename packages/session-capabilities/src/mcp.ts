@@ -1,4 +1,4 @@
-import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { lstat, readFile, writeFile, rename, rm } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -9,7 +9,13 @@ import { SessionCapabilities, type CapabilitySession, type CapabilityTool } from
 import { capabilityResultToMcp } from "./content.js";
 
 export { capabilitySigningKey, sessionCapabilityToken } from "./credentials.js";
-import { sessionCapabilityToken,executionCliSourceSession,parseHostGitSource } from "./credentials.js";
+import { sessionCapabilityToken, signCapabilityClaims, verifyCapabilityToken } from "./credentials.js";
+import { CapabilityInvocationFault, CapabilitySessionAuthority, type CapabilityAuthentication, type CapabilityRequestAudience } from "./session-authority.js";
+
+const AUDIENCES = new Map<string, CapabilityRequestAudience>([
+  ["/mcp", "mcp"], ["/admission", "session"], ["/orchestration", "session"], ["/thread-cli", "execution-cli"],
+  ["/execution-admission", "execution-cli"], ["/host-git", "host-git"], ["/host-environment", "host-environment"],
+]);
 interface McpClientSession {
   credential: string; server: Server; transport: StreamableHTTPServerTransport;
   authenticate(request: IncomingMessage): void; touched: number; active: number;
@@ -31,13 +37,8 @@ export class SessionCapabilityMcp {
   private readonly calls = new Set<Server>();
   private readonly clients = new Map<string, McpClientSession>();
   private readonly credentialInvocations = new Map<string, Set<AbortController>>();
-  private readonly pending = new Map<string, { tools: readonly CapabilityTool[]; expiresAt: number }>();
-  private readonly memoryBindings = new Map<string, CapabilitySession>();
-  private readonly executionReservations = new Map<string, {
-    bound: Promise<CapabilitySession>; resolve(session: CapabilitySession): void;
-    session?: CapabilitySession; scope?: CapabilitySession; expiresAt: number; memoryOnly?: boolean;
-  }>();
-  constructor(readonly capabilities: SessionCapabilities, private readonly key: Buffer, private readonly bindings?: CapabilityBindingStore,
+  private readonly authority: CapabilitySessionAuthority;
+  constructor(readonly capabilities: SessionCapabilities, private readonly key: Buffer, bindings?: CapabilityBindingStore,
     private readonly options: { descriptorPath?: string; retainEndpoint?: boolean; authorizeInput?: (session: CapabilitySession, inputId: string) => boolean;
       authorizeExecution?: (session:CapabilitySession)=>Promise<void>;
       orchestration?: (session: CapabilitySession, request: Record<string, unknown>) => Promise<unknown>;
@@ -45,6 +46,7 @@ export class SessionCapabilityMcp {
       hostGit?: (session: CapabilitySession) => Promise<unknown>;
       /** Opaque ENV capsule for the authenticated attachment's receiver key. */
       hostEnvironment?: (session: CapabilitySession, recipient: string) => Promise<unknown> } = {}) {
+    this.authority = new CapabilitySessionAuthority(capabilities, bindings);
     this.server = createServer((request, response) => { void this.handle(request, response).catch(() => {
       if (!response.headersSent) response.writeHead(500); response.end();
     }); });
@@ -56,54 +58,16 @@ export class SessionCapabilityMcp {
     return new URL('/thread-cli',this.url).href;
   }
   private signature(payload: string) { return createHmac("sha256", this.key).update(payload).digest(); }
-  private sign(claims: readonly string[]): string {
-    const payload = Buffer.from(JSON.stringify(claims)).toString("base64url");
-    return payload + "." + this.signature(payload).toString("base64url");
+  private sign(claims: readonly unknown[]): string {
+    return signCapabilityClaims(this.key, claims);
   }
   token(session: CapabilitySession): string { return sessionCapabilityToken(this.key, session); }
-  private bindingToken(id: string): string { return this.sign(["binding", id]); }
-  private authenticate(request: IncomingMessage): { session: CapabilitySession | null; tools?: readonly CapabilityTool[]; reservationId?: string; executionReservation?: Promise<CapabilitySession>; nativeTool?: boolean } | null {
+  private authenticate(request: IncomingMessage): CapabilityAuthentication | null {
     const auth = request.headers.authorization;
-    if (typeof auth !== "string" || auth.length > 4096 || !auth.startsWith("Bearer ")) return null;
-    const parts = auth.slice(7).split(".");
-    if (parts.length !== 2) return null;
-    const signature = Buffer.from(parts[1]!, "base64url"), expected = this.signature(parts[0]!);
-    if (signature.length !== expected.length || !timingSafeEqual(signature, expected)) return null;
+    const audience = AUDIENCES.get(request.url ?? "");
+    if (!audience || typeof auth !== "string" || auth.length > 4096 || !auth.startsWith("Bearer ")) return null;
     try {
-      const pair = JSON.parse(Buffer.from(parts[0]!, "base64url").toString());
-      if (!Array.isArray(pair)) return null;
-      const hostRoute=pair[0]==='host-git'?'/host-git':pair[0]==='host-environment'?'/host-environment':undefined;
-      if(hostRoute) {
-        if(request.url!==hostRoute||pair.length!==4||pair.slice(1,3).some(v=>typeof v!=='string'||!v||v.length>512||/[\x00-\x1f\x7f]/u.test(v)))return null;
-        return {session:Object.freeze({serverId:pair[1],threadId:pair[2],execution:parseHostGitSource(pair[3])})};
-      }
-      if(request.url==='/host-git'||request.url==='/host-environment')return null;
-      const cliRoute=request.url==='/thread-cli'||request.url==='/execution-admission';
-      if(pair[0]==='execution-cli')return cliRoute?{session:executionCliSourceSession(this.key,auth.slice(7))}:null;
-      if(cliRoute)return null;
-      if ((pair[0] === "execution" || pair[0] === 'native-tool') && pair.length === 4) {
-        const [_, serverId, threadId, execution] = pair;
-        if (![serverId, threadId].every(v => typeof v === "string" && v && v.length <= 512)
-          || !execution || typeof execution !== "object" || Array.isArray(execution)
-          || Object.keys(execution).some(k => !["executionId", "inputId", "turnId", "incarnation", "callId"].includes(k))
-          || Object.values(execution).some(v => typeof v !== "string" || !v || v.length > 512)
-          || !execution.inputId && !execution.turnId) return null;
-        if (pair[0] === 'native-tool' && (request.url !== '/mcp' || !execution.callId)) return null;
-        return { session: Object.freeze({ serverId, threadId, execution: Object.freeze(execution) }), nativeTool: pair[0] === 'native-tool' };
-      }
-      if (pair.some(v => typeof v !== "string" || !v || v.length > 512)) return null;
-      if ((pair[0] === "execution-binding"||pair[0] === "execution-memory-binding") && pair.length === 2) {
-        const reservation = pair[0] === "execution-memory-binding" ? this.executionReservations.get(pair[1]) : this.executionReservation(pair[1]);
-        if (!reservation || (!reservation.scope && !reservation.session && reservation.expiresAt <= Date.now())) return null;
-        return { session: reservation.session ?? null, executionReservation: reservation.bound };
-      }
-      if (pair[0] === "binding" && pair.length === 2) {
-        const session = this.bindings?.get(pair[1]) ?? this.memoryBindings.get(pair[1]);
-        if (session) return { session, reservationId: pair[1] };
-        const pending = this.pending.get(pair[1]);
-        return pending && pending.expiresAt > Date.now() ? { session: null, tools: pending.tools } : null;
-      }
-      return pair[0] === "session" && pair.length === 3 ? { session: Object.freeze({ serverId: pair[1], threadId: pair[2] }) } : null;
+      return this.authority.authenticate(audience, verifyCapabilityToken(this.key, auth.slice(7)));
     } catch { return null; }
   }
   async listen(): Promise<void> {
@@ -136,44 +100,12 @@ export class SessionCapabilityMcp {
       ...(approved.length ? { tools: Object.fromEntries(approved.map(tool => [tool.name, { approval_mode: "approve" }])) } : {}) };
   }
   config(session: CapabilitySession): Record<string, unknown> | null {
-    const tools = this.capabilities.tools(session);
-    if (!this.url || !tools.length) return null;
-    const id = session.execution ? undefined : this.bindings?.id(session) ?? [...this.memoryBindings].find(([, s]) => s.serverId === session.serverId && s.threadId === session.threadId)?.[0];
-    return this.configuration(id && !session.execution ? this.bindingToken(id) : this.token(session), tools);
+    const declaration = this.authority.declaration(session);
+    return this.url && declaration ? this.configuration(this.sign(declaration.claims), declaration.tools) : null;
   }
-  /** Host-only creation reservation. Listing a declaration never authorizes a
-   * call; the real native identity must be bound and domain admission committed. */
   prepare(tools: readonly CapabilityTool[]) {
-    for (const [id, entry] of this.pending) if (entry.expiresAt <= Date.now()) this.pending.delete(id);
-    if (this.pending.size >= 128) throw new Error("Too many pending capability reservations");
-    const id = randomUUID();
-    this.pending.set(id, { tools: structuredClone(tools), expiresAt: Date.now() + 60_000 });
-    return { configuration: this.configuration(this.bindingToken(id), tools),
-      bind: (session: CapabilitySession) => {
-        const pending = this.pending.get(id);
-        if (!pending || pending.expiresAt <= Date.now() || this.bindings?.get(id) || this.memoryBindings.has(id)) throw new Error("Capability reservation expired or already bound");
-        if (this.bindings) this.bindings.bind(id, session); else this.memoryBindings.set(id, Object.freeze({ ...session }));
-        // Keep declaration-only staging until domain admission is visible.
-        // MCP initialization can race the Host's post-create admission commit.
-      },
-      cancel: () => { this.pending.delete(id); },
-    };
-  }
-  /** Creation installs an opaque credential before a Thread ID exists. The Host
-   * binds it once to the first attested execution before dispatching that input.
-   * Native MCP startup may list tools before thread/start returns; only that
-   * read waits for binding. No invocation can run with an unbound credential. */
-  private executionReservation(id: string) {
-    const existing = this.executionReservations.get(id);
-    if (existing) return existing;
-    const saved = this.bindings?.execution(id);
-    if (!saved) return undefined;
-    let resolve!: (session: CapabilitySession) => void;
-    const bound = new Promise<CapabilitySession>(done => { resolve = done; });
-    const reservation = { bound, resolve, memoryOnly:false, scope: saved.scope, session: saved.session ?? undefined, expiresAt: Infinity };
-    if (saved.session) resolve(saved.session);
-    this.executionReservations.set(id, reservation);
-    return reservation;
+    const { claims, tools: declared, ...reservation } = this.authority.prepare(tools);
+    return { configuration: this.configuration(this.sign(claims), declared), ...reservation };
   }
   private cancelCredential(token: string): void {
     const credential = this.signature(`Bearer ${token}`).toString('hex');
@@ -182,62 +114,24 @@ export class SessionCapabilityMcp {
       for (const key of client.requests.keys()) client.transport.onmessage?.({ jsonrpc: '2.0', method: 'notifications/cancelled',
         params: { requestId: JSON.parse(key), reason: 'Execution capability retired' } });
   }
-  private executionHandle(id: string, reservation: NonNullable<ReturnType<SessionCapabilityMcp["executionReservation"]>>, tools:readonly CapabilityTool[] = []) {
-    const token = this.sign([reservation.memoryOnly?"execution-memory-binding":"execution-binding", id]);
-    return { configuration: this.configuration(token, tools),
-      bindThread: (scope: CapabilitySession) => {
-        if (this.executionReservations.get(id) !== reservation || reservation.scope
-          || reservation.expiresAt <= Date.now()) throw new Error("Execution capability reservation is unavailable");
-        if(!reservation.memoryOnly)this.bindings?.prepareExecution(id, scope);
-        reservation.scope = { serverId: scope.serverId, threadId: scope.threadId };
-      },
-      bind: (session: CapabilitySession) => {
-        if (this.executionReservations.get(id) !== reservation || (!reservation.scope && reservation.expiresAt <= Date.now())
-          || !session.execution?.inputId || !session.execution.executionId
-          || reservation.scope && (reservation.scope.serverId !== session.serverId || reservation.scope.threadId !== session.threadId))
-          throw new Error("Execution capability reservation is unavailable");
-        if (reservation.session) {
-          if (JSON.stringify(reservation.session) !== JSON.stringify(session)) throw new Error("Execution capability reservation is already bound");
-          return;
-        }
-        if (reservation.scope&&!reservation.memoryOnly) this.bindings?.bindExecution(id, session);
-        reservation.session = structuredClone(session); reservation.resolve(reservation.session);
-      },
-      resetBeforeStart: () => {
-        if(!reservation.memoryOnly)throw new Error('Only an unstarted bridge binding can reset');
-        reservation.session=undefined;
-        reservation.bound=new Promise<CapabilitySession>(resolve=>{reservation.resolve=resolve;});
-      },
-      cancel: () => {
-        try { if(!reservation.memoryOnly)this.bindings?.removeExecution(id); }
-        finally { this.executionReservations.delete(id); this.cancelCredential(token); }
-      },
+  private executionHandle({ claims, tools, cancel, ...reservation }: ReturnType<CapabilitySessionAuthority["prepareExecution"]>) {
+    const token = this.sign(claims);
+    return { configuration: this.configuration(token, tools), ...reservation,
+      cancel: () => { try { cancel(); } finally { this.cancelCredential(token); } },
     };
   }
-  prepareExecution(options:{memoryOnly?:boolean;scope?:CapabilitySession}={}) {
-    for (const [id, value] of this.executionReservations)
-      if (!value.scope && !value.session && value.expiresAt <= Date.now()) this.executionReservations.delete(id);
-    // Installed bridge scopes belong to live native sessions, not the pending
-    // preparation budget. Idle sessions must not exhaust all future creations.
-    if ([...this.executionReservations.values()].filter(v=>!v.memoryOnly||!v.scope).length >= 256) throw new Error("Too many pending execution capability reservations");
-    const id = randomUUID();
-    let resolve!: (session: CapabilitySession) => void;
-    const bound = new Promise<CapabilitySession>(done => { resolve = done; });
-    const reservation = { bound, resolve, memoryOnly:options.memoryOnly===true, expiresAt: Date.now() + 60_000, session: undefined as CapabilitySession | undefined,
-      scope: undefined as CapabilitySession | undefined };
-    this.executionReservations.set(id, reservation);
-    return this.executionHandle(id, reservation, options.scope ? this.capabilities.tools(options.scope) : []);
+  prepareExecution(options: { memoryOnly?: boolean; scope?: CapabilitySession } = {}) {
+    return this.executionHandle(this.authority.prepareExecution(options));
   }
   restoreExecution(scope: CapabilitySession) {
-    const id = this.bindings?.executionId(scope);
-    const reservation = id ? this.executionReservation(id) : undefined;
-    return id && reservation ? this.executionHandle(id, reservation) : null;
+    const reservation = this.authority.restoreExecution(scope);
+    return reservation ? this.executionHandle(reservation) : null;
   }
   async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
     response.setHeader("cache-control", "no-store");
     // This dedicated loopback listener uses session bearer auth, never ambient
     // browser cookies or an untrusted callerSessionId in tool arguments.
-    if (!["/mcp", "/execution-admission", "/admission", "/orchestration", "/thread-cli", "/host-git", "/host-environment"].includes(request.url ?? "")) { response.writeHead(404); response.end(); return; }
+    if (!AUDIENCES.has(request.url ?? "")) { response.writeHead(404); response.end(); return; }
     if (request.headers.origin !== undefined) { response.writeHead(403); response.end(); return; }
     let authenticated = this.authenticate(request);
     if (!authenticated) { response.writeHead(401); response.end(); return; }
@@ -370,27 +264,9 @@ export class SessionCapabilityMcp {
     const authenticateInvocation = () => this.authenticate(request);
     const mcp = new Server({ name: "opencraft-session", version: "1.0.0" }, { capabilities: { tools: {} } });
     mcp.setRequestHandler(ListToolsRequestSchema, async (_request, extra) => {
-      const authenticated = currentAuthentication;
       if (record) record.active++;
-      try {
-      let session = authenticated.session;
-      if (!session && authenticated.executionReservation) {
-        session = await new Promise<CapabilitySession>((resolve, reject) => {
-          const abort = () => reject(new Error("Capability declaration wait was cancelled"));
-          if (extra.signal.aborted) { abort(); return; }
-          extra.signal.addEventListener("abort", abort, { once: true });
-          void authenticated.executionReservation!.then(value => {
-            extra.signal.removeEventListener("abort", abort); resolve(value);
-          });
-        });
-      }
-      if (session) await this.capabilities.refresh(session);
-      const tools = session ? this.capabilities.tools(session) : authenticated.tools ?? [];
-      const staged = authenticated.reservationId ? this.pending.get(authenticated.reservationId) : undefined;
-      if (tools.length && authenticated.reservationId) this.pending.delete(authenticated.reservationId);
-      const visible = tools.length ? tools : staged && staged.expiresAt > Date.now() ? staged.tools : [];
-      return { tools: visible.map(({ approval: _approval, ...tool }) => tool) };
-      } finally { await finishInvocation(extra.signal, extra.requestId); }
+      try { return await this.authority.list(currentAuthentication, extra.signal); }
+      finally { await finishInvocation(extra.signal, extra.requestId); }
     });
     mcp.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       const authenticated = currentAuthentication;
@@ -400,25 +276,12 @@ export class SessionCapabilityMcp {
       let active = this.credentialInvocations.get(credential);
       if (!active) this.credentialInvocations.set(credential, active = new Set());
       active.add(controller);
-      let stage = 'authentication';
       try {
-        const current = authenticateInvocation();
-        if (!current || JSON.stringify(current.session) !== JSON.stringify(authenticated.session)) throw new Error("Session capability retired or changed");
-        stage = 'binding';
-        if (!authenticated.session) throw new Error("Session is not bound");
-        const session = authenticated.session;
-        // JSON-RPC IDs are local to a client, including clients sharing this
-        // execution credential. General MCP invocations get distinct identities;
-        // the separate signed native-tool audience already binds one native call.
-        // Request IDs and model arguments cannot select that audience.
-        const invocation = session.execution && !authenticated.nativeTool ? { ...session, execution: { ...session.execution,
-          callId: JSON.stringify([session.execution.callId ?? null, randomUUID()]) } } : session;
-        stage = 'dispatch';
-        const result = await this.capabilities.call(invocation, request.params.name, request.params.arguments ?? {}, signal);
-        stage = 'result';
+        const result = await this.authority.call(authenticated, authenticateInvocation,
+          request.params.name, request.params.arguments ?? {}, signal);
         return capabilityResultToMcp(result);
-      } catch {
-        const diagnosticId = this.diagnoseFailure(stage);
+      } catch (error) {
+        const diagnosticId = this.diagnoseFailure(error instanceof CapabilityInvocationFault ? error.stage : 'result');
         return { content: [{ type: "text", text: "Capability denied or failed; do not retry an uncertain external effect."
           + (diagnosticId ? ` Diagnostic: ${diagnosticId}` : '') }], isError: true };
       }
@@ -449,7 +312,7 @@ export class SessionCapabilityMcp {
       catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
     }
     this.url = undefined;
-    this.executionReservations.clear();
+    this.authority.close();
     this.clients.clear();
     await Promise.allSettled([...this.calls].map(server => server.close()));
     await new Promise<void>(resolve => { this.server.close(() => resolve()); this.server.closeAllConnections(); });

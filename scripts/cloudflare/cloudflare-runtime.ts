@@ -274,21 +274,28 @@ export async function cloudflareRuntime(options: CloudflareRuntimeOptions): Prom
     // Wait until the edge serves this generation.
     const deadline = Date.now() + 90_000;
     let consecutive = 0;
+    let lastObservation = "no response";
     for (;;) {
       try {
         const response = await fetch(deployment.origin + REHEARSAL_HEALTH_PATH, {
           headers: { [REHEARSAL_KEY_HEADER]: key },
+          signal: AbortSignal.timeout(5_000),
         });
+        lastObservation = `HTTP ${response.status}`;
         const body = response.ok
           ? ((await response.json()) as { generation: string | null })
           : await response.text().then(() => null);
+        if (body) lastObservation += `, generation ${body.generation}`;
         consecutive = body?.generation === String(deployment.generation) ? consecutive + 1 : 0;
         if (consecutive >= 3) break;
-      } catch {
+      } catch (error) {
         consecutive = 0;
+        lastObservation = error instanceof Error
+          ? [error.message, error.cause instanceof Error ? error.cause.message : null].filter(Boolean).join(": ")
+          : String(error);
       }
       if (Date.now() > deadline)
-        throw new Error(`${deployment.name} generation ${deployment.generation} did not become reachable`);
+        throw new Error(`${deployment.name} generation ${deployment.generation} did not become reachable: ${lastObservation}`);
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
     // The edge serving the new generation does not mean every active object has reset yet;

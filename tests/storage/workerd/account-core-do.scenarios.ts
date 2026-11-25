@@ -77,7 +77,7 @@ function deploymentVars(sealingKey: string | null, extra: Record<string, string>
 async function deploymentBackend(
   runtime: WorkerRuntime,
   sealingKey: string | null = SEALING_KEY,
-  /** Test-only variables for the test subclass (never read by the production object). */
+  /** Per-scenario deployment variables and test subclass bindings. */
   extra: Record<string, string> = {},
 ): Promise<Backend & { instance(): WorkerInstance }> {
   const persist = `account-core-do-${crypto.randomUUID()}`;
@@ -569,6 +569,51 @@ async function gatewaySequence(backend: Backend) {
 const SUBSCRIPTION_ROUTE = "https://codex-egress.invalid";
 
 export const ACCOUNT_CORE_DO_SCENARIOS: readonly WorkerScenario[] = [
+  {
+    name: "a fresh AccountCore accepts a sealed deployment model seed once and keeps later writes across restart",
+    async run({ runtime }) {
+      const document = {
+        schemaVersion: 1, revision: 0, providers: [provider("seeded")],
+        defaultModel: { providerId: "seeded", modelId: "m" },
+      };
+      const object = await deploymentBackend(runtime, SEALING_KEY, {
+        OPENCRAFT_ACCOUNT_MODEL_BOOTSTRAP: JSON.stringify({ document, credentials: { P1_KEY: PROVIDER_KEY } }),
+      });
+      try {
+        const op = async <T>(operation: AccountOperation) => value<T>(await opCall(object, operation));
+        assert.deepEqual(await op({ op: "config.read" }), document);
+        const { token } = await op<{ token: string }>({ op: "leases.grant", holder: holder("bootstrapped"), ttlMs: 60_000 });
+        assert.equal((await op<{ credential: string }>({ op: "leases.redeem", token, providerId: "seeded" })).credential, PROVIDER_KEY);
+        const stored = await (await object.fetch("/__test/account/storage")).text();
+        assert.ok(!stored.includes(PROVIDER_KEY));
+        await op({ op: "credentials.remove", ref: "P1_KEY" });
+        const updated = await op({ op: "config.update", revision: 0, providers: [provider("seeded", { name: "Updated" })] });
+        await object.restart();
+        assert.deepEqual(await op({ op: "config.read" }), updated);
+        assert.equal(await op({ op: "credentials.configured", ref: "P1_KEY" }), false);
+      } finally {
+        await object.close();
+      }
+    },
+  },
+  {
+    name: "an invalid model seed keeps AccountCore closed without publishing configuration or credentials",
+    async run({ runtime }) {
+      const document = { schemaVersion: 1, revision: 0, providers: [provider("seeded")], defaultModel: null };
+      const object = await deploymentBackend(runtime, SEALING_KEY, {
+        OPENCRAFT_ACCOUNT_MODEL_BOOTSTRAP: JSON.stringify({
+          document, credentials: { P1_KEY: PROVIDER_KEY, UNREFERENCED_KEY: ROTATED_KEY },
+        }),
+      });
+      try {
+        assert.equal((await object.fetch(POLICY)).status, 503);
+        const storage = await (await object.fetch("/__test/account/storage")).json() as { kv: [string, unknown][] };
+        assert.ok(!storage.kv.some(([key]) => key === "models/models.json" || key.startsWith("secret/")));
+      } finally {
+        await object.close();
+      }
+    },
+  },
   {
     name: "the AccountCore object, behind the entry and the InstallationCore gate, answers the model policy sequence as the Node Headless server does",
     async run({ runtime, scratch, diagnostic }) {

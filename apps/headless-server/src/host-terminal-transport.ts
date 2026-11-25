@@ -4,13 +4,12 @@ import { DurableHostProcessService } from '@opencraft/local-agent-host/durable-p
 import { TerminalCapacityError, type PreparedProcessIdentity } from '@opencraft/local-agent-host/process-service';
 import { validateEnvironmentName } from '@opencraft/execution-environment/account-environment';
 import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
-import { OPENCRAFT_METHOD_ACCESS_EXTENSION } from '@opencraft/appserver-protocol';
+import { HOST_TERMINAL_METHODS, isHostTerminalMethod, OPENCRAFT_METHOD_ACCESS_EXTENSION } from '@opencraft/appserver-protocol';
 import type { DuplexTransport, TransportSubmissionContext } from '@opencraft/appserver-client';
 import type { EnvironmentExecutionScope, ExecutionEnvironmentRuntime } from '@opencraft/execution-environment';
 import type { EnvironmentLaunchContextV2, EnvironmentLaunchTarget } from '@opencraft/execution-environment/environment-delivery';
 
-export const HOST_TERMINAL_METHODS = ['process/spawn', 'process/attach', 'process/list', 'process/writeStdin', 'process/resizePty', 'process/kill'] as const;
-const methods = new Set<string>(HOST_TERMINAL_METHODS);
+export { HOST_TERMINAL_METHODS };
 const object = (value: unknown): Record<string, any> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, any> : {};
 export type HostTerminalScope = EnvironmentExecutionScope & { readonly actorId?: string };
 
@@ -176,7 +175,7 @@ export class HostTerminalSession {
     }
     try {
       signal?.throwIfAborted();
-      if (this.closed || (!this.available && !this.selectService) || !this.initialized.has(String(clientId ?? '')) || !methods.has(value.method)) throw new Error('Terminal unavailable');
+      if (this.closed || (!this.available && !this.selectService) || !this.initialized.has(String(clientId ?? '')) || !isHostTerminalMethod(value.method)) throw new Error('Terminal unavailable');
       const scope = this.authorize(context, params);
       const current = () => {
         signal?.throwIfAborted();

@@ -19,7 +19,7 @@ export interface ConversationOutboxStorage {
 }
 
 export interface ConversationOutboxDispatch {
-  ready(): boolean;
+  ready(intent?: SubmitIntent): boolean;
   blocked(): boolean;
   send(intent: SubmitIntent, options: { readonly canDispatch: () => boolean }): Promise<SubmissionReceipt>;
   retire(ids: readonly string[]): void;
@@ -90,7 +90,7 @@ export function createConversationOutbox(config: ConversationOutboxDispatch & {
   };
   const notify = () => { if (!disposed) { revision++; dispatch?.publish(); for (const listener of listeners) listener(); } };
   const drain = async () => {
-    if (disposed || !dispatch?.ready() || (dispatch?.blocked() ?? true)) return;
+    if (disposed || !dispatch || dispatch.blocked()) return;
     if (draining) { pendingWake = true; return; }
     if (retryCommandId === entries.find(entry => entry.state !== "failed")?.intent.commandId && Date.now() < retryNotBefore) {
       // Timers can fire before the deadline (or the wall clock can move).
@@ -110,16 +110,16 @@ export function createConversationOutbox(config: ConversationOutboxDispatch & {
     try {
       await hydration;
       if (storageError) return;
-      while (!disposed && owner === generation && dispatch?.ready() && !(dispatch?.blocked() ?? true)) {
+      while (!disposed && owner === generation && dispatch && !dispatch.blocked()) {
         const head = entries.find(entry => entry.state !== "failed");
-        if (!head || head.state !== "waiting") break;
+        if (!head || head.state !== "waiting" || !dispatch.ready(head.intent)) break;
         // Persist the attempt before crossing the transport boundary. A reload
         // here loses automatic retry, never duplicates an uncertain execution.
         await commit(() => entries.map(entry => entry.intent.commandId === head.intent.commandId ? { ...entry, state: "sending" as const } : entry));
         if (!entries.some(entry => entry.intent.commandId === head.intent.commandId && entry.state === "sending")) continue;
         notify();
         if (disposed || owner !== generation) break;
-        if (!dispatch?.ready() || (dispatch?.blocked() ?? true)) {
+        if (!dispatch?.ready(head.intent) || dispatch.blocked()) {
           // Publishing custody can synchronously revoke dispatch readiness.
           // No transport call has happened, so keep this input retryable.
           await commit(() => entries.map(entry => entry.intent.commandId === head.intent.commandId
@@ -129,7 +129,7 @@ export function createConversationOutbox(config: ConversationOutboxDispatch & {
         }
         try {
           await dispatch!.send({ ...head.intent, target: { type: "enqueue-follow-up", key: config.key } },
-            { canDispatch: () => !disposed && owner === generation && dispatch?.ready() === true });
+            { canDispatch: () => !disposed && owner === generation && dispatch?.ready(head.intent) === true });
           if (disposed || owner !== generation) break;
           await commit(() => entries.filter(entry => entry.intent.commandId !== head.intent.commandId));
           notify();

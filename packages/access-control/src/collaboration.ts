@@ -14,7 +14,7 @@ import { PERSONAL_ASSISTANT_METHODS, type PersonalAssistantAccess, type Personal
 import { channelSyncCommand, enqueueChannelDelivery, channelImageType, type ChannelImage, type ChannelSyncCommand } from "./native-channel-sync.js";
 import type { ProjectAutomations } from './automation-runtime.js';
 import { AutomationError } from './automation.js';
-import type { OrchestrationRuntimeWorker } from './orchestration-runtime-store.js';
+import type { OrchestrationRuntimeClient } from './orchestration-runtime-client.js';
 // Node resolves the `node` condition (a companion Worker on a Node file); other runtimes get the neutral module.
 import { isOrchestrationRuntimeService, openOrchestrationRuntimeCompanion } from '@opencraft/access-control/orchestration-runtime-companion';
 import { updateExecutionRequest } from './execution-request-state.js';
@@ -30,7 +30,7 @@ import type { CreationReceipt, ServerCoreStorage } from '@opencraft/storage-node
 import type { ActorContext } from '@opencraft/identity-core/actors';
 import type { ActorStore } from './actors.js';
 import type { ActorAccess } from './actor-access.js';
-import { ThreadOrchestrationLedger } from './orchestration-ledger.js';
+import { notificationAuthorityIdSql, ThreadOrchestrationLedger } from './orchestration-ledger.js';
 import { type BoundedThreadDelegation, type OrchestrationMessageOrigin } from './orchestration-authority.js';
 import { communicationCommand, type CommunicationCommand } from './communication-command.js';
 import type { ActorInboxPage } from '@opencraft/appserver-protocol/collaboration';
@@ -111,9 +111,9 @@ export class Collaboration {
   readonly #unsubscribeIdentity: () => void;
   readonly outcome;
   readonly orchestration: ThreadOrchestrationLedger;
-  private ownedExecutionStorage?: OrchestrationRuntimeWorker;
+  private ownedExecutionStorage?: OrchestrationRuntimeClient;
   readonly channels: NativeChannels;
-  private communicationStorage?: OrchestrationRuntimeWorker;
+  private communicationStorage?: OrchestrationRuntimeClient;
   private readonly managedStorage: boolean;
   private assistantThreads?: {command(c:ActorContext,method:string,p:Record<string,unknown>):Promise<unknown>;allowsInput(grant:any,threadId:string):boolean;refreshInput(grant:any,threadId:string):Promise<void>;invalidate(threadId?:string,ownerActorId?:string,botId?:string):void};
   attachAssistantThreads(value:NonNullable<Collaboration['assistantThreads']>){if(this.assistantThreads)throw Error('Thread command owner already attached');this.assistantThreads=value;return ()=>{if(this.assistantThreads===value)this.assistantThreads=undefined;};}
@@ -211,7 +211,7 @@ export class Collaboration {
   readonly #closeDatabase: () => void;
   /** Node file backing this service; companion Workers open it. Absent for in-memory or non-file storage. */
   readonly #storageLocation: string | undefined;
-  constructor(path: ServerDatabaseSource, readonly actors: ActorStore, private readonly executionPort?: ConversationExecutionPort, readonly now = Date.now, readonly admittedActor: (actorId: string) => boolean = () => true, private executionStorage?: Pick<OrchestrationRuntimeWorker, "updateExecution"> & Partial<Pick<OrchestrationRuntimeWorker,"admission"|"executionAuthority">>, readonly resourceAccess: (context: ActorContext, ref: ConversationRef) => boolean = () => true, private readonly creationReceipts?: ServerCoreStorage["call"],
+  constructor(path: ServerDatabaseSource, readonly actors: ActorStore, private readonly executionPort?: ConversationExecutionPort, readonly now = Date.now, readonly admittedActor: (actorId: string) => boolean = () => true, private executionStorage?: Pick<OrchestrationRuntimeClient, "updateExecution"> & Partial<Pick<OrchestrationRuntimeClient,"admission"|"executionAuthority">>, readonly resourceAccess: (context: ActorContext, ref: ConversationRef) => boolean = () => true, private readonly creationReceipts?: ServerCoreStorage["call"],
     private readonly readConversationOwner?: (threadId: string) => Promise<{ serverId: string; ownerActorId: string } | null>) {
     if (executionPort !== undefined && (!executionPort || typeof executionPort.hostId !== 'string' || !executionPort.hostId.trim() || executionPort.hostId.length > 256 || /[\x00-\x1f]/u.test(executionPort.hostId))) throw new CollaborationError(500, 'execution_host_required');
     this.managedStorage = typeof path !== "string";
@@ -819,10 +819,21 @@ export class Collaboration {
   queueOrchestrationAck(operationId:string):void {this.database.prepare('INSERT OR IGNORE INTO opencraft_orchestration_acks VALUES(?)').run(operationId);}
   pendingOrchestrationAcks():string[]{return this.database.prepare('SELECT operation_id FROM opencraft_orchestration_acks LIMIT 16').all().map(row=>String(row.operation_id));}
   acknowledgeOrchestration(operationId:string):void{this.database.prepare('DELETE FROM opencraft_orchestration_acks WHERE operation_id=?').run(operationId);}
-  notificationAuthority(batchId:string,authorityId:string):void{this.database.prepare('INSERT OR IGNORE INTO opencraft_notification_authorities VALUES(?,?)').run(batchId,authorityId);}
-  notificationDelegation(childThreadId: string,batchId?:string): BoundedThreadDelegation|null {
-    const explicit=batchId?this.database.prepare('SELECT a.* FROM conversation_authorities a JOIN opencraft_notification_authorities n ON n.authority_id=a.id WHERE n.batch_id=?').get(batchId):null;
-    const row=explicit??this.database.prepare("SELECT a.* FROM conversation_authorities a JOIN opencraft_orchestration_operations o ON o.delegation_id=a.id WHERE o.kind='spawn' AND o.target_thread_id=? ORDER BY o.created_at_ms LIMIT 1").get(childThreadId);
+  notificationAuthority(batchId: string, authorityId: string): void {
+    this.database.transaction(() => {
+      const inserted = this.database.prepare('INSERT OR IGNORE INTO opencraft_notification_authorities VALUES(?,?)').run(batchId, authorityId);
+      // A wait may bind a fresh explicit authority after a spawn authority expired.
+      if (Number(inserted.changes) === 1) {
+        this.database.prepare(`UPDATE opencraft_parent_notification_batches SET state='pending'
+          WHERE batch_id=? AND state='expired' AND EXISTS
+            (SELECT 1 FROM conversation_authorities WHERE id=? AND expires_at>?)`).run(batchId, authorityId, this.now());
+      }
+    });
+  }
+  notificationDelegation(batchId: string): BoundedThreadDelegation | null {
+    const row = this.database.prepare(`SELECT authority.* FROM opencraft_parent_notification_batches batch
+      JOIN conversation_authorities authority ON authority.id=${notificationAuthorityIdSql}
+      WHERE batch.batch_id=? AND batch.state='pending'`).get(batchId);
     if (!row || !this.#validDelegation(row)) return null;
     return {id:String(row.id),context:{actorId:String(row.actor_id),generation:Number(row.generation),credentialId:row.credential_id as string|null,expiresAt:Number(row.expires_at)},sourceThreadId:String(row.thread_id),expiresAtMs:Number(row.expires_at)};
   }
@@ -1320,8 +1331,8 @@ export class Collaboration {
   }
   /** Native transport delegates every communication operation to the managed
    * storage Worker. Legacy standalone stores are retained only for local callers. */
-  async recordAssistantThreadAllocation(value:import('./assistant-thread-store.js').AssistantThreadAllocation){const storage=await this.#runtimeStorage();return (storage as OrchestrationRuntimeWorker).recordAssistantThreadAllocation(value);}
-  async assistantAdmissions(){const storage=await this.#runtimeStorage();return (storage as OrchestrationRuntimeWorker).assistantAdmissions();}
+  async recordAssistantThreadAllocation(value:import('./assistant-thread-store.js').AssistantThreadAllocation){const storage=await this.#runtimeStorage();return (storage as OrchestrationRuntimeClient).recordAssistantThreadAllocation(value);}
+  async assistantAdmissions(){const storage=await this.#runtimeStorage();return (storage as OrchestrationRuntimeClient).assistantAdmissions();}
   async communicate(context: ActorContext, method: string, params: Record<string, unknown> = {}): Promise<any> {
     const current = () => {
       if (this.#closed || !this.actors.isCurrent(context)) throw new CollaborationError(401, 'actor_authentication_required');
@@ -1471,7 +1482,7 @@ export class Collaboration {
   }
   /** The composition's runtime storage also serves communication (Headless: the
    * Server core owner); otherwise this service starts its own file-backed Worker. */
-  #communicationStorage(): OrchestrationRuntimeWorker | undefined {
+  #communicationStorage(): OrchestrationRuntimeClient | undefined {
     if (isOrchestrationRuntimeService(this.executionStorage)) return this.executionStorage;
     const path = this.#storageLocation;
     if (!path) return undefined;
@@ -1668,7 +1679,8 @@ export class Collaboration {
 
 /** HTTP adapter: only authenticated Actor contexts enter the domain service. */
 export class CollaborationHttpApi {
-  constructor(readonly service: Collaboration, readonly access: ActorAccess, readonly automations?: ProjectAutomations) {}
+  constructor(readonly service: Collaboration, readonly access: ActorAccess, readonly automations?: ProjectAutomations,
+    private readonly options: { readonly personalAssistant?: boolean } = {}) {}
   private personalAssistantResponse(context: ActorContext, operation: string, params: Record<string,unknown>) {
     return this.service.personalAssistant(context,'opencraft/personal-assistant/'+operation,params);
   }
@@ -1684,6 +1696,8 @@ export class CollaborationHttpApi {
       if (!context) throw new CollaborationError(401, 'actor_authentication_required');
       const current = () => { const next = this.access.authenticate(request); if (!next || next.actorId !== context.actorId || next.generation !== context.generation) throw new CollaborationError(401, 'actor_authentication_required'); };
       const path = url.pathname.slice(prefix.length);
+      if (this.options.personalAssistant === false && (path === 'personal-assistant' || path.startsWith('personal-assistant/')))
+        throw new CollaborationError(404, 'missing');
       if (exchange.method === 'GET') {
         const after = Number(url.searchParams.get('after') ?? 0), limit = Number(url.searchParams.get('limit') ?? 50);
         if (!Number.isSafeInteger(after) || after < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new CollaborationError(400, 'invalid_pagination');
@@ -1709,6 +1723,10 @@ export class CollaborationHttpApi {
       try { body = record(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))); }
       catch { throw new CollaborationError(400, 'invalid_body'); }
       current();
+      if (!this.service.hasExecution && (path === 'requests' || path === 'bindings' || path === 'cancel' ||
+          (path === 'messages' && body.execution !== undefined))) {
+        throw new CollaborationError(409, 'execution_unavailable');
+      }
       if (path.startsWith('personal-assistant/')) { const result=await this.personalAssistantResponse(context,path.slice('personal-assistant/'.length),body); current(); send(200,result); }
       else if(path==='automations'||path==='automation-grants'||path==='automation-reconcile') {
         if(!this.automations)throw new CollaborationError(503,'automation_unavailable');

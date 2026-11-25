@@ -45,6 +45,7 @@ interface HarnessOptions {
   historyRecovery?: import("@opencraft/appserver-protocol").ThreadHistoryRecovery;
   responseTurns?: readonly Record<string, unknown>[];
   initialTurnsPage?: { data: readonly Record<string, unknown>[]; nextCursor: string | null } | null;
+  initialReadPage?: boolean;
   turnsPages?: Readonly<Record<string, { data: readonly Record<string, unknown>[]; nextCursor: string | null }>>;
   itemsByTurnId?: Readonly<Record<string, readonly Record<string, unknown>[]>>;
   itemClocksById?: Readonly<Record<string, { startedAtMs?: unknown; completedAtMs?: unknown }>>;
@@ -139,7 +140,14 @@ async function createHarness(options: HarnessOptions = {}): Promise<{
       const params = message.params as Record<string, unknown>;
       requests.push({ method: message.method, params });
       if (message.method === "initialize") {
-        peer.send(encodeJsonRpcMessage({ id: message.id, result: { ...initializeResult, ...(options.readHistory ? { capabilities: { extensions: { "opencraft/read-history": { version: 1, initialTurnsPage: true, ...(options.itemDetails ? { itemDetails: true } : {}) } } } } : options.historyRecovery ? { capabilities: { extensions: { "opencraft/resume-history": { version: 1, mode: "paginated", initialTurnsPage: true, boundedRecovery: true } } } } : {}) } }));
+        const extensions = options.readHistory
+          ? { "opencraft/read-history": { version: 1, initialTurnsPage: true, ...(options.itemDetails ? { itemDetails: true } : {}) } }
+          : options.initialReadPage
+            ? { "opencraft/resume-history": { version: 1, mode: "paginated", initialReadPage: true } }
+            : options.historyRecovery
+              ? { "opencraft/resume-history": { version: 1, mode: "paginated", initialTurnsPage: true, boundedRecovery: true } }
+              : {};
+        peer.send(encodeJsonRpcMessage({ id: message.id, result: { ...initializeResult, capabilities: { extensions } } }));
         return;
       }
       if (message.method === "thread/read") {
@@ -149,7 +157,8 @@ async function createHarness(options: HarnessOptions = {}): Promise<{
         const turns = params.includeTurns === true ? options.fallbackTurns ?? [] : [];
         peer.send(encodeJsonRpcMessage({
           id: message.id,
-          result: { thread: thread("thread-one", turns, options.historyMode) },
+          result: { thread: thread("thread-one", turns, options.historyMode),
+            ...(params.initialTurnsPage && options.initialReadPage ? { initialTurnsPage: options.initialTurnsPage } : {}) },
         }));
         return;
       }
@@ -1975,6 +1984,26 @@ for (const included of [false, true]) test(`Read obtains a quiet snapshot instea
     assert.equal(view.turns[0]?.status, "completed");
     assert.equal(pages, 2);
     assert.equal(h.requests.some(r => r.method === "thread/resume"), false);
+  } finally { await h.close(); }
+});
+
+test("a passive initial page needs one request and preserves its older cursor", async () => {
+  const full = (id: string) => ({ id, itemsView: "full", items: [{ id: `${id}-answer`, type: "agentMessage", text: id }] });
+  const h = await createHarness({
+    historyMode: "paginated", initialReadPage: true,
+    initialTurnsPage: { data: [full("latest")], nextCursor: "older" },
+    turnsPages: { older: { data: [full("previous")], nextCursor: null } },
+  });
+  try {
+    const view = await h.runtime.resume.read("thread-one");
+    assert.deepEqual(view.turns.map(turn => turn.id), ["latest"]);
+    assert.deepEqual(h.requests.filter(row => row.method.startsWith("thread/")), [{
+      method: "thread/read",
+      params: { threadId: "thread-one", includeTurns: false, initialTurnsPage: { limit: 10, itemsView: "full", sortDirection: "desc" } },
+    }]);
+    const older = await h.runtime.resume.loadOlder("thread-one");
+    assert.deepEqual(older.turns.map(turn => turn.id), ["previous", "latest"]);
+    assert.equal(h.requests.find(row => row.method === "thread/turns/list")?.params.cursor, "older");
   } finally { await h.close(); }
 });
 

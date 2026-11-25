@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./window-metrics": "./src/window-metrics.ts",
+    "./workbench-location": "./src/workbench-location.ts",
     "./conversation-return-probe": "./src/conversation-return-probe.ts",
     "./retry-schedule": "./src/retry-schedule.ts",
     "./side-chat-records": "./src/side-chat/records.ts",

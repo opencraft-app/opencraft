@@ -283,15 +283,17 @@ or creates, reads the agent's identity over the `control` endpoint (`probe`:
 incarnation, roles, published names; `describe`: an endpoint's credentials and engine
 descriptor), persists `{receipt, agentIncarnation}` through a WorkspaceHost store
 before use, resolves an endpoint name to the first environment whose agent publishes
-it, and rebinds once when a relay cannot start (stale binding). `observe()` re-probes
+it, and rebinds once when a relay cannot start (stale binding). `attachExisting()` only adopts a running environment through its recorded receipt. `observe()` re-probes
 and reports a changed incarnation. It never replays bytes.
-`fenced(endpoint, operation)` runs one owner read (an execution-identity report) and
-returns it only when the agent's `control` probe before and after both name the bound
-incarnation; otherwise it releases the binding (the next use rebinds and persists the
-new incarnation) and rejects `SANDBOX_UNAVAILABLE`. Execution leases therefore depend
-only on what the agent and the owner report over the provider's channel; no consumer
-shares the environment's PID namespace or reads its `/proc` (the endpoint conformance
-suite runs this for every harness).
+`fenced(endpoint, operation, receipt?)` exposes the verified placement and endpoint
+connection methods for one bound environment. It returns the operation's result when
+both `control` probes confirm the same live agent and environment. A changed binding
+fails with `SANDBOX_UNAVAILABLE`. A caller that supplies a receipt can use only its
+already bound environment. Its endpoint calls cannot start a replacement or retry
+there. The placement records `restoredFrom` only after a provider starts the receipt
+from the recorded checkpoint. That evidence survives reattachment of the same
+receipt. Execution leases and recovery consume the agent's reports through the
+provider's channel. The endpoint conformance suite exercises the fence for each harness.
 
 | Provider | Process channel | `receipt.instanceId` | `attach` |
 | --- | --- | --- | --- |
@@ -370,19 +372,19 @@ but each one applies to every provider. Status after step 7a (the `cloudflare` p
 | Provider idle timers are re-armed by the owner | Cloudflare: set after start, on attach and on backend initialization; `armCloudflareContainerTimeout` for the DO constructor (implemented; the WorkspaceHost object calls it on every construction). Only a backstop for the WorkspaceHost idle policy |
 | Resource limits the provider does not enforce | Cloudflare containers report `cpu.max`/`pids.max` as `max` and nofile 1048576: the default 4096 tasks and 65536 FD per process must be applied by `workspace-agent`; CPU and memory (custom 4 vCPU / 8 GiB accepted) are reported by the provider |
 
-### Optional persistence and sleep capabilities (`sleep`/`discard` implemented for docker-provisioner; snapshots design)
+### Optional persistence and sleep capabilities
 
 The workspace content's durable source of truth is Git; a sandbox (disk, volume,
-engine-private data) is a rebuildable cache for every provider. A provider may
-declare an optional `snapshot` capability — `retained` (sleep/stop keeps the disk:
-Docker volume, E2B pause) or `captured` (explicit `captureSnapshot` /
-`restoreSnapshot`: Cloudflare `snapshotContainer`, 30-day TTL, not deletable from the
-Worker API) — and an optional `sleep(environment)` (implemented as
-`SandboxBackend.sleep?`, with `discard?`; see docker-provisioner above; the `snapshot`
-declaration is not). Both only speed up recovery and
-lower the chance of losing uncommitted changes; a provider without them is still
-correct, and no provider's beta feature is relied upon. A restored snapshot is always
-a new instance (new receipt, new incarnation) and never a reason to replay
+engine-private data) is a rebuildable cache for every provider. A provider can keep the disk
+when it sleeps (Docker volume, E2B pause) or implement `SandboxBackend.captureSnapshot`
+and `restoreSnapshot`. The pool exposes these as `Sandbox.captureSnapshot` and
+`SandboxPool.restoreSandbox`; restoring uses the same resource admission, verification
+and cleanup as creating an instance. Cloudflare implements the pair with
+`snapshotContainer`, a 30-day TTL, and restore bound to the original image digest.
+When configured to preserve an environment before sleep, WorkspaceRuntime commits the
+snapshot reference with its placement record before stopping it. Failed capture or
+commit leaves that environment running. A restored snapshot always produces new
+provider and agent incarnations. The snapshot grants no authority to replay
 unconfirmed input. When the owner requests capture, how it reconciles a restore with
 Git, and the WorkspaceHost-owned idle policy (default sleep after 15 minutes, optional
 resident) are specified in

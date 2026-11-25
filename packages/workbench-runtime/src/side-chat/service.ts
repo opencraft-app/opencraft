@@ -6,8 +6,6 @@ import { sideChatDirectoryBinding, type SideChatDirectoryRow, type SideChatRecor
 export type { SideChatRecord } from "./records";
 import type { AppServerThreadRuntimeLease, AppServerWorkbenchRuntime } from "../appserver-runtime";
 
-export { SIDE_CHAT_INSTRUCTIONS, SIDE_CHAT_BOUNDARY } from "./policy";
-
 export interface SideChatSession {
   readonly id: string;
   readonly parent: ConversationKey;

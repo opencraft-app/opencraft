@@ -2,7 +2,7 @@ import { parseServerInstalledExtensions, type ServerInstalledExtension } from '.
 import { readSelectionPreference, writeSelectionPreference } from "./selection-preferences";
 // Website-owned data, injected before the application module starts. Electron
 // never reads this contract; a static/Vite deployment has no injected element.
-import { createWorkbenchDraftLocation, createWorkbenchThreadLocation, type WorkbenchLocation } from "@opencraft/workbench-runtime";
+import { createWorkbenchDraftLocation, createWorkbenchThreadLocation, type WorkbenchLocation } from "@opencraft/workbench-runtime/workbench-location";
 
 export interface WebDeploymentConfig {
   readonly userPlugins?: readonly ServerInstalledExtension[];

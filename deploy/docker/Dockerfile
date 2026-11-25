@@ -19,7 +19,7 @@ RUN --mount=type=cache,target=/root/.npm env -u ELECTRON_SKIP_BINARY_DOWNLOAD no
 FROM scratch AS host-artifact
 COPY --from=build /out/opencraft-server/ /
 
-FROM ${RUNTIME_IMAGE} AS runtime
+FROM ${RUNTIME_IMAGE} AS runtime-payload
 ARG OPENCRAFT_UID=1000
 ARG OPENCRAFT_GID=1000
 ARG OPENCRAFT_BUILD_ID=development
@@ -52,4 +52,27 @@ RUN chown root:root /opt/opencraft/runtime/browser/electron/chrome-sandbox \
 ENV PATH=/opt/opencraft/bin:$PATH
 WORKDIR /opt/opencraft
 USER ${OPENCRAFT_UID}:${OPENCRAFT_GID}
+
+# Cloudflare workspace: the same pinned release payload, including the
+# AppServer and official Hands exec-server, under one workspace agent.
+FROM runtime-payload AS workspace
+ENV OPENCRAFT_DATA_DIR=/var/lib/opencraft-workspace/data \
+    OPENCRAFT_WORKSPACE_DIR=/var/lib/opencraft-workspace/workspace \
+    OPENCRAFT_LOG_DIR=/var/lib/opencraft-workspace/logs \
+    OPENCRAFT_HANDS_EXECUTION_SOCKET=/var/lib/opencraft-workspace/data/execution/exec-owner.sock \
+    OPENCRAFT_HANDS_EXECUTION_TOKEN=/var/lib/opencraft-workspace/data/execution/exec-owner.token \
+    OPENCRAFT_CODEX_EXECUTABLE=/opt/opencraft/runtime/codex/bin/codex \
+    OPENCRAFT_PROXY_MODE=workspace-egress \
+    HOME=/var/lib/opencraft-workspace/data
+ENTRYPOINT ["/opt/opencraft/bin/node", "/opt/opencraft/runtime/workspace-agent.mjs", "--role", "hands", "--role", "brain"]
+
+# Cloudflare exposes a delegated cgroup root. Set the owner budget as PID 1
+# before dropping to the workspace user and starting the standard entrypoint.
+FROM workspace AS cloudflare-workspace
+USER root
+ENV OPENCRAFT_CLOUDFLARE_UID=${OPENCRAFT_UID} OPENCRAFT_CLOUDFLARE_GID=${OPENCRAFT_GID}
+COPY --chmod=0555 deploy/docker/start-cloudflare-workspace.sh /usr/local/bin/start-cloudflare-workspace
+ENTRYPOINT ["/usr/local/bin/start-cloudflare-workspace"]
+
+FROM runtime-payload AS runtime
 ENTRYPOINT ["/opt/opencraft/bin/node", "/opt/opencraft/runtime/container-service.mjs", "gateway"]
