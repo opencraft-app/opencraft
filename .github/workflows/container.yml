@@ -15,8 +15,14 @@ jobs:
   admission:
     uses: ./.github/workflows/contribution-admission.yml
 
-  docker-compose:
+  plan:
+    if: github.event_name == 'pull_request'
     needs: admission
+    uses: ./.github/workflows/ci-plan.yml
+
+  docker-compose:
+    needs: [admission, plan]
+    if: ${{ !cancelled() && needs.admission.result == 'success' && needs.plan.outputs.fast-pr != 'true' }}
     strategy:
       fail-fast: false
       matrix:

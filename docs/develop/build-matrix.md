@@ -247,6 +247,20 @@ platforms, including for lockfiles, CI changes or an unreadable diff.
 | Root manifests/lockfile/toolchain, `.github/actions`, `build-matrix.yml`/`ci-plan.yml` or the selector | Web build, all installation-root audits, managed Web and Linux server regressions |
 | Server archive/installer/deployment inputs or build artifact contract | Linux server regressions plus archive build and smoke test |
 
+For PRs targeting `opencraft-app/opencraft:main`, GitHub organization owners
+and members with a same-repository source branch get lightweight feedback.
+After contribution admission, one build job runs format and lint on the PR's
+added source files, the hover policy, and the selected chat, AppServer client,
+startup or extension tests. The security workflow still scans for credentials,
+and CodeQL still runs on the PR. The portable builds, broad regression suites,
+browser smoke tests and Docker Compose drill run on the queue's `merge_group`
+using the existing selection for the combined candidate.
+
+Fork and external PRs, an unreadable diff, and changes to CI, toolchain,
+dependency or server archive inputs keep their existing PR validation. Both
+profiles report the same required `build-checks` and `security-checks` statuses.
+Each aggregate requires the jobs selected for its event to succeed.
+
 Any change that selects a Web build or Linux server regressions also runs
 `core-tests`: the full `npm run typecheck`, `check:boundaries` and every suite
 listed in `npm test`, each as a separate step so one failure cannot hide the

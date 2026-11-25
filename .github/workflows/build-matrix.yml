@@ -38,8 +38,49 @@ jobs:
     with:
       full-matrix: ${{ github.event_name == 'workflow_dispatch' && (inputs.validation == 'full' || inputs.package_macos) }}
 
+  quick-pr:
+    needs: plan
+    if: needs.plan.outputs.fast-pr == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - id: dependencies
+        run: npm ci --no-audit --no-fund
+      - run: npm run check:format -- --base HEAD^1
+        if: always() && steps.dependencies.outcome == 'success'
+      - run: npm run lint:changed -- --base HEAD^1
+        if: always() && steps.dependencies.outcome == 'success'
+      - run: npm run check:hover
+        if: always() && steps.dependencies.outcome == 'success'
+      - name: Enable test isolation
+        id: isolation
+        if: always() && steps.dependencies.outcome == 'success'
+        run: |
+          isolation_env="$(mktemp "$RUNNER_TEMP/opencraft-isolation.XXXXXX")"
+          printf 'export NODE_OPTIONS=%q\n' "--import $GITHUB_WORKSPACE/tests/support/test-isolation.mjs --test-global-setup=$GITHUB_WORKSPACE/tests/support/test-isolation-global.mjs" > "$isolation_env"
+          echo "BASH_ENV=$isolation_env" >> "$GITHUB_ENV"
+      - run: npm run test:hover-policy
+        if: always() && steps.isolation.outcome == 'success'
+      - run: npm run test:chat
+        if: always() && steps.isolation.outcome == 'success' && contains(fromJSON(needs.plan.outputs.quick-tests), 'chat')
+      - run: npm run test:appserver-client
+        if: always() && steps.isolation.outcome == 'success' && contains(fromJSON(needs.plan.outputs.quick-tests), 'appserver-client')
+      - run: npm run test:startup
+        if: always() && steps.isolation.outcome == 'success' && contains(fromJSON(needs.plan.outputs.quick-tests), 'startup')
+      - run: npm run test:extensions
+        if: always() && steps.isolation.outcome == 'success' && contains(fromJSON(needs.plan.outputs.quick-tests), 'extensions')
+
   hover-policy:
-    needs: admission
+    needs: [admission, plan]
+    if: ${{ !cancelled() && needs.admission.result == 'success' && needs.plan.outputs.fast-pr != 'true' }}
     runs-on: ubuntu-latest
     # Slow system-package mirrors must leave time for the browser smoke checks.
     timeout-minutes: 30
@@ -501,7 +542,7 @@ jobs:
 
   build-checks:
     if: always()
-    needs: [admission, plan, portable, extensions, macos-native, macos-electron, linux-headless, headless-package, core-tests, gate-tests, hover-policy]
+    needs: [admission, plan, portable, extensions, macos-native, macos-electron, linux-headless, headless-package, core-tests, gate-tests, quick-pr, hover-policy]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -509,6 +550,9 @@ jobs:
         env:
           EXTENSIONS_RESULT: ${{ needs.extensions.result }}
           EXTENSIONS_SELECTED: ${{ needs.plan.outputs.extensions }}
+          QUICK_SELECTED: ${{ needs.plan.outputs.fast-pr }}
+          QUICK_RESULT: ${{ needs.quick-pr.result }}
+          HOVER_SELECTED: ${{ needs.plan.outputs.fast-pr == 'false' }}
           HOVER_RESULT: ${{ needs.hover-policy.result }}
           ADMISSION_RESULT: ${{ needs.admission.result }}
           PLAN_RESULT: ${{ needs.plan.result }}
@@ -528,7 +572,6 @@ jobs:
         run: |
           test "$ADMISSION_RESULT" = success
           test "$PLAN_RESULT" = success
-          test "$HOVER_RESULT" = success
           require_selected() {
             if [ "$1" = true ]; then
               test "$2" = success
@@ -536,6 +579,8 @@ jobs:
               test "$1" = false && test "$2" = skipped
             fi
           }
+          require_selected "$QUICK_SELECTED" "$QUICK_RESULT"
+          require_selected "$HOVER_SELECTED" "$HOVER_RESULT"
           require_selected "$EXTENSIONS_SELECTED" "$EXTENSIONS_RESULT"
           require_selected "$BUILD_SELECTED" "$BUILD_RESULT"
           require_selected "$NATIVE_SELECTED" "$NATIVE_RESULT"

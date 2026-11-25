@@ -14,7 +14,7 @@ function job(name, contents = workflow) {
 const gate = job('build-checks').match(/        run: \|\n([\s\S]*)/)[1].replace(/^          /gm, '');
 const selected = {
   EXTENSIONS_SELECTED: 'false', EXTENSIONS_RESULT: 'skipped',
-  ADMISSION_RESULT: 'success', HOVER_RESULT: 'success',
+  ADMISSION_RESULT: 'success', QUICK_SELECTED: 'false', QUICK_RESULT: 'skipped', HOVER_SELECTED: 'true', HOVER_RESULT: 'success',
   PLAN_RESULT: 'success', BUILD_SELECTED: 'true', BUILD_RESULT: 'success',
   NATIVE_SELECTED: 'false', NATIVE_RESULT: 'skipped', PACKAGE_SELECTED: 'false', PACKAGE_RESULT: 'skipped',
   HEADLESS_SELECTED: 'true', HEADLESS_RESULT: 'success', ARCHIVE_SELECTED: 'true', ARCHIVE_RESULT: 'success',
@@ -64,14 +64,36 @@ test('server regressions and the server archive run as parallel jobs', () => {
   assert.match(job('build-checks'), /needs: \[[^\]]*\bheadless-package\b[^\]]*\]/);
 });
 
-test('hover checks run after admission independently of the build plan and scan failures', () => {
+test('the full hover smoke runs after admission outside the lightweight PR profile', () => {
   const hover = job('hover-policy');
-  assert.match(hover, /^    needs: admission\n/);
-  assert.doesNotMatch(hover, /needs: plan|if: needs\.plan/);
+  assert.match(hover, /^    needs: \[admission, plan\]\n/);
+  assert.match(hover, /needs\.admission\.result == 'success' && needs\.plan\.outputs\.fast-pr != 'true'/);
   assert.match(hover, /run: npm run check:hover/);
   assert.match(hover, /run: npm run test:hover-policy\n\s+if: always\(\) && steps\.dependencies\.outcome == 'success'/);
   assert.match(hover, /run: npm run smoke:touch-hover\n\s+if: always\(\) && steps\.browser\.outcome == 'success'/);
   assert.match(job('build-checks'), /needs: \[[^\]]*hover-policy\]/);
+});
+
+test('lightweight PRs have a required quick job and an explicitly skipped full matrix', () => {
+  const quick = job('quick-pr');
+  assert.match(quick, /if: needs\.plan\.outputs\.fast-pr == 'true'/);
+  for (const check of ['check:format -- --base HEAD^1', 'lint:changed -- --base HEAD^1', 'check:hover']) {
+    assert.ok(quick.includes(`run: npm run ${check}`), check);
+  }
+  for (const suite of ['chat', 'appserver-client', 'startup', 'extensions']) {
+    assert.ok(quick.includes(`run: npm run test:${suite}`), suite);
+    assert.ok(quick.includes(`contains(fromJSON(needs.plan.outputs.quick-tests), '${suite}')`), suite);
+  }
+  const fast = {
+    QUICK_SELECTED: 'true', QUICK_RESULT: 'success', HOVER_SELECTED: 'false', HOVER_RESULT: 'skipped',
+    BUILD_SELECTED: 'false', BUILD_RESULT: 'skipped', HEADLESS_SELECTED: 'false', HEADLESS_RESULT: 'skipped',
+    ARCHIVE_SELECTED: 'false', ARCHIVE_RESULT: 'skipped', CORE_SELECTED: 'false', CORE_RESULT: 'skipped', GATE_RESULT: 'skipped',
+  };
+  assert.equal(check(fast), 0);
+  for (const result of ['failure', 'cancelled', 'skipped', '']) assert.notEqual(check({ ...fast, QUICK_RESULT: result }), 0, result);
+  assert.notEqual(check({ ...fast, QUICK_SELECTED: '' }), 0, 'missing profile output');
+  assert.notEqual(check({ ...fast, HOVER_RESULT: 'success' }), 0, 'unexpected full hover smoke');
+  assert.notEqual(check({ QUICK_RESULT: 'success' }), 0, 'unexpected lightweight job');
 });
 
 test('core tests run the full typecheck and every npm test suite as independent steps', () => {
@@ -217,15 +239,26 @@ test('managed-web runs every suite exactly once across its parallel groups', () 
 
 test('contribution admission gates both required workflows before their first jobs', () => {
   const security = readFileSync(new URL('../../.github/workflows/security.yml', import.meta.url), 'utf8');
-  for (const [contents, jobs] of [[workflow, ['plan', 'hover-policy']], [security, ['plan', 'secrets']]]) {
+  for (const [contents, jobs] of [[workflow, ['plan']], [security, ['plan', 'secrets']]]) {
     assert.match(job('admission', contents), /uses: \.\/\.github\/workflows\/contribution-admission\.yml/);
     for (const name of jobs) assert.match(job(name, contents), /^    needs: admission\n/);
   }
   const gate = job('security-checks', security).match(/        run: \|\n([\s\S]*)/)[1].replace(/^          /gm, '');
-  const env = { ...process.env, PLAN_RESULT: 'success', SECRETS_RESULT: 'success', AUDIT_RESULT: 'skipped', WEB_RESULT: 'skipped' };
+  const env = { ...process.env, PLAN_RESULT: 'success', SECRETS_RESULT: 'success',
+    AUDIT_SELECTED: 'false', AUDIT_RESULT: 'skipped', WEB_SELECTED: 'false', WEB_RESULT: 'skipped' };
   for (const result of ['success', 'failure', 'cancelled', 'skipped', '']) {
     const status = spawnSync('bash', ['-e', '-c', gate], { env: { ...env, ADMISSION_RESULT: result } }).status;
     assert.equal(status === 0, result === 'success', result);
+  }
+  for (const job of ['AUDIT', 'WEB']) {
+    for (const [selected, result, expected] of [
+      ['true', 'success', true], ['true', 'skipped', false], ['false', 'success', false], ['', 'skipped', false],
+    ]) {
+      const status = spawnSync('bash', ['-e', '-c', gate], { env: {
+        ...env, ADMISSION_RESULT: 'success', [`${job}_SELECTED`]: selected, [`${job}_RESULT`]: result,
+      } }).status;
+      assert.equal(status === 0, expected, `${job}: ${selected}/${result}`);
+    }
   }
 });
 
@@ -309,6 +342,13 @@ test('generic convergence and assistant runtime remain mandatory gate steps', ()
     assert.ok(job('gate-tests').includes('run: npm run ' + name));
     assert.ok(!GATE_ONLY_EXCEPTIONS.has(name));
   }
+});
+
+test('Docker Compose only consults the lightweight profile on PRs', () => {
+  const container = readFileSync(new URL('../../.github/workflows/container.yml', import.meta.url), 'utf8');
+  assert.match(job('plan', container), /if: github\.event_name == 'pull_request'\n\s+needs: admission/);
+  assert.match(job('docker-compose', container), /needs: \[admission, plan\][\s\S]*?needs\.admission\.result == 'success' && needs\.plan\.outputs\.fast-pr != 'true'/);
+  assert.match(container, /^  merge_group:/m);
 });
 
 test('container browser-owner regressions use the TypeScript workspace loader', () => {
