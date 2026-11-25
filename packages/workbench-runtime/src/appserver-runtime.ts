@@ -1553,11 +1553,9 @@ export function createAppServerWorkbenchRuntime(
     publish();
   };
 
-  const discoverArchivedThread = async (threadId: string, afterRead = false): Promise<boolean> => {
-    if (unavailableThreads.has(threadId) || (!afterRead && (bindings.has(threadId) || catalogMetadata.has(threadId)))) return false;
+  const discoverArchivedThread = async (threadId: string): Promise<boolean> => {
+    if (unavailableThreads.has(threadId)) return false;
     const current = requireClient(), generation = current.connectionGeneration;
-    const capability = parseThreadLifecycleCapability(executionEngineExtension(current.initializeResult?.capabilities?.extensions, threadId, OPENCRAFT_THREAD_LIFECYCLE_EXTENSION));
-    if (!capability?.archive || (capability.archiveStateInRead && !afterRead)) return false;
     const revision = availabilityRevisions.get(threadId) ?? 0;
     let cursor: string | null = null;
     const cursors = new Set<string>();
@@ -1565,14 +1563,7 @@ export function createAppServerWorkbenchRuntime(
       const page: { data: ProtocolThread[]; nextCursor: string | null } = await current.request("thread/list", { archived: true, limit: 100, cursor });
       if (disposed || client !== current || current.connectionGeneration !== generation
         || (availabilityRevisions.get(threadId) ?? 0) !== revision) return false;
-      const archived = page.data.find(thread => thread.id === threadId);
-      if (archived) {
-        if (!afterRead) {
-          catalogMetadata.set(threadId, { ...archived, turns: [] });
-          markThreadUnavailable(threadId, "archived");
-        }
-        return true;
-      }
+      if (page.data.some(thread => thread.id === threadId)) return true;
       cursor = page.nextCursor;
       if (cursor !== null && cursors.has(cursor)) throw new Error("Archive catalog did not advance");
       if (cursor !== null) cursors.add(cursor);
@@ -1700,7 +1691,7 @@ export function createAppServerWorkbenchRuntime(
             archived = view.thread?.archived === true;
             if (view.thread?.archived === undefined && current() &&
               parseThreadLifecycleCapability(executionEngineExtension(extensions, threadId, OPENCRAFT_THREAD_LIFECYCLE_EXTENSION))?.archiveStateInRead) {
-              archived = await discoverArchivedThread(threadId, true);
+              archived = await discoverArchivedThread(threadId);
             }
             const canResume = parseAppServerMethodAccess(executionEngineExtension(extensions, threadId, OPENCRAFT_METHOD_ACCESS_EXTENSION))
               ?.methods.includes("thread/resume");
@@ -1730,7 +1721,7 @@ export function createAppServerWorkbenchRuntime(
             }
           }
           if (!current()) throw new AppServerClientError("ABORTED", "Thread recovery was superseded");
-          if (!unavailableThreads.has(binding.threadId) && legacyWindow) void recovery.span("capability-ready", () => ensureBindingCapabilities(binding)).catch(() => undefined);
+          if (!archived && !unavailableThreads.has(binding.threadId) && legacyWindow) void recovery.span("capability-ready", () => ensureBindingCapabilities(binding)).catch(() => undefined);
           // Passive approvals have their own source/connection revision fences. Their
           // network read must not hold up a verified history replica or turn an
           // interaction-only failure into a transcript recovery failure.
@@ -1748,7 +1739,7 @@ export function createAppServerWorkbenchRuntime(
         // Queue notifications can be lost with the old connection, including
         // the receipt for a locally persisted input. Reconcile independently
         // after history authority returns; do not wait for another queue event.
-        if (force && !unavailableThreads.has(binding.threadId) && !ephemeralThreadIds.has(binding.threadId))
+        if (force && !archived && !unavailableThreads.has(binding.threadId) && !ephemeralThreadIds.has(binding.threadId))
           void binding.refreshQueue().catch(() => undefined);
         binding.phase = "resident";
         binding.sleepingHistoryRevision = null;
@@ -2906,7 +2897,7 @@ export function createAppServerWorkbenchRuntime(
       let binding: ConversationBinding;
       try {
         await runtime.connect();
-        await discoverArchivedThread(threadId);
+        // Archive browsing is explicit. Opening a Thread only hydrates its own history.
         binding = await createBinding(threadId);
         if (disposed || binding.disposed) throw new Error(`Thread ${threadId} is disposed`);
       } finally {
