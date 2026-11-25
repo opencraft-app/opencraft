@@ -18,7 +18,12 @@ export interface ConversationDraftStorage {
 }
 
 export interface ConversationDraftContinuity {
-  attach(viewId: string, controller: ComposerController, recovery?: { loaded(raw: string | null): void; settled(): void }): () => void;
+  attach(viewId: string, controller: ComposerController, recovery?: {
+    /** Snapshot from before asynchronous slot discovery, if applicable. */
+    readonly initial: ComposerDraft;
+    loaded(raw: string | null, canRestore: boolean): void;
+    settled(): void;
+  }): () => void;
   discard(viewId: string, target: ComposerTarget): void;
 }
 
@@ -130,6 +135,8 @@ export function createConversationDraftContinuity(input: {
   const pending = new Map<string, Promise<void>>();
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
   const keyFor = (viewId: string, target: ComposerTarget) => conversationDraftStorageKey(input.namespace, viewId, target);
+  const hasStoredContent = (draft: ComposerDraft) =>
+    !isComposerDocumentEmpty(draft.document) || draftReferences(draft.context).length > 0;
   const enqueue = (key: string, operation: () => Promise<void>) => {
     const prior = pending.get(key) ?? Promise.resolve();
     const next = prior.catch(() => undefined).then(operation);
@@ -147,12 +154,21 @@ export function createConversationDraftContinuity(input: {
   };
   return {
     attach(viewId, controller, recovery) {
-      const initial = controller.getSnapshot().draft;
+      const initial = recovery?.initial ?? controller.getSnapshot().draft;
       const key = keyFor(viewId, initial.target);
       let live = true;
       let hydrated = false;
       let loaded = false;
       let loadedValue: string | null = null;
+      let keepSavedInput = false;
+      const canRestore = () => {
+        const { draft, hasTransientText } = controller.getSnapshot();
+        return draft.id === initial.id && draft.lifecycle.phase === "editing" && !hasTransientText
+          && isComposerDocumentEmpty(initial.document) && draft.document === initial.document
+          && draft.attachments === initial.attachments && draft.attachments.length === 0
+          && draft.context === initial.context && draft.context.length === 0
+          && keyFor(viewId, draft.target) === key;
+      };
       let previousDocument = initial.document;
       let previousTarget = initial.target;
       let previousContext = initial.context;
@@ -163,6 +179,8 @@ export function createConversationDraftContinuity(input: {
         if (keyFor(viewId, current.target) !== key) return;
         if (current.document === previousDocument && current.context === previousContext && current.selections === previousSelections
           && (current.target === previousTarget || isComposerDocumentEmpty(current.document))) return;
+        if (keepSavedInput && !hasStoredContent(current)) return;
+        keepSavedInput = false;
         previousDocument = current.document;
         previousTarget = current.target;
         previousContext = current.context;
@@ -188,12 +206,11 @@ export function createConversationDraftContinuity(input: {
           loadedValue = value;
           loaded = true;
           if (!live) return;
-          recovery?.loaded(value);
+          recovery?.loaded(value, canRestore());
           if (!live) return;
           const document = parseConversationDraftDocument(value);
           const current = controller.getSnapshot().draft;
-          if (document !== null && isComposerDocumentEmpty(initial.document) && current.document === initial.document
-            && keyFor(viewId, current.target) === key && current.attachments.length === 0 && current.context.length === 0) {
+          if (document !== null && canRestore()) {
             const envelope: unknown = value === null ? null : JSON.parse(value);
             controller.dispatch({ type: "replace-content", document, attachments: [], context: record(envelope) ? draftReferences(envelope.context) : [] });
             if (record(envelope) && current.selections.model === initial.selections.model
@@ -203,6 +220,9 @@ export function createConversationDraftContinuity(input: {
             previousTarget = controller.getSnapshot().draft.target;
             previousContext = controller.getSnapshot().draft.context;
             previousSelections = controller.getSnapshot().draft.selections;
+          } else if (document !== null && !hasStoredContent(current)) {
+            // An empty editor after an early send/clear did not adopt the saved draft.
+            keepSavedInput = true;
           }
           hydrated = true;
           persist();
@@ -220,6 +240,7 @@ export function createConversationDraftContinuity(input: {
         const needsFlush = timers.has(key);
         cancelTimer(key);
         const current = controller.getSnapshot().draft;
+        if ((keepSavedInput || (recovery !== undefined && !loaded)) && !hasStoredContent(current)) return;
         const hasUnhydratedInput = !hydrated && (current.document !== initial.document || current.context !== initial.context || current.selections !== initial.selections);
         const currentValue = serializeConversationDraftDocument(current.document, current.target, current);
         // Hydrating and leaving an untouched editor is not a new write. Preserve

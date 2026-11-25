@@ -1,6 +1,5 @@
 import { endpointLabel, type WebHostDefinition } from "./web-host-definition";
 export { parseWebHostDefinitions, type WebHostDefinition } from "./web-host-definition";
-import type { BrowserDraftRecovery } from "./browser-draft-recovery";
 import type { ChannelSearchRegistry } from './channel-search-contribution';
 import { parseConversationRef } from "@opencraft/appserver-protocol/collaboration";
 import { continueNativeSessionInBranch, nativeSessionBusyBeforeInput } from "./native-session-recovery";
@@ -98,7 +97,6 @@ import {
 
 // The Context object itself is part of the renderer's hot-reload state.
 export interface AppServerHostCatalog {
-  readonly draftRecovery: Pick<BrowserDraftRecovery, "isPending" | "subscribe">;
   readonly clientResources: ClientResources;
   readonly setConversationPresentationActive?: (active: boolean) => void;
   readonly tasks: TasksRequestPort | null;
@@ -404,7 +402,6 @@ export interface HostlessWebWorkbenchApplicationSupervisor extends WebWorkbenchA
 }
 
 export interface ActiveWebWorkbenchApplicationSupervisor extends WebWorkbenchApplicationBase {
-  readonly draftRecovery: Pick<BrowserDraftRecovery, "isPending" | "subscribe">;
   readonly tasks: TasksRequestPort | null;
   readonly displayContinuity: BrowserDisplayContinuity;
   readonly mode: "active";
@@ -549,7 +546,6 @@ export function provisionWebSocketHost(
 }
 
 export function createWebWorkbenchCommands(input: {
-  readonly isDraftRecovering?: () => boolean;
   readonly displayContinuity: BrowserDisplayContinuity;
   readonly presentation?: WorkbenchPresentationPolicy;
   readonly threadMemoryScope?: () => string;
@@ -571,7 +567,6 @@ export function createWebWorkbenchCommands(input: {
   readonly onThreadCreated?: (intent: SubmitIntent, receipt: SubmissionReceipt) => Promise<void>;
 }): WebWorkbenchCommands {
   const presentation = input.presentation ?? FULL_WORKBENCH_PRESENTATION;
-  const requireRestoredDraft = () => { if (input.isDraftRecovering?.()) throw new Error("Local draft recovery is pending"); };
   const assertSelectable = () => { if (presentation.executionSelection === "fixed") throw new Error("The embedding product owns execution selection"); };
   const assertHostConfiguration = () => { if (!presentation.runtimeHostConfiguration) throw new Error("The embedding product owns Host configuration"); };
   const assertTarget = (hostId: string) => {
@@ -644,7 +639,6 @@ export function createWebWorkbenchCommands(input: {
       else if (surface.kind === "extension-view") input.navigation.openExtensionView(surface.viewId, surface.resourceUri);
     },
     createGoal(intent, objective) {
-      requireRestoredDraft();
       if (intent.target.type !== "new-thread") throw new Error("Expected a new conversation");
       assertTarget(intent.target.execution.hostId);
       const target = intent.target;
@@ -802,7 +796,6 @@ export function createWebWorkbenchCommands(input: {
       return location;
     },
     retargetDraft(draftId, execution) {
-      requireRestoredDraft();
       assertSelectable();
       ++hostSelectionEpoch;
       input.activation.cancelPending();
@@ -810,7 +803,6 @@ export function createWebWorkbenchCommands(input: {
       locationMemory().set(execution.hostId, execution);
     },
     async submit(intent) {
-      requireRestoredDraft();
       assertTarget(intent.target.type === "new-thread" ? intent.target.execution.hostId : intent.target.key.hostId);
       if (intent.handoff && intent.target.type !== "new-thread") {
         if (intent.target.key.threadId !== intent.handoff.sourceThreadId) throw new Error("Handoff source changed");

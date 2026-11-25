@@ -1,5 +1,4 @@
 {
-  "chat.restoringLocalDraft": "Restoring your draft…",
   "im.channels.imageTooLarge": "This external chat accepts images up to 2 MB. Choose a smaller copy; your image is still in the draft.",
   "im.channels.imageInvalid": "This image could not be read. Choose a valid PNG or JPEG copy.",
   "im.channels.imageFormatUnavailable": "This external chat accepts PNG and JPEG images. Choose one of these formats; your image is still in the draft.",
