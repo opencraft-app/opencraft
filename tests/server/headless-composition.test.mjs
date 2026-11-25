@@ -520,9 +520,10 @@ test('deployment-level periodic owners run on the injected owner wake-up and shu
   const wake = fakeOwnerWake(clock);
   const ownerWake = { now: wake.now, timer: callback => { const timer = wake.timer(callback); return { arm(at) { periods.push(at - clock.now); timer.arm(at); }, cancel: () => timer.cancel() }; } };
   const app = await startHeadlessServer({ ...f.options, ownerWake }); f.own(() => app.close());
-  // Conversation resource retries (5 s), the push outbox pass (5 s) and resource reconciliation (60 s) are armed;
-  // nothing runs on a global interval, and connector grant checks arm only once a grant exists.
-  assert.ok(periods.filter(period => period === 5_000).length >= 2 && periods.includes(60_000), JSON.stringify(periods));
+  // The push outbox (5 s) and resource reconciliation (60 s) arm at startup.
+  // Conversation resource retries arm only when cleanup is pending.
+  assert.equal(periods.filter(period => period === 5_000).length, 1, JSON.stringify(periods));
+  assert.ok(periods.includes(60_000), JSON.stringify(periods));
   assert.ok(!periods.includes(500), JSON.stringify(periods));
   assert.ok(clock.pending >= 2);
   clock.elapse(60_000);

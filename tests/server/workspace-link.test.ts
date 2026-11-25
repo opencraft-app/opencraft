@@ -197,7 +197,11 @@ test("workspace Codex uses fenced owner endpoints and preserves approval and can
     },
     async fenced(endpoint, operation) {
       fences.push(endpoint.name);
-      const result = await operation();
+      const result = await operation({
+        placement: { agentIncarnation: "fixture-incarnation" },
+        describe: () => runtime.describe(endpoint),
+        connect: (onData) => runtime.connect(endpoint, onData),
+      });
       if (replace) throw new Error("Workspace agent incarnation changed");
       return result;
     },
