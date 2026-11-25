@@ -26,6 +26,7 @@ export type OrchestrationRuntimeSource = Exclude<ServerDatabaseSource, string>;
  */
 export function orchestrationRuntimeDomain(source: OrchestrationRuntimeSource) {
   const db = source.database;
+  let hasAutomation: boolean | undefined;
   let communication: Collaboration | undefined;
   let actors: ActorStore | undefined;
   const communicationService = () => {
@@ -270,9 +271,19 @@ export function orchestrationRuntimeDomain(source: OrchestrationRuntimeSource) {
         case "work": {
           const { now } = payload;
           // An absent authority may still arrive, so only a known expiration is terminal.
+          hasAutomation ??= !!db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='automation_delegations'").get();
+          // A live automation may renew the root and its descendant authorities.
+          const finalExpiry = hasAutomation ? `AND NOT EXISTS (
+            SELECT 1 FROM automation_delegations delegation
+            JOIN automation_runs run ON run.key=delegation.run_key
+            WHERE run.state IN ('admitted','running','unknown')
+              AND delegation.authority_id=COALESCE(
+                (SELECT root_authority_id FROM opencraft_delegation_roots WHERE authority_id=authority.id), authority.id)
+          )` : "";
           db.prepare(`UPDATE opencraft_parent_notification_batches AS batch SET state='expired'
             WHERE batch.state='pending' AND (batch.deliver_after_ms<=? OR batch.max_deadline_ms<=?)
-              AND (SELECT expires_at FROM conversation_authorities WHERE id=${notificationAuthorityIdSql})<=?`
+              AND EXISTS (SELECT 1 FROM conversation_authorities authority
+                WHERE authority.id=${notificationAuthorityIdSql} AND authority.expires_at<=? ${finalExpiry})`
           ).run(now, now, now);
           result = { waits: ledger.activeWaits(), notifications: ledger.dueNotifications() };
           break;

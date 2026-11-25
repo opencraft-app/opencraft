@@ -12,7 +12,11 @@ concurrency:
   group: container-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
+  admission:
+    uses: ./.github/workflows/contribution-admission.yml
+
   plan:
+    needs: admission
     if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -30,9 +34,9 @@ jobs:
         run: node scripts/ci/ci-plan.mjs
 
   docker-compose:
-    needs: plan
+    needs: [admission, plan]
     if: >-
-      !cancelled() && (needs.plan.result == 'skipped'
+      !cancelled() && needs.admission.result == 'success' && (needs.plan.result == 'skipped'
       || (needs.plan.result == 'success' && needs.plan.outputs.website-only != 'true'))
     strategy:
       fail-fast: false

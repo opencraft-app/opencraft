@@ -64,9 +64,9 @@ function fixture(failure?: { code: number; message: string }, options: { archive
     const id = request.params?.threadId; requests.push({ method: request.method, id });
     const send = (result: unknown) => reply.send(JSON.stringify({ id: request.id, result }));
     if (request.method === "initialize") send({ codexHome: "/tmp", platformFamily: "unix", platformOs: "linux", userAgent: "unavailable-test",
-      ...(options.archiveStateInRead ? { capabilities: { extensions: {
-        "opencraft/thread-lifecycle": { version: 1, archive: true, archiveStateInRead: true },
-      } } } : {}) });
+      capabilities: { extensions: { "opencraft/thread-lifecycle": {
+        version: 1, archive: true, ...(options.archiveStateInRead ? { archiveStateInRead: true } : {}),
+      } } } });
     else if (request.method === "thread/unarchive") { rejected = undefined; archived = false; send({ thread: thread(id) }); }
     else if (request.method === "thread/read") {
       if (rejected && id === "old") { reply.send(JSON.stringify({ id: request.id, error: { ...rejected, data: { retryable: true } } })); return; }
@@ -114,6 +114,7 @@ test("a fresh read of an archived Thread keeps its transcript and reports the re
     const snapshot = lease.getSnapshot();
     assert.equal(snapshot.authoritative, false);
     assert.ok(snapshot.timeline.frames.length > 0, "the archived transcript remains readable");
+    assert.equal(f.requests.filter(r => r.method === "thread/list").length, 0);
     assert.equal(f.requests.filter(r => r.method === "thread/read").length, 1);
     f.disconnect(); await f.runtime.reconnect(); await settle();
     assert.equal(f.requests.filter(r => r.method === "thread/read").length, 2, "passive reconnect refreshes read-only history without resuming execution");
@@ -148,6 +149,7 @@ test("archive acknowledgement allows passive history reconnect; execution remain
     await f.runtime.connect(); const lease = await f.runtime.acquireThread("old"); await settle();
     assert.equal(lease.getSnapshot().authoritative, true);
     await f.runtime.resources.threads.archive!("old");
+    assert.equal(f.requests.filter(r => r.method === "thread/read").length, 1, "archiving does not reload history");
     assert.equal(f.runtime.resources.threads.getUnavailableReason!("old"), "archived");
     assert.equal(lease.getSnapshot().authoritative, false);
     f.disconnect(); await f.runtime.reconnect(); await settle();
@@ -184,7 +186,7 @@ test("confirmed unarchive clears a cached rejection before ordinary acquire in t
   } finally { await f.runtime.dispose(); }
 });
 
-test("fresh archived routes discover lifecycle and read history without activating execution", async () => {
+test("only explicit archive browsing queries archive metadata; opening an archived Thread reads its history", async () => {
   const methods: string[] = [];
   let archived = true;
   const transport = new MemoryTransport({ receive(frame, peer) {
@@ -194,15 +196,29 @@ test("fresh archived routes discover lifecycle and read history without activati
     if (request.method === "initialize") send({ codexHome: "/tmp", platformFamily: "unix", platformOs: "linux", userAgent: "archive-read-test",
       capabilities: { extensions: { "opencraft/thread-lifecycle": { version: 1, archive: true }, "opencraft/read-history": { version: 1 } } } });
     else if (request.method === "thread/list") send({ data: request.params.archived && archived ? [thread("saved")] : [], nextCursor: null });
-    else if (request.method === "thread/read") send({ thread: thread("saved"), initialTurnsPage: { data: [{ id: "answer-turn", status: "completed", error: null,
-      items: [{ id: "answer", type: "agentMessage", text: "Archived history from server", phase: "final_answer" }] }], nextCursor: null } });
+    else if (request.method === "thread/read") send({ thread: thread(request.params.threadId), initialTurnsPage: {
+      data: request.params.threadId === "saved" ? [{ id: "answer-turn", status: "completed", error: null,
+        items: [{ id: "answer", type: "agentMessage", text: "Archived history from server", phase: "final_answer" }] }] : [],
+      nextCursor: null } });
     else if (request.method === "thread/unarchive") { archived = false; send({ thread: thread("saved") }); }
     else if (request.method.endsWith("/list")) send({ data: [], nextCursor: null });
     else send({});
   } });
   const runtime = createAppServerWorkbenchRuntime({ hostId: "fresh-archive", transport, autoReconnect: false, requestTimeoutMs: 1000 });
   try {
+    const active = await runtime.acquireThread("active"); await settle();
+    assert.equal(active.getSnapshot().authoritative, true);
+    assert.equal(methods.filter(method => method === "thread/list").length, 0);
+    assert.equal(methods.filter(method => method === "thread/read").length, 1);
+    active.release();
+
+    const archive = await runtime.resources.threads.list({ archived: true });
+    assert.deepEqual(archive.data.map(entry => entry.id), ["saved"]);
+    assert.equal(methods.filter(method => method === "thread/read").length, 1, "listing archives does not hydrate history");
+
     const lease = await runtime.acquireThread("saved"); lease.setRecoveryVisibility(true); await settle();
+    assert.equal(methods.filter(method => method === "thread/list").length, 1, "opening the entry does not re-list archives");
+    assert.equal(methods.filter(method => method === "thread/read").length, 2);
     assert.equal(runtime.resources.threads.getUnavailableReason!("saved"), "archived");
     assert.equal(lease.getSnapshot().authoritative, true, "the read-only transcript is canonical");
     assert.ok(JSON.stringify(lease.getSnapshot()).includes("Archived history from server"));

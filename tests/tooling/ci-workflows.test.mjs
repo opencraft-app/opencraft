@@ -6,14 +6,15 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 const workflow = readFileSync(new URL('../../.github/workflows/build-matrix.yml', import.meta.url), 'utf8');
-function job(name) {
-  const match = workflow.match(new RegExp(`^  ${name}:\\n([\\s\\S]*?)(?=^  [a-z][a-z-]*:|$(?![\\s\\S]))`, 'm'));
+function job(name, contents = workflow) {
+  const match = contents.match(new RegExp(`^  ${name}:\\n([\\s\\S]*?)(?=^  [a-z][a-z-]*:|$(?![\\s\\S]))`, 'm'));
   assert.ok(match, `Missing job: ${name}`);
   return match[1];
 }
 const gate = job('build-checks').match(/        run: \|\n([\s\S]*)/)[1].replace(/^          /gm, '');
 const selected = {
   EXTENSIONS_SELECTED: 'false', EXTENSIONS_RESULT: 'skipped',
+  ADMISSION_RESULT: 'success',
   HOVER_SELECTED: 'true', HOVER_RESULT: 'success',
   WEBSITE_SELECTED: 'false', WEBSITE_RESULT: 'skipped',
   PLAN_RESULT: 'success', BUILD_SELECTED: 'true', BUILD_RESULT: 'success',
@@ -44,6 +45,7 @@ test('the aggregate requires the website job and accepts skipped product jobs on
 });
 test('a selected build cannot pass by failing, cancelling, or being skipped', () => {
   for (const result of ['failure', 'cancelled', 'skipped', '']) {
+    assert.notEqual(check({ ADMISSION_RESULT: result }), 0, `admission: ${result}`);
     assert.notEqual(check({ PLAN_RESULT: result }), 0, `plan: ${result}`);
     assert.notEqual(check({ HOVER_RESULT: result }), 0, `hover: ${result}`);
     for (const name of ['BUILD', 'NATIVE', 'PACKAGE', 'HEADLESS', 'ARCHIVE', 'EXTENSIONS', 'CORE']) {
@@ -76,7 +78,7 @@ test('server regressions and the server archive run as parallel jobs', () => {
 
 test('hover checks skip website-only changes and cover scan failures', () => {
   const hover = job('hover-policy');
-  assert.match(hover, /needs: plan/);
+  assert.match(hover, /^    needs: \[admission, plan\]\n/);
   assert.match(hover, /if: needs\.plan\.outputs\.website-only != 'true'/);
   assert.match(hover, /run: npm run check:hover/);
   assert.match(hover, /run: npm run test:hover-policy\n\s+if: always\(\) && steps\.dependencies\.outcome == 'success'/);
@@ -222,7 +224,21 @@ test('managed-web runs every suite exactly once across its parallel groups', () 
     assert.ok(suites.includes(suite), `${command} is not assigned to a matrix suite`);
     assert.match(condition, /^always\(\) && steps\.(dependencies|browser)\.outcome == 'success' && /, command);
   }
-  assert.match(security, /needs: \[plan, secrets, dependency-audit, managed-web\]/);
+  assert.match(security, /needs: \[admission, plan, secrets, dependency-audit, managed-web\]/);
+});
+
+test('contribution admission gates both required workflows before their first jobs', () => {
+  const security = readFileSync(new URL('../../.github/workflows/security.yml', import.meta.url), 'utf8');
+  for (const [contents, jobs] of [[workflow, ['plan']], [security, ['plan', 'secrets']]]) {
+    assert.match(job('admission', contents), /uses: \.\/\.github\/workflows\/contribution-admission\.yml/);
+    for (const name of jobs) assert.match(job(name, contents), /^    needs: admission\n/);
+  }
+  const gate = job('security-checks', security).match(/        run: \|\n([\s\S]*)/)[1].replace(/^          /gm, '');
+  const env = { ...process.env, PLAN_RESULT: 'success', SECRETS_RESULT: 'success', AUDIT_RESULT: 'skipped', WEB_RESULT: 'skipped' };
+  for (const result of ['success', 'failure', 'cancelled', 'skipped', '']) {
+    const status = spawnSync('bash', ['-e', '-c', gate], { env: { ...env, ADMISSION_RESULT: result } }).status;
+    assert.equal(status === 0, result === 'success', result);
+  }
 });
 
 test('the security workflow runs every downstream tooling Python suite', () => {
@@ -307,7 +323,10 @@ test('generic convergence and assistant runtime remain mandatory gate steps', ()
   }
 });
 
-test('container browser-owner regressions use the TypeScript workspace loader', () => {
+test('container validation preserves admission, skips website-only changes, and uses the TypeScript workspace loader', () => {
   const container = readFileSync(new URL('../../.github/workflows/container.yml', import.meta.url), 'utf8');
+  assert.match(job('plan', container), /^    needs: admission\n/);
+  assert.match(job('docker-compose', container), /needs\.admission\.result == 'success'/);
+  assert.match(job('docker-compose', container), /needs\.plan\.outputs\.website-only != 'true'/);
   assert.match(container, /node --import tsx --test [^\n]*tests\/browser\/remote-browser-owner\.test\.mjs/);
 });
