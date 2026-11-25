@@ -42,7 +42,15 @@ function startupCompositionTest(startupModules: readonly RegExp[] = []): RegExp 
  * topology unchanged; product groups come first, then core groups in order.
  */
 export function createWorkbenchChunkGroups(options: WorkbenchChunkGroupOptions = {}, startupGroup?: WorkbenchChunkGroup): WorkbenchChunkGroup[] {
+  // Claim the AppHost entry's dependencies before the general startup
+  // coalescer can merge them into UI chunks.
+  const deploymentAppHost: WorkbenchChunkGroup = {
+    name: "deployment-app-host-startup",
+    includeDependenciesRecursively: true,
+    test: /\/apps\/workbench-web\/src\/runtime\/(?:deployment-app-host-startup|websocket-app-host)\.ts$/,
+  };
   const coreGroups: WorkbenchChunkGroup[] = [
+    ...(startupGroup ? [deploymentAppHost, startupGroup] : []),
     ...startupLeafGroups,
     // This requested queue UI shares tiny control leaves with Main.
     // Keep it separate as lazy Settings consumers change chunk grouping.
@@ -291,14 +299,7 @@ export function createWorkbenchChunkGroups(options: WorkbenchChunkGroupOptions =
     if (group.priority !== undefined)
       throw new Error(`Workbench product chunk group ${group.name} must not set priority`);
   }
-  // Claim the AppHost entry's dependencies before the general startup
-  // coalescer can merge them into UI chunks.
-  const deploymentAppHost: WorkbenchChunkGroup = {
-    name: "deployment-app-host-startup",
-    includeDependenciesRecursively: true,
-    test: /\/apps\/workbench-web\/src\/runtime\/(?:deployment-app-host-startup|websocket-app-host)\.ts$/,
-  };
-  return [...productGroups, deploymentAppHost, ...(startupGroup ? [startupGroup] : []), ...coreGroups];
+  return [...productGroups, ...coreGroups];
 }
 
 /** Coalesce small modules already required on the same startup paths.
