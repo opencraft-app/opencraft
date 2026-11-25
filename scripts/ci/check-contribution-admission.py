@@ -5,6 +5,12 @@ import subprocess
 import sys
 
 BLOCKED_DOMAIN = "@tencent.com"
+# The immutable pre-admission A2A commits in PR #602 retain their attribution.
+HISTORICAL_COMMIT_EXCEPTIONS = frozenset({
+    "ed6db9d1232e0fb8caf7638a7153218c9f9fcd4c",
+    "c86ed0e6867bef92941b8df5c15bfe24ec791359",
+    "7547baee34ae01d28e64776e0a92eaef4054e6f9",
+})
 SHA = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})")
 TRAILER_EMAIL = re.compile(r"<([^<>]+)>\s*$")
 COMMIT_FORMAT = "%H%x00%ae%x00%ce%x00%(trailers:key=Co-authored-by,valueonly,unfold,separator=%x0a)"
@@ -27,6 +33,8 @@ def violations(base: str, head: str) -> list[tuple[str, list[str]]]:
     rejected = []
     for offset in range(0, len(fields), 4):
         commit, author, committer, trailers = fields[offset:offset + 4]
+        if commit in HISTORICAL_COMMIT_EXCEPTIONS:
+            continue
         identities = [("author", author), ("committer", committer)]
         for trailer in trailers.splitlines():
             match = TRAILER_EMAIL.search(trailer)

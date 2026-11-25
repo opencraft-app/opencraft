@@ -15,6 +15,7 @@ should be upgraded or assessed against the current code before reporting.
 - PR and merge queue workflows check the newly introduced commits before build
   planning, tests and security scans. Author, committer and `Co-authored-by`
   addresses ending in `@tencent.com` are rejected, case-insensitively.
+  Historical exceptions apply to explicitly listed full commit IDs. New commits using the same address are checked.
   The check uses the recorded Git identities and compares against the event's
   base commit. The required `build-checks` and `security-checks` both require admission.
 - The `security` workflow scans every PR and main push with Gitleaks. PR dependency

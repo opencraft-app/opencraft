@@ -1,9 +1,11 @@
 import os
+import runpy
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 CHECK = Path(__file__).resolve().parents[1] / "ci" / "check-contribution-admission.py"
@@ -74,6 +76,16 @@ class ContributionAdmissionTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         empty = self.check(head, base=head)
         self.assertEqual(empty.returncode, 0, empty.stderr)
+
+    def test_historical_exception_matches_only_the_exact_commit(self):
+        address = "historical@tencent.com"
+        historical = self.commit(author=address, message="Approved historical commit")
+        head = self.commit(author=address, message="A later commit by the same author")
+        check = runpy.run_path(str(CHECK))["violations"]
+        with patch.dict(check.__globals__, {"HISTORICAL_COMMIT_EXCEPTIONS": frozenset({historical})}):
+            with patch.dict(os.environ, {"GIT_DIR": str(self.repo / ".git")}):
+                self.assertEqual(check(self.base, historical), [])
+                self.assertEqual(check(self.base, head), [(head, ["author"])])
 
     def test_does_not_apply_mailmap_to_attribution(self):
         (self.repo / ".mailmap").write_text("Mapped <allowed@example.test> <original@tencent.com>\n")
