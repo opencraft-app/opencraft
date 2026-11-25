@@ -2721,8 +2721,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     }
     if (message.method === "thread/goal/updated" && threadId) this.noteGoal(threadId, record(message.params).goal);
     if (message.method === "thread/goal/cleared" && threadId) this.noteGoal(threadId, null);
-    try { this.threadMetadata?.observeNotification(message); }
-    catch { this.diagnostic({ event: "thread-metadata-observation-failed" }); }
+    this.observeThreadIdentityNotification(message);
     if (this.messageSenders) message = projectThreadMessageNotification(this.projectSender, message);
     if (this.messageAttachments) message = projectThreadAttachmentNotification(this.messageAttachments, message);
     const targets = threadId ? this.threadTargets(threadId) : [];
@@ -3511,7 +3510,21 @@ export class CodexEngineAdapter implements DuplexTransport {
   }
   /** A bridge Thread's live notification with the sender recorded by prepareExternalInput. */
   private projectExternalNotification(message: RpcRecord): RpcRecord {
+    this.observeThreadIdentityNotification(message);
     return this.messageSenders ? projectThreadMessageNotification(this.projectSender, message) as RpcRecord : message;
+  }
+  private observeThreadIdentityNotification(message: RpcRecord): void {
+    try { this.identity?.observeNotification(message); }
+    catch { this.diagnostic({ event: "thread-metadata-observation-failed" }); }
+  }
+  private observeExternalIdentityResult(
+    method: string,
+    params: RpcRecord,
+    result: unknown,
+    sender?: TransportSubmissionContext["sender"],
+  ): void {
+    try { this.threadMetadata?.observeResult(method, params, result, sender); }
+    catch { this.diagnostic({ event: "thread-metadata-observation-failed" }); }
   }
   /** The trusted submission lookup for collection, which names bridge Threads by their native session. */
   private usageSubmissionByRecord() {
@@ -3583,6 +3596,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       projectHistory: (method, params, result) => this.projectExternalHistory(method, params, result),
       projectNotification: (message) => this.projectExternalNotification(message),
       observeTitle: (method, params, result) => this.observeExternalTitle(method, params, result),
+      observeIdentityResult: (method, params, result, sender) => this.observeExternalIdentityResult(method, params, result, sender),
       // The Host opens its sender storage when it connects, after a bridge is assembled.
       senderAttribution: () => this.externalSenderAttribution,
       usage: {

@@ -1,4 +1,5 @@
-import WebSocket from "ws";
+import type WebSocket from "ws";
+import { openCodexNativeSocket } from "./codex-native-endpoint.js";
 
 const HISTORY_READS = new Set(["thread/read", "thread/turns/list", "thread/items/list"]);
 export function isIsolatedCoreRead(message: { method?: unknown; id?: unknown }): boolean {
@@ -79,7 +80,7 @@ export class CodexCoreReadIsolation {
       // A deadline, reset or close may have retired this slot while health was pending.
       if (this.closed || slot.retired) return;
       if (!slot.job || performance.now() >= slot.job.deadline) { this.fail(slot); return; }
-      const ws = new WebSocket(`ws+unix://${endpoint.nativeSocket}:/`, {
+      const ws = openCodexNativeSocket(endpoint.nativeSocket, {
         handshakeTimeout: Math.min(5_000, this.limits.timeoutMs), maxPayload: this.limits.maxPayload,
       });
       slot.socket = ws;

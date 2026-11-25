@@ -1,4 +1,4 @@
-import { CodexCoreReadIsolation, isIsolatedCoreRead } from "./codex-core-read-isolation";
+import { CodexCoreReadIsolation, isIsolatedCoreRead } from "@opencraft/account-pool-host/codex-core-read-isolation";
 import { CodexCoreSocket } from "./codex-core-socket";
 import { CodexCoreControlClient } from "@opencraft/account-pool-host";
 import type { DuplexTransport, TransportStatus } from "@opencraft/appserver-client/transport";

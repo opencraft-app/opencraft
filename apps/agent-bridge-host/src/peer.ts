@@ -1,6 +1,6 @@
 import { StringDecoder } from 'node:string_decoder';
 import { randomUUID } from 'node:crypto';
-import { isBridgeCallback, decodeFrame, splitLines, encodeFrame, isRequest, isNotification, isSuccess, type BridgeWireMessage, type BridgeCommand } from '@opencraft/agent-bridge-protocol';
+import { BRIDGE_MAX_FRAME_BYTES, isBridgeCallback, decodeFrame, splitLines, encodeFrame, isRequest, isNotification, isSuccess, type BridgeWireMessage, type BridgeCommand } from '@opencraft/agent-bridge-protocol';
 import { createSandbox, type SandboxPool, type Sandbox, type SandboxProcess } from '@opencraft/sandbox';
 import type { Generation } from './types.js';
 /** One pinned generation owns one sandbox and bridge. No gateway lifetime here. */
@@ -75,9 +75,9 @@ export class Peer {
   }
   private async write(message: BridgeWireMessage): Promise<void> {
     if (this.failed || !this.child) throw this.failed ?? Error('Bridge unavailable');
-    const data = Buffer.from(encodeFrame(message) + '\n');
-    if (data.byteLength > 1_048_576) throw Error('Bridge request too large');
-    await this.child.writeStdin(data);
+    const frame = encodeFrame(message);
+    if (Buffer.byteLength(frame) > BRIDGE_MAX_FRAME_BYTES) throw Error('Bridge request too large');
+    await this.child.writeStdin(Buffer.from(frame + '\n'));
   }
   async request(id: string, method: BridgeCommand, params: unknown): Promise<BridgeWireMessage> {
     if (this.failed) throw this.failed;

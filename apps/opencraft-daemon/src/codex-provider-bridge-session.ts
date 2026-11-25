@@ -138,6 +138,13 @@ export class CodexProviderBridgeSession implements DuplexTransport {
       releaseForAdoption?: (threadId: string) => Promise<boolean>;
       /** Let the local title generator see a bridge Thread's creation and first turn, by native identity. */
       observeTitle?: (method: string, params: Record<string, unknown>, result: unknown) => void;
+      /** Report successful operations to the Host's identity owner using public Thread IDs. */
+      observeIdentityResult?: (
+        method: string,
+        params: Record<string, unknown>,
+        result: unknown,
+        sender: TransportSubmissionContext["sender"],
+      ) => void;
     } = {},
   ) {
     this.gateway = createGateway((threadId, value) => {
@@ -962,11 +969,13 @@ export class CodexProviderBridgeSession implements DuplexTransport {
           throw Object.assign(Error("Invalid input IDs"), { code: -32602 });
         result = await this.gateway.status(threadId, inputIds);
       } else throw Object.assign(Error("Method unavailable for this bridge thread"), { code: -32601 });
+      const visible = this.gateway.history(forkedId ?? threadId, result);
+      // An accepted operation still belongs to the Thread after its sending client disconnects.
+      this.policy.observeIdentityResult?.(method, { ...p, threadId }, visible, context.sender);
       const pendingInteractions = ["thread/resume", "thread/read"].includes(method)
         ? await this.gateway.pendingInteractions(threadId)
         : [];
       if (this.clients.get(client) === identity) {
-        const visible = this.gateway.history(forkedId ?? threadId, result);
         this.emit(
           {
             id: frame.id,
@@ -992,6 +1001,8 @@ export class CodexProviderBridgeSession implements DuplexTransport {
       await task;
     } catch (cause) {
       const error = cause as Error & { code?: number; kind?: string; commandId?: string };
+      const oversizedHistory = error.kind === "frame-too-large"
+        && ["thread/read", "thread/turns/list", "thread/items/list"].includes(method);
       const rejected =
         ["explicit-reject", "stale-target", "invalid", "unsupported"].includes(error.kind ?? "") ||
         [-32002, -32601, -32602].includes(error.code ?? 0);
@@ -1000,10 +1011,11 @@ export class CodexProviderBridgeSession implements DuplexTransport {
           {
             id: frame.id,
             error: {
-              code: error.code ?? -32005,
+              code: oversizedHistory ? -32072 : error.code ?? -32005,
               message: error.message,
               data: {
-                submissionOutcome: rejected ? "rejected" : "unknown",
+                ...(oversizedHistory ? { code: "HISTORY_RESPONSE_TOO_LARGE" } : {}),
+                submissionOutcome: oversizedHistory || rejected ? "rejected" : "unknown",
                 retryable: false,
                 bridgeErrorKind: error.kind ?? (rejected ? "explicit-reject" : "unknown-outcome"),
                 bridgeCommandId: error.commandId,

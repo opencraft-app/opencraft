@@ -15,6 +15,7 @@
     "./pool-core": "./src/account-pool-core.ts",
     "./credential-lease-exchange": "./src/credential-lease-exchange.ts",
     "./credential-egress": "./src/credential-egress.ts",
+    "./codex-core-read-isolation": "./src/codex-core-read-isolation.ts",
     "./codex-model-catalog": "./src/codex-model-catalog.ts",
     "./model-gateway": "./src/model-gateway.ts",
     "./model-gateway-http": "./src/model-gateway-http.ts",

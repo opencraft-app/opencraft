@@ -5,7 +5,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import WebSocket, { WebSocketServer } from "ws";
-import { CodexCoreReadIsolation } from "../../apps/opencraft-daemon/src/codex-core-read-isolation";
+import { CodexCoreReadIsolation } from "@opencraft/account-pool-host/codex-core-read-isolation";
 import { CodexCoreSocket } from "../../apps/opencraft-daemon/src/codex-core-socket";
 import { CodexEngineAdapter } from "../../apps/opencraft-daemon/src/codex-engine-adapter";
 import { CodexNativeCoreTransport } from "../../apps/opencraft-daemon/src/codex-native-core-transport";
@@ -156,6 +156,7 @@ test("queued reads share the end-to-end deadline and disposal leaves the shared 
 
 test("Host subscription/status checks request no history and schedule inspection uses bounded turn metadata", async () => {
   const adapter: any = Object.create(CodexEngineAdapter.prototype), calls: any[] = [];
+  adapter.options = {};
   adapter.nativeCore = {}; adapter.nativeSubscribedThreads = new Set(); adapter.sessionMcpRetirements = new Map();
   adapter.requestPhysical = async (method: string, params: any) => {
     calls.push({ method, params });

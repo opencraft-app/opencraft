@@ -14,6 +14,9 @@ import { createServerCodexBridge } from '../../apps/opencraft-daemon/src/bridge-
 import { CodexProviderBridge } from '../../apps/opencraft-daemon/src/codex-provider-bridge.js';
 import { localTestBackend } from './fixtures/local-backend.js';
 import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
+import { AppServerRpcError, type AppServerClient } from '@opencraft/appserver-client';
+import { BRIDGE_MAX_FRAME_BYTES } from '@opencraft/agent-bridge-protocol';
+import { readTurnsPage } from '../../packages/appserver-session/src/history-strategies';
 const token = 'private-test-token-00000000000000000000';
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 async function until<T>(read: () => T | Promise<T>, predicate: (v: T) => boolean): Promise<T> {
@@ -41,7 +44,6 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
   let loaded=true,nativeActive=false,issued=0,revoked=0,blockRetirement=cli==='timeout';const nativeConfigurations:any[]=[];
   const lifecycleCalls:any[]=[];const nativeStartInputs:unknown[]=[];const settingsCalls:any[]=[];const titleCalls:any[]=[];const oldStarts:any[]=[];const releaseCalls:string[]=[];let releaseAnswer=false;
   ws.on('connection', socket => {
-    nativePeer = socket;
     socket.on('message', raw => {
       const f = JSON.parse(String(raw));
       if (f.id === 'native-approval' && f.result) { approvalAnswer = f.result; approvalAnswers++; }
@@ -53,7 +55,10 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
         if (f.method === 'thread/resume') { reply({ thread: { id: 'native-old', turns: [] } }); return; }
         if (f.method === 'turn/start') { oldStarts.push(f.params); reply({ turn: { id: 'old-turn-1' } }); return; }
       }
-      if (f.method === 'initialize') reply({ userAgent: 'codex/0.167.0' });
+      if (f.method === 'initialize') {
+        if (f.params.clientInfo.name === 'opencraft-codex-bridge') nativePeer = socket;
+        reply({ userAgent: 'codex/0.167.0' });
+      }
       if (['thread/fork','thread/name/set','thread/archive','thread/unarchive','thread/delete','thread/goal/get','thread/goal/set','thread/goal/clear'].includes(f.method)) {
         lifecycleCalls.push({method:f.method,params:f.params});
         if (f.method === 'thread/fork') reply({ thread: { id: 'native-fork', cwd: root, turns: [] } });
@@ -84,6 +89,12 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
       if (f.method === 'thread/read'&&f.params.includeTurns&&!hasRollout){socket.send(JSON.stringify({id:f.id,error:{code:-32600,message:'thread native-new is not materialized yet; includeTurns is unavailable before first user message'}}));return;}
       if (f.method === 'thread/read') reply({ thread: { id: 'native-new',status:{type:!loaded?'notLoaded':nativeActive?'active':'idle'}, turns: [{ id: 'native-turn', items: [{ type: 'commandExecution', id: 'tool', command: 'cat input.txt', commandActions: [{ type: 'business-data', threadId: 'business-thread', id: 'native-turn' }] }] }] } });
       if (f.method === 'thread/turns/list') {
+        if (f.params.itemsView === 'full') {
+          const bytes = f.params.limit === 10 ? BRIDGE_MAX_FRAME_BYTES + 1 : 2 * 1024 * 1024;
+          const text = '界'.repeat(Math.ceil(bytes / 3));
+          reply({ data: [{ id: 'native-turn', status: 'completed', itemsView: 'full', items: [{ type: 'agentMessage', id: 'large', text }] }], nextCursor: 'older-turn' });
+          return;
+        }
         assert.deepEqual(f.params, { threadId: 'native-new', limit: 1, cursor: null, sortDirection: 'desc', itemsView: 'notLoaded' });
         reply({ data: [{ id: 'native-turn', status: nativeActive ? 'inProgress' : 'completed', items: [] }], nextCursor: 'older-turn' });
       }
@@ -110,6 +121,8 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
   let paused = false;
   const staged:unknown[]=[];const guarded:[string,string][]=[];
   let legacyListener: (frame: string) => void = () => {};
+  const verifiedSender = { kind: 'employee' as const, loginName: 'alice' };
+  const identityCalls: Array<{method: string; threadId: unknown; createdId: unknown; inputId: unknown; sender: unknown}> = [];
   const createTransport = async () => {
     const legacy = {
       status: { state: 'open' as const }, async connect() {}, async close() {}, subscribeStatus() { return () => {}; },
@@ -128,6 +141,10 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
       prepareInput:async(threadId,clientId,input)=>{staged.push([threadId,clientId]);return input.map((item:any)=>item.type==='mention'?{type:'text',text:`file at ${item.path}`}:item);},
       projectHistory:(method,_params,result)=>({...(result as object),projected:method}),
       observeTitle:(method,params,result)=>titleCalls.push([method,(params as any).threadId??null,(result as any).thread?.id??(result as any).turn?.id]),
+      senderAttribution: () => true,
+      observeIdentityResult: (method, params, result, sender) => {
+        identityCalls.push({method,threadId:params.threadId,createdId:(result as any).thread?.id,inputId:params.clientUserMessageId,sender});
+      },
       adoptExisting:true,newThreads:true,releaseForAdoption:async threadId=>{releaseCalls.push(threadId);return releaseAnswer;},
       queueGuard:async(threadId,method,params,_context,find)=>{
         guarded.push([threadId,method]);
@@ -139,16 +156,22 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
   };
   transport = await createTransport();
   let sequence = 0;
-  const request = async (method: string, params: unknown = {}) => {
+  const request = async (method: string, params: unknown = {}, sender?: typeof verifiedSender) => {
     const id = ++sequence;
-    await transport!.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: 'client' }));
+    const raw = JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: 'client' });
+    if (sender) await transport!.sendWithContext(raw, { sender, validUntil: Date.now() + 60_000 });
+    else await transport!.send(raw);
     const frame = await until(() => frames.find(f => f.id === id), Boolean);
-    assert.equal(frame.error, undefined, JSON.stringify(frame.error)); return frame.result;
+    if (frame.error) throw new AppServerRpcError(frame.error);
+    return frame.result;
   };
   await request('initialize', { capabilities: { extensions: { 'opencraft/steer-evidence': { version: 1 } } } });
   const created = await request('thread/start', { cwd: root, approvalPolicy: 'never', sandbox: 'read-only', agentBridge: { threadId: 'bridge:codex:public-new', clientRequestId: 'create' },
-    dynamicTools: [{ type: 'function', name: 'client_declared', description: 'Client tool', inputSchema: { type: 'object' } }, { type: 'function', name: 'host_declared', description: 'Shadowed', inputSchema: { type: 'object' } }] });
+    dynamicTools: [{ type: 'function', name: 'client_declared', description: 'Client tool', inputSchema: { type: 'object' } }, { type: 'function', name: 'host_declared', description: 'Shadowed', inputSchema: { type: 'object' } }] }, cli ? undefined : verifiedSender);
   assert.equal(created.thread.id, 'bridge:codex:public-new');
+  if (!cli) assert.deepEqual(identityCalls[0], {
+    method: 'thread/start', threadId: created.thread.id, createdId: created.thread.id, inputId: undefined, sender: verifiedSender,
+  });
   // The Host's own tools are declared at creation, replacing a client declaration of the same name.
   assert.deepEqual(startDynamicTools?.map((tool: any) => tool.name), ['client_declared', 'host_declared']);
   if(!cli){
@@ -269,8 +292,13 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
     assert.equal((await until(()=>frames.find(f=>f.id===gone),Boolean)).error.data.submissionOutcome,'rejected');
   }
   const started = await request('turn/start', { threadId: 'bridge:codex:public-new', clientUserMessageId: 'start', input: [{ type: 'text', text: 'read' },
-    ...(cli===false?[{ type: 'mention', name: 'input.txt', path: '/work/input.txt' }]:[])] });
+    ...(cli===false?[{ type: 'mention', name: 'input.txt', path: '/work/input.txt' }]:[])] }, cli ? undefined : verifiedSender);
   if(cli===false){
+    assert.deepEqual(identityCalls.at(-1), {
+      method: 'turn/start', threadId: created.thread.id, createdId: undefined, inputId: 'start', sender: verifiedSender,
+    });
+    assert.ok(!identityCalls.some(entry => entry.inputId === 'paused-input' || entry.inputId === 'actor-input:forged'));
+
     // Attachments are staged by the composition before native Codex sees the input.
     assert.deepEqual(nativeStartInputs.at(-1),[{type:'text',text:'read'},{type:'text',text:'file at /work/input.txt'}]);
     assert.deepEqual(staged.at(-1),['bridge:codex:public-new','start']);
@@ -282,6 +310,28 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
   if(cli==='initial'){assert.equal(issued,2);assert.equal(nativeConfigurations.length,0);assert.equal(initialConfig['shell_environment_policy.set'].OPENCRAFT_THREAD_CLI,'fixture');assert.equal(initialConfig['mcp_servers.opencraft_session'].http_headers.Authorization,'Bearer platform-mcp');}
   else if(cli){assert.equal(issued,cli==='timeout'?2:1);assert.equal(nativeConfigurations[0].sandbox,'read-only');assert.equal(nativeConfigurations[0].approvalPolicy,'never');assert.equal(nativeConfigurations[0].config['shell_environment_policy.set'].OPENCRAFT_THREAD_CLI,'fixture');assert.equal(nativeConfigurations[0].config['mcp_servers.opencraft_session'].http_headers.Authorization,'Bearer platform-mcp');}
   const turnId = started.turn.id; assert.notEqual(turnId, 'native-turn');
+  if (!cli) {
+    const attemptedLimits: number[] = [];
+    const client = {
+      async request(method: string, params: { limit: number }) {
+        attemptedLimits.push(params.limit);
+        try { return await request(method, params); }
+        catch (error) {
+          assert.ok(error instanceof AppServerRpcError);
+          assert.equal(error.code, -32072);
+          assert.equal((error.data as { code: string }).code, 'HISTORY_RESPONSE_TOO_LARGE');
+          throw error;
+        }
+      },
+    } as unknown as AppServerClient;
+    const executionPeer = nativePeer;
+    const page = await readTurnsPage({ client, threadId: created.thread.id, requestTimeoutMs: 30_000 }, null);
+    assert.deepEqual(attemptedLimits, [10, 5]);
+    assert.equal(page.nextCursor, 'older-turn');
+    assert.ok(Buffer.byteLength((page.data[0].items[0] as { text: string }).text) >= 2 * 1024 * 1024);
+    assert.equal(nativePeer, executionPeer);
+    assert.equal(executionPeer!.readyState, 1, 'oversize history leaves the native execution connection open');
+  }
   // The local Host's desktop serves a bridge Thread: the request reaches it with the public identity.
   await request('opencraft/desktop/attachment/create', { threadId: 'bridge:codex:public-new' });
   assert.equal(forwarded.find(f => f.method === 'opencraft/desktop/attachment/create').params.threadId, 'bridge:codex:public-new');

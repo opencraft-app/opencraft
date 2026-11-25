@@ -1,6 +1,6 @@
 import type { ExecutionLease, NativeExecutionState } from "./execution-lease-store.js";
 import { createNativeExecutionTurnInspector } from "./native-execution-turn-inspector.js";
-import { CodexCoreReadIsolation } from "./codex-core-read-isolation.js";
+import { CodexCoreReadIsolation } from "@opencraft/account-pool-host/codex-core-read-isolation";
 import { randomUUID } from "node:crypto";
 
 export { createNativeExecutionTurnInspector };

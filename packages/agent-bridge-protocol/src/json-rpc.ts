@@ -11,7 +11,7 @@
  */
 
 /** Default cap on a single JSONL line, in bytes (UTF-8). */
-export const BRIDGE_MAX_FRAME_BYTES = 1_048_576;
+export const BRIDGE_MAX_FRAME_BYTES = 10 * 1024 * 1024;
 
 export interface BridgeFrameLimits {
   readonly maxFrameBytes: number;
@@ -262,11 +262,14 @@ export function encodeFrame(message: BridgeWireMessage): string {
 export interface LineSplitState {
   /** Incomplete trailing line carried into the next chunk. */
   readonly carry: string;
+  /** UTF-8 size of the carried line returned by the splitter. */
+  readonly carryBytes?: number;
   /** True while dropping the remainder of an over-long line up to its newline. */
   readonly discarding: boolean;
 }
 
 export interface LineSplitResult extends LineSplitState {
+  readonly carryBytes: number;
   readonly lines: readonly string[];
   /** One recoverable frame-too-large error per dropped over-long line. */
   readonly oversized: readonly BridgeErrorObject[];
@@ -293,34 +296,38 @@ export function splitLines(
   state: LineSplitState = { carry: "", discarding: false },
   limits: BridgeFrameLimits = DEFAULT_BRIDGE_FRAME_LIMITS,
 ): LineSplitResult {
-  // An oversized carry was already dropped; do not prepend it again.
-  let remaining = state.discarding ? chunk : state.carry + chunk;
   let discarding = state.discarding;
+  let carry = discarding ? "" : state.carry;
+  let carryBytes = discarding ? 0 : (state.carryBytes ?? byteLength(carry));
   const lines: string[] = [];
   const oversized: BridgeErrorObject[] = [];
 
-  let newline = remaining.indexOf("\n");
-  while (newline >= 0) {
-    const part = remaining.slice(0, newline);
-    remaining = remaining.slice(newline + 1);
-    if (discarding) {
-      // This newline ends the oversized line; resume from the next line.
-      discarding = false;
-    } else if (byteLength(part) > limits.maxFrameBytes) {
-      oversized.push(frameTooLarge(limits));
-    } else {
-      lines.push(part);
+  let start = 0;
+  while (true) {
+    const newline = chunk.indexOf("\n", start);
+    if (!discarding) {
+      const part = newline < 0 ? chunk.slice(start) : chunk.slice(start, newline);
+      carryBytes += byteLength(part);
+      // Decoded bytes arrive on scalar boundaries, but string callers can split a surrogate pair.
+      const first = part.charCodeAt(0);
+      if (first >= 0xdc00 && first <= 0xdfff) {
+        const last = carry.charCodeAt(carry.length - 1);
+        if (last >= 0xd800 && last <= 0xdbff) carryBytes -= 2;
+      }
+      if (carryBytes > limits.maxFrameBytes) {
+        oversized.push(frameTooLarge(limits));
+        carry = "";
+        carryBytes = 0;
+        discarding = true;
+      } else {
+        carry += part;
+      }
     }
-    newline = remaining.indexOf("\n");
+    if (newline < 0) return { lines, carry, carryBytes, discarding, oversized };
+    if (!discarding) lines.push(carry);
+    carry = "";
+    carryBytes = 0;
+    discarding = false;
+    start = newline + 1;
   }
-
-  if (discarding) {
-    // Still inside an oversized line with no newline yet: keep dropping.
-    return { lines, carry: "", discarding: true, oversized };
-  }
-  if (byteLength(remaining) > limits.maxFrameBytes) {
-    oversized.push(frameTooLarge(limits));
-    return { lines, carry: "", discarding: true, oversized };
-  }
-  return { lines, carry: remaining, discarding: false, oversized };
 }

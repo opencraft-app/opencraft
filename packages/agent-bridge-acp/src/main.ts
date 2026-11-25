@@ -101,7 +101,7 @@ export async function runBridgeStdio(options: BridgeStdioOptions): Promise<void>
   }
 
   const decoder = new StringDecoder("utf8");
-  let lines = { carry: "", discarding: false };
+  let lines = { carry: "", carryBytes: 0, discarding: false };
   let closing = false;
 
   const handleLine = async (line: string): Promise<void> => {
@@ -146,7 +146,7 @@ export async function runBridgeStdio(options: BridgeStdioOptions): Promise<void>
   options.stdin.on("data", (chunk: Buffer | string) => {
     const text = typeof chunk === "string" ? chunk : decoder.write(chunk);
     const batch = splitLines(text, lines);
-    lines = { carry: batch.carry, discarding: batch.discarding };
+    lines = { carry: batch.carry, carryBytes: batch.carryBytes, discarding: batch.discarding };
     for (const oversized of batch.oversized) {
       diagnostic(oversized.message);
     }

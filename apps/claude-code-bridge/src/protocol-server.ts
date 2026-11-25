@@ -121,13 +121,8 @@ export class BridgeProtocolServer {
   private decode(chunk: string | Buffer): readonly string[] {
     const batch = splitLines(this.decoder.write(Buffer.from(chunk)), this.lines);
     this.lines = batch;
-    if (batch.oversized.length > 0) {
-      void this.send(bridgeFailure(null, {
-        kind: "frame-too-large",
-        code: -32007,
-        message: "Bridge frame exceeds the 1 MiB limit",
-      })).catch(() => {});
-    }
+    const oversized = batch.oversized[0];
+    if (oversized) void this.send(bridgeFailure(null, oversized)).catch(() => {});
     return batch.lines;
   }
 

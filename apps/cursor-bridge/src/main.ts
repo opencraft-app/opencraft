@@ -16,7 +16,7 @@ const bridge = new CursorBridge({ factory, notify: (method, params) => {
   });
 } });
 const decoder = new StringDecoder("utf8");
-let lines = { carry: "", discarding: false };
+let lines = { carry: "", carryBytes: 0, discarding: false };
 let closing = false;
 async function close() {
   if (closing) return; closing = true;
@@ -39,7 +39,7 @@ async function handle(line: string) {
   }
 }
 process.stdin.on("data", (data: Buffer) => {
-  const batch = splitLines(decoder.write(data), lines); lines = { carry: batch.carry, discarding: batch.discarding };
+  const batch = splitLines(decoder.write(data), lines); lines = { carry: batch.carry, carryBytes: batch.carryBytes, discarding: batch.discarding };
   if (batch.oversized.length) { void close().finally(() => process.exit(1)); return; }
   for (const line of batch.lines) void handle(line).catch(() => { void close().finally(() => process.exit(1)); });
 });
