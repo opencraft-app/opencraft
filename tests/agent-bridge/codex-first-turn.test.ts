@@ -161,6 +161,8 @@ test('a thread read in the first moments of a session answers with no turns for 
   ];
   for(const [code,message,answered] of refusals){
     const owner=new CodexOwnerConnection('/unused','unused',()=>{},()=>{},()=>{});
+    // Exercise read classification against the fixture's in-memory native transport.
+    owner.readHistory = owner.request.bind(owner);
     const reads:boolean[]=[];
     (owner as any).write=(frame:any)=>queueMicrotask(()=>{
       reads.push(frame.params.includeTurns===true);
@@ -183,6 +185,7 @@ test('a thread read in the first moments of a session answers with no turns for 
 test('on Windows an empty new rollout makes even the metadata read wait, then the read answers',async()=>{
   const empty='failed to read thread: thread-store internal error: failed to read session metadata D:\\s\\rollout.jsonl: rollout at D:\\s\\rollout.jsonl is empty';
   const owner=new CodexOwnerConnection('/unused','unused',()=>{},()=>{},()=>{});
+  owner.readHistory = owner.request.bind(owner);
   let reads=0;
   (owner as any).write=(frame:any)=>queueMicrotask(()=>{
     // The first three reads meet the empty rollout; then the first line is written.

@@ -107,6 +107,22 @@ test("splitLines keeps an incomplete trailing line for the next chunk", () => {
   assert.equal(second.carry, "");
 });
 
+test("splitLines counts UTF-8 across chunks and keeps subsequent lines after overflow", () => {
+  const limits = { maxFrameBytes: 8 };
+  const prefix = splitLines("a\ud83d", undefined, limits);
+  const completed = splitLines("\ude42界\n", prefix, limits);
+  assert.deepEqual(completed.lines, ["a🙂界"]);
+  assert.equal(completed.oversized.length, 0);
+
+  const full = splitLines("\ude42界", prefix, limits);
+  const dropped = splitLines("b", full, limits);
+  assert.equal(dropped.oversized[0]?.kind, "frame-too-large");
+  assert.equal(dropped.carryBytes, 0);
+  const recovered = splitLines("tail\nclean\n", dropped, limits);
+  assert.deepEqual(recovered.lines, ["clean"]);
+  assert.equal(recovered.oversized.length, 0);
+});
+
 test("splitLines drops an over-long incomplete carry as a recoverable frame-too-large", () => {
   const limits = { maxFrameBytes: 64 };
   // A chunk with no newline that grows beyond the limit must be dropped, not
