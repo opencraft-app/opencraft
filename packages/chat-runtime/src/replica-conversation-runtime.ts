@@ -2008,10 +2008,18 @@ export function createReplicaConversationRuntime(
       if (abandonedCommands.has(intent.commandId) || abandonedClientIds.has(intent.clientMessageId))
         throw new SubmissionOutcomeUnknownError();
       resetCapacityRetry();
-      if (outbox && !outbox.hydrated) await outbox.ready();
-      if (outbox && ((intent.target.type !== "steer-active-turn" && outbox.hasPending())
-        || !snapshot.authoritative || config.canDispatchOutbox?.(intent) === false))
-        return outbox.admit(intent);
+      if (outbox) {
+        if (!outbox.hydrated) await outbox.ready();
+        const steering = intent.target.type === "steer-active-turn";
+        const dispatchReady = config.canDispatchOutbox?.(intent);
+        // Attachments and attached context require a live command. When the
+        // Host is ready, its command owner can wait for the initial history.
+        const waitForHistoryOnline = !steering && dispatchReady === true
+          && (intent.attachments.length > 0 || intent.context.length > 0);
+        if ((!steering && outbox.hasPending()) || dispatchReady === false
+          || (!snapshot.authoritative && !waitForHistoryOnline))
+          return outbox.admit(intent);
+      }
       try { return await submitOnline(intent); }
       catch (error) {
         if (!outbox || !["existing-thread", "enqueue-follow-up"].includes(intent.target.type)
