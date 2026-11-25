@@ -1,5 +1,5 @@
 import { openWorkspaceFiles } from './workspace-files';
-import { WORKSPACE_PLACEMENT_EXTENSION, supportsWorkspacePlacement } from '@opencraft/appserver-protocol';
+import { OPENCRAFT_THREAD_FOLLOW_UP_EXTENSION, WORKSPACE_HISTORY_ASLEEP, WORKSPACE_PLACEMENT_EXTENSION, supportsWorkspacePlacement } from '@opencraft/appserver-protocol';
 import type { TransportSendProgressObserver } from "@opencraft/appserver-client/transport";
 import { executionStatusForThread } from "@opencraft/appserver-client/transport";
 import { OPENCRAFT_STEER_EVIDENCE_EXTENSION, OPENCRAFT_STEER_EVIDENCE_NOTIFICATION, parseSteerStatusResult, parseSteerEvidenceCapability } from "@opencraft/appserver-protocol";
@@ -71,6 +71,8 @@ import {
   OPENCRAFT_THREAD_PINS_EXTENSION,
   supportsThreadPinDiscovery,
   OPENCRAFT_THREAD_START_DURABILITY_EXTENSION,
+  supportsTerminalDraftScope,
+  OPENCRAFT_MODEL_CATALOG_REVALIDATION_EXTENSION,
   OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION,
   parseAttachmentStagingCapability,
   parseThreadLifecycleCapability,
@@ -78,6 +80,8 @@ import {
   supportsUnconfirmedSteerDiscard,
   parseThreadGoalCapability,
   allowsAppServerMethod,
+  OPENCRAFT_METHOD_ACCESS_EXTENSION,
+  parseAppServerMethodAccess,
 } from "@opencraft/appserver-protocol";
 import { OPENCRAFT_RESUME_HISTORY_EXTENSION } from "@opencraft/appserver-protocol";
 import { reasoningCapability, modelInputModalities } from "@opencraft/composer-core";
@@ -503,6 +507,7 @@ interface ConversationBinding {
   cancelHydration: (() => void) | null;
   hydrationForReconnect: boolean;
   hydrationConnectionRevision: number;
+  sleepingHistoryRevision: number | null;
   capabilityRegistrationOperation: Promise<void> | null;
   capabilityRegistrationClient: AppServerClient | null;
   capabilityRegistrationGeneration: number | null;
@@ -959,9 +964,13 @@ export function createAppServerWorkbenchRuntime(
    * hydration can commit independently while every mutation reuses the same
    * readiness boundary.
    */
-  const declaredDynamicTools = () => config.dynamicTools?.filter(tool =>
-    tool.type !== "namespace" || tool.name !== MCP_APPS_NAMESPACE
-    || client?.initializeResult?.capabilities?.extensions?.["opencraft/mcp-app-builder"] !== undefined);
+  const declaredDynamicTools = () => {
+    const extensions = client?.initializeResult?.capabilities?.extensions;
+    if (parseAppServerMethodAccess(extensions?.[OPENCRAFT_METHOD_ACCESS_EXTENSION])?.clientDynamicTools === false)
+      return undefined;
+    return config.dynamicTools?.filter(tool => tool.type !== "namespace" || tool.name !== MCP_APPS_NAMESPACE
+      || extensions?.["opencraft/mcp-app-builder"] !== undefined);
+  };
   const ensureBindingCapabilities = (
     binding: ConversationBinding,
   ): Promise<void> => {
@@ -1141,17 +1150,47 @@ export function createAppServerWorkbenchRuntime(
           && phase === "ready" && connection.snapshot.phase === "usable" && !unavailableThreads.has(threadId)
           && client === currentClient && client === dispatchClient
           && generation === dispatchClient.connectionGeneration && dispatchClient.status.state === "open";
-        if (!canDispatch()) throw new AppServerClientError("NOT_CONNECTED", "The connection changed before the response could be stopped");
+        if (!canDispatch()) throw new AppServerClientError("NOT_CONNECTED", "The connection changed before the command could be sent");
         return operation(canDispatch);
+      };
+      const followUpCapability = () => executionEngineExtension(currentClient.initializeResult?.capabilities?.extensions,
+        threadId, OPENCRAFT_THREAD_FOLLOW_UP_EXTENSION);
+      const admitsDirectTurn = () => {
+        const support = followUpCapability();
+        return support?.version === 1 && support.directTurnStart === true;
+      };
+      const nativeTurnActive = () => currentSession.views.get(threadId)?.turns.some(turn => turn.status === "inProgress") === true;
+      const canStartTurnWithoutHistory = (intent: SubmitIntent) => {
+        const owner = bindings.get(threadId);
+        return (intent.target.type === "existing-thread" || intent.target.type === "enqueue-follow-up")
+          && intent.attachments.length === 0 && intent.context.length === 0
+          && !!owner && !owner.disposed && !unavailableThreads.has(threadId) && admitsDirectTurn()
+          && owner.sleepingHistoryRevision === connectionRevision && owner.acceptedTurnIds.size === 0
+          && !nativeTurnActive();
       };
       const baselineGatedCommands: ConversationCommandPort = {
         ...currentCommandPort,
-        submit: (intent, options) => afterAuthoritativeBaseline(canDispatch => {
-          const followUp = executionEngineExtension(currentClient.initializeResult?.capabilities?.extensions, threadId, "opencraft/thread-follow-up");
-          const dispatched = intent.target.type === "enqueue-follow-up" && followUp?.queue === false
+        submit(intent, options) {
+          const dispatched = intent.target.type === "enqueue-follow-up" && followUpCapability()?.queue === false
             ? { ...intent, target: { type: "existing-thread" as const, key: intent.target.key } } : intent;
-          return currentCommandPort.submit(dispatched, { ...options, canDispatch: () => (options?.canDispatch() ?? true) && canDispatch() });
-        }, true),
+          const send = (canDispatch: () => boolean) => currentCommandPort.submit(dispatched, {
+            ...options, canDispatch: () => (options?.canDispatch() ?? true) && canDispatch(),
+          });
+          const owner = bindings.get(threadId);
+          if (dispatched.target.type === "existing-thread" && owner && admitsDirectTurn()
+            && (owner.runtime.getSnapshot().authoritative || canStartTurnWithoutHistory(dispatched))) {
+            return afterCurrentHost(async canDispatch => {
+              assertMethodAccess("turn/start");
+              const receipt = await send(canDispatch);
+              if (receipt.turnId !== null && canDispatch()) {
+                retainAcceptedTurn(owner, receipt.turnId);
+                if (!owner.runtime.getSnapshot().authoritative) void hydrateBinding(owner, true).catch(() => undefined);
+              }
+              return receipt;
+            });
+          }
+          return afterAuthoritativeBaseline(send, true);
+        },
         interrupt: (key, turnId, provenance, options) => afterCurrentHost(canDispatch => currentCommandPort.interrupt(key, turnId, provenance, {
           canDispatch: () => (options?.canDispatch() ?? true) && canDispatch(),
         })),
@@ -1177,10 +1216,11 @@ export function createAppServerWorkbenchRuntime(
       };
       conversation = createReplicaConversationRuntime({
         localOutbox: localOutbox(threadId) ?? undefined,
+        canStartTurnWithoutHistory,
         canDispatchOutbox: (intent) => config.canDispatchOutbox?.() !== false && phase === "ready" && connection.snapshot.phase === "usable" && currentTransport?.status.state === "open"
           && (intent?.target.type === "steer-active-turn"
-            || executionEngineExtension(currentClient.initializeResult?.capabilities?.extensions, threadId, "opencraft/thread-follow-up")?.queue !== false
-            || !conversation?.getSnapshot().activeTurn),
+            || followUpCapability()?.queue !== false
+            || (admitsDirectTurn() ? !nativeTurnActive() : !conversation?.getSnapshot().activeTurn)),
         canAutoContinueCapacity: () => currentClient.initializeResult?.capabilities?.extensions?.["opencraft/capacity-retry"] === undefined,
         getSubmissionSender: config.getSubmissionSender,
         key: createConversationKey(hostId, threadId),
@@ -1248,6 +1288,7 @@ export function createAppServerWorkbenchRuntime(
         cancelHydration: null,
         hydrationForReconnect: false,
         hydrationConnectionRevision: connectionRevision,
+        sleepingHistoryRevision: null,
         capabilityRegistrationOperation: null,
         capabilityRegistrationClient: null,
         capabilityRegistrationGeneration: null,
@@ -1454,6 +1495,15 @@ export function createAppServerWorkbenchRuntime(
     return operation;
   };
 
+  const reservePendingThreadView = (threadId: string): (() => void) => {
+    pendingViewAcquires.set(threadId, (pendingViewAcquires.get(threadId) ?? 0) + 1);
+    return () => {
+      const remaining = (pendingViewAcquires.get(threadId) ?? 1) - 1;
+      if (remaining > 0) pendingViewAcquires.set(threadId, remaining);
+      else pendingViewAcquires.delete(threadId);
+    };
+  };
+
   const markThreadUnavailable = (threadId: string, reason: ThreadUnavailableReason, cause?: AppServerRpcError,
     options: { readonly keepReadable?: boolean } = {}) => {
     const failure = cause ?? new AppServerRpcError({ code: reason === "archived" ? -32071 : -32600,
@@ -1503,28 +1553,31 @@ export function createAppServerWorkbenchRuntime(
     publish();
   };
 
-  const discoverArchivedThread = async (threadId: string) => {
-    if (bindings.has(threadId) || catalogMetadata.has(threadId) || unavailableThreads.has(threadId)) return;
+  const discoverArchivedThread = async (threadId: string, afterRead = false): Promise<boolean> => {
+    if (unavailableThreads.has(threadId) || (!afterRead && (bindings.has(threadId) || catalogMetadata.has(threadId)))) return false;
     const current = requireClient(), generation = current.connectionGeneration;
     const capability = parseThreadLifecycleCapability(executionEngineExtension(current.initializeResult?.capabilities?.extensions, threadId, OPENCRAFT_THREAD_LIFECYCLE_EXTENSION));
-    if (!capability?.archive) return;
+    if (!capability?.archive || (capability.archiveStateInRead && !afterRead)) return false;
     const revision = availabilityRevisions.get(threadId) ?? 0;
     let cursor: string | null = null;
     const cursors = new Set<string>();
     do {
       const page: { data: ProtocolThread[]; nextCursor: string | null } = await current.request("thread/list", { archived: true, limit: 100, cursor });
       if (disposed || client !== current || current.connectionGeneration !== generation
-        || (availabilityRevisions.get(threadId) ?? 0) !== revision) return;
+        || (availabilityRevisions.get(threadId) ?? 0) !== revision) return false;
       const archived = page.data.find(thread => thread.id === threadId);
       if (archived) {
-        catalogMetadata.set(threadId, { ...archived, turns: [] });
-        markThreadUnavailable(threadId, "archived");
-        return;
+        if (!afterRead) {
+          catalogMetadata.set(threadId, { ...archived, turns: [] });
+          markThreadUnavailable(threadId, "archived");
+        }
+        return true;
       }
       cursor = page.nextCursor;
       if (cursor !== null && cursors.has(cursor)) throw new Error("Archive catalog did not advance");
       if (cursor !== null) cursors.add(cursor);
     } while (cursor !== null);
+    return false;
   };
 
   const captureHistoryCheckpoint = (binding: ConversationBinding) => {
@@ -1641,15 +1694,47 @@ export function createAppServerWorkbenchRuntime(
               unresolvedTurnIds: [...binding.acceptedTurnIds], ...(force ? { historyCheckpoint } : {}) });
             archived = view.thread?.archived === true;
           } else {
-            const view = await currentSession.resume.read(binding.threadId, { signal: controller.signal, historyCheckpoint, unresolvedTurnIds: [...binding.acceptedTurnIds] });
+            const { threadId } = binding;
+            const unresolvedTurnIds = [...binding.acceptedTurnIds];
+            const view = await currentSession.resume.read(threadId, { signal: controller.signal, historyCheckpoint, unresolvedTurnIds });
             archived = view.thread?.archived === true;
+            if (view.thread?.archived === undefined && current() &&
+              parseThreadLifecycleCapability(executionEngineExtension(extensions, threadId, OPENCRAFT_THREAD_LIFECYCLE_EXTENSION))?.archiveStateInRead) {
+              archived = await discoverArchivedThread(threadId, true);
+            }
+            const canResume = parseAppServerMethodAccess(executionEngineExtension(extensions, threadId, OPENCRAFT_METHOD_ACCESS_EXTENSION))
+              ?.methods.includes("thread/resume");
+            const historyCapability = executionEngineExtension(extensions, threadId, OPENCRAFT_RESUME_HISTORY_EXTENSION);
+            const openCanObserve = binding.retainCount > 0 && historyCapability?.version === 1 && historyCapability.observeActiveTurns === true;
+            const activeTurn = !archived && view.turns.find(turn => turn.status === "inProgress" &&
+              (openCanObserve || (force && unresolvedTurnIds.includes(turn.id))));
+            if (current() && activeTurn && canResume &&
+              executionEngineExtension(extensions, threadId, "opencraft/read-history")?.version !== 1) {
+              let activated = false;
+              try {
+                // A previous Turn's activation on this connection does not
+                // imply a stream is still attached for the current Turn.
+                await currentSession.resume.activate({ threadId, signal: controller.signal, retryRejected, force: openCanObserve });
+                activated = true;
+              } catch (error) {
+                if (!current() || retryableHistoryFailure(error)) throw error;
+                // An execution refusal does not revoke the verified history.
+              }
+              if (activated && current() && currentSession.views.get(threadId)?.turns.some(turn =>
+                turn.status === "inProgress" && turn.id === activeTurn.id)) {
+                // The Turn can finish between the read and the new subscription.
+                // Read from Native again once future events can reach this client.
+                await currentSession.resume.read(threadId, { signal: controller.signal,
+                  unresolvedTurnIds: [...new Set([...unresolvedTurnIds, activeTurn.id])] });
+              }
+            }
           }
           if (!current()) throw new AppServerClientError("ABORTED", "Thread recovery was superseded");
           if (!unavailableThreads.has(binding.threadId) && legacyWindow) void recovery.span("capability-ready", () => ensureBindingCapabilities(binding)).catch(() => undefined);
           // Passive approvals have their own source/connection revision fences. Their
           // network read must not hold up a verified history replica or turn an
           // interaction-only failure into a transcript recovery failure.
-          if (!unavailableThreads.has(binding.threadId) && interactions) void recovery.span("interaction-ready", () => interactions!.sync(binding.threadId)).catch(() => undefined);
+          if (!archived && !unavailableThreads.has(binding.threadId) && interactions) void recovery.span("interaction-ready", () => interactions!.sync(binding.threadId)).catch(() => undefined);
         } finally { stopPreview?.(); }
         const source = createThreadViewReplicaSource(
           currentSession.views,
@@ -1666,6 +1751,7 @@ export function createAppServerWorkbenchRuntime(
         if (force && !unavailableThreads.has(binding.threadId) && !ephemeralThreadIds.has(binding.threadId))
           void binding.refreshQueue().catch(() => undefined);
         binding.phase = "resident";
+        binding.sleepingHistoryRevision = null;
         touchBinding(binding);
         // The Host persisted the archive before returning its readable history.
         // Mark after synchronization so the first paint keeps the transcript.
@@ -1674,7 +1760,13 @@ export function createAppServerWorkbenchRuntime(
       .catch((cause) => {
         if (current()) {
           const reason = threadUnavailableReason(cause);
+          const data = cause instanceof AppServerRpcError && cause.code === -32073
+            ? cause.data as { code?: unknown; archived?: unknown } | null | undefined : null;
+          const sleeping = data?.code === WORKSPACE_HISTORY_ASLEEP;
+          binding.sleepingHistoryRevision = sleeping && data?.archived === false ? revision : null;
           if (reason !== null) markThreadUnavailable(binding.threadId, reason, cause as AppServerRpcError);
+          if (sleeping && data?.archived === true)
+            markThreadUnavailable(binding.threadId, "archived", undefined, { keepReadable: true });
           binding.phase = "error";
           if (binding.replica.getSnapshot().lastError === null) {
             binding.replica.reportSyncFailure(cause);
@@ -1953,19 +2045,42 @@ export function createAppServerWorkbenchRuntime(
       });
       fuzzyFileSearch = new AppServerFuzzyFileSearchController(client);
       commandPort = createAppServerConversationCommandPort({
+        supportsTerminalDraftScope: () => supportsTerminalDraftScope(client?.initializeResult?.capabilities?.extensions),
         hostId,
         client,
         canRequest,
         supportsWorkspacePlacement: () => supportsWorkspacePlacement(
           client?.initializeResult?.capabilities?.extensions?.[WORKSPACE_PLACEMENT_EXTENSION]),
         interactions,
+        async withFirstTurnProjection(thread, start) {
+          const owner = requireClient();
+          const generation = owner.connectionGeneration;
+          const release = reservePendingThreadView(thread.id);
+          try {
+            // An acknowledged native Thread can emit before it has a rollout.
+            // Keep its live projection without opening or hydrating a View.
+            const binding = await createBinding(thread.id);
+            if (disposed || binding.disposed || client !== owner
+              || generation !== owner.connectionGeneration || owner.status.state !== "open")
+              throw new AppServerClientError("NOT_CONNECTED", "The connection changed before the first Turn");
+            requireSession().views.seedMetadata(thread);
+            return await runBindingCommand(binding, async () => {
+              const response = await start();
+              retainAcceptedTurn(binding, response.turn.id);
+              return response;
+            });
+          } finally {
+            release();
+            if (!disposed) pruneInactiveBindings();
+          }
+        },
         get queueAtomicSteer() { return supportsAtomicQueuedSteer(
           client?.initializeResult?.capabilities?.extensions?.[OPENCRAFT_THREAD_QUEUE_EXTENSION]); },
         get queueUnconfirmedDeliveryRetry() { return supportsUnconfirmedDeliveryRetry(
           client?.initializeResult?.capabilities?.extensions?.[OPENCRAFT_THREAD_QUEUE_EXTENSION]); },
         get queueUnconfirmedSteerDiscard() { return supportsUnconfirmedSteerDiscard(
           client?.initializeResult?.capabilities?.extensions?.[OPENCRAFT_THREAD_QUEUE_EXTENSION]); },
-        compiler: { historyMode: "paginated" },
+        compiler: { historyMode: historyModeHint() === "legacy" ? "legacy" : "paginated" },
         modelSelectionPolicy: config.modelSelectionPolicy,
         resolveCompilerOptions: async (intent) => {
           const followUp = intent.target.type === "steer-active-turn" || intent.target.type === "enqueue-follow-up";
@@ -1976,15 +2091,18 @@ export function createAppServerWorkbenchRuntime(
           );
           const modelId = useHostDefault ? null : intent.selections.model ?? (threadId ? bindings.get(threadId)?.runtime.getSnapshot().execution.model : null);
           if (threadId?.startsWith("codex_") && intent.selections.model === undefined && !modelId) return {};
-          const scope = !useHostDefault && client!.initializeResult?.capabilities?.extensions?.[OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION] !== undefined ? threadId : null;
+          const extensions = client!.initializeResult?.capabilities?.extensions;
+          const scope = !useHostDefault && extensions?.[OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION] !== undefined ? threadId : null;
+          const revalidation = extensions?.[OPENCRAFT_MODEL_CATALOG_REVALIDATION_EXTENSION] as { version?: unknown } | undefined;
+          const readFresh = !followUp && revalidation?.version === 1;
           let cursor: string | null = null;
           let catalogHasModels = false;
           const seen = new Set<string>();
           do {
             const params = {cursor,limit:100,includeHidden:false,...(scope ? {threadId:scope} : {})};
-            const page: ModelListResponse = recentModelPages.get(modelPageKey(scope, cursor))
-              ?? recentModelPages.get(modelPageKey(null, cursor))
-              ?? rememberModelPage(params, await client!.request("model/list", params, { timeoutMs: 1800 }));
+            const cached = readFresh ? undefined : recentModelPages.get(modelPageKey(scope, cursor))
+              ?? recentModelPages.get(modelPageKey(null, cursor));
+            const page: ModelListResponse = cached ?? rememberModelPage(params, await client!.request("model/list", params, { timeoutMs: 1800 }));
             if (page.data.length) catalogHasModels = true;
             const model = page.data.find(model => modelId ? model.id === modelId || model.model === modelId : model.isDefault);
             if (model) {
@@ -2467,7 +2585,7 @@ export function createAppServerWorkbenchRuntime(
             if (params.archived === true && unavailableThreads.get(thread.id)?.reason !== "archived") markThreadUnavailable(thread.id, "archived");
             catalogMetadata.delete(thread.id);
             catalogMetadata.set(thread.id, { ...thread, turns: [] });
-            if (bindings.has(thread.id)) views.seedMetadata(thread);
+            if (bindings.has(thread.id)) views.seedMetadata({ ...thread });
           }
           while (catalogMetadata.size > (config.maxCachedThreadMetadata ?? 128)) {
             catalogMetadata.delete(catalogMetadata.keys().next().value!);
@@ -2784,7 +2902,7 @@ export function createAppServerWorkbenchRuntime(
       const threadId = requireThreadId(nextThreadId);
       // Reserve View demand before any asynchronous binding publication. Queue
       // observers may prune a newly published binding before this await resumes.
-      pendingViewAcquires.set(threadId, (pendingViewAcquires.get(threadId) ?? 0) + 1);
+      const release = reservePendingThreadView(threadId);
       let binding: ConversationBinding;
       try {
         await runtime.connect();
@@ -2792,9 +2910,7 @@ export function createAppServerWorkbenchRuntime(
         binding = await createBinding(threadId);
         if (disposed || binding.disposed) throw new Error(`Thread ${threadId} is disposed`);
       } finally {
-        const remaining = (pendingViewAcquires.get(threadId) ?? 1) - 1;
-        if (remaining > 0) pendingViewAcquires.set(threadId, remaining);
-        else pendingViewAcquires.delete(threadId);
+        release();
       }
       return leaseBinding(binding, true);
     },

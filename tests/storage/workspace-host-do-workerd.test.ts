@@ -16,7 +16,6 @@ import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
 import { build } from "esbuild";
 import { testScenariosOnMiniflare } from "../cloudflare/node-test.ts";
-import { COMPATIBILITY_DATE } from "../cloudflare/worker-runtime.ts";
 import { WORKSPACE_HOST_DO_SCENARIOS, WORKSPACE_HOST_DO_SPEC } from "./workerd/workspace-host-do.scenarios.ts";
 
 const root = resolve(import.meta.dirname, "../..");
@@ -79,6 +78,7 @@ test(`${ENTRY} reaches the workspace-host module and no Node process, Worker or 
     "apps/headless-server/src/assembly/workspace-host-sql.ts",
     "apps/headless-server/src/workspace-host-routes.ts",
     "apps/headless-server/src/cloudflare/workspace-link.ts",
+    "apps/headless-server/src/cloudflare/workspace-codex.ts",
     "packages/sandbox-cloudflare/src/index.ts",
     "packages/sandbox/src/workspace.ts",
     "packages/sql/src/families.ts",
@@ -94,24 +94,27 @@ test("the Wrangler template binds the WorkspaceHost class to its container", asy
       .filter((line) => !line.trimStart().startsWith("//"))
       .join("\n"),
   );
-  assert.equal(resolve(dirname(template), config.main), resolve(root, ENTRY));
-  assert.equal(config.compatibility_date, COMPATIBILITY_DATE);
+  assert.equal(resolve(dirname(template), config.main), resolve(root, "apps/headless-server/src/cloudflare/deployment-worker.mjs"));
+  assert.equal(config.compatibility_date, "2026-11-01");
   assert.deepEqual(config.compatibility_flags, WORKSPACE_HOST_DO_SPEC.compatibilityFlags);
   assert.deepEqual(config.durable_objects.bindings, [
     { name: "INSTALLATION_CORE", class_name: "InstallationCore" },
     { name: "ACCOUNT_CORE", class_name: "AccountCore" },
     { name: "WORKSPACE_HOST", class_name: "WorkspaceHost" },
+    { name: "CLIENT", class_name: "ClientDO" },
   ]);
   // Each class in its own migration: a deployment of the earlier template only adds the WorkspaceHost class.
   assert.deepEqual(config.migrations, [
     { tag: "v1", new_sqlite_classes: ["InstallationCore"] },
     { tag: "v2", new_sqlite_classes: ["AccountCore"] },
     { tag: "v3", new_sqlite_classes: ["WorkspaceHost"] },
+    { tag: "v4", new_sqlite_classes: ["ClientDO"] },
   ]);
   assert.equal(config.containers.length, 1);
   const [container] = config.containers;
   assert.equal(container.class_name, "WorkspaceHost");
-  assert.match(container.image, /@sha256:[0-9a-f]{64}$/u, "the image is pinned by digest");
+  assert.equal(container.scheduling_policy, "durable_object");
+  assert.match(container.images[config.vars.OPENCRAFT_WORKSPACE_IMAGE].image, /@sha256:[0-9a-f]{64}$/u, "the image is pinned by digest");
   // Configuration only, no credentials: the container receives none.
   assert.ok(Object.keys(config.vars).every((name) => !/TOKEN|SECRET|KEY|PASSWORD/u.test(name)));
   const entry = await import(resolve(root, ENTRY));

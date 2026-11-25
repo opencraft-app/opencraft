@@ -2,14 +2,10 @@
 // (deploy/cloudflare/wrangler.installation-core.jsonc). It forwards the
 // installation's own routes (the shared route table and membership
 // administration) to the deployment's single InstallationCore object, the
-// account's routes (account-routes.ts) to its single AccountCore object, and a
-// workspace's operator operations (workspace-host-routes.ts) to that
-// workspace's WorkspaceHost object, addressed by its id, once the installation
-// confirms an administrator. It answers nothing else: static assets, the Client
-// DO and client sessions to a workspace belong to the edge Worker, which is not
-// assembled yet (cloudflare-deployment §5.4, §5.7). Internal object-to-object
-// paths (the account authority exchange, a workspace's owner operations) are
-// never forwarded.
+// account routes to AccountCore and workspace operator routes to WorkspaceHost
+// after InstallationCore confirms an administrator. Optional Client and Assets
+// bindings serve App Host upgrades and the Workbench through installation
+// admission. Object-internal routes remain private.
 import { fetchResponse } from "@opencraft/http-exchange/fetch";
 import { accountRoute } from "../account-routes.js";
 import {
@@ -26,11 +22,14 @@ import {
   workspaceHostRoute,
 } from "../workspace-host-routes.js";
 import type { DeploymentEnv, DeploymentRoutingEnv, InstallationCoreEnv } from "./bindings.js";
+import { serveEdgeAssets, type EdgeFetchBinding } from "./edge-assets.js";
+import { APP_HOST_PATH, forwardClientSocket, type ClientSocketNamespace } from "./client-attachment.js";
 import { ACCOUNT_CORE_OBJECT } from "./account-core.js";
 import { INSTALLATION_CORE_OBJECT } from "./installation-core.js";
 
 export { InstallationCore } from "./installation-core.js";
 export { AccountCore } from "./account-core.js";
+export { ClientDO } from "./client-do.js";
 export { WorkspaceHost } from "./workspace-host.js";
 
 /** Whether the installation's object owns `pathname`. */
@@ -43,10 +42,13 @@ export function accountCoreOwns(pathname: string): boolean {
   return accountRoute(pathname) !== null;
 }
 
-/** A deployment without the account or workspace binding routes none of their paths. */
+/** Optional routes are enabled by the corresponding deployment bindings. */
 type EntryEnv = InstallationCoreEnv &
   Partial<Pick<DeploymentEnv, "ACCOUNT_CORE">> &
-  Partial<Pick<DeploymentRoutingEnv, "WORKSPACE_HOST">>;
+  Partial<Pick<DeploymentRoutingEnv, "WORKSPACE_HOST">> & {
+    readonly ASSETS?: EdgeFetchBinding;
+    readonly CLIENT?: ClientSocketNamespace;
+  };
 
 const installation = (env: InstallationCoreEnv) =>
   env.INSTALLATION_CORE.get(env.INSTALLATION_CORE.idFromName(INSTALLATION_CORE_OBJECT));
@@ -92,6 +94,9 @@ export default {
         new Request(target, { method: request.method, headers: { [WORKSPACE_HOST_HEADER]: route.workspace } }),
       );
     }
+    if (pathname === APP_HOST_PATH && env.CLIENT)
+      return forwardClientSocket(request, installation(env), env.CLIENT);
+    if (env.ASSETS) return serveEdgeAssets(request, env.ASSETS, installation(env));
     return fetchResponse(installationExchangeReply(MISSING));
   },
 };

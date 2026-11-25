@@ -4,7 +4,8 @@ import {ConversationArchivedBadge, ConversationUnavailableState} from "./compone
 import { recordQueueError } from "./runtime/queue-error-history";
 import { routeStackPresentation } from "./components/route-stack-motion";
 import { RouteViewStack } from "./components/route-view-stack";
-import { supportsWorkspaceFiles } from '@opencraft/appserver-protocol';
+import { supportsWorkspaceFiles, workspaceProjectDirectoryRoot } from '@opencraft/appserver-protocol';
+import { isWorkspacePathWithinRoot } from "./components/workspace-directory-model";
 import { useWorkspaceCatalog } from './runtime/use-workspace-catalog';
 import { placementProblem } from './runtime/workspace-placement-model';
 import { channelSearchSource } from './runtime/channel-search-contribution';
@@ -162,13 +163,11 @@ import {
   type ConversationScrollApi,
 } from "./components/conversation";
 import {
-  connectionRecoveryIsPending,
+  composerConnectionFeedback,
   ConversationRecoveryNotice,
   ConversationRecoveryEmptyState,
   conversationArchivePresentation,
   conversationRecoveryPresentation,
-  conversationRecoveryIsPending,
-  conversationRecoveryIsUnstable,
 } from "./components/conversation-recovery";
 import { ConversationPendingInteractionPanel } from "./components/conversation-renderers/interaction/interaction-renderers";
 import { InteractionDraftStore } from "./components/conversation-renderers/interaction/interaction-drafts";
@@ -783,6 +782,10 @@ export function App({
       creationLabel: intl.formatMessage({ id: "panel.files", defaultMessage: "Files" }),
     } : action);
   const workspaceFileCapability = runtime.resources.host.getInitializeResult()?.capabilities?.extensions?.['opencraft/workspace-placement'];
+  const projectDirectoryRoot = workspaceProjectDirectoryRoot(workspaceFileCapability);
+  const draftDirectory = draft?.target.execution.workspace.cwd;
+  const draftPanelDirectory = draftDirectory && (projectDirectoryRoot === undefined ||
+    isWorkspacePathWithinRoot(draftDirectory, projectDirectoryRoot)) ? draftDirectory : projectDirectoryRoot;
   const workspaceFileThreadId = !draft && activeThreadId && supportsWorkspaceFiles(workspaceFileCapability)
       ? activeThreadId : undefined;
   const panelToolbarContext: PanelToolbarActionContext = {
@@ -791,7 +794,7 @@ export function App({
     projectId: draft?.target.execution.workspace.projectId ?? catalog.protocolThreads.find(thread => thread.id === activeThreadId)?.projectId ?? null,
     ownerId: panelOwnerId, resourceOwnerId: conversationResourceOwnerId, hostId: snapshot.hostId,
     cwd: snapshot.conversation?.execution.cwd ?? catalog.protocolThreads.find(thread => thread.id === activeThreadId)?.cwd
-      ?? draft?.target.execution.workspace.cwd ?? activeHost.workspaceBrowseRoots[0] ?? null,
+      ?? draftPanelDirectory ?? activeHost.workspaceBrowseRoots[0] ?? null,
   };
   const sideChatAction = panelToolbarActions.find(action => action.id === "sidechat.new");
   const threadShortcutCommands = activeThreadLease !== null && sideChatAction
@@ -950,7 +953,7 @@ export function App({
       ? conversationViewActivation.phase === "error"
       : snapshot.conversation?.error != null),
   });
-  const recoveryDiagnostic = useConversationRecoveryDiagnostic({
+  useConversationRecoveryDiagnostic({
     scope: JSON.stringify([displayScope, snapshot.hostId, activeThreadId]),
     failed: recoveryPresentation === "cold-error" || recoveryPresentation === "warm-error",
     active: recoveryPresentation !== "none",
@@ -963,16 +966,12 @@ export function App({
     runtime: snapshot.phase,
     transport: snapshot.transport,
   });
-  const conversationRecovering = activeThreadId !== null
-    && conversationRecoveryIsPending(recoveryPresentation, recoveryDiagnostic, recoveryRequiresUpdate || recoveryAccessFailure !== null);
-  const connectionRecovering = connectionRecoveryIsPending(snapshot.phase, recoveryDiagnostic, recoveryRequiresUpdate || recoveryAccessFailure !== null);
-  const recoveryPlaceholder = connectionRecovering
+  const connectionFeedback = composerConnectionFeedback(snapshot, recoveryRequiresUpdate || recoveryAccessFailure !== null);
+  const recoveryPlaceholder = connectionFeedback.pending
     ? snapshot.phase === "connecting"
       ? intl.formatMessage({ id: "settings.connection.connecting", defaultMessage: "Connecting" })
       : intl.formatMessage({ id: "chat.composer.reconnecting", defaultMessage: "Reconnecting…" })
-    : conversationRecovering
-      ? intl.formatMessage({ id: "chat.composer.loading", defaultMessage: "Loading…" })
-      : undefined;
+    : undefined;
   useEffect(() => {
     if (recoveryPresentation !== "cold-error" && recoveryPresentation !== "warm-error") return;
     console.info("[conversation-recovery] failed", {
@@ -1824,7 +1823,7 @@ export function App({
       settingsOpen,
     ],
   );
-  const workspaceBrowseRoot = activeHost.workspaceBrowseRoots[0]
+  const workspaceBrowseRoot = projectDirectoryRoot ?? activeHost.workspaceBrowseRoots[0]
     ?? draft?.target.execution.workspace.runtimeWorkspaceRoots[0] ?? "/";
   const localProjectPicker = nativeProjectPicker(activeHost);
   const browseWorkspace = useCallback(async () => {
@@ -2778,9 +2777,8 @@ export function App({
                           ? ["queue"]
                           : (["steer", "queue"] as const).filter(action => followUpCapability?.[action] !== false && runtime.resources.host.canRequest?.(action === "queue" ? "thread/queue/add" : "turn/steer") !== false)}
                         portalContainer={portalContainer}
-                        isUnstable={snapshot.phase === "reconnecting" || (activeThreadId !== null
-                          && conversationRecoveryIsUnstable(recoveryPresentation, recoveryDiagnostic))}
-                        isRecovering={connectionRecovering || conversationRecovering}
+                        isUnstable={connectionFeedback.warning}
+                        isRecovering={connectionFeedback.pending}
                         isStreaming={draft === null && isStreaming}
                         isStopping={snapshot.conversation?.activeTurn?.status === "interrupting"}
                         awaitSubmission

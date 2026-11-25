@@ -576,6 +576,14 @@ It packages the Headless gateway and exports matching native Codex/Pi execution
 owners for the host, with independent bind-mounted data and workspaces. The
 container build is separate from the single-owner archive target below.
 
+For the optional Cloudflare workspace image, build the same verified tree with
+`docker build --target workspace -f deploy/docker/Dockerfile .`. This target
+starts the packaged Brain and Hands together. Pass its immutable digest to the
+WorkspaceHost deployment and supply the installation machine identity and
+private model egress configuration described in the [Cloudflare workspace
+assembly](../architecture/platform/cloudflare-deployment.md#57-workspacehost-状态2026-11-24).
+The default target continues to produce the Compose image.
+
 ### Headless Linux server archive
 
 `headless-linux-amd64-tar` builds a separate single-owner server artifact from

@@ -162,6 +162,12 @@
       "name": "0026_thread_read_receipts",
       "checksum": "e36df6ad603bb44bb2f524fb3922d145d8535a8f263f91fd0ff4ee8922850fd7",
       "snapshotChecksum": "2ae5edf7ce60c2431bf21340d3c31cd33cffcce59b560785cc49ebd8f964359c"
+    },
+    {
+      "version": 28,
+      "name": "0027_orchestration_spawn_target_index",
+      "checksum": "a76bebf498b07412eff600812245bbbb8396a871ab143ef9b2b91e5abc2b4c72",
+      "snapshotChecksum": "dc21c408598903a4243b184e22c6f1d558ce8bccd9211ce9c0aebcd7870c680d"
     }
   ],
   "alternates": [
@@ -369,6 +375,11 @@
           "version": 27,
           "name": "converge_0026_thread_read_receipts",
           "checksum": "e36df6ad603bb44bb2f524fb3922d145d8535a8f263f91fd0ff4ee8922850fd7"
+        },
+        {
+          "version": 28,
+          "name": "converge_0027_orchestration_spawn_target_index",
+          "checksum": "a76bebf498b07412eff600812245bbbb8396a871ab143ef9b2b91e5abc2b4c72"
         }
       ]
     }

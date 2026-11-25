@@ -213,7 +213,7 @@ export function workspaceRootsForResource(
   return [workspacePathParent(normalizedPath)];
 }
 
-export function workspaceBreadcrumbs(path: string): readonly { path: string; label: string }[] {
+export function workspaceBreadcrumbs(path: string, scopeRoot?: string): readonly { path: string; label: string }[] {
   const normalized = path.replaceAll('\\', '/');
   const drive = /^[a-z]:\//iu.exec(normalized)?.[0];
   const root = drive ?? (normalized.startsWith('/') ? '/' : '');
@@ -223,5 +223,7 @@ export function workspaceBreadcrumbs(path: string): readonly { path: string; lab
     current = current ? joinWorkspacePath(current, segment) : segment;
     result.push({ path: current, label: segment });
   }
-  return result;
+  if (scopeRoot === undefined) return result;
+  const start = result.findIndex(part => part.path === scopeRoot);
+  return start === -1 ? [] : result.slice(start);
 }

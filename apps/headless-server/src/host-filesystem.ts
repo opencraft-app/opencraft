@@ -1,16 +1,18 @@
 import { ArtifactCatalog, artifactFileBody, inspectArtifactFile, type Artifact } from '@opencraft/local-agent-host/artifacts';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { constants } from 'node:fs';
-import { chmod, lstat, mkdir, open, readFile, readdir, realpath, stat, unlink } from 'node:fs/promises';
+import { chmod, lstat, mkdir, open, opendir, readFile, readdir, realpath, rename, stat, unlink, type FileHandle } from 'node:fs/promises';
 import { createServer, request, type IncomingMessage } from 'node:http';
 import { createConnection } from 'node:net';
 import { basename, dirname, isAbsolute, resolve, sep } from 'node:path';
 import { fileKeyMaterial } from '@opencraft/secret-storage/file';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { fileDescriptorPath, isScopedFilePath, withScopedFilePath } from './scoped-file-path.js';
 
 export const HOST_FILESYSTEM_METHODS = new Set(['fs/readDirectory', 'fs/getMetadata', 'fs/readFile', 'fs/writeFile', 'fs/createDirectory']);
 const MAX_BYTES = 32 * 1024 * 1024;
+const SCOPED_MAX_BYTES = 512 * 1024;
 export interface HostFileStream { size: number; body: Readable; dispose(): Promise<void> }
 export interface HostFileSystem {
   probe(signal?: AbortSignal): Promise<void>;
@@ -41,7 +43,7 @@ async function bodyJson(body: IncomingMessage, max = MAX_BYTES * 1.4) {
   }
   return JSON.parse(Buffer.concat(chunks).toString());
 }
-async function openFile(path: string, head: boolean, signal: AbortSignal, root?: string): Promise<HostFileStream> {
+async function openFile(path: string, head: boolean, signal: AbortSignal, root?: string, noFollow = false): Promise<HostFileStream> {
   filePath(path);
   if (root !== undefined) {
     const [canonical, boundary] = await Promise.all([realpath(path), realpath(filePath(root))]);
@@ -49,19 +51,44 @@ async function openFile(path: string, head: boolean, signal: AbortSignal, root?:
     path = canonical;
   }
   signal.throwIfAborted();
-  const handle = await open(path, constants.O_RDONLY | constants.O_NONBLOCK);
+  const handle = await open(path, constants.O_RDONLY | constants.O_NONBLOCK | (noFollow ? constants.O_NOFOLLOW : 0));
   try {
     const info = await handle.stat(); signal.throwIfAborted();
-    if (!info.isFile()) throw Error('Not a regular file');
+    if (!info.isFile() || (noFollow && info.nlink !== 1)) throw Error('Not a regular file');
     const body = head ? Readable.from([]) : handle.createReadStream({ signal });
     if (head) await handle.close();
     return { size: info.size, body, dispose: async () => { body.destroy(); await handle.close(); } };
   } catch (error) { await handle.close(); throw error; }
 }
 
+async function writeScopedFile(path: string, parent: FileHandle, contents: Uint8Array, signal: AbortSignal) {
+  const prior = await lstat(path).catch(error => {
+    if (error.code !== 'ENOENT') throw error;
+    return null;
+  });
+  if (prior && (!prior.isFile() || prior.nlink !== 1)) throw Error('Not a regular file');
+  const temporary = fileDescriptorPath(parent) + '/.opencraft-write-' + randomBytes(16).toString('hex');
+  const handle = await open(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+  let published = false;
+  try {
+    await handle.writeFile(contents, { signal });
+    if (prior) await handle.chmod(prior.mode & 0o777);
+    await handle.sync();
+    signal.throwIfAborted();
+    await rename(temporary, path);
+    published = true;
+    await parent.sync();
+  } finally {
+    try { await handle.close(); }
+    finally { if (!published) await unlink(temporary); }
+  }
+}
+
 /** Files belong to Hands. No shell execution, Native environment or engine lease. */
-export async function startHostFileSystem(options: FileSystemEndpoint & { concurrency?: number; queue?: number }) {
+export async function startHostFileSystem(options: FileSystemEndpoint & { concurrency?: number; queue?: number; scopedRoot?: string }) {
   for (const path of [options.endpoint, options.tokenFile]) filePath(path);
+  if (options.scopedRoot !== undefined &&
+    (process.platform !== 'linux' || !isScopedFilePath(options.scopedRoot, options.scopedRoot))) throw Error('Invalid scoped file root');
   await mkdir(dirname(options.endpoint), { recursive: true, mode: 0o700 });
   const parent = await lstat(dirname(options.endpoint));
   if (!parent.isDirectory() || parent.isSymbolicLink() || parent.uid !== process.getuid?.() || parent.mode & 0o077) throw Error('File owner directory must be private');
@@ -96,52 +123,76 @@ export async function startHostFileSystem(options: FileSystemEndpoint & { concur
     if (next) { next.signal.removeEventListener('abort', next.abort); next.resolve(); }
     else active--;
   }
-  async function rpc(method: string, raw: unknown, signal: AbortSignal): Promise<unknown> {
+  async function rpc(method: string, raw: unknown, signal: AbortSignal, root?: string): Promise<unknown> {
     if (!HOST_FILESYSTEM_METHODS.has(method) || !raw || typeof raw !== 'object' || Array.isArray(raw)) throw Error('Unsupported file request');
     const params = raw as Record<string, unknown>, path = filePath(params.path);
     const keys = method === 'fs/writeFile' ? ['path', 'dataBase64'] : method === 'fs/createDirectory' ? ['path', 'recursive'] : ['path'];
     if (Object.keys(params).some(key => !keys.includes(key))) throw Error('Invalid file request');
-    const operation = async () => {
-      await enter(signal);
-      try {
-        signal.throwIfAborted();
-        if (method === 'fs/readDirectory') {
-          const entries = await readdir(path, { withFileTypes: true });
-          if (entries.length > 100_000) throw Error('Directory exceeds its budget');
-          return { entries: entries.map(entry => ({ fileName: entry.name, isDirectory: entry.isDirectory(), isFile: entry.isFile() })) };
+    if (root && (method === 'fs/createDirectory' || !isScopedFilePath(root, path))) throw Error('Invalid scoped file request');
+    const limit = root ? SCOPED_MAX_BYTES : MAX_BYTES;
+    const call = async (path: string, parent?: FileHandle) => {
+      signal.throwIfAborted();
+      if (method === 'fs/readDirectory') {
+        if (parent) {
+          const directory = await open(path, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+          try {
+            const listing = await opendir(fileDescriptorPath(directory));
+            const entries = [];
+            for await (const entry of listing) {
+              signal.throwIfAborted();
+              if (entries.length >= 2000) throw Error('Directory exceeds its budget');
+              entries.push({ fileName: entry.name, isDirectory: entry.isDirectory(), isFile: entry.isFile() });
+            }
+            return { entries };
+          } finally {
+            await directory.close();
+          }
         }
-        if (method === 'fs/getMetadata') {
-          const [info, link] = await Promise.all([stat(path), lstat(path)]);
-          return { isDirectory: info.isDirectory(), isFile: info.isFile(), isSymlink: link.isSymbolicLink(),
-            createdAtMs: Number.isFinite(info.birthtimeMs) ? info.birthtimeMs : 0,
-            modifiedAtMs: Number.isFinite(info.mtimeMs) ? info.mtimeMs : 0 };
-        }
-        if (method === 'fs/createDirectory') {
-          if (params.recursive != null && typeof params.recursive !== 'boolean') throw Error('Invalid directory request');
-          await mkdir(path, { recursive: params.recursive !== false }); return {};
-        }
-        if (method === 'fs/writeFile') {
-          if (typeof params.dataBase64 !== 'string' || params.dataBase64.length > Math.ceil(MAX_BYTES / 3) * 4) throw Error('Invalid file content');
-          const data = Buffer.from(params.dataBase64, 'base64');
-          if (data.toString('base64') !== params.dataBase64) throw Error('Invalid file content');
-          if (data.length > MAX_BYTES) throw Error('File exceeds RPC budget; use streaming download');
-          // Reject devices/FIFOs and avoid blocking the owner on special files.
-          const handle = await open(path, constants.O_WRONLY | constants.O_CREAT | constants.O_NONBLOCK);
-          try { if (!(await handle.stat()).isFile()) throw Error('Not a regular file'); await handle.truncate(0); await handle.writeFile(data, { signal }); }
-          finally { await handle.close(); }
+        const entries = await readdir(path, { withFileTypes: true });
+        if (entries.length > 100_000) throw Error('Directory exceeds its budget');
+        return { entries: entries.map(entry => ({ fileName: entry.name, isDirectory: entry.isDirectory(), isFile: entry.isFile() })) };
+      }
+      if (method === 'fs/getMetadata') {
+        const link = await lstat(path);
+        const info = parent ? link : await stat(path);
+        return { isDirectory: info.isDirectory(), isFile: info.isFile(), isSymlink: link.isSymbolicLink(),
+          createdAtMs: Number.isFinite(info.birthtimeMs) ? info.birthtimeMs : 0,
+          modifiedAtMs: Number.isFinite(info.mtimeMs) ? info.mtimeMs : 0 };
+      }
+      if (method === 'fs/createDirectory') {
+        if (params.recursive != null && typeof params.recursive !== 'boolean') throw Error('Invalid directory request');
+        await mkdir(path, { recursive: params.recursive !== false }); return {};
+      }
+      if (method === 'fs/writeFile') {
+        if (typeof params.dataBase64 !== 'string' || params.dataBase64.length > Math.ceil(limit / 3) * 4) throw Error('Invalid file content');
+        const data = Buffer.from(params.dataBase64, 'base64');
+        if (data.toString('base64') !== params.dataBase64) throw Error('Invalid file content');
+        if (data.length > limit) throw Error(parent ? 'File exceeds RPC budget' : 'File exceeds RPC budget; use streaming download');
+        if (parent) {
+          await writeScopedFile(path, parent, data, signal);
           return {};
         }
-        const file = await openFile(path, false, signal);
-        try {
-          if (file.size > MAX_BYTES) throw Error('File exceeds RPC budget; use streaming download');
-          const chunks: Buffer[] = []; let bytes = 0;
-          for await (const chunk of file.body) { bytes += chunk.length; if (bytes > MAX_BYTES) throw Error('File exceeds RPC budget'); chunks.push(Buffer.from(chunk)); }
-          return { dataBase64: Buffer.concat(chunks).toString('base64') };
-        } finally { await file.dispose(); }
-      } finally { leave(); }
+        // Reject devices/FIFOs and avoid blocking the owner on special files.
+        const handle = await open(path, constants.O_WRONLY | constants.O_CREAT | constants.O_NONBLOCK);
+        try { if (!(await handle.stat()).isFile()) throw Error('Not a regular file'); await handle.truncate(0); await handle.writeFile(data, { signal }); }
+        finally { await handle.close(); }
+        return {};
+      }
+      const file = await openFile(path, false, signal, undefined, !!parent);
+      try {
+        if (file.size > limit) throw Error('File exceeds RPC budget');
+        const chunks: Buffer[] = []; let bytes = 0;
+        for await (const chunk of file.body) { bytes += chunk.length; if (bytes > limit) throw Error('File exceeds RPC budget'); chunks.push(Buffer.from(chunk)); }
+        return { dataBase64: Buffer.concat(chunks).toString('base64') };
+      } finally { await file.dispose(); }
+    };
+    const operation = async () => {
+      await enter(signal);
+      try { return root ? await withScopedFilePath(root, path, signal, call) : await call(path); }
+      finally { leave(); }
     };
     if (method !== 'fs/writeFile' && method !== 'fs/createDirectory') return operation();
-    const key = await realpath(path).catch(async error => {
+    const key = root ? path : await realpath(path).catch(async error => {
       if (error.code !== 'ENOENT') throw error;
       // Resolve the deepest existing ancestor, preserving paths created recursively.
       let ancestor = resolve(path), suffix: string[] = [];
@@ -159,12 +210,18 @@ export async function startHostFileSystem(options: FileSystemEndpoint & { concur
     if (closed || controllers.size >= capacity) { res.writeHead(503).end(); return; }
     const controller = new AbortController(); controllers.add(controller);
     const abort = () => controller.abort(); res.once('close', abort); req.once('aborted', abort);
-    const timeout = setTimeout(abort, req.url === '/rpc' ? 60_000 : 30 * 60_000);
+    const timeout = setTimeout(abort, req.url === '/rpc' || req.url === '/workspace/rpc' ? 60_000 : 30 * 60_000);
     try {
       const url = new URL(req.url ?? '/', 'http://files');
       if (url.pathname === '/health' && req.method === 'GET') { res.writeHead(200).end('{"ok":true,"protocol":1}'); return; }
       if (url.pathname === '/rpc' && req.method === 'POST') {
         const value = await bodyJson(req), result = await rpc(value.method, value.params, controller.signal);
+        controller.signal.throwIfAborted();
+        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ result })); return;
+      }
+      if (url.pathname === '/workspace/rpc' && req.method === 'POST' && options.scopedRoot) {
+        const value = await bodyJson(req, Math.ceil(SCOPED_MAX_BYTES / 3) * 4 + 16 * 1024);
+        const result = await rpc(value.method, value.params, controller.signal, options.scopedRoot);
         controller.signal.throwIfAborted();
         res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ result })); return;
       }

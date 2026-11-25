@@ -129,7 +129,7 @@ export class ResourcesObject extends DurableObject<Env> {
     const lifecycle = await this.#openLifecycle();
     this.#alarm?.();
     // The alarm invocation lasts until the passes it started settle.
-    await Promise.allSettled([...lifecycle.flights.values()]);
+    await lifecycle.settleCurrentCleanup();
   }
   async #lifecycleCall(method: LifecycleMethod): Promise<unknown> {
     switch (method) {

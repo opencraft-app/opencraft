@@ -1,5 +1,4 @@
 import { requiresInitialPresentation } from "./initial-presentation";
-import { createAppHostAdmission } from './app-host-admission';
 import { createBrowserAdmissionRecovery } from './browser-admission-recovery';
 import { ChannelSearchRegistry } from './channel-search-contribution';
 import { serverInstalledBuiltins, readServerInstalledExtensions } from './server-installed-extensions';
@@ -123,9 +122,9 @@ import { resolveWorkbenchResourceClass } from "./device-resource-class";
 import { useVoiceInputPreference } from "./use-voice-input-preference";
 import { parseWebDeploymentConfig, resolveLegacyWebsiteLocation, resolveWebDeploymentConfig, restoreLegacyWebsiteSelection } from "./web-deployment-config";
 import { webSshDiscoveryLifecycle } from "./web-ssh-discovery";
-import { connectWebSocketAppHost } from "./websocket-app-host";
 import {
   BuiltinWebSocketHostConnectionExtension,
+  createDeploymentWebSocketHostConnectionExtension,
   createHostConnectionProviderContributionAdapter,
 } from "./websocket-host-connection-provider";
 import {
@@ -269,16 +268,24 @@ export async function createWebWorkbenchApplicationSupervisor(
       reload: () => window.location.reload(),
     }) : null;
     if (admissionRecovery) startupRollback.push(() => admissionRecovery.dispose());
-    const appHostAdmission = platform === "web" && import.meta.env.VITE_INCLUDE_HEADLESS_APPHOST === "true"
-      ? createAppHostAdmission(serverFetch, status => admissionRecovery?.observe(status)) : null;
-    if (appHostAdmission) startupRollback.push(() => appHostAdmission.dispose());
-    const headlessAppHost = appHostAdmission
-      ? connectWebSocketAppHost(undefined, { beforeConnect: () => appHostAdmission.prepare() }) : null;
+    const hasHeadlessAppHost = platform === "web" && import.meta.env.VITE_INCLUDE_HEADLESS_APPHOST === "true";
+    const hasDeploymentAppHost = platform === "web" && bootstrapDefinitions.some(host => host.appHost);
+    const appHostModules = hasHeadlessAppHost || hasDeploymentAppHost
+      ? await Promise.all([import("./websocket-app-host"), import("./app-host-admission")]) : null;
+    const observeAdmission = (status: number) => admissionRecovery?.observe(status);
+    const preparedAppHost = hasDeploymentAppHost && options.navigationMode !== "memory"
+      ? (await options.deploymentAppHost)?.claim(rawBootstrapLocation?.kind === "thread" ? rawBootstrapLocation.key.hostId : undefined, observeAdmission)
+      : null;
+    const appHostAdmission = preparedAppHost?.admission ?? appHostModules?.[1].createAppHostAdmission(serverFetch, observeAdmission);
+    if (appHostAdmission && !preparedAppHost) startupRollback.push(() => appHostAdmission.dispose());
+    const webAppHost = preparedAppHost?.connection ?? (appHostModules
+      ? appHostModules[0].connectWebSocketAppHost(undefined, { beforeConnect: appHostAdmission!.prepare }) : null);
+    if (webAppHost) startupRollback.push(() => webAppHost.close());
+    const headlessAppHost = hasHeadlessAppHost ? webAppHost : null;
     const serverExtensions = headlessAppHost === null ? [] : options.serverExtensions ?? [];
-    if (headlessAppHost !== null) startupRollback.push(() => headlessAppHost.close());
     const sshManagement = headlessAppHost ? new (await import("@opencraft/plugin-builtin-agents")).SshConnectionsController(serverFetch, serverAdmissionOrigin()) : null;
     if (sshManagement) { startupRollback.push(() => sshManagement.dispose()); await sshManagement.startDiscovery(webSshDiscoveryLifecycle); }
-    const remoteAppHost = headlessAppHost ? connectWebSocketAppHost(undefined, {
+    const remoteAppHost = headlessAppHost ? appHostModules![0].connectWebSocketAppHost(undefined, {
       path: "/ssh-apphost",
       beforeConnect: async () => { await appHostAdmission!.prepare(); await sshManagement!.prepareConnection(); },
     }) : null;
@@ -350,7 +357,9 @@ export async function createWebWorkbenchApplicationSupervisor(
     const stopSidebarLayoutPersistReporting = bindSidebarLayoutPersistReporting(sidebarLayout);
     startupRollback.push(() => sidebarLayout.close());
     startupRollback.push(stopSidebarLayoutPersistReporting);
-    await extensions.activate(BuiltinWebSocketHostConnectionExtension);
+    await extensions.activate(hasDeploymentAppHost && webAppHost
+      ? createDeploymentWebSocketHostConnectionExtension(webAppHost.createTransport)
+      : BuiltinWebSocketHostConnectionExtension);
     if (platform === "electron" && desktopServerPort()) await extensions.activate(DesktopServerConnectionExtension);
     await extensions.activateOptional(BuiltinThemePackExtension);
     const loadPresentationExtension = async (
@@ -726,7 +735,7 @@ export async function createWebWorkbenchApplicationSupervisor(
     () => threadAttention.dispose(),
     () => appServerRegistry.dispose(),
     () => electronAppHost?.close(),
-    () => headlessAppHost?.close(),
+    () => webAppHost?.close(),
     () => remoteAppHost?.close(),
     () => admissionRecovery?.dispose(),
     () => appHostAdmission?.dispose(),
@@ -1002,6 +1011,9 @@ export async function createWebWorkbenchApplicationSupervisor(
   const identityProbes = new Set<JsonRpcAppServerClient>();
   let probesDisposed = false;
   for (const profile of profiles) {
+    // The active runtime observes this Host after initialization. A separate
+    // probe would consume the lease reserved for the incoming conversation.
+    if (profile.hostId === preparedAppHost?.hostId) continue;
     if (environmentDirectory.getSnapshot().entries.some(entry => entry.profile.hostId === profile.hostId && entry.resource !== null)) continue;
     void (async () => {
       const lease = connectionProviders.providers.acquire(profile.providerId, platform);

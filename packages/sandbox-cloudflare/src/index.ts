@@ -7,6 +7,7 @@ import {
   type SandboxProcess,
   type SandboxReceipt,
   type SandboxResources,
+  type SandboxSnapshotRef,
 } from "@opencraft/sandbox";
 import { brokerSource, startBrokerProcess, type SandboxBrokerChannel } from "@opencraft/sandbox/broker";
 import type { ContainerExecProcess, ContainerInstance, DurableObjectContainer } from "./bindings.js";
@@ -53,6 +54,7 @@ print(json.dumps({'boot':read('/proc/sys/kernel/random/boot_id'),'cpus':len(os.s
 /** Largest custom instance an account gets by default (4 vCPU, 12 GiB, 20 GB). */
 const MAXIMUM = { cpuMillis: 4000, memoryMib: 12 * 1024, diskMb: 20000 };
 const MiB = 1024 ** 2;
+const SNAPSHOT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export interface CloudflareSandboxOptions {
   /** `this.ctx.container` of the WorkspaceHost Durable Object. */
@@ -73,9 +75,13 @@ export interface CloudflareSandboxOptions {
   readonly user?: string;
   /** Main-process environment (never credentials: the container holds none). */
   readonly env?: Readonly<Record<string, string>>;
+  /** Installs the deployment's network policy before startup or reattachment. */
+  prepareContainer?(): Promise<void>;
   /** The Durable Object's `ctx.waitUntil`, so a pending `monitor()` keeps the object
    * resident while the container runs. */
   waitUntil?(promise: Promise<unknown>): void;
+  /** Lifecycle diagnostics carry fixed stage names and numeric exit codes only. */
+  onLifecycle?(stage: string, exitCode?: number): void;
 }
 
 const fault = (code: ConstructorParameters<typeof SandboxFault>[0], message: string) => new SandboxFault(code, message);
@@ -143,13 +149,18 @@ export function cloudflareSandboxBackend(options: CloudflareSandboxOptions): San
   let initialized = false,
     closed = false;
   const execOptions = { cwd: "/", ...(options.user ? { user: options.user } : {}) };
+  const report = (stage: string, exitCode?: number) => {
+    try {
+      options.onLifecycle?.(stage, exitCode);
+    } catch {}
+  };
 
-  const bounded = <T>(operation: Promise<T>, message: string) => {
+  const bounded = <T>(operation: Promise<T>, message: string, timeoutMs = requestTimeoutMs) => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     return Promise.race([
       operation,
       new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(Error(message)), requestTimeoutMs);
+        timer = setTimeout(() => reject(Error(message)), timeoutMs);
       }),
     ]).finally(() => clearTimeout(timer));
   };
@@ -161,9 +172,16 @@ export function cloudflareSandboxBackend(options: CloudflareSandboxOptions): San
         ...execOptions,
         stdout: "pipe",
         stderr: "ignore",
+      }).catch((error: unknown) => {
+        report(error instanceof Error && error.message === "The container has not been started"
+          ? "identity-exec-not-started" : "identity-exec-failed");
+        throw error;
       });
       const [text, code] = await Promise.all([new Response(process.stdout ?? null).text(), process.exitCode]);
-      if (code !== 0) throw Error("identity probe failed");
+      if (code !== 0) {
+        report("identity-probe-exited", code);
+        throw Error("identity probe failed");
+      }
       return JSON.parse(text.trim().split("\n").at(-1) ?? "") as Record<string, unknown>;
     })();
     const value = await bounded(read, "Cloudflare container identity timed out");
@@ -201,10 +219,15 @@ export function cloudflareSandboxBackend(options: CloudflareSandboxOptions): San
       monitoring = Promise.reject(error);
     }
     const watched = monitoring.then(
-      () => settle({ reason: "exited", code: 0 }),
+      () => {
+        report("monitor-exited", 0);
+        settle({ reason: "exited", code: 0 });
+      },
       (error: unknown) => {
         const code = (error as { exitCode?: unknown } | undefined)?.exitCode;
-        settle(Number.isSafeInteger(code) ? { reason: "crashed", code: code as number } : { reason: "stopped" });
+        const exitCode = typeof code === "number" && Number.isSafeInteger(code) ? code : undefined;
+        report("monitor-stopped", exitCode);
+        settle(exitCode === undefined ? { reason: "stopped" } : { reason: "crashed", code: exitCode });
       },
     );
     options.waitUntil?.(watched);
@@ -324,6 +347,7 @@ export function cloudflareSandboxBackend(options: CloudflareSandboxOptions): San
             // A container that no longer carries this incarnation is not ours to stop.
             if (info?.labels?.[CLOUDFLARE_INCARNATION_LABEL] === incarnation)
               try {
+                report("destroy-close");
                 await bounded(container.destroy(), "destroy timed out");
               } catch {
                 throw fault("SANDBOX_CLEANUP", "Cloudflare container destruction is unconfirmed");
@@ -348,6 +372,63 @@ export function cloudflareSandboxBackend(options: CloudflareSandboxOptions): San
     await bounded(stopped, "monitor did not settle");
   };
 
+  const start = async (resources: SandboxResources, signal: AbortSignal, snapshot?: SandboxSnapshotRef) => {
+    if (!initialized || closed || signal.aborted) throw new SandboxCreationFault("not-created");
+    const instance = cloudflareInstanceFor(resources, diskMb);
+    if (!instance) throw new SandboxCreationFault("not-created");
+    try {
+      await reclaim();
+    } catch {
+      throw new SandboxCreationFault("not-created");
+    }
+    if (closed || signal.aborted) throw new SandboxCreationFault("not-created");
+    const incarnation = hex(16);
+    let stage = "network-policy";
+    try {
+      if (options.prepareContainer) await bounded(options.prepareContainer(), "container network policy timed out");
+      if (closed || signal.aborted) throw new SandboxCreationFault("not-created");
+      // Validates its options synchronously; a throw allocated nothing.
+      stage = "container-start";
+      container.start({
+        ...(snapshot ? { containerSnapshot: { id: snapshot.id } } : { image: options.image }),
+        enableInternet: options.enableInternet ?? false,
+        instance,
+        labels: { [CLOUDFLARE_INCARNATION_LABEL]: incarnation },
+        ...(options.env ? { env: { ...options.env } } : {}),
+      });
+    } catch {
+      report(`${stage}-failed`);
+      throw new SandboxCreationFault("not-created");
+    }
+    // Submitted: never retried. Every later failure must reclaim the started container.
+    report("start-accepted");
+    const stopped = observe();
+    try {
+      stage = "inactivity-policy";
+      await armCloudflareContainerTimeout(container, timeout);
+      stage = "identity";
+      const identity = await identify();
+      report("identity-confirmed");
+      stage = "inspect";
+      const info = await bounded(container.inspect(), "inspect timed out");
+      if (info?.labels?.[CLOUDFLARE_INCARNATION_LABEL] !== incarnation) throw Error("Incarnation label mismatch");
+      report("incarnation-confirmed");
+      return environmentFor(incarnation, identity, effective(resources, identity), stopped);
+    } catch {
+      report(`${stage}-failed`);
+      try {
+        if (container.running) {
+          report("destroy-create-failed");
+          await bounded(container.destroy(), "destroy timed out");
+        }
+        await bounded(stopped, "monitor did not settle");
+      } catch {
+        throw new SandboxCreationFault("unknown");
+      }
+      throw new SandboxCreationFault("not-created");
+    }
+  };
+
   return {
     id: CLOUDFLARE_PROVIDER_ID,
     async initialize(_policy, signal) {
@@ -357,47 +438,31 @@ export function cloudflareSandboxBackend(options: CloudflareSandboxOptions): San
       await armCloudflareContainerTimeout(container, timeout).catch(() => {});
       initialized = true;
     },
-    async create(_identity, resources, signal) {
-      if (!initialized || closed || signal.aborted) throw new SandboxCreationFault("not-created");
-      const instance = cloudflareInstanceFor(resources, diskMb);
-      if (!instance) throw new SandboxCreationFault("not-created");
-      try {
-        await reclaim();
-      } catch {
-        throw new SandboxCreationFault("not-created");
-      }
-      if (closed || signal.aborted) throw new SandboxCreationFault("not-created");
-      const incarnation = hex(16);
-      try {
-        // Validates its options synchronously; a throw allocated nothing.
-        container.start({
-          image: options.image,
-          enableInternet: options.enableInternet ?? false,
-          instance,
-          labels: { [CLOUDFLARE_INCARNATION_LABEL]: incarnation },
-          ...(options.env ? { env: { ...options.env } } : {}),
-        });
-      } catch {
-        throw new SandboxCreationFault("not-created");
-      }
-      // Submitted: never retried. Every later failure must reclaim the started container.
-      const stopped = observe();
-      try {
-        await armCloudflareContainerTimeout(container, timeout);
-        const identity = await identify();
-        const info = await bounded(container.inspect(), "inspect timed out");
-        if (info?.labels?.[CLOUDFLARE_INCARNATION_LABEL] !== incarnation) throw Error("Incarnation label mismatch");
-        return environmentFor(incarnation, identity, effective(resources, identity), stopped);
-      } catch {
-        try {
-          if (container.running) await bounded(container.destroy(), "destroy timed out");
-          await bounded(stopped, "monitor did not settle");
-        } catch {
-          throw new SandboxCreationFault("unknown");
-        }
-        throw new SandboxCreationFault("not-created");
-      }
-    },
+    create: (_identity, resources, signal) => start(resources, signal),
+    ...(container.snapshotContainer ? {
+      async captureSnapshot(environment: SandboxEnvironment, signal: AbortSignal) {
+        const incarnation = environment.receipt && RECEIPT.exec(environment.receipt.instanceId)?.[1];
+        const check = async () => {
+          signal.throwIfAborted();
+          const running = incarnation && container.running && await bounded(container.inspect(), "inspect timed out");
+          if (!running || running.labels[CLOUDFLARE_INCARNATION_LABEL] !== incarnation)
+            throw fault("SANDBOX_UNAVAILABLE", "Cloudflare snapshot incarnation is unavailable");
+        };
+        await check();
+        const takenAt = Date.now();
+        const snapshot = await bounded(container.snapshotContainer!({}), "Cloudflare snapshot timed out", 120_000);
+        await check();
+        if (typeof snapshot?.id !== "string" || !snapshot.id)
+          throw fault("SANDBOX_UNAVAILABLE", "Cloudflare did not return a snapshot identifier");
+        report("snapshot-captured");
+        return { backend: CLOUDFLARE_PROVIDER_ID, image: options.image, id: snapshot.id, takenAt, expiresAt: takenAt + SNAPSHOT_TTL_MS };
+      },
+      async restoreSnapshot(_identity, snapshot, resources, signal) {
+        if (snapshot.backend !== CLOUDFLARE_PROVIDER_ID || snapshot.image !== options.image ||
+          snapshot.expiresAt === undefined || snapshot.expiresAt <= Date.now()) throw new SandboxCreationFault("not-created");
+        return start(resources, signal, snapshot);
+      },
+    } : {}),
     /** Binds the running container only when its label and identity are the receipt's. */
     async attach(_identity, receipt, resources, signal) {
       if (!initialized || closed || signal.aborted)
@@ -412,6 +477,7 @@ export function cloudflareSandboxBackend(options: CloudflareSandboxOptions): San
         if (info?.labels?.[CLOUDFLARE_INCARNATION_LABEL] !== incarnation) throw Error("different incarnation");
         identity = await identify();
         if (identity.boot !== boot || identity.placement !== placement) throw Error("different instance");
+        if (options.prepareContainer) await bounded(options.prepareContainer(), "container network policy timed out");
       } catch {
         throw fault("SANDBOX_UNAVAILABLE", "Cloudflare container is gone or is another incarnation");
       }
@@ -419,10 +485,8 @@ export function cloudflareSandboxBackend(options: CloudflareSandboxOptions): San
       await armCloudflareContainerTimeout(container, timeout).catch(() => {});
       return environmentFor(incarnation, identity, effective(resources, identity), stopped);
     },
-    /** Idle sleep (workspace-host-split §3.7.2): the WorkspaceHost stops its container. A
-     * stopped Cloudflare container keeps no disk (captured snapshots are not implemented),
-     * so sleeping is the confirmed stop `close()` performs; waking is a `create`, a new
-     * incarnation, and the WorkspaceHost recovers interrupted Turns from its own state. */
+    /** WorkspaceRuntime saves a snapshot reference before sleep when configured.
+     * Without one, the confirmed stop discards the container's writable disk. */
     async sleep(environment) {
       await environment.close();
     },

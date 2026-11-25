@@ -15,7 +15,7 @@ import type { MessageSender } from "./message-sender";
 import type { RuntimeMachineReadResponse } from "./machine";
 import type { AppServerProcessMethodMap } from "./process";
 import type { ThreadPinsMethodMap } from "./thread-pins";
-import type { ThreadCatalogMetadata } from "./thread-catalog";
+import type { ThreadCatalogEntry, ThreadCatalogMetadata } from "./thread-catalog";
 import type { SkillCatalogMethodMap } from "./skill-catalog";
 import type { TasksMethodMap } from "./tasks";
 import type { AppServerAttachmentMethodMap } from "./attachments";
@@ -195,7 +195,7 @@ export interface ThreadReadParams {
   includeTurns: boolean;
   /** Passive Host notifications; does not retain a native execution engine. */
   watch?: boolean;
-  /** Optional opencraft/read-history v1 page. Never resumes execution. */
+  /** Optional page negotiated by opencraft/read-history or resume-history.initialReadPage. */
   initialTurnsPage?: import("./resume-history").ThreadTurnsPageRequest;
   historyReadId?: string;
   historyCheckpoint?: import("./resume-history").ThreadHistoryCheckpoint;
@@ -217,6 +217,8 @@ export type ThreadTurnsListResponse = CursorPage<AppServerTurn> & {
 export type ThreadItemsListResponse = CursorPage<ThreadItemPageEntry | AppServerThreadItem>;
 
 export type ThreadStartParams = GeneratedThreadStartParams & {
+  /** The authenticated Host binds the already-open Draft's resources to the resulting Thread. */
+  readonly draftScopeId?: string;
   /** Only with advertised ordinary-workspace placement support. Logical IDs,
    * never provider credentials, sandbox/volume IDs or caller-resolved paths. */
   readonly workspacePlacement?: WorkspacePlacement;
@@ -268,7 +270,7 @@ export type ThreadForkParams = GeneratedThreadForkParams & { workspaceFork?: {ki
 export type ThreadForkResponse = GeneratedThreadForkResponse;
 export type ThreadListParams = GeneratedThreadListParams;
 export type ThreadListResponse = Omit<GeneratedThreadListResponse, "data"> & {
-  data: Array<GeneratedThreadListResponse["data"][number] & { pinned?: boolean }>;
+  data: Array<ThreadCatalogEntry & { pinned?: boolean }>;
   /**
    * Optional aggregate-directory coverage from OpenCraft Hosts. Native
    * AppServers omit it; a partial or unknown page must retain cached rows.

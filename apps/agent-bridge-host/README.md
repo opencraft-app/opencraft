@@ -92,7 +92,13 @@ replace any generation with retained bindings automatically, since surviving
 native processes cannot yet be attested or resumed by this foundation.
 
 EOF and close drain callbacks already received even if their acknowledgements
-can no longer be sent.
+can no longer be sent. If the Codex provider loses its connection to the
+independently owned AppServer, the next Host operation can recreate that
+attachment after confirmed sandbox cleanup. Concurrent operations share the
+replacement. Existing idle sessions are rebound from their recorded native
+identities, and unknown command receipts keep their original custody. An
+unsuccessful reconnection leaves the Host available for later attempts with a
+short cooldown.
 
 Callbacks sent as requests use their stable bridge request ID for transactional
 dedup and receive an ack only after commit. Repeated IDs with changed bodies are
@@ -115,7 +121,10 @@ an ordered page, dedup record, existing AppServer projection and cursor in one
 transaction before acking Host. Duplicate pages do not project again; crashes
 between commit and ack resume at the durable cursor. Consumers rebuild from the
 persisted projection log, never from an external side effect between commit and
-ack. Base AppServer notifications use P1a's existing projection; additive steer
+ack. The Worker uses the same migrated inbox tables through the runtime-neutral
+SQL port. The Node Worker and Workerd test exercise batch rollback, replay and
+durable cursor recovery using that store. Base AppServer notifications use
+P1a's existing projection; additive steer
 extensions are not advertised here. Existing Server/client consumers remain on
 their current path. Multi-server replication, production provider recovery and
 provider-specific request validation are outside P1b.

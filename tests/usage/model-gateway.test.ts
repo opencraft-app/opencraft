@@ -11,6 +11,7 @@ import { createServer } from "node:http";
 import { ModelGatewayStore } from "../../packages/account-pool-host/src/model-gateway-store.js";
 import { bindModelGatewaySponsor } from "../../packages/account-pool-host/src/model-gateway-sponsor.js";
 import { meteredModelRequest, ModelGatewayUsageReceipt } from "../../packages/account-pool-host/src/model-gateway-meter.js";
+import { observeModelGatewayResponse } from "@opencraft/account-pool-host/model-gateway-usage";
 import { modelGatewayHttp, MODEL_GATEWAY_PATH } from "../../packages/account-pool-host/src/model-gateway-http.js";
 import { gatewayContributions } from "../../apps/local-agent-host/src/model-config/gateway-contributions.js";
 import { createEngineModelSource } from "../../apps/local-agent-host/src/model-config/engine-models.js";
@@ -85,6 +86,28 @@ test("streaming forwards bytes and settles a split CRLF terminal before HTTP EOF
   assert.equal(store.summary("human-a").heldTokens,0);
   assert.equal(store.requests("human-a")[0]?.credential,"provider-key");
   await reader.cancel(); assert.equal(cancelled,true);
+});
+
+test("a streamed provider receipt waits for the remote owner to commit exactly once", async () => {
+  const committing = Promise.withResolvers<void>();
+  const committed = Promise.withResolvers<void>();
+  const observed: (number | null)[] = [];
+  const headers = { "content-type": "text/event-stream" };
+  const result = observeModelGatewayResponse(new Response(terminal(), { headers }), async (actual, usage) => {
+    observed.push(actual);
+    assert.deepEqual(usage, { inputTokens: 10, outputTokens: 5, cacheReadTokens: null, cacheWriteTokens: null });
+    committing.resolve();
+    await committed.promise;
+  });
+  const reader = result.body!.getReader();
+  let forwarded = false;
+  const first = reader.read().then(next => { forwarded = true; return next; });
+  await committing.promise;
+  assert.equal(forwarded, false);
+  committed.resolve();
+  assert.equal(new TextDecoder().decode((await first).value), terminal());
+  assert.equal((await reader.read()).done, true);
+  assert.deepEqual(observed, [15]);
 });
 
 test("pre-dispatch validation releases; EOF, cancellation and network ambiguity keep a hold", async t => {

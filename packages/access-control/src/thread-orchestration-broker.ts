@@ -900,7 +900,7 @@ export class ThreadOrchestrationBroker {
     }
     const parents=new Map<string,{parent:string;delegation:BoundedThreadDelegation;batches:ReturnType<typeof ledger.dueNotifications>}>();
     for(const batch of work.notifications){
-      const delegation=this.collaboration.notificationDelegation(batch.childThreadId,batch.batchId);if(!delegation)continue;
+      const delegation=this.collaboration.notificationDelegation(batch.batchId);if(!delegation)continue;
       try{this.authorize(delegation,batch.childThreadId,'conversation.read');}catch{continue;}
       const key=JSON.stringify([batch.parentThreadId,delegation.id]),group=parents.get(key)??{parent:batch.parentThreadId,delegation,batches:[]};group.batches.push(batch);parents.set(key,group);
     }

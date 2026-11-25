@@ -1,5 +1,6 @@
 import type { Rolldown } from "vite";
 import { startupLeafGroups } from "./startup-leaf-groups.vite";
+import { demandOnlyModule, requiredStartupModule, type StartupResourcePolicy } from "./startup-resource-policy.vite";
 
 export type WorkbenchChunkGroup = Rolldown.CodeSplittingGroup;
 
@@ -40,8 +41,16 @@ function startupCompositionTest(startupModules: readonly RegExp[] = []): RegExp 
  * Build the Web code-splitting groups. Without options the result is core's
  * topology unchanged; product groups come first, then core groups in order.
  */
-export function createWorkbenchChunkGroups(options: WorkbenchChunkGroupOptions = {}): WorkbenchChunkGroup[] {
+export function createWorkbenchChunkGroups(options: WorkbenchChunkGroupOptions = {}, startupGroup?: WorkbenchChunkGroup): WorkbenchChunkGroup[] {
+  // Claim the AppHost entry's dependencies before the general startup
+  // coalescer can merge them into UI chunks.
+  const deploymentAppHost: WorkbenchChunkGroup = {
+    name: "deployment-app-host-startup",
+    includeDependenciesRecursively: true,
+    test: /\/apps\/workbench-web\/src\/runtime\/(?:deployment-app-host-startup|websocket-app-host)\.ts$/,
+  };
   const coreGroups: WorkbenchChunkGroup[] = [
+    ...(startupGroup ? [deploymentAppHost, startupGroup] : []),
     ...startupLeafGroups,
     // This requested queue UI shares tiny control leaves with Main.
     // Keep it separate as lazy Settings consumers change chunk grouping.
@@ -291,4 +300,56 @@ export function createWorkbenchChunkGroups(options: WorkbenchChunkGroupOptions =
       throw new Error(`Workbench product chunk group ${group.name} must not set priority`);
   }
   return [...productGroups, ...coreGroups];
+}
+
+/** Coalesce small modules already required on the same startup paths.
+ * Follow static imports only and keep optional implementations and existing
+ * startup entry boundaries in their own chunks. */
+export function startupChunking(policy: StartupResourcePolicy = {}) {
+  const modules = new Map<string, {
+    isEntry: boolean;
+    importedIds: readonly string[];
+    dynamicallyImportedIds: readonly string[];
+  }>();
+  let startupModules: Set<string> | undefined;
+  const normalize = (id: string) => id.replace(/\?.*$/u, "").replaceAll("\\", "/");
+  const startupRoot = (id: string) => requiredStartupModule.test(normalize(id)) ||
+    policy.requiredModules?.some(pattern => pattern.test(normalize(id))) === true;
+  const collect = () => {
+    const reachable = new Set<string>();
+    const visit = (id: string) => {
+      if (reachable.has(id)) return;
+      reachable.add(id);
+      for (const child of modules.get(id)?.importedIds ?? []) visit(child);
+    };
+    for (const [id, info] of modules) if (info.isEntry || startupRoot(id)) visit(id);
+    return reachable;
+  };
+  const group: WorkbenchChunkGroup = {
+    debugName: "startup-static-dependencies",
+    name: id => normalize(id).includes("/node_modules/") ? "startup-vendor-dependencies" : "startup-package-dependencies",
+    test: id => {
+      const info = modules.get(id);
+      const modulePath = normalize(id);
+      if (id.startsWith("\0") || !info || info.isEntry || info.dynamicallyImportedIds.length ||
+        !/\/(?:node_modules|packages)\//u.test(modulePath) ||
+        startupRoot(id) || !/\.[cm]?[jt]sx?(?:\?|$)/u.test(id) || demandOnlyModule.test(id) ||
+        policy.demandOnlyModules?.some(pattern => pattern.test(id))) return false;
+      return (startupModules ??= collect()).has(id);
+    },
+    maxSize: 360_000,
+    includeDependenciesRecursively: false,
+  };
+  return {
+    group,
+    plugin: {
+      name: "opencraft-coalesce-startup-chunks",
+      buildStart() { modules.clear(); startupModules = undefined; },
+      moduleParsed({ id, isEntry, importedIds, dynamicallyImportedIds }: {
+        id: string; isEntry: boolean; importedIds: readonly string[]; dynamicallyImportedIds: readonly string[];
+      }) {
+        modules.set(id, { isEntry, importedIds, dynamicallyImportedIds });
+      },
+    },
+  };
 }

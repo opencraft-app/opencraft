@@ -1,6 +1,8 @@
 // A provider whose turns end by themselves, with native history carrying client message IDs.
 import { createInterface } from "node:readline";
-import { appendFileSync } from "node:fs";
+import { appendFileSync, existsSync } from "node:fs";
+if (process.env.BRIDGE_LAUNCHES) appendFileSync(process.env.BRIDGE_LAUNCHES, "launch\n");
+if (process.env.NATIVE_UNAVAILABLE && existsSync(process.env.NATIVE_UNAVAILABLE)) process.exit(1);
 const output = (frame) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...frame }) + "\n");
 let sequence = 0,
   turns = 0;
@@ -67,6 +69,11 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     const id = `turn-${++turns}`,
       clientId = p.native?.clientUserMessageId,
       scope = { threadId: p.threadId };
+    if (process.env.DROP_NATIVE_ON_INPUT && process.env.DROP_NATIVE_ON_INPUT === clientId) {
+      appendFileSync(process.env.EXECUTIONS, clientId + "\n");
+      process.stderr.write("codex-native-fault:unknown:connection\n", () => process.exit(1));
+      return;
+    }
     const turn = {
       id,
       status: "inProgress",

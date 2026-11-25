@@ -1,14 +1,22 @@
 import { isAbsolute, join, resolve } from 'node:path';
 import { readFile, stat } from 'node:fs/promises';
 import { environmentDeliveryOptions } from '../../apps/headless-server/src/headless-identity.mjs';
+import { workspaceCodexEgressTarget } from '../../apps/headless-server/src/workspace-host-routes.ts';
 
 export const codexProjectlessDirectory = workspaceDirectory => join(workspaceDirectory, 'sessions', 'codex');
 
 /** embedded: Brain starts the account Core itself (default). external: a separate proxy service owns it. */
 export function proxyConfiguration(env = process.env) {
   const mode = env.OPENCRAFT_PROXY_MODE ?? 'embedded';
-  if (!['embedded', 'external'].includes(mode)) throw new Error('OPENCRAFT_PROXY_MODE must be embedded or external');
+  if (!['embedded', 'external', 'workspace-egress'].includes(mode))
+    throw new Error('OPENCRAFT_PROXY_MODE must be embedded, external or workspace-egress');
   const raw = env.OPENCRAFT_PROXY_PORT;
+  if (mode === 'workspace-egress') {
+    if (raw) throw new Error('The workspace model relay selects its own loopback port');
+    return { proxyMode: mode, proxyPort: null, workspaceCodexEgress: workspaceCodexEgressTarget(
+      env.OPENCRAFT_CODEX_EGRESS_ORIGIN, env.OPENCRAFT_CODEX_EGRESS_PROVIDER,
+    ) };
+  }
   const port = raw === undefined || raw === '' ? null : Number(raw);
   if (port !== null && (!/^[0-9]+$/.test(raw) || !Number.isSafeInteger(port) || port < 1024 || port > 65535))
     throw new Error('OPENCRAFT_PROXY_PORT must be an integer from 1024 to 65535');

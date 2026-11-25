@@ -149,8 +149,10 @@ Thread，激活阶段的 `thread/resume` 会与首轮提交竞态并得到
 `opencraft/thread-start-durability: { durableAfter: "first-turn-accepted" }`：
 Workbench 在同一 Draft 提交事务内依次完成 `thread/start` 与首个
 `turn/start`，收到含 Turn ID 的回执后才导航升级；确定性失败保留原 Draft
-及原输入。该能力不声称两个 RPC 是数据库原子事务，也不允许在未知网络
-结果后自动重发。
+及原输入。收到 `thread/start` 回执后，Workbench 在发送首个 Turn 前建立本地
+Thread 投影，期间不发起历史读取或执行激活。原生计划事件属于运行中的 Turn，
+可与首次历史读取合并。该能力不声称两个 RPC 是数据库原子事务，也不允许
+在未知网络结果后自动重发。
 
 恢复已有会话时，历史读取独立完成并呈现；capability 声明可在后台准备。失败不清空已恢复历史、不删除已有 Thread。用户执行时重试所需准备，并在提交位置呈现失败。
 

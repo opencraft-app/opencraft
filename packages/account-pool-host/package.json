@@ -11,11 +11,14 @@
     "./refresh": "./src/oauth-refresh.ts",
     "./refresh-schedule": "./src/account-refresh-schedule.ts",
     "./renewal": "./src/account-renewal.ts",
+    "./renewal-node": "./src/account-renewal-node.ts",
     "./pool-core": "./src/account-pool-core.ts",
     "./credential-lease-exchange": "./src/credential-lease-exchange.ts",
     "./credential-egress": "./src/credential-egress.ts",
+    "./codex-model-catalog": "./src/codex-model-catalog.ts",
     "./model-gateway": "./src/model-gateway.ts",
     "./model-gateway-http": "./src/model-gateway-http.ts",
+    "./model-gateway-usage": "./src/model-gateway-usage.ts",
     "./personal-subscriptions": "./src/personal-subscriptions.ts"
   },
   "scripts": {

@@ -78,6 +78,7 @@ export function supportsUnconfirmedDeliveryRetry(value: unknown): boolean {
 }
 
 /** Host-owned Thread lifecycle operations; missing flags never imply support. */
+export const OPENCRAFT_THREAD_FOLLOW_UP_EXTENSION = "opencraft/thread-follow-up";
 export const OPENCRAFT_THREAD_LIFECYCLE_EXTENSION = "opencraft/thread-lifecycle";
 
 export interface OpenCraftThreadLifecycleCapability {
@@ -92,6 +93,8 @@ export interface OpenCraftThreadLifecycleCapability {
   readonly unsubscribe?: boolean;
   readonly rename?: boolean;
   readonly archive?: boolean;
+  /** A passive thread/read supplies the authorized archive state when known. */
+  readonly archiveStateInRead?: boolean;
   readonly delete?: boolean;
 }
 
@@ -109,6 +112,7 @@ export function parseThreadLifecycleCapability(value: unknown): OpenCraftThreadL
     unsubscribe: capability.unsubscribe === true,
     rename: capability.rename === true,
     archive: capability.archive === true,
+    ...(capability.archiveStateInRead === true ? { archiveStateInRead: true } : {}),
     delete: capability.delete === true,
   };
 }
@@ -126,6 +130,9 @@ export const OPENCRAFT_SCOPED_MODEL_CATALOG_CAPABILITY = Object.freeze({
   version: 1,
 });
 
+/** This Host supports a cheap authoritative model catalog read before submission. */
+export const OPENCRAFT_MODEL_CATALOG_REVALIDATION_EXTENSION = "opencraft/model-catalog-revalidation";
+
 /** Host-declared history strategy that can be selected before Thread Resume. */
 export const OPENCRAFT_RESUME_HISTORY_EXTENSION = "opencraft/resume-history";
 
@@ -134,7 +141,11 @@ export interface OpenCraftResumeHistoryCapability {
   readonly mode: "legacy" | "paginated" | "message-window";
   /** Paginated hosts may return a full initial page in thread/resume. */
   readonly initialTurnsPage?: boolean;
+  /** Passive thread/read accepts initialTurnsPage without subscribing to updates. */
+  readonly initialReadPage?: boolean;
   readonly boundedRecovery?: boolean;
+  /** An open Thread with a native active Turn can join its stream via thread/resume. */
+  readonly observeActiveTurns?: boolean;
 }
 
 /**

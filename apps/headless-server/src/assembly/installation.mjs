@@ -10,7 +10,7 @@ import { LocalAccountApplication } from "@opencraft/plugin-local-account/applica
 import { ServerSpacesRuntime } from "@opencraft/access-control/server-spaces";
 import { ThreadAccessStore } from "@opencraft/access-control/thread-access";
 import { Collaboration, CollaborationHttpApi } from "@opencraft/access-control/collaboration";
-import { OrchestrationRuntimeWorker } from "@opencraft/access-control/orchestration-runtime-store";
+import { OrchestrationRuntimeClient, coreOrchestrationTransport } from "@opencraft/access-control/orchestration-runtime-client";
 import { ThreadOrchestrationBroker } from "@opencraft/access-control/thread-orchestration-broker";
 import { CapabilityBindingProjection } from "@opencraft/session-capabilities/binding-projection";
 import { capabilitySigningKey } from "@opencraft/session-capabilities/credentials";
@@ -70,7 +70,7 @@ export function assembleInstallation({ serverStorage, identityFence, isHuman, ow
      * its domains); opened right after the owner, before any other step.
      */
     openOrchestrationStorage() {
-      orchestrationStorage = new OrchestrationRuntimeWorker(serverStorage);
+      orchestrationStorage = new OrchestrationRuntimeClient(coreOrchestrationTransport(serverStorage));
       return orchestrationStorage;
     },
     /** Instance membership, when the deployment configures any admission source. */
@@ -289,27 +289,33 @@ export function assembleInstallation({ serverStorage, identityFence, isHuman, ow
       return { serverSpaces, threadAccess, threadNotes };
     },
     /**
-     * Collaboration over routed conversation execution, thread orchestration,
-     * project automations and the collaboration HTTP API; all three start here.
-     * The App Host is constructed later and is read through its late binding;
-     * `codexBridge` is called at its original moment, once the broker is ready.
+     * Actor communication uses the same owner with or without conversation execution.
+     * A configured execution port also starts the broker and project automations.
+     * The broker reads the App Host through its late binding.
      */
-    async openCollaboration({ conversationExecution, operator, anonymousHandoff, appHost, engines, codexBridge }) {
+    async openCollaboration(execution) {
       actorCollaboration = new Collaboration(
         serverStorage,
         actorStore,
-        conversationExecution,
+        execution?.conversationExecution,
         Date.now,
         (actorId) =>
-          operator.owns(actorId) ? anonymousHandoff() : !instanceAccess || instanceAccess.admitsActor(actorId),
+          execution?.operator.owns(actorId)
+            ? execution.anonymousHandoff()
+            : !instanceAccess || instanceAccess.admitsActor(actorId),
         orchestrationStorage,
         (context, ref) =>
-          threadAccess.allows(ref.serverId, ref.threadId, operator.owns(context.actorId) ? undefined : context),
+          threadAccess?.allows(ref.serverId, ref.threadId, execution?.operator.owns(context.actorId) ? undefined : context) ?? false,
         serverStorage.call,
         serverStorage.call.readConversationOwner,
       );
       // Inbox team commands go to the Server space ledger, the only writer of team membership.
-      actorCollaboration.attachSpaces({ command: (context, command) => serverSpaces.command(context, command) });
+      if (serverSpaces) actorCollaboration.attachSpaces({ command: (context, command) => serverSpaces.command(context, command) });
+      if (!execution) {
+        const actorCollaborationApi = new CollaborationHttpApi(actorCollaboration, actorAccess, undefined, { personalAssistant: false });
+        return { actorCollaboration, actorCollaborationApi };
+      }
+      const { conversationExecution, appHost, engines, codexBridge } = execution;
 
       threadOrchestration = new ThreadOrchestrationBroker(
         actorCollaboration,
@@ -411,7 +417,7 @@ export function assembleInstallation({ serverStorage, identityFence, isHuman, ow
       });
       return { serverInformation, serverInformationService };
     },
-    /** Personal model defaults, cross-device read receipts and personal SSH keys of the signed-in Human. */
+    /** Personal defaults and receipts, plus SSH key management when the composition supplies its SSH setting. */
     async openPersonalServices({ sshLogin }) {
       const signedInHuman = humanActorAccess({
         authenticate: (request) => actorAccess.authenticate(request),
@@ -422,6 +428,8 @@ export function assembleInstallation({ serverStorage, identityFence, isHuman, ow
       });
       const accountModelDefaultsService = accountModelDefaultsHttp(serverStorage.call, signedInHuman);
       const threadReadReceiptsService = threadReadReceiptsHttp(serverStorage.call, signedInHuman);
+      const accountServices = { accountModelDefaultsService, threadReadReceiptsService };
+      if (sshLogin === undefined) return accountServices;
       // Personal SSH keys: committed by the owner Worker, read from this thread's projection.
       const sshKeyAuthority = installationSshKeyAuthority({ actors: actorStore, access: instanceAccess });
       personalSshKeys = await ActorSshKeys.open(serverStorage.call, sshKeyAuthority);
@@ -432,7 +440,7 @@ export function assembleInstallation({ serverStorage, identityFence, isHuman, ow
         isHuman: (actorId) => actorStore.get(actorId)?.kind === "human",
         sshLogin,
       });
-      return { accountModelDefaultsService, threadReadReceiptsService, personalSshKeys, actorSshKeysService };
+      return { ...accountServices, personalSshKeys, actorSshKeysService };
     },
     /**
      * Turn push subscriptions for the two local hosts. The root's factories

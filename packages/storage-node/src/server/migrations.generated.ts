@@ -134,6 +134,11 @@ export const SERVER_MIGRATIONS = [
     "version": 27,
     "name": "0026_thread_read_receipts",
     "sql": "CREATE TABLE `thread_read_receipts` (\n\t`actor_id` text NOT NULL,\n\t`host_id` text NOT NULL,\n\t`thread_id` text NOT NULL,\n\t`turn_id` text NOT NULL,\n\t`sequence` integer NOT NULL,\n\t`read_at` integer NOT NULL,\n\tPRIMARY KEY(`actor_id`, `host_id`, `thread_id`, `turn_id`),\n\tCONSTRAINT \"thread_read_receipts_sequence\" CHECK(sequence > 0)\n) STRICT;\n--> statement-breakpoint\nCREATE UNIQUE INDEX `thread_read_receipts_actor_sequence` ON `thread_read_receipts` (`actor_id`,`sequence`);"
+  },
+  {
+    "version": 28,
+    "name": "0027_orchestration_spawn_target_index",
+    "sql": "CREATE INDEX `opencraft_orchestration_spawn_target_created` ON `opencraft_orchestration_operations` (`target_thread_id`,`created_at_ms`) WHERE \"opencraft_orchestration_operations\".\"kind\" = 'spawn';"
   }
 ] as const;
 export const SERVER_ALTERNATE_MIGRATIONS = [
@@ -274,9 +279,14 @@ export const SERVER_ALTERNATE_MIGRATIONS = [
         "version": 27,
         "name": "converge_0026_thread_read_receipts",
         "sql": SERVER_MIGRATIONS[26].sql
+      },
+      {
+        "version": 28,
+        "name": "converge_0027_orchestration_spawn_target_index",
+        "sql": SERVER_MIGRATIONS[27].sql
       }
     ]
   }
 ] as const;
-export const SERVER_MIGRATION_CONTRACT_HASH = "23ef362dc25c50d2a262a8ad3c0b931d29adb831ea7a9418bd945bd2c0755771" as const;
+export const SERVER_MIGRATION_CONTRACT_HASH = "af3aa5cdd86a16ba6b98f9210ee84a7e0f3c17822405d5bef9d53c961af40460" as const;
 export const OPENCRAFT_VERSION = "0.3.0" as const;

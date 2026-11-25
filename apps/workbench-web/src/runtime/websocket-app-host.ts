@@ -11,7 +11,8 @@ import {
   isAcknowledgement, isSequence, parseResumeGrant, utf8Length, type ResumeGrant,
 } from "@opencraft/app-host-resume";
 import { MessagePortAppHostClient } from "@opencraft/app-host-client";
-import type { RendererToAppHostMessage } from "@opencraft/app-host-protocol";
+import { APP_HOST_IDLE_PROBE_ID, type RendererToAppHostMessage } from "@opencraft/app-host-protocol";
+import { APP_HOST_CLIENT_INSTANCE_PARAMETER } from "@opencraft/app-host-protocol/routing";
 import { captureTransportMessageScope, ClientObserverList, TransportStatusObservers } from "@opencraft/appserver-client/transport";
 import type { DuplexTransport, TransportStatus, TransportFailureDiagnostic } from "@opencraft/appserver-client/transport";
 import { RenewableAppHostTransport } from "./renewable-app-host-transport";
@@ -149,6 +150,7 @@ class WebSocketAppHostPort {
   private closed = false;
   private socketCloseAccepted = false;
   private supportsProbe = false;
+  private idleProbe = false;
   private lastMessageAt: number | undefined;
   private lastProbeRttMs: number | undefined;
   private probeSequence = 0;
@@ -202,12 +204,14 @@ class WebSocketAppHostPort {
     });
     socket.addEventListener("message", event => {
       if (this.closed || socket !== this.live) return;
-      this.lastMessageAt = Date.now();
-      // Any server frame answers an outstanding liveness check.
-      if (this.liveness) this.clearLiveness();
       try {
         const data = String(event.data);
         let message = JSON.parse(data);
+        if (this.idleProbe && message?.type === "response" && message.requestId === APP_HOST_IDLE_PROBE_ID &&
+          this.probe?.id !== APP_HOST_IDLE_PROBE_ID) return;
+        this.lastMessageAt = Date.now();
+        // Any current server frame answers an outstanding liveness check.
+        if (this.liveness) this.clearLiveness();
         if (message?.type === "connection/heartbeat") return;
         if (this.resuming) { this.receiveResumeReply(message); return; }
         if (message?.type === "connection/ack") {
@@ -228,6 +232,7 @@ class WebSocketAppHostPort {
         if (message?.type === "ready") {
           this.phase = "ready";
           this.supportsProbe = message.capabilities?.connectionProbe === true;
+          this.idleProbe = message.capabilities?.idleProbe === true;
           const heartbeatMs = message.capabilities?.heartbeatMs;
           if (typeof heartbeatMs === "number" && Number.isFinite(heartbeatMs) && heartbeatMs >= 1_000 && heartbeatMs <= 60_000)
             this.startLiveness(heartbeatMs);
@@ -430,12 +435,14 @@ class WebSocketAppHostPort {
 
   start(): void {}
 
-  probeReachability(): void {
+  probeReachability(periodic = false): void {
     if (this.resuming) return;
     // A negotiated heartbeat already proves the route; skip the slow legacy probe.
     if (this.heartbeatMs !== null) return;
     if (this.closed || !this.supportsProbe || this.phase !== "ready" || this.probe !== null || !this.isVisible()) return;
-    const id = `${this.attemptId}:probe:${++this.probeSequence}`;
+    // A foreground revalidation still uses a fresh ID, so a reply to a probe
+    // cancelled in the background cannot validate the returned page.
+    const id = this.idleProbe && periodic ? APP_HOST_IDLE_PROBE_ID : `${this.attemptId}:probe:${++this.probeSequence}`;
     const startedAt = Date.now();
     const check = () => {
       if (this.closed || this.probe?.id !== id) return;
@@ -602,6 +609,19 @@ export function connectWebSocketAppHost(
     readonly retryDelaysMs?: readonly number[];
   } = {},
 ): { createTransport(hostId: string): DuplexTransport; close(): void } {
+  const path = options.path ?? "/apphost";
+  // Keep the client identity through transport retries and fresh handshakes.
+  // Each socket still has its own diagnostic attempt ID.
+  const clientInstanceId = path === "/apphost"
+    ? globalThis.crypto?.randomUUID?.() ?? `instance-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    : null;
+  const socketAddress = (attemptId: string): string => {
+    const url = new URL(serverUrl(path), window.location.href);
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+    if (clientInstanceId !== null) url.searchParams.set(APP_HOST_CLIENT_INSTANCE_PARAMETER, clientInstanceId);
+    url.searchParams.set("attempt", attemptId);
+    return url.href;
+  };
   let current: { port: WebSocketAppHostPort; client: MessagePortAppHostClient } | null = null;
   let disposed = false;
   let closing = false;
@@ -659,11 +679,8 @@ export function connectWebSocketAppHost(
     void Promise.resolve().then(async () => {
       await options.beforeConnect?.();
       if (stopped || disposed || current !== old || !events.isVisible() || old.port.probeAgeMs < 15_000) { token.cancel(); return; }
-      const url = new URL(serverUrl(options.path ?? "/apphost"), window.location.href);
-      url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
       const id = globalThis.crypto?.randomUUID?.() ?? "validation-" + Date.now();
-      url.searchParams.set("attempt", id);
-      const port = new WebSocketAppHostPort(url.href, id, createSocket,
+      const port = new WebSocketAppHostPort(socketAddress(id), id, createSocket,
         options.handshakeTimeoutMs ?? 20_000,
         diagnostic => {
           if (current?.port === port) failed();
@@ -722,7 +739,7 @@ export function connectWebSocketAppHost(
     if (transports.size === 0) return;
     // Lifecycle/online events demand a fast answer from a silent heartbeat route.
     if (!periodic) current?.port.revalidate();
-    current?.port.probeReachability();
+    current?.port.probeReachability(periodic);
     validateReplacement();
     // Arm before notifying consumers: synchronous disposal must cancel this
     // owner's timer, and a subscriber cannot create duplicate periodic work.
@@ -787,14 +804,11 @@ export function connectWebSocketAppHost(
         // A raw provider callback can synchronously dispose the whole factory.
         if (disposed) throw new Error("App Host connection is closed");
         if (current === null || current.port.isClosed) {
-          const url = new URL(serverUrl(options.path ?? "/apphost"), window.location.href);
-          url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
           const id = globalThis.crypto?.randomUUID?.() ?? `client-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-          url.searchParams.set("attempt", id);
           let port: WebSocketAppHostPort;
           try {
             port = new WebSocketAppHostPort(
-              url.href,
+              socketAddress(id),
               id,
               createSocket,
               options.handshakeTimeoutMs ?? 20_000,

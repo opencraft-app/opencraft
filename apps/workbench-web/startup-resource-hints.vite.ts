@@ -6,7 +6,7 @@ const bootstrapModule = /\/apps\/workbench-web\/src\/(?:main-bootstrap\.ts|main\
 const settingsModule = /\/apps\/workbench-web\/src\/components\/settings-page\.tsx$/;
 
 /** Public URLs only: private module identities stay in the existing startup report. */
-export function startupResourceHints(policy: StartupResourcePolicy = {}): Plugin {
+export function startupResourceHints(policy: StartupResourcePolicy = {}, preloadCriticalScripts = false): Plugin {
   let config: ResolvedConfig;
   return {
     name: "opencraft-startup-resource-hints",
@@ -39,7 +39,13 @@ export function startupResourceHints(policy: StartupResourcePolicy = {}): Plugin
         const url = (file: string) => `${config.base}${file}`;
         const hints = new Map<string, string>();
         for (const chunk of roots) hints.set(url(chunk.fileName), "modulepreload");
-        for (const file of critical) if (file.endsWith(".css")) hints.set(url(file), "style");
+        for (const file of critical) {
+          if (file.endsWith(".css")) hints.set(url(file), "style");
+          // Start dependencies already on the release bootstrap path while
+          // the browser fetches the entry that would discover them.
+          if (preloadCriticalScripts && bundle[file]?.type === "chunk")
+            hints.set(url(file), "modulepreload");
+        }
         let source = String(html.source);
         const tags = [...hints].filter(([href]) => !source.includes(`href="${href}"`)).map(([href, kind]) => kind === "modulepreload"
           ? `<link rel="modulepreload" crossorigin href="${href}">`

@@ -22,6 +22,12 @@ import { Storage } from "./storage.js";
 import { Peer, successful } from "./peer.js";
 import { object, identifier, routeKey, type Command, type Generation, type Receipt } from "./types.js";
 import { HostQueue } from "./queue.js";
+const CODEX_RECONNECT_DELAY_MS = 1_000;
+class CodexAttachmentUnavailable extends Error {
+  constructor() {
+    super("Codex provider attachment is unavailable");
+  }
+}
 /** Error kinds that are definitive refusals before any native write. */
 const REFUSED_BRIDGE_ERRORS = new Set([
   "auth",
@@ -93,14 +99,15 @@ export class BridgeHost {
   private pool!: SandboxPool;
   private diagnosticPeers = new Map<string, Peer>();
   private peers = new Map<string, Promise<Peer>>();
+  private readonly reconnectAfter = new Map<string, number>();
   private capabilities = new Map<string, BridgeInitializeResult["effectiveCapabilities"]>();
   private admissions = new Set<Promise<Receipt>>();
   private tasks = new Set<Promise<void>>();
   private closing = false;
   private retainedAfterCrash = new Set<string>();
-  /** Routes of a restarted Host whose native session the new provider process has not bound yet. */
+  /** Native sessions a new provider process has not bound yet. */
   private readonly rebinding = new Set<string>();
-  private readonly rebinds = new Map<string, Promise<void>>();
+  private readonly rebinds = new Map<string, { peer: Peer; operation: Promise<void> }>();
   /**
    * A provider that adopts released native sessions can also take back its own
    * recorded sessions after a Host restart: the native session outlived the
@@ -188,16 +195,45 @@ export class BridgeHost {
     await this.peer(id); // no new default until sandbox and negotiation succeeded
     await this.storage.call("activate", { id, expected });
   }
+  private lostCodexAttachment(id: string, peer = this.diagnosticPeers.get(id)): boolean {
+    const diagnostic = peer?.diagnostic();
+    return (
+      this.generations.get(id)?.provider.providerId === "codex" &&
+      this.recoverable(id) &&
+      diagnostic?.failed === true &&
+      diagnostic.nativeFault === "codex-native-fault:unknown:connection"
+    );
+  }
   private peer(id: string): Promise<Peer> {
-    let pending = this.peers.get(id);
-    if (pending) return pending;
+    const pending = this.peers.get(id);
+    if (pending) {
+      return pending.then((peer) => {
+        if (!this.lostCodexAttachment(id, peer)) return peer;
+        const current = this.peers.get(id);
+        if (current && current !== pending) return current;
+        if (this.closing || current !== pending || Date.now() < (this.reconnectAfter.get(id) ?? 0))
+          throw new CodexAttachmentUnavailable();
+        return this.openPeer(id, { peer, pending });
+      });
+    }
+    return this.openPeer(id);
+  }
+  private openPeer(id: string, previous?: { peer: Peer; pending: Promise<Peer> }): Promise<Peer> {
     const config = this.generations.get(id);
     if (this.retainedAfterCrash.has(id) && !this.recoverable(id))
       return Promise.reject(
         Error("Retained generation requires explicit native recovery; automatic replacement refused"),
       );
     if (!config) return Promise.reject(Error("Pinned generation unavailable"));
-    pending = (async () => {
+    const launch = (async () => {
+      if (previous) {
+        // Drain the previous attachment before binding a new sandbox to the
+        // independently owned native writer.
+        await previous.peer.close();
+        if (this.closing || this.generations.get(id) !== config) throw new CodexAttachmentUnavailable();
+        const routes = await this.storage.call<string[]>("restorableRoutes", { generation: id });
+        for (const route of routes) this.rebinding.add(route);
+      }
       if (
         createHash("sha256")
           .update(await readFile(config.artifact))
@@ -338,8 +374,24 @@ export class BridgeHost {
         throw error;
       }
     })();
+    const pending = previous
+      ? launch.then(
+          (peer) => {
+            this.reconnectAfter.delete(id);
+            return peer;
+          },
+          () => {
+            if (this.peers.get(id) === pending) {
+              this.diagnosticPeers.set(id, previous.peer);
+              this.peers.set(id, previous.pending);
+              this.reconnectAfter.set(id, Date.now() + CODEX_RECONNECT_DELAY_MS);
+            }
+            throw new CodexAttachmentUnavailable();
+          },
+        )
+      : launch;
     this.peers.set(id, pending);
-    return pending; // failed generations never auto-restart native writers
+    return pending;
   }
   accept(raw: unknown): Promise<Receipt> {
     const admission = this.admit(raw);
@@ -397,7 +449,7 @@ export class BridgeHost {
     return result.receipt; // admission is durable, never waits for native response
   }
   /**
-   * After a restart, bind a route's recorded native session in the new provider
+   * After replacing a provider, bind a route's recorded native session in the new
    * process before any command or read touches it. The native ID comes from this
    * Host's own record, never from a client. A refusal (for example a turn still
    * running natively) leaves the route to retry on its next use.
@@ -405,7 +457,7 @@ export class BridgeHost {
   private bound(peer: Peer, route: string, epoch: number): Promise<void> {
     if (!this.rebinding.has(route)) return Promise.resolve();
     const pending = this.rebinds.get(route);
-    if (pending) return pending;
+    if (pending?.peer === peer) return pending.operation;
     const operation = (async () => {
       const state = await this.storage.call<{
         state: { openTurns?: Record<string, unknown> };
@@ -423,15 +475,15 @@ export class BridgeHost {
         });
         if (!successful(reply))
           throw Object.assign(
-            Error(
-              `Session recovery after Host restart was refused: ${"error" in reply ? reply.error.message : "no result"}`,
-            ),
+            Error(`Native session recovery was refused: ${"error" in reply ? reply.error.message : "no result"}`),
             { code: -32006, kind: "explicit-reject" },
           );
       }
-      this.rebinding.delete(route);
-    })().finally(() => this.rebinds.delete(route));
-    this.rebinds.set(route, operation);
+      if (!peer.diagnostic().failed) this.rebinding.delete(route);
+    })().finally(() => {
+      if (this.rebinds.get(route)?.operation === operation) this.rebinds.delete(route);
+    });
+    this.rebinds.set(route, { peer, operation });
     return operation;
   }
   private readonly migrations = new Map<string, Promise<void>>();
@@ -527,22 +579,36 @@ export class BridgeHost {
     this.migrations.set(route, operation);
     return operation;
   }
-  /** Bind a restarted route before the queue judges whether it is idle. */
+  /** Restore a native attachment before the queue judges whether the route is idle. */
   private async recoverRoute(route: string): Promise<void> {
-    if (!this.rebinding.has(route)) return;
-    await this.migrate(route);
-    if (!this.rebinding.has(route)) return;
+    if (this.rebinding.has(route)) await this.migrate(route);
     const binding = await this.storage.call<{ generation: string | null; epoch: number }>("observationRoute", {
       route,
     });
-    if (!binding.generation) return;
+    if (!binding.generation || (!this.rebinding.has(route) && !this.lostCodexAttachment(binding.generation))) return;
     await this.bound(await this.peer(binding.generation), route, binding.epoch);
   }
   private async dispatch(command: Command, receipt: Receipt): Promise<void> {
     // Fence is committed BEFORE preparing or writing a native request.
     await this.storage.call("dispatch", { id: command.commandId });
     try {
-      const peer = await this.peer(receipt.generation);
+      let peer: Peer;
+      try {
+        peer = await this.peer(receipt.generation);
+      } catch (error) {
+        if (!(error instanceof CodexAttachmentUnavailable)) throw error;
+        // Attachment negotiation failed before this command was sent.
+        await this.storage.call("settle", {
+          id: command.commandId,
+          state: "rejected",
+          response: {
+            jsonrpc: "2.0",
+            id: `host-command:${command.commandId}`,
+            error: { code: -32006, kind: "explicit-reject", message: error.message },
+          },
+        });
+        return;
+      }
       const admission = assertMethodAllowed(this.capabilities.get(receipt.generation)!, command.method);
       if (!admission.ok) {
         await this.storage.call("settle", { id: command.commandId, state: "rejected" });
@@ -869,11 +935,11 @@ export class BridgeHost {
   async snapshot(): Promise<any> {
     return { ...(await this.storage.call("snapshot")), databaseOutcome: await this.storage.ready };
   }
-  events(cursor: number, limit = 256): Promise<any> {
-    return this.storage.call("events", { cursor, limit });
+  events(cursor: number, limit = 256, fenced = false): Promise<any> {
+    return this.storage.call("events", { cursor, limit, fenced });
   }
-  async ack(cursor: number): Promise<void> {
-    await this.storage.call("ack", { cursor });
+  async ack(cursor: number, outboxId?: string): Promise<void> {
+    await this.storage.call("ack", { cursor, outboxId });
     await this.drain();
   }
   /** Retries draining generations; a migration in flight may still hand its route back to one. */
@@ -887,6 +953,7 @@ export class BridgeHost {
     const retired = this.peers.get(id);
     this.peers.delete(id);
     this.generations.delete(id);
+    this.reconnectAfter.delete(id);
     this.draining.delete(id);
     if (retired) await (await retired.catch(() => undefined))?.close().catch(() => undefined);
     return true;
@@ -897,9 +964,11 @@ export class BridgeHost {
   async retire(id: string): Promise<void> {
     await this.storage.call("retire", { id }); // refuse before touching a busy peer
     const peer = this.peers.get(id);
-    if (peer) await (await peer).close();
+    this.peers.delete(id);
     this.generations.delete(id);
+    this.reconnectAfter.delete(id);
     this.draining.delete(id);
+    if (peer) await (await peer).close();
   }
   async close(): Promise<void> {
     this.closing = true;

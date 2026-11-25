@@ -364,8 +364,11 @@ export class CodexBridge {
       if (item.type === "agentMessage" && typeof item.text === "string")
         shape = { kind: "agentMessage", text: item.text };
       else if (item.type === "plan" && typeof item.text === "string") shape = { kind: "plan", text: item.text };
-      else if (item.type === "reasoning" && Array.isArray(item.content))
-        shape = { kind: "reasoning", text: item.content.filter((v): v is string => typeof v === "string").join("\n") };
+      else if (item.type === "reasoning" && Array.isArray(item.content)) {
+        const content = item.content.filter((v): v is string => typeof v === "string");
+        const summary = Array.isArray(item.summary) ? item.summary.filter((v): v is string => typeof v === "string") : [];
+        shape = { kind: "reasoning", text: content.join("\n"), content, summary };
+      }
       else if (item.type === "dynamicToolCall" && typeof item.tool === "string")
         shape = {
           kind: "tool",
@@ -424,7 +427,12 @@ export class CodexBridge {
           cwd: item.cwd,
           status: item.status === "completed" ? "completed" : item.status === "failed" ? "failed" : "inProgress",
           output: typeof item.aggregatedOutput === "string" ? item.aggregatedOutput : null,
+          ...(typeof item.exitCode === "number" && Number.isSafeInteger(item.exitCode) ? { exitCode: item.exitCode } : {}),
+          ...(typeof item.durationMs === "number" && Number.isFinite(item.durationMs) ? { durationMs: item.durationMs } : {}),
         };
+      else if (item.type === "fileChange" && Array.isArray(item.changes) &&
+        (item.status === "inProgress" || item.status === "completed" || item.status === "failed" || item.status === "declined"))
+        shape = { kind: "fileChange", status: item.status, changes: item.changes as Extract<ItemShape, { kind: "fileChange" }>["changes"] };
       else {
         this.emit(threadId, [{ op: "unhandled", scope, nativeTurnId, nativeKey, reason: "Unsupported native item" }]);
         return;

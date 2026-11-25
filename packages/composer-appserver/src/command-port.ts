@@ -5,6 +5,8 @@ import { AppServerClientError, AppServerRpcError, type AppServerClient, type App
 import { ContinuationCommandError, SubmissionNotDispatchedError, SubmissionOutcomeUnknownError } from "@opencraft/chat-runtime";
 import type {
   AppServerMethod,
+  AppServerMethodResult,
+  AppServerThread,
   ThreadForkParams,
 } from "@opencraft/appserver-protocol";
 import type {
@@ -44,6 +46,11 @@ export interface AppServerConversationCommandPortConfig {
   readonly queueUnconfirmedSteerDiscard?: boolean;
   /** Read current authenticated Host capability; absent is unsupported. */
   readonly supportsWorkspacePlacement?: () => boolean;
+  readonly supportsTerminalDraftScope?: () => boolean;
+  /** Install the acknowledged Thread's live projection before its first Turn can emit events. */
+  readonly withFirstTurnProjection?: (
+    thread: AppServerThread, start: () => Promise<AppServerMethodResult<"turn/start">>,
+  ) => Promise<AppServerMethodResult<"turn/start">>;
   readonly queueUnconfirmedDeliveryRetry?: boolean;
   readonly canRequest?: (method: AppServerMethod) => boolean;
   readonly compiler?: SubmitCompilerOptions;
@@ -267,6 +274,7 @@ export function createAppServerConversationCommandPort(
       case "new-thread": {
         const started = await config.client.request("thread/start", {
           ...compiled.threadOptions,
+          ...(config.supportsTerminalDraftScope?.() ? { draftScopeId: intent.target.draftId } : {}),
           ...(placement ? {workspacePlacement:placement} : {}),
           ...(intent.target.type==="new-thread"&&intent.target.execution.collaborationSpaceId!==undefined?{collaborationSpaceId:intent.target.execution.collaborationSpaceId}:{}),
           ...(config.dynamicTools === undefined
@@ -285,7 +293,7 @@ export function createAppServerConversationCommandPort(
         onAdmission?.();
         onCreationAccepted?.();
         threadId = started.thread.id;
-        const turn = await config.client.request("turn/start", {
+        const start = () => config.client.request("turn/start", {
           threadId,
           clientUserMessageId: intent.clientMessageId,
           input: [...compiled.input],
@@ -294,6 +302,7 @@ export function createAppServerConversationCommandPort(
             : { additionalContext: compiled.additionalContext }),
           ...compiled.turnOptions,
         });
+        const turn = await (config.withFirstTurnProjection?.(started.thread, start) ?? start());
         observeSender(turn);
         turnId = turn.turn.id;
         break;
@@ -400,6 +409,7 @@ export function createAppServerConversationCommandPort(
       config.onDiagnostic?.(diagnostic, intent);
     const started = await config.client.request("thread/start", {
       ...compiled.threadOptions,
+      ...(config.supportsTerminalDraftScope?.() ? { draftScopeId: intent.target.draftId } : {}),
       ...(placement ? {workspacePlacement:placement} : {}),
           ...(intent.target.type==="new-thread"&&intent.target.execution.collaborationSpaceId!==undefined?{collaborationSpaceId:intent.target.execution.collaborationSpaceId}:{}),
       ...(config.dynamicTools === undefined

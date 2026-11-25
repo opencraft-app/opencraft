@@ -23,6 +23,17 @@
 //                           registry.cloudflare.com; see rehearsal-containers.ts).
 //                           Off by default. `--containers --only '^containers'`
 //                           runs only that group.
+//   --codex-image <digest>  run the native Codex AppHost scenario on Cloudflare
+//   --codex-bridge          run the Codex scenario over the packaged Bridge
+//   --codex-workers-ai      use the real Workers AI GPT-OSS 20B model
+//                           using an existing same-account image. This isolated
+//                           mode does not run prototypes or clean earlier runs.
+//   --codex-restart         verify snapshot restart, input deduplication and
+//                           provider credential confinement on a disposable workspace.
+//   --codex-crash           also stop the disposable container during an active Turn.
+//   --codex-wrangler <cli> deploy the Codex Worker with the supplied Wrangler CLI.
+//   --codex-provider <file> use an HTTPS Responses provider (baseUrl, model, apiKey)
+//                           instead of deploying the fixture model Worker.
 // See docs/architecture/platform/cloudflare-deployment.md ("真实 Cloudflare 预演").
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -34,6 +45,7 @@ import type { WorkerRuntime, WorkerScenario } from "../../tests/cloudflare/worke
 import { randomBytes } from "node:crypto";
 import { cleanLeftovers } from "./rehearsal-leftovers.ts";
 import { runContainerRehearsal } from "./rehearsal-containers.ts";
+import { CODEX_SCENARIO, runCodexRehearsal } from "./rehearsal-codex.ts";
 import {
   CloudflareApi,
   cloudflareRuntime,
@@ -63,6 +75,13 @@ const { values: args } = parseArgs({
     keep: { type: "boolean", default: false },
     "stale-minutes": { type: "string", default: "10" },
     containers: { type: "boolean", default: false },
+    "codex-image": { type: "string" },
+    "codex-bridge": { type: "boolean" },
+    "codex-workers-ai": { type: "boolean" },
+    "codex-restart": { type: "boolean" },
+    "codex-crash": { type: "boolean" },
+    "codex-wrangler": { type: "string" },
+    "codex-provider": { type: "string" },
   },
 });
 
@@ -81,6 +100,41 @@ if (!Number.isFinite(staleMinutes) || staleMinutes < 0) {
 }
 
 const api = new CloudflareApi(accountId, token);
+if ((args["codex-wrangler"] !== undefined || args["codex-provider"] !== undefined || args["codex-bridge"] || args["codex-workers-ai"] || args["codex-restart"] || args["codex-crash"]) && !args["codex-image"]) {
+  console.error("Codex rehearsal options require --codex-image.");
+  process.exit(2);
+}
+if (args["codex-image"] !== undefined) {
+  if (args.containers || (only && !only.test(CODEX_SCENARIO))) {
+    console.error("--codex-image runs only the native Codex scenario.");
+    process.exit(2);
+  }
+  const diagnostics: string[] = [];
+  const began = performance.now();
+  let error: string | undefined;
+  log(CODEX_SCENARIO);
+  try {
+    await runCodexRehearsal({
+      api, image: args["codex-image"], wrangler: args["codex-wrangler"], providerFile: args["codex-provider"],
+      bridge: args["codex-bridge"] === true,
+      workersAi: args["codex-workers-ai"] === true,
+      restart: args["codex-restart"] === true,
+      crash: args["codex-crash"] === true,
+      keep: args.keep, log, checks: diagnostics,
+    });
+  } catch (failure) {
+    error = failure instanceof Error ? failure.message : String(failure);
+  }
+  for (const diagnostic of diagnostics) log(diagnostic);
+  const result: Outcome = { ok: error === undefined, ms: performance.now() - began, diagnostics, ...(error && { error }) };
+  log(result.ok ? `pass ${result.ms.toFixed(0)}ms` : `FAIL ${error}`);
+  if (args.report) {
+    const rows: Row[] = [{ group: "codex", name: CODEX_SCENARIO.slice("codex: ".length), cloudflare: result }];
+    await writeFile(args.report, JSON.stringify({ rows }, null, 2) + "\n");
+    log(`report written to ${args.report}`);
+  }
+  process.exit(result.ok ? 0 : 1);
+}
 // Earlier runs that could not clean up (SIGKILL, crash, --keep) are removed first.
 const leftovers = await cleanLeftovers(api, { staleMinutes, log });
 log(

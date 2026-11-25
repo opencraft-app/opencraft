@@ -108,7 +108,7 @@ async function readCodexCredential(codexHome: string): Promise<ImportedCodexCred
   };
 }
 
-async function writeCodexCredential(codexHome: string, account: AccountPoolAccount, secret: AccountPoolSecret): Promise<void> {
+async function writeCodexCredential(codexHome: string, accountId: string, secret: AccountPoolSecret): Promise<void> {
   await mkdir(codexHome, { recursive: true, mode: 0o700 });
   await writeFile(join(codexHome, "auth.json"), `${JSON.stringify({
     auth_mode: "chatgpt",
@@ -117,7 +117,7 @@ async function writeCodexCredential(codexHome: string, account: AccountPoolAccou
       id_token: secret.idToken ?? null,
       access_token: secret.accessToken,
       refresh_token: secret.refreshToken,
-      account_id: account.upstreamAccountId,
+      account_id: accountId,
     },
     last_refresh: new Date().toISOString(),
   })}\n`, { mode: 0o600 });
@@ -382,7 +382,7 @@ export function createManagedCodexRefresh(options: {
   readonly createClient: CodexMaintenanceClientFactory;
   readonly deferRecovery?: boolean;
 }): ((
-  account: AccountPoolAccount,
+  account: Pick<AccountPoolAccount, "upstreamAccountId">,
   secret: AccountPoolSecret,
   reason: AccountCredentialRefreshReason,
 ) => Promise<AccountPoolSecret>) & { ready(): Promise<void> } {
@@ -390,17 +390,17 @@ export function createManagedCodexRefresh(options: {
   const ready = () => initializeOperation ??= rm(options.refreshRoot, { recursive: true, force: true })
     .then(() => mkdir(options.refreshRoot, { recursive: true, mode: 0o700 })).then(() => undefined);
   if (!options.deferRecovery) void ready();
-  const refresh = async (account: AccountPoolAccount, secret: AccountPoolSecret) => {
+  const refresh = async ({ upstreamAccountId }: Pick<AccountPoolAccount, "upstreamAccountId">, secret: AccountPoolSecret) => {
     await ready();
     const codexHome = await mkdtemp(join(options.refreshRoot, "flight-"));
     let client: CodexMaintenanceClient | null = null;
     try {
       if (!secret.refreshToken) throw new Error("Codex account cannot refresh without a refresh token");
-      await writeCodexCredential(codexHome, account, secret);
+      await writeCodexCredential(codexHome, upstreamAccountId, secret);
       client = await options.createClient(codexHome);
       await client.request("account/read", { refreshToken: true });
       const refreshed = await readCodexCredential(codexHome);
-      if (refreshed.accountId !== account.upstreamAccountId) throw new Error("Codex refresh changed account identity");
+      if (refreshed.accountId !== upstreamAccountId) throw new Error("Codex refresh changed account identity");
       return refreshed.secret;
     } finally {
       await client?.close().catch(() => undefined);

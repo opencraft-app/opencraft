@@ -54,6 +54,7 @@ const ACCOUNT_POOL_NEUTRAL = new Set(
     "account-diagnostics.ts",
     "codex-auth-file-format.ts",
     "codex-launch.ts",
+    "codex-model-catalog.ts",
     "model-gateway.ts",
     "model-gateway-http.ts",
     "model-gateway-sql-owner.ts",

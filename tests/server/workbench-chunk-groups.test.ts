@@ -40,6 +40,16 @@ test("core chunk groups are unchanged without product options", () => {
   }
 });
 
+test("release startup groups isolate AppHost before the general coalescer", () => {
+  const coalescer = { name: "fixture-coalescer", test: /runtime/u };
+  const groups = createWorkbenchChunkGroups({}, coalescer);
+  assert.equal(groups[0]?.name, "deployment-app-host-startup");
+  assert.ok(matches(groups[0]!, startupId("deployment-app-host-startup")));
+  assert.ok(matches(groups[0]!, startupId("websocket-app-host")));
+  assert.equal(groups[1], coalescer);
+  assert.deepEqual(shape(groups.slice(2)), shape(createWorkbenchChunkGroups()));
+});
+
 test("product startup modules join core's startup group without replacing it", () => {
   const baseline = createWorkbenchChunkGroups();
   const groups = createWorkbenchChunkGroups({

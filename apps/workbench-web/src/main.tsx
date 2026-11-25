@@ -18,6 +18,7 @@ installStaleAssetDetection();
 import { clientProductOptions } from "./runtime/client-product-entry";
 import { createClientRuntime } from "./runtime/client-runtime";
 import { bindPageLifecycle } from "./runtime/page-lifecycle";
+import type { PreparedDeploymentAppHost } from "./runtime/deployment-app-host-startup";
 import { bindMobileContainer, mobileContainer } from "./runtime/mobile-container";
 import { bindWorkbenchPreview, isMobileWorkbenchPreview } from "./runtime/workbench-preview";
 import { bindInteractionDensity } from "./runtime/interaction-density";
@@ -88,7 +89,12 @@ function StartupShell() {
   );
 }
 
-function ApplicationBootstrap() {
+interface WorkbenchBootstrap {
+  readonly deploymentAppHost?: Promise<PreparedDeploymentAppHost>;
+  readonly retirePreparation: () => void;
+}
+
+function ApplicationBootstrap({ deploymentAppHost, retirePreparation }: WorkbenchBootstrap) {
   const [state, setState] = useState<BootstrapState>({ phase: "loading" });
 
   useEffect(() => {
@@ -146,6 +152,7 @@ function ApplicationBootstrap() {
           serverAssetsContribution: assetsPlugin?.assets,
           pushDevice: clientRuntime.pushDevice ?? undefined,
           deferOptionalFeatures: true,
+          deploymentAppHost,
         });
         application = created;
         if (disposed) {
@@ -160,6 +167,8 @@ function ApplicationBootstrap() {
         setState({ phase: "ready", module, application: created, preferences, locale });
       })
       .catch((cause) => {
+        preparation.abort();
+        retirePreparation();
         disposeDensity?.();
         locale?.dispose();
         void preferences?.close().catch(error => reportRuntimeError(error, "application-disposal"));
@@ -170,6 +179,7 @@ function ApplicationBootstrap() {
       });
     return () => {
       preparation.abort();
+      retirePreparation();
       disposed = true;
       mobileBinding?.dispose();
       locale?.dispose();
@@ -177,7 +187,7 @@ function ApplicationBootstrap() {
       if (application !== null) void application.dispose().catch(error => reportRuntimeError(error, "application-disposal"));
       if (preferences !== null) void preferences.close().catch(error => reportRuntimeError(error, "application-disposal"));
     };
-  }, []);
+  }, [deploymentAppHost, retirePreparation]);
 
   useEffect(() => {
     if (state.phase !== "ready") return;
@@ -204,23 +214,21 @@ function ApplicationBootstrap() {
   );
 }
 
-const reactRoot = ReactDOM.createRoot(rootElement);
-const retirePage = bindPageLifecycle(window, () => {
-  releasePreview();
-  releaseAppearanceProjector();
-  try { clientRuntime.dispose(); } finally { reactRoot.unmount(); }
-});
-reactRoot.render(
-  <RuntimeErrorBoundary>
-    <ApplicationBootstrap />
-  </RuntimeErrorBoundary>,
-);
-window.requestAnimationFrame(() => {
-  document.getElementById("opencraft-bootstrap")?.remove();
-});
-
-if (import.meta.hot !== undefined) {
-  import.meta.hot.dispose(() => {
-    retirePage();
+export function mountWorkbench(startup: WorkbenchBootstrap) {
+  const reactRoot = ReactDOM.createRoot(rootElement);
+  const retirePage = bindPageLifecycle(window, () => {
+    startup.retirePreparation();
+    releasePreview();
+    releaseAppearanceProjector();
+    try { clientRuntime.dispose(); } finally { reactRoot.unmount(); }
   });
+  reactRoot.render(
+    <RuntimeErrorBoundary>
+      <ApplicationBootstrap {...startup} />
+    </RuntimeErrorBoundary>,
+  );
+  window.requestAnimationFrame(() => {
+    document.getElementById("opencraft-bootstrap")?.remove();
+  });
+  import.meta.hot?.dispose(retirePage);
 }

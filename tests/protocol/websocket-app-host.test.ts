@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createAppServerWorkbenchRuntime } from "@opencraft/workbench-runtime";
+import { APP_HOST_IDLE_PROBE_ID } from "@opencraft/app-host-protocol";
+import { APP_HOST_CLIENT_INSTANCE_PARAMETER } from "@opencraft/app-host-protocol/routing";
 
 import { connectWebSocketAppHost, type AppHostRecoveryEvents } from "../../apps/workbench-web/src/runtime/websocket-app-host";
 
@@ -129,6 +131,41 @@ test("a visible mobile route is probed without browser wake events, once per sha
   } finally {
     client.close();
     if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow); else Reflect.deleteProperty(globalThis, "window");
+  }
+});
+
+test("an idle-probe route uses the platform response for periodic checks and fences a foreground revalidation", async context => {
+  context.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { href: "https://example.test" } } });
+  const events = new RecoveryEvents(), socket = new FakeSocket();
+  const client = connectWebSocketAppHost(() => socket as unknown as WebSocket, {
+    retryDelaysMs: [0], recoveryEvents: events, probeTimeoutMs: 5_000, reportFailure: () => undefined,
+  });
+  try {
+    const transport = client.createTransport("local-codex");
+    const connected = transport.connect();
+    await flush();
+    socket.open();
+    socket.receive({ type: "ready", protocolVersion: 2, services: ["appserver"], capabilities: { connectionProbe: true, idleProbe: true } });
+    await flush();
+    const claim = socket.sent.map(frame => JSON.parse(frame)).find(message => message.type === "host/connect");
+    socket.receive({ type: "response", requestId: claim.requestId, ok: true, result: { hostId: claim.hostId, generation: 1 } });
+    await connected;
+    context.mock.timers.tick(5_000);
+    assert.equal(socket.sent.at(-1), JSON.stringify({ type: "connection/probe", requestId: APP_HOST_IDLE_PROBE_ID }));
+    events.fire(false);
+    events.fire(true);
+    const current = JSON.parse(socket.sent.at(-1)!);
+    assert.equal(current.type, "connection/probe");
+    assert.notEqual(current.requestId, APP_HOST_IDLE_PROBE_ID);
+    socket.receive({ type: "response", requestId: APP_HOST_IDLE_PROBE_ID, ok: true, result: null });
+    context.mock.timers.tick(5_000);
+    assert.equal(transport.status.state, "failed");
+  } finally {
+    client.close();
+    if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow);
+    else Reflect.deleteProperty(globalThis, "window");
   }
 });
 
@@ -331,7 +368,10 @@ test("browser AppHost transport keeps its listeners and renews its lease after W
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(new URL(urls[0]!).origin, "wss://example.test");
     assert.equal(new URL(urls[0]!).pathname, "/apphost");
+    const instance = new URL(urls[0]!).searchParams.get(APP_HOST_CLIENT_INSTANCE_PARAMETER);
+    assert.ok(instance);
     assert.ok(new URL(urls[0]!).searchParams.get("attempt"));
+    assert.notEqual(instance, new URL(urls[0]!).searchParams.get("attempt"));
     socket.open();
     const hello = JSON.parse(socket.sent[0]!);
     assert.equal(hello.type, "hello");
@@ -365,6 +405,7 @@ test("browser AppHost transport keeps its listeners and renews its lease after W
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(urls.length, 2);
     assert.notEqual(new URL(urls[1]!).searchParams.get("attempt"), new URL(urls[0]!).searchParams.get("attempt"));
+    assert.equal(new URL(urls[1]!).searchParams.get(APP_HOST_CLIENT_INSTANCE_PARAMETER), instance);
     replacementSocket.open();
     const replacementHello = JSON.parse(replacementSocket.sent[0]!);
     replacementSocket.receive({ type: "ready", protocolVersion: 2,

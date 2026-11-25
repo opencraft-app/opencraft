@@ -121,6 +121,9 @@ export interface ConnectAppHostMessage {
   readonly rendererId: string;
 }
 
+/** Fixed liveness frame id for transports that can answer probes without waking the session owner. */
+export const APP_HOST_IDLE_PROBE_ID = "opencraft-idle-probe-v1";
+
 export type RendererToAppHostMessage =
   | { readonly type: "connection/probe"; readonly requestId: string }
   | {
@@ -159,7 +162,7 @@ export type AppHostToRendererMessage =
       readonly protocolVersion: typeof APP_HOST_PROTOCOL_VERSION;
       readonly connectionId: string;
       readonly services: readonly ["appserver"];
-      readonly capabilities?: { readonly connectionProbe?: boolean; readonly heartbeatMs?: number };
+      readonly capabilities?: { readonly connectionProbe?: boolean; readonly heartbeatMs?: number; readonly idleProbe?: true };
     }
   | {
       /** Liveness only: proves the server-to-client path is moving. Carries no state. */

@@ -3,12 +3,7 @@ import type { ExecutionEnvironmentRuntime, EnvironmentExecutionScope } from "@op
 
 // Process identity the local Host prepares before handing a spawn to the
 // terminal owner process; no PTY or process-table access.
-export class TerminalCapacityError extends Error {
-  constructor() {
-    super("Terminal limit reached. Close an existing terminal before creating another.");
-    this.name = "TerminalCapacityError";
-  }
-}
+export { TerminalCapacityError } from './terminal-owner-link.js';
 export interface PreparedProcessIdentity {
   owner?: string;
   quotaOwner: string;

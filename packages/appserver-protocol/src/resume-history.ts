@@ -1,4 +1,7 @@
 import type { MessageSender } from "./message-sender";
+
+/** Authorized history can be unavailable while its execution environment sleeps. */
+export const WORKSPACE_HISTORY_ASLEEP = "WORKSPACE_HISTORY_ASLEEP";
 export type ThreadHistoryItemsView = "full" | "notLoaded" | "presentation";
 export type ThreadHistorySortDirection = "asc" | "desc";
 
@@ -50,6 +53,8 @@ export interface AppServerTurn {
 export interface AppServerThread {
   /** Read-only history index count; absent when the source cannot establish it. */
   historyTurnCount?: number;
+  /** In thread/read, a Host advertising archiveStateInRead may supply this. */
+  archived?: boolean;
   id: string;
   sessionId?: string;
   name?: string | null;

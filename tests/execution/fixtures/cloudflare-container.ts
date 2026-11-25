@@ -87,7 +87,7 @@ export class FakeDurableObjectContainer implements DurableObjectContainer {
     if (this.running) throw new Error("Container is already running");
     const instance = options.instance;
     if (
-      !options.image ||
+      !(options.image || options.containerSnapshot) ||
       typeof options.enableInternet !== "boolean" ||
       (instance !== undefined &&
         typeof instance === "object" &&
@@ -135,7 +135,7 @@ export class FakeDurableObjectContainer implements DurableObjectContainer {
 
   async inspect(): Promise<ContainerInfo | null> {
     const current = this.#current;
-    return current && !current.stopped ? { image: current.options.image, labels: { ...current.options.labels } } : null;
+    return current && !current.stopped ? { image: current.options.image ?? "", labels: { ...current.options.labels } } : null;
   }
 
   monitor(): Promise<void> {

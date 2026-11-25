@@ -1,4 +1,4 @@
-import { periodicOwnerWork, timeoutOwnerWake } from "@opencraft/owner-wake";
+import { timeoutOwnerWake } from "@opencraft/owner-wake";
 
 const keyOf = (hostId, threadId) => JSON.stringify([hostId, threadId]);
 const valid = value => typeof value === 'string' && value.length > 0 && value.length <= 1024;
@@ -63,7 +63,23 @@ export class ConversationResourceLifecycle {
     }
     // Losing the owner fences every bound conversation, as a failed write does.
     this.unsubscribe = storage?.onUnavailable?.(() => { this.poisoned = true; }) ?? (() => {});
-    this.retrying = periodicOwnerWork(wake, retryMs, () => this.retry());
+    if (!(retryMs > 0) || !Number.isFinite(retryMs)) throw Error('Resource retry period must be positive');
+    this.retryWake = wake;
+    this.retryMs = retryMs;
+    this.retryArmed = false;
+    this.retryTimer = wake.timer(() => {
+      this.retryArmed = false;
+      this.rescheduleRetry();
+      this.retry();
+    });
+    this.rescheduleRetry();
+  }
+  rescheduleRetry() {
+    const needed = !this.closed && this.pendingKeys.size > 0;
+    if (needed === this.retryArmed) return;
+    this.retryArmed = needed;
+    if (needed) this.retryTimer.arm(this.retryWake.now() + this.retryMs);
+    else this.retryTimer.cancel();
   }
   /** Commits the rows a change computes from the committed rows when its turn comes. */
   commit(change) {
@@ -93,6 +109,7 @@ export class ConversationResourceLifecycle {
       if (row.pending.length) this.pendingKeys.add(key); else this.pendingKeys.delete(key);
     }
     this.rows = rows;
+    this.rescheduleRetry();
   }
   /** Commits `changes` through the owner, then installs them. */
   async write(changes) {
@@ -104,6 +121,11 @@ export class ConversationResourceLifecycle {
     const key = keyOf(hostId, threadId), row = this.rows.get(key);
     if (this.closed || this.poisoned || this.intended.has(key) || row && (row.state !== 'active' || row.pending.length || this.flights.has(key)))
       throw Object.assign(Error('Conversation resources are unavailable until lifecycle cleanup completes'), { code: 'THREAD_RESOURCES_UNAVAILABLE', retryable: (this.intended.get(key) ?? row)?.state === 'active' });
+  }
+  observedState(hostId, threadId) {
+    const key = keyOf(hostId, threadId);
+    if (this.closed || this.poisoned || this.intended.has(key)) throw Error('Conversation lifecycle state unavailable');
+    return this.rows.get(key)?.state ?? null;
   }
   observe(hostId, threadId, state) {
     if (this.closed) throw Error('Conversation resource lifecycle closed');
@@ -154,6 +176,7 @@ export class ConversationResourceLifecycle {
       .then(() => this.drain(key), () => this.diagnose({ code: 'RESOURCE_JOURNAL_FAILED', hostId, threadId }));
   }
   retry() { for (const key of this.pendingKeys) void this.drain(key); }
+  async settleCurrentCleanup() { await Promise.allSettled([...this.flights.values()]); }
   drain(key) {
     if (this.closed) return Promise.resolve();
     if (this.flights.has(key)) return this.flights.get(key);
@@ -195,7 +218,7 @@ export class ConversationResourceLifecycle {
     this.flights.set(key, run); return run;
   }
   async close() {
-    this.closed = true; this.retrying.close(); this.unsubscribe?.();
+    this.closed = true; this.rescheduleRetry(); this.unsubscribe?.();
     await Promise.allSettled([...this.flights.values(), ...this.reconciliations.values(), this.writing]);
   }
 }

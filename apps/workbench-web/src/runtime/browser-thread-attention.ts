@@ -1,5 +1,6 @@
 import type { AppServerClientRegistry } from "@opencraft/appserver-client";
-import type { HostConnectionProfile, TurnCompletionObserver } from "@opencraft/workbench-runtime";
+import { parseThreadCatalogTurnCompletion, type ThreadCatalogEntry, type ThreadCatalogTurnCompletion } from "@opencraft/appserver-protocol";
+import type { HostConnectionProfile, TurnCompletion, TurnCompletionObserver } from "@opencraft/workbench-runtime";
 import { ThreadAttention, parseThreadReadReceipts, type ThreadReadReceiptPort, type ThreadReadReceiptSource } from "@opencraft/workbench-runtime";
 import type { PlatformAccountContributionRegistry } from "./platform-account-contributions";
 
@@ -30,7 +31,7 @@ export class BrowserThreadAttention {
   private stopState = () => {};
   private readonly checked = new Map<string, string>();
   private readonly pending = new Set<string>();
-  private readonly live = new Map<string, number>();
+  private readonly live = new Map<string, TurnCompletion>();
   constructor(private readonly clients: Pick<AppServerClientRegistry, "get">,
     source: TurnCompletionObserver, accounts: PlatformAccountContributionRegistry,
     private readonly storage: Pick<Storage, "getItem" | "setItem">,
@@ -55,7 +56,7 @@ export class BrowserThreadAttention {
     this.stops.push(source.subscribe(result => {
       if (this.scope === null) return;
       const key = JSON.stringify([result.hostId, result.threadId]);
-      this.live.set(key, (this.live.get(key) ?? 0) + 1);
+      this.live.set(key, result);
       this.state.observe(result.hostId, result.threadId, result.turnId);
     }));
     if (typeof window !== "undefined") {
@@ -163,7 +164,16 @@ export class BrowserThreadAttention {
     this.synchronization = task;
     return task;
   }
-  async catchUp(profile: HostConnectionProfile, threads: readonly { id: string; updatedAt: number }[], isCurrent: () => boolean) {
+  private observeHistory(scope: string, hostId: string, thread: { id: string; updatedAt: number }, turn: ThreadCatalogTurnCompletion) {
+    // A fixed deployment baseline also applies to users who first visit later.
+    const completedAt = turn.completedAt ?? thread.updatedAt;
+    if (Number.isFinite(this.resetBeforeSeconds) && this.resetBeforeSeconds > 0
+      && Number.isFinite(completedAt) && completedAt <= this.resetBeforeSeconds) {
+      this.acknowledge(scope, hostId, thread.id, turn.id);
+    }
+    this.state.observe(hostId, thread.id, turn.id);
+  }
+  async catchUp(profile: HostConnectionProfile, threads: readonly Pick<ThreadCatalogEntry, "id" | "updatedAt" | "latestTurnCompletion">[], isCurrent: () => boolean) {
     const client = this.clients.get(profile.hostId);
     const scope = this.scope;
     const epoch = this.epoch;
@@ -175,29 +185,30 @@ export class BrowserThreadAttention {
     await Promise.all(Array.from({ length: Math.min(3, queue.length) }, async () => {
       for (let thread = queue.shift(); thread && current(); thread = queue.shift()) {
         const key = JSON.stringify([profile.hostId, thread.id]);
-        const stamp = JSON.stringify([profile.revision, generation, thread.updatedAt]);
+        const projected = thread.latestTurnCompletion;
+        const stamp = JSON.stringify([profile.revision, generation, thread.updatedAt, projected]);
         if (this.checked.get(key) === stamp || this.pending.has(key)) continue;
+        const live = this.live.get(key);
+        if (projected !== undefined) {
+          this.checked.set(key, stamp);
+          const turn = parseThreadCatalogTurnCompletion(projected);
+          // A catalog response can have been in flight when a live Turn finished.
+          if (turn && (!live || (live.turnId !== turn.id && live.completedAt != null &&
+            turn.completedAt != null && turn.completedAt > live.completedAt))) {
+            this.observeHistory(scope, profile.hostId, thread, turn);
+          }
+          continue;
+        }
         this.pending.add(key);
-        const liveRevision = this.live.get(key) ?? 0;
         try {
           const page = await client.request("thread/turns/list", {
             threadId: thread.id, cursor: null, limit: 1, itemsView: "notLoaded", sortDirection: "desc",
           }, { priority: "background", timeoutMs: 10_000, signal: this.controller.signal, historySource: "attention" });
           if (!current()) return;
           this.checked.set(key, stamp);
-          const turn = page.data[0];
+          const turn = parseThreadCatalogTurnCompletion(page.data[0]);
           // A late catalog read cannot replace a completion received while it was in flight.
-          if ((this.live.get(key) ?? 0) === liveRevision && turn
-            && (turn.status === "completed" || turn.status === "failed" || turn.status === "interrupted")) {
-            // A deployment may establish a fixed historical baseline for every account
-            // and browser. Never use first-visit time: newer offline replies remain unread.
-            const completedAt = typeof turn.completedAt === "number" ? turn.completedAt : thread.updatedAt;
-            if (Number.isFinite(this.resetBeforeSeconds) && this.resetBeforeSeconds > 0
-              && Number.isFinite(completedAt) && completedAt <= this.resetBeforeSeconds) {
-              this.acknowledge(scope, profile.hostId, thread.id, turn.id);
-            }
-            this.state.observe(profile.hostId, thread.id, turn.id);
-          }
+          if (this.live.get(key) === live && turn) this.observeHistory(scope, profile.hostId, thread, turn);
         } catch {
           // Unsupported/temporarily unavailable history must not break the sidebar.
           // Retry only on the next catalog revision/connection generation, never in a loop.

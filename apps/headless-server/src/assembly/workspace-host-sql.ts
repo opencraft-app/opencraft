@@ -28,6 +28,7 @@ import { PROVISIONAL_THREAD_MIGRATIONS } from "@opencraft/opencraft-daemon/provi
 import { CONVERSATION_SCHEDULE_MIGRATIONS } from "@opencraft/host-schedules";
 import { INTERRUPTED_TURN_RECOVERY_MIGRATIONS, PROVIDER_TURN_RETRY_MIGRATIONS } from "@opencraft/host-recovery";
 import { EMPLOYEE_GIT_VAULT_MIGRATIONS } from "@opencraft/execution-environment/employee-git-vault";
+import { WORKSPACE_BRIDGE_INBOX_MIGRATIONS } from "@opencraft/agent-bridge-host/inbox-store";
 
 /** Family ids are the storage registry's schema ids, so a chain is named the same everywhere. */
 export const WORKSPACE_HOST_SQL_STORES = [
@@ -43,10 +44,11 @@ const sha256Hex = (text: string) => createHash("sha256").update(text).digest("he
 
 /** The families in the order they are applied; a published prefix that changed is refused. */
 export function workspaceHostSqlFamilies(): readonly SqlMigrationFamily[] {
-  return WORKSPACE_HOST_SQL_STORES.map(([id, prefix]) => ({
+  const stores = WORKSPACE_HOST_SQL_STORES.map(([id, prefix]) => ({
     id,
     migrations: hashSqlMigrations(resolveSqlMigrationContract(prefix, STORE_MIGRATIONS[id], sha256Hex), sha256Hex),
   }));
+  return [...stores, { id: "workspace-bridge-inbox", migrations: hashSqlMigrations(WORKSPACE_BRIDGE_INBOX_MIGRATIONS, sha256Hex) }];
 }
 
 /** Migrates the WorkspaceHost's one database; refuses a foreign, changed or newer history. */

@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { deploymentPaths, readPrivateToken } from './paths.mjs';
 import { coreHealth } from '../server-deployment/execution.mjs';
 import { proxyHealth } from './proxy-core.mjs';
+import { appServerControlTokenFile } from './execution-hosts.mjs';
 import { readDshHostIdentity } from '../../apps/headless-server/src/server-deployment/dsh-host-client.mjs';
 import { readEngineHostIdentity } from '../../apps/headless-server/src/server-deployment/engine-host-client.mjs';
 import { createHostFileSystem } from '../../apps/headless-server/src/host-filesystem.ts';
@@ -70,7 +71,7 @@ export async function checkBrain(environment = process.env) {
   await Promise.all([
     checkAgent(environment, ['brain']),
     // The AppServer owner in this container (the account Core is the proxy service's health).
-    coreHealth(paths.appServerEndpoint, paths.proxyMode === 'external' ? paths.appServerTokenFile : paths.tokenPath),
+    coreHealth(paths.appServerEndpoint, appServerControlTokenFile(paths)),
     readEngineHostIdentity(paths.engineDescriptor),
     readDshHostIdentity(paths.dshDescriptor),
   ]);

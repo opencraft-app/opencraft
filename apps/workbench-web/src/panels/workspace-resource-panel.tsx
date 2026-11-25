@@ -49,6 +49,7 @@ import {
   workspaceDraftKey,
   workspaceFileLanguage,
   workspaceImageMime,
+  workspaceBreadcrumbs,
   workspacePathParent,
   workspaceResourceBasename,
   workspaceRootsForResource,
@@ -186,6 +187,11 @@ export function WorkspaceResourcePanel({ tab, ownerId = "standalone", active, pr
     () => sessions.revision(ownerId, sessionHostId), () => 0);
   const changed = () => sessions.changed(ownerId, sessionHostId);
   const selectedPath = browser.location.path;
+  const workspaceRoot = selectedFiles?.location.kind === "workspace" ? selectedFiles.location.root : undefined;
+  const parentPath = workspacePathParent(selectedPath);
+  const scopeReady = !fileThreadId || !!selectedFiles;
+  const canSelectParent = scopeReady && parentPath !== selectedPath &&
+    (workspaceRoot === undefined || workspaceBreadcrumbs(parentPath, workspaceRoot).length > 0);
   const openLocation = useCallback((location: WorkspaceResourceLocation) => {
     browser.location = location; browser.visited.add(location.path);
     if (location.line !== null) browser.source = location.path;
@@ -410,9 +416,9 @@ export function WorkspaceResourcePanel({ tab, ownerId = "standalone", active, pr
             {fileTreeOpen ? <FolderOpen size={16} /> : <Folder size={16} />}
           </IconButton> : null}
           {!previewOnly ? <IconButton className="workspace-file-back" type="button"
-            disabled={workspacePathParent(selectedPath) === selectedPath}
+            disabled={!canSelectParent}
             aria-label={intl.formatMessage({ id: "files.parent", defaultMessage: "Parent directory" })}
-            onClick={() => selectFile(workspacePathParent(selectedPath))}><ChevronLeftIcon size={18} /></IconButton> : null}
+            onClick={() => selectFile(parentPath)}><ChevronLeftIcon size={18} /></IconButton> : null}
           {resource.data?.isDirectory ? <WorkspaceFolderIcon size={22} /> : <WorkspaceFileIcon path={selectedPath} size={15} />}
           <span>
             <strong title={selectedPath}>{workspaceResourceBasename(selectedPath)}</strong>
@@ -456,7 +462,7 @@ export function WorkspaceResourcePanel({ tab, ownerId = "standalone", active, pr
             <DropdownMenu.Portal><DropdownMenu.Content className="workspace-file-menu" align="end" sideOffset={4}>
               {canDownload && !resource.data?.isDirectory ? <DropdownMenu.Item asChild className="workspace-file-menu__item"><a href={downloadUrl ?? fileSource?.url} download={workspaceResourceBasename(selectedPath)}><Download size={16} />{intl.formatMessage({ id: "panel.downloadFile", defaultMessage: "Download file" })}</a></DropdownMenu.Item> : null}
               {!previewOnly ? <DropdownMenu.Item className="workspace-file-menu__item" onSelect={() => { void blobs.invalidate({ scope: readScope, path: selectedPath }).then(() => queryClient.invalidateQueries({ predicate: query => workspaceQueryAffected(query.queryKey, hostId, readScope, [selectedPath, workspacePathParent(selectedPath)]) })).catch(() => undefined); }}><RotateCcw size={16} />{intl.formatMessage({ id: "files.refresh", defaultMessage: "Refresh files" })}</DropdownMenu.Item> : null}
-              {!previewOnly ? <DropdownMenu.Item className="workspace-file-menu__item" onSelect={() => { selectFile(workspacePathParent(selectedPath)); setFileTreeOpen(true); }}><FolderOpen size={16} />{intl.formatMessage({ id: "files.parent", defaultMessage: "Parent directory" })}</DropdownMenu.Item> : null}
+              {!previewOnly ? <DropdownMenu.Item className="workspace-file-menu__item" disabled={!canSelectParent} onSelect={() => { selectFile(parentPath); setFileTreeOpen(true); }}><FolderOpen size={16} />{intl.formatMessage({ id: "files.parent", defaultMessage: "Parent directory" })}</DropdownMenu.Item> : null}
               {serverText !== null ? <DropdownMenu.CheckboxItem className="workspace-file-menu__item" checked={browser.wrapLines}
                 onCheckedChange={value => { browser.wrapLines = value === true; changed(); }}>{intl.formatMessage({ id: "files.wrapLines", defaultMessage: "Wrap long lines" })}</DropdownMenu.CheckboxItem> : null}
               <DropdownMenu.Item className="workspace-file-menu__item" onSelect={() => { void Promise.resolve().then(() => navigator.clipboard.writeText(selectedPath)).catch(() => notices?.error({ key: "workspace-copy", message: intl.formatMessage({ id: "files.copyFailed", defaultMessage: "Could not copy the path." }) })); }}><CopyIcon size={16} />{intl.formatMessage({ id: "files.copyPath", defaultMessage: "Copy path" })}</DropdownMenu.Item>
@@ -483,7 +489,7 @@ export function WorkspaceResourcePanel({ tab, ownerId = "standalone", active, pr
             ><Download size={14} aria-hidden="true" /></a>
           </div> : null}
         </header>
-        {!previewOnly ? <WorkspaceFilePath path={workspacePathParent(selectedPath)} onSelect={path => { selectFile(path); setFileTreeOpen(true); }} /> : null}
+        {!previewOnly && scopeReady ? <WorkspaceFilePath path={parentPath} scopeRoot={workspaceRoot} onSelect={path => { selectFile(path); setFileTreeOpen(true); }} /> : null}
         <div className="workspace-file-feedback" role="status">
           {conflicted ? intl.formatMessage({ id: "files.conflict", defaultMessage: "The file changed on disk. Copy your changes or discard them before saving." })
             : doc?.error === "write" ? intl.formatMessage({ id: "files.saveFailed", defaultMessage: "Could not save the file. Your changes are kept." })

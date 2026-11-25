@@ -150,6 +150,8 @@ export interface AppHostClientSessionOptions<C extends AppHostSubmissionContext>
   readonly submissionContext?: C;
   /** Without it, or for a client that does not ask, the connection ends with its socket. */
   readonly resume?: AppHostSessionResume | null;
+  /** The physical transport answers the fixed connection probe without a JS wake-up. */
+  readonly idleProbe?: true;
   /** Wake-ups of this connection (heartbeat frames, delayed acknowledgements) on the owner wake-up port; they
    * live only as long as the connection. Defaults to the runtime's timeouts. */
   readonly wake?: OwnerWake;
@@ -307,6 +309,7 @@ export function acceptAppHostClientSession<C extends AppHostSubmissionContext>(
         }
         if (message?.type === "ready") {
           const capabilities: Record<string, unknown> = { ...(message.capabilities as object | undefined) };
+          if (options.idleProbe) capabilities.idleProbe = true;
           if (active?.heartbeatRequested) {
             capabilities.heartbeatMs = APP_HOST_HEARTBEAT_MS;
             session.heartbeat = true;
@@ -530,7 +533,7 @@ export function acceptAppHostClientSession<C extends AppHostSubmissionContext>(
         closeSocket(wire, 1008, "App Host hello required");
         return;
       }
-      const heartbeatRequested = message.heartbeat === true;
+      const heartbeatRequested = !options.idleProbe && message.heartbeat === true;
       const requested = resume && message.resume !== undefined ? parseResumeAttempt(message.resume) : null;
       if (requested && isResumeAttempt(requested)) {
         const found = registry!.find(requested, JSON.stringify([resume!.identity, message.rendererId]));

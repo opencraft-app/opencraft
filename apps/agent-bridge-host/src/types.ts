@@ -25,6 +25,15 @@ export interface Receipt {
   response?: BridgeWireMessage;
 }
 export interface OutboxEvent { seq: number; route: string; generation: string; payload: unknown }
+export interface OutboxFence {
+  readonly outboxId: string;
+  readonly acknowledged: number;
+  readonly high: number;
+}
+
+export function isOutboxId(value: unknown): value is string {
+  return typeof value === "string" && /^[a-f0-9]{32}$/u.test(value);
+}
 export const routeKey = (serverId: string, threadId: string): string => JSON.stringify([serverId, threadId]);
 export function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error('Expected object');

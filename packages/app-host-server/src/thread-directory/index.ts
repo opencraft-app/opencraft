@@ -21,6 +21,7 @@ function metadata(value: unknown): Thread | null {
   return { ...Object.fromEntries(fields.filter(key => key in row).map(key => [key, row[key]])), preview: typeof row.preview === "string" ? row.preview.slice(0, 512) : "", extra: null, turns: [] } as unknown as Thread;
 }
 const cursorPrefix = "opencraft-catalog-v1:";
+export const isRecordedThreadCursor = (cursor: string) => cursor.startsWith(cursorPrefix);
 const randomUUID = () => crypto.randomUUID();
 const utf8 = new TextEncoder();
 /** Lets timers, I/O and other callers run between bounded write chunks. */
@@ -34,6 +35,8 @@ export interface DirectorySnapshotSource {
 export type DirectoryReadGuard = (database: SqlDatabase, isCurrent: () => boolean) => (() => boolean) | null;
 export interface ThreadDirectoryStorage {
   readonly database: SqlDatabase;
+  /** Stable only for owners whose committed catalog remains valid across instance restarts. */
+  readonly cursorScope?: string;
   /** File-backed owners serve snapshot cursors from this reader instead of the in-memory index. */
   readonly snapshotReader?: DirectorySnapshotSource;
   /** Defaults to `connectionReadGuard`, which only sees writes made through this connection. */
@@ -86,6 +89,8 @@ export interface ThreadDirectoryPort {
   /** Commit metadata per source page and reconcile in bounded rowid windows. */
   streamingSync?: boolean;
   nonblockingCold?: boolean;
+  /** The owner explicitly refreshes at a point when the source is already available. */
+  refreshOnDemandOnly?: boolean;
   observed?(threadIds: readonly string[]): void;
 }
 type Sync = { last_success_ms: number | null; watermark: number | null; last_full_ms: number | null; state: string };
@@ -103,6 +108,7 @@ export class SqlThreadDirectory {
   #closed = false;
   readonly #countReads = new Map<string,{scope:string;expires:number;validate:()=>boolean}>();
   readonly #source = `directory:${randomUUID()}`;
+  readonly #cursorScope: string;
   #dirty = new Set<string>();
   #dirtyTimer?: ReturnType<typeof setTimeout>;
   #dirtyJob: Promise<void> | null = null;
@@ -127,6 +133,7 @@ export class SqlThreadDirectory {
     this.#revision = Number(database.prepare("SELECT MAX(revision) AS revision FROM opencraft_thread_catalog").get()?.revision ?? 0);
     this.#snapshotBase = this.#revision;
     this.#snapshotReader = storage.snapshotReader;
+    this.#cursorScope = storage.cursorScope ?? this.#source;
     if (port.connectionLocalExecution) this.#snapshotIndex.replace(database.prepare("SELECT metadata_json,archived FROM opencraft_thread_catalog WHERE deleted=0").all()
       .map(row => ({row: this.#present(JSON.parse(String(row.metadata_json)) as Thread), archived: Boolean(row.archived)})));
   }
@@ -217,7 +224,7 @@ export class SqlThreadDirectory {
     const ticket=randomUUID();this.#countReads.set(ticket,{scope,expires,validate});
     return {status:'complete',ids,ticket,observedAt:state.observed};
   }
-  start(): void { if (!this.#closed && this.now() - this.#lastAttempt >= this.intervalMs) void this.refresh().catch(() => {}); }
+  start(): void { if (!this.#closed && !this.port.refreshOnDemandOnly && this.now() - this.#lastAttempt >= this.intervalMs) void this.refresh().catch(() => {}); }
   /** Observe the owner-scheduled scan without starting another source read. */
   settled(): Promise<void> { return this.#job ?? Promise.resolve(); }
   async list(params: Record<string, unknown>): Promise<ThreadListResponse & { readonly catalog: ThreadCatalogMetadata }> {
@@ -229,9 +236,9 @@ export class SqlThreadDirectory {
       if (this.#closed) throw new Error("Directory reader closed");
       return page;
     }
-    const readStarted = performance.now();
     const archived = params.archived === true ? 1 : 0;
     let sync = this.#state(archived);
+    if (this.port.refreshOnDemandOnly) return this.#listRecorded(params, sync);
     if (sync?.last_success_ms == null && this.port.nonblockingCold) {
       this.start();
     } else if (sync?.last_success_ms == null) {
@@ -240,6 +247,12 @@ export class SqlThreadDirectory {
     }
     else if (sync.state === "error" && this.now() - this.#lastAttempt >= 5_000) void this.refresh().catch(() => {});
     else this.start();
+    return this.#listRecorded(params, sync);
+  }
+
+  #listRecorded(params: Record<string, unknown>, sync?: Sync): ThreadListResponse & { readonly catalog: ThreadCatalogMetadata } {
+    const readStarted = performance.now();
+    const archived = params.archived === true ? 1 : 0;
     const limit = Number(params.limit ?? 30);
     if (typeof params.cursor === "string" && params.cursor.startsWith(SNAPSHOT_CURSOR)) {
       return this.#snapshots.list(params.cursor, archived === 1, limit, () => ({
@@ -250,7 +263,7 @@ export class SqlThreadDirectory {
     if (params.cursor) {
       try {
         const parsed = JSON.parse((params.cursor as string).slice(cursorPrefix.length));
-        if (!Array.isArray(parsed) || parsed.length !== 4 || parsed[0] !== archived || parsed[1] !== this.#source || !Number.isFinite(parsed[2]) || typeof parsed[3] !== "string") throw Error();
+        if (!Array.isArray(parsed) || parsed.length !== 4 || parsed[0] !== archived || parsed[1] !== this.#cursorScope || !Number.isFinite(parsed[2]) || typeof parsed[3] !== "string") throw Error();
         anchor = { updatedAt: parsed[2], id: parsed[3] };
       } catch { throw new Error("Invalid catalog cursor"); }
     }
@@ -267,7 +280,7 @@ export class SqlThreadDirectory {
   }
   /** Owner-bound keyset position. Revision changes do not invalidate pagination. */
   cursor(archived: boolean, anchor: { updatedAt: number; id: string }): string {
-    return cursorPrefix + JSON.stringify([archived ? 1 : 0, this.#source, anchor.updatedAt, anchor.id]);
+    return cursorPrefix + JSON.stringify([archived ? 1 : 0, this.#cursorScope, anchor.updatedAt, anchor.id]);
   }
   snapshot(archived: boolean) {
     if (this.#snapshotReader) throw new Error("File-backed snapshots belong to the directory reader worker");
@@ -289,7 +302,7 @@ export class SqlThreadDirectory {
     void job.then(() => report("ok"), () => report("failed"));
     void job.finally(() => {
       if (this.#job === job) this.#job = null;
-      if (!this.#closed) { this.#timer = setTimeout(() => this.start(), this.intervalMs); this.#timer.unref?.(); }
+      if (!this.#closed && !this.port.refreshOnDemandOnly) { this.#timer = setTimeout(() => this.start(), this.intervalMs); this.#timer.unref?.(); }
     }).catch(() => {});
     return job;
   }

@@ -4,10 +4,10 @@ import { bindHttpResourcePrefetch } from "./http-resource-prefetch";
 import { bindPwaEdgeNavigation } from "./pwa-edge-navigation";
 import { ApplePwaPushDevice, type PushDevicePort } from "./push-device";
 import { serverUrl } from "./server-context";
-import { readWindowPresentation, resolveWindowPresentation, type WindowPresentation } from "./window-presentation";
+import { readWindowPresentation, resolveClientRuntimeKind, resolveWindowPresentation, type ClientRuntimeKind, type WindowPresentation } from "./window-presentation";
 import { projectWindowAppearance, type WindowAppearanceIntent, type WindowAppearanceProjection, type WindowAppearanceProjector } from "./window-appearance";
 
-export type ClientRuntimeKind = "web" | "pwa" | "electron";
+export { resolveClientRuntimeKind, type ClientRuntimeKind } from "./window-presentation";
 
 /** One document's presentation lifetime, distinct from AppServer/Actor runtime. */
 export interface ClientRuntime extends WindowAppearanceProjector {
@@ -16,14 +16,6 @@ export interface ClientRuntime extends WindowAppearanceProjector {
   readonly pushDevice: PushDevicePort | null;
   start(): void;
   dispose(): void;
-}
-
-export function resolveClientRuntimeKind(view: Window): ClientRuntimeKind {
-  const presentation = readWindowPresentation(view);
-  if (presentation.host === "electron") return "electron";
-  const standalone = (view.navigator as Navigator & { standalone?: boolean }).standalone === true
-    || view.matchMedia?.("(display-mode: standalone)").matches === true;
-  return presentation.host === "browser" && standalone ? "pwa" : "web";
 }
 
 /** Shared DOM mechanics; subclasses own only their actual host capabilities. */
