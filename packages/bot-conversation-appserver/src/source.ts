@@ -185,6 +185,7 @@ function interaction(value: AppServerBotInteraction): BotInteractionSnapshot {
     questions: Object.freeze(value.questions.map((question) => Object.freeze({
       questionId: question.questionId,
       prompt: question.prompt,
+      ...(typeof question.detail === "string" ? { detail: question.detail } : {}),
       multiple: question.multiple === true,
       choices: Object.freeze((question.choices ?? []).map((choice) =>
         Object.freeze({ ...choice })

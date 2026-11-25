@@ -307,3 +307,17 @@ The pending request stays unavailable until its producer re-offers the source;
 that replay can restore availability without resetting a falsely consumed slot.
 Revoking another Thread cannot reject this Thread's answer, and an already
 admitted peer retains its answer even when the outer validator loses its source.
+
+### Complete Host question batches
+
+A Host can opt into complete batches on `item/tool/requestUserInput` with
+`answerMode: "complete"`. The Workbench accepts explicit Skip or a submission
+with answers for all questions still awaiting a response. In a reopened batch,
+`confirmedAnswer` marks a question resolved by the Host. A lost response is
+reconciled against the next Host request and its confirmed answers. Interrupting
+the turn does not synthesize Skip. Existing requests without the mode preserve
+their default answer encoding.
+
+Bot Conversation clarification items can carry optional Markdown `detail` in
+their question projection. Consumers render it using their existing link and
+resource policy.

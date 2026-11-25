@@ -62,6 +62,9 @@ function Demo() {
     refresh: () => setCurrent((value: any) => structuredClone(value)),
     replaceRequest: () => setCurrent((value: any) => ({ ...value, requestId: `${value.requestId}-replacement` })),
     changeQuestion: () => setCurrent((value: any) => ({ ...value, questions: value.questions.map((question: any) => ({ ...question, prompt: "Choose updated steps" })) })),
+    showConfirmed: () => setCurrent({ ...block, requestId: "restored-question", questions: [
+      { ...block.questions[0], confirmedAnswer: ["Deliver"] },
+    ] }),
     showTwoQuestions: () => setCurrent({ ...block, requestId: "two-question-request", questions: [block.questions[0], { ...block.questions[0], id: "second", header: "Second question", prompt: "Describe second step", multiSelect: false, options: [] }] }),
   };
   const panel = <ConversationPendingInteractionPanel block={current} draftStore={draftStore} draftScope="question-fixture" onRespondInteraction={async (_, action) => { (window as any).answers.push(action); }} />;

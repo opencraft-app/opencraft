@@ -1,3 +1,4 @@
+import { isCompleteUserInputAnswer } from "@opencraft/chat-core";
 import type { ReplicaJsonValue } from "@opencraft/appserver-protocol";
 import type { InteractionResponse, PendingInteraction } from "@opencraft/chat-runtime";
 
@@ -150,7 +151,14 @@ export function createInteractionResponse(
       };
     }
     case "item/tool/requestUserInput": {
-      return questionResponse(requestId, interaction.params.questions.map((question) => question.id), action);
+      const { answerMode, questions } = interaction.params;
+      const response = questionResponse(requestId, questions.map((question) => question.id), action);
+      if (answerMode !== "complete" || response.type !== "question") return response;
+      if (action.type === "cancel") return { ...response, skip: true };
+      if (!isCompleteUserInputAnswer(questions, response.answers)) {
+        throw new Error("Answer each question or choose Skip.");
+      }
+      return response;
     }
     case "item/tool/call": {
       const args = record(interaction.params.arguments);

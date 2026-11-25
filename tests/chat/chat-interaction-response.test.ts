@@ -142,6 +142,34 @@ test("request_user_input retains question identity and ordered answers", () => {
   });
 });
 
+test("complete batches preserve confirmed answers and distinguish Skip from an interrupt", () => {
+  const interaction = {
+    ...identity,
+    method: "item/tool/requestUserInput",
+    params: {
+      threadId: "thread-1", turnId: "turn-1", itemId: "item-1",
+      answerMode: "complete", isBlocking: true, autoResolutionMs: null,
+      questions: [
+        { id: "one", header: "", question: "First?", isOther: true, isSecret: false, options: null },
+        { id: "two", header: "", question: "Second?", isOther: true, isSecret: false, options: null },
+      ],
+    },
+  } satisfies PendingInteraction;
+  assert.throws(() => createInteractionResponse(interaction, { type: "answer-questions", answers: { one: ["a"] } }), /Answer each/);
+  const recovered: PendingInteraction = {
+    ...interaction, params: { ...interaction.params, questions: [
+      { ...interaction.params.questions[0]!, confirmedAnswer: ["prior"] }, interaction.params.questions[1]!,
+    ] },
+  };
+  assert.deepEqual(createInteractionResponse(recovered, { type: "answer-questions", answers: { two: ["new"] } }), {
+    type: "question", requestId: "request-1", answers: { two: ["new"] },
+  });
+  assert.deepEqual(createInteractionResponse(interaction, { type: "cancel" }), {
+    type: "question", requestId: "request-1", answers: {}, skip: true,
+  });
+  assert.equal(createInterruptInteractionResponse(interaction), null);
+});
+
 test("MCP elicitation accepts JSON form bodies and explicit cancellation", () => {
   const interaction = {
     ...identity,

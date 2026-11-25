@@ -32,5 +32,6 @@ const interruptResponses = {
 export function createInterruptInteractionResponse(
   interaction: PendingInteraction,
 ): InteractionResponse | null {
+  if (interaction.method === "item/tool/requestUserInput" && interaction.params.answerMode === "complete") return null;
   return interruptResponses[interaction.method](interaction.requestId);
 }

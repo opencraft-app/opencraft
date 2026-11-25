@@ -10,11 +10,17 @@ export interface UserInputQuestionDraft {
 export function createUserInputQuestionDrafts(
   questions: readonly UserInputQuestion[],
 ): readonly UserInputQuestionDraft[] {
-  return questions.map((question) => ({
-    selectedOptionId: question.multiSelect ? null : question.options[0]?.id ?? null,
-    ...(question.multiSelect ? { selectedOptionIds: [] } : {}),
-    freeformText: "",
-  }));
+  return questions.map((question) => {
+    const confirmed = question.confirmedAnswer;
+    const matched = confirmed === undefined ? [] : question.options.filter(option => confirmed.includes(option.label));
+    const freeformText = confirmed?.find(answer => !matched.some(option => option.label === answer)) ?? "";
+    return {
+      selectedOptionId: question.multiSelect ? null : confirmed === undefined
+        ? question.options[0]?.id ?? null : matched[0]?.id ?? null,
+      ...(question.multiSelect ? { selectedOptionIds: matched.map(option => option.id) } : {}),
+      freeformText,
+    };
+  });
 }
 
 export function resolveUserInputQuestionDraft(
@@ -61,13 +67,24 @@ export function selectUserInputQuestionOption(question: UserInputQuestion, draft
 }
 
 /** Parse client-owned question fields outside the generated request schema. */
-export function userInputQuestionExtensions(value: unknown): Pick<UserInputQuestion, "multiSelect" | "detail" | "intent"> {
+export function userInputQuestionExtensions(value: unknown): Pick<UserInputQuestion, "multiSelect" | "detail" | "intent" | "confirmedAnswer"> {
   if (!value || typeof value !== "object") return {};
   const input = value as Record<string, unknown>;
   const intent = input.intent as { kind?: unknown; approve?: unknown } | null;
   return {
     ...(typeof input.multiSelect === "boolean" ? { multiSelect: input.multiSelect } : {}),
     ...(typeof input.detail === "string" ? { detail: input.detail } : {}),
+    ...(Array.isArray(input.confirmedAnswer) && input.confirmedAnswer.every(answer => typeof answer === "string")
+      ? { confirmedAnswer: input.isSecret === true ? [] : [...input.confirmedAnswer] } : {}),
     ...(intent?.kind === "plan-review" && typeof intent.approve === "string" ? { intent: { kind: "plan-review" as const, approve: intent.approve } } : {}),
   };
+}
+
+/** A provider-confirmed answer can remain unchanged in a recovered batch. */
+export function isCompleteUserInputAnswer(
+  questions: readonly { readonly id: string; readonly confirmedAnswer?: readonly string[] }[],
+  answers: Readonly<Record<string, readonly string[]>>,
+): boolean {
+  return questions.every(question => Array.isArray(question.confirmedAnswer)
+    || (Object.hasOwn(answers, question.id) && answers[question.id]?.some(answer => answer.trim().length > 0)));
 }

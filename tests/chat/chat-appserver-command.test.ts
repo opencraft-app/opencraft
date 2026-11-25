@@ -1711,3 +1711,93 @@ test("manual delivery retry uses the retry capability and never the discard oper
     assert.equal(h.requests.length, 1);
   } finally { await h.close(); }
 });
+
+
+test("a complete question batch reopens on a lost reply rather than replaying it", async () => {
+  const createClient = () => {
+    const handlers = new Map<string, Handler>();
+    const client = {
+      handleServerRequest(method: string, handler: ServerRequestHandler) {
+        handlers.set(method, handler as Handler);
+        return () => { handlers.delete(method); };
+      },
+      interceptServerRequest() { return () => {}; },
+      subscribeNotification() { return () => {}; },
+      subscribeStatus() { return () => {}; },
+    } as unknown as AppServerClient;
+    return {
+      client,
+      emit(delivered: Promise<void>, id = "replayed-option-rpc") {
+        const method = "item/tool/requestUserInput";
+        const params = {
+          threadId: "thread-existing",
+          turnId: "turn-live",
+          itemId: "replayed-option-call",
+          answerMode: "complete",
+          questions: [{ id: "q", question: "Fixture?", header: "Fixture", isSecret: false, isOther: true, options: null }],
+          isBlocking: true, autoResolutionMs: null,
+        };
+        const handler = handlers.get(method);
+        assert.notEqual(handler, undefined);
+        const controller = new AbortController();
+        let retirement: ServerRequestResponseContext["retirement"] = null;
+        void delivered.then(() => { retirement = "answered"; controller.abort(); }, () => { retirement = "lost"; controller.abort(); });
+        return Promise.resolve(handler!(params, { id, method, params }, {
+          delivered, signal: controller.signal, get retirement() { return retirement; },
+        }));
+      },
+    };
+  };
+  const ledger = new AppServerInteractionLedger();
+  const first = createClient();
+  const firstPending = new Map<string, PendingInteraction & { readonly threadId: string }>();
+  const firstBroker = new AppServerInteractionBroker({
+    hostId,
+    client: first.client,
+    ledger,
+    store: {
+      upsertPendingInteraction(interaction) { firstPending.set(interaction.requestId, interaction); },
+      removePendingInteraction(_threadId, requestId) { firstPending.delete(requestId); },
+    },
+  });
+  let rejectDelivery!: (error: Error) => void;
+  const failedDelivery = new Promise<void>((_resolve, reject) => { rejectDelivery = reject; });
+  const firstOperation = first.emit(failedDelivery);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const requestId = encodeServerRequestId("replayed-option-rpc");
+  assert.equal(firstPending.has(requestId), true);
+  const firstResponse = firstBroker.respond(existingKey, {
+    type: "question", requestId, answers: { q: ["answer"] },
+  });
+  rejectDelivery(new Error("transport closed"));
+  await assert.rejects(firstResponse, /transport closed/);
+  await firstOperation;
+  firstBroker.dispose();
+
+  const second = createClient();
+  let reopened = 0;
+  const secondBroker = new AppServerInteractionBroker({
+    hostId,
+    client: second.client,
+    ledger,
+    store: {
+      upsertPendingInteraction() { reopened += 1; },
+      removePendingInteraction() {},
+    },
+  });
+  let confirm!: () => void;
+  const delivered = new Promise<void>(resolve => { confirm = resolve; });
+  const replayedOperation = second.emit(delivered, "complete-reconnected-rpc");
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(reopened, 1, "complete batches reopen from the new Host request");
+    const requestId = encodeServerRequestId("complete-reconnected-rpc");
+    const response = secondBroker.respond(existingKey, { type: "question", requestId, answers: {}, skip: true });
+    confirm();
+    await response;
+    assert.deepEqual(await replayedOperation, { answers: {}, skip: true });
+  } finally {
+    secondBroker.dispose();
+    await replayedOperation.catch(() => undefined);
+  }
+});

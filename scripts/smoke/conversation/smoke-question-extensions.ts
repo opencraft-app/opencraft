@@ -205,6 +205,17 @@ try {
     await showSetup("context");
     assert.equal(await browse.getAttribute("open"), null);
     assert.equal(await page.locator('.thread-setup-context input').inputValue(), "");
+    await page.evaluate(() => {
+      (window as any).answers = [];
+      (window as any).questionFixture.showConfirmed();
+    });
+    await page.getByRole("heading", { name: "Full fixture plan" }).waitFor();
+    assert.equal(await first.getAttribute("aria-pressed"), "false");
+    assert.equal(await second.getAttribute("aria-pressed"), "true");
+    await page.getByRole("button", { name: /^Submit(?:\s*↵)?$/ }).click();
+    await page.waitForFunction(() => (window as any).answers.length === 1);
+    assert.deepEqual(await page.evaluate(() => (window as any).answers[0]),
+      { type: "answer-questions", answers: { q: ["Deliver"] } });
     assert.deepEqual(errors, []); await page.close();
   }
   if (entryOnly) console.log(JSON.stringify({ result: "passed", entries, output }));

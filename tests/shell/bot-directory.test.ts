@@ -5,6 +5,7 @@ import type { AppServerClient, AppServerClientRegistryService } from "@opencraft
 import type { AppServerBotDescriptor, BotConversationsCapability } from "@opencraft/appserver-protocol";
 import {
   AppServerBotDirectory,
+  AppServerBotConversationSource,
   type AppServerBotConversationService,
 } from "@opencraft/bot-conversation-appserver";
 
@@ -91,4 +92,36 @@ test("a late Bot create result cannot repopulate a replaced Host", async () => {
   await assert.rejects(pending, /连接已改变/);
   assert.deepEqual(directory.getSnapshot().entries, []);
   directory.dispose();
+});
+
+
+test("Bot clarification preserves optional Markdown through snapshot hydration", async () => {
+  const detail = "See [setup](https://example.test/setup) before answering.";
+  const service = {
+    subscribe: () => () => undefined,
+    waitForCapability: async () => capability,
+    readConversation: async () => ({
+      conversation: { conversationId: "fixture-thread", title: "Fixture", createdAtMs: 1, updatedAtMs: 2 },
+      initialMessagesPage: { data: [] },
+      participants: [], executions: [], presence: [], liveCursor: { epoch: "fixture", nextSeq: 0 },
+      interactions: [{
+        interactionId: "interaction", conversationId: "fixture-thread", executionId: "execution",
+        participantId: "bot", kind: "clarification", status: "pending", title: "Choose settings",
+        questions: [
+          { questionId: "with-detail", prompt: "Select a value", detail },
+          { questionId: "plain", prompt: "Anything else?" },
+        ],
+      }],
+    }),
+  } as unknown as AppServerBotConversationService;
+  const source = new AppServerBotConversationSource(service);
+  const key = { hostId: "fixture", threadId: "fixture-thread" };
+  try {
+    await source.load(key);
+    const question = source.getSnapshot(key).interactions[0];
+    assert.equal(question?.kind, "clarification");
+    if (question?.kind !== "clarification") throw Error("Expected clarification");
+    assert.equal(question.questions[0]?.detail, detail);
+    assert.equal(Object.hasOwn(question.questions[1]!, "detail"), false);
+  } finally { source.dispose(); }
 });
