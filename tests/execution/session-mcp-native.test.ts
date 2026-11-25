@@ -9,6 +9,7 @@ import { createInterface } from "node:readline";
 import { SessionCapabilities } from "../../packages/session-capabilities/src/index.js";
 import { SessionCapabilityMcp } from "../../packages/session-capabilities/src/mcp.js";
 import { createCodexAccountPoolLaunch } from "../../packages/account-pool-host/src/codex-launch.js";
+import { CodexEngineAdapter } from "../../apps/opencraft-daemon/src/codex-engine-adapter.js";
 
 // Uses only native metadata/MCP RPCs and a local synthetic capability. No model request.
 test("native empty threads install execution-bound MCP before their first input without a rollout resume", {
@@ -53,7 +54,7 @@ test("native empty threads install execution-bound MCP before their first input 
 
 // Exercise native's actual retirement timer with a synthetic loopback provider.
 // No user history is copied and no remote model is contacted.
-test("native failed Thread reconfigures tools promptly and accepts the next execution after one retirement", {
+for (const mode of ["legacy", "named"] as const) test(`native Thread refreshes tools and accepts the next execution after unload: ${mode}`, {
   skip: !process.env.OPENCRAFT_CODEX_EXECUTABLE, timeout: 25_000,
 }, async t => {
   const { createServer } = await import("node:http");
@@ -64,11 +65,27 @@ test("native failed Thread reconfigures tools promptly and accepts the next exec
     const modelRequest = request.url?.split("?")[0]?.endsWith("/responses");
     if (modelRequest) requests++;
     const fail = () => { response.writeHead(503, { "content-type": "application/json" }); response.end('{"error":{"message":"synthetic unavailable"}}'); };
-    if (modelRequest && requests === 2) void nextResponse.then(fail); else fail();
+    if (!modelRequest || requests !== 2) return fail();
+    void nextResponse.then(() => {
+      const item = { id: "recovered-message", type: "message", role: "assistant", status: "completed",
+        content: [{ type: "output_text", text: "Recovered", annotations: [] }] };
+      response.writeHead(200, { "content-type": "text/event-stream" });
+      const events = [
+        { type: "response.created", response: { id: "recovered", object: "response", status: "in_progress", output: [] } },
+        { type: "response.output_item.added", output_index: 0, item: { ...item, status: "in_progress", content: [] } },
+        { type: "response.output_item.done", output_index: 0, item },
+        { type: "response.completed", response: { id: "recovered", object: "response", status: "completed", output: [item],
+          usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } } },
+      ];
+      for (const event of events) response.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
+      response.end();
+    });
   });
   await new Promise<void>(resolve => provider.listen(0, "127.0.0.1", resolve));
   const address = provider.address(); assert(address && typeof address !== "string");
   await writeFile(join(home, "config.toml"), `model_provider = "fixture"
+default_permissions = ":workspace"
+approval_policy = "never"
 [model_providers.fixture]
 name = "Synthetic loopback"
 base_url = "http://127.0.0.1:${address.port}/v1"
@@ -89,11 +106,11 @@ stream_max_retries = 0
   const exited = new Promise<void>(resolve => child.once("exit", () => resolve()));
   t.after(async () => { releaseNext(); child.kill(); await exited; provider.closeAllConnections(); await new Promise<void>(resolve => provider.close(() => resolve())); await mcp.close(); await rm(home, { recursive: true, force: true, maxRetries: 3 }); });
   const pending = new Map<number, { resolve(value: any): void; reject(error: Error): void }>(); let sequence = 0;
-  let completions = 0;
+  const completions: { id: string; status: string }[] = [];
   let complete!: () => void; const completed = new Promise<void>(resolve => { complete = resolve; });
   createInterface({ input: child.stdout }).on("line", line => {
     let message: any; try { message = JSON.parse(line); } catch { return; }
-    if (message.method === "turn/completed") { completions++; complete(); }
+    if (message.method === "turn/completed") { completions.push(message.params.turn); complete(); }
     const entry = pending.get(message.id); if (!entry) return;
     pending.delete(message.id);
     if (message.error) entry.reject(new Error(`Native ${message.error.code}: ${message.error.message}`)); else entry.resolve(message.result);
@@ -104,7 +121,9 @@ stream_max_retries = 0
   });
   await request("initialize", { clientInfo: { name: "mcp-recovery-fixture", version: "1" }, capabilities: { experimentalApi: true } });
   child.stdin.write(JSON.stringify({ method: "initialized" }) + "\n");
-  const created = await request("thread/start", { cwd: home, model: "fixture", modelProvider: "fixture", sandbox: "read-only", approvalPolicy: "never", config: {
+  const permissions = mode === "named" ? { permissions: ":read-only" } : { sandbox: "read-only" };
+  const created = await request("thread/start", { cwd: home, model: "fixture", modelProvider: "fixture",
+    ...permissions, approvalPolicy: "on-request", config: {
     "model_providers.fixture": { name: "Synthetic loopback", base_url: `http://127.0.0.1:${address.port}/v1`, wire_api: "responses", requires_openai_auth: false, request_max_retries: 0, stream_max_retries: 0 },
   } });
   await request("turn/start", { threadId: created.thread.id, input: [{ type: "text", text: "Synthetic failure fixture", text_elements: [] }] });
@@ -120,10 +139,36 @@ stream_max_retries = 0
     status = snapshot.thread.status.type;
   }
   assert.equal(status, "notLoaded", "tool rotation must not inherit native's idle retention delay");
-  await request("thread/resume", { threadId: created.thread.id, excludeTurns: true, config: {
-    "mcp_servers.opencraft_session": mcp.config({ serverId: "fixture", threadId: created.thread.id,
-      execution: { inputId: "next", executionId: "execution-next" } }),
-  } });
+  const configuration = mcp.config({ serverId: "fixture", threadId: created.thread.id,
+    execution: { inputId: "next", executionId: "execution-next" } });
+  const adapter = new CodexEngineAdapter({
+    executable: process.env.OPENCRAFT_CODEX_EXECUTABLE!,
+    runtimeDirectory: home,
+    dataDirectory: join(home, "adapter"),
+    sessionMcp: async () => configuration,
+  });
+  t.after(() => adapter.close());
+  const owner = adapter as unknown as {
+    requestPhysical(method: string, params: unknown): Promise<unknown>;
+    prepareSessionMcp(threadId: string, inputId: string, executionId: string): Promise<void>;
+  };
+  let recovered: any;
+  owner.requestPhysical = async (method, params) => {
+    const result = await request(method, params);
+    if (method === "thread/resume") recovered = result;
+    return result;
+  };
+  await owner.prepareSessionMcp(created.thread.id, "next", "execution-next");
+  assert.equal(recovered.thread.id, created.thread.id);
+  assert.equal(recovered.approvalPolicy, created.approvalPolicy);
+  assert.equal(recovered.approvalsReviewer, created.approvalsReviewer);
+  if (mode === "legacy" && recovered.activePermissionProfile !== null) {
+    assert.equal(recovered.activePermissionProfile.id, ":workspace");
+    assert.equal(recovered.sandbox.type, "workspaceWrite");
+  } else {
+    assert.deepEqual(recovered.activePermissionProfile, created.activePermissionProfile);
+    assert.deepEqual(recovered.sandbox, created.sandbox);
+  }
   assert(performance.now() - preparationStarted < 5_000);
   const result = await request("mcpServer/tool/call", { threadId: created.thread.id, server: "opencraft_session", tool: "probe", arguments: {} });
   assert.equal(result.isError, false); assert.equal(calls, 1);
@@ -141,6 +186,8 @@ stream_max_retries = 0
   await request("thread/resume", { threadId: created.thread.id, excludeTurns: true });
   releaseNext();
   const deadline = Date.now() + 10_000;
-  while (completions < 2 && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50));
-  assert.equal(completions, 2); assert.equal(requests, 2, "one local model request per execution, no replay");
+  while (completions.length < 2 && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(completions.length, 2);
+  assert.equal(completions.find(turn => turn.id === next.turn.id)?.status, "completed");
+  assert.equal(requests, 2, "one local model request per execution, no replay");
 });
