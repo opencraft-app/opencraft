@@ -390,11 +390,6 @@ export function App({
   }, [hostCatalog]);
   const attentionScope = hostCatalog.threadAttention.getScope();
   const conversationViewIdentity = useConversationViewIdentity();
-  const recoveringDraft = useSyncExternalStore(hostCatalog.draftRecovery.subscribe,
-    () => hostCatalog.draftRecovery.isPending(conversationViewIdentity.viewId));
-  const draftRecoveryNotice = recoveringDraft ? <div className="thread-layout-width" role="status">
-    {intl.formatMessage({ id: "chat.restoringLocalDraft", defaultMessage: "Restoring your draft…" })}
-  </div> : null;
   const extensionPlatform = (
     globalThis as typeof globalThis & {
       opencraftDesktop?: { readonly kind?: string };
@@ -1409,14 +1404,14 @@ export function App({
       }
       // transfer to Composer when no editable surface, menu or dialog owns
       // the event; browser shortcuts and IME composition remain untouched.
-      if (!recoveringDraft && shouldTypeToCompose(event)) {
+      if (shouldTypeToCompose(event)) {
         event.preventDefault();
         composerController.insertText(event.key);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [recoveringDraft, composerController, navigateToHome, toggleRightPanel, presentation.shellNavigation, presentation.rightPanel, conversationRouteOpen, conversationSurfaceVisible, openSettingsFromConversation, embedded, draft, activeThreadId]);
+  }, [composerController, navigateToHome, toggleRightPanel, presentation.shellNavigation, presentation.rightPanel, conversationRouteOpen, conversationSurfaceVisible, openSettingsFromConversation, embedded, draft, activeThreadId]);
 
 
   const collapseSidebar = useCallback(() => setSidebarOpen(false), []);
@@ -2492,7 +2487,7 @@ export function App({
             {connectionInterventionNode}
           </div>
         ) : draft !== null && draft.submission === null ? (
-          draftRecoveryNotice ?? <NewThreadDraftPage
+          <NewThreadDraftPage
             key={draft.id}
             setupNotice={recoveryAccessFailure !== null ? <div className="thread-layout-width new-thread-draft-composer-width"><ConversationRecoveryNotice
               failed accessFailure={recoveryAccessFailure} onRetry={retryConnectionAdmission} /></div> : draftSetupNotice}
@@ -2759,7 +2754,7 @@ export function App({
                         <SubmissionRecoveryNotice submission={item} onAbandon={deliveryRecoveryActions.onAbandon} onRetry={deliveryRecoveryActions.onRetry} />
                       </div>
                     ))}
-                    {pendingInteraction === null && draftRecoveryNotice ? draftRecoveryNotice : pendingInteraction === null ? (
+                    {pendingInteraction === null ? (
                       <ThreadGoalSurface
                         threadId={snapshot.phase === "ready" ? activeThreadId : null}
                         goals={runtime.resources.goals}

@@ -227,8 +227,12 @@ Task continuity includes new-Draft placement in its existing document envelope,
 not a second storage writer. Browser bootstrap can restore that exact client
 Draft ID and configured, enabled Host before the View hydrates its document.
 Canonical promotion aliases take precedence; old envelopes remain readable.
-Browser edits enqueue local writes immediately rather than leaving the last
-input behind a debounce window. No execution state is inferred from placement.
+The Composer mounts with its View and stays editable during local draft reads.
+A recovered document can fill only the original untouched editor. A pending
+read cannot gate submission or workspace selection, or resurrect or discard
+unread input after the live editor sends a new message. Browser edits enqueue
+local writes without a debounce when their slot is available. No execution state
+is inferred from placement.
 Account service disposal revokes asynchronous authority without rotating the
 persisted credential scope. Only actual identity/credential transitions rotate
 that scope; otherwise every ordinary browser refresh would orphan saved input.

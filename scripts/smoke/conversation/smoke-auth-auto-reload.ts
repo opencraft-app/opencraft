@@ -6,6 +6,9 @@ const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? 'pl
 const output = process.env.OPENCRAFT_SMOKE_OUTPUT ?? '.local/auth-auto-reload-smoke';
 await mkdir(output, { recursive: true });
 const hosts = JSON.stringify([{ hostId: 'opencraft-server', label: 'Recovery fixture', kind: 'local', url: '/appserver' }]);
+const thread = { id: 'draft-recovery-fixture', name: 'Draft recovery fixture', preview: '', cwd: '/synthetic',
+  path: null, modelProvider: 'fixture', createdAt: 1, updatedAt: 1, status: { type: 'idle' }, source: 'appServer', turns: [] };
+const threadPath = `/local/${thread.id}`;
 const common = createWorkbenchWebConfig({ mode: 'development', command: 'serve' }, { hyperNode: false, builtinAgents: false });
 const vite = await createServer({ configFile: false, root: process.cwd(), logLevel: 'error', cacheDir: '.local/vite-auth-auto-reload',
   optimizeDeps: { ...common.optimizeDeps, include: [...common.optimizeDeps?.include ?? [],
@@ -15,7 +18,7 @@ const vite = await createServer({ configFile: false, root: process.cwd(), logLev
     'import.meta.env.VITE_INCLUDE_HEADLESS_APPHOST': '"true"', 'import.meta.env.VITE_APPSERVER_HOSTS_JSON': JSON.stringify(hosts),
   }, esbuild: { jsx: 'automatic' }, resolve: { dedupe: ['react', 'react-dom'] }, server: { host: '127.0.0.1', port: 0, hmr: false },
   plugins: [{ name: 'auth-expiry-workbench', configureServer(server) { server.middlewares.use((req, res, next) => {
-    if (req.url?.split('?')[0] === '/') { res.setHeader('content-type', 'text/html'); res.end('<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="root"></div><script type="module" src="/tests/fixtures/auth-auto-reload-workbench.tsx"></script></body></html>'); }
+    if (req.url?.split('?')[0] === '/' || req.url?.split('?')[0] === threadPath) { res.setHeader('content-type', 'text/html'); res.end('<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="root"></div><script type="module" src="/tests/fixtures/auth-auto-reload-workbench.tsx"></script></body></html>'); }
     else next();
   }); } }],
 });
@@ -43,8 +46,21 @@ try {
           wire.send(JSON.stringify({ type: 'response', requestId: frame.requestId, ok: true, result: frame.type === 'host/connect' ? { hostId: frame.hostId, generation: 1 } : null }));
           if (frame.type !== 'host/send') return;
           const request = JSON.parse(frame.frame); if (request.id === undefined) return;
-          const result = request.method === 'initialize' ? { codexHome: '/synthetic', platformFamily: 'unix', platformOs: 'linux', userAgent: 'auth-smoke' }
-            : request.method.endsWith('/list') ? { data: [], nextCursor: null } : undefined;
+          let result: unknown;
+          switch (request.method) {
+            case 'initialize':
+              result = { codexHome: '/synthetic', platformFamily: 'unix', platformOs: 'linux', userAgent: 'auth-smoke' };
+              break;
+            case 'thread/read':
+              result = { thread };
+              break;
+            case 'thread/resume':
+              result = { thread, model: 'fixture-model', modelProvider: 'fixture', cwd: '/synthetic',
+                approvalPolicy: 'never', approvalsReviewer: 'user', sandbox: { type: 'readOnly' } };
+              break;
+            default:
+              if (request.method.endsWith('/list')) result = { data: [], nextCursor: null };
+          }
           const reply = result === undefined ? { id: request.id, error: { code: -32601, message: 'Unsupported synthetic engine method' } } : { id: request.id, result };
           wire.send(JSON.stringify({ type: 'host/frame', hostId: frame.hostId, generation: frame.generation, frame: JSON.stringify(reply) }));
         }
@@ -85,7 +101,31 @@ try {
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     assert.deepEqual(errors, []);
     await page.screenshot({ path: `${output}/recovered-${width}-${theme}.png` });
-    rows.push({ width, theme, touch: width === 390, autoReload: true, draftRestored: true, recovered: true });
+    // Hold the real local draft lookup across a reload. The same Composer must
+    // accept input before storage responds and remain focused after it settles.
+    for (const route of ['new', 'thread']) {
+      await page.evaluate(() => sessionStorage.setItem('opencraft.test.hold-draft-read', '1'));
+      if (route === 'new') await page.reload();
+      else await page.goto(new URL(`${threadPath}?hostId=local-codex&theme=${theme}`, page.url()).href);
+      await page.waitForFunction(() => (window as any).authRecovery?.draftRecoveryProbe.reads > 0);
+      const liveEditor = page.locator('[contenteditable="true"]').first();
+      await liveEditor.waitFor({ state: 'visible', timeout: 10_000 });
+      if (width === 390) await liveEditor.tap(); else await liveEditor.click();
+      const editorHandle = await liveEditor.elementHandle();
+      const input = 'Typed while draft storage was held in ' + route;
+      await liveEditor.fill(input);
+      const caret = await page.evaluate(() => getSelection()?.anchorOffset);
+      await page.screenshot({ path: `${output}/draft-pending-${route}-${width}-${theme}.png` });
+      await page.evaluate(() => (window as any).authRecovery.draftRecoveryProbe.release());
+      await page.waitForFunction(text => (window as any).authRecovery?.draftRecoveryProbe.lastSaved?.includes(text), input);
+      assert.equal(await liveEditor.innerText(), input);
+      assert.equal(await editorHandle.evaluate(element => document.activeElement === element), true);
+      assert.equal(await page.evaluate(() => getSelection()?.anchorOffset), caret);
+      await page.reload();
+      await page.waitForFunction(text => document.querySelector('[contenteditable="true"]')?.textContent?.includes(text), input);
+    }
+    assert.deepEqual(errors, []);
+    rows.push({ width, theme, touch: width === 390, autoReload: true, draftRestored: true, editingDuringRead: true, recovered: true });
     await context.close();
   }
   await writeFile(`${output}/results.json`, JSON.stringify(rows, null, 2));

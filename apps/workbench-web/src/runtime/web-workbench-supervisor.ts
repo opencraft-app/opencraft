@@ -1217,7 +1217,6 @@ export async function createWebWorkbenchApplicationSupervisor(
   );
   const commands = createWebWorkbenchCommands({
     displayContinuity,
-    isDraftRecovering: () => draftRecovery.isPending(navigation.getSnapshot().routeScopeId),
     presentation: options.presentation,
     threadMemoryScope,
     registry,
@@ -1327,7 +1326,6 @@ export async function createWebWorkbenchApplicationSupervisor(
     blobs,
     images,
     mode: "active",
-    draftRecovery,
     clientResources,
     managedHostCatalog: sshManagement,
     cordis,

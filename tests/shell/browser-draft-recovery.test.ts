@@ -15,23 +15,26 @@ const target = (id: string): ComposerTarget => ({ type: "existing-thread", key: 
 const createEditor = (target: ComposerTarget) => createComposerController(target, { now: Date.now, createId: () => crypto.randomUUID() });
 const text = (editor: ReturnType<typeof createEditor>) => composerDocumentToPlainText(editor.getSnapshot().draft.document);
 
-function fixture() {
+async function waitFor(check: () => boolean) {
+  for (let i = 0; i < 1000 && !check(); i++) await new Promise(r => setTimeout(r, 2));
+  assert.ok(check());
+}
+
+function fixture(find = async (_: ComposerTarget, view: string): Promise<string | null> => "stored-" + view) {
   const state = new BrowserDraftRecovery();
   const reads = new Map<string, ReturnType<typeof Promise.withResolvers<string | null>>>();
   const writes: string[] = [];
+  const saved = new Map<string, string>();
   const detach = state.bind(createConversationDraftContinuity({ namespace: "acct", delayMs: 0, storage: {
     load: key => { const result = Promise.withResolvers<string | null>(); reads.set(key, result); return result.promise; },
-    save: async key => { writes.push(key); }, remove: async key => { writes.push(key); },
-  } }), async (_, view) => "stored-" + view, () => {});
-  const waitFor = async (check: () => boolean) => {
-    for (let i = 0; i < 1000 && !check(); i++) await new Promise(r => setTimeout(r, 2));
-    assert.ok(check());
-  };
-  return { state, reads, writes, detach, waitFor };
+    save: async (key, value) => { writes.push(key); saved.set(key, value); },
+    remove: async key => { writes.push(key); saved.delete(key); },
+  } }), find, () => {});
+  return { state, reads, writes, saved, detach };
 }
 
 test("pending startup draft permits settings and another cold Thread, each callback stays with its editor", async () => {
-  const { state, reads, writes, detach, waitFor } = fixture();
+  const { state, reads, writes, detach } = fixture();
   const a = createEditor(target("a")), b = createEditor(target("b"));
   let stopB: (() => void) | undefined;
   const route = createWorkbenchNavigationTransaction(createWorkbenchThreadLocation("local", "a"), {
@@ -61,7 +64,7 @@ test("pending startup draft permits settings and another cold Thread, each callb
 });
 
 test("revoking an owner before a delayed read completes never hydrates or erases its draft", async () => {
-  const { state, reads, writes, detach, waitFor } = fixture();
+  const { state, reads, writes, detach } = fixture();
   const editor = createEditor(target("a"));
   state.markCold("v");
   const stop = detach.attach("v", editor);
@@ -77,7 +80,6 @@ test("restores new-draft placement and saves subsequent edits in the original sl
   const initial = { type: "new-thread", draftId: "draft", execution: { hostId: "local", workspace: { cwd: null, runtimeWorkspaceRoots: [] } } } as const;
   const saved = { ...initial, execution: { ...initial.execution, workspace: { cwd: "/project", runtimeWorkspaceRoots: ["/project"] } } };
   const raw = serializeConversationDraftDocument(document("original"), saved);
-  const restored = Promise.withResolvers<void>();
   const writes: string[] = [];
   const editor = createEditor(initial);
   const port = recovery.bind(createConversationDraftContinuity({ namespace: "account", delayMs: 0, storage: {
@@ -86,14 +88,58 @@ test("restores new-draft placement and saves subsequent edits in the original sl
     editor.dispatch({ type: "switch-target", target: placement, preserveDraft: true });
   });
   recovery.markCold("router-view");
-  const unsubscribe = recovery.subscribe(() => { if (!recovery.isPending("router-view")) restored.resolve(); });
   const stop = port.attach("router-view", editor);
   try {
-    await restored.promise;
+    await waitFor(() => !recovery.isPending("router-view"));
     assert.equal(text(editor), "original");
     assert.deepEqual(editor.getSnapshot().draft.target, saved);
     editor.dispatch({ type: "set-document", document: document("changed") });
     await new Promise(r => setImmediate(r));
     assert.deepEqual(writes, [conversationDraftStorageKey("account", "original-view", saved)]);
-  } finally { stop(); unsubscribe(); editor.dispose(); }
+  } finally { stop(); editor.dispose(); }
+});
+
+test("input typed during slot discovery wins and is saved when storage returns", async () => {
+  const lookup = Promise.withResolvers<string | null>();
+  const { state, reads, saved, detach } = fixture(() => lookup.promise);
+  const conversation = target("thread");
+  const editor = createEditor(conversation);
+  state.markCold("view");
+  const stop = detach.attach("view", editor);
+  try {
+    const newer = document("Keep the new text");
+    editor.dispatch({ type: "set-document", document: newer });
+    lookup.resolve("original-slot");
+    const key = conversationDraftStorageKey("acct", "original-slot", conversation);
+    await waitFor(() => reads.has(key));
+    reads.get(key)!.resolve(serializeConversationDraftDocument(document("Older saved text")));
+    await waitFor(() => saved.has(key));
+    assert.equal(text(editor), "Keep the new text");
+    assert.equal(saved.get(key), serializeConversationDraftDocument(newer));
+  } finally { stop(); editor.dispose(); }
+});
+
+test("an accepted send during recovery does not resurrect or delete unread input", async () => {
+  const lookup = Promise.withResolvers<string | null>();
+  const { state, reads, writes, detach } = fixture(() => lookup.promise);
+  const conversation = target("thread");
+  const editor = createEditor(conversation);
+  state.markCold("view");
+  const stop = detach.attach("view", editor);
+  try {
+    editor.dispatch({ type: "set-document", document: document("Send the new text") });
+    const draftId = editor.getSnapshot().draft.id;
+    const intent = editor.createSubmitIntent();
+    editor.dispatch({ type: "set-lifecycle", phase: "submitting" });
+    assert.equal(editor.settleSubmission(draftId, intent, { status: "accepted" }), true);
+    detach.discard("view", conversation);
+    lookup.resolve("view");
+    const key = conversationDraftStorageKey("acct", "view", conversation);
+    await waitFor(() => reads.has(key));
+    reads.get(key)!.resolve(serializeConversationDraftDocument(document("Unread previous draft")));
+    await waitFor(() => !state.isPending("view"));
+    assert.equal(text(editor), "");
+  } finally { stop(); editor.dispose(); }
+  await new Promise(r => setImmediate(r));
+  assert.deepEqual(writes, []);
 });

@@ -62,9 +62,11 @@ export async function attachSavedDraft(input: {
   trace?.phase("load-document");
   let loaded = false;
   const stop = input.continuity.attach(id, controller, {
-    loaded(raw) {
+    initial,
+    loaded(raw, canRestore) {
       loaded = true;
-      if (!input.live() || initial.target.type !== "new-thread" || controller.getSnapshot().draft.target !== initial.target) return;
+      if (!canRestore || !input.live() || initial.target.type !== "new-thread"
+        || controller.getSnapshot().draft.target !== initial.target) return;
       const saved = parseConversationDraftTarget(raw);
       if (saved && saved.draftId === initial.target.draftId && saved.execution.hostId === initial.target.execution.hostId)
         input.restorePlacement(saved);

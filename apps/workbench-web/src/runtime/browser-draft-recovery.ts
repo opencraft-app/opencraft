@@ -2,22 +2,15 @@ import { encodeComposerTarget, type ComposerTarget } from "@opencraft/composer-c
 import type { ConversationDraftContinuity } from "@opencraft/workbench-runtime";
 import type { DraftSlotOwners } from "./browser-draft-slot";
 
-/** Route identity is available immediately. Only its editor waits for the
- * account-scoped storage slot and the corresponding document to be read. */
+/** Restore account-scoped input in the background for a cold View. */
 export class BrowserDraftRecovery {
   private readonly coldViews = new Set<string>();
-  private readonly pending = new Map<string, symbol>();
-  private readonly listeners = new Set<() => void>();
+  private readonly pending = new Map<string, { target: string }>();
   private slots: DraftSlotOwners = new Map();
 
   markCold = (viewId: string) => { this.coldViews.add(viewId); };
-  forget(viewId: string) { this.coldViews.delete(viewId); this.slots.delete(viewId); }
+  forget(viewId: string) { this.coldViews.delete(viewId); this.pending.delete(viewId); this.slots.delete(viewId); }
   isPending = (viewId: string) => this.pending.has(viewId);
-  subscribe = (listener: () => void) => {
-    this.listeners.add(listener);
-    return () => { this.listeners.delete(listener); };
-  };
-  private publish() { for (const listener of this.listeners) listener(); }
 
   bind(continuity: ConversationDraftContinuity, find: (target: ComposerTarget, preferred: string) => Promise<string | null>,
     restorePlacement: (target: Extract<ComposerTarget, { type: "new-thread" }>) => void): ConversationDraftContinuity {
@@ -31,11 +24,10 @@ export class BrowserDraftRecovery {
           slots.set(viewId, { target, id: viewId });
           return continuity.attach(viewId, controller);
         }
-        const token = Symbol();
-        const live = () => this.pending.get(viewId) === token;
-        const finish = () => { if (live()) { this.pending.delete(viewId); this.publish(); } };
-        this.pending.set(viewId, token);
-        this.publish();
+        const attempt = { target };
+        const live = () => this.pending.get(viewId) === attempt;
+        const finish = () => { if (live()) this.pending.delete(viewId); };
+        this.pending.set(viewId, attempt);
         let detach: (() => void) | undefined;
         void import("./browser-draft-slot").then(({ attachSavedDraft }) => {
           if (!live()) return;
@@ -44,9 +36,12 @@ export class BrowserDraftRecovery {
         }).catch(finish);
         return () => { finish(); detach?.(); };
       },
-      discard(viewId, target) {
+      discard: (viewId, target) => {
+        const key = encodeComposerTarget(target);
+        // An early send can clear the live editor before it has adopted saved input.
+        if (this.pending.get(viewId)?.target === key) return;
         const slot = slots.get(viewId);
-        continuity.discard(slot?.target === encodeComposerTarget(target) ? slot.id : viewId, target);
+        continuity.discard(slot?.target === key ? slot.id : viewId, target);
       },
     };
   }

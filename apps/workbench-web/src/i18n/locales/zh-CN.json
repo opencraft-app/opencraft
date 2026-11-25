@@ -1,5 +1,4 @@
 {
-  "chat.restoringLocalDraft": "正在恢复草稿…",
   "im.channels.imageTooLarge": "这个外部聊天支持发送不超过 2 MB 的图片，请选择较小的副本。图片仍保留在草稿中。",
   "im.channels.imageInvalid": "无法读取这张图片，请重新选择有效的 PNG 或 JPEG 图片。",
   "im.channels.imageFormatUnavailable": "这个外部聊天支持 PNG 和 JPEG 图片，请转换格式后重试。图片仍保留在草稿中。",
