@@ -14,7 +14,9 @@ function job(name, contents = workflow) {
 const gate = job('build-checks').match(/        run: \|\n([\s\S]*)/)[1].replace(/^          /gm, '');
 const selected = {
   EXTENSIONS_SELECTED: 'false', EXTENSIONS_RESULT: 'skipped',
-  ADMISSION_RESULT: 'success', HOVER_RESULT: 'success',
+  ADMISSION_RESULT: 'success',
+  HOVER_SELECTED: 'true', HOVER_RESULT: 'success',
+  WEBSITE_SELECTED: 'false', WEBSITE_RESULT: 'skipped',
   PLAN_RESULT: 'success', BUILD_SELECTED: 'true', BUILD_RESULT: 'success',
   NATIVE_SELECTED: 'false', NATIVE_RESULT: 'skipped', PACKAGE_SELECTED: 'false', PACKAGE_RESULT: 'skipped',
   HEADLESS_SELECTED: 'true', HEADLESS_RESULT: 'success', ARCHIVE_SELECTED: 'true', ARCHIVE_RESULT: 'success',
@@ -30,6 +32,16 @@ test('the real aggregate script accepts Web/server and documentation-only plans'
   assert.equal(check({ EXTENSIONS_SELECTED: 'true', EXTENSIONS_RESULT: 'success' }), 0);
   assert.equal(check({ NATIVE_SELECTED: 'true', NATIVE_RESULT: 'success' }), 0);
   assert.equal(check({ PACKAGE_SELECTED: 'true', PACKAGE_RESULT: 'success' }), 0);
+});
+test('the aggregate requires the website job and accepts skipped product jobs on website-only changes', () => {
+  const siteOnly = {
+    WEBSITE_SELECTED: 'true', WEBSITE_RESULT: 'success', HOVER_SELECTED: 'false', HOVER_RESULT: 'skipped',
+    BUILD_SELECTED: 'false', BUILD_RESULT: 'skipped', HEADLESS_SELECTED: 'false', HEADLESS_RESULT: 'skipped',
+    ARCHIVE_SELECTED: 'false', ARCHIVE_RESULT: 'skipped', CORE_SELECTED: 'false', CORE_RESULT: 'skipped', GATE_RESULT: 'skipped',
+  };
+  assert.equal(check(siteOnly), 0);
+  assert.notEqual(check({ ...siteOnly, WEBSITE_RESULT: 'skipped' }), 0);
+  assert.notEqual(check({ ...siteOnly, WEBSITE_RESULT: 'failure' }), 0);
 });
 test('a selected build cannot pass by failing, cancelling, or being skipped', () => {
   for (const result of ['failure', 'cancelled', 'skipped', '']) {
@@ -64,10 +76,10 @@ test('server regressions and the server archive run as parallel jobs', () => {
   assert.match(job('build-checks'), /needs: \[[^\]]*\bheadless-package\b[^\]]*\]/);
 });
 
-test('hover checks run after admission independently of the build plan and scan failures', () => {
+test('hover checks skip website-only changes and cover scan failures', () => {
   const hover = job('hover-policy');
-  assert.match(hover, /^    needs: admission\n/);
-  assert.doesNotMatch(hover, /needs: plan|if: needs\.plan/);
+  assert.match(hover, /^    needs: \[admission, plan\]\n/);
+  assert.match(hover, /if: needs\.plan\.outputs\.website-only != 'true'/);
   assert.match(hover, /run: npm run check:hover/);
   assert.match(hover, /run: npm run test:hover-policy\n\s+if: always\(\) && steps\.dependencies\.outcome == 'success'/);
   assert.match(hover, /run: npm run smoke:touch-hover\n\s+if: always\(\) && steps\.browser\.outcome == 'success'/);
@@ -217,7 +229,7 @@ test('managed-web runs every suite exactly once across its parallel groups', () 
 
 test('contribution admission gates both required workflows before their first jobs', () => {
   const security = readFileSync(new URL('../../.github/workflows/security.yml', import.meta.url), 'utf8');
-  for (const [contents, jobs] of [[workflow, ['plan', 'hover-policy']], [security, ['plan', 'secrets']]]) {
+  for (const [contents, jobs] of [[workflow, ['plan']], [security, ['plan', 'secrets']]]) {
     assert.match(job('admission', contents), /uses: \.\/\.github\/workflows\/contribution-admission\.yml/);
     for (const name of jobs) assert.match(job(name, contents), /^    needs: admission\n/);
   }
@@ -311,7 +323,10 @@ test('generic convergence and assistant runtime remain mandatory gate steps', ()
   }
 });
 
-test('container browser-owner regressions use the TypeScript workspace loader', () => {
+test('container validation preserves admission, skips website-only changes, and uses the TypeScript workspace loader', () => {
   const container = readFileSync(new URL('../../.github/workflows/container.yml', import.meta.url), 'utf8');
+  assert.match(job('plan', container), /^    needs: admission\n/);
+  assert.match(job('docker-compose', container), /needs\.admission\.result == 'success'/);
+  assert.match(job('docker-compose', container), /needs\.plan\.outputs\.website-only != 'true'/);
   assert.match(container, /node --import tsx --test [^\n]*tests\/browser\/remote-browser-owner\.test\.mjs/);
 });

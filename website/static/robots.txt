@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://opencraft.app/sitemap.xml

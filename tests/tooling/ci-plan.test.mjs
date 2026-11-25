@@ -7,7 +7,7 @@ import test from 'node:test';
 import { changedPaths, planChanges, portableTargets } from "../../scripts/ci/ci-plan.mjs";
 
 const webTargets = ['web-browser'];
-const emptyPlan = { targets: [], audits: [], managedWeb: false, native: false, headlessTests: false, headlessPackage: false, extensions: false };
+const emptyPlan = { targets: [], audits: [], managedWeb: false, native: false, headlessTests: false, headlessPackage: false, extensions: false, website: false, websiteOnly: false };
 test('selected targets exist in the build artifact contract', () => {
   const matrix = JSON.parse(readFileSync(new URL("../../config/build-matrix.json", import.meta.url), 'utf8'));
   for (const target of portableTargets) assert(matrix.targets.some(entry => entry.id === target), target);
@@ -25,6 +25,18 @@ test('docs-only and empty diffs need no build; main and weekly runs still audit 
     assert.deepEqual(planChanges([], { event }).audits, ['.', 'runtime/dsh', 'apps/bridges/hermes']);
     assert.equal(planChanges([], { event }).managedWeb, false);
   }
+});
+test('website-only PRs and merge groups select the site and skip product checks', () => {
+  const sitePaths = ['website/static/site.css', 'website/wrangler.jsonc', 'website/package-lock.json'];
+  for (const event of ['pull_request', 'merge_group']) {
+    assert.deepEqual(planChanges(sitePaths, { event }), { ...emptyPlan, website: true, websiteOnly: true });
+    assert.deepEqual(planChanges([...sitePaths, 'packages/chat-core/src/index.ts'], { event }), {
+      ...emptyPlan, website: true, targets: webTargets, managedWeb: true, headlessTests: true,
+    });
+  }
+  assert.equal(planChanges(sitePaths, { event: 'push' }).websiteOnly, false);
+  assert.equal(planChanges(sitePaths, { unknownDiff: true }).websiteOnly, false);
+  assert.equal(planChanges(['apps/workbench-web/public/opencraft-icon.svg']).website, true);
 });
 test('platform source never starts Electron, Expo or macOS builds automatically', () => {
   assert.deepEqual(planChanges(['apps/mobile/src/app.tsx']), { ...emptyPlan, targets: webTargets });
@@ -106,14 +118,14 @@ test('managed Web is selected for update UI, deployment, protocol and Vite chang
 });
 test('manual Web is the default, and missing diffs conservatively validate the Linux server archive', () => {
   const automatic = { ...emptyPlan, targets: webTargets, audits: ['.', 'runtime/dsh', 'apps/bridges/hermes'],
-    managedWeb: true, headlessTests: true, extensions: true };
+    managedWeb: true, headlessTests: true, extensions: true, website: true };
   assert.deepEqual(planChanges([], { event: 'workflow_dispatch' }), automatic);
   assert.deepEqual(planChanges([], { unknownDiff: true }), { ...automatic, headlessPackage: true });
 });
 test('only explicit manual full requests restore other platforms and macOS', () => {
   assert.deepEqual(planChanges([], { event: 'workflow_dispatch', fullMatrix: true }), {
     targets: portableTargets, audits: ['.', 'runtime/dsh', 'apps/bridges/hermes'], managedWeb: true,
-    native: true, headlessTests: true, headlessPackage: true, extensions: true,
+    native: true, headlessTests: true, headlessPackage: true, extensions: true, website: true, websiteOnly: false,
   });
   for (const event of ['pull_request', 'push', 'schedule']) {
     assert.equal(planChanges(['package-lock.json'], { event, fullMatrix: true }).native, false);

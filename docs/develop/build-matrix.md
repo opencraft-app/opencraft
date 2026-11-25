@@ -238,6 +238,7 @@ platforms, including for lockfiles, CI changes or an unreadable diff.
 | Changed area | Automatic validation |
 | --- | --- |
 | Root Markdown, README/AGENTS, `docs/`, `design/`, `.agents/` | No product build or server archive; secrets scan and upstream contract remain |
+| Public site under `website/` | Build the static website; website-only PRs and merge groups skip product checks and Docker Compose validation while security and upstream checks still run |
 | Web renderer source or shared CSS/SCSS | Web browser build, typecheck and React runtime tests |
 | Expo application | Web compatibility build; native/Expo validation is opt-in |
 | Electron Main/Preload/native code, Daemon, local agent host, DSH runtime | Linux server regressions; desktop/native validation is opt-in |
