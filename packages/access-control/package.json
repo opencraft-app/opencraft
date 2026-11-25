@@ -26,6 +26,7 @@
     "./im-channels-appserver": "./src/runtime/im-channels-appserver.mjs",
     "./deployment-operator": "./src/deployment-operator.ts",
     "./orchestration-runtime-store": "./src/orchestration-runtime-store.ts",
+    "./orchestration-runtime-client": "./src/orchestration-runtime-client.ts",
     "./orchestration-runtime-companion": { "node": "./src/orchestration-runtime-companion.node.ts", "default": "./src/orchestration-runtime-companion.ts" },
     "./communication-extension": "./src/communication-extension.ts",
     "./orchestration-runtime-domain": "./src/orchestration-runtime-domain.ts",

@@ -28,3 +28,13 @@ export function readWindowPresentation(view: Window): WindowPresentation {
     fullscreen: media("(display-mode: fullscreen)"),
   });
 }
+
+export type ClientRuntimeKind = "web" | "pwa" | "electron";
+
+export function resolveClientRuntimeKind(view: Window): ClientRuntimeKind {
+  const presentation = readWindowPresentation(view);
+  if (presentation.host === "electron") return "electron";
+  const standalone = (view.navigator as Navigator & { standalone?: boolean }).standalone === true
+    || view.matchMedia?.("(display-mode: standalone)").matches === true;
+  return presentation.host === "browser" && standalone ? "pwa" : "web";
+}

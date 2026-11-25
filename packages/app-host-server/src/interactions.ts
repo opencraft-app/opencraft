@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { InteractionSourceRequest, SharedInteraction, SharedInteractionSnapshot } from "@opencraft/appserver-protocol";
 
 interface Entry {
@@ -20,7 +19,7 @@ export class InteractionFault extends Error {
 /** Producer-scoped human wait projection. Native execution owns actual resolution.
  * A response admission is synchronous; delivery never removes a pending source. */
 export class HostInteractions {
-  private readonly epoch = randomUUID();
+  private readonly epoch = crypto.randomUUID();
   private readonly entries = new Map<string, Entry>();
   private readonly nativeIds = new Map<string, string>();
   private readonly revisions = new Map<string, number>();
@@ -35,7 +34,7 @@ export class HostInteractions {
   }
   capture(source: InteractionSourceRequest): string {
     const key = JSON.stringify(source.id), stable = source.__opencraftInteractionKey;
-    const id = stable ?? this.nativeIds.get(key) ?? `interaction:${this.epoch}:${randomUUID()}`;
+    const id = stable ?? this.nativeIds.get(key) ?? `interaction:${this.epoch}:${crypto.randomUUID()}`;
     const currentNative = this.nativeIds.get(key);
     if (currentNative && currentNative !== id) {
       const previousRoute = this.entries.get(currentNative);

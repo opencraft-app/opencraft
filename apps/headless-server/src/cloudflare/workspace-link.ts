@@ -10,6 +10,7 @@
 //
 // No replay: a connection that ends early fails its request; the caller
 // decides (an unknown outcome stays unknown, as with the Node clients).
+import { isJsonRpcFailure, isJsonRpcSuccess, parseJsonRpcMessage } from "@opencraft/appserver-protocol";
 import { SandboxFault, type SandboxEndpointConnection } from "@opencraft/sandbox";
 
 /** Opens one connection to a workspace endpoint; bytes from the owner go to `onData`. */
@@ -212,10 +213,17 @@ export interface EndpointWebSocket {
 
 export interface EndpointWebSocketOptions {
   onMessage(text: string): void;
+  onError?(error: Error): void;
   readonly headers?: Readonly<Record<string, string>>;
   readonly timeoutMs?: number;
   /** Largest message accepted; a larger one closes the socket. */
   readonly maxPayload?: number;
+}
+
+export class EndpointMessageTooLargeError extends Error {
+  constructor() {
+    super("WebSocket message exceeds its budget");
+  }
 }
 
 /** A frame to the owner: FIN, the opcode, masked as RFC 6455 requires of clients. */
@@ -290,11 +298,11 @@ export async function openEndpointWebSocket(
       } else if (size === 127) {
         if (buffer.byteLength < 10) return;
         const wide = new DataView(buffer.buffer, buffer.byteOffset + 2, 8).getBigUint64(0);
-        if (wide > BigInt(maxPayload)) throw unavailable("WebSocket message exceeds its budget");
+        if (wide > BigInt(maxPayload)) throw new EndpointMessageTooLargeError();
         size = Number(wide);
         at = 10;
       }
-      if (size > maxPayload) throw unavailable("WebSocket message exceeds its budget");
+      if (size > maxPayload) throw new EndpointMessageTooLargeError();
       if (buffer.byteLength < at + size) return;
       const payload = buffer.slice(at, at + size);
       buffer = buffer.slice(at + size);
@@ -312,7 +320,7 @@ export async function openEndpointWebSocket(
         if (opcode !== 0 && message.length) throw unavailable("Interleaved WebSocket message from the owner");
         message.push(payload);
         messageSize += size;
-        if (messageSize > maxPayload) throw unavailable("WebSocket message exceeds its budget");
+        if (messageSize > maxPayload) throw new EndpointMessageTooLargeError();
         if (first & 0x80) {
           const text = decoder.decode(concat(message));
           message = [];
@@ -343,7 +351,9 @@ export async function openEndpointWebSocket(
       }
       parseFrames();
     } catch (error) {
-      finish(error instanceof Error ? error : unavailable("Endpoint WebSocket failed"));
+      const failure = error instanceof Error ? error : unavailable("Endpoint WebSocket failed");
+      options.onError?.(failure);
+      finish(failure);
     }
   };
   const connection = (link.connection = await dial(receive));
@@ -382,62 +392,89 @@ export async function openEndpointWebSocket(
   };
 }
 
+export class EndpointRpcError extends Error {
+  constructor(readonly code: number, message: string) {
+    super(message);
+  }
+}
+
 /**
- * One read-only JSON-RPC request to an App Server over a fresh endpoint
- * WebSocket: `initialize`, `initialized`, the request, then close. Server
- * requests and notifications are ignored, never answered, as the Node
- * execution reader does (`createWebSocketExecutionTurnInspector`).
+ * One owner-selected JSON-RPC operation over a fresh endpoint WebSocket.
+ * After initialization, the caller may fence a mutation immediately before
+ * dispatch. The adapter never retries a request or answers native callbacks.
  */
-export async function endpointJsonRpcRead(
+export async function endpointJsonRpcRequest(
   dial: EndpointDial,
   path: string,
   method: string,
   params: Record<string, unknown>,
-  options: { readonly timeoutMs?: number; readonly maxPayload?: number; readonly signal?: AbortSignal } = {},
+  options: {
+    readonly timeoutMs?: number;
+    readonly maxPayload?: number;
+    readonly signal?: AbortSignal;
+    readonly beforeRequest?: () => Promise<void>;
+  } = {},
 ): Promise<unknown> {
-  const id = `execution-read:${crypto.randomUUID()}`,
+  const id = `workspace-rpc:${crypto.randomUUID()}`,
     init = `${id}:initialize`;
   let socket: EndpointWebSocket | undefined,
-    initialized = false;
+    initialized = false,
+    sent = false,
+    pending = true;
   let resolve!: (value: unknown) => void, reject!: (error: Error) => void;
   const result = new Promise<unknown>((accept, refuse) => {
-    resolve = accept;
-    reject = refuse;
+    resolve = (value) => {
+      pending = false;
+      accept(value);
+    };
+    reject = (error) => {
+      pending = false;
+      refuse(error);
+    };
   });
   void result.catch(() => {});
-  const abort = () => reject(unavailable("Execution read cancelled"));
+  const abort = () => reject(unavailable("Workspace RPC cancelled"));
   options.signal?.addEventListener("abort", abort, { once: true });
-  const timer = setTimeout(() => reject(unavailable("Execution read timed out")), options.timeoutMs ?? 1500);
+  const timer = setTimeout(() => reject(unavailable("Workspace RPC timed out")), options.timeoutMs ?? 1500);
   try {
     socket = await openEndpointWebSocket(dial, path, {
       timeoutMs: options.timeoutMs ?? 1500,
       maxPayload: options.maxPayload ?? 1024 * 1024,
+      onError: reject,
       onMessage(text) {
         try {
-          const message = JSON.parse(text);
-          if (!message || typeof message !== "object" || Array.isArray(message)) throw Error();
-          if (typeof message.method === "string") return; // Never own or answer a native interaction.
+          if (!pending) return;
+          const message = parseJsonRpcMessage(text);
+          if ("method" in message) return; // Never own or answer a native interaction.
           if (!initialized && message.id === init) {
-            if (message.error || !("result" in message)) throw Error();
+            if (!isJsonRpcSuccess(message)) throw Error();
             initialized = true;
-            void socket!.send('{"method":"initialized","params":{}}');
-            void socket!.send(JSON.stringify({ id, method, params }));
-          } else if (initialized && message.id === id) {
-            if (message.error || !("result" in message)) throw Error();
-            resolve(message.result);
+            void socket!
+              .send('{"method":"initialized","params":{}}')
+              .then(async () => {
+                if (!pending) return;
+                await options.beforeRequest?.();
+                if (!pending) return;
+                sent = true;
+                await socket!.send(JSON.stringify({ id, method, params }));
+              })
+              .catch(() => reject(unavailable("Workspace RPC send failed")));
+          } else if (sent && message.id === id) {
+            if (isJsonRpcFailure(message)) reject(new EndpointRpcError(message.error.code, message.error.message));
+            else resolve(message.result);
           }
         } catch {
-          reject(unavailable("Execution read unavailable"));
+          reject(unavailable("Workspace RPC unavailable"));
         }
       },
     });
-    void socket.closed.then(() => reject(unavailable("Execution read closed")));
+    void socket.closed.then(() => reject(unavailable("Workspace RPC closed")));
     await socket.send(
       JSON.stringify({
         id: init,
         method: "initialize",
         params: {
-          clientInfo: { name: "opencraft-execution-history-reader", version: "1" },
+          clientInfo: { name: "opencraft-workspace-owner", version: "1" },
           capabilities: { experimentalApi: true },
         },
       }),

@@ -15,9 +15,14 @@ export type ContainerInstance =
   | "standard-4"
   | { readonly vcpu: number; readonly memoryMib: number; readonly diskMb: number };
 
-export interface ContainerStartOptions {
+export type ContainerStartOptions = ({
   /** Digest-pinned reference (a value of `images`); `durable_object` scheduling policy. */
   readonly image: string;
+  readonly containerSnapshot?: never;
+} | {
+  readonly containerSnapshot: { readonly id: string };
+  readonly image?: never;
+}) & {
   readonly enableInternet: boolean;
   readonly instance?: ContainerInstance;
   /** Up to 10 labels (names 1–16 bytes, values ≤ 64 bytes), returned by `inspect()`. */
@@ -25,6 +30,12 @@ export interface ContainerStartOptions {
   /** Main-process environment. Processes started by `exec()` do not inherit it (except PATH). */
   readonly env?: Readonly<Record<string, string>>;
   readonly entrypoint?: readonly string[];
+};
+
+export interface ContainerSnapshot {
+  readonly id: string;
+  readonly size: number;
+  readonly name?: string;
 }
 
 export interface ContainerInfo {
@@ -62,8 +73,12 @@ export interface DurableObjectContainer {
   readonly running: boolean;
   /** `durable_object` scheduling policy: digest-pinned image references by name. */
   readonly images?: Readonly<Record<string, string>>;
+  /** Registers a private HTTP destination for the lifetime of the running container. */
+  interceptOutboundHttp?(host: string, handler: { fetch(request: Request): Promise<Response> }): Promise<void>;
   /** Returns once the options are validated; later failures surface in `monitor()`. */
   start(options: ContainerStartOptions): void;
+  /** Optional in the port so deployments without the captured capability stay compatible. */
+  snapshotContainer?(options: { readonly name?: string }): Promise<ContainerSnapshot>;
   /** `null` when no container is running. */
   inspect(): Promise<ContainerInfo | null>;
   /** Waits for a container that is still starting; throws when none is running. */

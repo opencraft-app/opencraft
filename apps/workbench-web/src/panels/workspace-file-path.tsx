@@ -6,12 +6,13 @@ import { useIntl } from "@opencraft/i18n/react";
 import { workspaceBreadcrumbs } from "./workspace-resource-model";
 
 /** Ancestor navigation; the current file or directory is already in the header. */
-export function WorkspaceFilePath({ path, onSelect }: { path: string; onSelect(path: string): void }) {
+export function WorkspaceFilePath({ path, scopeRoot, onSelect }: { path: string; scopeRoot?: string; onSelect(path: string): void }) {
   const intl = useIntl();
-  const parts = workspaceBreadcrumbs(path);
+  const parts = workspaceBreadcrumbs(path, scopeRoot);
   const hidden = parts.slice(0, -2);
   const visible = parts.slice(-2);
   const label = intl.formatMessage({ id: "files.path", defaultMessage: "File path" });
+  if (!parts.length) return null;
   return <nav className="workspace-file-path" aria-label={label}>
     {hidden.length > 0 ? <>
       <DropdownMenu.Root key={path}>

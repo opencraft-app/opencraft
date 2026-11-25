@@ -43,6 +43,8 @@ import { assembleAccountPoolCore, type AccountPoolCore } from "@opencraft/accoun
 import { AccountPool } from "@opencraft/account-pool-host/account-pool";
 import { fetchAccountRenewal } from "@opencraft/account-pool-host/renewal";
 import { serveCredentialLeaseExchange } from "@opencraft/account-pool-host/credential-lease-exchange";
+import { codexModelMetadata } from "@opencraft/account-pool-host/codex-model-catalog";
+import type { ModelListResponse } from "@opencraft/appserver-protocol";
 import { mergedOwnerWake, type OwnerWake } from "@opencraft/owner-wake";
 import {
   fetchRequestView,
@@ -54,14 +56,18 @@ import type { HttpExchangeHandler } from "@opencraft/http-exchange";
 import { assembleAccount, type AccountAssembly } from "../assembly/account.mjs";
 import {
   ACCOUNT_AUTHORITY_PATH,
+  WORKSPACE_CODEX_CATALOG_PATH,
+  WORKSPACE_CODEX_MODEL_DIRECTORY_PATH,
   accountRoute,
   parseAccountAuthorityAnswer,
   type AccountAuthorityAnswer,
   type AccountAuthorityQuery,
   type AccountAuthorityScope,
 } from "../account-routes.js";
+import { parseCodexModelList } from "./codex-model-list.js";
 import { MISSING, installationExchangeReply } from "../installation-routes.js";
 import type { AccountCoreEnv, AccountCoreState } from "./bindings.js";
+import { bootstrapAccountModels } from "./account-model-bootstrap.js";
 
 /** The deployment's single object name. */
 export const ACCOUNT_CORE_OBJECT = "account";
@@ -146,9 +152,10 @@ export class AccountCore {
     const personalPool = (actor: string) =>
       new AccountPool(poolStorage, { ownerActor: actor, now: () => wake.now(), preserveAffinity: true });
     const route = this.personalSubscriptionRoute(env);
+    const modelDocuments = durableObjectStateDocumentStore(storage, { prefix: "models/" });
     const account = assembleAccount({
       openModelPolicy: () => policy,
-      modelDocuments: durableObjectStateDocumentStore(storage, { prefix: "models/" }),
+      modelDocuments,
       modelSecrets: sealedSecretStore(durableObjectSecretStore(storage), sealing),
       modelGateway: () => ({
         // The object owns its SQL; the account closing the store releases nothing.
@@ -158,6 +165,8 @@ export class AccountCore {
       }),
     });
     this.#disposers = [() => account.close()];
+    if (env.OPENCRAFT_ACCOUNT_MODEL_BOOTSTRAP !== undefined)
+      await bootstrapAccountModels(env.OPENCRAFT_ACCOUNT_MODEL_BOOTSTRAP, modelDocuments, account);
     const maintenance = env.ACCOUNT_MAINTENANCE;
     const wake = mergedOwnerWake(this.#alarmWake());
     const pool = assembleAccountPoolCore({
@@ -223,6 +232,70 @@ export class AccountCore {
     return null;
   }
 
+  async #configuredCodexCatalog(account: AccountAssembly, providerId: string) {
+    const { revision, providers, defaultModel } = await account.modelConfiguration.read();
+    const provider = providers.find((item) => item.id === providerId && item.enabled && item.protocol === "openai-responses");
+    if (!provider) return null;
+    const models = provider.models.filter((model) => model.enabled && model.type !== "asr").map((model) => {
+      const isDefault = defaultModel?.providerId === providerId && defaultModel.modelId === model.id;
+      return { ...codexModelMetadata(model.id, provider, model, isDefault ? defaultModel.reasoningEffort : undefined),
+        priority: isDefault ? 0 : 1000 };
+    });
+    return { revision, models };
+  }
+
+  async #workspaceCodexCatalog(account: AccountAssembly, request: Request, url: URL) {
+    const unavailable = () => fetchResponse(installationExchangeReply(MISSING));
+    const token = /^Bearer (\S+)$/u.exec(request.headers.get("authorization") ?? "")?.[1];
+    const providerId = url.searchParams.get("provider");
+    if (request.method !== "GET" || !token || !providerId) return unavailable();
+    try {
+      const { holder } = await account.credentialLeases.redeem(token, providerId);
+      if (holder.engine !== "codex") return unavailable();
+      const catalog = await this.#configuredCodexCatalog(account, providerId);
+      return catalog ? Response.json({ models: catalog.models }, { headers: { "cache-control": "no-store" } }) : unavailable();
+    } catch {
+      return unavailable();
+    }
+  }
+
+  /** Read-only binding route. WorkspaceHost admits the public caller before this projection. */
+  async #workspaceCodexModelDirectory(account: AccountAssembly, request: Request, url: URL) {
+    const provider = url.searchParams.get("provider");
+    const missing = () => fetchResponse(installationExchangeReply(MISSING));
+    if (!provider) return missing();
+    if (request.method === "HEAD") {
+      const model = url.searchParams.get("model");
+      if (!model || model.length > 512) return missing();
+      const catalog = await this.#configuredCodexCatalog(account, provider);
+      return new Response(null, { status: catalog?.models.some(entry => entry.slug === model) ? 204 : 404,
+        headers: { "cache-control": "no-store" } });
+    }
+    if (request.method !== "POST") return missing();
+    const params = parseCodexModelList(await request.json().catch(() => null));
+    const invalid = () => Response.json({ error: "invalid_model_list" }, { status: 400 });
+    if (!params) return invalid();
+    const catalog = await this.#configuredCodexCatalog(account, provider);
+    if (!catalog) return missing();
+    const { revision, models } = catalog;
+    const prefix = `models/${revision}/${encodeURIComponent(provider)}/`;
+    const cursor = params.cursor?.startsWith(prefix) ? params.cursor.slice(prefix.length) : "";
+    const offset = params.cursor == null ? 0 : /^\d+$/u.test(cursor) ? Number(cursor) : NaN;
+    if (!Number.isSafeInteger(offset) || (params.cursor != null && offset >= models.length)) return invalid();
+    const limit = params.limit ?? 30;
+    const ordered = [...models].sort((a, b) => a.priority - b.priority);
+    const data: ModelListResponse["data"] = ordered.slice(offset, offset + limit).map((model) => ({
+      id: model.slug, model: model.slug, displayName: model.display_name, description: model.description,
+      supportedReasoningEfforts: model.supported_reasoning_levels.map(({ effort, description }) => ({ reasoningEffort: effort, description })),
+      defaultReasoningEffort: model.default_reasoning_level, inputModalities: [...model.input_modalities],
+      isDefault: model.priority === 0, hidden: false, supportsPersonality: false, multiAgentVersion: null,
+      upgrade: null, upgradeInfo: null, availabilityNux: null, modelSpecialty: null,
+      additionalSpeedTiers: [], serviceTiers: [], defaultServiceTier: null, availableAccessPrograms: null,
+    }));
+    const nextCursor = offset + limit < ordered.length ? prefix + (offset + limit) : null;
+    return Response.json({ data, nextCursor } satisfies ModelListResponse, { headers: { "cache-control": "no-store" } });
+  }
+
   /** The object's alarm: wakes whichever owner work is due (account renewals); each re-derives from state. */
   async alarm(): Promise<void> {
     this.#wake?.();
@@ -265,7 +338,10 @@ export class AccountCore {
     // never forwards `/__opencraft_internal/`.
     const leaseReply = await services.leaseExchange(request);
     if (leaseReply) return leaseReply;
-    const pathname = new URL(request.url).pathname;
+    const url = new URL(request.url);
+    const { pathname } = url;
+    if (pathname === WORKSPACE_CODEX_CATALOG_PATH) return this.#workspaceCodexCatalog(services.account, request, url);
+    if (pathname === WORKSPACE_CODEX_MODEL_DIRECTORY_PATH) return this.#workspaceCodexModelDirectory(services.account, request, url);
     if (!accountRoute(pathname)) return fetchResponse(installationExchangeReply(MISSING));
     const gate = await services.ask("gate", fetchRequestView(request));
     if (gate instanceof Response) return gate;

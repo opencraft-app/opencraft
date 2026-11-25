@@ -1,17 +1,19 @@
 // Template: the installation's Cloudflare Workers deployment assembly
 // (docs/architecture/platform/cloudflare-deployment.md §5, §5.6, §5.7). Copy it,
 // choose the Worker name and origin, set the workspace image digest, and deploy
-// with Wrangler from this directory. Nothing in this repository deploys it;
-// validation and builds never touch an account.
+// with Wrangler from this directory. The opt-in cf:rehearsal command can
+// deploy a temporary copy with the same bindings and migrations.
 //
 // It serves the installation's identity and admission (setup, local login,
 // sessions, Actors, instance membership) from one SQLite-backed Durable Object,
 // InstallationCore; the account's model usage policy, model configuration,
 // sealed model credentials and credential leases from a second one,
 // AccountCore; and one WorkspaceHost object per workspace that holds the
-// workspace's Host state and its container. Static assets and the Client DO
-// are not assembled yet; see §5.4, §5.6 and §5.7 for what a production
-// deployment still lacks.
+// workspace's Host state and its container. To add Workbench static assets,
+// build the hostless Web release and run scripts/cloudflare/prepare-workbench-assets.mjs.
+// Point the assets directory below at that output. Run the Worker before
+// every asset for admission.
+// See §5.4, §5.6 and §5.7 for the remaining deployment work.
 //
 // Secrets, never vars:
 //   wrangler secret put OPENCRAFT_SETUP_TOKEN --config wrangler.installation-core.jsonc
@@ -21,26 +23,32 @@
 //   node -e "console.log('k1.'+require('crypto').randomBytes(32).toString('base64url'))"
 //   It seals every model credential AccountCore stores, so losing it loses
 //   them; without a valid key AccountCore stays closed)
+//   OPENCRAFT_ACCOUNT_MODEL_BOOTSTRAP optionally seeds a fresh AccountCore
+//   with {"document": <models.json at revision 0>, "credentials": { <ref>: <value> }}.
+//   Supply it as a Worker Secret on the first deployment (see §5.6).
 // The workspace container receives no secret and holds no credential.
 {
   "name": "opencraft-installation-core",
-  "main": "../../apps/headless-server/src/cloudflare/worker.ts",
-  // The same runtime the local workerd tests and the rehearsal use.
-  "compatibility_date": "2026-07-30",
+  "main": "../../apps/headless-server/src/cloudflare/deployment-worker.mjs",
+  // Matches the cloud rehearsal's Containers API compatibility date.
+  "compatibility_date": "2026-11-01",
   // node:crypto and the other built-ins the installation, account and workspace-host modules import.
   "compatibility_flags": ["nodejs_compat"],
+  // "assets": { "directory": "./workbench-assets", "binding": "ASSETS", "run_worker_first": true, "html_handling": "none" },
   "durable_objects": {
     "bindings": [
       { "name": "INSTALLATION_CORE", "class_name": "InstallationCore" },
       { "name": "ACCOUNT_CORE", "class_name": "AccountCore" },
-      { "name": "WORKSPACE_HOST", "class_name": "WorkspaceHost" }
+      { "name": "WORKSPACE_HOST", "class_name": "WorkspaceHost" },
+      { "name": "CLIENT", "class_name": "ClientDO" }
     ]
   },
   // Each class arrives in its own migration, so a deployment of an earlier template only adds it.
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["InstallationCore"] },
     { "tag": "v2", "new_sqlite_classes": ["AccountCore"] },
-    { "tag": "v3", "new_sqlite_classes": ["WorkspaceHost"] }
+    { "tag": "v3", "new_sqlite_classes": ["WorkspaceHost"] },
+    { "tag": "v4", "new_sqlite_classes": ["ClientDO"] }
   ],
   // One container per WorkspaceHost object (`cloudflare://WorkspaceHost`): the workspace
   // image (Brain and Hands, `workspace-agent` as its main process), pinned by digest. The
@@ -49,8 +57,12 @@
   "containers": [
     {
       "class_name": "WorkspaceHost",
-      "image": "registry.cloudflare.com/ACCOUNT_ID/opencraft-workspace@sha256:0000000000000000000000000000000000000000000000000000000000000000",
-      "max_instances": 10
+      "scheduling_policy": "durable_object",
+      "images": {
+        "workspace": {
+          "image": "registry.cloudflare.com/ACCOUNT_ID/opencraft-workspace@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      }
     }
   ],
   "vars": {
@@ -59,9 +71,25 @@
     "OPENCRAFT_MACHINE_NAME": "OpenCraft",
     // The container's image name as the object reads it (`ctx.container.images`).
     "OPENCRAFT_WORKSPACE_IMAGE": "workspace",
+    // The non-root UID and GID used by the cloudflare-workspace image.
+    "OPENCRAFT_WORKSPACE_USER": "1000:1000",
     // Stop a workspace's container after this many idle milliseconds, or `resident`.
     "OPENCRAFT_WORKSPACE_IDLE": "900000",
     // The engines of the workspace's Engine Host (`pi`, `dsh`); the first is its endpoint.
+    // To enable Codex Turns, add codex and set
+    // OPENCRAFT_WORKSPACE_CODEX_DEFAULT, OPENCRAFT_WORKSPACE_CODEX_TURNS=true,
+    // OPENCRAFT_WORKSPACE_CODEX_EGRESS_ORIGIN (private HTTP) and
+    // OPENCRAFT_WORKSPACE_CODEX_EGRESS_PROVIDER (the AccountCore provider ID,
+    // which can be registered from the one-time model bootstrap Secret).
+    // OPENCRAFT_WORKSPACE_CODEX_ISOLATE_ACTORS=true gives each Human's new
+    // conversations a separate WorkspaceHost and container.
+    // Set OPENCRAFT_WORKSPACE_CODEX_FILES=true with an image exposing scoped
+    // access through the existing Hands file owner, for isolated workspaces.
+    // Set OPENCRAFT_WORKSPACE_CODEX_PROJECTS=true with scoped files and native
+    // project/list, project/create and thread/start project support in the image.
+    // Set OPENCRAFT_WORKSPACE_CODEX_SNAPSHOTS=true with an image that supports
+    // snapshot startup to enable manual and idle sleep with Codex history.
+    // Otherwise set the idle policy to resident when enabling Codex.
     "OPENCRAFT_WORKSPACE_ENGINES": "pi"
   },
   "observability": { "enabled": true }

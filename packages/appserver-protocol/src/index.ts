@@ -1,6 +1,7 @@
 export * from "./json-rpc";
 export * from "./codex-accounts";
 export * from "./extensions";
+export * from "./side-chat";
 export * from "./method-access";
 export * from "./permission-modes";
 export * from "./methods";

@@ -1,7 +1,7 @@
 import { SandboxFault } from "@opencraft/sandbox";
 import type { SandboxProviderDefinition, SandboxProviderInstallation } from "@opencraft/sandbox/providers";
 import type { DurableObjectContainer } from "./bindings.js";
-import { cloudflareSandboxBackend } from "./index.js";
+import { cloudflareSandboxBackend, type CloudflareSandboxOptions } from "./index.js";
 
 /** A container class is the Durable Object class name a Worker binds a container to
  * (`cloudflare://<class>`): a JavaScript identifier. */
@@ -31,6 +31,8 @@ export interface CloudflareProviderOptions {
   /** Main-process environment of every container this object starts: the workspace's
    * identity for its agent (never credentials: the container holds none). */
   readonly env?: Readonly<Record<string, string>>;
+  prepareContainer?(): Promise<void>;
+  onLifecycle?: CloudflareSandboxOptions["onLifecycle"];
 }
 
 /** Provider definition for the WorkspaceHost Durable Object's composition root: it
@@ -64,6 +66,8 @@ export function cloudflareSandboxProvider(
         requestTimeoutMs: request.requestTimeoutMs,
         ...(options.waitUntil ? { waitUntil: options.waitUntil } : {}),
         ...(options.env ? { env: options.env } : {}),
+        ...(options.prepareContainer ? { prepareContainer: options.prepareContainer } : {}),
+        ...(options.onLifecycle ? { onLifecycle: options.onLifecycle } : {}),
       });
     },
   };

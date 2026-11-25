@@ -3,6 +3,8 @@ import { mkdir, mkdtemp, readFile, readdir, rm, utimes, writeFile } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
+import { ACCOUNT_RENEWAL_PATH, fetchAccountRenewal } from "@opencraft/account-pool-host/renewal";
+import { createNodeAccountRenewalExecutor } from "@opencraft/account-pool-host/renewal-node";
 
 // The authorization-expiry tests mock timers. Keep this test-only deadlock
 // deadline on the real clock; successful closure resolves without a delay.
@@ -106,7 +108,7 @@ test("managed Codex refresh round-trips one account through an isolated auth pro
       }),
     });
     const result = await refresh(
-      { id: "account-a", provider: "codex", label: "A", upstreamAccountId: "chatgpt-account-a", priority: 1, enabled: true, createdAt: 1 },
+      { upstreamAccountId: "chatgpt-account-a" },
       { accessToken: jwt({ exp: 10_000 }), refreshToken: "refresh-old", idToken: refreshedIdToken, expiresAt: 10_000 },
       "expired",
     );
@@ -115,6 +117,94 @@ test("managed Codex refresh round-trips one account through an isolated auth pro
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("the maintenance binding renews exactly one account through native Codex and drains before closing", async t => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-renewal-binding-"));
+  const refreshRoot = join(root, "refresh");
+  const started = Promise.withResolvers<void>();
+  const allowRenewal = Promise.withResolvers<void>();
+  const account = {
+    id: "account-a", provider: "codex" as const, label: "A", upstreamAccountId: "upstream-a",
+    priority: 1, enabled: true, allowCredits: false, createdAt: 1,
+  };
+  const secret = { accessToken: "access-old", refreshToken: "refresh-old", idToken: null, expiresAt: null };
+  let clients = 0;
+  let native: FakeMaintenanceClient | undefined;
+  const executor = createNodeAccountRenewalExecutor({
+    executable: process.execPath,
+    refreshRoot,
+    createClient: async (codexHome) => {
+      clients++;
+      return native = new FakeMaintenanceClient(async (method, params) => {
+        assert.equal(method, "account/read");
+        assert.deepEqual(params, { refreshToken: true });
+        const previous = JSON.parse(await readFile(join(codexHome, "auth.json"), "utf8"));
+        assert.equal(previous.tokens.account_id, account.upstreamAccountId);
+        assert.equal(previous.tokens.refresh_token, secret.refreshToken);
+        started.resolve();
+        await allowRenewal.promise;
+        previous.tokens.access_token = jwt({ exp: 30_000 });
+        previous.tokens.refresh_token = "refresh-new";
+        await writeFile(join(codexHome, "auth.json"), JSON.stringify(previous), { mode: 0o600 });
+        return {};
+      });
+    },
+  });
+  t.after(async () => {
+    allowRenewal.resolve();
+    await executor.close();
+    await rm(root, { recursive: true, force: true });
+  });
+  const renew = fetchAccountRenewal(executor);
+  const renewal = renew(account, secret, "expired");
+  await started.promise;
+  await assert.rejects(renew(account, secret, "unauthorized"), /service-unavailable/);
+  assert.equal(clients, 1);
+  let closed = false;
+  const closing = executor.close().then(() => { closed = true; });
+  await assert.rejects(renew({ ...account, upstreamAccountId: "upstream-b" }, secret, "expired"), /service-unavailable/);
+  assert.equal(closed, false);
+
+  allowRenewal.resolve();
+  assert.deepEqual(await renewal, {
+    accessToken: jwt({ exp: 30_000 }), refreshToken: "refresh-new", idToken: null, expiresAt: 30_000_000,
+  });
+  await closing;
+  assert.equal(native?.closed, true);
+  assert.deepEqual(await readdir(refreshRoot), []);
+});
+
+test("the maintenance binding refuses malformed input and redacts native failures", async t => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-renewal-refusal-"));
+  let clients = 0;
+  const executor = createNodeAccountRenewalExecutor({
+    executable: process.execPath,
+    refreshRoot: join(root, "refresh"),
+    createClient: async () => {
+      clients++;
+      return new FakeMaintenanceClient(async () => { throw new Error("invalid_grant internal-provider-detail"); });
+    },
+  });
+  t.after(async () => {
+    await executor.close();
+    await rm(root, { recursive: true, force: true });
+  });
+  const url = new URL(ACCOUNT_RENEWAL_PATH, "https://account-maintenance.internal");
+  const post = (body: string) => executor.fetch(new Request(url, {
+    method: "POST", headers: { "content-type": "application/json" }, body,
+  }));
+  assert.equal((await executor.fetch(new Request(url))).status, 405);
+  assert.equal((await post(JSON.stringify({ provider: "codex", secret: {} }))).status, 400);
+  assert.equal((await post("x".repeat(1_600_001))).status, 413);
+  assert.equal(clients, 0);
+  const response = await post(JSON.stringify({
+    provider: "codex", upstreamAccountId: "upstream-a", reason: "expired",
+    secret: { accessToken: "access-old", refreshToken: "refresh-old", idToken: null, expiresAt: null },
+  }));
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.deepEqual(await response.json(), { status: "failed", code: "authorization-rejected" });
+  assert.equal(clients, 1);
 });
 
 test("existing native Codex login imports explicitly without modifying its auth file", async () => {

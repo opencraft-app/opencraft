@@ -4,7 +4,16 @@ import type { Thread, ThreadStatus } from "./generated/v2";
 /** Authenticated reader projection, never an authorization grant. Missing means
  * unknown/unsupported, not that this reader did not create the conversation. */
 export interface ThreadViewerProjection { readonly createdByViewer?: boolean }
-export type ThreadCatalogEntry = Thread & ThreadViewerProjection;
+export interface ThreadCatalogTurnCompletion {
+  readonly id: string;
+  readonly status: "completed" | "failed" | "interrupted";
+  readonly completedAt: number | null;
+}
+export type ThreadCatalogEntry = Thread & ThreadViewerProjection & {
+  /** When present, the Host supplies attention metadata with the directory.
+   * Null means no known terminal Turn. Omitted means the Host has no projection. */
+  readonly latestTurnCompletion?: ThreadCatalogTurnCompletion | null;
+};
 
 export const THREAD_CATALOG_CHANGED = "opencraft/thread-catalog/changed";
 export type ThreadCatalogFact =
@@ -38,18 +47,26 @@ const id = (value: unknown): value is string => typeof value === "string" && val
 const time = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0;
 const fields = ["id", "sessionId", "forkedFromId", "parentThreadId", "section", "sectionEnteredAt", "projectId", "historyMode", "modelProvider", "model", "reasoningEffort", "createdAt", "updatedAt", "recencyAt", "path", "cwd", "cliVersion", "originator", "source", "canAcceptDirectInput", "threadSource", "agentNickname", "agentRole", "gitInfo", "daybreakEnabled", "visibility"];
 
+export function parseThreadCatalogTurnCompletion(value: unknown): ThreadCatalogTurnCompletion | null {
+  const { id: turnId, status, completedAt } = object(value);
+  if (!id(turnId) || (status !== "completed" && status !== "failed" && status !== "interrupted")) return null;
+  return { id: turnId, status, completedAt: time(completedAt) ? completedAt : null };
+}
+
 /** Directory metadata never carries history, tool payloads or execution credentials. */
 export function threadCatalogEntry(value: unknown): ThreadCatalogEntry | null {
   const row = object(value);
   if (!id(row.id) || typeof row.cwd !== "string" || !time(row.createdAt) || !time(row.updatedAt) || row.ephemeral === true) return null;
+  const completion = parseThreadCatalogTurnCompletion(row.latestTurnCompletion);
   return { ...Object.fromEntries(fields.filter(key => key in row).map(key => [key, row[key]])),
+    ...(completion || row.latestTurnCompletion === null ? { latestTurnCompletion: completion } : {}),
     ...(typeof row.createdByViewer === 'boolean' ? { createdByViewer: row.createdByViewer } : {}),
     ...(parseNativeConversationProject(row.nativeProject) ? { nativeProject: parseNativeConversationProject(row.nativeProject)! } : {}),
     ...(row.accessMode === 'private' || row.accessMode === 'shared' ? {accessMode:row.accessMode} : {}),
     name: typeof row.name === "string" ? row.name.slice(0, 1024) : null,
     preview: typeof row.preview === "string" ? row.preview.slice(0, 512) : "",
     status: threadCatalogStatus(row.status) ?? { type: "notLoaded" }, ephemeral: false, extra: null, turns: [],
-  } as unknown as Thread;
+  } as unknown as ThreadCatalogEntry;
 }
 export function threadCatalogStatus(value: unknown): ThreadStatus | null {
   const row = object(value);

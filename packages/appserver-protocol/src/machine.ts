@@ -5,10 +5,14 @@ export interface RuntimeMachineIdentity {
   readonly platform: "macos" | "linux" | "windows";
 }
 
+export function isRuntimeMachineId(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
 export function parseRuntimeMachineIdentity(value: unknown): RuntimeMachineIdentity {
   if (typeof value !== "object" || value === null) throw new TypeError("Invalid machine identity");
   const entry = value as Record<string, unknown>;
-  if (typeof entry.machineId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(entry.machineId)
+  if (!isRuntimeMachineId(entry.machineId)
     || typeof entry.name !== "string" || !entry.name.trim()
     || typeof entry.platform !== "string" || !["macos", "linux", "windows"].includes(entry.platform)) throw new TypeError("Invalid machine identity");
   return Object.freeze({ machineId: entry.machineId, name: entry.name.trim(), platform: entry.platform as RuntimeMachineIdentity["platform"] });

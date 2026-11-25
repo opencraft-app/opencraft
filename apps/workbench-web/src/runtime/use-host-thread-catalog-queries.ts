@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { InfiniteQueryObserver, notifyManager, useQueryClient,
   type InfiniteData, type DefaultedInfiniteQueryObserverOptions, type InfiniteQueryObserverOptions, type InfiniteQueryObserverResult } from "@tanstack/react-query";
-import type { ThreadListResponse } from "@opencraft/appserver-protocol/generated/v2";
+import type { ThreadListResponse } from "@opencraft/appserver-protocol";
 import { isHostThreadCatalogUnavailableError, readHostThreadCatalog } from "./host-thread-catalog";
 import { mergeThreadCatalogPages, sidebarThreadCatalogQueryKey } from "./thread-catalog-query";
 import { beginObservedOperation } from "./observability";

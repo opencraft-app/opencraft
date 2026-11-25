@@ -48,6 +48,7 @@
   "dependencies": {
     "@opencraft/access-control": "0.1.0",
     "@opencraft/account-pool-host": "0.1.0",
+    "@opencraft/agent-bridge-host": "0.1.0",
     "@opencraft/app-host-protocol": "0.1.0",
     "@opencraft/app-host-resume": "0.1.0",
     "@opencraft/app-host-server": "0.1.0",

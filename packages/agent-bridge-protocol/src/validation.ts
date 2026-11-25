@@ -61,15 +61,25 @@ function isItemShape(value: unknown): boolean {
         && (value.content === undefined || Array.isArray(value.content) && value.content.every(part => isRecord(part) && isString(part.type))
           && JSON.stringify(value.content).length <= 65_536);
     case "agentMessage":
-    case "reasoning":
     case "plan":
       return isString(value.text);
+    case "reasoning":
+      return isString(value.text) && (value.summary === undefined || isStringArray(value.summary)) &&
+        (value.content === undefined || isStringArray(value.content));
     case "tool":
       return isString(value.name) && isOneOf(value.status, ITEM_TOOL_STATUSES)
         && (value.output === undefined || value.output === null || isString(value.output));
+    case "fileChange":
+      return isOneOf(value.status, [...ITEM_TOOL_STATUSES, "declined"]) &&
+        Array.isArray(value.changes) && value.changes.length <= 64 && JSON.stringify(value.changes).length <= 256 * 1024 &&
+        value.changes.every(change => isRecord(change) && isString(change.path) && isString(change.diff) &&
+          isRecord(change.kind) && (change.kind.type === "add" || change.kind.type === "delete" ||
+            (change.kind.type === "update" && (change.kind.move_path === null || isString(change.kind.move_path)))));
     case "command":
       return isString(value.command) && isString(value.cwd) && isOneOf(value.status, ITEM_TOOL_STATUSES)
-        && (value.output === undefined || value.output === null || isString(value.output));
+        && (value.output === undefined || value.output === null || isString(value.output))
+        && (value.exitCode == null || (typeof value.exitCode === "number" && Number.isSafeInteger(value.exitCode)))
+        && (value.durationMs == null || isNumber(value.durationMs));
     default:
       return false;
   }

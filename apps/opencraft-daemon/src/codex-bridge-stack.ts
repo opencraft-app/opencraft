@@ -196,19 +196,17 @@ const programPaths = (directory: string) =>
  * launch register the same generation again, and the artifact is kept by digest
  * so threads bound to it outlive program updates.
  */
-async function launchEngineHost(
-  start: Awaited<ReturnType<typeof childLauncher>>["start"],
-  options: {
+async function prepareEngineHost(options: {
     programs: Record<keyof typeof CODEX_BRIDGE_PROGRAMS, string>;
     node: string;
     coreEndpoint: string;
     coreToken: string;
     coreNativeSocket?: string;
+    nativeProjectless?: true;
     stateDirectory: string;
     cli?: CodexEngineHostOptions["cli"];
-    serverId?: string;
-  },
-): Promise<BridgeGatewayOptions> {
+    socketPath?: string;
+}) {
   const privateFile = async (name: string, content: string) => {
     const path = join(options.stateDirectory, name);
     await writeFile(path, content, { mode: 0o600 });
@@ -226,6 +224,7 @@ async function launchEngineHost(
       endpoint: options.coreEndpoint,
       token: options.coreToken,
       ...(options.coreNativeSocket ? { nativeSocket: options.coreNativeSocket } : {}),
+      ...(options.nativeProjectless ? { nativeProjectless: true } : {}),
     }),
   );
   const launch = {
@@ -252,9 +251,18 @@ async function launchEngineHost(
       generations: [{ id, ...generation }],
       activate: id,
       ...(options.cli ? { cli: options.cli } : {}),
+      ...(options.socketPath ? { socketPath: options.socketPath } : {}),
     }),
   );
   await mkdir(join(options.stateDirectory, "sandbox"), { recursive: true, mode: 0o700 });
+  return { config, token };
+}
+
+async function launchEngineHost(
+  start: Awaited<ReturnType<typeof childLauncher>>["start"],
+  options: Parameters<typeof prepareEngineHost>[0] & { serverId?: string },
+): Promise<BridgeGatewayOptions> {
+  const { config, token } = await prepareEngineHost(options);
   const ready = await start(options.programs.engineHost, [config], (line) => typeof line.url === "string");
   return {
     url: String(ready.url),
@@ -262,6 +270,15 @@ async function launchEngineHost(
     serverId: options.serverId ?? "local-codex",
     inboxPath: join(options.stateDirectory, "gateway-inbox.sqlite"),
   };
+}
+
+/** Prepare the same immutable provider for supervision by the workspace agent. */
+export async function prepareWorkspaceCodexEngineHost(options: Pick<CodexEngineHostOptions,
+  "programs" | "node" | "coreEndpoint" | "coreToken" | "stateDirectory"> & { socketPath: string; coreNativeSocket: string }) {
+  const programs = programPaths(options.programs);
+  await stat(programs.engineHost);
+  await mkdir(options.stateDirectory, { recursive: true, mode: 0o700 });
+  return { program: programs.engineHost, ...await prepareEngineHost({ ...options, programs, nativeProjectless: true }) };
 }
 
 export interface CodexEngineHostOptions {

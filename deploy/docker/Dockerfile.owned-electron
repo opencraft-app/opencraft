@@ -144,6 +144,15 @@ RUN /bin/sh /usr/local/share/opencraft/install-sandbox-deps.sh
 USER ${OPENCRAFT_UID}:${OPENCRAFT_GID}
 ENTRYPOINT ["/opt/opencraft/bin/node", "/opt/opencraft/runtime/container-service.mjs", "hands"]
 
+# The Hands release payload already contains the Brain runtime. Configure
+# their combined Cloudflare workspace entrypoint in the image.
+FROM hands AS cloudflare-workspace
+LABEL org.opencraft.role=workspace
+USER root
+ENV OPENCRAFT_CLOUDFLARE_UID=${OPENCRAFT_UID} OPENCRAFT_CLOUDFLARE_GID=${OPENCRAFT_GID}
+COPY --chmod=0555 deploy/docker/start-cloudflare-workspace.sh /usr/local/bin/start-cloudflare-workspace
+ENTRYPOINT ["/usr/local/bin/start-cloudflare-workspace"]
+
 FROM control-runtime AS gateway
 LABEL org.opencraft.role=gateway
 ENTRYPOINT ["/opt/opencraft/bin/node", "/opt/opencraft/runtime/container-service.mjs", "gateway"]

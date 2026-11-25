@@ -67,6 +67,14 @@ export interface SandboxReceipt {
   /** Provider instance identity (E2B sandbox id; a static provider's agent incarnation). */
   readonly instanceId: string;
 }
+/** An opaque filesystem checkpoint. Restoring it creates a new environment. */
+export interface SandboxSnapshotRef {
+  readonly backend: string;
+  readonly id: string;
+  readonly image: string;
+  readonly takenAt: number;
+  readonly expiresAt?: number;
+}
 /** Why a provider reports an environment lost: its main process exited (`exited`, code 0)
  * or failed (`crashed`, with the exit code when known), or the provider stopped it for
  * another reason (`stopped`: platform stop, idle backstop, host loss). */
@@ -98,6 +106,8 @@ export interface Sandbox extends SandboxEnvironment {
   readonly enforcement: Readonly<SandboxEnforcement>;
   /** Present when the backend can sleep (`SandboxBackend.sleep`); afterwards the sandbox is closed. */
   sleep?(): Promise<void>;
+  /** Capture the current environment's filesystem before retiring it. */
+  captureSnapshot?(signal?: AbortSignal): Promise<SandboxSnapshotRef>;
 }
 export interface SandboxBackend {
   readonly id: string;
@@ -110,6 +120,9 @@ export interface SandboxBackend {
    * it is the same instance (gone, restarted, different incarnation) it rejects with
    * SANDBOX_UNAVAILABLE and the owner decides whether to create a new one and recover. */
   attach?(identity: SandboxIdentity, receipt: SandboxReceipt, resources: SandboxResources, signal: AbortSignal): Promise<SandboxEnvironment>;
+  captureSnapshot?(environment: SandboxEnvironment, signal: AbortSignal): Promise<SandboxSnapshotRef>;
+  /** Same admission, effective resource checks and unknown-outcome handling as create. */
+  restoreSnapshot?(identity: SandboxIdentity, snapshot: SandboxSnapshotRef, resources: SandboxResources, signal: AbortSignal): Promise<SandboxEnvironment>;
   /** Optional idle sleep (workspace-host-split §3.7.2): end this Host's processes, then stop
    * the instance while keeping its retained disk. Resolves once the instance is stopped; the
    * environment is closed afterwards. Waking is `attach`/`create` and yields a new incarnation

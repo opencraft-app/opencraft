@@ -6,6 +6,7 @@ export interface TurnCompletion {
   readonly threadId: string;
   readonly turnId: string;
   readonly status: "completed" | "failed" | "interrupted";
+  readonly completedAt?: number;
   readonly threadTitle?: string;
   readonly userMessage?: string;
 }
@@ -160,7 +161,10 @@ export function readTurnCompletion(hostId: string, notification: { readonly meth
   if (typeof params?.threadId !== "string" || !params.threadId
     || typeof turn?.id !== "string" || !turn.id
     || (turn.status !== "completed" && turn.status !== "failed" && turn.status !== "interrupted")) return null;
-  return { hostId, threadId: params.threadId, turnId: turn.id, status: turn.status };
+  const completedAt = typeof turn.completedAt === "number" && Number.isFinite(turn.completedAt) && turn.completedAt >= 0
+    ? turn.completedAt : undefined;
+  return { hostId, threadId: params.threadId, turnId: turn.id, status: turn.status,
+    ...(completedAt === undefined ? {} : { completedAt }) };
 }
 
 export function turnCompletionKey(completion: TurnCompletion): string {

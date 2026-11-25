@@ -12,6 +12,8 @@ import { readDshHostIdentity } from "../../apps/headless-server/src/server-deplo
 import { readEngineHostIdentity } from "../../apps/headless-server/src/server-deployment/engine-host-client.mjs";
 import { readHandsIncarnation, watchHandsIncarnation } from "./hands-incarnation.mjs";
 import { codexCoreArguments, waitForProxy } from "./proxy-core.mjs";
+import { startWorkspaceCodexModelRelay } from "./workspace-codex-model-relay.mjs";
+import { bindHostMachineIdentity } from "@opencraft/local-agent-host/machine-identity";
 import { handsOwnerSpawnOptions } from "./hands-owner-privileges.mjs";
 import {
   appServerControlTokenFile,
@@ -100,18 +102,22 @@ export const brainRole = {
     ])
       await rm(join(paths.runDirectory, name), { force: true });
     const executionResources = handsResources(env);
+    const workspaceEgress = paths.proxyMode === "workspace-egress";
+    const accountEndpoint = workspaceEgress ? join(paths.agentRunDirectory, "codex-launch.sock") : paths.coreEndpoint;
+    const accountTokenFile = workspaceEgress ? join(paths.agentRunDirectory, "codex-launch.token") : paths.tokenPath;
+    if (workspaceEgress) await bindHostMachineIdentity(paths.dataDirectory, env.OPENCRAFT_MACHINE_ID);
     try {
-      await writeFile(paths.tokenPath, randomBytes(32).toString("hex") + "\n", { mode: 0o600, flag: "wx" });
+      await writeFile(accountTokenFile, randomBytes(32).toString("hex") + "\n", { mode: 0o600, flag: "wx" });
     } catch (error) {
       if (error.code !== "EEXIST") throw error;
     }
-    await readPrivateToken(paths.tokenPath);
+    const accountToken = await readPrivateToken(accountTokenFile);
     // The AppServer owner's own control credential, fresh per incarnation and handed to
     // the Host only through the control endpoint. The embedded account Core (restore
     // path) forwards health with the account token, so that mode keeps one token.
     const appServerTokenFile = appServerControlTokenFile(paths);
-    if (paths.proxyMode === "external")
-      await writeFile(paths.appServerTokenFile, randomBytes(32).toString("hex") + "\n", { mode: 0o600, flag: "wx" });
+    if (appServerTokenFile !== accountTokenFile)
+      await writeFile(appServerTokenFile, randomBytes(32).toString("hex") + "\n", { mode: 0o600, flag: "wx" });
     await privateDirectory(paths.codexPrivateDirectory, "The Codex private directory must be private");
     // With ENV delivery, DSH, Pi and the Codex AppServer pin the Gateway vault owner's
     // published issuer key. Brain starts before that owner, so only the stable
@@ -148,14 +154,23 @@ export const brainRole = {
       }) + "\n",
       { mode: 0o600 },
     );
-    await mkdir(join(paths.dataDirectory, "codex"), { recursive: true, mode: 0o700 });
+    const codexDataDirectory = join(paths.dataDirectory, "codex");
+    await mkdir(codexDataDirectory, { recursive: true, mode: 0o700 });
     const start = (name, entry, argv = [], extra = {}, options = {}) =>
       agent.start(name, node(root), [runtime(root, entry), ...argv], {
         cwd: paths.runtimeDirectory,
         env: { ...env, ...extra },
         ...options,
       });
-    if (paths.proxyMode === "external") {
+    if (workspaceEgress) {
+      const relay = await startWorkspaceCodexModelRelay({
+        target: paths.workspaceCodexEgress,
+        dataDirectory: codexDataDirectory,
+        controlEndpoint: accountEndpoint,
+        controlToken: accountToken,
+      });
+      agent.defer(() => relay.close());
+    } else if (paths.proxyMode === "external") {
       // The proxy service owns the account Core and its fixed port; Brain only waits for it.
       console.log(
         JSON.stringify({
@@ -188,9 +203,9 @@ export const brainRole = {
       "--endpoint",
       paths.appServerEndpoint,
       "--core-endpoint",
-      paths.coreEndpoint,
+      accountEndpoint,
       "--token-file",
-      paths.tokenPath,
+      accountTokenFile,
       "--control-token-file",
       appServerTokenFile,
       "--codex-executable",
@@ -198,7 +213,7 @@ export const brainRole = {
       "--runtime-directory",
       paths.runtimeDirectory,
       "--data-directory",
-      join(paths.dataDirectory, "codex"),
+      codexDataDirectory,
       "--private-directory",
       paths.codexPrivateDirectory,
       // ENV delivery only: the receiver's launch file in this agent's private run directory.

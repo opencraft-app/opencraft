@@ -20,3 +20,9 @@ export type WorkspaceFileLocation = { readonly kind: 'host' } | {
 export function supportsWorkspaceFiles(value: unknown): boolean {
   return !!value && typeof value === 'object' && (value as {fileScopeVersion?:unknown}).fileScopeVersion === 1;
 }
+
+/** Server-owned starting boundary for the existing Workbench directory picker. */
+export function workspaceProjectDirectoryRoot(value: unknown): string | undefined {
+  const root = value && typeof value === 'object' ? (value as {projectDirectoryRoot?:unknown}).projectDirectoryRoot : undefined;
+  return typeof root === 'string' && root.startsWith('/') && !/[\\\x00-\x1f\x7f]/u.test(root) ? root : undefined;
+}

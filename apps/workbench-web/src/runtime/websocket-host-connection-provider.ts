@@ -8,10 +8,12 @@ import {
   type HostConnectionProvider,
   type HostConnectionProviderRegistrySnapshot,
 } from "@opencraft/workbench-runtime";
+import { serverUrl } from "./server-context";
 
 export interface WebSocketHostConnectionConfig {
   readonly url: string;
   readonly protocols?: string | readonly string[];
+  readonly appHost?: true;
 }
 
 function validateConfig(config: HostConnectionJson): WebSocketHostConnectionConfig & HostConnectionJson {
@@ -44,6 +46,12 @@ function validateConfig(config: HostConnectionJson): WebSocketHostConnectionConf
     throw new TypeError("WebSocket credentials must not be embedded in the URL");
   }
   const rawProtocols = record.protocols;
+  if (record.appHost !== undefined) {
+    const endpoint = new URL(serverUrl("/apphost"), window.location.href);
+    endpoint.protocol = endpoint.protocol === "https:" ? "wss:" : "ws:";
+    if (record.appHost !== true || url.href !== endpoint.href || rawProtocols !== undefined)
+      throw new TypeError("AppHost requires the deployment's own WebSocket endpoint");
+  }
   let protocols: string | readonly string[] | undefined;
   if (typeof rawProtocols === "string") {
     protocols = rawProtocols.trim();
@@ -59,6 +67,7 @@ function validateConfig(config: HostConnectionJson): WebSocketHostConnectionConf
   }
   return Object.freeze({
     url: url.href,
+    ...(record.appHost === true ? { appHost: true } : {}),
     ...(protocols === undefined ? {} : { protocols }),
   }) as WebSocketHostConnectionConfig & HostConnectionJson;
 }
@@ -74,6 +83,7 @@ export const WebSocketHostConnectionProvider: HostConnectionProvider = {
   validate: validateConfig,
   createTransport(config) {
     const validated = validateConfig(config);
+    if (validated.appHost) throw new Error("This deployment has no AppHost transport");
     const protocols = validated.protocols;
     return new WebSocketTransport({
       url: validated.url,
@@ -125,3 +135,21 @@ export const BuiltinWebSocketHostConnectionExtension: TrustedExtensionDefinition
     api.internal.register("hostConnectionProvider", WebSocketHostConnectionProvider);
   },
 };
+
+export function createDeploymentWebSocketHostConnectionExtension(
+  openAppHost: (hostId: string) => ReturnType<HostConnectionProvider["createTransport"]>,
+): TrustedExtensionDefinition {
+  return {
+    ...BuiltinWebSocketHostConnectionExtension,
+    activate(api) {
+      const provider: HostConnectionProvider = {
+        ...WebSocketHostConnectionProvider,
+        createTransport(config, context) {
+          const validated = validateConfig(config);
+          return validated.appHost ? openAppHost(context.hostId) : WebSocketHostConnectionProvider.createTransport(validated, context);
+        },
+      };
+      api.internal.register("hostConnectionProvider", provider);
+    },
+  };
+}

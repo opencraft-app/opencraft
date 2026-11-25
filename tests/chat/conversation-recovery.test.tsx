@@ -6,12 +6,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { LocaleRuntime } from "@opencraft/i18n";
 import { IntlRuntimeProvider } from "@opencraft/i18n/react";
 import {
-  connectionRecoveryIsPending,
+  composerConnectionFeedback,
   ConversationRecoveryNotice,
   ConversationRecoveryEmptyState,
   conversationArchivePresentation,
   conversationRecoveryPresentation,
-  conversationRecoveryIsPending,
 } from "../../apps/workbench-web/src/components/conversation-recovery";
 
 test("recovery presentation retains painted history across syncing and failure", () => {
@@ -103,21 +102,6 @@ test('console prints the full allowlisted clipboard snapshot with physical corre
 
 
 
-test("Composer recovery scan follows current recovery, including automatic retries, but stops on terminal errors", async () => {
-  const { createConversationRecoveryDiagnostic } = await import("../../apps/workbench-web/src/runtime/conversation-recovery-diagnostic");
-  const diagnostic = createConversationRecoveryDiagnostic({ stage: "history", error: null, runtime: "ready", transport: {state: "open"} });
-  assert.equal(conversationRecoveryIsPending("none"), false);
-  assert.equal(conversationRecoveryIsPending("cold-loading"), true);
-  assert.equal(conversationRecoveryIsPending("warm-loading"), true);
-  assert.equal(conversationRecoveryIsPending("warm-error"), false);
-  for (const stage of ["connecting", "initializing", "queued", "history", "backoff", "blocked", "failed"] as const) {
-    const observation = { ...diagnostic, progress: { recoveryId: "test", startedAt: 0, stage, stageStartedAt: 0, attempt: 1, events: [] } };
-    assert.equal(conversationRecoveryIsPending("warm-error", observation), stage !== "blocked" && stage !== "failed");
-    assert.equal(conversationRecoveryIsPending("cold-loading", observation), stage !== "blocked" && stage !== "failed");
-    assert.equal(conversationRecoveryIsPending("warm-error", observation, true), false);
-  }
-});
-
 
 test('console prints the full allowlisted clipboard snapshot with physical correlation', async context => {
  const {logConversationRecoveryDiagnostic,conversationRecoveryDiagnosticText,createConversationRecoveryDiagnostic}=await import('../../apps/workbench-web/src/runtime/conversation-recovery-diagnostic');
@@ -130,13 +114,18 @@ test('console prints the full allowlisted clipboard snapshot with physical corre
 });
 
 
-test("Host recovery stays pending independently of retained history or a Thread lease", () => {
-  for (const phase of ["connecting", "reconnecting"]) {
-    assert.equal(connectionRecoveryIsPending(phase), true);
-    assert.equal(conversationRecoveryIsPending("none"), false, "history can already be authoritative");
-    assert.equal(connectionRecoveryIsPending(phase, undefined, true), false);
+test("Composer recovery follows Host connection and stops for terminal or manual failures", () => {
+  for (const [phase, warning, pending] of [
+    ["idle", false, false], ["connecting", false, true], ["ready", false, false],
+    ["reconnecting", true, true], ["error", true, false], ["disposed", false, false],
+  ] as const) {
+    assert.deepEqual(composerConnectionFeedback({ phase }), { warning, pending });
+    assert.deepEqual(composerConnectionFeedback({ phase }, true), { warning, pending: false });
   }
-  for (const phase of ["idle", "ready", "disposed", "error"]) {
-    assert.equal(connectionRecoveryIsPending(phase), false);
+  for (const stage of ["initializing", "backoff", "blocked", "failed"] as const) {
+    const recovery = { recoveryId: "host", startedAt: 0, stage, stageStartedAt: 0, attempt: 1, events: [] };
+    assert.deepEqual(composerConnectionFeedback({ phase: "error", recovery }), { warning: true, pending: stage !== "blocked" && stage !== "failed" });
+    assert.deepEqual(composerConnectionFeedback({ phase: "error", recovery }, true), { warning: true, pending: false });
+    assert.deepEqual(composerConnectionFeedback({ phase: "ready", recovery }), { warning: false, pending: false });
   }
 });

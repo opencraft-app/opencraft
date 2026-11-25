@@ -529,7 +529,10 @@ export class ThreadResumeCoordinatorService extends Service {
     const generation = this.client.connectionGeneration;
     const readCapability = executionEngineExtension(this.client.initializeResult?.capabilities?.extensions,
       threadId, "opencraft/read-history");
-    const supportsWindow = readCapability?.version === 1 && readCapability.initialTurnsPage !== false;
+    const resumeCapability = executionEngineExtension(this.client.initializeResult?.capabilities?.extensions,
+      threadId, OPENCRAFT_RESUME_HISTORY_EXTENSION);
+    const supportsWindow = (readCapability?.version === 1 && readCapability.initialTurnsPage !== false) ||
+      (resumeCapability?.version === 1 && resumeCapability.initialReadPage === true);
     const requestRead = (window: boolean) => this.client.request("thread/read", { threadId, includeTurns: false,
       ...(readCapability?.version === 1 ? { watch: true } : {}),
       ...(window ? { initialTurnsPage: { ...(readCapability?.imageResources === true ? { imageResources: true } : {}), limit: readCapability?.itemDetails === true ? 1 : 10, itemsView: readCapability?.itemDetails === true ? "presentation" as const : "full" as const, sortDirection: "desc" as const } } : {}),

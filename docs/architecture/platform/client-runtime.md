@@ -31,6 +31,13 @@ restart, and partial startup releases its acquired resources. Persisted pagehide
 retains the runtime with its document. Moving between conversations preserves the
 same runtime and application state.
 
+For direct conversation links on a browser deployment, the document bootstrap
+starts the existing AppHost admission and prepares a Host transport while the
+Workbench loads. The application claims that transport once for its selected
+Host. A failed startup, retired document or mismatched Host releases an
+unclaimed connection. Bootstrap acquires the connection only. Conversation
+reads, execution admission and routing remain with Workbench and the Host.
+
 ## PWA edge policy
 
 PwaRuntime reserves native history contacts only when the Apple Home Screen

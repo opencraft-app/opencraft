@@ -42,6 +42,7 @@ export const SANDBOX_ENDPOINT_NAMES = Object.freeze([
   "control",
   "codex-control",
   "codex-native",
+  "codex-bridge",
   "pi",
   "dsh",
   "exec",

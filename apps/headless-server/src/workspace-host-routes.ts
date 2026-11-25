@@ -7,6 +7,16 @@
 // inputs, execution observation) are internal: only another owner holding the
 // binding reaches them, the entry Worker never forwards them.
 import { isWorkspaceId } from "@opencraft/sandbox/uri";
+import { CREDENTIAL_EGRESS_PREFIX } from "@opencraft/account-pool-host/credential-egress";
+
+export function workspaceCodexEgressTarget(origin: unknown, providerId: unknown) {
+  const url = typeof origin === "string" ? URL.parse(origin) : null;
+  if (!url || url.protocol !== "http:" || url.pathname !== "/" || url.search || url.hash || url.username || url.password)
+    throw new Error("Codex workspace egress requires a private HTTP origin");
+  if (typeof providerId !== "string" || !/^[A-Za-z0-9_./:-]{1,256}$/u.test(providerId) || providerId === "." || providerId === "..")
+    throw new Error("Invalid Codex workspace egress provider");
+  return new URL(`${CREDENTIAL_EGRESS_PREFIX}${encodeURIComponent(providerId)}/`, url).href;
+}
 
 /** Public operator paths: `/__opencraft_workspaces/<workspace id>/<operation>`. */
 export const WORKSPACE_HOST_PREFIX = "/__opencraft_workspaces/";
@@ -14,6 +24,19 @@ export const WORKSPACE_HOST_PREFIX = "/__opencraft_workspaces/";
 export const WORKSPACE_HOST_OBJECT_PREFIX = "/__workspace_host/";
 /** Names the workspace a request to the object is for; the object refuses any other. */
 export const WORKSPACE_HOST_HEADER = "x-opencraft-workspace";
+export const WORKSPACE_CODEX_TURN_OPERATION = "codex-turn";
+export const WORKSPACE_CODEX_CONTROL_OPERATION = "codex-turn-control";
+export const WORKSPACE_CODEX_START_OPERATION = "codex-thread-start";
+export const WORKSPACE_CODEX_READ_OPERATION = "codex-thread-read";
+export const WORKSPACE_CODEX_THREAD_LIST_OPERATION = "codex-thread-list";
+export const WORKSPACE_CODEX_MODEL_LIST_OPERATION = "codex-model-list";
+export const WORKSPACE_TERMINAL_OPERATION = "terminal";
+export const WORKSPACE_TERMINAL_COMMAND_OPERATION = "terminal-command";
+export const WORKSPACE_TERMINAL_SESSION_HEADER = "opencraft-terminal-session";
+export const WORKSPACE_TERMINAL_COMMAND_BYTES = 1024 * 1024;
+export const WORKSPACE_TERMINAL_RELEASE_OPERATION = "terminal-release";
+export const WORKSPACE_FILES_OPERATION = "workspace-files";
+export const WORKSPACE_PROJECTS_OPERATION = "workspace-projects";
 
 /** Operator operations and their methods (Node: `workspace-admin.mjs open|sleep|discard`). */
 export const WORKSPACE_HOST_OPERATIONS = Object.freeze({ status: "GET", wake: "POST", sleep: "POST" } as const);
@@ -24,6 +47,21 @@ export const WORKSPACE_HOST_INTERNAL_OPERATIONS = Object.freeze({
   open: "POST",
   inputs: "POST",
   execution: "GET",
+  "codex-health": "GET",
+  "codex-native": "GET",
+  [WORKSPACE_CODEX_READ_OPERATION]: "POST",
+  [WORKSPACE_CODEX_THREAD_LIST_OPERATION]: "POST",
+  [WORKSPACE_CODEX_MODEL_LIST_OPERATION]: "POST",
+  [WORKSPACE_CODEX_START_OPERATION]: "POST",
+  [WORKSPACE_CODEX_TURN_OPERATION]: "POST",
+  [WORKSPACE_CODEX_CONTROL_OPERATION]: "POST",
+  [WORKSPACE_TERMINAL_OPERATION]: "GET",
+  [WORKSPACE_TERMINAL_COMMAND_OPERATION]: "POST",
+  [WORKSPACE_TERMINAL_RELEASE_OPERATION]: "POST",
+  [WORKSPACE_FILES_OPERATION]: "POST",
+  [WORKSPACE_PROJECTS_OPERATION]: "POST",
+  "thread-placement": "POST",
+  "publish-thread-placement": "POST",
 } as const);
 export type WorkspaceHostInternalOperation = keyof typeof WORKSPACE_HOST_INTERNAL_OPERATIONS;
 

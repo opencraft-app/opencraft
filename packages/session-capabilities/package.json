@@ -14,6 +14,8 @@
     "./thread-cli": "./src/thread-cli.ts",
     "./execution-cli": "./src/execution-cli.ts",
     "./credentials": "./src/credentials.ts",
+    "./credential-wire": "./src/credential-wire.ts",
+    "./session-authority": "./src/session-authority.ts",
     "./native-invocation": "./src/native-invocation.ts",
     "./execution-tools": "./src/execution-tools.ts",
     "./thread-cli-instruction": "./src/thread-cli-instruction.ts"

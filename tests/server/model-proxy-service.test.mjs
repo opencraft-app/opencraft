@@ -4,9 +4,14 @@ import { createServer } from 'node:http';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { gzipSync, gunzipSync } from 'node:zlib';
+import { CodexCoreControlClient } from '@opencraft/account-pool-host';
+import { bindHostMachineIdentity, readHostMachineIdentity } from '@opencraft/local-agent-host/machine-identity';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { deploymentPaths, proxyConfiguration } from '../../scripts/container-deployment/paths.mjs';
 import { codexCoreArguments, proxyHealth, waitForProxy } from '../../scripts/container-deployment/proxy-core.mjs';
+import { startWorkspaceCodexModelRelay } from '../../scripts/container-deployment/workspace-codex-model-relay.mjs';
 
 const base = { OPENCRAFT_DATA_DIR: '/var/lib/opencraft', OPENCRAFT_WORKSPACE_DIR: '/workspace' };
 
@@ -15,9 +20,89 @@ test('model proxy mode defaults to embedded and an external proxy requires a fix
   assert.deepEqual(proxyConfiguration({ OPENCRAFT_PROXY_PORT: '45071' }), { proxyMode: 'embedded', proxyPort: 45071 });
   assert.deepEqual(proxyConfiguration({ OPENCRAFT_PROXY_MODE: 'external', OPENCRAFT_PROXY_PORT: '45071' }), { proxyMode: 'external', proxyPort: 45071 });
   assert.throws(() => proxyConfiguration({ OPENCRAFT_PROXY_MODE: 'external' }), /fixed OPENCRAFT_PROXY_PORT/);
-  assert.throws(() => proxyConfiguration({ OPENCRAFT_PROXY_MODE: 'remote' }), /embedded or external/);
+  assert.throws(() => proxyConfiguration({ OPENCRAFT_PROXY_MODE: 'remote' }), /embedded, external or workspace-egress/);
   for (const port of ['80', '65536', '4507a', '1e4', '-1']) assert.throws(() => proxyConfiguration({ OPENCRAFT_PROXY_PORT: port }), /1024 to 65535/);
   assert.equal(deploymentPaths(base).proxyMode, 'embedded');
+});
+
+test('workspace Codex binds its assigned machine and exposes a credential-free streaming model relay', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'opencraft-model-relay-'));
+  const origin = 'http://workspace-model.invalid:8080';
+  const provider = 'configured/responses';
+  const env = {
+    OPENCRAFT_PROXY_MODE: 'workspace-egress',
+    OPENCRAFT_CODEX_EGRESS_ORIGIN: origin,
+    OPENCRAFT_CODEX_EGRESS_PROVIDER: provider,
+  };
+  const path = '/__opencraft_egress/configured%2Fresponses/';
+  const { workspaceCodexEgress: target } = proxyConfiguration(env);
+  assert.equal(target, origin + path);
+  assert.throws(() => proxyConfiguration({ ...env, OPENCRAFT_CODEX_EGRESS_ORIGIN: 'https://workspace-model.invalid' }));
+  assert.throws(() => proxyConfiguration({ ...env, OPENCRAFT_CODEX_EGRESS_ORIGIN: origin + '/other' }));
+  assert.throws(() => proxyConfiguration({ ...env, OPENCRAFT_CODEX_EGRESS_PROVIDER: '..' }));
+  assert.throws(() => proxyConfiguration({ ...env, OPENCRAFT_PROXY_PORT: '45071' }));
+  const machine = randomUUID();
+  await Promise.all([bindHostMachineIdentity(root, machine), bindHostMachineIdentity(root, machine)]);
+  await assert.rejects(bindHostMachineIdentity(root, randomUUID()), /different Host machine/);
+  assert.equal((await readHostMachineIdentity(root)).machineId, machine);
+
+  const endpoint = join(root, 'launch.sock');
+  const controlToken = randomUUID();
+  const seen = [];
+  let remaining;
+  const relay = await startWorkspaceCodexModelRelay({
+    target, dataDirectory: root, controlEndpoint: endpoint, controlToken,
+    async fetchModel(request) {
+      const body = request.headers.get('content-encoding') === 'gzip'
+        ? gunzipSync(Buffer.from(await request.arrayBuffer())).toString()
+        : await request.text();
+      seen.push({ url: request.url, method: request.method, headers: Object.fromEntries(request.headers), body });
+      if (request.method === 'GET') return Response.json({ data: [{ id: 'model' }] });
+      return new Response(new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('first '));
+          remaining = () => {
+            controller.enqueue(new TextEncoder().encode('second'));
+            controller.close();
+          };
+        },
+      }), { headers: { 'content-type': 'text/event-stream', 'set-cookie': 'discard=1' } });
+    },
+  });
+  t.after(async () => { await relay.close(); await rm(root, { recursive: true, force: true }); });
+  await assert.rejects(new CodexCoreControlClient(endpoint, 'wrong').appServerLaunch(), /authentication failed/);
+  const { dataDirectory, launch } = await new CodexCoreControlClient(endpoint, controlToken).appServerLaunch();
+  assert.equal(dataDirectory, root);
+  const setting = launch.args.find(value => value.startsWith('openai_base_url='));
+  const local = JSON.parse(setting.slice('openai_base_url='.length));
+  assert.match(local, /^http:\/\/127\.0\.0\.1:[0-9]+\/v1$/);
+  const headers = {
+    authorization: 'Bearer ' + launch.auth.accessToken,
+    'x-opencraft-account-pool-token': launch.env.OPENCRAFT_CODEX_POOL_AUTH_TOKEN,
+    cookie: 'discard=1',
+  };
+  assert.equal((await fetch(local + '/models')).status, 401);
+  assert.equal((await fetch(local + '/files', { headers })).status, 404);
+  assert.equal(seen.length, 0);
+  const catalog = await fetch(local + '/models?client_version=0.162.1&unknown=omitted', { headers });
+  assert.deepEqual(await catalog.json(), { data: [{ id: 'model' }] });
+  const response = await fetch(local + '/responses', {
+    method: 'POST', headers: { ...headers, 'content-type': 'application/json', 'content-encoding': 'gzip' },
+    body: gzipSync(JSON.stringify({ model: 'fixture' })),
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('set-cookie'), null);
+  const reader = response.body.getReader();
+  const first = await reader.read();
+  assert.equal(new TextDecoder().decode(first.value), 'first ');
+  remaining();
+  const second = await reader.read();
+  assert.equal(new TextDecoder().decode(second.value), 'second');
+  assert.equal((await reader.read()).done, true);
+  assert.deepEqual(seen, [
+    { url: origin + path + 'models?client_version=0.162.1', method: 'GET', headers: { accept: '*/*' }, body: '' },
+    { url: origin + path + 'responses', method: 'POST', headers: { accept: '*/*', 'content-type': 'application/json', 'content-encoding': 'gzip' }, body: '{"model":"fixture"}' },
+  ]);
 });
 
 test('embedded Brain and the proxy service start the same account Core command', () => {

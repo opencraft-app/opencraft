@@ -38,7 +38,7 @@ export interface AppHostServerPort {
 
 export interface AppHostServerOptions {
   /** Trusted Hub access boundary, installed per logical lease before native forwarding. */
-  readonly createRpcAccessSession?: (hostId: string, context: TransportSubmissionContext, emit: (frame: string) => void) => {
+  readonly createRpcAccessSession?: (hostId: string, context: TransportSubmissionContext, emit: (frame: string) => void, leaseId: string) => {
     receive(frame: string): boolean | Promise<boolean>;
     rewrite?(frame:string):string;
     prepare?(frame:string):Promise<void>;
@@ -51,6 +51,8 @@ export interface AppHostServerOptions {
   readonly logicalClientRouting?: boolean;
   /** A process-owned Host outlives every Renderer claim and closes with this server. */
   readonly physicalHostLifetime?: "last-claim" | "server";
+  /** Last generation before rebuilding explicitly restorable transports. */
+  readonly initialHostGeneration?: number;
   readonly createTransport: (
     hostId: string,
     signal?: AbortSignal,
@@ -157,7 +159,7 @@ export class AppHostServer {
   private readonly connections = new Set<AppHostServerConnection>();
   private readonly connectionCleanup = new Set<AppHostServerConnection>();
   private readonly forwardingAdmissions = new WeakMap<object, () => void>();
-  private generationSequence = 0;
+  private generationSequence: number;
   private connectionSequence = 0;
   private closed = false;
   private closeOperation: Promise<void> | null = null;
@@ -165,6 +167,9 @@ export class AppHostServer {
   constructor(private readonly options: AppHostServerOptions) {
     if (!Number.isFinite(options.lifecycleTimeoutMs ?? 20_000) || (options.lifecycleTimeoutMs ?? 20_000) <= 0)
       throw new RangeError("Host lifecycle timeout must be positive and finite");
+    this.generationSequence = options.initialHostGeneration ?? 0;
+    if (!Number.isSafeInteger(this.generationSequence) || this.generationSequence < 0)
+      throw new RangeError("Invalid initial Host generation");
   }
 
   private waitForLifecycle<T>(operation: Promise<T>, stage: "START" | "CLEANUP" | "RESET"): Promise<T> {
@@ -893,7 +898,7 @@ export class AppHostServerConnection {
     current?.session.close();
     const session = this.createRpcAccessSession(hostId, this.submissionContext, frame => {
       if (!this.closed && this.leases.get(key)?.generation === generation) this.deliver(() => this.port.postMessage({type:'host/frame',hostId,leaseId,generation,frame}));
-    });
+    }, leaseId);
     this.accessSessions.set(key,{hostId,leaseId,generation,session});
     return session;
   }

@@ -96,6 +96,8 @@ export function installationAccountAuthorities<Request>({
  * Worker never forwards this path.
  */
 export const ACCOUNT_AUTHORITY_PATH = "/__opencraft_internal/account-authority";
+export const WORKSPACE_CODEX_CATALOG_PATH = "/__opencraft_internal/workspace-codex-catalog";
+export const WORKSPACE_CODEX_MODEL_DIRECTORY_PATH = "/__opencraft_internal/workspace-codex-model-directory";
 
 /**
  * `gate`: the installation's admission gate for the request (a refusal or null);

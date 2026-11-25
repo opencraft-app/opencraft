@@ -62,6 +62,26 @@ test('offline catch-up creates an unread result; retired connections cannot publ
   assert.equal(f.store.unread('host','thread'),false); f.store.dispose();
 });
 
+test('directory completion restores unread without a history request and respects live and read receipts', async () => {
+  const row = (id: string, completedAt: number) => ({
+    id: 'thread', updatedAt: completedAt, latestTurnCompletion: { id, status: 'completed' as const, completedAt },
+  });
+  const f = fixture();
+  await f.store.catchUp(profile, [{ id: 'unknown', updatedAt: 10, latestTurnCompletion: null }, row('offline', 10)], () => true);
+  assert.deepEqual(f.calls, []);
+  assert.equal(f.store.unread('host', 'thread'), true);
+  f.store.acknowledge(f.store.getScope(), 'host', 'thread', 'offline');
+  const restored = fixture(undefined, 0, f.storage);
+  await restored.store.catchUp(profile, [row('offline', 10)], () => true);
+  assert.equal(restored.store.unread('host', 'thread'), false);
+  restored.complete('live');
+  await restored.store.catchUp(profile, [row('older', 9)], () => true);
+  restored.store.acknowledge(restored.store.getScope(), 'host', 'thread', 'live');
+  assert.equal(restored.store.unread('host', 'thread'), false);
+  assert.deepEqual(restored.calls, []);
+  f.store.dispose(); restored.store.dispose();
+});
+
 test('account changes retire pending reads and stale acknowledgements, preserving isolated receipts', async () => {
   let accountScope = 'a'; let changed = () => {};
   const account = {getSnapshot: () => ({readStateScope:accountScope}), subscribe:(listener:any)=>{changed=listener;return()=>{};}};

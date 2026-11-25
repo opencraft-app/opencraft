@@ -8,6 +8,7 @@ import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { nodeSqlDatabase, resolveStoreMigrations } from "@opencraft/sqlite-node";
+import { createBridgeInboxStore, createWorkspaceBridgeInboxStore } from "@opencraft/agent-bridge-host/inbox-store";
 import { applySqlMigrations, hashSqlMigrations, SqlMigrationError } from "@opencraft/sql/migrations";
 import {
   applySqlMigrationFamilies as applyFamilies,
@@ -144,6 +145,10 @@ test("the WorkspaceHost database holds exactly what each Node owner's file holds
     applySqlMigrations(file, hashSqlMigrations(resolveStoreMigrations(id, prefix), sha256Hex));
     expected.push(...objects(file));
   }
+  const inbox = workspaceHostSqlFamilies().find(({ id }) => id === "workspace-bridge-inbox")!;
+  const standaloneInbox = memory();
+  applySqlMigrations(standaloneInbox, inbox.migrations);
+  expected.push(...objects(standaloneInbox));
   const sort = (rows: Record<string, unknown>[]) => rows.map((row) => JSON.stringify(row)).sort();
   assert.deepEqual(sort(objects(database)), sort(expected), "disjoint chains, identical schema");
   assert.deepEqual(
@@ -155,4 +160,49 @@ test("the WorkspaceHost database holds exactly what each Node owner's file holds
     migrateWorkspaceHostSql(database).map((value) => value.applied),
     outcome.map(() => 0),
   );
+});
+
+test("WorkspaceHost upgrades to the Bridge inbox without rewriting existing data and refuses its altered migration", () => {
+  const database = memory();
+  const previous = workspaceHostSqlFamilies().filter(({ id }) => id !== "workspace-bridge-inbox");
+  applySqlMigrationFamilies(database, previous);
+  database.prepare("INSERT INTO opencraft_thread_catalog (thread_id,metadata_json,updated_at,archived,observed_at_ms,revision) VALUES ('kept','{}',12,0,13,1)").run();
+  const before = readSqlMigrationFamilies(database);
+  assert.deepEqual(migrateWorkspaceHostSql(database).at(-1), { id: "workspace-bridge-inbox", status: "fresh", applied: 2, version: 2 });
+  const { "workspace-bridge-inbox": bridge, ...after } = readSqlMigrationFamilies(database);
+  assert.deepEqual(after, before);
+  assert.equal(database.prepare("SELECT thread_id FROM opencraft_thread_catalog").get()?.thread_id, "kept");
+  assert.equal(bridge?.length, 2);
+  database.prepare("UPDATE schema_family_migrations SET checksum=? WHERE family='workspace-bridge-inbox' AND version=1").run("0".repeat(64));
+  assert.throws(() => migrateWorkspaceHostSql(database), refused("history-mismatch"));
+});
+
+test("the Bridge placement migration preserves the original inbox and only a verified restore may archive its suffix", () => {
+  const database = memory();
+  const inbox = workspaceHostSqlFamilies().find(({ id }) => id === "workspace-bridge-inbox")!;
+  applySqlMigrationFamilies(database, [{ ...inbox, migrations: inbox.migrations.slice(0, 1) }]);
+  const producer = { outboxId: "a".repeat(32), acknowledged: 0, high: 2 };
+  const event = { route: '["server","thread"]', generation: "g1", payload: { method: "fixture-event" } };
+  const legacy = createBridgeInboxStore(database, "workspace");
+  const events = [{ ...event, seq: 1 }, { ...event, seq: 2 }];
+  legacy.apply(events, producer);
+  assert.deepEqual(applySqlMigrationFamilies(database, [inbox]), [{ id: inbox.id, status: "migrated", applied: 1, version: 2 }]);
+
+  const store = createWorkspaceBridgeInboxStore(database);
+  store.adoptPlacement("container-1");
+  assert.deepEqual(store.read(), legacy.read());
+  assert.equal(store.cursor(), 2);
+  const restored = { ...producer, acknowledged: 1, high: 1 };
+  assert.throws(() => store.apply("container-1", "snapshot", 1, [], restored), /outside the producer/u);
+  assert.throws(() => store.apply("container-2", undefined, 1, [], restored), /outside the producer/u);
+  assert.throws(() => store.apply("container-2", "snapshot", 1, [], { ...restored, high: 2 }), /batch does not match/u);
+  assert.equal(store.cursor(), 2);
+  assert.equal(store.placement(), "container-1");
+  assert.deepEqual(database.prepare("SELECT seq FROM bridge_inbox_archive").all(), []);
+
+  assert.deepEqual(store.apply("container-2", "snapshot", 1, [], restored), { cursor: 1, inserted: [] });
+  assert.equal(store.placement(), "container-2");
+  assert.deepEqual(store.read().map(row => row.seq), [1]);
+  assert.deepEqual(database.prepare("SELECT placement,seq,payload FROM bridge_inbox_archive").all().map(row => ({ ...row })),
+    [{ placement: "container-1", seq: 2, payload: JSON.stringify(event.payload) }]);
 });

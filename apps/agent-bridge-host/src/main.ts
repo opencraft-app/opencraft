@@ -4,11 +4,14 @@ import { isAbsolute } from 'node:path';
 import { systemdSandboxBackend } from '@opencraft/sandbox-node';
 import { nodeSandboxBackends } from '@opencraft/sandbox-node/runtime';
 import { BridgeHost } from './host.js';
-import { attachGateway } from './server.js';
+import { attachGateway, attachGatewaySocket } from './server.js';
 // Explicit opt-in executable. No imports from existing engine composition.
 const path = process.argv[2];
 if (!path || !isAbsolute(path)) throw Error('Supply an absolute private Host configuration path');
 const config = JSON.parse(await readFile(path, 'utf8'));
+if (config.socketPath !== undefined &&
+    (typeof config.socketPath !== 'string' || !isAbsolute(config.socketPath) || config.port !== undefined || config.cli !== undefined))
+  throw Error('Private Bridge socket requires an absolute path and no loopback CLI listener');
 // The backend is always explicit; there is no fallback to another one.
 const BACKENDS = ['linux-systemd', 'host-process', 'hands-unix'];
 if (!BACKENDS.includes(config.backend) || !isAbsolute(config.database)) throw Error('Explicit supported backend and database required');
@@ -33,9 +36,12 @@ if (config.activate !== undefined) {
   const snapshot = await host.snapshot();
   await host.activate(config.activate, typeof snapshot.current === 'string' ? snapshot.current : '');
 }
-const gateway = await attachGateway(host, config.token, config.port ?? 0);
-launcherEndpoint=new URL('/thread-cli',gateway.url).href;
-process.stdout.write(JSON.stringify({ url: gateway.url, pid: process.pid }) + '\n');
+const gateway = config.socketPath === undefined
+  ? await attachGateway(host, config.token, config.port ?? 0)
+  : await attachGatewaySocket(host, config.token, config.socketPath);
+const address = 'url' in gateway ? { url: gateway.url } : { socketPath: gateway.socketPath };
+if ('url' in gateway) launcherEndpoint=new URL('/thread-cli',gateway.url).href;
+process.stdout.write(JSON.stringify({ ...address, pid: process.pid }) + '\n');
 let closing = false;
 const close = async () => {
   if (closing) return; closing = true;

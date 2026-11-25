@@ -342,8 +342,16 @@ test("durable inbox transaction deduplicates replay including ack-loss and rejec
   const reopened = new GatewayInbox(join(root, "inbox.db"));
   await reopened.storage.ready;
   assert.deepEqual((await reopened.storage.call("inbox", { batch: [event] })).inserted, []);
-  await assert.rejects(reopened.storage.call("inbox", { batch: [{ ...event, seq: 3 }] }), /gap/);
-  assert.equal((await reopened.read()).length, 1);
+  const next = { ...event, seq: 2, payload: { text: "two" } };
+  await assert.rejects(reopened.storage.call("inbox", { batch: [next, { ...event, seq: 4 }] }), /gap/);
+  await assert.rejects(
+    reopened.storage.call("inbox", { batch: [next, { ...event, generation: "other" }] }),
+    /Conflicting replay/,
+  );
+  assert.equal(await reopened.storage.call("cursor"), 1);
+  assert.deepEqual(await reopened.read(1), []);
+  assert.deepEqual((await reopened.storage.call("inbox", { batch: [event, next] })).inserted, [next]);
+  assert.deepEqual((await reopened.read()).map(({ seq }) => seq), [1, 2]);
   await reopened.close();
 });
 

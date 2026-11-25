@@ -3,17 +3,22 @@
 // servers the container owners use: `node:http` and `ws` on a Unix socket, reached
 // through a dial that carries bytes the way an endpoint relay does.
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer as createHttpServer } from "node:http";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 import { WebSocketServer } from "ws";
 import type { SandboxEndpointConnection } from "@opencraft/sandbox";
+import { startControlServer } from "../../apps/codex-core/src/control-server.ts";
+import { startOrchestrationCallbackRelay } from "../../apps/codex-core/src/orchestration-callback-lane.ts";
+import { attachWorkspaceCodex } from "../../apps/headless-server/src/cloudflare/workspace-codex.ts";
 import {
   endpointHttpRequest,
-  endpointJsonRpcRead,
+  endpointJsonRpcRequest,
   openEndpointWebSocket,
   type EndpointDial,
 } from "../../apps/headless-server/src/cloudflare/workspace-link.ts";
@@ -115,7 +120,7 @@ test("WebSocket over an endpoint: handshake, a message beyond 64 KiB, ping, JSON
   assert.equal(JSON.parse(messages[0]!).echo.length, 70_000);
   await socket.close();
   await socket.closed;
-  const result = await endpointJsonRpcRead(dial, "/rpc?token=t", "thread/turns/list", { threadId: "t" });
+  const result = await endpointJsonRpcRequest(dial, "/rpc?token=t", "thread/turns/list", { threadId: "t" });
   assert.deepEqual(result, { data: [{ id: "turn-1", status: "completed" }] });
   assert.deepEqual(requests, ["/rpc?token=t", "/rpc?token=t"]);
   // A refused upgrade fails the open, and a too-large message closes the socket.
@@ -128,4 +133,151 @@ test("WebSocket over an endpoint: handshake, a message beyond 64 KiB, ping, JSON
   await limited.send(JSON.stringify({ method: "echo" }));
   await limited.closed;
   assert.deepEqual(small, []);
+});
+
+test("workspace Codex uses fenced owner endpoints and preserves approval and cancellation across reconnect", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "oc-codex-link-"));
+  const path = join(directory, "native.sock");
+  const callbackPath = join(directory, "callback.sock");
+  const controlPath = join(directory, "control.sock");
+  const http = createHttpServer();
+  const upstream = new WebSocketServer({ server: http });
+  await new Promise<void>((resolve) => http.listen(path, resolve));
+  const requests: { id?: string; method?: string; params?: unknown; result?: unknown }[] = [];
+  upstream.on("connection", (socket) => {
+    socket.on("message", (frame) => {
+      const request = JSON.parse(String(frame));
+      requests.push(request);
+      if (["initialize", "thread/resume", "turn/interrupt"].includes(request.method)) {
+        socket.send(JSON.stringify({ id: request.id, result: {} }));
+      }
+    });
+  });
+  const callbacks = await startOrchestrationCallbackRelay(callbackPath, path, {});
+  const token = randomUUID();
+  let attested = true;
+  let healthy = true;
+  const paths: string[] = [];
+  const control = await startControlServer(controlPath, token, async (request) => {
+    paths.push(request.url ?? "");
+    return {
+      status: healthy || request.url === "/native-health" ? 200 : 503,
+      value: {
+        protocolVersion: 1,
+        pid: 2,
+        codexPid: 3,
+        executionIncarnation: attested ? "native-child-incarnation" : undefined,
+        nativeSocket: "/do-not-dial-an-in-container-path",
+        callbackProtocolVersion: 1,
+        callbackIncarnation: callbacks.incarnation,
+        threadTitleToolVersion: 1,
+      },
+    };
+  });
+  t.after(async () => {
+    await callbacks.close();
+    for (const socket of upstream.clients) socket.terminate();
+    upstream.close();
+    await control.close();
+    await new Promise<void>((resolve) => http.close(() => resolve()));
+    await rm(directory, { recursive: true, force: true });
+  });
+  const dials: string[] = [];
+  const fences: string[] = [];
+  let replace = false;
+  const runtime: Parameters<typeof attachWorkspaceCodex>[0] = {
+    workspaceId: "test-codex",
+    async describe(endpoint) {
+      assert.equal(endpoint.name, "codex-control");
+      return { token };
+    },
+    async connect(endpoint, onData) {
+      dials.push(endpoint.name);
+      return unixDial(endpoint.name === "codex-control" ? controlPath : callbackPath)(onData);
+    },
+    async fenced(endpoint, operation) {
+      fences.push(endpoint.name);
+      const result = await operation();
+      if (replace) throw new Error("Workspace agent incarnation changed");
+      return result;
+    },
+  };
+  const codex = attachWorkspaceCodex(runtime, () => true);
+  assert.deepEqual(await codex.health(), {
+    pid: 3,
+    incarnation: "native-child-incarnation",
+    callbackIncarnation: callbacks.incarnation,
+    supportsThreadTitle: true,
+  });
+  healthy = false;
+  await assert.rejects(codex.health(), /AppServer unavailable/u);
+  assert.equal((await codex.health(true)).pid, 3);
+  healthy = true;
+  attested = false;
+  await assert.rejects(codex.open("stable-host", () => assert.fail()), /AppServer unavailable/u);
+  assert.ok(dials.every((target) => target === "codex-control"));
+  attested = true;
+  replace = true;
+  await assert.rejects(codex.open("stale-host", () => assert.fail()), /incarnation changed/u);
+  replace = false;
+  await assert.rejects(codex.open("invalid&lane", () => assert.fail()), /Invalid Codex callback lane/u);
+
+  async function until<T>(find: () => T | undefined): Promise<T> {
+    const deadline = Date.now() + 3000;
+    for (;;) {
+      const value = find();
+      if (value !== undefined) return value;
+      if (Date.now() > deadline) throw Error("Timed out waiting for native AppServer");
+      await delay(5);
+    }
+  }
+  async function open(id: string) {
+    const messages: Record<string, unknown>[] = [];
+    const socket = await codex.open("stable-host", (frame) => messages.push(JSON.parse(frame)));
+    t.after(() => socket.close());
+    await socket.send(JSON.stringify({
+      id, method: "initialize", params: { clientInfo: { name: "gateway", version: "1" } },
+    }));
+    await until(() => messages.find((message) => message.id === id));
+    await socket.send(JSON.stringify({ method: "initialized" }));
+    return { socket, messages };
+  }
+
+  const first = await open("initialize-first");
+  await until(() => requests.find((request) => request.method === "initialized"));
+  // The first throwaway connection never initialized. Select the real active lane.
+  const native = [...upstream.clients].at(-1)!;
+  native.send(JSON.stringify({
+    id: "approval", method: "item/commandExecution/requestApproval",
+    params: { threadId: "thread", turnId: "turn", itemId: "approval-item" },
+  }));
+  native.send(JSON.stringify({
+    method: "item/agentMessage/delta",
+    params: { threadId: "thread", turnId: "turn", itemId: "assistant", delta: "response" },
+  }));
+  const approval = await until(() => first.messages.find((message) => message.id === "approval"));
+  await until(() => first.messages.find((message) => message.method === "item/agentMessage/delta"));
+  await first.socket.close();
+  await delay(15);
+
+  const second = await open("initialize-second");
+  const pending = await until(() => second.messages.find((message) => message.id === "approval"));
+  assert.equal(pending.__opencraftInteractionKey, approval.__opencraftInteractionKey);
+  const reply = JSON.stringify({ id: "approval", result: { decision: "accept" } });
+  await second.socket.send(reply);
+  await second.socket.send(reply);
+  await second.socket.send(JSON.stringify({
+    id: "interrupt", method: "turn/interrupt", params: { threadId: "thread", turnId: "turn" },
+  }));
+  await until(() => second.messages.find((message) => message.id === "interrupt"));
+  await second.socket.send(JSON.stringify({
+    id: "resume", method: "thread/resume", params: { threadId: "thread" },
+  }));
+  await until(() => second.messages.find((message) => message.id === "resume"));
+  assert.equal(requests.filter((request) => request.id === "approval").length, 1);
+  assert.equal(requests.filter((request) => request.method === "initialize").length, 1);
+  assert.equal(requests.filter((request) => request.method === "turn/interrupt").length, 1);
+  assert.ok(paths.includes("/native-health"));
+  assert.ok(fences.includes("codex-native"));
+  await second.socket.close();
 });

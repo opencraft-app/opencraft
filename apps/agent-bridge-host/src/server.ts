@@ -1,9 +1,10 @@
 import { createServer, type Server } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
+import { chmod } from 'node:fs/promises';
+import { isAbsolute } from 'node:path';
 import { BridgeHost } from './host.js';
-import { object, identifier, type Generation } from './types.js';
-/** Private attachment only. Closing it cannot close the execution owner. */
-export async function attachGateway(host: BridgeHost, token: string, port = 0): Promise<{ server: Server; url: string; close(): Promise<void> }> {
+import { object, identifier, isOutboxId, type Generation } from './types.js';
+function gatewayServer(host: BridgeHost, token: string): Server {
   if (Buffer.byteLength(token) < 32) throw Error('Private Host requires a token of at least 32 bytes');
   const server = createServer(async (request, response) => {
     if(request.url==='/thread-cli') {
@@ -31,7 +32,7 @@ export async function attachGateway(host: BridgeHost, token: string, port = 0): 
           case '/script/show': result=await host.scriptResult(identifier(url.searchParams.get('key')));break;
           case '/health': result = { pid: process.pid, incarnation: host.incarnation, generations: host.diagnostics() }; break;
           case '/command': result = await host.query(identifier(url.searchParams.get('id'))); break;
-          case '/events': result = await host.events(Number(url.searchParams.get('cursor') ?? 0)); break;
+          case '/events': result = await host.events(Number(url.searchParams.get('cursor') ?? 0), undefined, url.searchParams.get('fenced') === '1'); break;
           case '/thread': result = await host.threadState(identifier(url.searchParams.get('serverId')), identifier(url.searchParams.get('threadId'))); break;
           case '/snapshot': result = await host.snapshot(); break;
           case '/maintenance': result = await host.maintenance(); break;
@@ -48,7 +49,12 @@ export async function attachGateway(host: BridgeHost, token: string, port = 0): 
           case '/command': result = await host.accept(body); break;
           case '/observe': result = await host.observe(body); break;
           case '/queue': result = await host.queueRequest(body); break;
-          case '/ack': result = await host.ack(Number(body.cursor)); break;
+          case '/ack': {
+            const { outboxId } = body;
+            if (outboxId !== undefined && !isOutboxId(outboxId)) throw Error('Invalid outbox identity');
+            result = await host.ack(Number(body.cursor), outboxId);
+            break;
+          }
           case '/generation/add': result = await host.add(body as unknown as Generation); break;
           case '/generation/activate': result = await host.activate(identifier(body.id), typeof body.expected === 'string' ? body.expected : ''); break;
           case '/generation/retire': result = await host.retire(identifier(body.id)); break;
@@ -68,8 +74,44 @@ export async function attachGateway(host: BridgeHost, token: string, port = 0): 
     }
   });
   server.requestTimeout = 15_000;
-  await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
+  return server;
+}
+
+function closeGateway(server: Server): Promise<void> {
+  return new Promise((resolve, reject) => {
+    server.close(error => error ? reject(error) : resolve());
+    server.closeIdleConnections();
+  });
+}
+
+function listen(server: Server, address: number | string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    const ready = () => { server.off('error', reject); resolve(); };
+    if (typeof address === 'number') server.listen(address, '127.0.0.1', ready);
+    else server.listen(address, ready);
+  });
+}
+
+/** Private attachment only. Closing it cannot close the execution owner. */
+export async function attachGateway(host: BridgeHost, token: string, port = 0): Promise<{ server: Server; url: string; close(): Promise<void> }> {
+  const server = gatewayServer(host, token);
+  await listen(server, port);
   const address = server.address();
   if (!address || typeof address === 'string') throw Error('Missing Host address');
-  return { server, url: `http://127.0.0.1:${address.port}`, close: () => new Promise<void>((resolve, reject) => { server.close(error => error ? reject(error) : resolve()); server.closeIdleConnections(); }) };
+  return { server, url: `http://127.0.0.1:${address.port}`, close: () => closeGateway(server) };
+}
+
+/** Same authenticated RPC served on the workspace agent's private socket. */
+export async function attachGatewaySocket(host: BridgeHost, token: string, socketPath: string) {
+  if (!isAbsolute(socketPath) || socketPath.includes('\0')) throw Error('Absolute private Bridge socket required');
+  const server = gatewayServer(host, token);
+  await listen(server, socketPath);
+  try {
+    await chmod(socketPath, 0o600);
+  } catch (error) {
+    await closeGateway(server).catch(() => {});
+    throw error;
+  }
+  return { server, socketPath, close: () => closeGateway(server) };
 }

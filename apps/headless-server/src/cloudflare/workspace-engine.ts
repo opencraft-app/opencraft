@@ -16,7 +16,7 @@ import {
   type WorkspaceRuntime,
 } from "@opencraft/sandbox";
 import { createNativeExecutionTurnInspector } from "@opencraft/opencraft-daemon/native-execution-turn-inspector";
-import { endpointHttpRequest, endpointJsonRpcRead, type EndpointDial } from "./workspace-link.js";
+import { endpointHttpRequest, endpointJsonRpcRequest, type EndpointDial } from "./workspace-link.js";
 
 type Runtime = Pick<WorkspaceRuntime, "connect" | "describe" | "fenced" | "workspaceId">;
 
@@ -222,7 +222,7 @@ export function workspaceExecutionRecovery(options: Pick<WorkspaceEngineOptions,
       const path = engineRpcPath(((await options.runtime.describe(endpoint)) as Record<string, unknown>).websocketUrl);
       active++;
       try {
-        return await endpointJsonRpcRead(dialer({ ...options, endpoint }), path, method, params, { signal });
+        return await endpointJsonRpcRequest(dialer({ ...options, endpoint }), path, method, params, { signal });
       } finally {
         active--;
       }

@@ -54,7 +54,7 @@ test("unrelated missing resources and transient failures cannot retire a Thread"
   assert.equal(isRetryableAppServerRpcError(new AppServerRpcError({ code: -32602, message: "bad params", data: { retryable: true } })), false);
 });
 
-function fixture(failure?: { code: number; message: string }, options: { archived?: boolean } = {}) {
+function fixture(failure?: { code: number; message: string }, options: { archived?: boolean; archiveStateInRead?: boolean } = {}) {
   let peer!: InMemoryAppServerPeer;
   let hold = false, release: (() => void) | undefined;
   let rejected = failure, archived = options.archived === true;
@@ -63,11 +63,14 @@ function fixture(failure?: { code: number; message: string }, options: { archive
     const request = JSON.parse(frame); if (request.id === undefined) return;
     const id = request.params?.threadId; requests.push({ method: request.method, id });
     const send = (result: unknown) => reply.send(JSON.stringify({ id: request.id, result }));
-    if (request.method === "initialize") send({ codexHome: "/tmp", platformFamily: "unix", platformOs: "linux", userAgent: "unavailable-test" });
+    if (request.method === "initialize") send({ codexHome: "/tmp", platformFamily: "unix", platformOs: "linux", userAgent: "unavailable-test",
+      ...(options.archiveStateInRead ? { capabilities: { extensions: {
+        "opencraft/thread-lifecycle": { version: 1, archive: true, archiveStateInRead: true },
+      } } } : {}) });
     else if (request.method === "thread/unarchive") { rejected = undefined; archived = false; send({ thread: thread(id) }); }
     else if (request.method === "thread/read") {
       if (rejected && id === "old") { reply.send(JSON.stringify({ id: request.id, error: { ...rejected, data: { retryable: true } } })); return; }
-      const complete = () => send({ thread: thread(id, archived && id === "old" ? { archived: true } : {}), model: "test", modelProvider: "test", cwd: "/workspace",
+      const complete = () => send({ thread: thread(id, options.archiveStateInRead || (archived && id === "old") ? { archived: archived && id === "old" } : {}), model: "test", modelProvider: "test", cwd: "/workspace",
         approvalPolicy: "on-request", approvalsReviewer: "user", runtimeWorkspaceRoots: ["/workspace"],
         sandbox: { type: "workspaceWrite", writableRoots: ["/workspace"] }, initialTurnsPage: { data: archived && id === "old"
           ? [{ id: "turn-1", status: "completed", itemsView: "full", items: [{ id: "item-1", type: "agentMessage", text: "archived history" }] }]
@@ -120,6 +123,23 @@ test("a fresh read of an archived Thread keeps its transcript and reports the re
     assert.equal(lease.getSnapshot().authoritative, true);
     lease.release();
   } finally { await f.runtime.dispose(); }
+});
+
+test("direct Thread reads use the Host archive state without loading the archive directory", async () => {
+  for (const archived of [false, true]) {
+    const f = fixture(undefined, { archived, archiveStateInRead: true });
+    try {
+      const lease = await f.runtime.acquireThread("old");
+      await settle();
+      assert.equal(f.runtime.resources.threads.getUnavailableReason!("old"), archived ? "archived" : null);
+      assert.equal(lease.getSnapshot().authoritative, !archived);
+      if (archived) assert.ok(lease.getSnapshot().timeline.frames.length > 0);
+      assert.deepEqual(f.requests.filter(r => ["thread/read", "thread/list", "thread/resume"].includes(r.method)), [
+        { method: "thread/read", id: "old" },
+      ]);
+      lease.release();
+    } finally { await f.runtime.dispose(); }
+  }
 });
 
 test("archive acknowledgement allows passive history reconnect; execution remains archived until restore", async () => {
@@ -194,3 +214,78 @@ test("fresh archived routes discover lifecycle and read history without activati
     lease.release();
   } finally { await runtime.dispose(); }
 });
+
+for (const mode of ["missing-history", "cached-history", "already-queued", "archived"] as const) {
+  test(`admitted Turn start on a sleeping Host with ${mode}`, async () => {
+    let running = false;
+    const { createConversationKey } = await import("@opencraft/chat-core");
+    const intent = { commandId: "original-command", clientMessageId: "original-input",
+      target: { type: "existing-thread", key: createConversationKey("sleeping", "old") },
+      document: { version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text: "Wake only to answer" }] }] },
+      attachments: [], context: [], selections: {}, options: { autoContext: false }, createdAt: 1,
+    } satisfies import("@opencraft/composer-core").SubmitIntent;
+    let rows: readonly import("@opencraft/chat-runtime").ConversationOutboxEntry[] =
+      mode === "already-queued" ? [{ intent, state: "waiting" }] : [];
+    const methods: string[] = [];
+    const sent: string[] = [];
+    const turn = { id: "wake-turn", status: "completed", itemsView: "full", items: [
+      { id: "wake-user", type: "userMessage", clientUserMessageId: "original-input", content: [{ type: "text", text: "Wake only to answer" }] },
+    ] };
+    const transport = new MemoryTransport({ receive(frame, peer) {
+      const request = JSON.parse(frame);
+      if (request.id === undefined) return;
+      methods.push(request.method);
+      const send = (result: unknown) => peer.send(JSON.stringify({ id: request.id, result }));
+      if (request.method === "initialize") {
+        send({ codexHome: "/tmp", platformFamily: "unix", platformOs: "linux", userAgent: "sleeping-host",
+          capabilities: { extensions: {
+            "opencraft/thread-follow-up": { version: 1, queue: false, directTurnStart: true },
+            "opencraft/thread-lifecycle": { version: 1, archive: true, archiveStateInRead: true },
+            "opencraft/method-access": { version: 1, methods: ["initialize", "thread/read", "thread/resume", "turn/start", "model/list"], clientDynamicTools: false },
+          } } });
+      } else if (request.method === "thread/read") {
+        if (running || mode === "cached-history") {
+          send({ thread: thread("old", { archived: false }), initialTurnsPage: { data: running ? [turn] : [], nextCursor: null } });
+        } else {
+          peer.send(JSON.stringify({ id: request.id, error: {
+            code: -32073, message: "History is unavailable while the workspace sleeps",
+            data: { code: "WORKSPACE_HISTORY_ASLEEP", archived: mode === "archived" },
+          } }));
+        }
+      } else if (request.method === "turn/start") {
+        assert.equal(request.params.threadId, "old");
+        sent.push(request.params.clientUserMessageId);
+        running = true;
+        send({ turn });
+      } else if (request.method.endsWith("/list")) send({ data: [], nextCursor: null });
+      else if (request.method === "thread/resume") assert.fail("Sending uses native Turn admission before any Resume");
+      else send({});
+    } });
+    const runtime = createAppServerWorkbenchRuntime({ hostId: "sleeping", transport, autoReconnect: false, requestTimeoutMs: 1000,
+      outbox: { read: () => rows, write: (_, next) => { rows = structuredClone(next); }, subscribe: () => () => {} } });
+    try {
+      const lease = await runtime.acquireThread("old");
+      lease.setRecoveryVisibility(true);
+      await settle();
+      if (mode !== "already-queued") {
+        assert.equal(running, false, "viewing the chat did not submit a Turn");
+        assert.equal(lease.getSnapshot().authoritative, mode === "cached-history");
+      }
+      const submit = () => lease.submit(intent);
+      if (mode === "archived") {
+        await assert.rejects(submit, /archived/i);
+        assert.equal(running, false);
+      } else {
+        if (mode !== "already-queued") await submit();
+        for (let i = 0; i < 100 && (!sent.length || rows.length > 0 || !lease.getSnapshot().authoritative); i++)
+          await new Promise(resolve => setTimeout(resolve, 5));
+        assert.deepEqual(sent, ["original-input"], JSON.stringify({ methods, rows, phase: runtime.getSnapshot().phase, error: lease.getSnapshot().error?.message }));
+        assert.equal(rows.length, 0, "the original outbox entry was retired after native acceptance");
+        assert.ok(lease.getSnapshot().authoritative, "history became authoritative after sending");
+      }
+      assert.ok(!methods.includes("thread/resume"));
+      assert.ok(!methods.includes("thread/queue/add"));
+      lease.release();
+    } finally { await runtime.dispose(); }
+  });
+}

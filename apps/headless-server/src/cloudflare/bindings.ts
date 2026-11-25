@@ -46,6 +46,8 @@ export interface AccountCoreEnv {
    * stays closed; it never stores a credential unsealed.
    */
   readonly OPENCRAFT_ACCOUNT_SEALING_KEY?: string;
+  /** One-time model document and credential seed for a deployment without a model document. */
+  readonly OPENCRAFT_ACCOUNT_MODEL_BOOTSTRAP?: string;
   /**
    * The account maintenance executor (a service binding to the maintenance
    * container's front door), which runs a provider's OAuth renewal for the
@@ -66,6 +68,16 @@ export interface DeploymentEnv extends InstallationCoreEnv, AccountCoreEnv {
  * Names are the installation's, not the platform's.
  */
 export interface InstallationCoreEnv {
+  readonly WORKSPACE_HOST?: WorkspaceHostNamespace;
+  /** Opt-in workspace for projectless Codex Thread creation. */
+  readonly OPENCRAFT_WORKSPACE_CODEX_DEFAULT?: string;
+  /** Routes projectless creation to an Actor's own workspace. Existing placements remain authoritative. */
+  readonly OPENCRAFT_WORKSPACE_CODEX_ISOLATE_ACTORS?: string;
+  /** Requires a Hands image exposing the scoped file owner endpoint. */
+  readonly OPENCRAFT_WORKSPACE_CODEX_FILES?: string;
+  /** Enable the native project catalog within isolated Codex workspaces. */
+  readonly OPENCRAFT_WORKSPACE_CODEX_PROJECTS?: string;
+  readonly OPENCRAFT_WORKSPACE_CODEX_TURNS?: string;
   /** The installation's single InstallationCore object. */
   readonly INSTALLATION_CORE: InstallationCoreNamespace;
   /**
@@ -83,6 +95,11 @@ export interface InstallationCoreEnv {
 /** `ctx` of a WorkspaceHost object: storage with the object's single alarm, and its container. */
 export interface WorkspaceHostState {
   readonly storage: InstallationCoreStorage;
+  readonly exports?: {
+    WorkspaceCodexModelEgress?(options: { props: { workspace: string; nonce: string } }): {
+      fetch(request: Request): Promise<Response>;
+    };
+  };
   /** `ctx.container` when the class is bound to a container application; absent otherwise. */
   readonly container?: DurableObjectContainer;
   blockConcurrencyWhile<T>(callback: () => Promise<T>): Promise<T>;
@@ -99,14 +116,31 @@ export type WorkspaceHostNamespace = InstallationCoreNamespace;
  * Non-secret configuration only: the container holds no credential and neither do these.
  */
 export interface WorkspaceHostEnv {
+  readonly ACCOUNT_CORE?: AccountCoreNamespace;
+  readonly OPENCRAFT_WORKSPACE_CODEX_FILES?: string;
+  readonly OPENCRAFT_WORKSPACE_CODEX_PROJECTS?: string;
+  readonly OPENCRAFT_WORKSPACE_CODEX_TURNS?: string;
+  /** Requires an image whose startup supports restoring captured filesystems. */
+  readonly OPENCRAFT_WORKSPACE_CODEX_SNAPSHOTS?: string;
+  /** Start the packaged Bridge Host and require its private endpoint on operator wake. */
+  readonly OPENCRAFT_WORKSPACE_CODEX_BRIDGE_ENDPOINT?: string;
+  readonly INSTALLATION_CORE?: InstallationCoreNamespace;
   /** Name of the workspace image in `ctx.container.images`; default `workspace`. */
   readonly OPENCRAFT_WORKSPACE_IMAGE?: string;
   /** Idle policy (workspace-host-split §3.7.2): milliseconds, or `resident`; default 15 minutes. */
   readonly OPENCRAFT_WORKSPACE_IDLE?: string;
-  /** Engines of the workspace's Engine Host, comma-separated; default `pi`. */
+  /**
+   * Engines of the workspace, comma-separated; default `pi`. An image with
+   * the separate Codex AppServer can add `codex` beside its Engine Host.
+   */
   readonly OPENCRAFT_WORKSPACE_ENGINES?: string;
+  /** Private HTTP intercept origin and configured AccountCore provider identity. */
+  readonly OPENCRAFT_WORKSPACE_CODEX_EGRESS_ORIGIN?: string;
+  readonly OPENCRAFT_WORKSPACE_CODEX_EGRESS_PROVIDER?: string;
   /** Interpreter in the image for the shared broker and endpoint relay; default `/usr/bin/python3`. */
   readonly OPENCRAFT_WORKSPACE_PYTHON?: string;
+  /** Non-root numeric uid:gid of the workspace image's broker processes. */
+  readonly OPENCRAFT_WORKSPACE_USER?: string;
 }
 
 /** Everything the deployment's entry Worker routes with. */

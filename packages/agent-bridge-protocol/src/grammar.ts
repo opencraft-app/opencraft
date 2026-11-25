@@ -54,8 +54,17 @@ export type ItemShape =
       readonly content?: readonly Readonly<Record<string, unknown>>[];
     }
   | { readonly kind: "agentMessage"; readonly text: string }
-  | { readonly kind: "reasoning"; readonly text: string }
+  | { readonly kind: "reasoning"; readonly text: string; readonly summary?: readonly string[]; readonly content?: readonly string[] }
   | { readonly kind: "plan"; readonly text: string }
+  | {
+      readonly kind: "fileChange";
+      readonly status: "inProgress" | "completed" | "failed" | "declined";
+      readonly changes: readonly {
+        readonly path: string;
+        readonly diff: string;
+        readonly kind: { readonly type: "add" | "delete" } | { readonly type: "update"; readonly move_path: string | null };
+      }[];
+    }
   | {
       /** A generic provider tool: projects to an existing dynamicToolCall. */
       readonly kind: "tool";
@@ -70,6 +79,8 @@ export type ItemShape =
       readonly cwd: string;
       readonly status: "inProgress" | "completed" | "failed";
       readonly output?: string | null;
+      readonly exitCode?: number | null;
+      readonly durationMs?: number | null;
     };
 
 export interface TurnOpenDelta extends DeltaBase {

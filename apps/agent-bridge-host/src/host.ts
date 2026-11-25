@@ -869,11 +869,11 @@ export class BridgeHost {
   async snapshot(): Promise<any> {
     return { ...(await this.storage.call("snapshot")), databaseOutcome: await this.storage.ready };
   }
-  events(cursor: number, limit = 256): Promise<any> {
-    return this.storage.call("events", { cursor, limit });
+  events(cursor: number, limit = 256, fenced = false): Promise<any> {
+    return this.storage.call("events", { cursor, limit, fenced });
   }
-  async ack(cursor: number): Promise<void> {
-    await this.storage.call("ack", { cursor });
+  async ack(cursor: number, outboxId?: string): Promise<void> {
+    await this.storage.call("ack", { cursor, outboxId });
     await this.drain();
   }
   /** Retries draining generations; a migration in flight may still hand its route back to one. */

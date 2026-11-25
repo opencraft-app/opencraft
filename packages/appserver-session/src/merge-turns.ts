@@ -169,8 +169,14 @@ function mergeHistoryTurn(
       ? existingItems
       : mergeOrderedWindow(existingItems, historyItems,
         historyIsOlder ? "before" : "after", mergeItem);
-  const items = observationBaseline === undefined ? hydratedItems
-    : retainObservedRows(hydratedItems, existingItems, observedSinceRequest);
+  // Native history Item membership does not include turn/plan/updated.
+  // Keep live plan observations until the Turn settles, including on the
+  // first history read after Draft promotion.
+  const keepLivePlan = history.status === "inProgress" && !isTerminalTurn(existing);
+  const items = observationBaseline !== undefined || keepLivePlan
+    ? retainObservedRows(hydratedItems, existingItems, item =>
+      observedSinceRequest(item) || (keepLivePlan && item.type === "todo-list"))
+    : hydratedItems;
   // Updates are immutable in ThreadViewStore. Compare against the request's
   // captured baseline, not a clock or guessed Item revision. Only fields that
   // actually changed during the read override the snapshot's metadata.

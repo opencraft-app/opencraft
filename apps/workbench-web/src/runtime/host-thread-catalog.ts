@@ -2,7 +2,7 @@ import { beginObservedOperation } from "./observability";
 import type { SshConnectionView, SshServerDescriptor } from "@opencraft/app-host-protocol";
 import type { HostConnectionProfile } from "@opencraft/workbench-runtime";
 import type { AppServerWorkbenchRuntime, HostRuntimeRegistry } from "@opencraft/workbench-runtime";
-import type { ThreadListResponse } from "@opencraft/appserver-protocol/generated/v2";
+import type { ThreadListResponse } from "@opencraft/appserver-protocol";
 import { managedCatalogDiscoveryPhase, mergeThreadCatalogPages } from "./thread-catalog-query";
 
 /** Read-only application projection; the backend remains the SSH authority. */

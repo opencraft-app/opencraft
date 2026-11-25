@@ -13,11 +13,12 @@ import type { LocalAccountApplication } from "@opencraft/plugin-local-account/ap
 import type { ServerSpacesRuntime } from "@opencraft/access-control/server-spaces";
 import type { ThreadAccessStore } from "@opencraft/access-control/thread-access";
 import type { Collaboration, CollaborationHttpApi } from "@opencraft/access-control/collaboration";
-import type { OrchestrationRuntimeWorker } from "@opencraft/access-control/orchestration-runtime-store";
+import type { OrchestrationRuntimeClient } from "@opencraft/access-control/orchestration-runtime-client";
 import type { ThreadOrchestrationBroker } from "@opencraft/access-control/thread-orchestration-broker";
 import type { CapabilityBindingProjection } from "@opencraft/session-capabilities/binding-projection";
 import type { KeyMaterial } from "@opencraft/secret-storage";
 import type { StateDocumentStore } from "@opencraft/document-storage/state";
+import type { HttpExchangeHandler } from "@opencraft/http-exchange";
 import type { TurnPushOptions, TurnPushService } from "@opencraft/web-push-node";
 import type { LoginAttemptLimiter } from "@opencraft/identity-core/login-attempts";
 import type { OwnerWake } from "@opencraft/owner-wake";
@@ -108,6 +109,12 @@ export interface InstallationServerInformation {
 /** An HTTP handler that answers its own routes and declines the rest. */
 export type InstallationHttpService = (request: unknown, response: unknown) => Promise<boolean>;
 
+type ActorHttpService = HttpExchangeHandler<Parameters<ActorAccess["authenticate"]>[0]>;
+export interface InstallationPersonalAccountServices {
+  readonly accountModelDefaultsService: ActorHttpService;
+  readonly threadReadReceiptsService: ActorHttpService;
+}
+
 /** A store with a close the shutdown order calls. */
 export interface InstallationClosable {
   close(): unknown;
@@ -116,7 +123,7 @@ export interface InstallationClosable {
 
 export interface InstallationAssembly {
   /** Orchestration runtime storage on the core owner's connection; opened right after the owner. */
-  openOrchestrationStorage(): OrchestrationRuntimeWorker;
+  openOrchestrationStorage(): OrchestrationRuntimeClient;
   /** Opens instance membership when any admission source is configured; otherwise `undefined`. */
   openMembership(options: {
     hub: InstallationHub;
@@ -178,6 +185,7 @@ export interface InstallationAssembly {
    * the App Host is read through its late binding, `codexBridge` is called
    * once the broker is ready.
    */
+  openCollaboration(): Promise<{ actorCollaboration: Collaboration; actorCollaborationApi: CollaborationHttpApi }>;
   openCollaboration(options: {
     conversationExecution: InstallationConversationExecution;
     operator: InstallationOperator;
@@ -211,13 +219,13 @@ export interface InstallationAssembly {
   /** Server information over the given document store. */
   openServerInformation(documents: StateDocumentStore): {
     serverInformation: InstallationServerInformation;
-    serverInformationService: InstallationHttpService;
+    serverInformationService: ActorHttpService;
   };
-  /** Personal model defaults and personal SSH keys of the signed-in Human. */
-  openPersonalServices(options: { sshLogin: boolean }): Promise<{
-    accountModelDefaultsService: InstallationHttpService;
+  /** Personal defaults and receipts of the signed-in Human, optionally with SSH key management. */
+  openPersonalServices(options: { sshLogin?: undefined }): Promise<InstallationPersonalAccountServices>;
+  openPersonalServices(options: { sshLogin: boolean }): Promise<InstallationPersonalAccountServices & {
     personalSshKeys: ActorSshKeys;
-    actorSshKeysService: InstallationHttpService;
+    actorSshKeysService: ActorHttpService;
   }>;
   /**
    * Turn push subscriptions; the root's factories open the store and
