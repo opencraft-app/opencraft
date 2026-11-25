@@ -16,6 +16,8 @@ export interface CodexOwnerPort {
     sessionMcp?: Record<string, unknown> | null,
   ): Promise<void>;
   request(method: string, params: Record<string, unknown>): Promise<unknown>;
+  /** Passive history may use a separate connection from execution. */
+  readHistory?(method: string, params: Record<string, unknown>): Promise<unknown>;
 }
 export class CodexBridgeError extends Error {
   constructor(

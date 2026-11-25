@@ -11,7 +11,7 @@
  */
 
 /** Default cap on a single JSONL line, in bytes (UTF-8). */
-export const BRIDGE_MAX_FRAME_BYTES = 1_048_576;
+export const BRIDGE_MAX_FRAME_BYTES = 10 * 1024 * 1024;
 
 export interface BridgeFrameLimits {
   readonly maxFrameBytes: number;

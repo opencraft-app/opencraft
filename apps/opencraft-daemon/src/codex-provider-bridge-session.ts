@@ -985,6 +985,8 @@ export class CodexProviderBridgeSession implements DuplexTransport {
       await task;
     } catch (cause) {
       const error = cause as Error & { code?: number; kind?: string; commandId?: string };
+      const oversizedHistory = error.kind === "frame-too-large"
+        && ["thread/read", "thread/turns/list", "thread/items/list"].includes(method);
       const rejected =
         ["explicit-reject", "stale-target", "invalid", "unsupported"].includes(error.kind ?? "") ||
         [-32002, -32601, -32602].includes(error.code ?? 0);
@@ -993,10 +995,11 @@ export class CodexProviderBridgeSession implements DuplexTransport {
           {
             id: frame.id,
             error: {
-              code: error.code ?? -32005,
+              code: oversizedHistory ? -32072 : error.code ?? -32005,
               message: error.message,
               data: {
-                submissionOutcome: rejected ? "rejected" : "unknown",
+                ...(oversizedHistory ? { code: "HISTORY_RESPONSE_TOO_LARGE" } : {}),
+                submissionOutcome: oversizedHistory || rejected ? "rejected" : "unknown",
                 retryable: false,
                 bridgeErrorKind: error.kind ?? (rejected ? "explicit-reject" : "unknown-outcome"),
                 bridgeCommandId: error.commandId,

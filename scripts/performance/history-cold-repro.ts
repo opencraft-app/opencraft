@@ -21,7 +21,7 @@ const repo = resolve(value("--repo", process.cwd()));
 const load = (path: string) => import(pathToFileURL(join(repo, path)).href);
 const { startCodexCore } = await load("apps/codex-core/src/main.ts");
 const { CodexEngineAdapter } = await load("apps/opencraft-daemon/src/codex-engine-adapter.ts");
-const { CodexCoreReadIsolation } = await load("apps/opencraft-daemon/src/codex-core-read-isolation.ts");
+const { CodexCoreReadIsolation } = await load("packages/account-pool-host/src/codex-core-read-isolation.ts");
 const { CodexCoreControlClient } = await load("packages/account-pool-host/src/index.ts");
 const { AppHostServer } = await load("packages/app-host-server/src/index.ts");
 const { MessagePortAppHostClient } = await load("packages/app-host-client/src/index.ts");

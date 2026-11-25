@@ -1,9 +1,10 @@
 import { readFile, lstat } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
-import { decodeFrame, encodeFrame, isRequest, splitLines, type BridgeWireMessage } from '@opencraft/agent-bridge-protocol';
+import { BRIDGE_MAX_FRAME_BYTES, decodeFrame, encodeFrame, isRequest, isSuccess, splitLines, type BridgeWireMessage } from '@opencraft/agent-bridge-protocol';
 import { CodexOwnerConnection } from './codex-owner.js';
 import { CodexBridgeRuntime } from './codex-runtime.js';
+import { CodexBridgeError } from './codex.js';
 
 async function main() {
 const path = process.argv[2];
@@ -20,10 +21,17 @@ let runtime: CodexBridgeRuntime;
 let outputBytes = 0;
 let output = Promise.resolve();
 const send = (message: BridgeWireMessage) => {
-  const frame = encodeFrame(message) + '\n', bytes = Buffer.byteLength(frame);
-  if (bytes > 1_048_576 || outputBytes + bytes > 8 * 1024 ** 2) { owner.close(); process.stdin.destroy(); throw Error('Bridge output capacity exceeded'); }
+  const frame = encodeFrame(message), frameBytes = Buffer.byteLength(frame);
+  if (frameBytes > BRIDGE_MAX_FRAME_BYTES && isSuccess(message))
+    throw new CodexBridgeError('frame-too-large', 'Bridge response exceeds the frame limit');
+  const bytes = frameBytes + 1; // The JSONL delimiter is outside the frame.
+  if (frameBytes > BRIDGE_MAX_FRAME_BYTES || outputBytes + bytes > 4 * (BRIDGE_MAX_FRAME_BYTES + 1) + 1024 * 1024) {
+    owner.close();
+    process.stdin.destroy();
+    throw Error('Bridge output capacity exceeded');
+  }
   outputBytes += bytes;
-  output = output.then(() => new Promise<void>((resolve, reject) => process.stdout.write(frame, error => error ? reject(error) : resolve()))).finally(() => { outputBytes -= bytes; });
+  output = output.then(() => new Promise<void>((resolve, reject) => process.stdout.write(frame + '\n', error => error ? reject(error) : resolve()))).finally(() => { outputBytes -= bytes; });
   void output.catch(() => { owner.close(); process.stdin.destroy(); process.exitCode = 1; });
 };
 const owner = new CodexOwnerConnection(config.endpoint, config.token,

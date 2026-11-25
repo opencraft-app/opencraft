@@ -2,6 +2,8 @@ import { refreshCodexExecutionConfiguration } from "@opencraft/codex-execution";
 import WebSocket from 'ws';
 import { isDeepStrictEqual } from 'node:util';
 import { CodexCoreControlClient, openCodexNativeSocket } from '@opencraft/account-pool-host';
+import { CodexCoreReadIsolation } from '@opencraft/account-pool-host/codex-core-read-isolation';
+import { BRIDGE_MAX_FRAME_BYTES } from '@opencraft/agent-bridge-protocol';
 import { codexDeclaration } from './codex-declaration.js';
 import { CodexBridgeError, type CodexOwnerPort } from './codex.js';
 
@@ -10,8 +12,9 @@ import { CodexBridgeError, type CodexOwnerPort } from './codex.js';
 export class CodexOwnerConnection implements CodexOwnerPort {
   private brokerAuth?: { accessToken: string; chatgptAccountId: string };
   private socket?: WebSocket;
+  private historyReads?: CodexCoreReadIsolation;
   private sequence = 0;
-  private pending = new Map<number, { resolve(value: unknown): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout>; method: string; threadId?:unknown; includeTurns?:unknown; initial?:Record<string,unknown>; observedTurn?:boolean }>();
+  private pending = new Map<number, { resolve(value: unknown): void; reject(error: Error): void; timer?: ReturnType<typeof setTimeout>; method: string; threadId?:unknown; includeTurns?:unknown; initial?:Record<string,unknown>; observedTurn?:boolean }>();
   private failed = false;
   serverInfo: unknown;
   constructor(private endpoint: string, private token: string,
@@ -27,7 +30,10 @@ export class CodexOwnerConnection implements CodexOwnerPort {
     const [nativeSocket, auth] = await Promise.all([
       this.nativeSocket ?? control.health().then(health => health.nativeSocket), control.brokerAuth()]);
     this.brokerAuth = auth;
-    this.socket = openCodexNativeSocket(nativeSocket, { maxPayload: 1_048_576, handshakeTimeout: 5000 });
+    this.socket = openCodexNativeSocket(nativeSocket, { maxPayload: BRIDGE_MAX_FRAME_BYTES, handshakeTimeout: 5000 });
+    this.historyReads = new CodexCoreReadIsolation(async () => ({ nativeSocket }), {
+      maxPayload: BRIDGE_MAX_FRAME_BYTES, concurrency: 4, queue: 64, timeoutMs: 30_000,
+    });
     const socket = this.socket;
     socket.on('message', data => {
       let frame: unknown;
@@ -121,6 +127,10 @@ export class CodexOwnerConnection implements CodexOwnerPort {
     this.pending.delete(p.id); clearTimeout(pending.timer);
     if ('result' in p) { pending.resolve(p.result); return; }
     const error = p.error as { code?: number; message?: string } | undefined;
+    if (error?.code === -32072) {
+      pending.reject(new CodexBridgeError('frame-too-large', 'History response is too large; use a smaller history page'));
+      return;
+    }
     const message = typeof error?.message === 'string' ? error.message : '';
     // Fixed native stale diagnostics; no substring inference for auth/quota or
     // transport failures. A native stale reply is a definitive rejection.
@@ -142,22 +152,38 @@ export class CodexOwnerConnection implements CodexOwnerPort {
     if (this.failed || this.socket?.readyState !== WebSocket.OPEN) throw new CodexBridgeError('unknown-outcome', 'Core connection unavailable');
     this.socket.send(JSON.stringify(value));
   }
-  request(method: string, params: Record<string, unknown>,timeoutMs=30_000): Promise<unknown> {
+  readHistory(method: string, params: Record<string, unknown>): Promise<unknown> {
+    if (!this.historyReads || this.failed)
+      return Promise.reject(new CodexBridgeError('unknown-outcome', 'History read connection is unavailable'));
+    return this.requestNative(method, params, 30_000, this.historyReads);
+  }
+  request(method: string, params: Record<string, unknown>, timeoutMs = 30_000): Promise<unknown> {
+    return this.requestNative(method, params, timeoutMs);
+  }
+  private requestNative(method: string, params: Record<string, unknown>, timeoutMs: number, historyReads?: CodexCoreReadIsolation): Promise<unknown> {
     if (this.pending.size >= 256) return Promise.reject(new CodexBridgeError('explicit-reject', 'Native request capacity reached'));
     const initial=method==='turn/start'&&typeof params.threadId==='string'?this.initialConfigurations.get(params.threadId):undefined;
     if(method==='turn/start'&&typeof params.threadId==='string')this.initialConfigurations.delete(params.threadId);
     const initialConfig=method==='thread/start'&&params.config&&typeof params.config==='object'?structuredClone(params.config) as Record<string,unknown>:undefined;
     const id = ++this.sequence;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { this.pending.delete(id); reject(new CodexBridgeError('unknown-outcome', 'Native request outcome unknown')); }, timeoutMs);
+      const timer = historyReads ? undefined : setTimeout(() => { this.pending.delete(id); reject(new CodexBridgeError('unknown-outcome', 'Native request outcome unknown')); }, timeoutMs);
       this.pending.set(id, { resolve:value=>{
         if(method==='thread/unsubscribe'&&typeof params.threadId==='string')this.initialConfigurations.delete(params.threadId);
         const nativeId=(value as any)?.thread?.id;
         if(initialConfig&&typeof nativeId==='string')this.initialConfigurations.set(nativeId,initialConfig);
         resolve(value);
       }, reject, timer, method,threadId:params.threadId,includeTurns:params.includeTurns,initial });
-      try { this.write({ id, method, params }); }
-      catch (error) { clearTimeout(timer); this.pending.delete(id); reject(error); }
+      const message = { id, method, params };
+      if (historyReads) {
+        // The dedicated reader owns this read's deadline and frame failure.
+        void historyReads.read(message).then(reply => this.receive(JSON.parse(reply))).catch(() => {
+          if (this.pending.delete(id)) reject(new CodexBridgeError('unknown-outcome', 'History read connection is unavailable'));
+        });
+      } else {
+        try { this.write(message); }
+        catch (error) { clearTimeout(timer); this.pending.delete(id); reject(error); }
+      }
     });
   }
   reject(id: string | number): void { this.write({ id, error: { code: -32601, message: 'Native method is not supported by this bridge' } }); }
@@ -165,6 +191,7 @@ export class CodexOwnerConnection implements CodexOwnerPort {
   private fail(fault?: { method: string; reason: 'invalid-frame' | 'translation' | 'connection' }): void {
     if (this.failed) return;
     this.failed = true;
+    this.historyReads?.close();
     for (const request of this.pending.values()) { clearTimeout(request.timer); request.reject(new CodexBridgeError('unknown-outcome', 'Native connection lost')); }
     this.pending.clear(); this.initialConfigurations.clear(); this.socket?.terminate(); this.lost(fault ?? { method: 'unknown', reason: 'connection' });
   }

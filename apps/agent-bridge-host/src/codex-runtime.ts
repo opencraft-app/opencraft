@@ -1,6 +1,7 @@
 import { isAbsolute } from "node:path";
 import { randomUUID } from "node:crypto";
 import {
+  BRIDGE_ERROR_CODES,
   negotiateHandshake,
   type BridgeWireMessage,
   type BridgeRequest,
@@ -111,17 +112,17 @@ export class CodexBridgeRuntime {
     try {
       this.send({ jsonrpc: "2.0", id: request.id, result: await this.command(request.method, request.params) });
     } catch (error) {
-      const kind: BridgeErrorKind = error instanceof CodexBridgeError ? error.kind : "unknown-outcome";
-      const code =
-        kind === "stale-target"
-          ? -32002
-          : kind === "invalid"
-            ? -32602
-            : kind === "unsupported"
-              ? -32001
-              : kind === "explicit-reject"
-                ? -32006
-                : -32005;
+      // An oversized mutation receipt does not prove the mutation was rejected.
+      const kind: BridgeErrorKind = error instanceof CodexBridgeError
+        && (error.kind !== "frame-too-large" || request.method === "history/read") ? error.kind : "unknown-outcome";
+      const codes: Partial<Record<BridgeErrorKind, number>> = {
+        "frame-too-large": BRIDGE_ERROR_CODES.frameTooLarge,
+        "stale-target": BRIDGE_ERROR_CODES.staleTarget,
+        invalid: BRIDGE_ERROR_CODES.invalidParams,
+        unsupported: BRIDGE_ERROR_CODES.unsupportedCapability,
+        "explicit-reject": BRIDGE_ERROR_CODES.explicitReject,
+      };
+      const code = codes[kind] ?? BRIDGE_ERROR_CODES.unknownOutcome;
       this.send({
         jsonrpc: "2.0",
         id: request.id,
@@ -306,6 +307,8 @@ export class CodexBridgeRuntime {
       case "input/withdraw":
         throw new CodexBridgeError("unsupported", "Native input withdrawal is unavailable");
       case "history/read": {
+        const read = (method: string, params: Record<string, unknown>) =>
+          this.owner.readHistory?.(method, params) ?? this.owner.request(method, params);
         if (p.view === "thread") {
           const nativeId = this.adapter.nativeSession(threadId);
           // Between turn/start and native recording the first user message the session has no
@@ -316,13 +319,13 @@ export class CodexBridgeRuntime {
             error instanceof CodexBridgeError && ["unmaterialized", "turns-unavailable"].includes(error.nativeReason ?? "");
           for (let attempt = 0; ; attempt++) {
             try {
-              return await this.owner.request("thread/read", { threadId: nativeId, includeTurns: p.includeTurns === true });
+              return await read("thread/read", { threadId: nativeId, includeTurns: p.includeTurns === true });
             } catch (error) {
               if (!notYet(error)) throw error;
             }
             try {
-              const read = object(await this.owner.request("thread/read", { threadId: nativeId, includeTurns: false }));
-              return { ...read, thread: { ...object(read.thread), turns: [] } };
+              const metadata = object(await read("thread/read", { threadId: nativeId, includeTurns: false }));
+              return { ...metadata, thread: { ...object(metadata.thread), turns: [] } };
             } catch (error) {
               if (!notYet(error) || attempt >= 9) throw error;
             }
@@ -331,13 +334,13 @@ export class CodexBridgeRuntime {
         }
         const nativeId = this.adapter.nativeSession(threadId);
         if (p.turnId !== undefined)
-          return this.owner.request("thread/items/list", {
+          return read("thread/items/list", {
             threadId: nativeId,
             turnId: identifier(p.turnId),
             limit: p.limit ?? 100,
             cursor: p.cursor ?? null,
           });
-        return this.owner.request("thread/turns/list", {
+        return read("thread/turns/list", {
           threadId: nativeId,
           limit: p.limit ?? 100,
           cursor: p.cursor ?? null,

@@ -29,7 +29,7 @@ const NODE_OWNERS = [
   "apps/headless-server/src/headless-application.mjs",
   "apps/headless-server/src/serve-workbench-web.mjs",
   "apps/headless-server/src/server-deployment/",
-  "apps/opencraft-daemon/src/codex-core-read-isolation.ts",
+  "packages/account-pool-host/src/codex-core-read-isolation.ts",
   "apps/opencraft-daemon/src/native-execution-inspector.ts",
   "node_modules/ws/",
   "node_modules/proper-lockfile/",

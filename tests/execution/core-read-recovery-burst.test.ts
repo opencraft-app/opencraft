@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WebSocketServer } from "ws";
 import { CodexCoreControlClient } from "@opencraft/account-pool-host";
-import { CodexCoreReadIsolation } from "../../apps/opencraft-daemon/src/codex-core-read-isolation";
+import { CodexCoreReadIsolation } from "@opencraft/account-pool-host/codex-core-read-isolation";
 
 test("simultaneous history recovery survives one slow native-health probe without losing read RPCs", async () => {
   const root = await mkdtemp(join(tmpdir(), "oc-history-recovery-burst-"));
