@@ -1503,30 +1503,6 @@ export function createAppServerWorkbenchRuntime(
     publish();
   };
 
-  const discoverArchivedThread = async (threadId: string) => {
-    if (bindings.has(threadId) || catalogMetadata.has(threadId) || unavailableThreads.has(threadId)) return;
-    const current = requireClient(), generation = current.connectionGeneration;
-    const capability = parseThreadLifecycleCapability(executionEngineExtension(current.initializeResult?.capabilities?.extensions, threadId, OPENCRAFT_THREAD_LIFECYCLE_EXTENSION));
-    if (!capability?.archive) return;
-    const revision = availabilityRevisions.get(threadId) ?? 0;
-    let cursor: string | null = null;
-    const cursors = new Set<string>();
-    do {
-      const page: { data: ProtocolThread[]; nextCursor: string | null } = await current.request("thread/list", { archived: true, limit: 100, cursor });
-      if (disposed || client !== current || current.connectionGeneration !== generation
-        || (availabilityRevisions.get(threadId) ?? 0) !== revision) return;
-      const archived = page.data.find(thread => thread.id === threadId);
-      if (archived) {
-        catalogMetadata.set(threadId, { ...archived, turns: [] });
-        markThreadUnavailable(threadId, "archived");
-        return;
-      }
-      cursor = page.nextCursor;
-      if (cursor !== null && cursors.has(cursor)) throw new Error("Archive catalog did not advance");
-      if (cursor !== null) cursors.add(cursor);
-    } while (cursor !== null);
-  };
-
   const captureHistoryCheckpoint = (binding: ConversationBinding) => {
     const snapshot = binding.runtime.getSnapshot();
     return {
@@ -1645,11 +1621,11 @@ export function createAppServerWorkbenchRuntime(
             archived = view.thread?.archived === true;
           }
           if (!current()) throw new AppServerClientError("ABORTED", "Thread recovery was superseded");
-          if (!unavailableThreads.has(binding.threadId) && legacyWindow) void recovery.span("capability-ready", () => ensureBindingCapabilities(binding)).catch(() => undefined);
+          if (!archived && !unavailableThreads.has(binding.threadId) && legacyWindow) void recovery.span("capability-ready", () => ensureBindingCapabilities(binding)).catch(() => undefined);
           // Passive approvals have their own source/connection revision fences. Their
           // network read must not hold up a verified history replica or turn an
           // interaction-only failure into a transcript recovery failure.
-          if (!unavailableThreads.has(binding.threadId) && interactions) void recovery.span("interaction-ready", () => interactions!.sync(binding.threadId)).catch(() => undefined);
+          if (!archived && !unavailableThreads.has(binding.threadId) && interactions) void recovery.span("interaction-ready", () => interactions!.sync(binding.threadId)).catch(() => undefined);
         } finally { stopPreview?.(); }
         const source = createThreadViewReplicaSource(
           currentSession.views,
@@ -1663,7 +1639,7 @@ export function createAppServerWorkbenchRuntime(
         // Queue notifications can be lost with the old connection, including
         // the receipt for a locally persisted input. Reconcile independently
         // after history authority returns; do not wait for another queue event.
-        if (force && !unavailableThreads.has(binding.threadId) && !ephemeralThreadIds.has(binding.threadId))
+        if (force && !archived && !unavailableThreads.has(binding.threadId) && !ephemeralThreadIds.has(binding.threadId))
           void binding.refreshQueue().catch(() => undefined);
         binding.phase = "resident";
         touchBinding(binding);
@@ -2788,7 +2764,7 @@ export function createAppServerWorkbenchRuntime(
       let binding: ConversationBinding;
       try {
         await runtime.connect();
-        await discoverArchivedThread(threadId);
+        // Archive browsing is explicit. Opening a Thread only hydrates its own history.
         binding = await createBinding(threadId);
         if (disposed || binding.disposed) throw new Error(`Thread ${threadId} is disposed`);
       } finally {

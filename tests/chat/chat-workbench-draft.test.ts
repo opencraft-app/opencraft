@@ -550,6 +550,27 @@ test("a first-Turn durable Host does not return a promotable Thread before turn/
 });
 
 
+for (const atomic of [false, true]) {
+  test(`a created Draft Thread skips archive discovery (atomic first Turn: ${atomic})`, async () => {
+    const harness = createHarness(false, false, [], false, undefined, false, false, atomic, false,
+      { version: 1, archive: true });
+    const runtime = createAppServerWorkbenchRuntime({ hostId: "local", transport: harness.transport, autoReconnect: false });
+    try {
+      const receipt = await runtime.createThread(intent({
+        type: "new-thread",
+        draftId: "archive-discovery",
+        execution: { hostId: "local", workspace: { cwd: "/workspace", runtimeWorkspaceRoots: ["/workspace"] } },
+      }));
+      const lease = await runtime.acquireThread(receipt.threadId);
+      await waitForAuthoritative(lease);
+      assert.equal(harness.requests.some(request => request.method === "thread/list"
+        && (request.params as { archived?: boolean }).archived === true), false);
+      assert.equal(runtime.resources.threads.getUnavailableReason?.(receipt.threadId), null);
+      lease.release();
+    } finally { await runtime.dispose(); }
+  });
+}
+
 test("a rejected first Turn never publishes a promotable Thread receipt", async () => {
   const harness = createHarness(false, false, [], false, undefined, false, false, true, true);
   const runtime = createAppServerWorkbenchRuntime({
