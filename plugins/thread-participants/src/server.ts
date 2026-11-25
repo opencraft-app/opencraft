@@ -173,6 +173,11 @@ export class ThreadParticipantsMetadata implements ThreadMetadataExtension {
     }
     const turns = Array.isArray(thread.turns) ? thread.turns : Array.isArray(value.turns) ? value.turns : [];
     for (const turn of turns) this.#apply(threadId, messageIds(turn));
+    // Reuse accepted items in an already requested history page, including
+    // those whose live notification was missed. Never request history here.
+    const page = method === "thread/turns/list" || method === "thread/items/list"
+      ? value.data : record(value.initialTurnsPage).data;
+    if (Array.isArray(page)) this.#apply(threadId, page.flatMap(messageIds));
     this.#apply(threadId, [...messageIds(value), ...messageIds(value.turn)]);
   }
 

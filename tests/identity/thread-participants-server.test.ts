@@ -80,6 +80,22 @@ async function fixture(t: { after(callback: () => unknown): void }, options?: Th
     },
   };
 }
+test("already requested paginated history reconciles only verified accepted participants", async (t) => {
+  const f = await fixture(t);
+  const threadId = "bridge:codex:thread";
+  const identity = f.identity();
+  const item = (clientId: string) => ({ type: "userMessage", clientId });
+  for (const [clientUserMessageId, sender] of [["first", "alice"], ["second", "bob"], ["third", "carol"], ["unaccepted", "dave"]]) {
+    identity.recordSubmission({ threadId, clientUserMessageId }, context(sender));
+  }
+  const params = { threadId };
+  assert.deepEqual((await f.read([threadId]))[0].participants, []);
+  identity.observeResult("thread/read", params, { initialTurnsPage: { data: [{ items: [item("first")] }] } });
+  identity.observeResult("thread/turns/list", params, { data: [{ items: [item("first"), item("second")] }] });
+  identity.observeResult("thread/items/list", params, { data: [{ item: item("third") }, { item: item("unverified") }] });
+  assert.deepEqual((await f.read([threadId]))[0].participants, ["alice", "bob", "carol"]);
+});
+
 const committed = (path: string, threadId: string) => {
   const reader = new DatabaseSync(path, { readOnly: true });
   try {

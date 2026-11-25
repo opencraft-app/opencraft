@@ -127,6 +127,13 @@ export class CodexProviderBridgeSession implements DuplexTransport {
       releaseForAdoption?: (threadId: string) => Promise<boolean>;
       /** Let the local title generator see a bridge Thread's creation and first turn, by native identity. */
       observeTitle?: (method: string, params: Record<string, unknown>, result: unknown) => void;
+      /** Report successful operations to the Host's identity owner using public Thread IDs. */
+      observeIdentityResult?: (
+        method: string,
+        params: Record<string, unknown>,
+        result: unknown,
+        sender: TransportSubmissionContext["sender"],
+      ) => void;
     } = {},
   ) {
     this.gateway = createGateway((threadId, value) => {
@@ -946,11 +953,13 @@ export class CodexProviderBridgeSession implements DuplexTransport {
           throw Object.assign(Error("Invalid input IDs"), { code: -32602 });
         result = await this.gateway.status(threadId, inputIds);
       } else throw Object.assign(Error("Method unavailable for this bridge thread"), { code: -32601 });
+      const visible = this.gateway.history(forkedId ?? threadId, result);
+      // An accepted operation still belongs to the Thread after its sending client disconnects.
+      this.policy.observeIdentityResult?.(method, { ...p, threadId }, visible, context.sender);
       const pendingInteractions = ["thread/resume", "thread/read"].includes(method)
         ? await this.gateway.pendingInteractions(threadId)
         : [];
       if (this.clients.get(client) === identity) {
-        const visible = this.gateway.history(forkedId ?? threadId, result);
         this.emit(
           {
             id: frame.id,

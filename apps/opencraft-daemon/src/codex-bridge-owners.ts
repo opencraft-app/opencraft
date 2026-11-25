@@ -17,6 +17,7 @@ export interface CodexBridgeOwners {
   readonly projectHistory: NonNullable<BridgePolicy["projectHistory"]>;
   readonly projectNotification: NonNullable<BridgePolicy["projectNotification"]>;
   readonly observeTitle: NonNullable<BridgePolicy["observeTitle"]>;
+  readonly observeIdentityResult: NonNullable<BridgePolicy["observeIdentityResult"]>;
   /** Whether prepareInput records verified senders now (the owner opens its sender store on connect). */
   readonly senderAttribution: () => boolean;
   readonly usage: NonNullable<BridgePolicy["usage"]>;

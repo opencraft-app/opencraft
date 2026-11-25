@@ -110,6 +110,8 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
   let paused = false;
   const staged:unknown[]=[];const guarded:[string,string][]=[];
   let legacyListener: (frame: string) => void = () => {};
+  const verifiedSender = { kind: 'employee' as const, loginName: 'alice' };
+  const identityCalls: Array<{method: string; threadId: unknown; createdId: unknown; inputId: unknown; sender: unknown}> = [];
   const createTransport = async () => {
     const legacy = {
       status: { state: 'open' as const }, async connect() {}, async close() {}, subscribeStatus() { return () => {}; },
@@ -128,6 +130,10 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
       prepareInput:async(threadId,clientId,input)=>{staged.push([threadId,clientId]);return input.map((item:any)=>item.type==='mention'?{type:'text',text:`file at ${item.path}`}:item);},
       projectHistory:(method,_params,result)=>({...(result as object),projected:method}),
       observeTitle:(method,params,result)=>titleCalls.push([method,(params as any).threadId??null,(result as any).thread?.id??(result as any).turn?.id]),
+      senderAttribution: () => true,
+      observeIdentityResult: (method, params, result, sender) => {
+        identityCalls.push({method,threadId:params.threadId,createdId:(result as any).thread?.id,inputId:params.clientUserMessageId,sender});
+      },
       adoptExisting:true,newThreads:true,releaseForAdoption:async threadId=>{releaseCalls.push(threadId);return releaseAnswer;},
       queueGuard:async(threadId,method,params,_context,find)=>{
         guarded.push([threadId,method]);
@@ -139,16 +145,21 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
   };
   transport = await createTransport();
   let sequence = 0;
-  const request = async (method: string, params: unknown = {}) => {
+  const request = async (method: string, params: unknown = {}, sender?: typeof verifiedSender) => {
     const id = ++sequence;
-    await transport!.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: 'client' }));
+    const raw = JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: 'client' });
+    if (sender) await transport!.sendWithContext(raw, { sender, validUntil: Date.now() + 60_000 });
+    else await transport!.send(raw);
     const frame = await until(() => frames.find(f => f.id === id), Boolean);
     assert.equal(frame.error, undefined, JSON.stringify(frame.error)); return frame.result;
   };
   await request('initialize', { capabilities: { extensions: { 'opencraft/steer-evidence': { version: 1 } } } });
   const created = await request('thread/start', { cwd: root, approvalPolicy: 'never', sandbox: 'read-only', agentBridge: { threadId: 'bridge:codex:public-new', clientRequestId: 'create' },
-    dynamicTools: [{ type: 'function', name: 'client_declared', description: 'Client tool', inputSchema: { type: 'object' } }, { type: 'function', name: 'host_declared', description: 'Shadowed', inputSchema: { type: 'object' } }] });
+    dynamicTools: [{ type: 'function', name: 'client_declared', description: 'Client tool', inputSchema: { type: 'object' } }, { type: 'function', name: 'host_declared', description: 'Shadowed', inputSchema: { type: 'object' } }] }, cli ? undefined : verifiedSender);
   assert.equal(created.thread.id, 'bridge:codex:public-new');
+  if (!cli) assert.deepEqual(identityCalls[0], {
+    method: 'thread/start', threadId: created.thread.id, createdId: created.thread.id, inputId: undefined, sender: verifiedSender,
+  });
   // The Host's own tools are declared at creation, replacing a client declaration of the same name.
   assert.deepEqual(startDynamicTools?.map((tool: any) => tool.name), ['client_declared', 'host_declared']);
   if(!cli){
@@ -269,8 +280,13 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
     assert.equal((await until(()=>frames.find(f=>f.id===gone),Boolean)).error.data.submissionOutcome,'rejected');
   }
   const started = await request('turn/start', { threadId: 'bridge:codex:public-new', clientUserMessageId: 'start', input: [{ type: 'text', text: 'read' },
-    ...(cli===false?[{ type: 'mention', name: 'input.txt', path: '/work/input.txt' }]:[])] });
+    ...(cli===false?[{ type: 'mention', name: 'input.txt', path: '/work/input.txt' }]:[])] }, cli ? undefined : verifiedSender);
   if(cli===false){
+    assert.deepEqual(identityCalls.at(-1), {
+      method: 'turn/start', threadId: created.thread.id, createdId: undefined, inputId: 'start', sender: verifiedSender,
+    });
+    assert.ok(!identityCalls.some(entry => entry.inputId === 'paused-input' || entry.inputId === 'actor-input:forged'));
+
     // Attachments are staged by the composition before native Codex sees the input.
     assert.deepEqual(nativeStartInputs.at(-1),[{type:'text',text:'read'},{type:'text',text:'file at /work/input.txt'}]);
     assert.deepEqual(staged.at(-1),['bridge:codex:public-new','start']);
