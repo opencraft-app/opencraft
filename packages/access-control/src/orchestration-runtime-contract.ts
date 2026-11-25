@@ -87,7 +87,7 @@ export interface OrchestrationRuntimeMethods {
   };
   updateExecution: { payload: ExecutionRequestState; result: void };
   targets: { payload: { includeTerminal: boolean; now: number }; result: string[] };
-  work: { payload: { now: number }; result: { waits: WaitTicket[]; notifications: ParentNotification[] } };
+  work: { payload: { now: number }; result: { waits: WaitTicket[]; notifications: ParentNotification[]; /** Earliest time a pending notification not yet due becomes due (deliver-after or deadline), null when none. */ nextNotificationAt: number | null } };
   pendingAcks: { payload: NoInput; result: string[] };
   acknowledge: { payload: { operationId: string }; result: void };
 }

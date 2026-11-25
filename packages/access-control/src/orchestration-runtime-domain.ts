@@ -16,6 +16,14 @@ import { orchestrationRuntimeRequest, type OrchestrationRuntimeRequest } from ".
  * no service built here can start a companion Worker on the same file. */
 export type OrchestrationRuntimeSource = Exclude<ServerDatabaseSource, string>;
 
+/** Earliest time a pending parent notification that is not yet due becomes due (its deliver-after or deadline). */
+function nextNotificationAt(db: { prepare(sql: string): { get(...values: unknown[]): Record<string, unknown> | undefined } }): number | null {
+  const row = db
+    .prepare("SELECT MIN(MIN(deliver_after_ms,max_deadline_ms)) AS due FROM opencraft_parent_notification_batches WHERE state='pending'")
+    .get();
+  return row?.due === null || row?.due === undefined ? null : Number(row.due);
+}
+
 /**
  * Orchestration runtime, communication and automation commands over one
  * Server connection. It runs only where that connection is owned: the Server
@@ -268,7 +276,7 @@ export function orchestrationRuntimeDomain(source: OrchestrationRuntimeSource) {
           ];
           break;
         case "work":
-          result = { waits: ledger.activeWaits(), notifications: ledger.dueNotifications() };
+          result = { waits: ledger.activeWaits(), notifications: ledger.dueNotifications(), nextNotificationAt: nextNotificationAt(db) };
           break;
         case "pendingAcks":
           result = db

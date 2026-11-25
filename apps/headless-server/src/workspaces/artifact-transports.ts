@@ -1,5 +1,13 @@
 import { WorkspaceArtifactCleanupUnconfirmed } from "./artifact-errors.js";
 import { randomBytes, createHash } from "node:crypto";
+import {
+  dueOwnerWork,
+  periodicOwnerWork,
+  timeoutOwnerWake,
+  type DueOwnerWork,
+  type OwnerWake,
+  type PeriodicOwnerWork,
+} from "@opencraft/owner-wake";
 import type { Readable } from "node:stream";
 import type { Artifact } from "@opencraft/local-agent-host/artifacts";
 import type { WorkspaceActorAdmission } from "./actor-authority.js";
@@ -25,12 +33,15 @@ export interface WorkspaceArtifactPort {
   workspaceArtifactClose(token: string): Promise<"pending" | "closed" | "failed">;
 }
 const invalid = () => Error("Workspace artifact unavailable");
+/** A transfer untouched this long is closed. */
+export const ARTIFACT_TRANSFER_IDLE_MS = 30_000;
+/** Authority has no change notification; open transfers are re-checked this often. */
+export const ARTIFACT_TRANSFER_CHECK_MS = 50;
 const tokenShape = (value: unknown): value is string => typeof value === "string" && /^[a-f0-9]{64}$/u.test(value);
 interface Base {
   access: WorkspaceActorAdmission;
   controller: AbortController;
   touched: number;
-  timer: ReturnType<typeof setInterval>;
   closed: boolean;
   failed: boolean;
   cleanupFailed: boolean;
@@ -63,6 +74,11 @@ type Entry = Download | Upload;
 export class WorkspaceArtifactTransfers {
   private readonly entries = new Map<string, Entry>();
   private closed = false;
+  private readonly wake: OwnerWake;
+  /** Idle transfers close when the least recently touched one expires; nothing wakes while none is open. */
+  private readonly idle: DueOwnerWork;
+  /** Armed only while a transfer is open (its phase starts with the first one). */
+  private check: PeriodicOwnerWork | null = null;
   constructor(
     private readonly options: {
       current(access: WorkspaceActorAdmission): boolean;
@@ -79,30 +95,58 @@ export class WorkspaceArtifactTransfers {
         body: AsyncIterable<Uint8Array>,
         signal: AbortSignal,
       ): Promise<Artifact>;
+      /** Owner wake-up for the authority check and idle expiry; the default Node timeout one. */
+      wake?: OwnerWake;
     },
-  ) {}
+  ) {
+    this.wake = options.wake ?? timeoutOwnerWake();
+    this.idle = dueOwnerWork(
+      this.wake,
+      () => {
+        let oldest: number | null = null;
+        for (const entry of this.entries.values())
+          if (!entry.closing && (oldest === null || entry.touched < oldest)) oldest = entry.touched;
+        return oldest === null ? null : oldest + ARTIFACT_TRANSFER_IDLE_MS;
+      },
+      (now) => {
+        for (const [token, entry] of this.entries)
+          if (!entry.closing && now - entry.touched >= ARTIFACT_TRANSFER_IDLE_MS) void this.close(token).catch(() => {});
+      },
+    );
+  }
+  /** Re-arms the authority check and idle expiry after a transfer opens or closes. Touching a transfer only moves its
+   * expiry later, so it needs no re-arm: an early wake-up finds nothing due and re-arms for the new time. */
+  private changed() {
+    const open = !this.closed && [...this.entries.values()].some((entry) => !entry.closing);
+    if (open)
+      this.check ??= periodicOwnerWork(this.wake, ARTIFACT_TRANSFER_CHECK_MS, () => {
+        for (const [token, entry] of this.entries)
+          if (!entry.closing && !this.options.current(entry.access)) void this.close(token).catch(() => {});
+        this.changed();
+      });
+    else {
+      this.check?.close();
+      this.check = null;
+    }
+    this.idle.reschedule();
+  }
   private base(access: WorkspaceActorAdmission): Base {
     if (this.closed || this.entries.size >= 16 || !this.options.current(access)) throw invalid();
     const value: Base = {
       access,
       controller: new AbortController(),
-      touched: Date.now(),
+      touched: this.wake.now(),
       closed: false,
       failed: false,
       cleanupFailed: false,
       pending: new Set(),
-      timer: undefined!,
     };
     return value;
   }
   private install(entry: Entry): string {
     const token = randomBytes(32).toString("hex");
     this.entries.set(token, entry);
-    entry.timer = setInterval(() => {
-      if (!this.options.current(entry.access) || Date.now() - entry.touched > 30000)
-        void this.close(token).catch(() => {});
-    }, 50);
-    entry.timer.unref();
+    this.changed();
     return token;
   }
   private track(entry: Entry, work: Promise<unknown>) {
@@ -120,7 +164,7 @@ export class WorkspaceArtifactTransfers {
     if (this.closed || !tokenShape(token)) throw invalid();
     const value = this.entries.get(token);
     if (!value || value.closed || !this.options.current(value.access)) throw invalid();
-    value.touched = Date.now();
+    value.touched = this.wake.now();
     return value;
   }
   download(access: WorkspaceActorAdmission, threadId: string, path: string): string {
@@ -295,9 +339,9 @@ export class WorkspaceArtifactTransfers {
     if (!tokenShape(token)) return Promise.reject(invalid());
     const entry = this.entries.get(token);
     if (!entry) return Promise.resolve();
-    return (entry.closing ??= (async () => {
+    if (entry.closing) return entry.closing;
+    entry.closing = (async () => {
       entry.closed = true;
-      clearInterval(entry.timer);
       entry.controller.abort();
       if (entry.kind === "upload") {
         entry.waiting?.reject(invalid());
@@ -307,10 +351,14 @@ export class WorkspaceArtifactTransfers {
       if (entry.kind === "download") await entry.source?.dispose();
       if (entry.cleanupFailed) throw new WorkspaceArtifactCleanupUnconfirmed();
       this.entries.delete(token);
-    })());
+    })();
+    this.changed();
+    return entry.closing;
   }
   async closeAll() {
     this.closed = true;
+    this.idle.close();
+    this.changed();
     const results = await Promise.allSettled([...this.entries.keys()].map((token) => this.close(token)));
     const failures = results.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
     if (failures.length) throw new AggregateError(failures, "Workspace artifact cleanup unconfirmed");

@@ -11,7 +11,7 @@ export {channelImageType, type ChannelImage};
 export interface ChannelSourceBinding { source: string; channelId: string }
 export interface ChannelArrival { source: string; id: string; author: string; sender?: { id: string; displayName: string }; text: string; at: number; mediaId?: string; mediaIdentity?: string }
 export interface ChannelSyncCommand { method: string; params: Record<string, any> }
-export interface ChannelSyncResult { result: any; changes: NativeChannelChange[] }
+export interface ChannelSyncResult { result: any; changes: NativeChannelChange[]; /** The command created an execution request (see `Collaboration.executionRequestsCreated`). */ executionRequested?: true }
 const text=(v:unknown,max=512):string=>{if(typeof v!=='string'||!v.trim()||v.length>max||/[\0]/u.test(v))throw Error('invalid_input');return v;};
 const digest=(v:unknown)=>sha256Hex(JSON.stringify(v));
 const conflict=()=>Object.assign(Error('idempotency_conflict'),{code:'idempotency_conflict'});
@@ -20,6 +20,7 @@ const conflict=()=>Object.assign(Error('idempotency_conflict'),{code:'idempotenc
  * storage Worker, never dispatched from client supplied method/context frames. */
 export function channelSyncCommand(service: Collaboration, db: SqlDatabase, command: ChannelSyncCommand): ChannelSyncResult {
   const changes: NativeChannelChange[]=[];
+  const requestsBefore=service.executionRequestsCreated;
   const changed=(channelId:string)=>changes.push({channelId});
   const touch=(messageId:string)=>{
     db.prepare('INSERT OR REPLACE INTO actor_channel_changes(channel_id,message_id) SELECT channel_id,id FROM actor_messages WHERE id=?').run(messageId);
@@ -224,7 +225,7 @@ export function channelSyncCommand(service: Collaboration, db: SqlDatabase, comm
       default:throw Error('unsupported_channel_sync_command');
     }
   });
-  return {result,changes};
+  return {result,changes,...(service.executionRequestsCreated!==requestsBefore?{executionRequested:true as const}:{})};
 }
 
 /** Called in the same transaction as native admission. A binding does not replay

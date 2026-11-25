@@ -3,6 +3,7 @@ import type { MembershipStore, InstanceAccess } from "./index.js";
 import type { TransportSubmissionContext } from "@opencraft/appserver-client/transport";
 import type { Principal } from "@opencraft/identity-core";
 import type { WorkspaceActorAdmission } from "./actor-admission-reader.js";
+import { periodicOwnerWork, timeoutOwnerWake, type OwnerWake, type PeriodicOwnerWork } from "@opencraft/owner-wake";
 
 type Resource = { actorId: string; generation: number; revision: number; permit: Int32Array<SharedArrayBuffer> };
 type Access = Pick<InstanceAccess, "admitsActor">;
@@ -13,6 +14,9 @@ export type ActorAdmissionOptions = {
   /** Instance policy; a function when it is created after the identity. While
    * it returns nothing, no proof is issued and issued resource permits retire. */
   access: Access | (() => Access | undefined);
+  /** Owner wake-up for the policy re-check; the default Node timeout one. A single-alarm owner passes its merged
+   * alarm (docs/architecture/platform/gateway-split.md §4.2, G5). */
+  ownerWake?: OwnerWake;
 };
 const flag = () => {
   const value = new Int32Array(new SharedArrayBuffer(4));
@@ -28,17 +32,25 @@ const PRINCIPAL_LIFETIME = 120_000,
 export class ActorAdmission {
   private readonly resources = new Map<string, Resource>();
   private readonly disposers: (() => void)[] = [];
-  private readonly timer: ReturnType<typeof setInterval>;
+  private readonly wake: OwnerWake;
+  /** Instance policy has no change notification, so issued permits are re-checked every 500 ms, the cadence of
+   * InstanceAccess.watch; the check is armed only while a resource permit is issued (its phase starts with the first
+   * one). The Worker independently checks committed Actor/member revocation every IO. */
+  private check: PeriodicOwnerWork | null = null;
   private closed = false;
   constructor(protected readonly options: ActorAdmissionOptions) {
+    this.wake = options.ownerWake ?? timeoutOwnerWake();
     this.disposers.push(
       options.actors.onAuthorityChanged(this.refresh),
       options.membership.onAuthorityChanged(this.refresh),
     );
-    // Same bounded policy observation cadence as InstanceAccess.watch. The
-    // Worker independently checks committed Actor/member revocation every IO.
-    this.timer = setInterval(this.refresh, 500);
-    this.timer.unref();
+  }
+  private checked() {
+    if (this.resources.size && !this.closed) this.check ??= periodicOwnerWork(this.wake, 500, this.refresh);
+    else {
+      this.check?.close();
+      this.check = null;
+    }
   }
   private access(): Access | undefined {
     const { access } = this.options;
@@ -66,6 +78,7 @@ export class ActorAdmission {
         Atomics.store(resource.permit, 0, 0);
         this.resources.delete(key);
       }
+    this.checked();
   };
   /** The authenticated transport request context; its request permit is per call. */
   readonly admit = (context: TransportSubmissionContext): WorkspaceActorAdmission => {
@@ -104,6 +117,7 @@ export class ActorAdmission {
       resource = { actorId: actorId, generation: generation, revision, permit: flag() };
       if (!this.current(resource)) throw Error("Workspace Actor unavailable");
       this.resources.set(key, resource);
+      this.checked();
     }
     return {
       actorId: actorId,
@@ -117,7 +131,6 @@ export class ActorAdmission {
   readonly close = () => {
     if (this.closed) return;
     this.closed = true;
-    clearInterval(this.timer);
     for (const dispose of this.disposers) dispose();
     this.refresh();
   };

@@ -18,7 +18,9 @@ export interface OrchestrationRuntimeStorage {
   finishTitleWrite(toolCallKey: string, result: unknown): Promise<void>;
   observe(snapshot: ThreadOrchestrationSnapshot, now: number): Promise<void>;
   targets(includeTerminal: boolean, now: number): Promise<string[]>;
-  work(now: number): Promise<{ waits: WaitTicket[]; notifications: ParentNotification[] }>;
+  /** `nextNotificationAt` is the earliest time a pending notification not yet due becomes due; a port that leaves it out
+   * is swept every period. */
+  work(now: number): Promise<{ waits: WaitTicket[]; notifications: ParentNotification[]; nextNotificationAt?: number | null }>;
   pendingAcks(): Promise<string[]>;
   acknowledge(operationId: string): Promise<void>;
 }
@@ -97,7 +99,7 @@ export class OrchestrationRuntimeWorker implements OrchestrationRuntimeStorage {
   }
   observe(snapshot:ThreadOrchestrationSnapshot,now:number):Promise<void>{return this.request('observe',{snapshot,now});}
   targets(includeTerminal:boolean,now:number):Promise<string[]>{return this.request('targets',{includeTerminal,now});}
-  work(now:number):Promise<{waits:WaitTicket[];notifications:ParentNotification[]}>{return this.request('work',{now});}
+  work(now:number):Promise<{waits:WaitTicket[];notifications:ParentNotification[];nextNotificationAt:number|null}>{return this.request('work',{now});}
   pendingAcks():Promise<string[]>{return this.request('pendingAcks',{});}
   acknowledge(operationId:string):Promise<void>{return this.request('acknowledge',{operationId});}
   recordAssistantThreadAllocation(value:AssistantThreadAllocation):Promise<OrchestrationRuntimeResult<'assistantAllocation'>>{return this.request('assistantAllocation',value);}

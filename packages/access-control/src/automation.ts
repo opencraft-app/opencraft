@@ -83,6 +83,18 @@ export function automationOccurrence(schedule: AutomationSchedule, now: number):
     if (localMinute(previous,schedule.timezone).key === local.key) return null;
   return `utc-${instant}`;
 }
+/**
+ * The first instant after `after` and no later than `until` at which {@link automationOccurrence} yields an occurrence,
+ * or null when there is none in that span. A cron schedule is probed at each minute start with
+ * {@link automationOccurrence} itself, so the due time follows exactly the same cron, timezone and fold rules; a
+ * one-time schedule is due at its `at`. Owners bound `until` (a horizon) and look again from there.
+ */
+export function nextAutomationOccurrence(schedule: AutomationSchedule, after: number, until: number): number | null {
+  if (schedule.kind === 'once') return schedule.at > after && schedule.at <= until ? schedule.at : null;
+  for (let at = Math.floor(after/60_000)*60_000+60_000; at <= until; at += 60_000)
+    if (automationOccurrence(schedule, at) !== null) return at;
+  return null;
+}
 export function parseAutomationTarget(value: unknown): AutomationTarget {
   const body=automationRecord(value),kind=body.kind;
   if (kind==='script') {

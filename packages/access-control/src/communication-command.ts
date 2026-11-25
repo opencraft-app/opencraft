@@ -11,7 +11,7 @@ import { syncActorInbox } from './actor-inbox-projection.js';
 import { decodeBase64, encodeBase64 } from './portable-crypto.js';
 
 export interface CommunicationCommand { context: ActorContext; method: string; params: Record<string, unknown>; executionScope?:{serverId:string;hostId:string} }
-export interface CommunicationResult { retiredCredentials?:string[]; result: unknown; changes: NativeChannelChange[]; personalReadGuard?: {epoch:string;groups:{id:string;epoch:string}[]}; createdActors?: Actor[]; createdCredential?: {id:string;actor_id:string;generation:number;expires_at:number;enabled:1} }
+export interface CommunicationResult { retiredCredentials?:string[]; result: unknown; changes: NativeChannelChange[]; personalReadGuard?: {epoch:string;groups:{id:string;epoch:string}[]}; createdActors?: Actor[]; createdCredential?: {id:string;actor_id:string;generation:number;expires_at:number;enabled:1}; /** The command created an execution request (see `Collaboration.executionRequestsCreated`). */ executionRequested?: true }
 function invalid(): never { throw Object.assign(Error('invalid_input'), {status:400,code:'invalid_input'}); }
 function fields(p: Record<string,unknown>, allowed: string[]) { if (!p || Array.isArray(p) || Object.keys(p).some(k=>!allowed.includes(k))) invalid(); }
 function text(value: unknown): string { if(typeof value!=='string'||!value||value.length>2048)invalid();return value; }
@@ -22,6 +22,7 @@ export function communicationCommand(service: Collaboration, db: SqlDatabase, co
   const createdActors: Actor[] = [];
   let personalReadGuard: CommunicationResult["personalReadGuard"];
   let createdCredential: CommunicationResult["createdCredential"];
+  const requestsBefore=service.executionRequestsCreated;
   const unwatch=service.channels.onChange(change=>changes.push(change));
   try {
     const result=db.transaction(()=>{
@@ -133,6 +134,6 @@ export function communicationCommand(service: Collaboration, db: SqlDatabase, co
     });
     const retiredCredentials=(result as any)?.retiredCredentials as string[]|undefined;
     if(retiredCredentials)delete (result as any).retiredCredentials;
-    return {result,changes,createdActors,createdCredential,personalReadGuard,retiredCredentials};
+    return {result,changes,createdActors,createdCredential,personalReadGuard,retiredCredentials,...(service.executionRequestsCreated!==requestsBefore?{executionRequested:true as const}:{})};
   } finally { unwatch(); }
 }

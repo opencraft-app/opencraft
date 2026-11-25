@@ -365,8 +365,10 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   // Identity, admission, collaboration and deployment-level services over the
   // core SQL owner; creating it opens nothing, each step and disposer keeps
   // its original position.
+  // Deployment-level periodic owner work runs on the owner wake-up port (gateway-split.md §4.2).
+  const ownerWake = options.ownerWake ?? timeoutOwnerWake();
   const installation = assembleInstallation({ serverStorage, identityFence: sharedMemoryCommitFence(identityFence),
-    isHuman: principal => composition.isHuman?.(principal) });
+    isHuman: principal => composition.isHuman?.(principal), ownerWake });
   const orchestrationStorage = installation.openOrchestrationStorage();
   const releaseLock = async () => { await installation.closeOrchestrationStorage(); await serverStorage.close(); releaseExtensions(); };
   let account;
@@ -403,8 +405,6 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   // Runtime plugins, the Web server's options and the listener; creating it
   // opens nothing, each step and disposer keeps its original position.
   const edge = assembleEdge();
-  // Deployment-level periodic owner work runs on the owner wake-up port (gateway-split.md §4.2).
-  const ownerWake = options.ownerWake ?? timeoutOwnerWake();
   // The lifecycle publishes the shared promise before invoking any disposer
   // (including a synchronous failure or reentrant close). Retire listeners before stores.
   const close = (update = null) => lifecycle.shutdown(async () => {
@@ -691,7 +691,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     // around it, are Node constructions (gateway-split §4.1.1 "client-session").
     const appHostServer = clientSession.openAppHost({
       transports: {
-        channels: () => new ImChannelsAppServer(() => actorCollaboration),
+        channels: () => new ImChannelsAppServer(() => actorCollaboration, { ownerWake }),
         server: () => new TokenUsageQueryTransport(new MachineIdentityTransport(machineIdentity,'OpenCraft',async () => {
           const engine = new WebSocketTransport({
             url: agent.resolveWebsocketUrl ? await agent.resolveWebsocketUrl() : agent.websocketUrl,

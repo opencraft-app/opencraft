@@ -521,12 +521,24 @@ test('deployment-level periodic owners run on the injected owner wake-up and shu
   const ownerWake = { now: wake.now, timer: callback => { const timer = wake.timer(callback); return { arm(at) { periods.push(at - clock.now); timer.arm(at); }, cancel: () => timer.cancel() }; } };
   const app = await startHeadlessServer({ ...f.options, ownerWake }); f.own(() => app.close());
   // Conversation resource retries (5 s), the push outbox pass (5 s) and resource reconciliation (60 s) are armed;
-  // nothing runs on a global interval, and connector grant checks arm only once a grant exists.
+  // nothing runs on a global interval, and connector grant checks arm only once a grant exists. The collaboration
+  // pump and the orchestration sweep each arm one pass 500 ms after start, the automation run check one sweep 1 s
+  // after start (each as its former interval's first tick); with nothing open they then stay disarmed.
   assert.ok(periods.filter(period => period === 5_000).length >= 2 && periods.includes(60_000), JSON.stringify(periods));
-  assert.ok(!periods.includes(500), JSON.stringify(periods));
+  assert.equal(periods.filter(period => period === 500).length, 2, JSON.stringify(periods));
+  assert.equal(periods.filter(period => period === 1_000).length, 1, JSON.stringify(periods));
   assert.ok(clock.pending >= 2);
-  clock.elapse(60_000);
+  // The first passes run and settle through their storage Workers (the run check re-arms before its sweep, as a
+  // period does, and disarms once the sweep found no open run).
+  clock.elapse(1_000);
+  await new Promise(resolve => setTimeout(resolve, 500));
+  const runChecks = periods.filter(period => period === 1_000).length;
+  assert.ok(runChecks <= 2, JSON.stringify(periods));
+  clock.elapse(59_000);
+  await new Promise(resolve => setTimeout(resolve, 200));
   assert.ok(periods.filter(period => period === 60_000).length >= 2, 'reconciliation re-arms one period after it ran');
+  assert.equal(periods.filter(period => period === 500).length, 2, 'no open request or child: no further pass ' + JSON.stringify(periods));
+  assert.equal(periods.filter(period => period === 1_000).length, runChecks, 'no open run: the run check stays disarmed ' + JSON.stringify(periods));
   await app.close();
   assert.equal(clock.pending, 0, 'closing the deployment leaves no owner wake-up armed');
 });
