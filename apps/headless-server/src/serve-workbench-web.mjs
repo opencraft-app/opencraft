@@ -451,6 +451,7 @@ export async function createWorkbenchWebServer({
   modelPolicyService = null,
   assetsService = null,
   identityService = null,
+  serviceIngress,
   runtimePluginService = null,
   localAccess = null,
   accessService = null,
@@ -581,6 +582,8 @@ export async function createWorkbenchWebServer({
         sendJson(response, 403, { ok: false, error: "Matching origin required" });
         return;
       }
+      // Explicit trusted channel ingress owns its non-browser authentication.
+      if (serviceIngress?.paths.has(url.pathname) && await serveNodeHttpExchange(request, response, serviceIngress.handle)) return;
       const local = !!localAccess?.origin(request);
       // These capabilities only reach a frozen report, never installation APIs.
       if (htmlPreviews && await htmlPreviews.handlePublic(request, response, sameOrigin)) return;

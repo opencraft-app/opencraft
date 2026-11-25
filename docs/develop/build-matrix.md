@@ -238,6 +238,7 @@ platforms, including for lockfiles, CI changes or an unreadable diff.
 | Changed area | Automatic validation |
 | --- | --- |
 | Root Markdown, README/AGENTS, `docs/`, `design/`, `.agents/` | No product build or server archive; secrets scan and upstream contract remain |
+| Public site under `website/` | Build the static website; website-only PRs and merge groups skip product checks and Docker Compose validation while security and upstream checks still run |
 | Web renderer source or shared CSS/SCSS | Web browser build, typecheck and React runtime tests |
 | Expo application | Web compatibility build; native/Expo validation is opt-in |
 | Electron Main/Preload/native code, Daemon, local agent host, DSH runtime | Linux server regressions; desktop/native validation is opt-in |
@@ -256,8 +257,8 @@ and CodeQL still runs on the PR. The portable builds, broad regression suites,
 browser smoke tests and Docker Compose drill run on the queue's `merge_group`
 using the existing selection for the combined candidate.
 
-Fork and external PRs, an unreadable diff, and changes to CI, toolchain,
-dependency or server archive inputs keep their existing PR validation. Both
+Fork and external PRs, an unreadable diff, and changes to the website, CI,
+toolchain, dependencies or server archive inputs keep their existing PR validation. Both
 profiles report the same required `build-checks` and `security-checks` statuses.
 Each aggregate requires the jobs selected for its event to succeed.
 

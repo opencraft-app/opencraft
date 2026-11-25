@@ -9,6 +9,7 @@ import { communicationCommand } from "./communication-command.js";
 import { notificationAuthorityIdSql, ThreadOrchestrationLedger } from "./orchestration-ledger.js";
 import { AutomationLedger } from "./automation-ledger.js";
 import { updateExecutionRequest } from "./execution-request-state.js";
+import { externalConversation } from "./external-conversation.js";
 import type { ServerDatabaseSource } from "@opencraft/storage-node/server-repository";
 import { orchestrationRuntimeRequest, type OrchestrationRuntimeRequest } from "./orchestration-runtime-contract.js";
 
@@ -52,6 +53,9 @@ export function orchestrationRuntimeDomain(source: OrchestrationRuntimeSource) {
         () => ("now" in payload && typeof payload.now === "number" ? payload.now : undefined) ?? Date.now(),
       );
       switch (method) {
+        case "externalConversation":
+          result = await externalConversation(source, payload);
+          break;
         // A lost acknowledgement must not replay an old title over a later one.
         case "claimTitleWrite":
           result =

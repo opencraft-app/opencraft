@@ -38,6 +38,26 @@ jobs:
     with:
       full-matrix: ${{ github.event_name == 'workflow_dispatch' && (inputs.validation == 'full' || inputs.package_macos) }}
 
+  website:
+    needs: plan
+    if: needs.plan.outputs.website == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+
   quick-pr:
     needs: plan
     if: needs.plan.outputs.fast-pr == 'true'
@@ -80,7 +100,7 @@ jobs:
 
   hover-policy:
     needs: [admission, plan]
-    if: ${{ !cancelled() && needs.admission.result == 'success' && needs.plan.outputs.fast-pr != 'true' }}
+    if: needs.plan.outputs.website-only != 'true' && needs.plan.outputs.fast-pr != 'true'
     runs-on: ubuntu-latest
     # Slow system-package mirrors must leave time for the browser smoke checks.
     timeout-minutes: 30
@@ -542,7 +562,7 @@ jobs:
 
   build-checks:
     if: always()
-    needs: [admission, plan, portable, extensions, macos-native, macos-electron, linux-headless, headless-package, core-tests, gate-tests, quick-pr, hover-policy]
+    needs: [admission, plan, website, portable, extensions, macos-native, macos-electron, linux-headless, headless-package, core-tests, gate-tests, quick-pr, hover-policy]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -550,9 +570,11 @@ jobs:
         env:
           EXTENSIONS_RESULT: ${{ needs.extensions.result }}
           EXTENSIONS_SELECTED: ${{ needs.plan.outputs.extensions }}
+          WEBSITE_SELECTED: ${{ needs.plan.outputs.website }}
+          WEBSITE_RESULT: ${{ needs.website.result }}
           QUICK_SELECTED: ${{ needs.plan.outputs.fast-pr }}
           QUICK_RESULT: ${{ needs.quick-pr.result }}
-          HOVER_SELECTED: ${{ needs.plan.outputs.fast-pr == 'false' }}
+          HOVER_SELECTED: ${{ needs.plan.outputs.website-only != 'true' && needs.plan.outputs.fast-pr != 'true' }}
           HOVER_RESULT: ${{ needs.hover-policy.result }}
           ADMISSION_RESULT: ${{ needs.admission.result }}
           PLAN_RESULT: ${{ needs.plan.result }}
@@ -579,6 +601,7 @@ jobs:
               test "$1" = false && test "$2" = skipped
             fi
           }
+          require_selected "$WEBSITE_SELECTED" "$WEBSITE_RESULT"
           require_selected "$QUICK_SELECTED" "$QUICK_RESULT"
           require_selected "$HOVER_SELECTED" "$HOVER_RESULT"
           require_selected "$EXTENSIONS_SELECTED" "$EXTENSIONS_RESULT"

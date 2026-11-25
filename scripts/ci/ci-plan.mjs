@@ -5,6 +5,8 @@ import { appendFileSync, readFileSync } from 'node:fs';
 
 export const portableTargets = ['web-browser', 'electron-renderer', 'electron-host', 'expo-web', 'expo-ios-bundle'];
 const auditDirectories = ['.', 'runtime/dsh', 'apps/bridges/hermes'];
+const websiteLogo = 'apps/workbench-web/public/opencraft-icon.svg';
+const isWebsitePath = path => path.startsWith('website/');
 /**
  * Release and workflow tooling that builds no product. Every PR validates it
  * without the Web/server matrix: ci-plan.yml runs these tooling tests, and
@@ -18,6 +20,10 @@ export function releaseToolingOnly(path) {
 }
 /** Automatic checks stay on Linux/Web. Other platforms require an explicit manual request. */
 export function planChanges(paths, { event = 'pull_request', unknownDiff = false, fullMatrix = false } = {}) {
+  const websiteOnly = !unknownDiff && ['pull_request', 'merge_group'].includes(event)
+    && paths.length > 0 && paths.every(isWebsitePath);
+  const website = unknownDiff || event === 'workflow_dispatch'
+    || paths.some(path => isWebsitePath(path) || path === websiteLogo);
   const builds = new Set();
   const audits = new Set();
   let managedWeb = false;
@@ -38,6 +44,7 @@ export function planChanges(paths, { event = 'pull_request', unknownDiff = false
   // Advisory databases change even when lockfiles do not.
   if (event === 'push' || event === 'schedule') auditDirectories.forEach(dir => audits.add(dir));
   for (const path of paths) {
+    if (isWebsitePath(path)) continue;
     if (/^examples\/extensions\//.test(path) || path === 'tests/extensions/extension-example.test.ts'
       || path === 'docs/develop/extension-development.md' || path === 'docs/architecture/extensions/plugin-architecture.md'
       || path.startsWith('docs/architecture/extensions/')
@@ -87,7 +94,7 @@ export function planChanges(paths, { event = 'pull_request', unknownDiff = false
   return {
     targets: portableTargets.filter(target => builds.has(target)),
     audits: auditDirectories.filter(dir => audits.has(dir)),
-    managedWeb, native, headlessTests, headlessPackage, extensions,
+    managedWeb, native, headlessTests, headlessPackage, extensions, website, websiteOnly,
   };
 }
 
@@ -112,7 +119,7 @@ function affectsValidation(path) {
 export function planRun(paths, { eventName, event, unknownDiff = false, fullMatrix = false }) {
   const plan = planChanges(paths, { event: eventName, unknownDiff, fullMatrix });
   const fastPr = !unknownDiff && isInternalMainPullRequest(eventName, event)
-    && !plan.headlessPackage && !plan.audits.length && !paths.some(affectsValidation);
+    && !plan.website && !plan.headlessPackage && !plan.audits.length && !paths.some(affectsValidation);
   if (!fastPr) return { ...plan, fastPr, quickTests: [] };
 
   const quickTests = [];
@@ -159,6 +166,7 @@ function main() {
   const outputs = {
     'fast-pr': plan.fastPr, 'quick-tests': JSON.stringify(plan.quickTests),
     targets: JSON.stringify(plan.targets), audits: JSON.stringify(plan.audits),
+    website: plan.website, 'website-only': plan.websiteOnly,
     'has-builds': plan.targets.length > 0, 'has-audits': plan.audits.length > 0,
     'managed-web': plan.managedWeb, native: plan.native,
     'headless-tests': plan.headlessTests, 'headless-package': plan.headlessPackage, extensions: plan.extensions,
@@ -166,7 +174,7 @@ function main() {
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT,
     Object.entries(outputs).map(([key, value]) => `${key}=${value}\n`).join(''));
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY,
-    `## Selected CI work\n\n- Internal PR fast checks: ${plan.fastPr}\n- Quick test suites: ${plan.quickTests.join(', ') || 'none'}\n- Portable builds: ${plan.targets.join(', ') || 'none'}\n- Dependency audits: ${plan.audits.join(', ') || 'none'}\n- Managed Web: ${plan.managedWeb}\n- Extension contracts: ${plan.extensions}\n- Server tests: ${plan.headlessTests}\n- Server archive: ${plan.headlessPackage}\n- macOS native compile: ${plan.native}\n- Full matrix requested: ${eventName === 'workflow_dispatch' && fullMatrix}\n- Diff unavailable: ${unknownDiff}\n`);
+    `## Selected CI work\n\n- Internal PR fast checks: ${plan.fastPr}\n- Quick test suites: ${plan.quickTests.join(', ') || 'none'}\n- Portable builds: ${plan.targets.join(', ') || 'none'}\n- Website: ${plan.website}\n- Dependency audits: ${plan.audits.join(', ') || 'none'}\n- Managed Web: ${plan.managedWeb}\n- Extension contracts: ${plan.extensions}\n- Server tests: ${plan.headlessTests}\n- Server archive: ${plan.headlessPackage}\n- macOS native compile: ${plan.native}\n- Full matrix requested: ${eventName === 'workflow_dispatch' && fullMatrix}\n- Diff unavailable: ${unknownDiff}\n`);
   console.log(JSON.stringify(plan, null, 2));
 }
 if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) main();

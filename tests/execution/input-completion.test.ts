@@ -4,8 +4,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { OpenCraftHostQueue } from "../../apps/opencraft-daemon/src/opencraft-host-queue.js";
-import { readInputCompletion } from "../../apps/opencraft-daemon/src/input-completion.js";
+import { readInputCompletion, readQueuedInputCompletion } from "../../apps/opencraft-daemon/src/input-completion.js";
 import { parseInputCompletion } from "@opencraft/appserver-protocol";
+import { threadQueueRequest } from "@opencraft/thread-queue";
 
 async function fixture(t: test.TestContext) {
   const root = await mkdtemp(join(tmpdir(), "input-completion-"));
@@ -16,6 +17,26 @@ async function fixture(t: test.TestContext) {
   return { get queue() {return queue;}, id:queued.id, restart() {queue.close();queue=new OpenCraftHostQueue(root);} };
 }
 const items = async () => ({data:[{turnId:"owned-turn",item:{type:"agentMessage",text:"native result"}}],nextCursor:null});
+
+test("bridge queue find preserves owner delivery evidence for exact-Turn completion", async t => {
+  const f = await fixture(t);
+  f.queue.settle("thread", f.id, "delivered");
+  f.queue.deliveries.finish("thread", "owned-turn", "completed");
+  f.restart();
+  const { queuedSubmission: row } = await threadQueueRequest(f.queue, "thread", "thread/queue/find",
+    { clientUserMessageId: "actor-input:request" }, {} as never) as { queuedSubmission: any };
+  assert.equal(row.delivery.nativeAdmission, "accepted");
+  assert.equal(row.delivery.execution, "completed");
+  const result = await readQueuedInputCompletion(row, async (turn, cursor) => {
+    assert.equal(turn, "owned-turn"); assert.equal(cursor, null); return items();
+  });
+  assert.deepEqual(result, { version: 1, turnId: "owned-turn", status: "completed", text: "native result", truncated: false });
+  for (const delivery of [undefined, { ...row.delivery, nativeAdmission: "unknown" },
+    { ...row.delivery, targetTurnId: "another-turn" }, { ...row.delivery, execution: "running" }]) {
+    assert.equal((await readQueuedInputCompletion({ ...row, delivery }, async () => { throw Error("No positive native terminal"); })).status, "unknown");
+  }
+  await assert.rejects(readQueuedInputCompletion(row, async () => ({ data: [{ turnId: "another-turn", item: { type: "agentMessage", text: "foreign" } }], nextCursor: null })), /another Turn/u);
+});
 
 for (const outcome of ["completed", "failed"] as const) test(`durable ${outcome} survives restart and a different later Turn without reading latest status`, async t => {
   const f = await fixture(t);
