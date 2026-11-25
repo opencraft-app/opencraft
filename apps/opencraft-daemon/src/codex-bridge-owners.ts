@@ -79,7 +79,7 @@ const ACTOR_INPUT = "actor-input:";
  * steered rather than again at dispatch.
  */
 export function collaborationQueueGuard(owners: CollaborationQueueOwners): CodexBridgeOwners["queueGuard"] {
-  return async (threadId, method, params, context, find) => {
+  return async (threadId, method, params, context, find, readCompletion) => {
     const actorRequest = context.collaborationRequestId;
     const selected = text(params.queuedSubmissionId)
       ? await find({ queuedSubmissionId: text(params.queuedSubmissionId) })
@@ -107,7 +107,9 @@ export function collaborationQueueGuard(owners: CollaborationQueueOwners): Codex
     if (method === "thread/queue/collaborationReceipt") {
       if (!actorRequest) throw new CollaborationQueueRefusal(-32600, "Trusted Actor admission required");
       const row = await find({ clientUserMessageId: `${ACTOR_INPUT}${actorRequest}` });
-      return { result: { receipt: row ? { id: row.id, state: row.state, targetTurnId: row.targetTurnId } : null } };
+      const completion = row && params.includeCompletion === true && readCompletion ? await readCompletion(row) : undefined;
+      return { result: { receipt: row ? { id: row.id, state: row.state, targetTurnId: row.targetTurnId,
+        ...(completion ? { completion } : {}) } : null } };
     }
     if (method === "thread/queue/add") {
       if (actorInput) {

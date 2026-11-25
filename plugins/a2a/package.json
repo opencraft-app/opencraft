@@ -1,0 +1,21 @@
+{
+  "name": "@opencraft/plugin-a2a",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./server": "./src/server.ts",
+    "./relay": "./src/relay.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test ../../tests/extensions/a2a-plugin.test.ts"
+  },
+  "dependencies": {
+    "@opencraft/access-control": "0.1.0",
+    "@opencraft/appserver-protocol": "0.1.0",
+    "@opencraft/http-exchange": "0.1.0",
+    "@opencraft/hub-network": "0.1.0",
+    "@opencraft/relay-server": "0.1.0"
+  }
+}

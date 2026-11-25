@@ -9,6 +9,7 @@ import type { OrchestrationMessageOrigin } from "./orchestration-authority.js";
 import type { ParentNotification, WaitTicket } from "./orchestration-ledger.js";
 import type { PersonalAssistants } from "./personal-assistants.js";
 import type { ThreadAccessPolicy } from "./thread-access.js";
+import type { ExternalConversationRequest, ExternalConversationResult } from "./external-conversation.js";
 
 /**
  * The owner Worker RPC of the orchestration runtime domain: every method the
@@ -77,6 +78,7 @@ export interface OrchestrationRuntimeMethods {
   };
   assistantAdmissions: { payload: NoInput; result: AssistantAdmission[] };
   communication: { payload: CommunicationCommand; result: CommunicationResult };
+  externalConversation: { payload: ExternalConversationRequest; result: ExternalConversationResult };
   /** The result depends on the operation; see `AutomationResult`. */
   automation: { payload: AutomationRequest; result: unknown };
   observe: { payload: { snapshot: ThreadOrchestrationSnapshot; now: number }; result: void };
@@ -109,6 +111,7 @@ const METHODS: Readonly<Record<OrchestrationRuntimeMethod, true>> = {
   assistantAllocation: true,
   assistantAdmissions: true,
   communication: true,
+  externalConversation: true,
   automation: true,
   observe: true,
   admission: true,

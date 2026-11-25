@@ -9,6 +9,11 @@ export interface WorkbenchWebServer {
 
 export function createWorkbenchWebServer(options?: {
   root?: string;
+  serviceIngress?: {
+    paths: ReadonlySet<string>;
+    handle: import("@opencraft/http-exchange").HttpExchangeHandler<import("node:http").IncomingMessage>;
+    close?(): Promise<void> | void;
+  };
   workbenchAssetsPlugin?: import("./web-deployment/workbench-assets-plugin.mjs").WorkbenchAssetsPlugin | null;
   accountService?: { handle(request: import("node:http").IncomingMessage, response: import("node:http").ServerResponse): Promise<boolean> } | null;
   getImService?: () => { handle(request: import("node:http").IncomingMessage, response: import("node:http").ServerResponse, sameOrigin: (request: import("node:http").IncomingMessage, requireOrigin: boolean) => boolean): Promise<boolean> } | null;

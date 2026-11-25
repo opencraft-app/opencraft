@@ -12,8 +12,18 @@ import {
   OPENCRAFT_STEER_EVIDENCE_EXTENSION,
   OPENCRAFT_THREAD_GOAL_EXTENSION,
   OPENCRAFT_THREAD_QUEUE_EXTENSION,
+  type InputCompletion,
 } from "@opencraft/appserver-protocol";
 import { CODEX_MAINTENANCE_READ, codexMaintenanceError, isCodexAdmission } from "./codex-admission-policy.js";
+import { readQueuedInputCompletion } from "./input-completion.js";
+
+type BridgeQueueRow = {
+  id: string;
+  clientUserMessageId: string;
+  state: string;
+  targetTurnId: string | null;
+  delivery?: unknown;
+};
 const object = (v: unknown): Record<string, unknown> =>
   v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 
@@ -105,7 +115,8 @@ export class CodexProviderBridgeSession implements DuplexTransport {
         context: TransportSubmissionContext,
         find: (
           by: { queuedSubmissionId: string } | { clientUserMessageId: string },
-        ) => Promise<{ id: string; clientUserMessageId: string; state: string; targetTurnId: string | null } | null>,
+        ) => Promise<BridgeQueueRow | null>,
+        completion?: (row: BridgeQueueRow) => Promise<InputCompletion>,
       ) => Promise<{ result: Record<string, unknown> } | null>;
       /** Translate an OpenCraft permission mode into the provider's own permission fields. */
       resolvePermissions?: (selection: string, cwd: unknown) => Promise<Record<string, unknown>>;
@@ -913,14 +924,19 @@ export class CodexProviderBridgeSession implements DuplexTransport {
         const { threadId: _, ...params } = p;
         const guarded = this.policy.queueGuard
           ? await this.policy
-              .queueGuard(threadId, method, params, context, async (by) => {
-                const found = object(
-                  this.publicTurns(threadId, await this.gateway.queue(threadId, "thread/queue/find", by)),
-                ).queuedSubmission;
-                return found
-                  ? (found as { id: string; clientUserMessageId: string; state: string; targetTurnId: string | null })
-                  : null;
-              })
+              .queueGuard(
+                threadId, method, params, context,
+                async (by) => {
+                  const found = object(
+                    this.publicTurns(threadId, await this.gateway.queue(threadId, "thread/queue/find", by)),
+                  ).queuedSubmission;
+                  return found ? (found as BridgeQueueRow) : null;
+                },
+                (row) => readQueuedInputCompletion(row, async (turnId, cursor) => this.gateway.history(
+                  threadId,
+                  await this.gateway.observe(threadId, { turnId: this.gateway.nativeTurn(threadId, turnId), cursor, limit: 100 }),
+                )),
+              )
               .catch((error: Error & { code?: number }) => {
                 throw Object.assign(error, { kind: "explicit-reject" });
               })
