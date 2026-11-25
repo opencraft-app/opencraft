@@ -7,14 +7,56 @@ import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import { deploymentPaths, proxyConfiguration, readPrivateToken } from '../../scripts/container-deployment/paths.mjs';
 import { handsResources } from '../../scripts/container-deployment/resources.mjs';
-import { AGENT_RUN_DIRECTORY, inspectWorkspaceAgentServices, OWNER_ORDER, RESTORE_PROXY_MODE_VARIABLE, RESTORE_PROXY_PORT_VARIABLE, EMBEDDED_CORE_ENVIRONMENT, brainEmbedsAccountCore, ownerSteps, restoreSteps, assertImageReference, deploymentIdentity, parseEnvironment, setEnvironmentValue } from '../../scripts/container-deployment/compose-release.mjs';
+import { AGENT_RUN_DIRECTORY, inspectWorkspaceAgentServices, inspectRollbackComposeHelp, rollbackMounts, OWNER_ORDER, RESTORE_PROXY_MODE_VARIABLE, RESTORE_PROXY_PORT_VARIABLE, EMBEDDED_CORE_ENVIRONMENT, brainEmbedsAccountCore, ownerSteps, restoreSteps, assertImageReference, deploymentIdentity, parseEnvironment, setEnvironmentValue } from '../../scripts/container-deployment/compose-release.mjs';
 import { legacyLayoutValues } from '../../scripts/container-deployment/layout.mjs';
-import { archiveRuntimeLocks } from '../../scripts/container-deployment/rollback-runtime-locks.mjs';
+import { archiveRuntimeLocks, resolveRollbackRoot } from '../../scripts/container-deployment/rollback-runtime-locks.mjs';
 
 const composeExecutable = process.env.OPENCRAFT_COMPOSE_EXECUTABLE ?? 'docker';
 const composePrefix = process.env.OPENCRAFT_COMPOSE_EXECUTABLE ? [] : ['compose'];
 const composeAvailable = () => spawnSync(composeExecutable, [...composePrefix, 'version'], { stdio: 'ignore' }).status === 0;
 const compose = (args, options) => execFileSync(composeExecutable, [...composePrefix, ...args], options);
+
+test('rollback preflight requires a Compose run pull policy before changing any owner', () => {
+  assert.throws(() => inspectRollbackComposeHelp('      --no-deps   Do not start dependencies\n'), /--pull never/);
+  assert.doesNotThrow(() => inspectRollbackComposeHelp('      --pull string   Pull image before running\n'));
+});
+
+test('rollback selects the deepest writable bind for the declared runtime UID', () => {
+  const base = { type: 'bind', source: '/host/data', target: '/data' };
+  const privateBind = { type: 'bind', source: '/host/locks', target: '/data/private' };
+  const gateway = { user: '1234:1234', environment: { OPENCRAFT_DATA_DIR: '/data' }, volumes: [base] };
+  const hands = { user: '0:0', environment: { OPENCRAFT_EXECUTION_DIR: '/data/private/exec' }, volumes: [base, privateBind] };
+  const config = { services: { gateway, hands } };
+  assert.deepEqual(rollbackMounts(config), [
+    { role: 'gateway', root: '/data', source: '/host/data', hostPath: '/host/data', user: '1234:1234' },
+    { role: 'hands', root: '/data/private/exec', source: '/host/locks', hostPath: '/host/locks/exec', user: '0:0' },
+  ]);
+  privateBind.read_only = true;
+  assert.throws(() => rollbackMounts(config), /writable host bind/);
+  privateBind.read_only = false;
+  hands.network_mode = 'service:proxy';
+  assert.throws(() => rollbackMounts(config), /which must stop/);
+});
+
+test('rollback resolves a directory alias only if it reaches the Compose host bind and the declared user', async t => {
+  const data = await realpath(await mkdtemp(join(tmpdir(), 'opencraft-rollback-alias-')));
+  t.after(() => rm(data, { recursive: true, force: true }));
+  const real = join(data, 'real');
+  const unrelated = join(data, 'unrelated');
+  const root = join(data, 'alias');
+  await mkdir(real);
+  await mkdir(unrelated);
+  await symlink(real, root);
+  const info = await lstat(real, { bigint: true });
+  const expected = { root, user: `${process.getuid()}:${process.getgid()}`, dev: String(info.dev), ino: String(info.ino) };
+  assert.equal(resolveRollbackRoot(root, expected), real);
+  await writeFile(join(real, 'terminal.lock'), '', { mode: 0o600 });
+  assert.ok((await lstat(join(real, 'terminal.lock'))).isFile(), 'path preflight is read-only');
+  assert.throws(() => resolveRollbackRoot(root, { ...expected, user: '1:1' }), /runtime user/);
+  await rm(root);
+  await symlink(unrelated, root);
+  assert.throws(() => resolveRollbackRoot(root, expected), /declared host bind/);
+});
 
 test('rollback archives converted owner and placement locks and preserves other state', async t => {
   const data = await realpath(await mkdtemp(join(tmpdir(), 'opencraft-rollback-locks-')));

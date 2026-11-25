@@ -1,4 +1,4 @@
-import { lstatSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync } from "node:fs";
+import { accessSync, constants, lstatSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, statSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
@@ -103,9 +103,29 @@ export function archiveRuntimeLocks(role, root) {
   }
 }
 
+/** Resolve an image's mount alias only after proving it is the declared host
+ * directory and that the one-off container is running as the declared owner. */
+export function resolveRollbackRoot(root, expected) {
+  if (expected.root !== root || !isAbsolute(root ?? "") || resolve(root) !== root || root === "/"
+    || expected.user !== `${process.getuid()}:${process.getgid()}`)
+    throw new Error("Rollback helper path or runtime user differs from Compose configuration");
+  const canonical = realpathSync(root);
+  const info = statSync(canonical, { bigint: true });
+  if (canonical === "/" || !info.isDirectory() || String(info.dev) !== expected.dev || String(info.ino) !== expected.ino
+    || info.uid !== BigInt(process.getuid()))
+    throw new Error(`Rollback helper directory does not match the declared host bind: ${root}`);
+  accessSync(canonical, constants.W_OK | constants.X_OK);
+  return canonical;
+}
+
 if (process.argv[1] === "-") {
-  const role = process.argv[2];
+  const [role, mode, expected] = process.argv.slice(2);
+  if (!["gateway", "hands"].includes(role) || !["check", "archive"].includes(mode))
+    throw new Error("Invalid rollback helper invocation");
   const root = role === "hands" ? process.env.OPENCRAFT_EXECUTION_DIR : process.env.OPENCRAFT_DATA_DIR;
-  const count = archiveRuntimeLocks(role, root);
-  if (count) console.log(`Archived ${count} released ${role} runtime locks for rollback.`);
+  const canonical = resolveRollbackRoot(root, JSON.parse(expected));
+  if (mode === "archive") {
+    const count = archiveRuntimeLocks(role, canonical);
+    if (count) console.log(`Archived ${count} released ${role} runtime locks for rollback.`);
+  }
 }

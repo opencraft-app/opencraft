@@ -647,18 +647,18 @@ docker compose -f compose.yaml -f compose.workspaces.yaml up -d
 
 ## Upgrade and rollback
 
-Build a content-addressed or versioned image reference, then use the transaction
-tool. It checks paths, ownership, capacity, disk and rendered Compose config,
-and that the deployment UID can write `deploy/docker/` (for `.env`) and
-`$OPENCRAFT_HOST_DATA_DIR/deployment/` (for `compose-state.json`), so a release
-never fails after replacing every owner; that the rendered `brain` and `hands`
-services keep `/run/opencraft-agent` on a private tmpfs (Compose files older than
-the workspace agent lack it; update `deploy/docker/` first) and that each has its
-static-docker link volume shared with the Gateway only;
-uses a deployment lock; applies and waits for each owner in strict dependency
-order (`hands`, `proxy`, `brain`, `gateway`); and writes `.env` only after all four are
+Use the transaction tool with a content-addressed or versioned image reference.
+It checks paths, ownership, capacity, disk, rendered Compose configuration and
+support for `docker compose run --pull never`. The deployment UID must be able
+to write `deploy/docker/` for `.env` and `$OPENCRAFT_HOST_DATA_DIR/deployment/`
+for `compose-state.json`. Brain and Hands each need a private
+`/run/opencraft-agent` tmpfs and a static-docker link volume shared only with
+Gateway. Update older Compose files in `deploy/docker/` if they lack these mounts.
+
+The tool uses a deployment lock, applies and waits for the owners in dependency
+order (`hands`, `proxy`, `brain`, `gateway`), and writes `.env` once all four are
 healthy. A Brain that still embeds the account Core is stopped before `proxy`
-starts (see [Switching an existing installation](#switching-an-existing-installation)):
+starts. See [Switching an existing installation](#switching-an-existing-installation).
 
 ```sh
 node ../scripts/container-deployment/compose-release.mjs doctor
@@ -670,6 +670,10 @@ If a stage fails, the tool stops the Compose owners and reapplies the previous
 image in the same owner order. For releases that changed from directory leases
 to kernel locks, the tool checks that the affected runtime lock files are free
 and archives them before starting the previous image.
+Before stopping any owner, the tool starts read-only checks in the previous
+and candidate images with the Gateway and Hands runtime identities and mounts.
+A container path alias is accepted when its resolved directory has the same
+identity as the writable host bind declared by Compose.
 If the failed release was the first switch from a Brain that embedded the account
 Core, the tool restores that topology rather than only the image: it stops Brain,
 removes the `proxy` container, starts the previous image's Brain with the

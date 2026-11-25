@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process';
 import { constants } from 'node:fs';
-import { access, lstat, mkdir, open, readFile, rename, stat, statfs, unlink, writeFile } from 'node:fs/promises';
+import { access, lstat, mkdir, open, readFile, realpath, rename, stat, statfs, unlink, writeFile } from 'node:fs/promises';
 import { cpus, hostname, totalmem } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { handsResources } from './resources.mjs';
 import { hostLayout, inspectPrivateDirectory, inspectWorkspaceDirectory, SERVICES } from './layout.mjs';
@@ -150,6 +150,33 @@ export function inspectWorkspaceAgentServices(config) {
   }
 }
 
+export function inspectRollbackComposeHelp(help) {
+  if (!/^\s+--pull\s+string\s/mu.test(help))
+    throw new Error('Docker Compose cannot run rollback helpers with --pull never. Update the Compose plugin before upgrading.');
+}
+
+const rollbackRoles = ['gateway', 'hands'];
+
+export function rollbackMounts(config) {
+  return rollbackRoles.map(role => {
+    const service = config.services?.[role];
+    const root = service?.environment?.[role === 'hands' ? 'OPENCRAFT_EXECUTION_DIR' : 'OPENCRAFT_DATA_DIR'];
+    const user = service?.user;
+    if (typeof root !== 'string' || !posix.isAbsolute(root) || root === '/' || posix.normalize(root) !== root
+      || !/^\d+:\d+$/u.test(user ?? ''))
+      throw new Error(`Invalid ${role} runtime lock path or user in Compose configuration`);
+    const dependency = service.network_mode?.match(/^service:(.+)$/u)?.[1];
+    if (OWNER_ORDER.includes(dependency))
+      throw new Error(`${role} rollback helper cannot share the network of ${dependency}, which must stop before rollback`);
+    const [mount] = (service.volumes ?? []).filter(({ target }) =>
+      typeof target === 'string' && (root === target || root.startsWith(target === '/' ? '/' : target + '/')))
+      .sort((a, b) => b.target.length - a.target.length);
+    if (mount?.type !== 'bind' || mount.read_only || !isAbsolute(mount.source ?? ''))
+      throw new Error(`${role} runtime lock directory must be in a writable host bind: ${root}`);
+    return { role, root, source: mount.source, hostPath: join(mount.source, posix.relative(mount.target, root)), user };
+  });
+}
+
 export async function doctor(environment, { allowOversubscription = false, deployDirectory = dockerDirectory } = {}) {
   const required = ['OPENCRAFT_HOST_DATA_DIR', 'OPENCRAFT_DATA_DIR', 'OPENCRAFT_HOST_WORKSPACE_DIR', 'OPENCRAFT_WORKSPACE_DIR', 'OPENCRAFT_UID', 'OPENCRAFT_GID'];
   for (const name of required) if (!environment[name]) throw new Error(`Missing ${name}`);
@@ -172,7 +199,10 @@ export async function doctor(environment, { allowOversubscription = false, deplo
     throw new Error('Host CPU count is below the declared Hands budget');
   const disk = await statfs(environment.OPENCRAFT_HOST_DATA_DIR);
   if (disk.bavail * disk.bsize < 5 * 1024 ** 3) throw new Error('Less than 5 GiB is available in the data filesystem');
-  inspectWorkspaceAgentServices(JSON.parse(runCompose(['config', '--format', 'json'], undefined, { capture: true })));
+  inspectRollbackComposeHelp(runCompose(['run', '--help'], undefined, { capture: true }));
+  const config = JSON.parse(runCompose(['config', '--format', 'json'], undefined, { capture: true }));
+  inspectWorkspaceAgentServices(config);
+  rollbackMounts(config);
   return { hostname: hostname(), resources, memoryBytes: totalmem(), cpuCount: cpus().length,
     availableDataBytes: disk.bavail * disk.bsize };
 }
@@ -210,20 +240,37 @@ async function applyOwners(image) {
   runSteps(ownerSteps({ brainEmbedsCore: brainEmbedsAccountCore(runningBrainEnvironment()) }), image);
 }
 
-async function prepareOwnerRollback(image) {
+async function rollbackPlan(image) {
+  const config = JSON.parse(runCompose(['config', '--format', 'json'], image, { capture: true }));
+  return Promise.all(rollbackMounts(config).map(async ({ role, root, source, hostPath, user }) => {
+    const canonical = await realpath(hostPath);
+    const path = relative(await realpath(source), canonical);
+    if (path === '..' || path.startsWith('..' + sep) || isAbsolute(path))
+      throw new Error(`${role} runtime lock directory resolves outside its Compose bind: ${root}`);
+    const info = await stat(canonical, { bigint: true });
+    if (!info.isDirectory()) throw new Error(`${role} runtime lock bind is not a directory: ${hostPath}`);
+    return { role, expected: JSON.stringify({ root, user, dev: String(info.dev), ino: String(info.ino) }) };
+  }));
+}
+
+async function runRollbackHelpers(image, mode, plan) {
   const input = await readFile(new URL('./rollback-runtime-locks.mjs', import.meta.url));
+  for (const { role, expected } of plan)
+    runCompose(['run', '--rm', '--no-deps', '-T', '--pull', 'never', '--entrypoint', '/opt/opencraft/bin/node',
+      role, '--input-type=module', '-', role, mode, expected], image, { input });
+}
+
+async function prepareOwnerRollback(image, plan) {
   // Some newer owners retain a file at the pathname older owners need as a
   // directory. Stop every writer before preparing the shared mounts.
   runCompose(['stop', '--timeout', '60', ...OWNER_ORDER], image);
   if (runCompose(['ps', '-q', ...OWNER_ORDER], image, { capture: true }).trim())
     throw new Error('OpenCraft owners are still running; cannot prepare runtime locks for rollback');
-  for (const role of ['gateway', 'hands'])
-    runCompose(['run', '--rm', '--no-deps', '-T', '--pull', 'never', '--entrypoint', '/opt/opencraft/bin/node',
-      role, '--input-type=module', '-', role], image, { input });
+  await runRollbackHelpers(image, 'archive', plan);
 }
 
-async function restoreOwners(image, embeddedCoreBefore) {
-  await prepareOwnerRollback(image);
+async function restoreOwners(image, embeddedCoreBefore, plan) {
+  await prepareOwnerRollback(image, plan);
   if (embeddedCoreBefore) console.error('Returning to the embedded account Core that ran before this release.');
   runSteps(restoreSteps({ embeddedCoreBefore }), image);
 }
@@ -252,13 +299,17 @@ async function applyImage({ image: requestedImage, rollback, envPath, allowMutab
     // Observed before any step: the topology a failed release must return to.
     const embeddedCoreBefore = brainEmbedsAccountCore(runningBrainEnvironment());
     if (!allowMutable) runCompose(['pull', 'hands'], image);
+    // Exercise the exact one-off container before changing any running owner.
+    const previousRollback = await rollbackPlan(previous), nextRollback = await rollbackPlan(image);
+    await runRollbackHelpers(previous, 'check', previousRollback);
+    await runRollbackHelpers(image, 'check', nextRollback);
     try {
-      if (rollback) await prepareOwnerRollback(image);
+      if (rollback) await prepareOwnerRollback(image, nextRollback);
       await applyOwners(image);
     }
     catch (error) {
       console.error(`Upgrade failed; restoring ${previous}`);
-      try { await restoreOwners(previous, embeddedCoreBefore); }
+      try { await restoreOwners(previous, embeddedCoreBefore, previousRollback); }
       catch (rollback) { throw new AggregateError([error, rollback], 'Upgrade and automatic code rollback both failed'); }
       throw error;
     }
@@ -269,7 +320,7 @@ async function applyImage({ image: requestedImage, rollback, envPath, allowMutab
     } catch (persistence) {
       console.error('Deployment metadata could not be committed; restoring the previous image.');
       const failures = [persistence];
-      try { await restoreOwners(previous, embeddedCoreBefore); } catch (error) { failures.push(error); }
+      try { await restoreOwners(previous, embeddedCoreBefore, previousRollback); } catch (error) { failures.push(error); }
       try { previousState === null ? await unlink(statePath).catch(error => { if (error.code !== 'ENOENT') throw error; }) : await atomicWrite(statePath, previousState); }
       catch (error) { failures.push(error); }
       if (failures.length > 1) throw new AggregateError(failures, 'Deployment persistence and recovery failed');
