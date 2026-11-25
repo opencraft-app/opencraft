@@ -1,18 +1,77 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtemp, readFile, writeFile, chmod, rm } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readdir, readFile, realpath, writeFile, chmod, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { once } from 'node:events';
 import { deploymentPaths, proxyConfiguration, readPrivateToken } from '../../scripts/container-deployment/paths.mjs';
 import { handsResources } from '../../scripts/container-deployment/resources.mjs';
 import { AGENT_RUN_DIRECTORY, inspectWorkspaceAgentServices, OWNER_ORDER, RESTORE_PROXY_MODE_VARIABLE, RESTORE_PROXY_PORT_VARIABLE, EMBEDDED_CORE_ENVIRONMENT, brainEmbedsAccountCore, ownerSteps, restoreSteps, assertImageReference, deploymentIdentity, parseEnvironment, setEnvironmentValue } from '../../scripts/container-deployment/compose-release.mjs';
 import { legacyLayoutValues } from '../../scripts/container-deployment/layout.mjs';
+import { archiveRuntimeLocks } from '../../scripts/container-deployment/rollback-runtime-locks.mjs';
 
 const composeExecutable = process.env.OPENCRAFT_COMPOSE_EXECUTABLE ?? 'docker';
 const composePrefix = process.env.OPENCRAFT_COMPOSE_EXECUTABLE ? [] : ['compose'];
 const composeAvailable = () => spawnSync(composeExecutable, [...composePrefix, 'version'], { stdio: 'ignore' }).status === 0;
 const compose = (args, options) => execFileSync(composeExecutable, [...composePrefix, ...args], options);
+
+test('rollback archives converted owner and placement locks and preserves other state', async t => {
+  const data = await realpath(await mkdtemp(join(tmpdir(), 'opencraft-rollback-locks-')));
+  t.after(() => rm(data, { recursive: true, force: true }));
+  const workspace = join(data, 'workspaces', 'default', 'host');
+  const hands = join(data, 'execution');
+  await mkdir(workspace, { recursive: true });
+  await mkdir(hands);
+  await mkdir(join(data, 'native-host.lock')); // An older owner still uses a directory lease.
+  for (const path of [join(data, '.personal-assistant-host.lock'), join(data, 'hub-network.json.lock'),
+    join(workspace, 'placement.json.lock'), join(hands, 'terminal.lock')])
+    await writeFile(path, '', { mode: 0o600 });
+  const owner = JSON.stringify({ version: 1, released: true });
+  await writeFile(join(data, '.personal-assistant-host.lock.owner.json'), owner, { mode: 0o600 });
+  await writeFile(join(workspace, 'placement.json'), '{"schemaVersion":1}');
+
+  assert.equal(archiveRuntimeLocks('gateway', data), 2);
+  assert.equal(archiveRuntimeLocks('hands', hands), 1);
+  assert.equal(archiveRuntimeLocks('gateway', data), 0);
+  assert.ok((await lstat(join(data, 'native-host.lock'))).isDirectory());
+  assert.ok((await lstat(join(data, 'hub-network.json.lock'))).isFile());
+  assert.equal(await readFile(join(workspace, 'placement.json'), 'utf8'), '{"schemaVersion":1}');
+  const archive = (await readdir(data)).find(name => name.startsWith('.opencraft-lock-rollback-'));
+  assert.equal(await readFile(join(data, archive, '.personal-assistant-host.lock.owner.json'), 'utf8'), owner);
+  for (const path of [join(data, '.personal-assistant-host.lock'), join(workspace, 'placement.json.lock'), join(hands, 'terminal.lock')])
+    await assert.rejects(lstat(path), { code: 'ENOENT' });
+});
+
+test('rollback refuses active SQLite locks and symlinks before archiving any owner locks', async t => {
+  const data = await realpath(await mkdtemp(join(tmpdir(), 'opencraft-active-rollback-lock-')));
+  t.after(() => rm(data, { recursive: true, force: true }));
+  const active = join(data, '.personal-assistant-host.lock');
+  const released = join(data, 'native-host.lock');
+  for (const path of [active, released]) await writeFile(path, '', { mode: 0o600 });
+  const child = spawn(process.execPath, ['--input-type=module', '-e', `
+    import { DatabaseSync } from 'node:sqlite';
+    const db = new DatabaseSync(process.argv[1]);
+    db.exec('BEGIN EXCLUSIVE');
+    process.stdout.write('locked');
+    process.stdin.resume();
+  `, active], { stdio: ['pipe', 'pipe', 'inherit'] });
+  const closed = once(child, 'close');
+  try {
+    assert.equal(await Promise.race([
+      once(child.stdout, 'data').then(([data]) => data.toString()),
+      closed.then(() => 'child exited'),
+    ]), 'locked');
+    assert.throws(() => archiveRuntimeLocks('gateway', data), /could not be reserved/);
+    assert.ok((await lstat(released)).isFile());
+  } finally {
+    child.stdin.end();
+    await closed;
+  }
+  await symlink(released, join(data, 'server-information.json.lock'));
+  assert.throws(() => archiveRuntimeLocks('gateway', data), /Unexpected runtime lock file/);
+  assert.ok((await lstat(active)).isFile());
+});
 
 test('Compose release transactions preserve env content and owner dependency order', () => {
   assert.deepEqual(OWNER_ORDER, ['hands', 'proxy', 'brain', 'gateway']);

@@ -86,7 +86,8 @@ function runCompose(args, image, options = {}) {
   for (const name of Object.keys(EMBEDDED_CORE_ENVIRONMENT)) delete env[name];
   if (options.embeddedCore) Object.assign(env, EMBEDDED_CORE_ENVIRONMENT);
   return execFileSync('docker', ['compose', '--env-file', '.env', ...args], {
-    cwd: dockerDirectory, stdio: options.capture ? 'pipe' : 'inherit', encoding: options.capture ? 'utf8' : undefined, env,
+    cwd: dockerDirectory, stdio: options.capture ? 'pipe' : [options.input ? 'pipe' : 'inherit', 'inherit', 'inherit'],
+    encoding: options.capture ? 'utf8' : undefined, input: options.input, env,
   });
 }
 
@@ -209,7 +210,20 @@ async function applyOwners(image) {
   runSteps(ownerSteps({ brainEmbedsCore: brainEmbedsAccountCore(runningBrainEnvironment()) }), image);
 }
 
-function restoreOwners(image, embeddedCoreBefore) {
+async function prepareOwnerRollback(image) {
+  const input = await readFile(new URL('./rollback-runtime-locks.mjs', import.meta.url));
+  // Some newer owners retain a file at the pathname older owners need as a
+  // directory. Stop every writer before preparing the shared mounts.
+  runCompose(['stop', '--timeout', '60', ...OWNER_ORDER], image);
+  if (runCompose(['ps', '-q', ...OWNER_ORDER], image, { capture: true }).trim())
+    throw new Error('OpenCraft owners are still running; cannot prepare runtime locks for rollback');
+  for (const role of ['gateway', 'hands'])
+    runCompose(['run', '--rm', '--no-deps', '-T', '--pull', 'never', '--entrypoint', '/opt/opencraft/bin/node',
+      role, '--input-type=module', '-', role], image, { input });
+}
+
+async function restoreOwners(image, embeddedCoreBefore) {
+  await prepareOwnerRollback(image);
   if (embeddedCoreBefore) console.error('Returning to the embedded account Core that ran before this release.');
   runSteps(restoreSteps({ embeddedCoreBefore }), image);
 }
@@ -220,25 +234,31 @@ async function atomicWrite(path, text, mode = 0o600) {
   await rename(temporary, path);
 }
 
-async function applyImage({ image, envPath, allowMutable, allowOversubscription }) {
-  assertImageReference(image, allowMutable);
-  const original = await readFile(envPath, 'utf8'), environment = parseEnvironment(original);
+async function applyImage({ image: requestedImage, rollback, envPath, allowMutable, allowOversubscription }) {
+  const environment = parseEnvironment(await readFile(envPath, 'utf8'));
   await doctor(environment, { allowOversubscription });
-  const previous = environment.OPENCRAFT_IMAGE;
-  if (!previous) throw new Error('OPENCRAFT_IMAGE is missing from .env');
   const release = await acquireLock(environment.OPENCRAFT_HOST_DATA_DIR);
   const statePath = join(environment.OPENCRAFT_HOST_DATA_DIR, 'deployment', 'compose-state.json');
   let previousState = null;
   try {
+    const original = await readFile(envPath, 'utf8');
+    const previous = parseEnvironment(original).OPENCRAFT_IMAGE;
+    if (!previous) throw new Error('OPENCRAFT_IMAGE is missing from .env');
     try { previousState = await readFile(statePath, 'utf8'); }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
+    if (rollback && !previousState) throw new Error('No previous Compose release is recorded');
+    const image = rollback ? JSON.parse(previousState).previousImage : requestedImage;
+    assertImageReference(image, allowMutable);
     // Observed before any step: the topology a failed release must return to.
     const embeddedCoreBefore = brainEmbedsAccountCore(runningBrainEnvironment());
     if (!allowMutable) runCompose(['pull', 'hands'], image);
-    try { await applyOwners(image); }
+    try {
+      if (rollback) await prepareOwnerRollback(image);
+      await applyOwners(image);
+    }
     catch (error) {
       console.error(`Upgrade failed; restoring ${previous}`);
-      try { restoreOwners(previous, embeddedCoreBefore); }
+      try { await restoreOwners(previous, embeddedCoreBefore); }
       catch (rollback) { throw new AggregateError([error, rollback], 'Upgrade and automatic code rollback both failed'); }
       throw error;
     }
@@ -249,7 +269,7 @@ async function applyImage({ image, envPath, allowMutable, allowOversubscription 
     } catch (persistence) {
       console.error('Deployment metadata could not be committed; restoring the previous image.');
       const failures = [persistence];
-      try { restoreOwners(previous, embeddedCoreBefore); } catch (error) { failures.push(error); }
+      try { await restoreOwners(previous, embeddedCoreBefore); } catch (error) { failures.push(error); }
       try { previousState === null ? await unlink(statePath).catch(error => { if (error.code !== 'ENOENT') throw error; }) : await atomicWrite(statePath, previousState); }
       catch (error) { failures.push(error); }
       if (failures.length > 1) throw new AggregateError(failures, 'Deployment persistence and recovery failed');
@@ -277,8 +297,7 @@ async function main(argv = process.argv.slice(2)) {
     return;
   }
   if (command === 'rollback') {
-    const state = JSON.parse(await readFile(join(environment.OPENCRAFT_HOST_DATA_DIR, 'deployment', 'compose-state.json'), 'utf8'));
-    await applyImage({ image: state.previousImage, envPath, allowMutable: flags.has('--allow-mutable-image'), allowOversubscription: flags.has('--allow-oversubscription') });
+    await applyImage({ rollback: true, envPath, allowMutable: flags.has('--allow-mutable-image'), allowOversubscription: flags.has('--allow-oversubscription') });
     return;
   }
 }

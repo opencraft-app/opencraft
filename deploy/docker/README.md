@@ -666,7 +666,10 @@ node ../scripts/container-deployment/compose-release.mjs upgrade \
   ghcr.io/opencraft-app/opencraft@sha256:REPLACE_WITH_VERIFIED_DIGEST
 ```
 
-If a stage fails, the tool reapplies the previous image in the same owner order.
+If a stage fails, the tool stops the Compose owners and reapplies the previous
+image in the same owner order. For releases that changed from directory leases
+to kernel locks, the tool checks that the affected runtime lock files are free
+and archives them before starting the previous image.
 If the failed release was the first switch from a Brain that embedded the account
 Core, the tool restores that topology rather than only the image: it stops Brain,
 removes the `proxy` container, starts the previous image's Brain with the
@@ -691,7 +694,8 @@ image:
 node ../scripts/container-deployment/compose-release.mjs rollback
 ```
 
-`rollback` keeps the current Compose files, so the previous image must already
+`rollback` uses the same runtime lock preparation. It keeps the current Compose
+files, so the previous image must already
 contain the `proxy` service entry. To return to a release older than that, follow
 the embedded-Core rollback in [Model proxy](#switching-an-existing-installation).
 
