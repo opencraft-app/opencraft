@@ -24,5 +24,10 @@ export function executionRequestEffect(method: string): ExecutionRequestEffect {
       "thread/approveGuardianDeniedAction", "review/start"].includes(method)) return "configured-execution";
   return "none";
 }
-export const requiresEnvironmentAuthority = (method: string): boolean => executionRequestEffect(method) !== "none";
+export function requiresEnvironmentAuthority(method: string, collaborationRequestId?: string): boolean {
+  // The collaboration service already authorized a cancellation of this request.
+  // The Host must still match the exact queued input to the trusted request ID.
+  if (method === "thread/queue/delete" && collaborationRequestId) return false;
+  return executionRequestEffect(method) !== "none";
+}
 export const requiresCurrentEnvironmentAuthority = (method: string, _params?: unknown): boolean => executionRequestEffect(method) === "configured-execution";

@@ -228,6 +228,10 @@ class SessionMcpPreparationFailure extends Error {
 // contain credentials, environment values or paths and never cross this boundary.
 function sessionMcpReason(cause: unknown): string {
   if (cause instanceof SessionMcpRecoveryPending) return "reconfiguration-pending";
+  const rpc = record(cause);
+  const data = record(rpc.data);
+  if (rpc.code === -32073 && data.code === "HISTORY_READ_UNAVAILABLE" && data.retryable === true)
+    return "history-read-unavailable";
   const message = cause instanceof Error ? cause.message : "";
   switch (message) {
     case "Wait until the Codex thread is idle before changing its tools": return "thread-busy";
@@ -241,17 +245,17 @@ function sessionMcpReason(cause: unknown): string {
     case "Session tools require an attested execution": return "execution-unattested";
     case "Cannot preserve this Codex sandbox while refreshing tools": return "sandbox-unsupported";
     default:
-      if (typeof record(cause).code === "number") {
+      if (typeof rpc.code === "number") {
         if (/(?:permission denied|\bEACCES\b|os error 13)/i.test(message)) return "workspace-access-denied";
         if (/exec-server[^\n]*(?:no such file or directory|\bENOENT\b)/i.test(message)) return "execution-start-unavailable";
       }
       if (/^Codex thread\/(?:read|resume|unsubscribe|settings\/update) delivery outcome is unknown after timeout$/.test(message)) return "preparation-timeout";
-      return typeof record(cause).code === "number" ? "native-rpc-failed" : "preparation-failed";
+      return typeof rpc.code === "number" ? "native-rpc-failed" : "preparation-failed";
   }
 }
 function sessionMcpRetryable(cause: unknown): boolean {
   return ["thread-busy", "connection-closed", "connection-not-ready", "connection-expired",
-    "preparation-timeout", "reconfiguration-pending"].includes(sessionMcpReason(cause));
+    "preparation-timeout", "reconfiguration-pending", "history-read-unavailable"].includes(sessionMcpReason(cause));
 }
 interface SharedCodexRoutingOptions {
   readonly artifactDirectory?: string;
@@ -1277,7 +1281,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       && typeof context.collaborationRequestId === 'string'
       && params.clientUserMessageId === `actor-input:${context.collaborationRequestId}`;
     try {
-      if (this.options.executionEnvironment && requiresEnvironmentAuthority(string(message.method)) && !collaborationQueueAdmission) {
+      if (this.options.executionEnvironment && requiresEnvironmentAuthority(string(message.method), context.collaborationRequestId) && !collaborationQueueAdmission) {
         const scope = this.options.executionEnvironment.scope(context, 'local-codex', params);
         if (requiresCurrentEnvironmentAuthority(string(message.method), message.params)) this.assertCurrentEnvironmentOwner(scope);
         else if (['turn/steer', 'thread/queue/steer'].includes(string(message.method)) && !this.options.sharedTurnInput)
@@ -4049,6 +4053,8 @@ export class CodexEngineAdapter implements DuplexTransport {
     if (!threadId || this.queue === null || this.initializeResult === null) return;
     void this.withThreadOperation(threadId, () => this.maintainQueue(threadId)).catch(error => {
       this.diagnostic({ event: "queue-maintenance-failed", threadId, reason: errorMessage(error) });
+      if (sessionMcpReason(error) === "history-read-unavailable" && this.queue?.firstAwaitingAdmission(threadId))
+        this.scheduleQueuePreparationRetry(threadId);
     });
   }
 
@@ -4529,6 +4535,8 @@ export class CodexEngineAdapter implements DuplexTransport {
       const actorRequest = context.collaborationRequestId;
       const selected = string(params.queuedSubmissionId) ? queue.find(threadId, string(params.queuedSubmissionId)) : null;
       const actorClientId = selected?.clientUserMessageId ?? string(params.clientUserMessageId);
+      if (method === 'thread/queue/delete' && actorRequest && selected?.clientUserMessageId !== `actor-input:${actorRequest}`)
+        throw new OpenCraftQueueRpcError(-32600, 'Actor input requires its trusted admission');
       if (selected && actorClientId.startsWith('actor-input:') && method === 'thread/queue/delete'
           && !actorRequest && context.actorContext && this.options.collaboration) {
         await this.options.collaboration.command(context.actorContext, {

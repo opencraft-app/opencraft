@@ -218,7 +218,7 @@ export class EnvironmentMetadataTransport implements DuplexTransport {
       params.clientUserMessageId === `actor-input:${context.collaborationRequestId}`;
     let admitted: EnvironmentExecutionScope | undefined;
     try {
-      if (method && requiresEnvironmentAuthority(method) && !collaborationQueueAdmission) {
+      if (method && requiresEnvironmentAuthority(method, context.collaborationRequestId) && !collaborationQueueAdmission) {
         admitted = await this.metadata.admit(environmentScopeRequest(context, this.hostId, params));
         // The submission may have lost authority while the owner answered.
         environmentScopeRequest(context, this.hostId, params);

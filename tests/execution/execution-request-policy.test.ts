@@ -11,4 +11,7 @@ test('effects separate input admission, shared control and use of configured cre
   for (const method of ['thread/read','thread/goal/get','thread/queue/list','thread/backgroundTerminals/list']) assert.equal(effect(method),'none');
   assert.equal(effect('thread/queue/collaborationReceipt'),'none');
   assert.ok(!requiresEnvironmentAuthority('thread/queue/collaborationReceipt'));
+  assert.ok(requiresEnvironmentAuthority('thread/queue/delete'));
+  assert.ok(!requiresEnvironmentAuthority('thread/queue/delete', 'trusted-request'));
+  assert.ok(requiresEnvironmentAuthority('thread/queue/update', 'trusted-request'));
 });

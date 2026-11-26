@@ -95,12 +95,18 @@ test("bridge queue: Actor input needs its own trusted admission and stays immuta
 });
 
 test("bridge queue: a person deleting Actor input cancels the request instead", async () => {
-  const rows = [{ id: "q1", clientUserMessageId: "actor-input:r1", state: "queued", targetTurnId: null }];
+  const rows = [
+    { id: "q1", clientUserMessageId: "actor-input:r1", state: "queued", targetTurnId: null },
+    { id: "q2", clientUserMessageId: "ordinary", state: "queued", targetTurnId: null },
+  ];
   const { run, calls } = guard(rows);
   assert.deepEqual(await run("thread/queue/delete", { queuedSubmissionId: "q1" }, actor), {
     result: { deleted: true },
   });
   assert.deepEqual(calls, [["command", { action: "cancel", requestId: "r1" }]]);
+  const trusted = { collaborationRequestId: "r1" };
+  assert.equal(await run("thread/queue/delete", { queuedSubmissionId: "q1" }, trusted), null);
+  await assert.rejects(run("thread/queue/delete", { queuedSubmissionId: "q2" }, trusted), /trusted admission/u);
 });
 
 test("bridge queue: collaboration receipts come from the Host queue rows", async () => {

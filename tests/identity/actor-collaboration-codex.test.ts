@@ -10,18 +10,29 @@ import { AppHostServer } from "../../packages/app-host-server/src/index";
 import { CodexEngineAdapter } from "../../apps/opencraft-daemon/src/codex-engine-adapter";
 import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
 import { createConversationExecution } from "../../apps/headless-server/src/conversation-execution.mjs";
+import { ExecutionEnvironmentTransport } from "../../apps/headless-server/src/execution-environment-transport";
+import { ExecutionEnvironmentRuntime } from "@opencraft/execution-environment";
 
-async function fixture(t: any) {
+async function fixture(t: any, { useExecutionEnvironment = false } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'actor-codex-'));
+  const executionEnvironment = useExecutionEnvironment
+    ? await ExecutionEnvironmentRuntime.open(root, { create: true })
+    : undefined;
   const actors = new ActorStore(join(root, 'actors.sqlite'));
   const a = actors.createSession('source', 'operator'), b = actors.createSession('target', 'operator');
   const credential = actors.issueCredential(a.id, Date.now() + 60_000, 'operator');
   const context = actors.authenticateSession(credential.token)!;
+  const creator = executionEnvironment ? actors.resolveHuman({
+    provider: 'local', subject: 'creator', displayName: 'Creator', expiresAt: Date.now() + 60_000,
+  })! : undefined;
   let service!: Collaboration;
   const frames: any[] = [];
-  const adapter = new CodexEngineAdapter({ executable: process.execPath, runtimeDirectory: root, dataDirectory: join(root, 'data'), nativeCodexHomeDirectory: join(root, 'native'),
+  const adapter = new CodexEngineAdapter({ executable: process.execPath, runtimeDirectory: root, dataDirectory: join(root, 'codex'), nativeCodexHomeDirectory: join(root, 'native'),
     upstreamBaseUrl: 'http://127.0.0.1:9/backend-api/codex', fetch: async () => Response.json({ ok: true }),
-    spawnAppServer: ({ cwd, env }) => spawn(process.execPath, [new URL("../fixtures/fake-codex-stdio-appserver.mjs", import.meta.url).pathname], { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] }),
+    executionEnvironment,
+    spawnAppServer: ({ cwd, env }) => spawn(process.execPath, [new URL("../fixtures/fake-codex-stdio-appserver.mjs", import.meta.url).pathname], {
+      cwd, env: executionEnvironment ? { ...env, OPENCRAFT_TEST_UNLOAD_ON_UNSUBSCRIBE: '1' } : env, stdio: ['pipe', 'pipe', 'pipe'],
+    }),
     createMaintenanceClient: async () => { throw new Error('not used'); }, logDiagnostic: () => {},
     collaboration: {
       queuedContext: (thread,inputId,input)=>service.queuedReferenceContext(thread,inputId,input),
@@ -33,21 +44,24 @@ async function fixture(t: any) {
     collaborationInput: { available: () => service.available, mode: id => service.inputMode(id), authorize: (thread, id, mode, turn) => service.authorizeInput(thread, id, mode, turn) },
   });
   adapter.subscribeMessage(frame => frames.push(JSON.parse(frame)));
-  const host = new AppHostServer({ physicalHostLifetime: 'server', logicalClientRouting: true, createTransport: () => adapter });
+  const host = new AppHostServer({ physicalHostLifetime: 'server', logicalClientRouting: true,
+    createTransport: () => executionEnvironment ? new ExecutionEnvironmentTransport(adapter, executionEnvironment, 'local-codex') : adapter });
   service = new Collaboration(join(root, 'collaboration.sqlite'), actors, createConversationExecution(() => host, {serverId:"fixture",hostId:"local-codex"}));
-  t.after(async () => { await service.close(); await host.close(); actors.close(); await rm(root, { recursive: true, force: true }); });
+  t.after(async () => { await service.close(); await host.close(); executionEnvironment?.close(); actors.close(); await rm(root, { recursive: true, force: true }); });
   await host.ensureHostConnected('local-codex');
   let next = 0;
   const rpc = async (method: string, params: any = {}, trusted?: string, raw = false, actor?: any) => {
     const id = `controller-${next++}`, frame = JSON.stringify({ id, method, params, collaborationRequestId: trusted, [LOGICAL_CLIENT_FIELD]: 'controller' });
     if (raw || (!trusted && !actor)) await adapter.send(frame);
-    else await adapter.sendWithContext(frame, { sender: null, collaborationRequestId: trusted, actorContext:actor });
+    else await adapter.sendWithContext(frame, { sender: null, collaborationRequestId: trusted, actorContext:actor,
+      ...(actor ? { executionPrincipal: { provider: 'local', subject: actor.actorId }, validUntil: Date.now() + 60_000 } : {}) });
     const deadline = Date.now() + 5_000;
     while (Date.now() < deadline) { const result = frames.find(f => f.id === id); if (result) return result; await new Promise(resolve => setTimeout(resolve, 5)); }
     throw new Error('RPC timeout: ' + method);
   };
   assert.ok((await rpc('initialize')).result);
-  const started = await rpc('thread/start', { cwd: root, testNoServerRequest: true });
+  const started = await rpc('thread/start', { cwd: root, testNoServerRequest: true },
+    undefined, false, creator);
   const threadId = started.result.thread.id;
   await service.bind(b.id, threadId, 0, () => {});
   for (const action of ['message.send', 'execution.queue', 'execution.steer']) actors.setGrant(a.id, b.id, action, true, 'operator');
@@ -58,7 +72,7 @@ async function fixture(t: any) {
     while (Date.now() < deadline) { await service.pump(); if (service.getRequest(context, id).state === state) return; await new Promise(resolve => setTimeout(resolve, 10)); }
     assert.equal(service.getRequest(context, id).state, state);
   };
-  return { root, actors, a, b, context, service, host, rpc, threadId, send, settle };
+  return { root, actors, a, b, context, service, host, rpc, threadId, send, settle, executionEnvironment, creator };
 }
 
 test('real AppHost lane dispatches once, waits behind a busy Turn, and fences revocation before queue claim', async t => {
@@ -203,11 +217,13 @@ test('authenticated queue delete cancels managed delivery through collaboration 
   assert.equal((await f.rpc('thread/queue/list', { threadId: f.threadId })).result.data.length, 0);
 });
 
-test('Human receiving a message in a shared conversation cancels through the real queue lane', async t => {
-  const f=await fixture(t);
+test('Human receiving a message in a shared conversation cancels through the real queue lane on a credential-owned Thread', async t => {
+  const f=await fixture(t, { useExecutionEnvironment: true });
   const sender=f.actors.resolveHuman({provider:'local',subject:'sender-human',displayName:'Sender',expiresAt:Date.now()+60000})!;
   const receiver=f.actors.resolveHuman({provider:'local',subject:'receiver-human',displayName:'Receiver',expiresAt:Date.now()+60000})!;
-  await f.rpc('turn/start',{threadId:f.threadId,input:[]});
+  assert.equal(f.executionEnvironment!.creator('local-codex', f.threadId)?.account, `local:${f.creator!.actorId}`);
+  const started = await f.rpc('turn/start', { threadId:f.threadId, input:[], clientUserMessageId:'initial' }, undefined, false, f.creator);
+  assert.ok(started.result, JSON.stringify(started.error));
   const sent=f.service.sendConversation(sender,{reference:{serverId:'fixture',threadId:f.threadId},content:'incoming shared message',idempotencyKey:'shared-incoming'});
   await f.service.pump();
   const queueId=f.service.getRequest(sender,sent.requestId!).queue_id;
@@ -217,4 +233,13 @@ test('Human receiving a message in a shared conversation cancels through the rea
   assert.equal(deleted.result?.deleted,true,JSON.stringify(deleted));
   assert.equal(f.service.getRequest(sender,sent.requestId!).state,'cancelled');
   assert.equal((await f.rpc('thread/queue/list',{threadId:f.threadId})).result.data.length,0);
+  const ordinary = await f.rpc('thread/queue/add', {
+    threadId: f.threadId, clientUserMessageId: 'ordinary', input: [{ type: 'text', text: 'ordinary' }],
+  }, undefined, false, receiver);
+  const ordinaryId = ordinary.result.queuedSubmission.id;
+  const wrongRequest = await f.rpc('thread/queue/delete', {
+    threadId: f.threadId, queuedSubmissionId: ordinaryId,
+  }, sent.requestId!);
+  assert.equal(wrongRequest.error?.code, -32600);
+  assert.equal((await f.rpc('thread/queue/list', { threadId: f.threadId })).result.data[0]?.id, ordinaryId);
 });

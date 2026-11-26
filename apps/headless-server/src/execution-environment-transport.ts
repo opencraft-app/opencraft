@@ -84,7 +84,7 @@ export class ExecutionEnvironmentTransport implements DuplexTransport {
       && typeof context.collaborationRequestId === 'string'
       && params.clientUserMessageId === `actor-input:${context.collaborationRequestId}`;
     try {
-      if (typeof value.method === 'string' && requiresEnvironmentAuthority(value.method) && !collaborationQueueAdmission) this.runtime.scope(context, this.hostId, params);
+      if (typeof value.method === 'string' && requiresEnvironmentAuthority(value.method, context.collaborationRequestId) && !collaborationQueueAdmission) this.runtime.scope(context, this.hostId, params);
     } catch {
       // This check precedes every native dispatch. Report only a known rejection,
       // not a delivery failure or an invitation to reconnect/replay. Keep logical
