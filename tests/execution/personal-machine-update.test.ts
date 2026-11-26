@@ -140,7 +140,15 @@ test("invalid downloaded candidate never stops or replaces the current runtime",
     requests += 1;
     assert.equal(req.headers.authorization, `Bearer ${config.credential}`);
     if (req.url?.includes("/bootstrap?")) {
-      res.end(JSON.stringify({ schemaVersion: 1, id: config.id, hubId: config.hubId, origin: config.origin, digest: hash(bytes) }));
+      res.end(
+        JSON.stringify({
+          schemaVersion: 1,
+          id: config.id,
+          hubId: config.hubId,
+          origin: config.origin,
+          digest: hash(bytes),
+        }),
+      );
     } else {
       res.end(bytes);
     }
@@ -172,7 +180,10 @@ test("download rejects redirects and intranet HTTP origins; runUpdate delegates 
   await new Promise<void>((resolve) => redirectServer.listen(0, "127.0.0.1", resolve));
   t.after(() => new Promise<void>((resolve) => redirectServer.close(() => resolve())));
   await assert.rejects(
-    download({ origin: `http://127.0.0.1:${(redirectServer.address() as { port: number }).port}`, credential: "x".repeat(43) }, "/update"),
+    download(
+      { origin: `http://127.0.0.1:${(redirectServer.address() as { port: number }).port}`, credential: "x".repeat(43) },
+      "/update",
+    ),
     /302/u,
   );
   await assert.rejects(download({ origin: "http://10.42.0.8:15473", credential: "x".repeat(43) }, "/update"), /HTTPS/u);
@@ -224,5 +235,9 @@ test("packagePersonalMachine snapshots unstaged tracked edits without touching g
   const entries = execFileSync("tar", ["-tzf", result.path]).toString().trim().split("\n");
   assert.deepEqual(entries, ["tracked.txt"]);
   assert.equal(execFileSync("tar", ["-xzOf", result.path, "tracked.txt"]).toString(), "v2-unstaged\n");
-  assert.equal(execFileSync("git", ["diff", "--cached", "--name-only"], { cwd: repo }).toString().trim(), "", "real git index remains untouched");
+  assert.equal(
+    execFileSync("git", ["diff", "--cached", "--name-only"], { cwd: repo }).toString().trim(),
+    "",
+    "real git index remains untouched",
+  );
 });

@@ -17,7 +17,12 @@ if (command) {
 } else {
   const child = spawn(
     process.execPath,
-    ["--import", join(runtime, "node_modules/tsx/dist/loader.mjs"), join(runtime, "scripts/personal-machine/daemon.ts"), ...args],
+    [
+      "--import",
+      join(runtime, "node_modules/tsx/dist/loader.mjs"),
+      join(runtime, "scripts/personal-machine/daemon.ts"),
+      ...args,
+    ],
     { cwd: runtime, stdio: "inherit", env: process.env },
   );
   for (const signal of ["SIGINT", "SIGTERM"]) {

@@ -15,7 +15,9 @@ export async function packagePersonalMachine(root, output) {
       child.stdout.on("data", (chunk) => rows.push(chunk));
       child.on("error", fail);
       child.on("exit", (code) =>
-        code === 0 ? done(Buffer.concat(rows).toString().trim()) : fail(new Error("Machine source snapshot unavailable")),
+        code === 0
+          ? done(Buffer.concat(rows).toString().trim())
+          : fail(new Error("Machine source snapshot unavailable")),
       );
     });
   const tempIndex = join(tmpdir(), `opencraft-machine-index-${randomUUID()}`);
@@ -35,7 +37,9 @@ export async function packagePersonalMachine(root, output) {
     const temp = `${archivePath}.tmp`;
     await run(["archive", "--format=tar.gz", `--output=${temp}`, tree], env);
     await rename(temp, archivePath);
-    const digest = createHash("sha256").update(await readFile(archivePath)).digest("hex");
+    const digest = createHash("sha256")
+      .update(await readFile(archivePath))
+      .digest("hex");
     await writeFile(join(output, "sha256"), digest, { mode: 0o600 });
     return { path: archivePath, digest };
   } finally {

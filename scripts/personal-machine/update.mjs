@@ -90,10 +90,10 @@ export function verifyArchive(bytes, digest) {
 export function validateOrigin(origin) {
   const url = new URL(origin);
   if (
-    url.origin !== origin
-    || url.username
-    || url.password
-    || (url.protocol !== "https:" && !(url.protocol === "http:" && url.hostname === "127.0.0.1"))
+    url.origin !== origin ||
+    url.username ||
+    url.password ||
+    (url.protocol !== "https:" && !(url.protocol === "http:" && url.hostname === "127.0.0.1"))
   ) {
     throw new Error("HTTPS update origin is required");
   }
@@ -101,12 +101,12 @@ export function validateOrigin(origin) {
 
 export function validateConnection(config) {
   if (
-    !config
-    || config.schemaVersion !== 1
-    || !/^[-a-f0-9]{36}$/u.test(config.id)
-    || !/^[-a-f0-9]{36}$/u.test(config.hubId)
-    || !/^[A-Za-z0-9_-]{43}$/u.test(config.credential)
-    || config.phase !== "enrolled"
+    !config ||
+    config.schemaVersion !== 1 ||
+    !/^[-a-f0-9]{36}$/u.test(config.id) ||
+    !/^[-a-f0-9]{36}$/u.test(config.hubId) ||
+    !/^[A-Za-z0-9_-]{43}$/u.test(config.credential) ||
+    config.phase !== "enrolled"
   ) {
     throw new Error("An enrolled machine is required");
   }
@@ -259,10 +259,13 @@ export async function restoreSqliteDatabases(state) {
 
 const socketControl = (state, method) =>
   new Promise((done, fail) => {
-    const req = httpRequest({ socketPath: join(state, "control.sock"), path: "/status", method, timeout: 60_000 }, (res) => {
-      res.resume();
-      res.on("end", done);
-    });
+    const req = httpRequest(
+      { socketPath: join(state, "control.sock"), path: "/status", method, timeout: 60_000 },
+      (res) => {
+        res.resume();
+        res.on("end", done);
+      },
+    );
     req.on("error", fail);
     req.on("timeout", () => req.destroy(new Error("Machine shutdown timed out")));
     req.end();
@@ -296,7 +299,13 @@ export async function stop(state, unit, commands = { run, capture }) {
     } else {
       const name = `opencraft-machine-${config.id}.service`;
       const query = async () => {
-        const out = await commands.capture("systemctl", ["--user", "show", name, "--property=LoadState", "--property=ActiveState"]);
+        const out = await commands.capture("systemctl", [
+          "--user",
+          "show",
+          name,
+          "--property=LoadState",
+          "--property=ActiveState",
+        ]);
         return Object.fromEntries(
           out
             .trim()
@@ -335,7 +344,14 @@ async function linkRuntime(state, target) {
 async function start(state) {
   await run(
     process.execPath,
-    ["--import", join(state, "runtime/node_modules/tsx/dist/loader.mjs"), join(state, "runtime/scripts/personal-machine/daemon.ts"), "--state", state, "--install"],
+    [
+      "--import",
+      join(state, "runtime/node_modules/tsx/dist/loader.mjs"),
+      join(state, "runtime/scripts/personal-machine/daemon.ts"),
+      "--state",
+      state,
+      "--install",
+    ],
     join(state, "runtime"),
   );
 }
@@ -518,13 +534,15 @@ export async function runUpdate(state, action = "--update", operations = {}) {
       console.log("Previous machine runtime activated.");
       return;
     }
-    const metadata = JSON.parse((await download(config, `/__opencraft_machines/bootstrap?update=1&id=${config.id}`, 16_384)).toString());
+    const metadata = JSON.parse(
+      (await download(config, `/__opencraft_machines/bootstrap?update=1&id=${config.id}`, 16_384)).toString(),
+    );
     if (
-      metadata.schemaVersion !== 1
-      || metadata.id !== config.id
-      || metadata.hubId !== config.hubId
-      || metadata.origin !== config.origin
-      || !/^[a-f0-9]{64}$/u.test(metadata.digest)
+      metadata.schemaVersion !== 1 ||
+      metadata.id !== config.id ||
+      metadata.hubId !== config.hubId ||
+      metadata.origin !== config.origin ||
+      !/^[a-f0-9]{64}$/u.test(metadata.digest)
     ) {
       throw new Error("Update identity mismatch");
     }

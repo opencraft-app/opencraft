@@ -4,7 +4,11 @@ import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
-import { machineLaunchAgentLabel, machineLaunchAgentPlist, machineServiceUnit } from "../../scripts/personal-machine/service.mjs";
+import {
+  machineLaunchAgentLabel,
+  machineLaunchAgentPlist,
+  machineServiceUnit,
+} from "../../scripts/personal-machine/service.mjs";
 import { stop } from "../../scripts/personal-machine/update.mjs";
 
 test("systemd path directives and command arguments have distinct escaping", () => {

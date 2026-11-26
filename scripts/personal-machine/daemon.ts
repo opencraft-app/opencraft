@@ -52,14 +52,16 @@ const extraBins = [
   join(home, "go", "bin"),
   join(home, ".npm-global", "bin"),
 ];
-process.env.PATH = [...new Set([...(process.env.PATH ?? "").split(delimiter), ...extraBins].filter(Boolean))].join(delimiter);
+process.env.PATH = [...new Set([...(process.env.PATH ?? "").split(delimiter), ...extraBins].filter(Boolean))].join(
+  delimiter,
+);
 
 personalMachineOrigin(config.origin);
 if (
-  config.schemaVersion !== 1
-  || !/^[-a-f0-9]{36}$/u.test(config.id)
-  || !/^[-a-f0-9]{36}$/u.test(config.hubId)
-  || !/^[A-Za-z0-9_-]{43}$/u.test(config.credential)
+  config.schemaVersion !== 1 ||
+  !/^[-a-f0-9]{36}$/u.test(config.id) ||
+  !/^[-a-f0-9]{36}$/u.test(config.hubId) ||
+  !/^[A-Za-z0-9_-]{43}$/u.test(config.credential)
 ) {
   throw new Error("Invalid machine identity");
 }
@@ -110,10 +112,16 @@ if (args.includes("--install")) {
   const launcher = join(state, "launcher.mjs");
   const launch = [executable, launcher, "--state", state];
   const installLauncher = async () => {
-    await writeFile(`${launcher}.new`, await readFile(join(root, "scripts/personal-machine/launcher.mjs")), { mode: 0o600 });
+    await writeFile(`${launcher}.new`, await readFile(join(root, "scripts/personal-machine/launcher.mjs")), {
+      mode: 0o600,
+    });
     await rename(`${launcher}.new`, launcher);
     const quote = (value: string) => `'${value.replace(/'/gu, "'\\''")}'`;
-    await writeFile(join(state, "opencraft-machine"), `#!/usr/bin/env bash\nexec ${launch.map(quote).join(" ")} "$@"\n`, { mode: 0o700 });
+    await writeFile(
+      join(state, "opencraft-machine"),
+      `#!/usr/bin/env bash\nexec ${launch.map(quote).join(" ")} "$@"\n`,
+      { mode: 0o700 },
+    );
   };
   let managed = false;
   const exec = promisify(execFile);
@@ -209,7 +217,9 @@ if (args.includes("--install")) {
   console.log(
     `OpenCraft machine connected. ${managed ? "User service enabled." : "Detached process; reboot startup is not configured."}`,
   );
-  console.log(`Local controls: ${join(state, "opencraft-machine")} --status / --stop / --check-update / --update / --rollback / --recover`);
+  console.log(
+    `Local controls: ${join(state, "opencraft-machine")} --status / --stop / --check-update / --update / --rollback / --recover`,
+  );
   process.exit(0);
 }
 
@@ -218,7 +228,10 @@ try {
   await control("GET");
   throw new Error("Machine is already running");
 } catch (error) {
-  if (!(error as NodeJS.ErrnoException).code || !["ENOENT", "ECONNREFUSED"].includes((error as NodeJS.ErrnoException).code!)) {
+  if (
+    !(error as NodeJS.ErrnoException).code ||
+    !["ENOENT", "ECONNREFUSED"].includes((error as NodeJS.ErrnoException).code!)
+  ) {
     throw error;
   }
 }
@@ -331,7 +344,11 @@ try {
   });
   const target = new URL(host.websocketUrl);
   const ingress = createLocalIngress(
-    () => ({ port: Number(target.port), origin: "http://personal-machine", path: `${target.pathname}${target.search}` }),
+    () => ({
+      port: Number(target.port),
+      origin: "http://personal-machine",
+      path: `${target.pathname}${target.search}`,
+    }),
     ["/rpc"],
   );
   const relay = connectRelay({
