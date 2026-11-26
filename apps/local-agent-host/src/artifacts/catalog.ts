@@ -32,13 +32,26 @@ const stamp = (s: import('node:fs').BigIntStats) => [s.dev,s.ino,s.size,s.mtimeN
 
 /** Verify the opened object, not a path/length guess. Never buffer the whole file. */
 export async function inspectArtifactFile(path: string, signal?: AbortSignal): Promise<{ size: number; sha256: string }> {
+  signal?.throwIfAborted();
   const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const before = await file.stat({ bigint: true });
     if (!before.isFile()) throw Error('Artifact must be a regular file');
-    const hash = createHash('sha256'); let size = 0;
-    for await (const chunk of file.createReadStream({ autoClose: false, signal })) { size += chunk.length; hash.update(chunk); }
-    if (stamp(before) !== stamp(await file.stat({ bigint: true })) || BigInt(size) !== before.size) throw Error('Artifact changed while reading');
+    const hash = createHash('sha256');
+    const buffer = Buffer.allocUnsafe(64 * 1024);
+    let size = 0;
+    // Each read has one promise owner, including cancellation during open or stat.
+    // No detached stream error can escape through the process event emitter.
+    for (;;) {
+      signal?.throwIfAborted();
+      const { bytesRead } = await file.read(buffer, 0, buffer.length, null);
+      if (bytesRead === 0) break;
+      size += bytesRead;
+      hash.update(buffer.subarray(0, bytesRead));
+    }
+    const after = await file.stat({ bigint: true });
+    signal?.throwIfAborted();
+    if (stamp(before) !== stamp(after) || BigInt(size) !== before.size) throw Error('Artifact changed while reading');
     return { size, sha256: hash.digest('hex') };
   } finally { await file.close(); }
 }
