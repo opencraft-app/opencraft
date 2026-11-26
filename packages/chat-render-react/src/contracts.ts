@@ -158,9 +158,12 @@ export type ChatResourceKind =
   | "resource"
   | "workspace-file";
 
+/** Markdown destinations carry URL syntax. Host files and citations carry literal paths. */
+export type ChatResourceTargetSyntax = "path" | "url";
+
 export interface ChatResourcePolicy {
   readonly name: string;
   readonly priority: number;
-  matches(target: string, context: ChatRenderContext): boolean;
-  resolve(target: string, context: ChatRenderContext): ChatResourceDecision;
+  matches(target: string, context: ChatRenderContext, syntax?: ChatResourceTargetSyntax): boolean;
+  resolve(target: string, context: ChatRenderContext, syntax?: ChatResourceTargetSyntax): ChatResourceDecision;
 }

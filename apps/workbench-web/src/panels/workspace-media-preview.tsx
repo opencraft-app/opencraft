@@ -11,7 +11,7 @@ export function WorkspaceMediaPreview({ blob, name, kind }: { readonly blob: Blo
   const intl = useIntl();
   const [failed, setFailed] = useState(false);
   return <div className="workspace-media-preview">
-    {kind !== "file" ? <MediaPlayer blob={blob} type={chatMediaMimeType(name)} kind={kind} label={name} onError={()=>setFailed(true)} /> : null}
+    {kind !== "file" ? <MediaPlayer blob={blob} type={chatMediaMimeType(name, "path")} kind={kind} label={name} onError={()=>setFailed(true)} /> : null}
     {kind === "file" || failed ? <p>{intl.formatMessage({ id: "media.unavailable", defaultMessage: "Preview unavailable. Download this file to open it." })}</p> : null}
     <button type="button" onClick={() => downloadWorkspaceBlob(blob, name)}><Download size={16} />{intl.formatMessage({ id: "pdf.download", defaultMessage: "Download file" })}</button>
   </div>;

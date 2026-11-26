@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { changesThreadCatalog, mergeThreadCatalogPages, threadCatalogPhase, sidebarThreadCatalogQueryKey, managedCatalogDiscoveryPhase, catalogCachedAt } from "../../apps/workbench-web/src/runtime/thread-catalog-query.js";
+import { changesThreadCatalog, mergeThreadCatalogPages, threadCatalogPhase, sidebarThreadCatalogQueryKey, managedCatalogDiscoveryPhase, catalogCachedAt, refreshThreadCatalogFirstPage } from "../../apps/workbench-web/src/runtime/thread-catalog-query.js";
 import { MemoryTransport } from "@opencraft/appserver-transport-memory";
 import { createAppServerWorkbenchRuntime } from "@opencraft/workbench-runtime";
 import { QueryClient } from "@tanstack/react-query";
@@ -103,4 +103,35 @@ test("durable catalog failure exposes saved-data state only with valid metadata"
 test("successful empty pages with a cursor are still loading, and failed continuation is retryable", () => {
   assert.equal(threadCatalogPhase({ admitted: true, status: "success", isFetching: false, partial: true }), "loading");
   assert.equal(threadCatalogPhase({ admitted: true, status: "error", isFetching: false, partial: true }), "error");
+});
+test("inbox refresh reads only the first page and preserves cached pages on failure or reconnect", async () => {
+  const requests: unknown[] = [];
+  const firstPage = { data: [], nextCursor: "fresh-cursor" };
+  const cached = {
+    pages: [{ data: [], nextCursor: "previous-cursor" }, { data: [], nextCursor: null }],
+    pageParams: [null, "previous-cursor"],
+  };
+  let generation = 1;
+  let list = async () => firstPage;
+  const runtime = {
+    getSnapshot: () => ({ phase: "ready", connectionGeneration: generation }),
+    resources: { threads: { list: (params: unknown) => { requests.push(params); return list(); } } },
+  } as Parameters<typeof refreshThreadCatalogFirstPage>[0];
+  const client = new QueryClient();
+  const key = ["appserver", "bot", "threads"];
+  try {
+    client.setQueryData(key, cached);
+    list = async () => { throw new Error("offline"); };
+    await assert.rejects(refreshThreadCatalogFirstPage(runtime, client, key), /offline/);
+    assert.deepEqual(client.getQueryData(key), cached);
+    list = async () => { generation++; return firstPage; };
+    await assert.rejects(refreshThreadCatalogFirstPage(runtime, client, key), /owner changed/);
+    assert.deepEqual(client.getQueryData(key), cached);
+    list = async () => firstPage;
+    await refreshThreadCatalogFirstPage(runtime, client, key);
+    assert.deepEqual(client.getQueryData(key), { pages: [firstPage], pageParams: [null] });
+    assert.deepEqual(requests, Array.from({ length: 3 }, () => ({ cursor: null, limit: 30 })));
+  } finally {
+    client.clear();
+  }
 });

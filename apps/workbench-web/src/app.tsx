@@ -73,6 +73,8 @@ import { applyApplicationBranding } from "./runtime/application-branding";
 import { shouldTypeToCompose } from "./type-to-compose";
 import { findStandaloneHostComposerAction } from "@opencraft/workbench-runtime";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { embeddedWorkspaceResource, refreshEmbeddedWorkspaceFiles } from "./embedded-chat/embedded-workspace-actions";
+import { fileBlobResource } from "./runtime/blob-files";
 import { useDefaultFollowUpAction } from "./runtime/use-default-follow-up-action";
 import { useIntl } from "@opencraft/i18n/react";
 import { groupWorkInMachines, machineName, machineRole } from "./runtime/work-in-presentation";
@@ -82,6 +84,7 @@ import {
   retargetSubmitIntentForFollowUp,
   type ComposerAttachment,
   type ComposerFollowUpAction,
+  type ComposerMentionInline,
   type SubmitIntent,
 } from "@opencraft/composer-core";
 import {
@@ -304,9 +307,13 @@ export interface EmbeddedWorkbenchAppSession {
 
 export interface EmbeddedWorkbenchAppActions {
   submitPrompt(text: string): boolean;
+  openWorkspaceFile(path: string): boolean;
+  refreshWorkspaceFiles(threadId: string): Promise<void>;
+  insertComposerMention(mention: ComposerMentionInline): boolean;
   selectThread(threadId: string): Promise<void>;
   createThread(): Promise<void>;
   loadMoreThreads(): Promise<void>;
+  refreshThreads(): Promise<void>;
   renameThread(threadId: string, title: string): Promise<void>;
   deleteThread(threadId: string): Promise<void>;
   setThreadPinned(threadId: string, pinned: boolean): Promise<void>;
@@ -963,7 +970,7 @@ export function App({
       ? conversationViewActivation.phase === "error"
       : snapshot.conversation?.error != null),
   });
-  useConversationRecoveryDiagnostic({
+  const recoveryDiagnostic = useConversationRecoveryDiagnostic({
     scope: JSON.stringify([displayScope, snapshot.hostId, activeThreadId]),
     failed: recoveryPresentation === "cold-error" || recoveryPresentation === "warm-error",
     active: recoveryPresentation !== "none",
@@ -1757,9 +1764,41 @@ export function App({
       embedded.onReady(activeThreadId);
     }
   }, [activeThreadId, conversationViewActivation.error, conversationViewActivation.phase, embedded, snapshot.hostId]);
-  useEffect(() => {
-    if (embedded === undefined) return;
-    return embedded.bindActions({
+  const embeddedWorkspaceReadScope = embedded && fileBlobResource(runtime, snapshot.hostId, "").scope;
+  // Action registration can change during a turn without changing its resource owner.
+  const embeddedWorkspaceLease = useMemo(() => ({ active: false }), [
+    embedded?.hostId, embeddedWorkspaceReadScope, activeThreadId, conversationRouteOpen,
+    panelOwnerId, panelPresentationId, showingDisplayCache, snapshot.phase,
+  ]);
+  useLayoutEffect(() => {
+    embeddedWorkspaceLease.active = true;
+    return () => { embeddedWorkspaceLease.active = false; };
+  }, [embeddedWorkspaceLease]);
+  useLayoutEffect(() => {
+    if (embedded === undefined || embeddedWorkspaceReadScope === undefined) return;
+    let bound = true;
+    const composerDraftId = composerController.getSnapshot().draft.id;
+    const isCurrent = () => bound && conversationRouteOpen && snapshot.hostId === embedded.hostId
+      && snapshot.phase === "ready" && !showingDisplayCache
+      && fileBlobResource(runtime, snapshot.hostId, "").scope === embeddedWorkspaceReadScope;
+    const unbind = embedded.bindActions({
+      openWorkspaceFile: (path) => {
+        if (!isCurrent() || !presentation.rightPanel
+          || (!workspaceFileThreadId && runtime.resources.host.canRequest?.("fs/readFile") === false)) return false;
+        const resource = embeddedWorkspaceResource(path);
+        if (resource === null) return false;
+        panelRuntime.panels.open(panelOwnerId, "resource", { resource, workspaceFileThreadId });
+        return true;
+      },
+      refreshWorkspaceFiles: async (threadId) => {
+        if (draft !== null || activeThreadId !== threadId || !isCurrent()) return;
+        await refreshEmbeddedWorkspaceFiles(queryClient, blobs, snapshot.hostId,
+          [panelOwnerId, embeddedWorkspaceReadScope], () => embeddedWorkspaceLease.active
+            && runtime.getSnapshot().phase === "ready"
+            && fileBlobResource(runtime, snapshot.hostId, "").scope === embeddedWorkspaceReadScope);
+      },
+      insertComposerMention: (mention) => isCurrent()
+        && composerController.getSnapshot().draft.id === composerDraftId && composerController.insertMention(mention),
       submitPrompt: (text) => {
         if (composerController.getSnapshot().draft.target.type !== "new-thread") {
           navigateToHome();
@@ -1772,6 +1811,7 @@ export function App({
         await hostCatalog.navigate(createWorkbenchThreadLocation(embedded.hostId, threadId));
       },
       createThread: async () => { navigateToHome(); },
+      refreshThreads: catalog.refreshFirstPage,
       loadMoreThreads: async () => {
         const result = await catalog.fetchNextPage();
         if (result !== null && typeof result === "object" && "isError" in result && result.isError) {
@@ -1791,7 +1831,11 @@ export function App({
         await threadPinWriter.set({ hostId: embedded.hostId, threadId }, pinned);
       },
     });
-  }, [activeThreadId, catalog.fetchNextPage, composerController, embedded, hostCatalog, threadPinWriter, navigateToHome, queryClient, sendMessage, snapshot.phase]);
+    return () => { bound = false; unbind(); };
+  }, [activeThreadId, blobs, catalog.fetchNextPage, catalog.refreshFirstPage, composerController, conversationRouteOpen, draft?.id,
+    embedded, embeddedWorkspaceLease, embeddedWorkspaceReadScope, hostCatalog, navigateToHome, panelOwnerId, panelPresentationId, panelRuntime.panels,
+    presentation.rightPanel, queryClient, runtime, sendMessage, showingDisplayCache, snapshot.hostId, snapshot.phase,
+    threadPinWriter, workspaceFileThreadId]);
   const workspaceSelectionEpoch = useRef(0);
   useLayoutEffect(() => {
     workspaceSelectionEpoch.current++;
@@ -2089,6 +2133,7 @@ export function App({
     ? conversationPresentation?.({
       hostId: snapshot.hostId, threadId: activeThreadId, extra: activeProtocolThread?.extra,
       ready: snapshot.phase === "ready", authoritative: snapshot.conversation?.authoritative === true,
+      activeTurnId: snapshot.conversation?.activeTurn?.turnId ?? null,
       canFork: hostCatalog.threadManagement.capabilities(snapshot.hostId, activeThreadId ?? undefined).fork,
       readExtra: async () => (await hostCatalog.agentRuntimes.request(snapshot.hostId, "thread/read", {
         threadId: activeThreadId, includeTurns: false,
@@ -2100,6 +2145,10 @@ export function App({
         openThread: childId => hostCatalog.navigate(createWorkbenchThreadLocation(snapshot.hostId, childId)),
       }),
     }) : null;
+  const recoveryRenderer = conversationContribution?.renderRecovery;
+  const retryPresentedRecovery = recoveryAccessFailure !== null || snapshot.phase !== "ready"
+    ? retryConnectionAdmission
+    : activeThreadLease === null ? undefined : () => { void activeThreadLease.retryRestore().catch(() => undefined); };
   useConversationHistoryRefresh(activeThreadLease,
     conversationContribution?.refreshHistory === true && snapshot.phase === "ready", refreshConversationCatalog);
   const headerThreadId = activeThreadId ?? "";
@@ -2617,14 +2666,19 @@ export function App({
                       onRetry={(intent) => hostCatalog.submit(intent).then(() => undefined)}
                     /> : recoveryPresentation === "cold-loading" || recoveryPresentation === "cold-error"
                     ? <ConversationRecoveryEmptyState
+                        renderRecovery={recoveryRenderer} reconnecting={snapshot.phase === "reconnecting"}
+                        diagnostic={recoveryDiagnostic}
                         failed={recoveryPresentation === "cold-error"}
                         requiresUpdate={recoveryRequiresUpdate}
-                        accessFailure={recoveryAccessFailure} onRetry={retryConnectionAdmission}
+                        accessFailure={recoveryAccessFailure} onRetry={retryPresentedRecovery}
                       />
                     : undefined}
                   key={activeConversationRestoreKey ?? "empty"}
                   documentContext={{
                     conversationId: activeThreadId,
+                    renderAssistantFrame: conversationContribution?.renderAssistantFrame,
+                    renderAssistantActions: !showingDisplayCache && snapshot.conversation?.authoritative === true
+                      ? conversationContribution?.renderAssistantActions : undefined,
                     submissionRecovery: showingDisplayCache ? undefined : deliveryRecoveryActions,
                     beginImageEdit: beginConversationImageEdit,
                     mcpApps: mcpAppOwner ?? undefined,
@@ -2757,10 +2811,12 @@ export function App({
                       className="thread-composer-region"
                       data-thread-find-composer="true"
                     >
-                    {(draft === null && recoveryPresentation === "warm-error") || (recoveryAccessFailure !== null && (draft !== null || recoveryPresentation !== 'cold-error')) ? <ConversationRecoveryNotice
-                      failed requiresUpdate={recoveryRequiresUpdate}
-                      accessFailure={recoveryAccessFailure} onRetry={retryConnectionAdmission}
-                    /> : null}
+                    {(draft === null && recoveryPresentation === "warm-error") || (recoveryAccessFailure !== null && (draft !== null || recoveryPresentation !== 'cold-error'))
+                      ? <ConversationRecoveryNotice
+                        renderRecovery={recoveryRenderer} reconnecting={snapshot.phase === "reconnecting"}
+                        diagnostic={recoveryDiagnostic} failed requiresUpdate={recoveryRequiresUpdate}
+                        accessFailure={recoveryAccessFailure} onRetry={retryPresentedRecovery}
+                      /> : null}
                     {conversationContribution?.beforeComposer}
                     <ContinuationFailureNotice scope={JSON.stringify([snapshot.hostId, activeThreadId])}
                       error={snapshot.conversation?.continuation.error} />

@@ -171,7 +171,7 @@ function markTypes(schema: Schema, marks: ComposerTextInline["marks"]): Mark[] {
   });
 }
 
-function inlineToNodes(schema: Schema, inline: ComposerInline): readonly ProseMirrorNode[] {
+export function inlineToNodes(schema: Schema, inline: ComposerInline): readonly ProseMirrorNode[] {
   switch (inline.type) {
     case "text": return inline.text.length === 0 ? [] : [schema.text(inline.text, markTypes(schema, inline.marks))];
     case "hard-break": return [schema.nodes.hard_break.create()];

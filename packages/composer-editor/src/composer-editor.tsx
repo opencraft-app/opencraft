@@ -89,6 +89,7 @@ import {
 
 import {
   composerDocumentToProseMirror,
+  inlineToNodes,
   proseMirrorToComposerDocument,
 } from "./prosemirror-codec";
 import type { ComposerQueueSender, ComposerQueueImageLoader } from "./queue-tray";
@@ -2127,6 +2128,33 @@ export const OpenCraftComposer = forwardRef<
           if (view === null || text.length === 0) return;
           view.dispatch(view.state.tr.insertText(text).scrollIntoView());
           view.focus();
+        },
+        insertMention: (mention) => {
+          const view = editorViewRef.current;
+          if (view === null || view.isDestroyed || !view.editable || view.composing) return false;
+          const { doc, schema, selection } = view.state;
+          let duplicate = false;
+          doc.descendants(node => {
+            if (node.type === schema.nodes.token && node.attrs.kind === "mention"
+              && (node.attrs.id === mention.id || (mention.uri && node.attrs.payload?.uri === mention.uri))) {
+              duplicate = true;
+            }
+          });
+          if (duplicate) { view.focus(); return true; }
+
+          const nodes = [...inlineToNodes(schema, mention), schema.text(" ")];
+          const transaction = closeHistory(view.state.tr);
+          const end = selection.$to;
+          if (end.parent.type === schema.nodes.paragraph) {
+            transaction.insert(end.pos, nodes);
+            transaction.setSelection(TextSelection.near(transaction.doc.resolve(end.pos + 2)));
+          } else {
+            transaction.insert(doc.content.size, schema.nodes.paragraph.create(null, nodes));
+            transaction.setSelection(TextSelection.atEnd(transaction.doc));
+          }
+          view.dispatch(transaction.scrollIntoView());
+          view.focus();
+          return true;
         },
         appendQuote: (text) => {
           const view = editorViewRef.current;

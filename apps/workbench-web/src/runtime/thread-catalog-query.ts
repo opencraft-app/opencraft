@@ -1,3 +1,25 @@
+import type { QueryClient, QueryKey } from "@tanstack/react-query";
+import type { AppServerWorkbenchRuntime } from "@opencraft/workbench-runtime";
+
+export async function refreshThreadCatalogFirstPage(
+  runtime: Pick<AppServerWorkbenchRuntime, "getSnapshot" | "resources">,
+  queryClient: QueryClient,
+  queryKey: QueryKey,
+): Promise<void> {
+  const generation = runtime.getSnapshot().connectionGeneration;
+  const assertCurrent = () => {
+    const current = runtime.getSnapshot();
+    if (current.phase !== "ready" || current.connectionGeneration !== generation) {
+      throw new Error("Conversation catalog owner changed");
+    }
+  };
+  const page = await runtime.resources.threads.list({ cursor: null, limit: 30 });
+  assertCurrent();
+  await queryClient.cancelQueries({ queryKey, exact: true });
+  assertCurrent();
+  queryClient.setQueryData(queryKey, { pages: [page], pageParams: [null] });
+}
+
 const catalogChanges = new Set(["opencraft/thread-access/changed", "opencraft/thread-access/revoked","opencraft/thread-catalog/changed", "thread/started", "thread/name/updated", "thread/archived", "thread/unarchived", "thread/closed", "thread/deleted", "thread/pins/updated", "thread/status/changed", "turn/started", "turn/completed"]);
 export function changesThreadCatalog(method: string): boolean { return catalogChanges.has(method); }
 

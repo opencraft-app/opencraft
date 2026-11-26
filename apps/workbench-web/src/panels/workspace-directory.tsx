@@ -10,10 +10,12 @@ import { joinWorkspacePath } from './workspace-resource-model';
 import { WorkspaceFileIcon } from './workspace-file-icon';
 import { FileFolderArtwork as WorkspaceFolderIcon } from "@opencraft/design-system-web/action-icons";
 
+import { workspaceFileQueryKey, type WorkspaceQueryOwner } from "../embedded-chat/embedded-workspace-actions";
+
 /** Directory navigation and the tree share the same filesystem query cache. */
-export function WorkspaceDirectory({ path, hostId, readScope, fileSystem, session, onSelect }: {
+export function WorkspaceDirectory({ path, hostId, readScope, queryOwner, fileSystem, session, onSelect }: {
   path: string; hostId: string; readScope: string; fileSystem: AppServerFileSystemResourcePort;
-  session: WorkspaceBrowserSession; onSelect(path: string): void;
+  queryOwner: WorkspaceQueryOwner; session: WorkspaceBrowserSession; onSelect(path: string): void;
 }) {
   const intl = useIntl();
   const receipt = session.directories.get(path);
@@ -23,7 +25,7 @@ export function WorkspaceDirectory({ path, hostId, readScope, fileSystem, sessio
   const filterInput = useRef<HTMLInputElement>(null);
   const [filterOpen, setFilterOpen] = useState(false);
   const filterLabel = intl.formatMessage({ id: 'files.filterDirectory', defaultMessage: 'Filter this folder' });
-  const listing = useQuery({ queryKey: ['appserver-fs', hostId, 'directory', path, readScope],
+  const listing = useQuery({ queryKey: workspaceFileQueryKey("directory", hostId, path, readScope, queryOwner),
     queryFn: () => fileSystem.readDirectory(path), select: selectWorkspaceDirectoryEntries, staleTime: 15_000 });
   useLayoutEffect(() => {
     if (viewport.current && listing.data) viewport.current.scrollTop = session.directories.get(path)?.top ?? 0;

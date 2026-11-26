@@ -84,7 +84,7 @@ import {
   type ReactNode,
 } from "react";
 import { cachedComposerModelMetadata, composerCapabilitiesOptions, invalidateComposerCapabilities } from "./composer-capabilities-query";
-import { catalogCachedAt, managedCatalogDiscoveryPhase, mergeThreadCatalogPages, sidebarThreadCatalogQueryKey, threadCatalogPhase, type HostThreadCatalogState } from "./thread-catalog-query";
+import { catalogCachedAt, managedCatalogDiscoveryPhase, mergeThreadCatalogPages, refreshThreadCatalogFirstPage, sidebarThreadCatalogQueryKey, threadCatalogPhase, type HostThreadCatalogState } from "./thread-catalog-query";
 
 import { subscribeHostCatalogReadiness } from "./host-catalog-readiness";
 import { canDisplayHostThreadCatalog, canReadHostThreadCatalog, managedHostCatalogSignature, type ManagedHostCatalogSource } from "./host-thread-catalog";
@@ -546,6 +546,7 @@ export function useThreadCatalog(): {
   readonly protocolThreads: readonly Thread[];
   readonly threads: readonly WorkbenchThread[];
   readonly hasNextPage: boolean;
+  readonly refreshFirstPage: () => Promise<void>;
   readonly fetchNextPage: () => Promise<unknown>;
   readonly isPending: boolean;
   readonly isFetching: boolean;
@@ -553,8 +554,10 @@ export function useThreadCatalog(): {
 } {
   const runtime = useAppServerRuntime();
   const snapshot = useAppServerHostSnapshot();
+  const queryClient = useQueryClient();
+  const queryKey = useMemo(() => ["appserver", snapshot.hostId, "threads", "updated_at", "desc", false] as const, [snapshot.hostId]);
   const query = useInfiniteQuery({
-    queryKey: ["appserver", snapshot.hostId, "threads", "updated_at", "desc", false] as const,
+    queryKey,
     enabled: snapshot.phase === "ready" || snapshot.phase === "reconnecting",
     initialPageParam: null as string | null,
     queryFn: ({ pageParam }) => runtime.resources.threads.list({ cursor: pageParam, limit: 30 }),
@@ -566,10 +569,15 @@ export function useThreadCatalog(): {
     [query.data],
   );
   const threads = useMemo(() => protocolThreads.map((thread) => projectAppServerThread(thread)), [protocolThreads]);
+  const refreshFirstPage = useCallback(
+    () => refreshThreadCatalogFirstPage(runtime, queryClient, queryKey),
+    [runtime, queryClient, queryKey],
+  );
   return {
     protocolThreads,
     threads,
     hasNextPage: query.hasNextPage,
+    refreshFirstPage,
     fetchNextPage: query.fetchNextPage,
     isPending: query.isPending,
     isFetching: query.isFetching,

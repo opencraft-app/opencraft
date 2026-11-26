@@ -1,7 +1,7 @@
 import {ConversationUnavailableState} from "../../apps/workbench-web/src/components/conversation-archived-state";
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createElement, type ReactElement } from "react";
+import { createElement, type ComponentProps, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { LocaleRuntime } from "@opencraft/i18n";
 import { IntlRuntimeProvider } from "@opencraft/i18n/react";
@@ -33,6 +33,32 @@ test("routine recovery has no error, retry button or diagnostic UI in cold and r
         children: createElement(Component, { failed: true, requiresUpdate: true }) }));
       assert.match(markup, /Update or reload to reconnect/);
       assert.doesNotMatch(markup, /<button|<details|<pre|Try again|Technical details/);
+    }
+  } finally { runtime.dispose(); }
+});
+
+test("trusted recovery presentation receives the scoped retry while admission stays host-owned", () => {
+  const runtime = new LocaleRuntime([]);
+  const onRetry = () => undefined;
+  try {
+    for (const [Component, hasVisibleHistory] of [
+      [ConversationRecoveryEmptyState, false],
+      [ConversationRecoveryNotice, true],
+    ] as const) {
+      let calls = 0;
+      const renderRecovery: NonNullable<ComponentProps<typeof Component>["renderRecovery"]> = state => {
+        calls += 1;
+        assert.equal(state.hasVisibleHistory, hasVisibleHistory);
+        assert.equal(state.onRetry, onRetry);
+        assert.equal(state.reconnecting, true);
+        return createElement("span", null, "Product recovery");
+      };
+      const markup = (props: ComponentProps<typeof Component>) =>
+        renderToStaticMarkup(createElement(IntlRuntimeProvider, { runtime, children: createElement(Component, props) }));
+      assert.match(markup({ failed: true, reconnecting: true, onRetry, renderRecovery }), /Product recovery/);
+      assert.match(markup({ failed: true, accessFailure: "authentication", onRetry, renderRecovery }), /Open sign-in/);
+      assert.match(markup({ failed: true, requiresUpdate: true, onRetry, renderRecovery }), /Update or reload/);
+      assert.equal(calls, 1);
     }
   } finally { runtime.dispose(); }
 });

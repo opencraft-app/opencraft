@@ -17,7 +17,7 @@ export function appServerMediaPath(target: string): string | null {
 }
 
 export function mediaMimeType(path: string): string {
-  return chatMediaMimeType(path);
+  return chatMediaMimeType(path, "path");
 }
 
 interface PreparedMediaSource extends ChatMediaSourceResult { retain(): ChatMediaSourceResult; }

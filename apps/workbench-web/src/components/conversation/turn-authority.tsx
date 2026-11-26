@@ -17,7 +17,7 @@ export function ConversationTurnAuthority({ readOnly, children }: {
     turnActions: { ...document.turnActions,
       fork: document.turnActions?.fork ?? document.onForkTurn !== undefined,
       reviewDiff: document.turnActions?.reviewDiff ?? document.onReviewTurnDiff !== undefined },
-    onForkTurn: undefined, onReviewTurnDiff: undefined,
+    onForkTurn: undefined, onReviewTurnDiff: undefined, renderAssistantActions: undefined,
   } : document, [document, readOnly]);
   const questionValue = useMemo(() => readOnly ? { ...questions, answer: null } : questions, [questions, readOnly]);
   const interactionValue = useMemo(() => readOnly ? { ...interaction, canRespond: false, respond: null } : interaction, [interaction, readOnly]);

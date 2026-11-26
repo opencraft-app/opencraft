@@ -20,10 +20,13 @@ import {
 } from "./workspace-file-tree-model";
 
 /** One query projection and one viewport for the whole tree, independent of Chat. */
+import { workspaceFileQueryKey, type WorkspaceQueryOwner } from "../embedded-chat/embedded-workspace-actions";
+
 export const WorkspaceFileTree = memo(function WorkspaceFileTree({
-  fileSystem, hidden, hostId, onSelect, roots, selectedPath, readScope = hostId, session,
+  fileSystem, hidden, hostId, onSelect, roots, selectedPath, readScope = hostId, queryOwner, session,
 }: {
   readonly readScope?: string;
+  readonly queryOwner: WorkspaceQueryOwner;
   readonly session?: WorkspaceBrowserSession;
   readonly fileSystem: AppServerFileSystemResourcePort;
   readonly hidden: boolean;
@@ -64,7 +67,7 @@ export const WorkspaceFileTree = memo(function WorkspaceFileTree({
   })), [paths]);
   const directories = useQueries({
     queries: paths.map(path => ({
-      queryKey: ["appserver-fs", hostId, "directory", path, readScope],
+      queryKey: workspaceFileQueryKey("directory", hostId, path, readScope, queryOwner),
       queryFn: () => fileSystem.readDirectory(path),
       select: selectWorkspaceDirectoryEntries,
       staleTime: 15_000,
@@ -186,7 +189,7 @@ export const WorkspaceFileTree = memo(function WorkspaceFileTree({
           if (!("title" in row)) return (
             <div className={`workspace-file-tree__virtual-row workspace-file-tree__status${row.kind === "error" ? " is-error" : ""}`}
               key={row.path} role="status" style={{ ...position, paddingInlineStart: 28 + (row.depth - 1) * 14 }}>
-              {row.kind === "loading" ? <><LoaderCircle className="is-spinning" size={12} />{intl.formatMessage({ id: "files.loading", defaultMessage: "Loading…" })}</> : <Button variant="ghost" onClick={() => void queryClient.invalidateQueries({ queryKey: ["appserver-fs", hostId, "directory", row.parent, readScope] })}>{intl.formatMessage({ id: "files.directoryRetry", defaultMessage: "Directory unavailable. Retry" })}</Button>}
+              {row.kind === "loading" ? <><LoaderCircle className="is-spinning" size={12} />{intl.formatMessage({ id: "files.loading", defaultMessage: "Loading…" })}</> : <Button variant="ghost" onClick={() => void queryClient.invalidateQueries({ queryKey: workspaceFileQueryKey("directory", hostId, row.parent, readScope, queryOwner) })}>{intl.formatMessage({ id: "files.directoryRetry", defaultMessage: "Directory unavailable. Retry" })}</Button>}
             </div>
           );
           const open = row.kind === "directory" && expanded.has(row.path);

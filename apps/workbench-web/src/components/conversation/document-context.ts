@@ -10,6 +10,7 @@ import type {
   ChatResourceDecision,
 } from "@opencraft/chat-render-web";
 import { createContext } from "react";
+import type { ConversationPresentation } from "../../runtime/conversation-presentation";
 import type { McpAppPort } from "../../mcp-apps/contract";
 
 /**
@@ -22,6 +23,8 @@ export interface ConversationDocumentContextValue {
   readonly submissionRecovery?: import('../../submission-recovery-presentation').SubmissionRecoveryActions;
   /** Captures a guarded draft destination; editing never rewrites sent history. */
   readonly beginImageEdit?: () => import("@opencraft/composer-editor").ComposerImageEditSession | null;
+  readonly renderAssistantFrame?: ConversationPresentation["renderAssistantFrame"];
+  readonly renderAssistantActions?: ConversationPresentation["renderAssistantActions"];
   readonly conversationId: string | null;
   readonly cwd: string | null;
   readonly hostId: string | null;
