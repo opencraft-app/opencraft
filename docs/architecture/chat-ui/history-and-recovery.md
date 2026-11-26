@@ -526,6 +526,12 @@ subscriptions belong to the connection factory and are released with it. A real
 remote close or missing response on the new probe remains recoverable through
 the existing Host policy.
 
+An embedded lifecycle source can wake a disconnected Workbench with
+`requestRecovery()` when its surface is visible and online again. The same
+connection policy handles transport hints and foreground hints. It preserves
+the reconnect cooldown, respects manual and disabled recovery, and leaves
+an idle Host unopened.
+
 Recovery observations carry the local physical `attemptId` and `eventAtMs`; the server receipt time is not the client event time. `history-started`, `history-backoff`, and allowlisted slow/failed history RPC metadata are accepted by the diagnostic endpoint. A rejected metadata record is discarded instead of blocking later reports. No request params, conversation text, credentials, URLs or Thread IDs are added.
 
 The renderer logs the full allowlisted diagnostic to `console.log` on recovery state transitions, without an elapsed-time logging timer. Loading UI stays concise and retains existing messages and drafts.
