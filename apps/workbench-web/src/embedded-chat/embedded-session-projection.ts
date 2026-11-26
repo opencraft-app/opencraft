@@ -1,6 +1,4 @@
-export type EmbeddedSessionMetadataProjector = (
-  metadata: unknown,
-) => Readonly<Record<string, unknown>> | undefined;
+export type EmbeddedSessionMetadataProjector = (metadata: unknown) => Readonly<Record<string, unknown>> | undefined;
 
 export interface EmbeddedWorkbenchAppSession {
   readonly chatId: string;
