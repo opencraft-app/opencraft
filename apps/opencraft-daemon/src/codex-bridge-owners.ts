@@ -88,6 +88,8 @@ export function collaborationQueueGuard(owners: CollaborationQueueOwners): Codex
       : null;
     const clientId = selected?.clientUserMessageId ?? text(params.clientUserMessageId);
     const actorInput = clientId.startsWith(ACTOR_INPUT);
+    if (method === "thread/queue/delete" && actorRequest && selected?.clientUserMessageId !== `${ACTOR_INPUT}${actorRequest}`)
+      throw new CollaborationQueueRefusal(-32600, "Actor input requires its trusted admission");
     if (
       selected &&
       actorInput &&

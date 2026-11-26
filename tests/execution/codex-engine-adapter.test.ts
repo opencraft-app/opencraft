@@ -8,6 +8,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
+import { AppServerRpcError } from "@opencraft/appserver-client";
 import { AccountPoolStore, ModelGatewayStore } from "@opencraft/account-pool-host";
 import { OPENCRAFT_ATTACHMENT_STAGING_EXTENSION, OPENCRAFT_THREAD_LIFECYCLE_EXTENSION, OPENCRAFT_THREAD_QUEUE_EXTENSION, OPENCRAFT_THREAD_START_DURABILITY_EXTENSION, OPENCRAFT_PERMISSION_MODES_EXTENSION } from "@opencraft/appserver-protocol";
 import { CodexEngineAdapter } from "../../apps/opencraft-daemon/src/codex-engine-adapter.js";
@@ -2372,11 +2373,25 @@ for (const state of ["not-found", "archived", "recovering"] as const)
     } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
   });
 
-for (const transient of [true, false]) test(`queued tool-preflight rejection retains known custody (transient=${transient})`, { timeout: 10_000 }, async () => {
+const temporaryHistoryFailure = new AppServerRpcError({
+  code: -32073, message: "History read connection is unavailable",
+  data: { code: "HISTORY_READ_UNAVAILABLE", retryable: true },
+});
+
+for (const fixture of [
+  { name: "closed connection", transient: true, error: new Error("Codex AppServer closed") },
+  { name: "busy history reader", transient: true, error: temporaryHistoryFailure },
+  { name: "sleeping workspace", transient: false, error: new AppServerRpcError({
+    code: -32073, message: "History is unavailable while the workspace sleeps",
+    data: { code: "WORKSPACE_HISTORY_ASLEEP" },
+  }) },
+  { name: "permanent configuration failure", transient: false, error: new Error("synthetic permanent configuration failure") },
+]) test(`queued tool-preflight rejection retains known custody (${fixture.name})`, { timeout: 10_000 }, async () => {
+  const { transient } = fixture;
   const root = await mkdtemp(join(tmpdir(), "codex-queue-tools-retry-")), frames: Array<Record<string, unknown>> = [];
   let preparations = 0;
   const adapter = createRoutingAdapter(root, frames, 0, undefined, undefined, undefined, false, undefined, async () => {
-    if (++preparations === 1 || !transient) throw new Error(transient ? "Codex AppServer closed" : "synthetic permanent configuration failure");
+    if (++preparations === 1 || !transient) throw fixture.error;
     return null;
   });
   const rpc = async (id: string, method: string, params: object) => {
@@ -2403,6 +2418,31 @@ for (const transient of [true, false]) test(`queued tool-preflight rejection ret
       await (adapter as any).maintainQueue(threadId);
       assert.equal(preparations, 1);
     }
+  } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test("queue maintenance retries when the idle-state read is temporarily unavailable", { timeout: 10_000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-queue-status-retry-")), frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames);
+  const rpc = async (id: string, method: string, params: object) => {
+    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "writer" }));
+    return waitFor(frames, frame => frame.id === id);
+  };
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "writer");
+    const threadId = ((await rpc("create", "thread/start", { cwd: root, testNoServerRequest: true })).result as any).thread.id;
+    const internals = adapter as any;
+    const readStatus = internals.threadStatus.bind(adapter);
+    let attempts = 0;
+    internals.threadStatus = async (id: string) => {
+      if (++attempts === 1) throw temporaryHistoryFailure;
+      return readStatus(id);
+    };
+    await rpc("enqueue", "thread/queue/add", { threadId, clientUserMessageId: "status-retry", input: [{ type: "text", text: "test" }] });
+    await waitFor(frames, frame => frame.method === "turn/started");
+    const inputs = ((await rpc("accepted", "test/readAcceptedInputs", {})).result as any).data;
+    assert.deepEqual(inputs.map((row: any) => row.params.clientUserMessageId), ["status-retry"]);
+    assert.equal(attempts, 2);
   } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
 });
 
