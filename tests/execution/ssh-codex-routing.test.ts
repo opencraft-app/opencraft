@@ -229,7 +229,10 @@ test("logical detach preserves another reader and shared human approval admits o
     f.frames.length = 0;
     f.physical.receive({ id: "approval", method: "item/commandExecution/requestApproval", params: { threadId: "t", turnId: "turn" } });
     assert.deepEqual(f.frames.map(frame => frame[LOGICAL_CLIENT_FIELD]), ["a", "b"]);
-    await f.adapter.send(JSON.stringify({ id: "approval", result: { decision: "accept" }, [LOGICAL_CLIENT_FIELD]: "unsubscribed" }));
+    const approvalId = f.frames[0].id;
+    assert.notEqual(approvalId, "approval");
+    assert.equal(f.frames[1].id, approvalId);
+    await f.adapter.send(JSON.stringify({ id: approvalId, result: { decision: "accept" }, [LOGICAL_CLIENT_FIELD]: "unsubscribed" }));
     assert.ok(!f.physical.sent.some(message => message.id === "approval"));
     await f.detach("a");
     assert.ok(!f.physical.sent.some(message => message.method === "thread/unsubscribe"));
@@ -237,12 +240,12 @@ test("logical detach preserves another reader and shared human approval admits o
     f.physical.receive({ method: "item/agentMessage/delta", params: { threadId: "t", delta: "live" } });
     assert.equal(f.frames.length, 1); assert.equal(f.frames[0][LOGICAL_CLIENT_FIELD], "b");
     await f.send("b", 3, "thread/resume", { threadId: "t" }); f.physical.receive({ id: f.physical.sent.at(-1).id, result: { thread: { id: "t" } } });
-    assert.equal(f.frames.filter(frame => frame.id === "approval").length, 0, "an already offered request is not dispatched twice");
-    await f.adapter.send(JSON.stringify({ id: "approval", result: { decision: "accept" }, [LOGICAL_CLIENT_FIELD]: "a" }));
+    assert.equal(f.frames.filter(frame => frame.id === approvalId).length, 0, "an already offered request is not dispatched twice");
+    await f.adapter.send(JSON.stringify({ id: approvalId, result: { decision: "accept" }, [LOGICAL_CLIENT_FIELD]: "a" }));
     assert.ok(!f.physical.sent.some(message => message.id === "approval"));
-    await f.adapter.send(JSON.stringify({ id: "approval", result: { decision: "accept" }, [LOGICAL_CLIENT_FIELD]: "b" }));
+    await f.adapter.send(JSON.stringify({ id: approvalId, result: { decision: "accept" }, [LOGICAL_CLIENT_FIELD]: "b" }));
     assert.equal(f.physical.sent.filter(message => message.id === "approval").length, 1);
-    await f.adapter.send(JSON.stringify({ id: "approval", result: { decision: "accept" }, [LOGICAL_CLIENT_FIELD]: "b" }));
+    await f.adapter.send(JSON.stringify({ id: approvalId, result: { decision: "accept" }, [LOGICAL_CLIENT_FIELD]: "b" }));
     assert.equal(f.physical.sent.filter(message => message.id === "approval").length, 1, "duplicate legacy answer cannot repeat native execution");
   } finally { await f.adapter.close(); }
 });
