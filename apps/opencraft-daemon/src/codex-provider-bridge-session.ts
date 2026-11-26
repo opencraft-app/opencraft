@@ -2,6 +2,7 @@ import { ThreadCatalogPublisher } from "@opencraft/app-host-server/thread-catalo
 import { HostInteractions, InteractionFault, InteractionResponseNotDispatched } from "@opencraft/app-host-server/interactions";
 import { createHash, randomUUID } from "node:crypto";
 import { OPENCRAFT_DESKTOP_ATTACH } from "@opencraft/appserver-protocol/desktop";
+import { COLLABORATION_METHOD } from "@opencraft/appserver-protocol/collaboration";
 import {
   BridgeInteractionSnapshotIncomplete, BridgeOutboxReadError, type BridgeGatewaySession,
 } from "@opencraft/agent-bridge-host/gateway-session";
@@ -921,7 +922,8 @@ export class CodexProviderBridgeSession implements DuplexTransport {
     const behind = this.gateway.publicThread(threadId);
     if (!optIn && behind !== undefined && behind !== threadId)
       throw Error("Use the bridge thread identity; native owner bypass refused");
-    if (method?.startsWith("opencraft/schedules/") || method === "opencraft/turn-recovery/read") {
+    // Collaboration is owned by the local Host and uses the public Thread ID.
+    if (method === COLLABORATION_METHOD || method?.startsWith("opencraft/schedules/") || method === "opencraft/turn-recovery/read") {
       if (frame.id !== undefined) this.pending.set(JSON.stringify([client, frame.id]), { method, client });
       return this.legacy.sendWithContext ? this.legacy.sendWithContext(raw, context) : this.legacy.send(raw);
     }

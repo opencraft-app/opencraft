@@ -1,6 +1,31 @@
 import type { CatalogModel as Model } from "@opencraft/appserver-protocol";
 import { reasoningCapability, resolveModelSelection, modelInputModalities, type ModelInputModality } from "@opencraft/composer-core";
 
+export function resolveConversationAgentId(
+  threadId: string | null,
+  executionModel: string | null | undefined,
+  extensions: Readonly<Record<string, unknown>> | null | undefined,
+  models: readonly Pick<Model, "id" | "model" | "agentId">[],
+): string | null {
+  if (!threadId) return null;
+  const bridge = extensions?.["opencraft/agent-bridge"] as
+    { version?: number; providerId?: string; threadPrefix?: string } | undefined;
+  // The Bridge owns routing, while its provider owns the Agent and model catalog.
+  if (bridge?.version === 1 && typeof bridge.providerId === "string" && bridge.providerId
+    && typeof bridge.threadPrefix === "string" && bridge.threadPrefix && threadId.startsWith(bridge.threadPrefix)) {
+    return bridge.providerId;
+  }
+  const engines = extensions?.["opencraft/execution-engines"] as {
+    defaultEngine?: string;
+    providers?: readonly { id: string; threadPrefix?: string; modelPrefix?: string }[];
+  } | undefined;
+  return engines?.providers?.find(engine =>
+    (engine.threadPrefix && threadId.startsWith(engine.threadPrefix))
+    || (engine.modelPrefix && threadId.startsWith(engine.modelPrefix)))?.id
+    ?? models.find(model => model.id === executionModel || model.model === executionModel)?.agentId
+    ?? engines?.defaultEngine ?? null;
+}
+
 export interface WorkbenchReasoningEffortChoice {
   readonly value: string;
   readonly label: string;

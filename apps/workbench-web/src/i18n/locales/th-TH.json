@@ -1984,7 +1984,7 @@
   "composer.attachmentsAndContext": "ไฟล์แนบและบริบท",
   "composer.context.reference": "บริบทอ้างอิง",
   "composer.context.remove": "นำบริบทออก: {title}",
-  "chat.continueWithAgent.failed": "ยังเตรียมการสนทนาให้ Agent นี้ไม่ได้ การสนทนาและฉบับร่างเดิมยังคงอยู่ โปรดรอให้คำตอบปัจจุบันเสร็จแล้วลองอีกครั้ง",
+  "chat.continueWithAgent.failed": "ยังเตรียมการสนทนาให้ Agent นี้ไม่ได้ โปรดลองอีกครั้ง",
   "chat.nativeSession.busy": "การสนทนานี้เปิดอยู่ในไคลเอนต์ Codex อื่น ปิดที่นั่นเพื่อทำต่อที่นี่ หรือเก็บบริบทไว้ในบทสนทนาใหม่ บทสนทนาใหม่จะดำเนินต่อแยกกัน ข้อความที่ยังไม่ส่งจะอยู่ที่นี่",
   "chat.nativeSession.fork": "ทำต่อในบทสนทนาใหม่",
   "chat.nativeSession.forking": "กำลังเตรียมบทสนทนา…",

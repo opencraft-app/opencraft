@@ -2201,7 +2201,7 @@
   "composer.attachmentsAndContext": "附件与参考内容",
   "composer.context.reference": "参考内容",
   "composer.context.remove": "移除参考内容：{title}",
-  "chat.continueWithAgent.failed": "暂时无法为这个 Agent 准备会话，原会话和草稿仍然保留。请先结束正在进行的回复，再试一次。",
+  "chat.continueWithAgent.failed": "暂时无法为这个 Agent 准备续接，请重试。",
   "chat.nativeSession.busy": "这个会话正被另一个 Codex 客户端占用。请先在那里关闭，再回到这里继续；也可以保留上下文，新建会话接着聊。新会话后续独立进行，未发送的消息仍留在原会话。",
   "chat.nativeSession.fork": "保留上下文，在新会话继续",
   "chat.nativeSession.forking": "正在准备新会话…",
