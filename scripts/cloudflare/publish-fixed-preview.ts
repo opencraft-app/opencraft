@@ -18,6 +18,7 @@ const DO_BINDINGS = {
 } as const;
 
 type Binding = { name: string; type: string; class_name?: string; namespace_id?: string; text?: string };
+type ContainerConfig = { name: string; class_name: string; images: Record<string, string> };
 type Settings = {
   bindings: Binding[];
   compatibility_date: string;
@@ -26,6 +27,7 @@ type Settings = {
 };
 type Deployment = { versions: { version_id: string; percentage: number }[]; id: string };
 type Application = { id: string; name: string; configuration?: { image?: string } };
+type VersionDetails = { id: string; resources?: { script_runtime?: { containers?: ContainerConfig[] } } };
 
 export interface PublishFixedPreviewOptions {
   readonly assetsDir: string;
@@ -89,6 +91,19 @@ function fingerprintBindings(settings: Settings): string {
   return JSON.stringify(settings.bindings.toSorted((a, b) => a.name.localeCompare(b.name)));
 }
 
+export function extractVersionContainers(
+  version: VersionDetails,
+  app: Application | undefined,
+  worker: string,
+): ContainerConfig[] {
+  const fromVersion = version.resources?.script_runtime?.containers;
+  if (fromVersion && fromVersion.length > 0) return fromVersion;
+  if (app?.configuration?.image) {
+    return [{ name: worker, class_name: "WorkspaceHost", images: { workspace: app.configuration.image } }];
+  }
+  throw new Error(`Missing container configuration on active version ${version.id} and application ${worker}`);
+}
+
 export async function publishFixedPreview(options: PublishFixedPreviewOptions) {
   const { assetsDir, worker, origin, revision, accountId, token } = options;
   const api = new CloudflareApi(accountId, token);
@@ -107,6 +122,9 @@ export async function publishFixedPreview(options: PublishFixedPreviewOptions) {
 
   const app = applications.find((item) => item.name === worker);
   assert.ok(app?.id, `Missing container application for ${worker}`);
+
+  const previousVersionDetails = await api.call<VersionDetails>("GET", `${base}/versions/${previousVersion}`);
+  const containers = extractVersionContainers(previousVersionDetails, app, worker);
 
   const address = await inspectPreviewAddress(api, previewPublicOrigin(subdomain));
   assert.equal(
@@ -148,13 +166,7 @@ export async function publishFixedPreview(options: PublishFixedPreviewOptions) {
           observability: previousSettings.observability,
           bindings,
           assets: { jwt: assetJwt, config: workbenchAssetsConfig },
-          ...(app.configuration?.image
-            ? {
-                containers: [
-                  { name: worker, class_name: "WorkspaceHost", images: { workspace: app.configuration.image } },
-                ],
-              }
-            : {}),
+          containers,
           annotations: {
             "workers/tag": `git-${revision.slice(0, 12)}`,
             "workers/message": `OpenCraft fixed preview ${revision.slice(0, 12)}`,
@@ -188,11 +200,12 @@ export async function publishFixedPreview(options: PublishFixedPreviewOptions) {
       `Live origin ${origin}/ returned unexpected HTTP ${response.status}`,
     );
 
-    const [finalSettings, finalApps, finalAddress, finalDeployments] = await Promise.all([
+    const [finalSettings, finalApps, finalAddress, finalDeployments, finalVersion] = await Promise.all([
       api.call<Settings>("GET", `${base}/settings`),
       api.call<Application[]>("GET", "/containers/applications"),
       inspectPreviewAddress(api, previewPublicOrigin(subdomain)),
       api.call<{ deployments: Deployment[] }>("GET", `${base}/deployments`),
+      api.call<VersionDetails>("GET", `${base}/versions/${candidate.id}`),
     ]);
 
     assert.equal(
@@ -203,6 +216,11 @@ export async function publishFixedPreview(options: PublishFixedPreviewOptions) {
     assert.equal(finalApps.find((item) => item.name === worker)?.id, app.id, "Container application changed");
     assert.equal(finalAddress?.target, worker, "Fixed preview target changed");
     assert.equal(finalDeployments.deployments[0]?.versions[0]?.version_id, candidate.id, "Active deployment mismatch");
+    assert.deepEqual(
+      finalVersion.resources?.script_runtime?.containers,
+      containers,
+      "Container configuration changed during deploy",
+    );
 
     console.log(`Fixed preview verified at ${origin} (version ${candidate.id})`);
     return { worker, origin, previousVersion, candidateVersion: candidate.id, revision };

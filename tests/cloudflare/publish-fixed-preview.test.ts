@@ -4,6 +4,7 @@ import {
   buildInheritedBindings,
   DEFAULT_PREVIEW_ORIGIN,
   DEFAULT_PREVIEW_WORKER,
+  extractVersionContainers,
   parsePublishArgs,
 } from "../../scripts/cloudflare/publish-fixed-preview.ts";
 
@@ -46,4 +47,27 @@ test("buildInheritedBindings converts secret_text to inherit and preserves DO bi
     { type: "plain_text", name: "PREVIEW_ORIGIN", text: "https://preview.opencraft.app" },
     { type: "assets", name: "ASSETS" },
   ]);
+});
+
+test("extractVersionContainers preserves containers from active version script_runtime", () => {
+  const containers = [
+    { name: DEFAULT_PREVIEW_WORKER, class_name: "WorkspaceHost", images: { workspace: "registry.example/ws@sha256:abc" } },
+  ];
+  assert.deepEqual(
+    extractVersionContainers(
+      { id: "v1", resources: { script_runtime: { containers } } },
+      { id: "app-1", name: DEFAULT_PREVIEW_WORKER, configuration: {} },
+      DEFAULT_PREVIEW_WORKER,
+    ),
+    containers,
+  );
+  assert.throws(
+    () =>
+      extractVersionContainers(
+        { id: "v1", resources: {} },
+        { id: "app-1", name: DEFAULT_PREVIEW_WORKER, configuration: {} },
+        DEFAULT_PREVIEW_WORKER,
+      ),
+    /Missing container configuration/,
+  );
 });
