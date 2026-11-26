@@ -285,7 +285,6 @@ export function AppServerRuntimeProvider({
     agentRuntimes: supervisor.agentRuntimes,
     threadManagement,
     environmentDirectory: supervisor.environmentDirectory,
-    personalMachines: supervisor.personalMachines,
     authenticationFlows: supervisor.authenticationFlows,
     connectors: supervisor.connectors,
     connectorManager: supervisor.connectorManager,

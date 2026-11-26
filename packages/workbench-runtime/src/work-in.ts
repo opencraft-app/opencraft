@@ -50,21 +50,14 @@ export async function readHostMachineInfo(request: () => Promise<unknown>): Prom
   try { return parseRuntimeMachineReadResponse(await request()); } catch { return null; }
 }
 
-function routePreferenceScore(host: HostConnectionProfile): number {
-  const onlineBonus = host.machinePresence === "offline" ? 0 : 10;
-  const directBonus = host.hostKind === "remote-control" ? 0 : 5;
-  return onlineBonus + directBonus;
-}
+const routeRank = (host: HostConnectionProfile) =>
+  (host.machinePresence === "offline" ? 0 : 2) + (host.hostKind === "remote-control" ? 0 : 1);
 
 export function chooseWorkInHost(machine: WorkInMachine, currentAgent: HostConnectionProfile["agent"], currentHostId?: string): HostConnectionProfile {
   const current = machine.hosts.find(host => host.hostId === currentHostId && host.machinePresence !== "offline");
   if (current) return current;
-  const matchingAgent = machine.hosts
-    .filter(host => currentAgent != null && host.agent === currentAgent)
-    .sort((a, b) => routePreferenceScore(b) - routePreferenceScore(a));
-  if (matchingAgent.length > 0) return matchingAgent[0]!;
-  const sorted = [...machine.hosts].sort((a, b) => routePreferenceScore(b) - routePreferenceScore(a));
-  return sorted[0] ?? machine.hosts[0]!;
+  const pool = currentAgent != null ? machine.hosts.filter(host => host.agent === currentAgent) : [];
+  return [...(pool.length ? pool : machine.hosts)].sort((a, b) => routeRank(b) - routeRank(a))[0] ?? machine.hosts[0]!;
 }
 
 /** Multiple connection profiles may expose one reported Agent. Prefer the current path or direct online route; the active Agent comes first. */
@@ -73,12 +66,8 @@ export function workInAgentHosts(machine: WorkInMachine | undefined, activeHostI
   for (const host of machine?.hosts ?? []) {
     if (!host.enabled) continue;
     const key = host.agent ?? `host:${host.hostId}`;
-    const existing = agents.get(key);
-    if (
-      !existing
-      || host.hostId === activeHostId
-      || (existing.hostId !== activeHostId && routePreferenceScore(host) > routePreferenceScore(existing))
-    ) {
+    const prev = agents.get(key);
+    if (!prev || host.hostId === activeHostId || (prev.hostId !== activeHostId && routeRank(host) > routeRank(prev))) {
       agents.set(key, host);
     }
   }

@@ -20,6 +20,7 @@ export interface PersonalMachinesController {
   subscribe(listener: () => void): () => void;
   refresh(): Promise<void>;
   command(input: PersonalMachineCommand): Promise<PersonalMachineCommandResult>;
+  readonly retryConnection?: (hostId: string) => Promise<void>;
 }
 
 const POLL_INTERVAL_MS = 5_000;
@@ -29,6 +30,7 @@ export interface PersonalMachineEnvironmentSourceOptions {
   readonly resolveRpcUrl: (machineId: string) => string;
   readonly isActive?: () => boolean;
   readonly pollIntervalMs?: number;
+  readonly retryConnection?: (hostId: string) => Promise<void>;
 }
 
 function isMethodUnsupportedError(error: unknown): boolean {
@@ -100,7 +102,11 @@ export class PersonalMachineEnvironmentSource implements EnvironmentSource, Pers
   private inFlight: Promise<void> | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(private readonly options: PersonalMachineEnvironmentSourceOptions) {}
+  readonly retryConnection?: (hostId: string) => Promise<void>;
+
+  constructor(private readonly options: PersonalMachineEnvironmentSourceOptions) {
+    this.retryConnection = options.retryConnection;
+  }
 
   getSnapshot = (): EnvironmentSourceSnapshot => this.snapshot;
 
@@ -142,7 +148,12 @@ export class PersonalMachineEnvironmentSource implements EnvironmentSource, Pers
         }
         // Retain the last known directory projection across transient disconnects.
         if (this.directory === null) {
-          this.publishSource("error", [], error instanceof Error ? error.message : "Machine directory unavailable", false);
+          this.publishSource(
+            "error",
+            [],
+            error instanceof Error ? error.message : "Machine directory unavailable",
+            false,
+          );
         }
       } finally {
         this.inFlight = null;
@@ -213,9 +224,7 @@ export class PersonalMachineEnvironmentSource implements EnvironmentSource, Pers
   ): void {
     const prev = this.snapshot;
     const sameSource =
-      prev.phase === phase
-      && prev.error === error
-      && JSON.stringify(prev.entries) === JSON.stringify(entries);
+      prev.phase === phase && prev.error === error && JSON.stringify(prev.entries) === JSON.stringify(entries);
     if (!sameSource) {
       this.snapshot = Object.freeze({
         revision: prev.revision + 1,
@@ -228,6 +237,52 @@ export class PersonalMachineEnvironmentSource implements EnvironmentSource, Pers
       for (const listener of this.listeners) listener();
     }
   }
+}
+
+let activeController: PersonalMachinesController | null = null;
+const activeControllerListeners = new Set<() => void>();
+
+export function subscribeActivePersonalMachines(listener: () => void): () => void {
+  activeControllerListeners.add(listener);
+  return () => {
+    activeControllerListeners.delete(listener);
+  };
+}
+
+export function getActivePersonalMachines(): PersonalMachinesController | null {
+  return activeController;
+}
+
+export function attachPersonalMachines(
+  directory: { register(id: string, source: EnvironmentSource): () => void },
+  agentRuntimes: {
+    request(hostId: string, method: "opencraft/personal-machines", params: PersonalMachineCommand): Promise<unknown>;
+    ensureReady(hostId: string): Promise<unknown>;
+  },
+  ownerHostId: string,
+  isActive?: () => boolean,
+): () => void {
+  const source = new PersonalMachineEnvironmentSource({
+    request: (command) => agentRuntimes.request(ownerHostId, PERSONAL_MACHINES_METHOD, command),
+    resolveRpcUrl: (machineId) =>
+      new URL(`/__opencraft_machines/${machineId}/rpc`, window.location.href).href.replace(/^http/u, "ws"),
+    isActive,
+    retryConnection: async (targetHostId) => {
+      await agentRuntimes.ensureReady(targetHostId);
+    },
+  });
+  const unregister = directory.register(source.id, source);
+  activeController = source;
+  for (const listener of activeControllerListeners) listener();
+  source.start();
+  return () => {
+    if (activeController === source) {
+      activeController = null;
+      for (const listener of activeControllerListeners) listener();
+    }
+    unregister();
+    source.dispose();
+  };
 }
 
 export { PERSONAL_MACHINES_METHOD };
