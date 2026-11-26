@@ -113,7 +113,12 @@ export class ConnectedAgentHost {
     private readonly cwd: string,
     private readonly deps: OnboardingDeps,
     private readonly bridge?: ConnectedAgentBridge,
-    private readonly options: {nativePi?:boolean;modelPolicyPath?:string;executionCli?:import("@opencraft/session-capabilities/execution-cli").ScopedExecutionCliPort} = {},
+    private readonly options: {
+      nativePi?: boolean;
+      modelPolicyPath?: string;
+      executionCli?: import("@opencraft/session-capabilities/execution-cli").ScopedExecutionCliPort;
+      resolveStagedAttachment?: (name: string, path: string) => Promise<{ name: string; path: string } | null>;
+    } = {},
   ) { this.providerUsage = new AgentProviderUsageService(deps); }
   async start(): Promise<void> { await this.bridge?.provider.start(); }
   ownsBridgeThread(threadId: string): boolean { return this.bridge?.provider.ownsThread(threadId) === true; }
@@ -413,6 +418,7 @@ export class ConnectedAgentHost {
       dataDirectory: directory,
       permission: "allow-once",
       timeoutMs: 120_000,
+      ...(this.options.resolveStagedAttachment ? { resolveStagedAttachment: this.options.resolveStagedAttachment } : {}),
       ...(history ? { history } : {}),
     });
     engine.subscribe((method, params) => {

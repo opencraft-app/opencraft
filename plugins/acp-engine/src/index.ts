@@ -15,6 +15,7 @@ import { permissionModeProfileId, type NativeConversationProject } from "@opencr
 import type { HostInputPort, HostInputReceipt } from "@opencraft/appserver-protocol/host-inputs";
 import { AcpStdioTransport, AcpProtocolError, type AcpObject as Value } from "./transport.js";
 import { codexBaseModelId, splitModelVariant } from "./model-variant.js";
+import { prepareAcpPromptContent, type PreparedAcpPrompt, type StagedAttachmentLocation } from "./prompt-content.js";
 
 export interface AcpEngineOptions {
   executionCli?: ScopedExecutionCliPort;
@@ -40,6 +41,7 @@ export interface AcpEngineOptions {
   };
   permission?: "allow-once" | "reject";
   reconnectWindowMs?: number;
+  resolveStagedAttachment?: (name: string, path: string) => Promise<StagedAttachmentLocation | null>;
 }
 interface Session {
   schemaVersion: 1; id: string; nativeId: string; cwd: string; model: string | null; name: string | null;
@@ -646,8 +648,13 @@ export class AcpEngine implements ExecutionEngineProvider {
       if (params.effort != null || params.reasoningEffort != null) await this.setReasoning(session, params.effort ?? params.reasoningEffort);
       if (Object.hasOwn(params, "serviceTier")) await this.setServiceTier(session, params.serviceTier);
       runtime.owner = client;
-      const userPrompt = continuing ? [{ type: "text", text: "Continue." }] : this.promptContent(params.input);
-      return this.prompt(session, this.promptWithContext(userPrompt, params.additionalContext), typeof params.__opencraftDelegationId === "string" ? params.__opencraftDelegationId : null, params.clientUserMessageId, userPrompt, typeof params.__opencraftExecutionCli === "string" ? params.__opencraftExecutionCli : undefined);
+      const userPrompt: PreparedAcpPrompt = continuing
+        ? { prompt: [{ type: "text", text: "Continue." }], userContent: [{ type: "text", text: "Continue.", text_elements: [] }], visibleText: "Continue." }
+        : await prepareAcpPromptContent(params.input, {
+            cwd: session.cwd,
+            resolveStagedAttachment: this.options.resolveStagedAttachment,
+          });
+      return this.prompt(session, this.promptWithContext(userPrompt.prompt, params.additionalContext), typeof params.__opencraftDelegationId === "string" ? params.__opencraftDelegationId : null, params.clientUserMessageId, userPrompt, typeof params.__opencraftExecutionCli === "string" ? params.__opencraftExecutionCli : undefined);
     }
     if (method === "turn/interrupt") {
       if (runtime.active && params.turnId && params.turnId !== runtime.active.id) return fault("ACP turn changed", -32000);
@@ -716,10 +723,6 @@ export class AcpEngine implements ExecutionEngineProvider {
       if (!tool || typeof tool.name !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/u.test(tool.name) || names.has(tool.name) || !tool.inputSchema || typeof tool.inputSchema !== "object") return fault("Invalid ACP dynamic tool");
       names.add(tool.name); return { name: tool.name, description: String(tool.description ?? ""), inputSchema: tool.inputSchema };
     });
-  }
-  private promptContent(input: unknown): Value[] {
-    if (!Array.isArray(input) || !input.length) return fault("ACP input must contain text");
-    return input.map(item => { if (!item || item.type !== "text" || typeof item.text !== "string") return fault("This ACP adapter supports text input only"); return { type: "text", text: item.text }; });
   }
   private captureModels(session: Session, result: Value): void {
     const options: Value[] = Array.isArray(result.configOptions) ? result.configOptions : [];
@@ -944,7 +947,7 @@ export class AcpEngine implements ExecutionEngineProvider {
       if (cursor) cursors.add(cursor);
     } while (cursor && !this.closed);
   }
-  private async prompt(session: Session, prompt: Value[], delegationId: string | null, inputId?: string, userPrompt: Value[] = prompt, cliCredential?: string): Promise<any> {
+  private async prompt(session: Session, prompt: Value[], delegationId: string | null, inputId?: string, userPrompt?: PreparedAcpPrompt, cliCredential?: string): Promise<any> {
     await this.resume(session, inputId); const runtime = this.state(session.id);
     const advertisedEffort = this.id === "cursor" || (session.reasoningConfig && !this.variantReasoningCatalog(session))
       ? session.reasoningConfig?.currentValue ?? null : null;
@@ -964,9 +967,9 @@ export class AcpEngine implements ExecutionEngineProvider {
     runtime.active = { id: `acp-turn-${randomUUID()}`, delegationId, ...(inputId ? { inputId } : {}), items: [], status: "inProgress", startedAtMs: Date.now() };
     const active = runtime.active;
     active.items.push({ id: `${active.id}:user`, type: "userMessage", clientId: inputId ?? null,
-      content: userPrompt.map(item => ({ type: "text", text: item.text, text_elements: [] })) });
+      content: userPrompt?.userContent ?? prompt.map(item => ({ type: "text", text: item.text, text_elements: [] })) });
     session.lastTurn = { id: active.id, status: active.status };
-    const firstText = userPrompt.map(item => item.text).join(" ").replace(/\s+/gu, " ").trim();
+    const firstText = (userPrompt?.visibleText ?? prompt.map(item => item.text).join(" ")).replace(/\s+/gu, " ").trim();
     if (!session.preview && firstText) session.preview = Array.from(firstText).slice(0, 160).join("");
     const initialTitle = !session.name && session.nameOrigin !== "manual" && firstText
       ? Array.from(firstText).slice(0, 80).join("") : null;

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -912,4 +912,50 @@ test('ACP publishes the persisted title after creation and self rename',async t=
  await f.engine.request('thread/name/set',{threadId:child.threadId,name:'Updated task'},client);
  assert.deepEqual(notices.at(-1),{threadId:child.threadId,threadName:'Updated task'});
  assert.equal((await f.engine.request('thread/read',{threadId:child.threadId},client)).thread.name,'Updated task');
+});
+
+test("ACP turns support Host-staged file attachments, workspace mentions, and explicit skills", async t => {
+  const stagedFile = join(tmpdir(), `acp-staged-${Date.now()}-${Math.random().toString(16).slice(2)}.pptx`);
+  await writeFile(stagedFile, "slides-binary-payload");
+  t.after(() => rm(stagedFile, { force: true }));
+
+  const notices: Array<{ method: string; params: any }> = [];
+  const f = await fixture(t, {
+    id: "codex",
+    env: { ACP_TEST_CAPTURE_PROMPT: "1" },
+    resolveStagedAttachment: async (name: string, path: string) => (
+      path === stagedFile ? { name, path: stagedFile } : null
+    ),
+  });
+  f.engine.subscribe((method, params) => notices.push({ method, params }));
+
+  await writeFile(join(f.root, "notes.md"), "workspace note\n");
+  const skillDir = join(f.root, "skills", "brief");
+  await mkdir(skillDir, { recursive: true });
+  await writeFile(join(skillDir, "SKILL.md"), "Always summarize concisely.\n");
+
+  const { thread } = await f.engine.request("thread/start", { cwd: f.root }, client);
+  await f.engine.request("turn/start", {
+    threadId: thread.id,
+    input: [
+      { type: "mention", name: "deck.pptx", path: stagedFile },
+      { type: "mention", name: "notes.md", path: "notes.md" },
+      { type: "skill", name: "brief", path: skillDir },
+      { type: "text", text: "Review these" },
+    ],
+  }, client);
+
+  await until(() => notices.some(notice => notice.method === "turn/completed"));
+  const promptCalls = (await f.calls()).filter(call => call.method === "session/prompt");
+  assert.equal(promptCalls.length, 1);
+  const promptTexts = promptCalls[0]!.prompt.map((block: any) => block.text);
+  assert.match(promptTexts[0], /The user attached a file named "deck\.pptx"/);
+  assert.match(promptTexts[1], /Attached workspace reference.*"notes\.md"/);
+  assert.match(promptTexts[2], /User-selected skill.*"brief".*Always summarize concisely\./s);
+  assert.equal(promptTexts[3], "Review these");
+
+  const started = notices.find(notice => notice.method === "turn/started");
+  const userMessage = started?.params.turn.items.find((item: any) => item.type === "userMessage");
+  assert.equal(userMessage?.content?.[0]?.text_elements?.[0]?.placeholder, "opencraft:staged-file:v1");
+  assert.deepEqual(userMessage?.content?.[1], { type: "mention", name: "deck.pptx", path: stagedFile });
 });

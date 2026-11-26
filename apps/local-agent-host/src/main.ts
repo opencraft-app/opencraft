@@ -358,7 +358,15 @@ export async function startLocalAgentHost(options: {
     defaultCwd: options.bridge.claudeCode.defaultCwd ?? projectlessWorkspaceRoot ?? homedir(),
   });
   const connectedAgents = new ConnectedAgentHost(agentOnboarding, join(productDataRoot, "connected-agents"), projectlessWorkspaceRoot ?? homedir(), createOnboardingDeps(),
-    claudeBridge === undefined ? undefined : { provider: claudeBridge, engines: ["claude-code"] }, {nativePi:options.nativePi,modelPolicyPath:options.modelPolicyPath,executionCli:options.executionCli});
+    claudeBridge === undefined ? undefined : { provider: claudeBridge, engines: ["claude-code"] }, {
+      nativePi: options.nativePi,
+      modelPolicyPath: options.modelPolicyPath,
+      executionCli: options.executionCli,
+      resolveStagedAttachment: async (name, path) => {
+        const ref = await attachmentStaging.referenceForHostPath(name, path);
+        return ref?.location.kind === "host-file" ? { name: ref.name, path: ref.location.path } : null;
+      },
+    });
   await connectedAgents.start();
   cleanup.push(() => connectedAgents.close());
   cleanup.push(connectedAgents.subscribe((method, params) => {
