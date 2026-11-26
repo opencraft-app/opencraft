@@ -14,6 +14,7 @@ import type {
   TurnStatus,
 } from "@opencraft/agent-bridge-protocol";
 import type {
+  AgentMessagePresentation,
   AssembleContext,
   AssembleDiagnostic,
   AssembleResult,
@@ -41,13 +42,6 @@ interface OpenTurn {
   readonly startedAtMs: number;
 }
 
-interface StreamState {
-  readonly itemId: string;
-  readonly channel: TextChannel;
-  readonly text: string;
-  readonly turnId: string | null;
-}
-
 interface MutableState {
   schemaVersion: number;
   sessionEpoch: number;
@@ -60,7 +54,7 @@ interface MutableState {
   lastTurnId: string | null;
   settledNativeTurns: Record<string, string>;
   openItems: Record<string, CanonicalItem>;
-  streams: Record<string, StreamState>;
+  streams: Record<string, AssemblerState["streams"][string]>;
   settledKeys: Record<string, true>;
   inputs: Record<string, CanonicalInputState>;
   pendingAccepted: string[];
@@ -90,10 +84,10 @@ function cloneState(source: AssemblerState): MutableState {
   };
 }
 
-function textShape(channel: TextChannel, text: string): ItemShape {
+function textShape(channel: TextChannel, text: string, agentMessage?: AgentMessagePresentation): ItemShape {
   if (channel === "reasoning") return { kind: "reasoning", text };
   if (channel === "plan") return { kind: "plan", text };
-  return { kind: "agentMessage", text };
+  return { kind: "agentMessage", text, ...agentMessage };
 }
 
 function channelForShape(shape: ItemShape): TextChannel | null {
@@ -293,6 +287,12 @@ export function assemble(
             channel,
             text: textOfShape(shape),
             turnId: item.turnId,
+            ...(shape.kind === "agentMessage" && (shape.phase || shape.delivery || shape.questions) ? {
+              agentMessage: { phase: shape.phase, delivery: shape.delivery, questions: shape.questions },
+            } : {}),
+            ...(shape.kind === "reasoning" && shape.content ? {
+              reasoning: { summary: shape.summary, content: shape.content },
+            } : {}),
           };
         } else {
           state.openItems[key] = item;
@@ -307,35 +307,39 @@ export function assemble(
           diag("out-of-order", op, `text delta after ${key} settled`, key);
           break;
         }
-        const stream = state.streams[key];
-        if (stream !== undefined) {
-          state.streams[key] = { ...stream, text: stream.text + delta.text };
-          emit({ kind: "agentMessage.delta", threadId, turnId: stream.turnId ?? "", itemId: stream.itemId, channel: stream.channel, delta: delta.text });
-          break;
-        }
+        let stream = state.streams[key];
         const opened = state.openItems[key];
-        if (opened !== undefined) {
-          // A non-text item (tool/command) cannot accumulate a text stream; keep
-          // the delta observable without minting a second item for the same key.
-          emit({ kind: "agentMessage.delta", threadId, turnId: opened.turnId ?? "", itemId: opened.itemId, channel: delta.channel, delta: delta.text });
-          break;
+        if (stream === undefined && opened === undefined) {
+          if (state.activeTurnId === null) {
+            diag("orphan-no-turn", op, `text stream ${key} with no open turn`, key);
+            break;
+          }
+          const itemId = mintItemId();
+          const item: CanonicalItem = {
+            itemId, nativeKey: key, threadId, turnId: state.activeTurnId, shape: textShape(delta.channel, ""),
+          };
+          diag("delta-first-synthesized", op, `synthesized item.started for delta-first stream ${key}`, key);
+          emit({ kind: "item.started", threadId, turnId: item.turnId, item });
+          stream = { itemId, channel: delta.channel, text: "", turnId: item.turnId };
         }
-        if (state.activeTurnId === null) {
-          diag("orphan-no-turn", op, `text stream ${key} with no open turn`, key);
-          break;
+        const target = stream ?? opened!;
+        const channel = stream?.channel ?? delta.channel;
+        const contentIndex = channel === "reasoning" ? delta.contentIndex : undefined;
+        if (stream !== undefined) {
+          if (stream.reasoning || contentIndex !== undefined) {
+            const content = [...(stream.reasoning?.content ?? (stream.text ? [stream.text] : []))];
+            const index = contentIndex ?? 0;
+            while (content.length <= index) content.push("");
+            content[index] = content[index]! + delta.text;
+            state.streams[key] = { ...stream, text: "", reasoning: { ...stream.reasoning, content } };
+          } else {
+            state.streams[key] = { ...stream, text: stream.text + delta.text };
+          }
         }
-        const itemId = mintItemId();
-        const item: CanonicalItem = {
-          itemId,
-          nativeKey: key,
-          threadId,
-          turnId: state.activeTurnId,
-          shape: textShape(delta.channel, ""),
-        };
-        diag("delta-first-synthesized", op, `synthesized item.started for delta-first stream ${key}`, key);
-        emit({ kind: "item.started", threadId, turnId: item.turnId, item });
-        state.streams[key] = { itemId, channel: delta.channel, text: delta.text, turnId: item.turnId };
-        emit({ kind: "agentMessage.delta", threadId, turnId: item.turnId ?? "", itemId, channel: delta.channel, delta: delta.text });
+        emit({
+          kind: "agentMessage.delta", threadId, turnId: target.turnId ?? "", itemId: target.itemId, channel, delta: delta.text,
+          ...(contentIndex === undefined ? {} : { contentIndex }),
+        });
         break;
       }
       case "item.textClose": {
@@ -350,7 +354,8 @@ export function assemble(
           diag("out-of-order", op, `textClose on non-text item ${key}`, key);
           break;
         }
-        const accumulated = stream?.text ?? textOfShape(opened!.shape);
+        const reasoning = stream?.reasoning;
+        const accumulated = reasoning?.content.join("\n") ?? stream?.text ?? textOfShape(opened!.shape);
         const finalText = delta.text ?? accumulated;
         if (delta.text === undefined && finalText.trim().length === 0) {
           diag("empty-stream", op, `whitespace-only stream ${key} completes nothing`, key);
@@ -364,7 +369,9 @@ export function assemble(
           nativeKey: key,
           threadId,
           turnId,
-          shape: textShape(channel, finalText),
+          shape: reasoning && delta.text === undefined
+            ? { kind: "reasoning", text: finalText, ...reasoning }
+            : textShape(channel, finalText, stream?.agentMessage),
         };
         emit({ kind: "item.completed", threadId, turnId, item });
         state.settledKeys[key] = true;
@@ -381,11 +388,17 @@ export function assemble(
         const opened = state.openItems[key];
         const stream = state.streams[key];
         if (opened !== undefined) {
-          item = { ...opened, shape: delta.shape };
+          const shape = opened.shape.kind === "command" && delta.shape.kind === "command"
+            ? { ...opened.shape, ...delta.shape }
+            : delta.shape;
+          item = { ...opened, shape };
           delete state.openItems[key];
           delete state.streams[key];
         } else if (stream !== undefined) {
-          item = { itemId: stream.itemId, nativeKey: key, threadId, turnId: stream.turnId, shape: delta.shape };
+          const shape = delta.shape.kind === "agentMessage" && stream.agentMessage
+            ? { ...stream.agentMessage, ...delta.shape }
+            : delta.shape;
+          item = { itemId: stream.itemId, nativeKey: key, threadId, turnId: stream.turnId, shape };
           delete state.streams[key];
         } else {
           // A close with no open turn is an orphan: diagnose only, never mint

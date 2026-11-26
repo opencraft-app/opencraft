@@ -95,7 +95,7 @@ export type CanonicalEventBody =
   | { readonly kind: "turn.completed"; readonly threadId: string; readonly turnId: string; readonly status: TurnStatus; readonly startedAtMs: number; readonly error?: TurnFailure }
   | { readonly kind: "item.started"; readonly threadId: string; readonly turnId: string | null; readonly item: CanonicalItem }
   | { readonly kind: "item.completed"; readonly threadId: string; readonly turnId: string | null; readonly item: CanonicalItem }
-  | { readonly kind: "agentMessage.delta"; readonly threadId: string; readonly turnId: string; readonly itemId: string; readonly channel: TextChannel; readonly delta: string }
+  | { readonly kind: "agentMessage.delta"; readonly threadId: string; readonly turnId: string; readonly itemId: string; readonly channel: TextChannel; readonly delta: string; readonly contentIndex?: number }
   | { readonly kind: "tokenUsage.updated"; readonly threadId: string; readonly turnId: string; readonly usage: CanonicalUsage }
   | { readonly kind: "input.state"; readonly threadId: string; readonly status: CanonicalInputState }
   | { readonly kind: "extension.state"; readonly threadId: string; readonly extensionKind: string; readonly state: unknown }
@@ -139,10 +139,14 @@ interface OpenTurn {
   readonly startedAtMs: number;
 }
 
+export type AgentMessagePresentation = Pick<Extract<ItemShape, { kind: "agentMessage" }>, "phase" | "delivery" | "questions">;
+
 interface StreamState {
   readonly itemId: string;
   readonly channel: "agentMessage" | "reasoning" | "plan";
   readonly text: string;
+  readonly agentMessage?: AgentMessagePresentation;
+  readonly reasoning?: { readonly summary?: readonly string[]; readonly content: readonly string[] };
   readonly turnId: string | null;
 }
 

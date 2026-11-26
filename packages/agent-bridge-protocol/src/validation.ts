@@ -5,7 +5,8 @@
  * envelope-level framing stays tolerant of unknown fields.
  */
 
-import type { BridgeDelta, BridgeDeltaOp, ThreadDeltaParams, TokenUsage } from "./grammar";
+import { APP_SERVER_ACTIVITY_TYPES, COMMAND_SOURCES, type AgentMessageQuestion, type AppServerActivityType, type BridgeDelta,
+  type BridgeDeltaOp, type CommandAction, type ThreadDeltaParams, type TokenUsage } from "./grammar";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -24,6 +25,83 @@ function isStringArray(value: unknown): boolean {
 }
 function isOneOf<T extends string>(value: unknown, allowed: readonly T[]): value is T {
   return isString(value) && (allowed as readonly string[]).includes(value);
+}
+
+function isNullableString(value: unknown): boolean {
+  return value === null || isString(value);
+}
+
+export function isAgentMessageQuestions(value: unknown): value is readonly AgentMessageQuestion[] {
+  return Array.isArray(value) && value.every(question => isRecord(question) && isString(question.title) &&
+    (question.options === null || isStringArray(question.options)));
+}
+
+export function isCommandActions(value: unknown): value is readonly CommandAction[] {
+  return Array.isArray(value) && value.every(action => {
+    if (!isRecord(action) || !isString(action.command)) return false;
+    switch (action.type) {
+      case "read": return isString(action.name) && isString(action.path);
+      case "listFiles": return isNullableString(action.path);
+      case "search": return isNullableString(action.path) && isNullableString(action.query);
+      case "unknown": return true;
+      default: return false;
+    }
+  });
+}
+
+export function isReasoningContentIndex(value: unknown): value is number {
+  // Section indices grow an array in both the assembler and the client.
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 && value < 4096;
+}
+
+export function isTerminalInteraction(value: unknown): boolean {
+  return isRecord(value) && isString(value.turnId) && isString(value.itemId) &&
+    isString(value.processId) && isString(value.stdin);
+}
+
+export function isAppServerActivityType(value: unknown): value is AppServerActivityType {
+  return isOneOf(value, APP_SERVER_ACTIVITY_TYPES);
+}
+
+function isAppServerItem(item: unknown): boolean {
+  if (!isRecord(item) || Object.hasOwn(item, "id")) return false;
+  switch (item.type) {
+    case "contextCompaction":
+      return true;
+    case "webSearch": {
+      const action = item.action;
+      return isString(item.query) && (action == null || isRecord(action) && (
+        action.type === "search" && isNullableString(action.query) && (action.queries === null || isStringArray(action.queries)) ||
+        action.type === "openPage" && isNullableString(action.url) ||
+        action.type === "findInPage" && isNullableString(action.url) && isNullableString(action.pattern) ||
+        action.type === "other"
+      )) && (item.results == null || Array.isArray(item.results));
+    }
+    case "collabAgentToolCall":
+      return isOneOf(item.tool, ["spawnAgent", "sendInput", "resumeAgent", "wait", "closeAgent", "sendMessage",
+        "followupTask", "interruptAgent", "listAgents"]) &&
+        isOneOf(item.status, [...ITEM_TOOL_STATUSES, "interrupted"]) && isString(item.senderThreadId) &&
+        isStringArray(item.receiverThreadIds) && isNullableString(item.prompt) && isNullableString(item.model) &&
+        isNullableString(item.reasoningEffort) && isRecord(item.agentsStates) &&
+        Object.values(item.agentsStates).every(state => isRecord(state) &&
+          isOneOf(state.status, ["pendingInit", "running", "interrupted", "completed", "errored", "shutdown", "notFound"]) &&
+          isNullableString(state.message));
+    case "subAgentActivity":
+      return isOneOf(item.kind, ["started", "interacted", "interrupted", "completed"]) &&
+        isString(item.agentThreadId) && isString(item.agentPath);
+    case "hookPrompt":
+      return Array.isArray(item.fragments) && item.fragments.every(fragment =>
+        isRecord(fragment) && isString(fragment.text) && isString(fragment.hookRunId));
+    case "imageGeneration":
+      return isString(item.status) && isString(item.result) && (item.savedPath === undefined || isString(item.savedPath));
+    case "mcpToolCall":
+      return isString(item.status) && isString(item.server) && isString(item.tool) && (item.result == null ||
+        isRecord(item.result) && Array.isArray(item.result.content));
+    case "dynamicToolCall":
+      return isString(item.status) && isString(item.tool) && (item.contentItems == null || Array.isArray(item.contentItems));
+    default:
+      return false;
+  }
 }
 
 const TURN_STATUSES = ["completed", "failed", "interrupted"] as const;
@@ -61,22 +139,17 @@ function isItemShape(value: unknown): boolean {
         && (value.content === undefined || Array.isArray(value.content) && value.content.every(part => isRecord(part) && isString(part.type))
           && JSON.stringify(value.content).length <= 65_536);
     case "agentMessage":
+      return isString(value.text) &&
+        (value.phase === undefined || isOneOf(value.phase, ["commentary", "final_answer"])) &&
+        (value.delivery === undefined || value.delivery === "async") &&
+        (value.questions === undefined || isAgentMessageQuestions(value.questions));
     case "plan":
       return isString(value.text);
     case "reasoning":
       return isString(value.text) && (value.summary === undefined || isStringArray(value.summary)) &&
         (value.content === undefined || isStringArray(value.content));
-    case "appServerItem": {
-      const item = value.item;
-      if (!isRecord(item) || !isString(item.status) || Object.hasOwn(item, "id")) return false;
-      if (item.type === "imageGeneration")
-        return isString(item.result) && (item.savedPath === undefined || isString(item.savedPath));
-      if (item.type === "mcpToolCall")
-        return isString(item.server) && isString(item.tool) && (item.result == null ||
-          isRecord(item.result) && Array.isArray(item.result.content));
-      return item.type === "dynamicToolCall" && isString(item.tool) &&
-        (item.contentItems == null || Array.isArray(item.contentItems));
-    }
+    case "appServerItem":
+      return isAppServerItem(value.item);
     case "tool":
       return isString(value.name) && isOneOf(value.status, ITEM_TOOL_STATUSES)
         && (value.output === undefined || value.output === null || isString(value.output));
@@ -87,7 +160,10 @@ function isItemShape(value: unknown): boolean {
           isRecord(change.kind) && (change.kind.type === "add" || change.kind.type === "delete" ||
             (change.kind.type === "update" && (change.kind.move_path === null || isString(change.kind.move_path)))));
     case "command":
-      return isString(value.command) && isString(value.cwd) && isOneOf(value.status, ITEM_TOOL_STATUSES)
+      return isString(value.command) && isString(value.cwd) && isOneOf(value.status, [...ITEM_TOOL_STATUSES, "declined"])
+        && (value.processId === undefined || isNullableString(value.processId))
+        && (value.source === undefined || isOneOf(value.source, COMMAND_SOURCES))
+        && (value.commandActions === undefined || isCommandActions(value.commandActions))
         && (value.output === undefined || value.output === null || isString(value.output))
         && (value.exitCode == null || (typeof value.exitCode === "number" && Number.isSafeInteger(value.exitCode)))
         && (value.durationMs == null || isNumber(value.durationMs));
@@ -144,6 +220,9 @@ export function parseDelta(value: unknown): DeltaParseResult {
       break;
     case "item.textDelta":
       if (!requireNativeKey() || !isOneOf(value.channel, TEXT_CHANNELS) || !isString(value.text)) return fail("item.textDelta needs nativeKey/channel/text");
+      if (value.contentIndex !== undefined && (value.channel !== "reasoning" || !isReasoningContentIndex(value.contentIndex))) {
+        return fail("item.textDelta contentIndex needs a bounded reasoning section index");
+      }
       break;
     case "item.textClose":
       if (!requireNativeKey() || !isOneOf(value.channel, TEXT_CHANNELS)) return fail("item.textClose needs nativeKey/channel");

@@ -3,6 +3,12 @@ import { threadCatalogStatus } from "@opencraft/appserver-protocol";
 import {
   BRIDGE_MAX_INPUT_BYTES,
   BRIDGE_THREAD_NOTIFICATIONS,
+  COMMAND_SOURCES,
+  isAgentMessageQuestions,
+  isAppServerActivityType,
+  isCommandActions,
+  isReasoningContentIndex,
+  isTerminalInteraction,
   parseDelta,
   type BridgeDelta,
   type BridgeErrorKind,
@@ -306,7 +312,9 @@ export class CodexBridge {
       if (entry && method === "thread/status/changed") {
         const status = threadCatalogStatus(p.status);
         if (status) this.forward(entry[0], method, { threadId: entry[0], status });
-      } else if (entry) this.forward(entry[0], method, { ...p, threadId: entry[0] });
+      } else if (entry && (method !== "item/commandExecution/terminalInteraction" || isTerminalInteraction(p))) {
+        this.forward(entry[0], method, { ...p, threadId: entry[0] });
+      }
       return;
     }
     if (
@@ -371,9 +379,16 @@ export class CodexBridge {
         nativeTurnId = id(p.turnId);
       if (method === "item/completed") session.streams?.delete(nativeKey);
       let shape: ItemShape;
-      if (item.type === "agentMessage" && typeof item.text === "string")
-        shape = { kind: "agentMessage", text: item.text };
-      else if (item.type === "plan" && typeof item.text === "string") shape = { kind: "plan", text: item.text };
+      if (item.type === "agentMessage" && typeof item.text === "string") {
+        const questions = isAgentMessageQuestions(item.questions) ? item.questions : undefined;
+        shape = {
+          kind: "agentMessage",
+          text: item.text,
+          ...(item.phase === "commentary" || item.phase === "final_answer" ? { phase: item.phase } : {}),
+          ...(item.delivery === "async" || questions?.length ? { delivery: "async" } : {}),
+          ...(questions ? { questions } : {}),
+        };
+      } else if (item.type === "plan" && typeof item.text === "string") shape = { kind: "plan", text: item.text };
       else if (item.type === "reasoning" && Array.isArray(item.content)) {
         const content = item.content.filter((v): v is string => typeof v === "string");
         const summary = Array.isArray(item.summary) ? item.summary.filter((v): v is string => typeof v === "string") : [];
@@ -383,6 +398,9 @@ export class CodexBridge {
         typeof item.status === "string") {
         const { id: _nativeId, ...fields } = item;
         shape = { kind: "appServerItem", item: { ...fields, type: item.type, status: item.status } };
+      } else if (isAppServerActivityType(item.type)) {
+        const { id: _nativeId, ...fields } = item;
+        shape = { kind: "appServerItem", item: { ...fields, type: item.type } };
       }
       else if (item.type === "userMessage" && Array.isArray(item.content)) {
         shape = {
@@ -428,17 +446,22 @@ export class CodexBridge {
             },
           ]);
         }
-      } else if (item.type === "commandExecution" && typeof item.command === "string" && typeof item.cwd === "string")
+      } else if (item.type === "commandExecution" && typeof item.command === "string" && typeof item.cwd === "string") {
+        const source = COMMAND_SOURCES.find(candidate => candidate === item.source);
         shape = {
           kind: "command",
           command: item.command,
           cwd: item.cwd,
-          status: item.status === "completed" ? "completed" : item.status === "failed" ? "failed" : "inProgress",
+          status: item.status === "completed" || item.status === "failed" || item.status === "declined"
+            ? item.status : "inProgress",
+          ...(typeof item.processId === "string" || item.processId === null ? { processId: item.processId } : {}),
+          ...(source ? { source } : {}),
+          ...(isCommandActions(item.commandActions) ? { commandActions: item.commandActions } : {}),
           output: typeof item.aggregatedOutput === "string" ? item.aggregatedOutput : null,
           ...(typeof item.exitCode === "number" && Number.isSafeInteger(item.exitCode) ? { exitCode: item.exitCode } : {}),
           ...(typeof item.durationMs === "number" && Number.isFinite(item.durationMs) ? { durationMs: item.durationMs } : {}),
         };
-      else if (item.type === "fileChange" && Array.isArray(item.changes) &&
+      } else if (item.type === "fileChange" && Array.isArray(item.changes) &&
         (item.status === "inProgress" || item.status === "completed" || item.status === "failed" || item.status === "declined"))
         shape = { kind: "fileChange", status: item.status, changes: item.changes as Extract<ItemShape, { kind: "fileChange" }>["changes"] };
       else {
@@ -447,7 +470,7 @@ export class CodexBridge {
       }
       const delta = { op: method === "item/started" ? "item.open" : "item.close", scope, nativeTurnId, nativeKey, shape } as const;
       if (shape.kind === "appServerItem" && !parseDelta(delta).ok) {
-        this.emit(threadId, [{ op: "unhandled", scope, nativeTurnId, nativeKey, reason: "Invalid native media or tool item" }]);
+        this.emit(threadId, [{ op: "unhandled", scope, nativeTurnId, nativeKey, reason: "Invalid native AppServer item" }]);
         return;
       }
       this.emit(threadId, [delta]);
@@ -483,6 +506,7 @@ export class CodexBridge {
       if (typeof p.delta !== "string") throw new CodexBridgeError("invalid", "Invalid text delta");
       const channel =
         method === "item/plan/delta" ? "plan" : method === "item/reasoning/textDelta" ? "reasoning" : "agentMessage";
+      if (channel === "reasoning" && p.contentIndex !== undefined && !isReasoningContentIndex(p.contentIndex)) return;
       (session.streams ??= new Map()).set(id(p.itemId), { nativeTurnId: id(p.turnId), channel });
       this.emit(threadId, [
         {
@@ -490,13 +514,9 @@ export class CodexBridge {
           scope,
           nativeTurnId: id(p.turnId),
           nativeKey: id(p.itemId),
-          channel:
-            method === "item/plan/delta"
-              ? "plan"
-              : method === "item/reasoning/textDelta"
-                ? "reasoning"
-                : "agentMessage",
+          channel,
           text: p.delta,
+          ...(channel === "reasoning" && isReasoningContentIndex(p.contentIndex) ? { contentIndex: p.contentIndex } : {}),
         },
       ]);
     }

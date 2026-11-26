@@ -86,10 +86,12 @@ function toThreadItem(item: CanonicalItem): ThreadItem {
         type: "agentMessage",
         id: item.itemId,
         text: shape.text,
-        phase: null,
+        phase: shape.phase ?? null,
         memoryCitation: null,
-        delivery: null,
-        questions: null,
+        delivery: shape.delivery ?? null,
+        questions: shape.questions?.map(question => ({
+          title: question.title, options: question.options === null ? null : [...question.options],
+        })) ?? null,
       };
     case "reasoning":
       return { type: "reasoning", id: item.itemId, summary: [...(shape.summary ?? [])], content: [...(shape.content ?? [shape.text])] };
@@ -125,10 +127,10 @@ function toThreadItem(item: CanonicalItem): ThreadItem {
         scriptPath: null,
         command: shape.command,
         cwd: shape.cwd,
-        processId: null,
-        source: "agent",
+        processId: shape.processId ?? null,
+        source: shape.source ?? "agent",
         status: shape.status,
-        commandActions: [],
+        commandActions: [...(shape.commandActions ?? [])],
         aggregatedOutput: shape.output ?? null,
         exitCode: shape.exitCode ?? null,
         durationMs: shape.durationMs ?? null,
@@ -273,7 +275,7 @@ export function projectToAppServer(
       case "agentMessage.delta": {
         const common = { threadId: event.threadId, turnId: event.turnId, itemId: event.itemId, delta: event.delta };
         if (event.channel === "reasoning") {
-          const params: ReasoningTextDeltaNotification = { ...common, contentIndex: 0 };
+          const params: ReasoningTextDeltaNotification = { ...common, contentIndex: event.contentIndex ?? 0 };
           out.push({ method: "item/reasoning/textDelta", params });
         } else if (event.channel === "plan") {
           const params: PlanDeltaNotification = common;
