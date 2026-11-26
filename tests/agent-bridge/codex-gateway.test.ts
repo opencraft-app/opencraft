@@ -18,6 +18,7 @@ import { localTestBackend } from './fixtures/local-backend.js';
 import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
 import { AppServerRpcError, type AppServerClient } from '@opencraft/appserver-client';
 import { COLLABORATION_METHOD, encodeConversationRef } from '@opencraft/appserver-protocol/collaboration';
+import type { TransportSubmissionContext } from '@opencraft/appserver-client/transport';
 import { BRIDGE_MAX_FRAME_BYTES } from '@opencraft/agent-bridge-protocol';
 import { readTurnsPage } from '../../packages/appserver-session/src/history-strategies';
 const token = 'private-test-token-00000000000000000000';
@@ -556,8 +557,9 @@ test('a revoked Host continuation never reaches Bridge command custody', async (
   assert.equal(frames.find(frame => frame.id === 'continue').error.data.submissionOutcome, 'rejected');
 });
 
-for(const cli of [false,true,'timeout','initial','contradiction','closed-contradiction'])test(`bundled Codex bridge through durable Host: CLI ${cli}, opt-in, steer, reattach and ID continuity`, async t => {
-  const initial=cli==='initial'||String(cli).includes('contradiction');
+for(const cli of [false,true,'timeout','initial','contradiction','closed-contradiction','git'])test(`bundled Codex bridge through durable Host: CLI ${cli}, opt-in, steer, reattach and ID continuity`, async t => {
+  const git = cli === 'git';
+  const initial=git||cli==='initial'||String(cli).includes('contradiction');
   let serverStarted=0,serverReset=0;
   const root = await mkdtemp(join(tmpdir(), 'codex-p2a-'));
   const native = createServer(), control = createServer((req, res) => {
@@ -575,6 +577,10 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
   const nativeTool = (context: any, tool: any, args: unknown) => tool.name === 'host_tool'
     ? (hostToolCalls.push({ context, tool, args }), Promise.resolve({ success: true, contentItems: [{ type: 'inputText', text: 'host answered' }] })) : null;
   let hasRollout=!initial,initialConfig:any;
+  const rollout = join(root, 'native-rollout.jsonl');
+  const gitAdmissions: unknown[] = [], gitSettlements: unknown[] = [];
+  const gitEvents: [string, unknown, unknown][] = [];
+  const nativeTurn = () => starts === 1 ? 'native-turn' : 'native-turn-' + starts;
   let loaded=true,nativeActive=false,issued=0,revoked=0,blockRetirement=cli==='timeout';const nativeConfigurations:any[]=[];
   const lifecycleCalls:any[]=[];const nativeStartInputs:unknown[]=[];const settingsCalls:any[]=[];const titleCalls:any[]=[];const oldStarts:any[]=[];const releaseCalls:string[]=[];let releaseAnswer=false;
   let holdFullHistory: ((reply: () => void) => void) | undefined;
@@ -603,28 +609,36 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
         else if (f.method === 'thread/goal/clear') reply({ cleared: true });
         else reply({});
       }
-      if (f.method === 'thread/start') {initialConfig=f.params.config;startDynamicTools=f.params.dynamicTools;reply({sandbox:{type:'readOnly'},approvalPolicy:'never',approvalsReviewer:'user',thread: { id: 'native-new', cwd: root, createdAt: 10, updatedAt: 10, turns: [] }});}
+      if (f.method === 'thread/start') {if (git) assert.equal(f.params.historyMode, 'paginated');initialConfig=f.params.config;startDynamicTools=f.params.dynamicTools;reply({sandbox:{type:'readOnly'},approvalPolicy:'never',approvalsReviewer:'user',thread: { id: 'native-new', cwd: root, createdAt: 10, updatedAt: 10, turns: [] }});}
       if(f.method==='turn/start'&&f.params.clientUserMessageId==='initial-invalid'){socket.send(JSON.stringify({id:f.id,error:{code:-32602,message:'invalid input'}}));return;}
       if (f.method === 'turn/start' && f.params.clientUserMessageId === 'unknown-start') { socket.send(JSON.stringify({ id: f.id, error: { code: -32000, message: 'Opaque native failure' } })); return; }
       if (f.method === 'turn/start') {
         assert.equal(f.params.opencraftExecutionAdmission,undefined);assert.equal(f.params.executionSource,undefined);assert.equal(f.params.opencraftSessionMcp,undefined);
         nativeStartInputs.push(f.params.input);
-        hasRollout=true;nativeActive=true;starts++; event('turn/started', { threadId: 'native-new', turn: { id: 'native-turn' } });
-        event('item/started', { threadId: 'native-new', turnId: 'native-turn', item: { type: 'commandExecution', id: 'tool', command: 'cat input.txt', cwd: root, status: 'inProgress' } });
+        hasRollout=true;nativeActive=true;starts++; event('turn/started', { threadId: 'native-new', turn: { id: nativeTurn() } });
+        event('item/started', { threadId: 'native-new', turnId: nativeTurn(), item: { type: 'commandExecution', id: 'tool', command: 'cat input.txt', cwd: root, status: 'inProgress' } });
         if(String(cli).includes('contradiction')){
           if(cli==='closed-contradiction'){nativeActive=false;event('turn/completed',{threadId:'native-new',turn:{id:'native-turn',status:'completed'}});}
           socket.send(JSON.stringify({id:f.id,error:{code:-32602,message:'refused after start'}}));return;
         }
-        reply({ turn: { id: 'native-turn', status: 'inProgress', items: [] } });
+        reply({ turn: { id: nativeTurn(), status: 'inProgress', items: [] } });
       }
       if (f.method === 'turn/steer') {
         steers++; assert.equal(f.params.expectedTurnId, 'native-turn');
         event('item/started', { threadId: 'native-new', turnId: 'native-turn', item: { type: 'userMessage', id: 'steer-item', clientId: f.params.clientUserMessageId, content: f.params.input } });
         reply({ turnId: 'native-turn' });
       }
-      if (f.method === 'thread/read'&&f.params.includeTurns&&!hasRollout){socket.send(JSON.stringify({id:f.id,error:{code:-32600,message:'thread native-new is not materialized yet; includeTurns is unavailable before first user message'}}));return;}
+      if (f.method === 'thread/read' && f.params.includeTurns && !hasRollout) {
+        if (git) {
+          void writeFile(rollout, JSON.stringify({ type: 'session_meta' }) + '\n').then(() => {
+            hasRollout = true;
+            socket.send(JSON.stringify({ id: f.id, error: { code: -32601, message: 'list_turns is not supported yet' } }));
+          });
+        } else socket.send(JSON.stringify({id:f.id,error:{code:-32600,message:'thread native-new is not materialized yet; includeTurns is unavailable before first user message'}}));
+        return;
+      }
       if (f.method === 'thread/read') {
-        const sendHistory = () => reply({ thread: { id: 'native-new',status:{type:!loaded?'notLoaded':nativeActive?'active':'idle'}, turns: [{ id: 'native-turn', items: [{ type: 'commandExecution', id: 'tool', command: 'cat input.txt', commandActions: [{ type: 'business-data', threadId: 'business-thread', id: 'native-turn' }] }] }] } });
+        const sendHistory = () => reply({ thread: { id: 'native-new',...(git ? { path: rollout } : {}),status:{type:!loaded?'notLoaded':nativeActive?'active':'idle'}, turns: [{ id: 'native-turn', items: [{ type: 'commandExecution', id: 'tool', command: 'cat input.txt', commandActions: [{ type: 'business-data', threadId: 'business-thread', id: 'native-turn' }] }] }] } });
         if (holdFullHistory && f.params.includeTurns) {
           const hold = holdFullHistory;
           holdFullHistory = undefined;
@@ -665,6 +679,10 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
       }
       if(f.method==='thread/unsubscribe'){if(!blockRetirement)loaded=false;reply({});}
       if(f.method==='thread/settings/update'){settingsCalls.push(f.params);reply({});}
+      if (git && f.method === 'thread/resume' && loaded && starts === 0 && hasRollout) {
+        socket.send(JSON.stringify({ id: f.id, error: { code: -32601, message: 'list_turns is not supported yet' } }));
+        return;
+      }
       if(f.method==='thread/resume'&&!hasRollout){socket.send(JSON.stringify({id:f.id,error:{code:-32600,message:'no rollout found'}}));return;}
       if (f.method === 'thread/resume') {resumeRequests.push(f.params);loaded=true;if(f.params.config)nativeConfigurations.push(f.params);reply({sandbox:{type:'readOnly'},approvalPolicy:'never',thread: { id: 'native-new', turns: [] }});}
     });
@@ -706,7 +724,24 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
     const next=cli?createServerCodexBridge(legacy,options,{
       async admit(threadId,inputId){return {serverId:'server',threadId,execution:{inputId,executionId:inputId}};},
       sign:scope=>'signed:'+scope.execution!.inputId,...(initial?{async prepareSessionMcp(){return {configuration:{url:'http://127.0.0.1:1/mcp',http_headers:{Authorization:'Bearer platform-mcp'}}};}}:{}),sessionMcp:async()=>({url:'http://127.0.0.1:1/mcp',http_headers:{Authorization:'Bearer platform-mcp'}}),started:()=>{serverStarted++;},rejectedBeforeStart:()=>{serverReset++;},
-    },{admissionPaused:()=>paused,nativeTool,creationTools}):new CodexProviderBridge(legacy,options,{admissionPaused:()=>paused,nativeTool,creationTools,
+    }, {
+      admissionPaused: () => paused, nativeTool, creationTools,
+      ...(git ? { executionGit: {
+        async prepare(nativeThreadId, inputId, context) {
+          const actor = context.executionPrincipal?.subject;
+          gitAdmissions.push([nativeThreadId, inputId, actor]);
+          if (actor === 'revoked') throw Error('fixture credential service unavailable');
+          return {
+            environment: actor ? {
+              OPENCRAFT_GIT_CAPABILITY: 'synthetic-git-seal-' + actor + '-' + gitAdmissions.length,
+              OPENCRAFT_GIT_BIN: '/git/bin', PATH: '/git/bin:/usr/bin', BASH_ENV: '/git/shell-env.sh',
+            } : {},
+            settle(outcome, turnId) { gitSettlements.push([inputId, outcome, turnId]); },
+          };
+        },
+        notification(method, params) { gitEvents.push([method, params.threadId, params.turnId]); },
+      } } : {}),
+    }):new CodexProviderBridge(legacy,options,{admissionPaused:()=>paused,nativeTool,creationTools,
       prepareInput: async (threadId, clientId, input, context, purpose) => {
         if (context.sender && clientId === undefined && purpose !== 'queue-edit') throw new Error('Message identity is required');
         staged.push([threadId, clientId]);
@@ -729,10 +764,11 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
   };
   transport = await createTransport();
   let sequence = 0;
-  const request = async (method: string, params: unknown = {}, sender?: typeof verifiedSender) => {
+  const request = async (method: string, params: unknown = {}, sender?: typeof verifiedSender, execution?: TransportSubmissionContext) => {
     const id = ++sequence;
     const raw = JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: 'client' });
-    if (sender) await transport!.sendWithContext(raw, { sender, validUntil: Date.now() + 60_000 });
+    if (execution) await transport!.sendWithContext(raw, execution);
+    else if (sender) await transport!.sendWithContext(raw, { sender, validUntil: Date.now() + 60_000 });
     else await transport!.send(raw);
     const frame = await until(() => frames.find(f => f.id === id), Boolean);
     if (frame.error) throw new AppServerRpcError(frame.error);
@@ -912,6 +948,44 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
     const gone=++sequence;
     await transport.send(JSON.stringify({id:gone,method:'thread/name/set',params:{threadId:forked,name:'late'},[LOGICAL_CLIENT_FIELD]:'client'}));
     assert.equal((await until(()=>frames.find(f=>f.id===gone),Boolean)).error.data.submissionOutcome,'rejected');
+  }
+  if (git) {
+    const threadId = created.thread.id;
+    const start = (inputId: string, actor?: string) => request('turn/start', {
+      threadId, clientUserMessageId: inputId, input: [{ type: 'text', text: inputId }],
+    }, undefined, { sender: null, ...(actor ? {
+      executionPrincipal: { provider: 'fixture', subject: actor }, validUntil: Date.now() + 30_000,
+    } : {}) });
+    const finish = async (turnId: string) => {
+      nativeActive = false;
+      nativePeer!.send(JSON.stringify({ method: 'turn/completed', params: {
+        threadId: 'native-new', turn: { id: turnId, status: 'completed' },
+      } }));
+      await until(() => gitEvents.some(([method, thread, turn]) => method === 'turn/completed' && thread === 'native-new' && turn === turnId), Boolean);
+      await until(() => revoked, count => count >= starts);
+    };
+    await start('first', 'alice');
+    assert.equal(starts, 1);
+    const first = nativeConfigurations.at(-1).config['shell_environment_policy.set'];
+    assert.equal(first.OPENCRAFT_GIT_CAPABILITY, 'synthetic-git-seal-alice-1');
+    assert.equal(first.OPENCRAFT_THREAD_CLI, 'fixture');
+    assert.equal(first.PATH, '/git/bin:fixture:/usr/bin');
+    assert.deepEqual(gitSettlements[0], ['first', 'accepted', 'native-turn']);
+    await finish('native-turn');
+
+    await start('second', 'bob');
+    assert.equal(nativeConfigurations.at(-1).config['shell_environment_policy.set'].OPENCRAFT_GIT_CAPABILITY, 'synthetic-git-seal-bob-2');
+    await finish('native-turn-2');
+    await assert.rejects(start('denied', 'revoked'), { message: 'git_execution_unavailable' });
+    assert.equal(starts, 2);
+    await start('third');
+    assert.deepEqual(nativeConfigurations.at(-1).config['shell_environment_policy.set'], { OPENCRAFT_THREAD_CLI: 'fixture', PATH: 'fixture' });
+    assert.deepEqual(gitAdmissions, [
+      ['native-new', 'first', 'alice'], ['native-new', 'second', 'bob'], ['native-new', 'denied', 'revoked'], ['native-new', 'third', undefined],
+    ]);
+    assert.ok(!JSON.stringify(frames).includes('synthetic-git-seal'));
+    await finish('native-turn-3');
+    return;
   }
   const started = await request('turn/start', { threadId: 'bridge:codex:public-new', clientUserMessageId: 'start', input: [{ type: 'text', text: 'read' },
     ...(cli===false?[{ type: 'mention', name: 'input.txt', path: '/work/input.txt' }]:[])] }, cli ? undefined : verifiedSender);

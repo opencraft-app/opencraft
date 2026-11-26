@@ -28,6 +28,15 @@ The first admitted native input refreshes its Git environment even when the
 creator and sender are the same account. Native configuration waits for readiness;
 a failed preflight rejects before dispatch rather than pretending input was sent.
 
+Codex Bridge uses the same admitted Human and lease store for direct turn
+starts. The Gateway resolves the native Thread and prepares the sealed Git
+environment before dispatch. The private Engine Host combines it with the
+session CLI environment and the provider reloads the native Thread before
+starting the turn. The original input or its command receipt binds the lease
+to the native turn, and completion closes it. Steers never transfer a running
+turn's Git identity. The Engine Host's autonomous queue does not yet prepare
+a personal Git grant when it starts a new turn.
+
 An installation with a separate vault owner signs grants there instead:
 `PersonalGitSealPort` (`{ authority, seal(scope): Promise<string> }`, subpath
 `personal-git-seal`) is served by the core vault-owner Worker

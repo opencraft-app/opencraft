@@ -21,6 +21,7 @@ export interface CodexBridgeOwners {
   readonly beforeUserInput: NonNullable<BridgePolicy["beforeUserInput"]>;
   /** Whether prepareInput records verified senders now (the owner opens its sender store on connect). */
   readonly senderAttribution: () => boolean;
+  readonly executionGit?: BridgePolicy["executionGit"];
   readonly usage: NonNullable<BridgePolicy["usage"]>;
   readonly queueGuard: NonNullable<BridgePolicy["queueGuard"]>;
   readonly releaseForAdoption: NonNullable<BridgePolicy["releaseForAdoption"]>;
