@@ -41,6 +41,7 @@ export class WebBrowserDynamicToolHost implements BrowserDynamicToolHost {
     private readonly pages: WebBrowserPageRuntime,
     private readonly workbench: BrowserWorkbenchCoordinator,
     private readonly receipts?: BrowserEffectReceipts,
+    private readonly shouldAutoPresentPanel: () => boolean = () => true,
   ) {}
 
   private threadScope(context: BrowserDynamicToolContext): string {
@@ -55,7 +56,7 @@ export class WebBrowserDynamicToolHost implements BrowserDynamicToolHost {
     return this.boundary(() => this.effect(context, args, 'open', () => {
       if (context.signal?.aborted) throw new BrowserToolError('CDP_ABORTED', 'Browser invocation cancelled', false, 'not-dispatched');
       if (args['visible'] !== undefined && typeof args['visible'] !== 'boolean') throw new BrowserToolError('INVALID_ARGUMENT', 'visible must be a boolean', false, 'not-dispatched');
-      const visible = args['visible'] === true;
+      const visible = args['visible'] === true && this.shouldAutoPresentPanel();
       if (visible && (!this.workbench.canPresentConversation(context) || typeof document !== 'undefined' && document.visibilityState !== 'visible'))
         throw new BrowserToolError('PRESENTATION_UNAVAILABLE', 'No visible Workbench is available for this conversation', false, 'not-dispatched');
       const placement = stringArgument(args, "placement") ?? "right";

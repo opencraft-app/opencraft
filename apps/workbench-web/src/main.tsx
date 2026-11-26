@@ -152,6 +152,7 @@ function ApplicationBootstrap({ deploymentAppHost, retirePreparation }: Workbenc
           serverAssetsContribution: assetsPlugin?.assets,
           pushDevice: clientRuntime.pushDevice ?? undefined,
           deferOptionalFeatures: true,
+          shouldAutoPresentBrowserPanel: () => preferences?.get("chat.openPagesInRightPanel") ?? true,
           deploymentAppHost,
         });
         application = created;
