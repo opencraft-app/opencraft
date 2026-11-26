@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {QueryClient} from '@tanstack/react-query';
 import {asHostId} from '@opencraft/chat-core';
-import {createConversationBindingStore,createConversationScopeLeaseRegistry,createConversationScopeRegistry,createConversationViewRegistry,createConversationActivationCoordinator,createWorkbenchCoordinator,createWorkbenchDraftLocation,createWorkbenchThreadLocation,HostRuntimeRegistry} from '@opencraft/workbench-runtime';
+import {createConversationBindingStore,createConversationScopeLeaseRegistry,createConversationScopeRegistry,createConversationViewRegistry,createConversationActivationCoordinator,createWorkbenchCoordinator,createWorkbenchDraftLocation,createWorkbenchThreadLocation,HostRuntimeRegistry,resolveConversationAgentId} from '@opencraft/workbench-runtime';
 import {createWorkbenchNavigationTransaction} from '../../apps/workbench-web/src/runtime/workbench-navigation-transaction';
 Object.defineProperty(globalThis,'window',{configurable:true,value:{location:{href:'http://localhost/'},history:{state:null},localStorage:{setItem(){},removeItem(){}}}});
 const {createWebWorkbenchCommands}=await import('../../apps/workbench-web/src/runtime/workbench-application-services');
@@ -28,6 +28,20 @@ async function fixture(t:test.TestContext) {
   return {commands,source,navigation,creations,setFailure(value:boolean){fail=value;},holdCreation(gate:Promise<void>|undefined){creationGate=gate;}};
 }
 const selection={hostId:'local',threadId:'source',historyTitle:'History',agentId:'codex',model:'codex-model',effort:'low',permissionProfile:'full'};
+
+test('a Bridge conversation and its Codex models share the Agent identity', () => {
+  const extensions = {
+    'opencraft/agent-bridge': { version: 1, providerId: 'codex', threadPrefix: 'bridge:codex:' },
+    'opencraft/execution-engines': { defaultEngine: 'codex', providers: [
+      { id: 'codex-bridge', threadPrefix: 'bridge:codex:' }, { id: 'pi', threadPrefix: 'pi_' },
+    ] },
+  };
+  const models = [{ id: 'custom-codex', model: 'custom-codex', agentId: 'codex' }];
+  assert.equal(resolveConversationAgentId('bridge:codex:source', undefined, extensions, models), models[0]!.agentId);
+  assert.equal(resolveConversationAgentId('native-codex', 'custom-codex', extensions, models), 'codex');
+  assert.equal(resolveConversationAgentId('pi_source', undefined, extensions, models), 'pi');
+  assert.equal(resolveConversationAgentId(null, undefined, extensions, models), null);
+});
 
 test('handoff stays on source until send, preserves a failed draft, then PUSH/POP returns to source',async t=>{
   const f=await fixture(t),original=f.source.getSnapshot().draft;

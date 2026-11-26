@@ -17,6 +17,7 @@ import { BridgeGatewaySession, BridgeOutboxReadError } from '../../apps/agent-br
 import { localTestBackend } from './fixtures/local-backend.js';
 import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
 import { AppServerRpcError, type AppServerClient } from '@opencraft/appserver-client';
+import { COLLABORATION_METHOD, encodeConversationRef } from '@opencraft/appserver-protocol/collaboration';
 import { BRIDGE_MAX_FRAME_BYTES } from '@opencraft/agent-bridge-protocol';
 import { readTurnsPage } from '../../packages/appserver-session/src/history-strategies';
 const token = 'private-test-token-00000000000000000000';
@@ -89,6 +90,46 @@ test('exclusive Codex bridge keeps passive legacy history reads on the native re
   assert.deepEqual(methods, ['initialize', ...passive]);
   await send('thread/read', { threadId: 'old-native-thread', watch: true });
   assert.deepEqual(releases, ['old-native-thread']);
+});
+
+test('collaboration references for a Bridge conversation use the authorized Host lane and public identity', async () => {
+  const threadId = 'bridge:codex:source';
+  const context = { sender: null, validUntil: Date.now() + 60_000 };
+  const reference = encodeConversationRef({ serverId: 'server:fixture:codex', threadId });
+  const frames: any[] = [];
+  let reply: (raw: string) => void;
+  const session = new CodexProviderBridgeSession({
+    status: { state: 'open' },
+    async connect() {}, async close() {}, async send() { assert.fail('Expected trusted context'); },
+    subscribeStatus: () => () => {},
+    subscribeMessage(listener) { reply = listener; return () => {}; },
+    async sendWithContext(raw, received) {
+      assert.equal(received, context);
+      const frame = JSON.parse(raw);
+      if (frame.method === 'initialize') return;
+      assert.equal(frame.method, COLLABORATION_METHOD);
+      assert.deepEqual(frame.params, { action: 'reference', threadId });
+      reply(JSON.stringify({ id: frame.id, result: { reference }, [LOGICAL_CLIENT_FIELD]: 'fixture' }));
+    },
+  }, publish => {
+    const gateway = new BridgeGatewaySession({
+      serverId: 'fixture',
+      async request() { assert.fail('Collaboration must not dispatch an engine command'); },
+      inbox: { async cursor() { return 0; }, async read() { return []; }, async readIdentities() { return []; },
+        async readPendingInteractions() { return []; }, async pull() {}, async close() {} },
+    }, publish);
+    gateway.reserve(threadId);
+    return gateway;
+  }, { exclusive: true, async releaseForAdoption() { assert.fail('Collaboration must not adopt a thread'); } });
+  const send = (method: string, params = {}) => session.sendWithContext(JSON.stringify({
+    id: method, method, params, [LOGICAL_CLIENT_FIELD]: 'fixture',
+  }), context);
+  session.subscribeMessage(raw => frames.push(JSON.parse(raw)));
+  try {
+    await send('initialize');
+    await send(COLLABORATION_METHOD, { action: 'reference', threadId });
+    assert.deepEqual(frames.find(frame => frame.id === COLLABORATION_METHOD)?.result, { reference });
+  } finally { await session.close(); }
 });
 
 for (const transition of ['none', 'unsubscribe', 'archive-and-reopen']) test(`a watched history read sends its result before restoring approvals, transition=${transition}`, async () => {

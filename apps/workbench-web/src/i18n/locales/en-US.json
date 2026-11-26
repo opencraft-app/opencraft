@@ -2088,7 +2088,7 @@
   "composer.attachmentsAndContext": "Attachments and context",
   "composer.context.reference": "Reference context",
   "composer.context.remove": "Remove context: {title}",
-  "chat.continueWithAgent.failed": "Could not prepare the conversation for this Agent. Your original conversation and draft are unchanged. Finish any active response and try again.",
+  "chat.continueWithAgent.failed": "Could not prepare the conversation for this Agent. Try again.",
   "chat.nativeSession.busy": "This conversation is open in another Codex client. Close it there to continue here, or keep its context in a new conversation. New conversations continue independently. Your unsent message stays here.",
   "chat.nativeSession.fork": "Continue in a new conversation",
   "chat.nativeSession.forking": "Preparing conversation…",

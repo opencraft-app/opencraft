@@ -218,7 +218,7 @@ try {
   for (const touch of retirementOnly ? [] : [false, true]) {
     const context = await browser.newContext({ viewport: { width: touch ? 390 : 1200, height: 900 }, hasTouch: touch, isMobile: touch, reducedMotion: "reduce" });
     const p = await context.newPage(); p.setDefaultTimeout(20_000); const errors: string[] = []; p.on("pageerror", (error: Error) => errors.push(error.message));
-    await p.goto(`${base}?thread=1`); const editor = p.locator(".opencraft-composer-editor"); await editor.fill("Continue this thread");
+    await p.goto(`${base}?thread=1&bridge=1`); const editor = p.locator(".opencraft-composer-editor"); await editor.fill("Continue this thread");
     const trigger = p.locator(".opencraft-composer-mode--intelligence");
     if (touch) await trigger.tap(); else { await trigger.focus(); await p.keyboard.press("Enter"); }
     const menu = p.locator(".opencraft-composer-model-browser-surface"); await menu.waitFor();

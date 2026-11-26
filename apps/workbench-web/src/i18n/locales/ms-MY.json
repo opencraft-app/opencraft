@@ -1984,7 +1984,7 @@
   "composer.attachmentsAndContext": "Lampiran dan konteks",
   "composer.context.reference": "Konteks rujukan",
   "composer.context.remove": "Alih keluar konteks: {title}",
-  "chat.continueWithAgent.failed": "Perbualan untuk Agent ini tidak dapat disediakan. Perbualan dan draf asal dikekalkan. Selesaikan respons yang sedang berjalan dan cuba lagi.",
+  "chat.continueWithAgent.failed": "Perbualan untuk Agent ini tidak dapat disediakan. Cuba lagi.",
   "chat.nativeSession.busy": "Perbualan ini dibuka dalam klien Codex lain. Tutup di sana untuk meneruskan di sini, atau kekalkan konteks dalam perbualan baharu. Perbualan baharu diteruskan secara berasingan. Mesej yang belum dihantar kekal di sini.",
   "chat.nativeSession.fork": "Teruskan dalam perbualan baharu",
   "chat.nativeSession.forking": "Menyediakan perbualan…",

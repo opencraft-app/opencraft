@@ -126,6 +126,7 @@ import {
   equalWorkbenchLocation,
   findHostConnectionInterventionError,
   projectComposerModelChoices,
+  resolveConversationAgentId,
 } from "@opencraft/workbench-runtime";
 import { OPENCRAFT_THREAD_QUEUE_EXTENSION, OPENCRAFT_PERMISSION_MODES_EXTENSION, supportsAtomicQueuedSteer, supportsUnconfirmedDeliveryRetry, type OpenCraftPermissionProfile } from "@opencraft/appserver-protocol";
 import {
@@ -1550,12 +1551,11 @@ export function App({
     composerWorkspaceRoots,
   );
   const agentAvailability = useAgentAvailability();
-  const continuationCapability = runtime.resources.host.getInitializeResult()?.capabilities?.extensions?.["opencraft/thread-access"] as { agentHandoff?: boolean } | undefined;
-  const executionEngines = runtime.resources.host.getInitializeResult()?.capabilities?.extensions?.["opencraft/execution-engines"] as { defaultEngine?: string; providers?: readonly { id: string; threadPrefix?: string; modelPrefix?: string }[] } | undefined;
-  const conversationAgent = activeThreadId === null ? null : executionEngines?.providers?.find(engine =>
-    (engine.threadPrefix && activeThreadId.startsWith(engine.threadPrefix)) || (engine.modelPrefix && activeThreadId.startsWith(engine.modelPrefix)))?.id
-    ?? [...composerCatalog.models, ...composerCatalog.displayModels, ...engineCatalog.groups.flatMap(group => group.hostId === snapshot.hostId ? group.models : [])].find(model => model.id === snapshot.conversation?.execution.model || model.model === snapshot.conversation?.execution.model)?.agentId
-    ?? executionEngines?.defaultEngine ?? null;
+  const hostExtensions = runtime.resources.host.getInitializeResult()?.capabilities?.extensions;
+  const continuationCapability = hostExtensions?.["opencraft/thread-access"] as { agentHandoff?: boolean } | undefined;
+  const hostModels = engineCatalog.groups.find(group => group.hostId === snapshot.hostId)?.models ?? [];
+  const conversationAgent = resolveConversationAgentId(activeThreadId, snapshot.conversation?.execution.model,
+    hostExtensions, [...composerCatalog.models, ...composerCatalog.displayModels, ...hostModels]);
   const canContinueWithAgent = !embedded && draft === null && conversationAgent !== null
     && continuationCapability?.agentHandoff === true && presentation.executionSelection !== "fixed";
   const filterNewAgents = !embedded && draft !== null && modelSelectionPolicy === "user" && presentation.executionSelection !== "fixed";
@@ -1625,8 +1625,8 @@ export function App({
           if (canContinueWithAgent && activeThreadId && model.agentId && model.agentId !== conversationAgent) {
             try {
               await hostCatalog.continueWithAgent({ hostId: snapshot.hostId, threadId: activeThreadId, historyTitle: intl.formatMessage({ id: "composer.context.conversationHistory", defaultMessage: "Conversation history" }), agentId: model.agentId, model: model.value, effort: model.defaultEffort, permissionProfile: snapshot.conversation?.execution.permissionProfile ?? null, serviceTier: null });
-            } catch (error) {
-              throw new Error(intl.formatMessage({ id: "chat.continueWithAgent.failed", defaultMessage: "Could not prepare the conversation for this Agent. Your original conversation and draft are unchanged. Finish any active response and try again." }));
+            } catch {
+              throw new Error(intl.formatMessage({ id: "chat.continueWithAgent.failed", defaultMessage: "Could not prepare the conversation for this Agent. Try again." }));
             }
             return { selection: "handled" as const };
           }

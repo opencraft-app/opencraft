@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { createIntlTestRoot } from "./intl-root";
 import { createComposerController } from "@opencraft/composer-core";
 import { OpenCraftComposer, type ComposerAgentModelGroup, type ComposerModelOption } from "@opencraft/composer-editor";
+import { resolveConversationAgentId } from "@opencraft/workbench-runtime";
 import { WorkbenchPresentationActivityProvider } from "../../apps/workbench-web/src/components/workbench-presentation-activity";
 import { initializeAppearanceTheme, setThemePreference, setAppearanceThemeId } from "../../apps/workbench-web/src/appearance-theme";
 import "../../apps/workbench-web/src/styles/app.scss";
@@ -9,12 +10,14 @@ import "../../apps/workbench-web/src/styles/app.scss";
 initializeAppearanceTheme();
 const params = new URLSearchParams(location.search);
 const existingThread = params.has("thread");
+const bridgeThread = params.has("bridge");
+const threadId = bridgeThread ? "bridge:codex:source" : "codex_thread";
 const singleAgent = params.has("single");
 const lateCatalog = params.has("lateCatalog");
 const handoffEnabled = params.get("handoff") !== "0";
 let sequence = 0;
 const controller = createComposerController((existingThread ? {
-  type: "existing-thread", key: { hostId: "fixture", threadId: "codex_thread" },
+  type: "existing-thread", key: { hostId: "fixture", threadId },
 } : {
   type: "new-thread", draftId: "model-browser", execution: {
     hostId: "fixture", workspace: { cwd: "/workspace", runtimeWorkspaceRoots: ["/workspace"] },
@@ -46,9 +49,13 @@ function Fixture() {
   } });
   const available = catalogReady ? models.filter(model => !disabledAgents.includes(model.agentId!) && (!singleAgent || model.agentId === "codex")) : [];
   if (lateCatalog && catalogReady) available.push({ ...model("legacy-model", "Legacy Host model"), agentId: null, agentLabel: null });
+  const currentAgentId = bridgeThread ? resolveConversationAgentId(threadId, undefined, {
+    "opencraft/agent-bridge": { version: 1, providerId: "codex", threadPrefix: "bridge:codex:" },
+    "opencraft/execution-engines": { defaultEngine: "codex", providers: [{ id: "codex-bridge", threadPrefix: "bridge:codex:" }] },
+  }, []) : "codex";
   const agentGroup: ComposerAgentModelGroup = { id: "fixture", label: lateCatalog ? "Codex" : "Fixture", active: true, models: available, loading: !catalogReady,
     select: async model => {
-      if (existingThread && model.agentId && model.agentId !== "codex") { handoffs.push(model.value); return { selection: "handled" as const }; }
+      if (existingThread && model.agentId && model.agentId !== currentAgentId) { handoffs.push(model.value); return { selection: "handled" as const }; }
       if (existingThread) return;
     },
   };
@@ -58,7 +65,7 @@ function Fixture() {
   const composer = <OpenCraftComposer controller={controller} resolveAgentCycleShortcut={cycleAgentShortcut}
     selectionCatalog={{ agentsDisabled: disabledAgents.length > 0, models: available, permissionProfiles: [], modelError: error,
       ...(existingThread ? {
-        agentGroups, currentAgentId: "codex", currentAgentLabel: "Codex",
+        agentGroups, currentAgentId, currentAgentLabel: "Codex",
         ...(handoffEnabled ? { agentContinuation: { startsNewThread: true } } : {}),
       } : {}),
       onConfigureAgents: () => remembered.push("agents"),
