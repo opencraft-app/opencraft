@@ -5,7 +5,10 @@ import { join } from "node:path";
 import test from "node:test";
 import { openManagedDatabase, resolveStoreMigrations } from "@opencraft/sqlite-node";
 import { migrations } from "../../apps/agent-bridge-host/src/migrations.js";
-import { CodexRollbackHistory, openCodexRollbackHistory } from "../../apps/opencraft-daemon/src/codex-rollback-history.js";
+import {
+  CodexRollbackHistory,
+  openCodexRollbackHistory,
+} from "../../apps/opencraft-daemon/src/codex-rollback-history.js";
 
 const server = "server:fixture:codex";
 const publicId = "bridge:codex:original";
@@ -20,7 +23,9 @@ test("rollback reads existing Bridge identities without opening another writer",
     try {
       database.exec("INSERT INTO generations(id,config) VALUES ('generation','{}')");
       const route = JSON.stringify([server, publicId]);
-      database.prepare("INSERT INTO routes(route,generation,archive_state) VALUES (?,'generation','active')").run(route);
+      database
+        .prepare("INSERT INTO routes(route,generation,archive_state) VALUES (?,'generation','active')")
+        .run(route);
       database.prepare("INSERT INTO native_sessions VALUES (?,'generation',?,1)").run(route, nativeId);
       const history = await openCodexRollbackHistory(path, server);
       assert.equal(history.toNative(publicId), nativeId);
@@ -64,11 +69,19 @@ test("only a readable public identity reaches Native and the response retains it
   assert.equal(history.rejection(request.method, request.params), undefined);
   assert.deepEqual(history.nativeRequest(request), { ...request, params: { ...request.params, threadId: nativeId } });
   assert.equal(request.params.threadId, publicId);
-  assert.deepEqual(history.publicResponse({ result: { thread: { id: nativeId, name: nativeId } } }, "thread/read"),
-    { result: { thread: { id: publicId, name: nativeId } } });
-  assert.deepEqual(history.publicResponse({ result: { data: [{ id: nativeId }] } }, "thread/list"),
-    { result: { data: [{ id: publicId }] } });
-  for (const id of [nativeId, nativeId.toUpperCase(), nativeId.replaceAll("-", ""), `urn:uuid:${nativeId}`, "bridge:codex:unknown"]) {
+  assert.deepEqual(history.publicResponse({ result: { thread: { id: nativeId, name: nativeId } } }, "thread/read"), {
+    result: { thread: { id: publicId, name: nativeId } },
+  });
+  assert.deepEqual(history.publicResponse({ result: { data: [{ id: nativeId }] } }, "thread/list"), {
+    result: { data: [{ id: publicId }] },
+  });
+  for (const id of [
+    nativeId,
+    nativeId.toUpperCase(),
+    nativeId.replaceAll("-", ""),
+    `urn:uuid:${nativeId}`,
+    "bridge:codex:unknown",
+  ]) {
     assert.equal(history.rejection("thread/read", { threadId: id })?.data?.code, "THREAD_NOT_FOUND");
   }
   assert.equal(history.rejection("turn/start", { threadId: publicId })?.data?.notSubmitted, true);

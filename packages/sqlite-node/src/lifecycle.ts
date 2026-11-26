@@ -93,9 +93,11 @@ export function createMissingLegacyObjects(sql: string): NonNullable<ManagedData
 }
 
 export function openManagedDatabase(options: ManagedDatabaseSnapshotOptions): ManagedDatabaseOpen<Pick<DatabaseOutcome, "appliedVersion">>;
-export function openManagedDatabase(options: ManagedDatabaseOptions): ManagedDatabaseOpen;
-export function openManagedDatabase(options: ManagedDatabaseOptions & Partial<Pick<ManagedDatabaseSnapshotOptions, "readOnly">>):
+export function openManagedDatabase(options: ManagedDatabaseOptions & {
+  readonly readOnly: ManagedDatabaseSnapshotOptions["readOnly"] | undefined;
+}):
   ManagedDatabaseOpen<DatabaseOutcome | Pick<DatabaseOutcome, "appliedVersion">>;
+export function openManagedDatabase(options: ManagedDatabaseOptions): ManagedDatabaseOpen;
 export function openManagedDatabase(options: ManagedDatabaseOptions & Partial<Pick<ManagedDatabaseSnapshotOptions, "readOnly">>) {
   let database: DatabaseSync | undefined;
   try {
