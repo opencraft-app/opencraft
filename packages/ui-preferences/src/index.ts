@@ -13,6 +13,7 @@ export interface UiPreferenceValues {
   readonly "chat.agentAvailability": Readonly<Record<string, Readonly<Record<string, boolean>>>>;
   readonly "chat.modelSelections": Readonly<Record<string, { readonly model: string; readonly effort: string | null; readonly serviceTier?: string | null }>>;
   readonly "chat.defaultFollowUpAction": "steer" | "queue";
+  readonly "chat.openPagesInRightPanel": boolean;
   readonly "chat.turnNotifications": boolean;
   readonly "shell.toolbarDocks": Readonly<Record<string, readonly string[]>>;
   readonly "shell.applicationsPinned": boolean;
@@ -135,6 +136,12 @@ export const uiPreferenceDefinitions = Object.freeze({
     defaultValue: "queue",
     parse: (value: unknown): "steer" | "queue" | null =>
       value === "steer" || value === "queue" ? value : null,
+  },
+  "chat.openPagesInRightPanel": {
+    key: "chat.openPagesInRightPanel",
+    scope: "installation",
+    defaultValue: true,
+    parse: booleanValue,
   },
   "locale.override": {
     key: "locale.override",

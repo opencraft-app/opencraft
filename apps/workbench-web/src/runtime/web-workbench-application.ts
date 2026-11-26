@@ -101,6 +101,7 @@ export interface CreateWebWorkbenchApplicationOptions extends Omit<WebWorkbenchS
   readonly conversationPresentation?: ConversationPresentationProvider;
   readonly browserMetadataStorage?: BrowserMetadataStorage;
   readonly browserNavigationPolicy?: BrowserNavigationPolicy;
+  readonly shouldAutoPresentBrowserPanel?: () => boolean;
   /** Product override; null disables desktop panels and actions, undefined uses the local Host adapter. */
   readonly cloudDesktop?: CloudDesktopPluginAdapter | null;
 }
@@ -224,6 +225,7 @@ export async function createWebWorkbenchApplication(
       browserPages,
       browserWorkbench,
       browserStorage && 'effectReceipts' in browserStorage ? browserStorage.effectReceipts : undefined,
+      options.shouldAutoPresentBrowserPanel,
     );
     terminalSessions = new ConversationTerminalSessionRegistry((hostId) => {
       if (resolveTerminalRuntime === null) {

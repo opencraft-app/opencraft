@@ -201,6 +201,8 @@
   "panel.close": "Tutup panel pratonton",
   "panel.open": "Buka panel pratonton",
   "settings.chat.immediateFollowUp": "Susuli segera semasa membalas",
+  "settings.chat.openPagesInRightPanel": "Buka halaman web di panel kanan",
+  "settings.chat.openPagesInRightPanel.description": "Buka pautan yang diklik dan halaman web yang dilancarkan ejen dalam panel pelayar sisi kanan. Matikan ini untuk membuka pautan dalam pelayar luaran anda dan mengekalkan halaman ejen di latar belakang.",
   "settings.chat": "Sembang",
   "settings.chat.immediateFollowUp.description": "Mesej baru membimbing respons semasa. Matikan ini untuk menyusunnya bagi respons seterusnya. Sembang sampingan sementara sentiasa disusuli segera.",
   "settings.chat.saveError": "Tidak dapat menyimpan pilihan anda. Sila cuba semula.",

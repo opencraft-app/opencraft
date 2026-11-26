@@ -37,6 +37,7 @@ import { displayTimingCounts } from "./runtime/display-timing-diagnostics";
 import { canReportDisplayEvent } from "./runtime/recovery-diagnostics";
 import { reportDisplayPaint } from "./runtime/display-paint-diagnostics";
 import { serverFetch } from "./runtime/server-context";
+import { useOpenPagesInRightPanel } from "./runtime/use-open-pages-in-right-panel";
 import { queueFailureFields, withQueueFailureFeedback } from "./queue-operation-feedback";
 import { ConversationReferenceSurface } from "./components/conversation-reference-surface";
 import { copyConversationReference } from "./runtime/conversation-reference-actions";
@@ -1374,6 +1375,8 @@ export function App({
     browserWorkbench.bindView(conversationResourceOwnerId, panelPresentationId);
   }, [browserWorkbench, conversationResourceOwnerId, panelPresentationId]);
 
+  const openPagesInRightPanel = useOpenPagesInRightPanel();
+
   const openChatResource = useCallback(
     (target: string, decision: ChatResourceDecision, intent?: ChatResourceOpenIntent) => {
       if (decision.kind === "mail") {
@@ -1385,7 +1388,8 @@ export function App({
           window.open(target, "_blank", "noopener,noreferrer");
           return;
         }
-        if (chatLinkOpensExternally(extensionPlatform, intent, browserWorkbench.isRecognizedInternalUrl(target))) {
+        if ((!openPagesInRightPanel && intent?.target !== "in-app-browser")
+          || chatLinkOpensExternally(extensionPlatform, intent, browserWorkbench.isRecognizedInternalUrl(target))) {
           window.open(target, "_blank", "noopener,noreferrer");
           return;
         }
@@ -1401,7 +1405,7 @@ export function App({
       }
       panelRuntime.panels.open(panelOwnerId, "resource", { resource: target, workspaceFileThreadId });
     },
-    [openBrowserTab, browserWorkbench, extensionPlatform, panelRuntime.panels, panelOwnerId, workspaceFileThreadId],
+    [openBrowserTab, openPagesInRightPanel, browserWorkbench, extensionPlatform, panelRuntime.panels, panelOwnerId, workspaceFileThreadId],
   );
   const loadItemDetails = useStableEvent((ids: readonly string[], signal: AbortSignal) => activeThreadLease?.loadItemDetails(ids, signal) ?? Promise.resolve());
   const loadOlderConversation = useStableEvent(
