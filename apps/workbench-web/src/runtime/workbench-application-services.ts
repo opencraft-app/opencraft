@@ -1,4 +1,5 @@
 import { endpointLabel, type WebHostDefinition } from "./web-host-definition";
+import type { PersonalMachinesController } from "./personal-machine-environment-source";
 export { parseWebHostDefinitions, type WebHostDefinition } from "./web-host-definition";
 import type { ChannelSearchRegistry } from './channel-search-contribution';
 import { parseConversationRef } from "@opencraft/appserver-protocol/collaboration";
@@ -118,6 +119,7 @@ export interface AppServerHostCatalog {
   };
   readonly authenticationFlows: AuthenticationFlowService;
   readonly environmentDirectory: EnvironmentDirectory;
+  readonly personalMachines: PersonalMachinesController | null;
   readonly selectedHostId: string;
   readonly hosts: readonly HostRuntimeDescriptor[];
   readonly profiles: readonly HostConnectionProfile[];
@@ -355,6 +357,7 @@ export interface WebWorkbenchApplicationBase {
   readonly agentRuntimes: AgentRuntimeDirectory;
   readonly authenticationFlows: AuthenticationFlowService;
   readonly environmentDirectory: EnvironmentDirectory;
+  readonly personalMachines: PersonalMachinesController | null;
   readonly blobs: BlobResourceService;
   readonly images: ImageProcessingService;
   readonly cordis: CordisContext;

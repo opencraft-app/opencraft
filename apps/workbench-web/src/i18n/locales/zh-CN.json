@@ -2793,5 +2793,22 @@
   "loginAdmission.error.selfLock": "此策略会拒绝你自己的登录。请先加入你的账号再发布。",
   "loginAdmission.error.invalid": "请检查规则：某个值、条件或函数无效。",
   "loginAdmission.error.admin": "只有服务器管理员可以更改登录准入。",
-  "loginAdmission.error.generic": "无法完成请求，请重试。"
+  "loginAdmission.error.generic": "无法完成请求，请重试。",
+  "settings.machines.retryConnection": "重试连接",
+  "settings.machines.notConnected": "未连接",
+  "settings.machines.personal.sectionTitle": "个人远程机器",
+  "settings.machines.personal.sectionDescription": "通过反向中继接入你自己的 Mac 或 Linux 开发机，无需开放公网或入站端口。",
+  "settings.machines.personal.add": "添加机器",
+  "settings.machines.personal.commandHint": "请在 15 分钟内到远程机器终端执行这条私密命令，请勿分享给他人。",
+  "settings.machines.personal.copy": "复制命令",
+  "settings.machines.personal.copied": "已复制",
+  "settings.machines.personal.noEntrance": "当前服务端尚未配置公网远程接入入口。",
+  "settings.machines.personal.pending": "等待机器接入",
+  "settings.machines.personal.updateAvailable": "有可用更新",
+  "settings.machines.personal.updating": "正在更新…",
+  "settings.machines.personal.updateNow": "更新",
+  "settings.machines.personal.copyUpdate": "复制更新命令",
+  "settings.machines.personal.accessTitle": "访问与吊销",
+  "settings.machines.personal.accessDescription": "撤销接入会立即断开该机器的反向通道，并保留机器本地已有的代码与会话文件。",
+  "settings.machines.personal.revoke": "撤销接入"
 }

@@ -50,19 +50,37 @@ export async function readHostMachineInfo(request: () => Promise<unknown>): Prom
   try { return parseRuntimeMachineReadResponse(await request()); } catch { return null; }
 }
 
-export function chooseWorkInHost(machine: WorkInMachine, currentAgent: HostConnectionProfile["agent"], currentHostId?: string): HostConnectionProfile {
-  const current = machine.hosts.find(host => host.hostId === currentHostId);
-  if (current) return current;
-  return machine.hosts.find(host => currentAgent != null && host.agent === currentAgent) ?? machine.hosts[0]!;
+function routePreferenceScore(host: HostConnectionProfile): number {
+  const onlineBonus = host.machinePresence === "offline" ? 0 : 10;
+  const directBonus = host.hostKind === "remote-control" ? 0 : 5;
+  return onlineBonus + directBonus;
 }
 
-/** Multiple connection profiles may expose one reported Agent. Prefer the current path; the active Agent comes first. */
+export function chooseWorkInHost(machine: WorkInMachine, currentAgent: HostConnectionProfile["agent"], currentHostId?: string): HostConnectionProfile {
+  const current = machine.hosts.find(host => host.hostId === currentHostId && host.machinePresence !== "offline");
+  if (current) return current;
+  const matchingAgent = machine.hosts
+    .filter(host => currentAgent != null && host.agent === currentAgent)
+    .sort((a, b) => routePreferenceScore(b) - routePreferenceScore(a));
+  if (matchingAgent.length > 0) return matchingAgent[0]!;
+  const sorted = [...machine.hosts].sort((a, b) => routePreferenceScore(b) - routePreferenceScore(a));
+  return sorted[0] ?? machine.hosts[0]!;
+}
+
+/** Multiple connection profiles may expose one reported Agent. Prefer the current path or direct online route; the active Agent comes first. */
 export function workInAgentHosts(machine: WorkInMachine | undefined, activeHostId: string): readonly HostConnectionProfile[] {
   const agents = new Map<string, HostConnectionProfile>();
   for (const host of machine?.hosts ?? []) {
     if (!host.enabled) continue;
     const key = host.agent ?? `host:${host.hostId}`;
-    if (!agents.has(key) || host.hostId === activeHostId) agents.set(key, host);
+    const existing = agents.get(key);
+    if (
+      !existing
+      || host.hostId === activeHostId
+      || (existing.hostId !== activeHostId && routePreferenceScore(host) > routePreferenceScore(existing))
+    ) {
+      agents.set(key, host);
+    }
   }
   const result = [...agents.values()];
   const activeIndex = result.findIndex(host => host.hostId === activeHostId);

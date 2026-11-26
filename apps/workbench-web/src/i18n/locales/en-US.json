@@ -2694,5 +2694,22 @@
   "loginAdmission.error.selfLock": "This policy would refuse your own sign-in. Include your account before publishing.",
   "loginAdmission.error.invalid": "Check the rules: a value, condition or the function is not valid.",
   "loginAdmission.error.admin": "Only server administrators can change sign-in admission.",
-  "loginAdmission.error.generic": "Couldn't complete the request. Try again."
+  "loginAdmission.error.generic": "Couldn't complete the request. Try again.",
+  "settings.machines.retryConnection": "Retry connection",
+  "settings.machines.notConnected": "Not connected",
+  "settings.machines.personal.sectionTitle": "Personal machines",
+  "settings.machines.personal.sectionDescription": "Connect your own Mac or Linux machines over a reverse relay without opening inbound ports.",
+  "settings.machines.personal.add": "Add machine",
+  "settings.machines.personal.commandHint": "Run this private command on the remote machine within 15 minutes. Do not share it.",
+  "settings.machines.personal.copy": "Copy command",
+  "settings.machines.personal.copied": "Copied",
+  "settings.machines.personal.noEntrance": "Remote enrollment entrance is not configured on this server yet.",
+  "settings.machines.personal.pending": "Waiting for connection",
+  "settings.machines.personal.updateAvailable": "Update available",
+  "settings.machines.personal.updating": "Updating…",
+  "settings.machines.personal.updateNow": "Update",
+  "settings.machines.personal.copyUpdate": "Copy update command",
+  "settings.machines.personal.accessTitle": "Access",
+  "settings.machines.personal.accessDescription": "Revoking disconnects this machine immediately and leaves its local files and conversations untouched.",
+  "settings.machines.personal.revoke": "Revoke"
 }

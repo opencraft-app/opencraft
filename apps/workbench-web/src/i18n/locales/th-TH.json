@@ -2662,5 +2662,22 @@
   "loginAdmission.error.selfLock": "นโยบายนี้จะปฏิเสธการลงชื่อเข้าใช้ของคุณเอง โปรดรวมบัญชีของคุณก่อนเผยแพร่",
   "loginAdmission.error.invalid": "ตรวจสอบกฎ: มีค่า เงื่อนไข หรือฟังก์ชันที่ไม่ถูกต้อง",
   "loginAdmission.error.admin": "เฉพาะผู้ดูแลเซิร์ฟเวอร์เท่านั้นที่เปลี่ยนการอนุญาตการลงชื่อเข้าใช้ได้",
-  "loginAdmission.error.generic": "ดำเนินการคำขอไม่สำเร็จ โปรดลองอีกครั้ง"
+  "loginAdmission.error.generic": "ดำเนินการคำขอไม่สำเร็จ โปรดลองอีกครั้ง",
+  "settings.machines.retryConnection": "ลองเชื่อมต่ออีกครั้ง",
+  "settings.machines.notConnected": "ยังไม่ได้เชื่อมต่อ",
+  "settings.machines.personal.sectionTitle": "เครื่องส่วนตัว",
+  "settings.machines.personal.sectionDescription": "เชื่อมต่อเครื่อง Mac หรือ Linux ของคุณเองผ่านรีเลย์ย้อนกลับโดยไม่ต้องเปิดพอร์ตขาเข้า",
+  "settings.machines.personal.add": "เพิ่มเครื่อง",
+  "settings.machines.personal.commandHint": "รันคำสั่งส่วนตัวนี้บนเครื่องปลายทางภายใน 15 นาที ห้ามแชร์กับผู้อื่น",
+  "settings.machines.personal.copy": "คัดลอกคำสั่ง",
+  "settings.machines.personal.copied": "คัดลอกแล้ว",
+  "settings.machines.personal.noEntrance": "เซิร์ฟเวอร์นี้ยังไม่ได้กำหนดค่าทางเข้าการลงทะเบียนระยะไกล",
+  "settings.machines.personal.pending": "กำลังรอการเชื่อมต่อ",
+  "settings.machines.personal.updateAvailable": "มีอัปเดตพร้อมใช้งาน",
+  "settings.machines.personal.updating": "กำลังอัปเดต…",
+  "settings.machines.personal.updateNow": "อัปเดต",
+  "settings.machines.personal.copyUpdate": "คัดลอกคำสั่งอัปเดต",
+  "settings.machines.personal.accessTitle": "การเข้าถึง",
+  "settings.machines.personal.accessDescription": "การเพิกถอนจะตัดการเชื่อมต่อเครื่องนี้ทันทีโดยไม่ลบไฟล์และการสนทนาในเครื่อง",
+  "settings.machines.personal.revoke": "เพิกถอน"
 }

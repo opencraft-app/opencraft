@@ -103,6 +103,7 @@ import {
   type WorkbenchLocation
 } from "@opencraft/workbench-runtime";
 import { installAppServerDiagnostics } from "./appserver-diagnostics";
+import { PersonalMachineEnvironmentSource } from "./personal-machine-environment-source";
 import { authenticationProviderAdapter } from "./authentication-contributions";
 import { openClientExtensionPersistence } from "./client-extension-persistence";
 import { changesComposerCapabilities, invalidateComposerCapabilities } from "./composer-capabilities-query";
@@ -784,6 +785,7 @@ export async function createWebWorkbenchApplicationSupervisor(
       connectorManager,
       connectorApprovals,
       environmentDirectory,
+      personalMachines: null,
       authenticationFlows,
       blobs,
       images,
@@ -1315,10 +1317,33 @@ export async function createWebWorkbenchApplicationSupervisor(
       ] }] }, attachments: [], context: [] });
     };
   }
+  const deploymentOwnerHostId = !fixedPresentation
+    ? configuredHostProfiles
+        .getSnapshot()
+        .profiles.find((profile) => profile.enabled && (profile.hostKind === "local" || profile.hostKind === "durable"))?.hostId ?? null
+    : null;
+  const personalMachinesSource = deploymentOwnerHostId !== null
+    ? new PersonalMachineEnvironmentSource({
+        request: (command) => agentRuntimes.request(deploymentOwnerHostId, "opencraft/personal-machines", command),
+        resolveRpcUrl: (machineId) => new URL(`/__opencraft_machines/${machineId}/rpc`, window.location.href).href.replace(/^http/u, "ws"),
+        isActive: presentationActive,
+      })
+    : null;
+  const stopPersonalMachinesDirectory = personalMachinesSource
+    ? environmentDirectory.register("opencraft.personal-machines", personalMachinesSource)
+    : () => {};
+  if (personalMachinesSource) {
+    startupRollback.push(() => {
+      stopPersonalMachinesDirectory();
+      personalMachinesSource.dispose();
+    });
+    personalMachinesSource.start();
+  }
   const supervisor: WebWorkbenchApplicationSupervisor = {
     setConversationPresentationActive,
     tasks,
     environmentDirectory,
+    personalMachines: personalMachinesSource,
     authenticationFlows,
     connectors,
     connectorManager,
@@ -1369,6 +1394,10 @@ export async function createWebWorkbenchApplicationSupervisor(
     addWebSocketHost: commands.addWebSocketHost,
     removeHost: commands.removeHost,
     dispose: createApplicationDisposer([
+      () => {
+        stopPersonalMachinesDirectory();
+        personalMachinesSource?.dispose();
+      },
       () => taskConversationFlow?.dispose(),
       stopIdentityProbes,
       () => machineIdentityObserver.dispose(),

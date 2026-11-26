@@ -1908,6 +1908,10 @@ export function App({
         extensionRuntime={hostCatalog.extensionRuntime}
         extensionManager={hostCatalog.extensionManager}
         platformViewRenderers={hostCatalog.platformViewRenderers}
+        personalMachines={hostCatalog.personalMachines}
+        onRetryMachineConnection={async (targetHostId) => {
+          await hostCatalog.agentRuntimes.ensureReady(targetHostId);
+        }}
         regions={appShellPlatformViewRegions}
         archivedConversations={archivedConversationsAvailable ? {
           load: loadArchivedThreads,
