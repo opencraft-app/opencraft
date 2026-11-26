@@ -103,7 +103,11 @@ import { CODEX_THREAD_START_BODY_BYTES, createdCodexThreadId, currentCodexStart,
 import { parseCodexModelList } from "./codex-model-list.js";
 import { parseCodexThreadList, parseCodexThreadPage } from "./codex-thread-list.js";
 import { ACCOUNT_CORE_OBJECT } from "./account-core.js";
-import { WORKSPACE_CODEX_CATALOG_PATH, WORKSPACE_CODEX_MODEL_DIRECTORY_PATH } from "../account-routes.js";
+import {
+  WORKSPACE_ASSETS_ENVIRONMENT_PATH,
+  WORKSPACE_CODEX_CATALOG_PATH,
+  WORKSPACE_CODEX_MODEL_DIRECTORY_PATH,
+} from "../account-routes.js";
 import { CODEX_TURN_STREAM_TYPE, CODEX_WORKBENCH_THREAD_CONFIG, codexTurnAuthority, isDefinitiveCodexSteerRefusal, matchesCodexResume, parseCodexThreadMutationReceipt, parseCodexTurnCall, parseCodexTurnOperationCall, runCodexTurn, type CodexResume, type CodexThreadMutation, type CodexTurnControls, type TurnAuthority, type TurnStreamFrame } from "./codex-turn.js";
 import { HostInteractions, InteractionFault, InteractionResponseNotDispatched } from "@opencraft/app-host-server/interactions";
 import {
@@ -585,6 +589,7 @@ export class WorkspaceHost {
     const placements = placementStore(this.#documents);
     const prepareContainer = this.#codexModelIntercept(container, identity.workspace, settings);
     this.#codexEgressEnabled = !!prepareContainer;
+    const personalEnv = await this.#personalAssetsEnvironment(identity.ownerActorId);
     const installation: CloudflareInstallation = {
       backend: "cloudflare",
       image: settings.image,
@@ -600,6 +605,7 @@ export class WorkspaceHost {
         waitUntil: (promise) => this.ctx.waitUntil(promise),
         onLifecycle: (stage, exitCode) => this.#startup(stage, exitCode === undefined ? undefined : { exitCode }),
         env: {
+          ...personalEnv,
           OPENCRAFT_WORKSPACE_ID: identity.workspace,
           OPENCRAFT_MACHINE_ID: identity.machine,
           ...(settings.codexBridgeEndpoint ? { OPENCRAFT_WORKSPACE_CODEX_BRIDGE_ENDPOINT: "true" } : {}),
@@ -1422,6 +1428,30 @@ export class WorkspaceHost {
       return true;
     });
     return bound ? this.#status() : this.#bind(value);
+  }
+
+  async #personalAssetsEnvironment(ownerActorId: string | undefined): Promise<Record<string, string>> {
+    if (!ownerActorId || !this.#account) return {};
+    try {
+      const stub = this.#account.get(this.#account.idFromName(ACCOUNT_CORE_OBJECT));
+      const response = await stub.fetch(
+        new Request(`https://account.internal${WORKSPACE_ASSETS_ENVIRONMENT_PATH}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ actorId: ownerActorId }),
+        }),
+      );
+      if (!response.ok) return {};
+      const body = (await response.json().catch(() => null)) as { env?: unknown } | null;
+      if (!body || !body.env || typeof body.env !== "object" || Array.isArray(body.env)) return {};
+      const entries: [string, string][] = [];
+      for (const [key, value] of Object.entries(body.env)) {
+        if (typeof value === "string") entries.push([key, value]);
+      }
+      return Object.fromEntries(entries);
+    } catch {
+      return {};
+    }
   }
 
   async #status(): Promise<Response> {

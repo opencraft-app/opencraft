@@ -13,6 +13,7 @@
     "./personal-git-seal": "./src/personal-git-seal.ts",
     "./employee-git-vault-store": "./src/employee-git-vault-store.node.ts",
     "./employee-git-vault": "./src/employee-git-vault-store.ts",
+    "./git-vault-cipher": "./src/git-vault-cipher.ts",
     "./git-identity-ipc": "./src/git-identity-ipc.ts",
     "./git-execution": "./src/git-execution.ts",
     "./execution-snapshot": "./src/execution-snapshot.ts",
@@ -35,6 +36,7 @@
   },
   "dependencies": {
     "@opencraft/appserver-client": "0.1.0",
+    "@opencraft/http-exchange": "0.1.0",
     "@opencraft/secret-storage": "0.1.0",
     "@opencraft/session-capabilities": "0.1.0",
     "@opencraft/workbench-runtime": "0.1.0"

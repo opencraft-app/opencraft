@@ -4,7 +4,7 @@
 // openManagedDatabase on `employee-git-vault.sqlite` (published migration and
 // checksum unchanged) and AES-256-GCM through node:crypto. The vault rows,
 // revisions and envelopes are the runtime-neutral EmployeeGitVault.
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { constants } from "node:fs";
 import { mkdir, open, realpath } from "node:fs/promises";
 import { join } from "node:path";
@@ -22,6 +22,7 @@ import {
   EmployeeGitVault,
   type GitVaultCipher,
 } from "./employee-git-vault-store.js";
+import { aes256GcmGitVaultCipher } from "./git-vault-cipher.js";
 import { GitVaultError } from "./git-vault-error.js";
 
 export * from "./employee-git-vault-store.js";
@@ -41,29 +42,15 @@ async function privateFile(path: string): Promise<{ fresh: boolean }> {
 
 /** AES-256-GCM with a 12-byte IV and 16-byte tag: `iv ‖ ciphertext ‖ tag`, the vault's original layout. */
 export function nodeGitVaultCipher(key: Buffer): GitVaultCipher {
-  const live = () => {
-    if (key.length !== 32) throw new GitVaultError("unavailable", 503);
-    return key;
-  };
+  const cipher = aes256GcmGitVaultCipher(key, {
+    grantAuthority: (liveKey, accountMode) => gitGrantAuthority(liveKey, accountMode),
+    sealGrant: (liveKey, scope) => sealGitGrant(liveKey, scope),
+  });
   return {
-    seal(aad, clear) {
-      const iv = randomBytes(12),
-        cipher = createCipheriv("aes-256-gcm", live(), iv);
-      cipher.setAAD(aad);
-      return Buffer.concat([iv, cipher.update(clear), cipher.final(), cipher.getAuthTag()]);
-    },
-    open(aad, sealed) {
-      const data = Buffer.from(sealed.buffer, sealed.byteOffset, sealed.byteLength);
-      const decipher = createDecipheriv("aes-256-gcm", live(), data.subarray(0, 12));
-      decipher.setAAD(aad);
-      decipher.setAuthTag(data.subarray(-16));
-      return Buffer.concat([decipher.update(data.subarray(12, -16)), decipher.final()]);
-    },
-    grantAuthority: (accountMode) => gitGrantAuthority(live(), accountMode),
-    sealGrant: (scope) => sealGitGrant(live(), scope),
+    ...cipher,
     dispose() {
+      cipher.dispose();
       key.fill(0);
-      key = Buffer.alloc(0);
     },
   };
 }

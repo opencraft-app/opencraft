@@ -1,8 +1,8 @@
 import {
-  EmployeeGitVaultStore,
+  EmployeeGitVault,
   GitVaultError,
   type GitVaultCredential,
-} from "@opencraft/execution-environment/employee-git-vault-store";
+} from "@opencraft/execution-environment/employee-git-vault";
 import { generateGitSigningKey } from "@opencraft/execution-environment/git-keys";
 import { SandboxConfigurationError } from "./errors.js";
 import type { GitConnectionsSnapshot, GitConnectionStatus, GitProviderDescriptor } from "../git/contract.js";
@@ -47,7 +47,7 @@ function fail(code = "invalid", status = 400): never {
 export class GitConnections {
   private readonly providers: ReadonlyMap<string, GitConnectionProvider>;
   constructor(
-    private readonly vault: Pick<EmployeeGitVaultStore, "read" | "write" | "status">,
+    private readonly vault: Pick<EmployeeGitVault, "read" | "write" | "status">,
     providers: readonly GitConnectionProvider[],
   ) {
     if (
