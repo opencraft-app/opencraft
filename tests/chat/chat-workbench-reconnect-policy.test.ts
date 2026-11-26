@@ -349,7 +349,7 @@ test("short-lived reconnects retain escalation, stable readiness resets it and d
   assert.equal(scheduled.length, 0);
 });
 
-test("foreground advances a scheduled reconnect; duplicate hints do not bypass the cooldown", async () => {
+for (const source of ["transport", "foreground"] as const) test(`${source} advances a scheduled reconnect; duplicate hints do not bypass the cooldown`, async () => {
   const scheduled = new Set<unknown>();
   const generations: GenerationTransport[] = [];
   const runtime = createAppServerWorkbenchRuntime({
@@ -363,14 +363,59 @@ test("foreground advances a scheduled reconnect; duplicate hints do not bypass t
     const old = generations[0]!;
     old.setStatus({ state: "failed", failure: { code: "SSH_LINK_LOST", recovery: "automatic" } });
     assert.equal(scheduled.size, 1);
-    old.recoveryHint(); old.recoveryHint();
+    const hint = source === "transport" ? () => old.recoveryHint() : () => runtime.requestRecovery!();
+    hint(); hint();
     for (let i=0;i<20 && runtime.getSnapshot().phase!=="ready";i++) await new Promise<void>(resolve=>setImmediate(resolve));
     assert.equal(runtime.getSnapshot().phase,"ready");
     assert.equal(old.connectCalls,2);
     old.setStatus({state:"failed",failure:{code:"SSH_LINK_LOST",recovery:"automatic"}});
-    old.recoveryHint(); await new Promise<void>(resolve=>setImmediate(resolve));
+    hint(); await new Promise<void>(resolve=>setImmediate(resolve));
     assert.equal(old.connectCalls,2,"event burst does not bypass cooldown after a short-lived reconnect");
     assert.equal(runtime.getSnapshot().phase,"reconnecting");
   } finally { await runtime.dispose(); }
   assert.equal(scheduled.size,0);
+});
+
+for (const mode of ["disabled", "manual"] as const) {
+  test(`foreground preserves ${mode} recovery policy`, async () => {
+    const generations: GenerationTransport[] = [];
+    const runtime = createAppServerWorkbenchRuntime({
+      hostId: `foreground-${mode}`,
+      autoReconnect: mode !== "disabled",
+      createTransport: () => {
+        const transport = new GenerationTransport(true);
+        generations.push(transport);
+        return transport;
+      },
+    });
+    try {
+      await runtime.connect();
+      const transport = generations[0]!;
+      transport.setStatus({ state: "failed", failure: { code: "FIXTURE_LINK_LOST",
+        recovery: mode === "manual" ? "manual" : "automatic" } });
+      runtime.requestRecovery!();
+      await new Promise<void>(resolve => setImmediate(resolve));
+      assert.equal(transport.connectCalls, 1);
+      assert.equal(generations.length, 1);
+      assert.notEqual(runtime.getSnapshot().phase, "ready");
+    } finally { await runtime.dispose(); }
+  });
+}
+
+test("foreground does not initiate an unused Host", async () => {
+  let allocations = 0;
+  const runtime = createAppServerWorkbenchRuntime({
+    hostId: "unused-host",
+    autoReconnect: true,
+    createTransport() {
+      allocations++;
+      return new GenerationTransport(true);
+    },
+  });
+  try {
+    runtime.requestRecovery!();
+    await new Promise<void>(resolve => setImmediate(resolve));
+    assert.equal(allocations, 0);
+    assert.equal(runtime.getSnapshot().phase, "idle");
+  } finally { await runtime.dispose(); }
 });

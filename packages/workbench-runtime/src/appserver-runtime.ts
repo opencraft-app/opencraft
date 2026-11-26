@@ -438,6 +438,8 @@ export interface AppServerWorkbenchRuntime {
   /** Connects the Host. It never chooses or restores a Thread. */
   connect(): Promise<void>;
   reconnect(): Promise<void>;
+  /** A foreground or transport hint uses the existing automatic recovery policy. */
+  requestRecovery?(): void;
   acquireThread(threadId: string): Promise<AppServerThreadRuntimeLease>;
   /** Borrow an already resident body synchronously, without connecting or admitting I/O. */
   tryAcquireThread(threadId: string): AppServerThreadRuntimeLease | null;
@@ -2001,19 +2003,7 @@ export function createAppServerWorkbenchRuntime(
         connection.lost(status.reason === undefined ? new Error("Host connection lost") : new Error(status.reason),
           status.failure?.recovery === "manual", status.failure?.diagnostic?.closeCode === 1012 || status.failure?.code === 'APP_SERVER_RESTARTING');
       });
-      removeRecoveryHintListener = currentTransport?.subscribeRecoveryHint?.(() => {
-        if (disposed || config.autoReconnect === false || !connection.admitRecoveryHint()) return;
-        if (phase !== "ready") {
-          void connection.connect(true).catch(() => undefined);
-        } else {
-          for (const binding of bindings.values()) {
-            if (binding.visibleCount === 0 || binding.runtime.getSnapshot().authoritative) continue;
-            void recovery.recover({ key: binding, demand: () => recoveryDemand(binding),
-              run: signal => hydrateBinding(binding, true, true, undefined, signal), retryable: retryableHistoryFailure,
-            }, true).catch(() => undefined);
-          }
-        }
-      }) ?? null;
+      removeRecoveryHintListener = currentTransport?.subscribeRecoveryHint?.(requestRecovery) ?? null;
       await duringAttempt(connectPhysicalHost(generation, attempt), attempt, async () => {});
       ensureLifecycle(generation);
       goals.reset();
@@ -2403,6 +2393,20 @@ export function createAppServerWorkbenchRuntime(
       },
     } satisfies AppServerThreadRuntimeLease;
   };
+
+  function requestRecovery() {
+    if (disposed || phase === "idle" || config.autoReconnect === false || !connection.admitRecoveryHint()) return;
+    if (phase !== "ready") {
+      void connection.connect(true).catch(() => undefined);
+    } else {
+      for (const binding of bindings.values()) {
+        if (binding.visibleCount === 0 || binding.runtime.getSnapshot().authoritative) continue;
+        void recovery.recover({ key: binding, demand: () => recoveryDemand(binding),
+          run: signal => hydrateBinding(binding, true, true, undefined, signal), retryable: retryableHistoryFailure,
+        }, true).catch(() => undefined);
+      }
+    }
+  }
 
   const runtime: AppServerWorkbenchRuntime = {
     resources: {
@@ -2905,6 +2909,7 @@ export function createAppServerWorkbenchRuntime(
     localOutbox,
     connect() { return connection.connect(); },
     reconnect() { return connection.connect(true); },
+    requestRecovery,
     async acquireThread(nextThreadId) {
       const threadId = requireThreadId(nextThreadId);
       // Reserve View demand before any asynchronous binding publication. Queue
