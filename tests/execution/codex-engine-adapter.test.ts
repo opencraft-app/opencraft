@@ -165,6 +165,61 @@ function createRoutingAdapter(root: string, frames: Array<Record<string, unknown
   return adapter;
 }
 
+test("the Bridge Git owner uses the admitted Human and closes the native execution lease", async t => {
+  const root = await mkdtemp(join(tmpdir(), "oc-bridge-git-"));
+  const adapter = createRoutingAdapter(root, []);
+  t.after(async () => { await adapter.close(); await rm(root, { recursive: true, force: true }); });
+  await adapter.connect();
+  const owner = adapter as any;
+  const leases = owner.executionLeases;
+  const identity = (subject: string) => ({
+    sender: null,
+    executionPrincipal: { provider: "fixture", subject },
+    validUntil: Date.now() + 60_000,
+    actorContext: { credentialId: null, actorId: "human://test/" + subject, generation: 1, expiresAt: Date.now() + 60_000 },
+  });
+  let grantAvailable = true;
+  owner.gitNativeIncarnation = async () => "native-incarnation";
+  owner.executionGit = {
+    async reserve({ hostId, threadId, inputId }: { hostId: string; threadId: string; inputId: string }) {
+      assert.equal(hostId, "local-codex");
+      assert.equal(threadId, "native-thread");
+      const principal = leases.getSubmission(threadId, inputId).principal;
+      assert.ok(leases.unsettledTargets(threadId).some((target: { inputId: string }) => target.inputId === inputId));
+      return {
+        ready: async () => { if (!grantAvailable) throw Error("broker offline"); },
+        overlay: () => principal ? { OPENCRAFT_GIT_CAPABILITY: principal.subject } : {},
+      };
+    },
+    close: async () => {},
+  };
+  const git = adapter.bridgeOwners().executionGit!;
+  const alice = await git.prepare("native-thread", "input-a", identity("alice"));
+  assert.deepEqual(alice.environment, { OPENCRAFT_GIT_CAPABILITY: "alice" });
+  await assert.rejects(git.prepare("native-thread", "input-a", identity("bob")), /immutable/);
+  const aliceExecution = leases.begin("native-thread", "input-a");
+
+  git.notification("turn/started", { threadId: "native-thread", turnId: "turn-a" });
+  git.notification("item/started", { threadId: "native-thread", turnId: "turn-a",
+    item: { type: "userMessage", clientId: "input-a" } });
+  assert.equal(leases.resolve({ threadId: "native-thread", executionId: aliceExecution }).status, "active");
+  git.notification("turn/completed", { threadId: "native-thread", turnId: "turn-a" });
+  alice.settle("accepted", "turn-a"); // A late acknowledgement cannot revive the lease.
+  assert.equal(leases.resolve({ threadId: "native-thread", executionId: aliceExecution }).status, "expired");
+
+  const bob = await git.prepare("native-thread", "input-b", identity("bob"));
+  assert.deepEqual(bob.environment, { OPENCRAFT_GIT_CAPABILITY: "bob" });
+  const bobExecution = leases.begin("native-thread", "input-b");
+  git.notification("turn/completed", { threadId: "native-thread", turnId: "turn-b" });
+  bob.settle("accepted", "turn-b");
+  assert.equal(leases.resolve({ threadId: "native-thread", executionId: bobExecution }).status, "expired");
+  assert.equal(leases.getSubmission("native-thread", "input-b").principal.actorId, "human://test/bob");
+
+  grantAvailable = false;
+  await assert.rejects(git.prepare("native-thread", "input-c", identity("bob")), /git_execution_unavailable/);
+  assert.deepEqual(leases.unsettledTargets("native-thread"), []);
+});
+
 test("aborted Item hydration includes the active page phase in the terminal diagnostic", async () => {
   const root = await mkdtemp(join(tmpdir(), "codex-history-abort-stage-")), frames: Array<Record<string, unknown>> = [];
   const diagnostics: Array<Record<string, unknown>> = [];

@@ -166,6 +166,14 @@ export class CodexProviderBridgeSession implements DuplexTransport {
           nativeTurnId?: string,
         ): void;
       };
+      /** Personal Git authority and launch state belong to the local execution owner. */
+      executionGit?: {
+        prepare(nativeThreadId: string, inputId: string, context: TransportSubmissionContext): Promise<{
+          environment: Readonly<Record<string, string>>;
+          settle(outcome: "accepted" | "rejected" | "unknown", nativeTurnId?: string): void;
+        }>;
+        notification(method: string, params: Record<string, unknown>): void;
+      };
       /** Dynamic tools every new bridge Thread declares (replacing same-named client declarations). */
       creationTools?: () => readonly Record<string, unknown>[];
       /** Live notifications of a bridge Thread, enriched as projectHistory enriches reads. */
@@ -244,6 +252,15 @@ export class CodexProviderBridgeSession implements DuplexTransport {
       }
       if (this.policy.usage && typeof frame.method === "string" && USAGE_NOTIFICATIONS.has(frame.method))
         this.observeUsage(threadId, frame.method, object(frame.params));
+      if (this.policy.executionGit && typeof frame.method === "string"
+        && ["turn/started", "turn/completed", "item/started", "item/completed"].includes(frame.method)) {
+        const params = object(frame.params);
+        const nativeThreadId = this.gateway.nativeThread(threadId);
+        const nativeTurnId = this.nativeTurnOf(threadId, object(params.turn).id ?? params.turnId);
+        if (nativeThreadId && nativeTurnId) this.policy.executionGit.notification(frame.method, {
+          ...params, threadId: nativeThreadId, turnId: nativeTurnId,
+        });
+      }
       // Forwarded native notifications name native turns; clients know public ones.
       const params = object(frame.params);
       if (typeof params.turnId === "string")
@@ -1054,6 +1071,10 @@ export class CodexProviderBridgeSession implements DuplexTransport {
           const cwd = await this.policy.projectlessWorkspace();
           Object.assign(native, { cwd, runtimeWorkspaceRoots: [cwd] });
         }
+        // Native can persist an empty paginated Thread before its first input,
+        // so the admitted sender's configuration can reload the same Thread.
+        if (this.policy.executionGit && native.historyMode == null && native.ephemeral !== true)
+          Object.assign(native, { historyMode: "paginated" });
         result = await command("session/create", { native });
         this.policy.observeTitle?.("thread/start", native, result);
       } else if (method === "turn/start") {
@@ -1065,15 +1086,43 @@ export class CodexProviderBridgeSession implements DuplexTransport {
           String(requestKey),
           "start",
           context,
-          () => {
-            context.resourceOwner?.assertCurrent();
-            if (context.commitExecution && !context.commitExecution())
-              throw Object.assign(Error("Host execution admission expired"), { kind: "explicit-reject" });
-            return command("turn/start", {
-              native,
-              executionSource: opencraftExecutionAdmission,
-              ...(opencraftSessionMcp !== undefined ? { sessionMcp: opencraftSessionMcp } : {}),
-            });
+          async () => {
+            const git = this.policy.executionGit;
+            const nativeThreadId = this.gateway.nativeThread(threadId);
+            let preparation: Awaited<ReturnType<NonNullable<typeof git>["prepare"]>> | undefined;
+            if (git) {
+              try {
+                if (!nativeThreadId) throw Error("Missing Native Thread identity");
+                preparation = await git.prepare(nativeThreadId, String(requestKey), context);
+              } catch {
+                throw Object.assign(Error("git_execution_unavailable"), { kind: "explicit-reject" });
+              }
+            }
+            let dispatching = false;
+            let started: unknown;
+            try {
+              started = await this.gateway.command(threadId, commandId, "turn/start", {
+                native,
+                executionSource: opencraftExecutionAdmission,
+                ...(opencraftSessionMcp !== undefined ? { sessionMcp: opencraftSessionMcp } : {}),
+                ...(preparation ? { gitEnvironment: preparation.environment } : {}),
+              }, () => {
+                try {
+                  context.resourceOwner?.assertCurrent();
+                  if (context.commitExecution && !context.commitExecution()) throw Error("Host execution admission expired");
+                } catch {
+                  throw Object.assign(Error("Host execution admission expired"), { kind: "explicit-reject" });
+                }
+                dispatching = true;
+              });
+            } catch (error) {
+              const rejected = !dispatching || ["explicit-reject", "invalid", "stale-target", "unsupported", "frame-too-large"].includes(String(object(error).kind));
+              preparation?.settle(rejected ? "rejected" : "unknown");
+              throw error;
+            }
+            const nativeTurnId = this.nativeTurnOf(threadId, object(object(started).turn).id);
+            preparation?.settle(nativeTurnId ? "accepted" : "unknown", nativeTurnId);
+            return started;
           },
           (value) => object(object(value).turn).id,
         );

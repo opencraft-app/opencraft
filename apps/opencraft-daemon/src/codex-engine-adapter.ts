@@ -3647,6 +3647,47 @@ export class CodexEngineAdapter implements DuplexTransport {
       actorKind:trusted?.sourceKind==="system"?trusted.actorKind:actor?.kind??trusted?.actorKind??"unknown",mode,
       sourceKind:trusted?.sourceKind === "system" ? "system" : actor?.kind === "human" ? "human":actor?.kind === "session" ? "system":trusted?.sourceKind??"unknown",submittedAt:Date.now()};
   }
+  private async prepareBridgeGit(threadId: string, inputId: string, context: TransportSubmissionContext) {
+    const leases = this.executionLeases;
+    const git = this.executionGit;
+    if (!leases || !git) throw Error("git_execution_unavailable");
+    this.validateSubmissionContext(context);
+    leases.capture(threadId, inputId, snapshotExecutionSubmission(context));
+    await this.beginExecution(threadId, inputId);
+    try {
+      const snapshot = await git.reserve({ hostId: "local-codex", threadId, inputId });
+      await snapshot.ready();
+      this.validateSubmissionContext(context);
+      return {
+        environment: snapshot.overlay(),
+        settle: (outcome: "accepted" | "rejected" | "unknown", nativeTurnId?: string) => {
+          try {
+            if (outcome === "accepted" && nativeTurnId) leases.started(threadId, nativeTurnId, inputId);
+            else leases.outcome(threadId, inputId, outcome === "rejected");
+          } catch { this.diagnostic({ event: "execution-lease-reconciliation-pending" }); }
+        },
+      };
+    } catch {
+      leases.outcome(threadId, inputId, true);
+      throw Error("git_execution_unavailable");
+    }
+  }
+  private observeBridgeGit(method: string, params: RpcRecord): void {
+    const threadId = string(params.threadId), turnId = string(params.turnId);
+    const leases = this.executionLeases;
+    if (!leases || !threadId || !turnId) return;
+    try {
+      if (method === "turn/started" || method === "turn/completed") {
+        // Retain end evidence even if the command receipt has not arrived yet.
+        leases.observedStart(threadId, turnId);
+        if (method === "turn/completed") leases.finished(threadId, turnId);
+      } else {
+        const inputId = originalExecutionInputIds({ items: [params.item] })[0];
+        if (inputId && leases.unsettledTargets(threadId).some(target => target.inputId === inputId && target.turnId === null))
+          leases.observedInput(threadId, turnId, inputId);
+      }
+    } catch { this.diagnostic({ event: "execution-lease-reconciliation-pending" }); }
+  }
   /** A bridge Thread's turn notification, with native session and turn identities, for usage collection. */
   private observeExternalUsage(method: string, params: RpcRecord): void {
     try { this.tokenUsage?.notification(method, params); } catch { this.diagnostic({event:"token-usage-partial",category:"notification"}); }
@@ -3709,6 +3750,10 @@ export class CodexEngineAdapter implements DuplexTransport {
       },
       // The Host opens its sender storage when it connects, after a bridge is assembled.
       senderAttribution: () => this.externalSenderAttribution,
+      ...(this.executionGit ? { executionGit: {
+        prepare: (nativeThreadId, inputId, context) => this.prepareBridgeGit(nativeThreadId, inputId, context),
+        notification: (method, params) => this.observeBridgeGit(method, params),
+      } } : {}),
       usage: {
         notification: (method, params) => this.observeExternalUsage(method, params),
         begin: (nativeThreadId, publicThreadId, inputId, mode, context) => this.beginExternalUsage(nativeThreadId, publicThreadId, inputId, mode, context),

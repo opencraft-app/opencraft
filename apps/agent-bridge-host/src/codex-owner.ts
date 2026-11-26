@@ -1,11 +1,17 @@
 import { refreshCodexExecutionConfiguration } from "@opencraft/codex-execution";
 import WebSocket from 'ws';
+import { stat } from 'node:fs/promises';
 import { isDeepStrictEqual } from 'node:util';
 import { CodexCoreControlClient, openCodexNativeSocket } from '@opencraft/account-pool-host';
 import { CodexCoreReadIsolation } from '@opencraft/account-pool-host/codex-core-read-isolation';
 import { BRIDGE_MAX_FRAME_BYTES } from '@opencraft/agent-bridge-protocol';
 import { codexDeclaration } from './codex-declaration.js';
 import { CodexBridgeError, type CodexOwnerPort } from './codex.js';
+
+type InitialConfiguration = {
+  config: Record<string, unknown>;
+  settings: Record<string, unknown>;
+};
 
 /** An attachment, never a launcher. Account refresh, proxy and execution remain
  * in the existing Core/AppServer process. Mutations are never retried. */
@@ -14,7 +20,7 @@ export class CodexOwnerConnection implements CodexOwnerPort {
   private socket?: WebSocket;
   private historyReads?: CodexCoreReadIsolation;
   private sequence = 0;
-  private pending = new Map<number, { resolve(value: unknown): void; reject(error: Error): void; timer?: ReturnType<typeof setTimeout>; method: string; threadId?:unknown; includeTurns?:unknown; initial?:Record<string,unknown>; observedTurn?:boolean }>();
+  private pending = new Map<number, { resolve(value: unknown): void; reject(error: Error): void; timer?: ReturnType<typeof setTimeout>; method: string; threadId?:unknown; includeTurns?:unknown; initial?:InitialConfiguration; observedTurn?:boolean }>();
   private failed = false;
   serverInfo: unknown;
   constructor(private endpoint: string, private token: string,
@@ -61,7 +67,7 @@ export class CodexOwnerConnection implements CodexOwnerPort {
     }
     this.write({ method: 'initialized', params: {} });
   }
-  private readonly initialConfigurations = new Map<string,Record<string,unknown>>();
+  private readonly initialConfigurations = new Map<string, InitialConfiguration>();
   private readonly uncertainConfigurations=new Set<string>();
   private readonly retirements = new Map<string,Record<string,any>>();
   async configureExecution(threadId:string,environment:Readonly<Record<string,string>>,preparationDeadlineMs=Date.now()+10000,sessionMcp?:Record<string,unknown>|null):Promise<void> {
@@ -69,6 +75,7 @@ export class CodexOwnerConnection implements CodexOwnerPort {
     const deadline=performance.now()+Math.min(10000,preparationDeadlineMs-Date.now());
     const current=()=>{if(this.failed||performance.now()>=deadline)throw new CodexBridgeError('unsupported','cliUnavailable');};
     const initial=this.initialConfigurations.get(threadId);
+    let initialSettings: Record<string, unknown> | undefined;
     if(initial) {
       current();
       const read=await this.request('thread/read',{threadId,includeTurns:false},Math.max(1,deadline-performance.now())) as any;
@@ -84,12 +91,24 @@ export class CodexOwnerConnection implements CodexOwnerPort {
         if(!(error instanceof CodexBridgeError)||!['unmaterialized','turns-unavailable'].includes(error.nativeReason??''))throw error;
         if(this.initialConfigurations.get(threadId)===initial) {
           const mcp=sessionMcp??{enabled:false,url:'http://127.0.0.1:1/mcp'};
-          const installed=initial['shell_environment_policy.set']??{};
-          if(!isDeepStrictEqual(installed,{...(installed as Record<string,unknown>),...environment})
-            ||sessionMcp!==undefined&&!isDeepStrictEqual(initial['mcp_servers.opencraft_session']??{enabled:false,url:'http://127.0.0.1:1/mcp'},mcp))throw new CodexBridgeError('unsupported','cliUnavailable');
-          // The admitted one-shot namespace was installed by native creation.
-          // No native mutation, permission rewrite, retirement or identity change.
-          return;
+          const installed=initial.config['shell_environment_policy.set']??{};
+          if (isDeepStrictEqual(installed, { ...(installed as Record<string, unknown>), ...environment })
+            && (sessionMcp === undefined || isDeepStrictEqual(initial.config['mcp_servers.opencraft_session'] ?? { enabled: false, url: 'http://127.0.0.1:1/mcp' }, mcp))) {
+            // The admitted one-shot namespace was installed by native creation.
+            return;
+          }
+          // A paginated history read can flush an empty rollout before
+          // reporting that listing turns is unsupported. Verify that Native
+          // persisted it before releasing the only live subscription.
+          const path: unknown = read.thread.path;
+          const persisted = error.nativeReason === 'turns-unavailable' && typeof path === 'string'
+            && await stat(path).then(value => value.isFile() && value.size > 0, () => false);
+          current();
+          if (!persisted || this.initialConfigurations.get(threadId) !== initial)
+            throw new CodexBridgeError('unsupported', 'cliUnavailable');
+          // A live resume can still try to read unindexed history. The Native
+          // creation reply already attested these settings on this empty Thread.
+          initialSettings = initial.settings;
         }
       }
     }
@@ -102,6 +121,7 @@ export class CodexOwnerConnection implements CodexOwnerPort {
         try {return await this.request(method,params,Math.max(1,deadline-performance.now()));}
         catch(error){if(method!=='thread/read'&&error instanceof CodexBridgeError&&error.kind==='unknown-outcome')this.uncertainConfigurations.add(threadId);throw error;}
       },current,
+      initialSettings,
       stage:()=>{},nativeStatus:()=>{},ephemeral:()=>{throw new CodexBridgeError('unsupported','cliUnavailable');},
       cancelRelease:()=>{},retirement:()=>this.retirements.get(threadId),waitForRetirement:true,retirementTimeoutMs:Math.max(1,deadline-performance.now()),
       pending:()=>new CodexBridgeError('unsupported','cliUnavailable: native runtime has not retired'),invalidate:()=>{},
@@ -116,6 +136,16 @@ export class CodexOwnerConnection implements CodexOwnerPort {
       this.resolve(p.id, this.brokerAuth); return;
     }
     if (typeof p.method === 'string') {
+      if (p.method === 'thread/settings/updated') {
+        const event = p.params as { threadId?: string; threadSettings?: Record<string, unknown> } | undefined;
+        const initial = event?.threadId ? this.initialConfigurations.get(event.threadId) : undefined;
+        const settings = event?.threadSettings;
+        if (initial && settings && Object.hasOwn(settings, 'sandboxPolicy')) {
+          // The creation reply is only a baseline. A Native settings update
+          // before the first input supersedes its permission and model fields.
+          initial.settings = { ...initial.settings, ...settings, sandbox: settings.sandboxPolicy, reasoningEffort: settings.effort };
+        }
+      }
       if(p.method==='turn/started'){const threadId=(p.params as any)?.threadId;if(typeof threadId==='string'){this.initialConfigurations.delete(threadId);for(const request of this.pending.values())if(request.method==='turn/start'&&request.threadId===threadId)request.observedTurn=true;}}
       if (typeof p.id === 'number' || typeof p.id === 'string') this.interaction(p.id, p.method, p.params);
       else this.notify(p.method, p.params);
@@ -171,7 +201,7 @@ export class CodexOwnerConnection implements CodexOwnerPort {
       this.pending.set(id, { resolve:value=>{
         if(method==='thread/unsubscribe'&&typeof params.threadId==='string')this.initialConfigurations.delete(params.threadId);
         const nativeId=(value as any)?.thread?.id;
-        if(initialConfig&&typeof nativeId==='string')this.initialConfigurations.set(nativeId,initialConfig);
+        if(initialConfig&&typeof nativeId==='string')this.initialConfigurations.set(nativeId,{config:initialConfig,settings:value as Record<string,unknown>});
         resolve(value);
       }, reject, timer, method,threadId:params.threadId,includeTurns:params.includeTurns,initial });
       const message = { id, method, params };

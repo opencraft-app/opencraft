@@ -416,8 +416,18 @@ export class BridgeHost {
     // An adopted session keeps its identity: the public Thread is the native session it names.
     if (command.method === "session/adopt" && command.params.providerThreadId !== command.threadId)
       throw hostRefusal(command, "An adopted session keeps its own Thread ID");
-    const serialized = stable(command);
-    if (Buffer.byteLength(serialized) > BRIDGE_MAX_COMMAND_BYTES) throw oversizedBridgeRequest(BRIDGE_MAX_COMMAND_BYTES);
+    const { gitEnvironment, ...durableParams } = command.params;
+    if (gitEnvironment !== undefined && (
+      command.method !== "turn/start" || typeof gitEnvironment !== "object" || gitEnvironment === null ||
+      Array.isArray(gitEnvironment) || Object.entries(gitEnvironment).some(([name, value]) =>
+        !/^(PATH|BASH_ENV|OPENCRAFT_GIT_[A-Z0-9_]+)$/u.test(name) || typeof value !== "string" || value.includes("\0"))
+    )) throw hostRefusal(command, "Invalid Git execution environment");
+    // The short-lived seal may change when an identical request is retried.
+    // The admitted command's input stays immutable, and only the first
+    // admission can dispatch with the launch material it received.
+    const durableCommand = { ...command, params: durableParams };
+    const serialized = stable(durableCommand);
+    if (Buffer.byteLength(gitEnvironment === undefined ? serialized : stable(command)) > BRIDGE_MAX_COMMAND_BYTES) throw oversizedBridgeRequest(BRIDGE_MAX_COMMAND_BYTES);
     const digest = createHash("sha256").update(serialized).digest("hex");
     const route = routeKey(command.serverId, command.threadId);
     if (command.method === "session/resume") {
@@ -437,7 +447,7 @@ export class BridgeHost {
     // to the current provider generation.
     if (command.method === "turn/start" || this.rebinding.has(route)) await this.migrate(route);
     const result = await this.storage.call<{ receipt: Receipt; fresh: boolean }>("admit", {
-      command,
+      command: durableCommand,
       digest,
       route,
       maxSpoolBytes: this.options.maxSpoolBytes ?? 64 * 1024 ** 2,
@@ -799,7 +809,19 @@ export class BridgeHost {
           this.finishPendingCliIssue(receipt.route, pending, peer);
         }
       }
-      const { executionSource: _executionSource, ...providerParams } = command.params;
+      const { executionSource: _executionSource, gitEnvironment, ...providerParams } = command.params;
+      if (gitEnvironment !== undefined) {
+        if (this.generations.get(receipt.generation)?.provider.providerId !== "codex") {
+          await this.rejectCliCommand(command.commandId);
+          return;
+        }
+        const git = gitEnvironment as Record<string, string>;
+        // Preserve the Thread CLI shim and the Git interceptor in the same
+        // shell PATH. Both authorities supply absolute paths.
+        const paths = [git.OPENCRAFT_GIT_BIN, cliEnvironment?.PATH, git.PATH];
+        const path = [...new Set(paths.flatMap(value => value?.split(":") ?? []))].join(":");
+        cliEnvironment = { ...cliEnvironment, ...git, ...(path ? { PATH: path } : {}) };
+      }
       // A fork names its source by public Thread; the provider knows sessions by route.
       if (command.method === "session/fork")
         providerParams.sourceThreadId = routeKey(command.serverId, identifier(command.params.sourceThreadId));

@@ -9,7 +9,7 @@ export async function refreshCodexExecutionConfiguration(threadId:string,config:
   request(method:string,params:RecordValue):Promise<unknown>;
   current():void; stage(value:ConfigurationStage):void; nativeStatus(value:string):void;
   ephemeral():void; cancelRelease():void; retirement():RecordValue|undefined;
-  waitForRetirement:boolean; retirementTimeoutMs?:number; pending():Error; invalidate():void; retire(live:RecordValue):void;
+  initialSettings?:RecordValue; waitForRetirement:boolean; retirementTimeoutMs?:number; pending():Error; invalidate():void; retire(live:RecordValue):void;
   unsubscribed():void; clearRetirement():void;
 }):Promise<boolean> {
   const {request,current}=ports;
@@ -51,7 +51,7 @@ export async function refreshCodexExecutionConfiguration(threadId:string,config:
       };
       if (retirement && status !== "notLoaded") await waitForUnload();
       ports.stage("capture-settings");
-      const live = retirement ?? (status === "notLoaded" ? {} : record(await request("thread/resume", { threadId, excludeTurns: true })));
+      const live = retirement ?? ports.initialSettings ?? (status === "notLoaded" ? {} : record(await request("thread/resume", { threadId, excludeTurns: true })));
       const resume: RecordValue = {};
       for (const key of ["model", "modelProvider", "serviceTier", "cwd", "runtimeWorkspaceRoots", "approvalPolicy", "approvalsReviewer"])
         if (live[key] !== undefined) resume[key] = live[key];

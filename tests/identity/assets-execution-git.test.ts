@@ -989,7 +989,7 @@ test('an independent broker that pinned an Actor authority never downgrades to a
 
 
 // Opt-in installed stock-native boundary, synthetic model and account only.
-for (const replaceGateway of [false, true]) test(`stock independent Codex signs from the original Assets admission (Gateway replacement=${replaceGateway})`, {
+for (const mode of ["native", "replacement", "bridge"] as const) test(`stock independent Codex signs from the original Assets admission (${mode})`, {
   skip: !process.env.OPENCRAFT_TEST_NATIVE_CLI,
   timeout: 60000,
 }, async t => {
@@ -999,6 +999,7 @@ for (const replaceGateway of [false, true]) test(`stock independent Codex signs 
   const {CodexEngineAdapter} = await import('../../apps/opencraft-daemon/src/codex-engine-adapter.js');
   const {LOGICAL_CLIENT_FIELD} = await import('@opencraft/app-host-protocol');
   const {CodexCoreControlClient} = await import('@opencraft/account-pool-host');
+  const replaceGateway = mode === "replacement";
   const token = 'synthetic-git-core-owner-token-'.repeat(3), dataDirectory = join(f.root, 'data/codex');
   let modelPosts = 0;
   let releaseModel!: () => void;
@@ -1009,10 +1010,20 @@ for (const replaceGateway of [false, true]) test(`stock independent Codex signs 
     const timer = setTimeout(() => reject(Error('Native Git lifecycle fixture did not settle')), 8000); timer.unref();
   })]);
   const toolOutputs: string[] = [];
+  const { createCodexAccountPoolLaunch } = await import("../../packages/account-pool-host/src/codex-launch.js");
+  let launch: ReturnType<typeof createCodexAccountPoolLaunch> | undefined;
   const core = await startCodexCore({
     endpoint: join(f.root, 'core.sock'), authToken: token,
     executable: process.env.OPENCRAFT_TEST_NATIVE_CLI!, runtimeDirectory: f.repo,
     dataDirectory, nativeCodexHomeDirectory: join(f.root, 'native-codex'),
+    ...(mode === "bridge" ? { spawnAppServer({ args, cwd, env }) {
+      const baseUrl = args.find(arg => arg.startsWith("chatgpt_base_url="));
+      assert.ok(baseUrl && env.OPENCRAFT_CODEX_POOL_AUTH_TOKEN);
+      launch = createCodexAccountPoolLaunch({
+        baseUrl: JSON.parse(baseUrl.slice("chatgpt_base_url=".length)), hostToken: env.OPENCRAFT_CODEX_POOL_AUTH_TOKEN,
+      });
+      return spawn(process.env.OPENCRAFT_TEST_NATIVE_CLI!, args, { cwd, env, stdio: ["pipe", "pipe", "pipe"] });
+    } } : {}),
     fetch: async (input, init) => {
       const url = new URL(input instanceof Request ? input.url : String(input));
       if (init?.method !== 'POST' || !url.pathname.endsWith('/responses')) return Response.json({plan_type: 'pro'});
@@ -1024,14 +1035,15 @@ for (const replaceGateway of [false, true]) test(`stock independent Codex signs 
       for (const item of body.input ?? []) if (item.type === 'function_call_output') toolOutputs.push(String(item.output));
       const tools = (body.tools ?? []).map((value: any) => value.name ?? value.function?.name);
       let item: any;
-      if (modelPosts === 1) {
+      if (modelPosts === 1 || (mode === "bridge" && modelPosts === 3)) {
         requested.resolve(); if (replaceGateway) await modelGate;
         assert.ok(tools.includes('exec_command'), 'The stock native tool surface must provide exec_command: ' + tools.join(','));
-        item = {type: 'function_call', id: 'fc_native_git', call_id: 'call_native_git', name: 'exec_command',
-          arguments: JSON.stringify({cmd: 'git commit --allow-empty -m NativeCodexAssets', workdir: f.repo, yield_time_ms: 1000, max_output_tokens: 1000}), status: 'completed'};
+        const message = modelPosts === 1 ? "NativeCodexAssets" : "BridgeCodexAssetsFollowup";
+        item = {type: 'function_call', id: 'fc_native_git_' + modelPosts, call_id: 'call_native_git_' + modelPosts, name: 'exec_command',
+          arguments: JSON.stringify({cmd: 'git commit --allow-empty -m ' + message, workdir: f.repo, yield_time_ms: 1000, max_output_tokens: 1000}), status: 'completed'};
       } else {
-        assert.ok(modelPosts <= 2, 'No model request retry or accidental new Turn');
-        item = {type: 'message', id: 'msg_native_git', role: 'assistant', status: 'completed',
+        assert.ok(modelPosts <= (mode === "bridge" ? 4 : 2), 'No model request retry or accidental new Turn');
+        item = {type: 'message', id: 'msg_native_git_' + modelPosts, role: 'assistant', status: 'completed',
           content: [{type: 'output_text', text: 'Synthetic native Git completed.', annotations: []}]};
       }
       const response = {id: 'resp_native_git_' + modelPosts, object: 'response', status: 'in_progress', output: []};
@@ -1044,7 +1056,46 @@ for (const replaceGateway of [false, true]) test(`stock independent Codex signs 
     },
   }); f.defer(() => core.close()); f.defer(() => releaseModel());
   const control = new CodexCoreControlClient(core.endpoint, token), before = await control.health();
-  const makeEngine = () => new CodexEngineAdapter({executable: process.env.OPENCRAFT_TEST_NATIVE_CLI!, runtimeDirectory: f.repo,
+  const bridge = mode === "bridge" ? await (async () => {
+    const { build } = await import("esbuild");
+    const { createHash } = await import("node:crypto");
+    const { BridgeHost } = await import("../../apps/agent-bridge-host/src/host.js");
+    const { attachGateway } = await import("../../apps/agent-bridge-host/src/server.js");
+    const { codexDeclaration } = await import("../../apps/agent-bridge-host/src/codex-declaration.js");
+    const { localTestBackend } = await import("../agent-bridge/fixtures/local-backend.js");
+    // The split Core serves this private launch response in production.
+    const endpoint = join(f.root, "bridge-control.sock");
+    const launchControl = createServer((req, res) => {
+      if (req.url !== "/launch" || req.headers.authorization !== "Bearer " + token) {
+        res.writeHead(404).end();
+        return;
+      }
+      res.end(JSON.stringify({ dataDirectory, launch }));
+    });
+    await new Promise<void>(done => launchControl.listen(endpoint, done));
+    f.defer(() => new Promise<void>(done => launchControl.close(() => done())));
+    const attachment = join(f.root, "bridge-core.json"), artifact = join(f.root, "codex-provider.cjs");
+    await writeFile(attachment, JSON.stringify({ endpoint, nativeSocket: before.nativeSocket, token }), { mode: 0o600 });
+    await build({ entryPoints: [new URL("../../apps/agent-bridge-host/src/codex-main.ts", import.meta.url).pathname],
+      outfile: artifact, bundle: true, platform: "node", format: "cjs" });
+    const lease = () => ({ environment: { PATH: process.env.PATH ?? "" }, async revoke() {} });
+    const host = await BridgeHost.open({ path: join(f.root, "bridge-host.sqlite"), backend: localTestBackend(),
+      policy: { id: "stock-codex-git", capacity: { cpuMillis: 16000, memoryBytes: 32 * 1024 ** 3 } },
+      executionCli: {
+        async reserve() { return lease(); },
+        async issue(scope) { assert.equal(scope.credential, "synthetic-bridge-admission"); return lease(); },
+      },
+    });
+    f.defer(() => host.close());
+    await host.add({ id: "stock-codex-git", artifact, digest: createHash("sha256").update(await readFile(artifact)).digest("hex"),
+      provider: codexDeclaration, launch: { command: [process.execPath, artifact, attachment], cwd: f.repo, env: {} } });
+    await host.activate("stock-codex-git", "");
+    const gateway = await attachGateway(host, token);
+    f.defer(() => gateway.close());
+    return { url: gateway.url, token, serverId: "fixture", inboxPath: join(f.root, "bridge-inbox.sqlite") };
+  })() : undefined;
+  const { createServerCodexBridge } = await import("../../apps/opencraft-daemon/src/bridge-execution-admission.js");
+  const makeNative = () => new CodexEngineAdapter({executable: process.env.OPENCRAFT_TEST_NATIVE_CLI!, runtimeDirectory: f.repo,
     dataDirectory, nativeCodexHomeDirectory: join(f.root, 'native-codex'), coreEndpoint: core.endpoint, coreAuthToken: token, coreHostOverlays: true,
     logDiagnostic() {},
     createExecutionGit: native => {
@@ -1058,6 +1109,13 @@ for (const replaceGateway of [false, true]) test(`stock independent Codex signs 
       };
     },
   });
+  const makeEngine = () => createServerCodexBridge(makeNative(), bridge, {
+    async admit(threadId, inputId) {
+      return { serverId: "fixture", threadId, execution: { inputId, executionId: inputId } };
+    },
+    sign: () => "synthetic-bridge-admission",
+    started() {},
+  }, { newThreads: true });
   const frames: any[] = [];
   let engine = makeEngine(); f.defer(() => engine.close());
   const connect = async () => {engine.subscribeMessage(frame => frames.push(JSON.parse(frame))); await engine.connect();};
@@ -1065,7 +1123,7 @@ for (const replaceGateway of [false, true]) test(`stock independent Codex signs 
   let sequence = 0;
   const rpc = async (method: string, params: object = {}, original = false) => {
     const id = ++sequence, frame = JSON.stringify({id, method, params, [LOGICAL_CLIENT_FIELD]: 'native-git'});
-    if (original) await engine.sendWithContext(frame, f.context); else await engine.send(frame);
+    if (original) await engine.sendWithContext!(frame, f.context); else await engine.send(frame);
     const deadline = Date.now() + 15000;
     while (Date.now() < deadline) {
       const reply = frames.find(value => value.id === id && !value.method && value[LOGICAL_CLIENT_FIELD] === 'native-git');
@@ -1096,15 +1154,19 @@ for (const replaceGateway of [false, true]) test(`stock independent Codex signs 
     await bounded(reattached.promise);
     releaseModel();
   }
-  const deadline = Date.now() + 20000;
-  let status: string | undefined;
-  while (Date.now() < deadline) {
-    const latest = (await rpc('thread/turns/list', {threadId: thread.id, limit: 1, sortDirection: 'desc', itemsView: 'notLoaded'})).data?.[0];
-    if (latest?.id === started.turn.id) status = latest.status;
-    if (status === 'completed' || status === 'failed' || status === 'interrupted') break;
-    await new Promise(resolve => setTimeout(resolve, 50));
-  }
-  assert.equal(status, 'completed');
+  const waitForTurn = async (turnId: string) => {
+    const deadline = Date.now() + 20000;
+    while (Date.now() < deadline) {
+      const latest = (await rpc('thread/turns/list', {threadId: thread.id, limit: 1, sortDirection: 'desc', itemsView: 'notLoaded'})).data?.[0];
+      if (latest?.id === turnId && ['completed', 'failed', 'interrupted'].includes(latest.status)) {
+        assert.equal(latest.status, 'completed');
+        return;
+      }
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    assert.fail('Timed out awaiting completion of the admitted turn');
+  };
+  await waitForTurn(started.turn.id);
   assert.equal((await f.nativeGit('log', '-1', '--format=%s')).out, 'NativeCodexAssets', toolOutputs.join('\n'));
   assert.equal(modelPosts, 2);
   await writeFile(join(f.root, 'native-codex-signers'), 'fixture@example.test ' + f.metadata.hosts['github.com'].signing.publicKey + '\n');
@@ -1112,9 +1174,18 @@ for (const replaceGateway of [false, true]) test(`stock independent Codex signs 
   assert.equal((await control.health()).codexPid, before.codexPid, 'The existing native owner executes Git; no replacement executor');
   const beforeEndedAttempt = (await f.nativeGit('rev-parse', 'HEAD')).out;
   const ended = await command(join(f.root, 'bin/git'), ['commit', '--allow-empty', '-m', 'MustNotReuseFinishedNativeCodex'], f.repo,
-    {...originalEnvironment.apply(f.base), CODEX_THREAD_ID: thread.id});
+    {...originalEnvironment.apply(f.base), CODEX_THREAD_ID: bridge ?
+      (engine as { threadIdentities(): { toNative(threadId: string): string | undefined } }).threadIdentities().toNative(thread.id) : thread.id});
   assert.notEqual(ended.code, 0, 'A persisted lease is not enough after Native completion');
   assert.equal((await f.nativeGit('rev-parse', 'HEAD')).out, beforeEndedAttempt);
+  if (bridge) {
+    const followup = await rpc('turn/start', { threadId: thread.id, clientUserMessageId: 'followup-bridge-codex',
+      input: [{ type: 'text', text: 'Create one more synthetic signed Git commit.' }] }, true);
+    await waitForTurn(followup.turn.id);
+    assert.equal((await f.nativeGit('log', '-1', '--format=%s')).out, 'BridgeCodexAssetsFollowup', toolOutputs.join('\n'));
+    assert.equal((await f.nativeGit('-c', 'gpg.ssh.allowedSignersFile=' + join(f.root, 'native-codex-signers'), 'verify-commit', 'HEAD')).code, 0);
+    assert.equal(modelPosts, 4);
+  }
 });
 
 
