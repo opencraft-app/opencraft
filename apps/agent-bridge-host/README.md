@@ -294,8 +294,17 @@ their queue moves.
 The private Host configuration may include `generations` (the same immutable
 registration bodies as `POST /generation/add`) and `activate`. Startup registers
 each generation and activates the configured one only after its sandbox and
-bridge negotiation succeed; a restart therefore never silently replaces a
-generation that still owns native work.
+bridge negotiation succeed. The built-in Codex deployment sets
+`cutoverCodex: true`: after the probe, startup moves Codex routes and their
+native bindings to that generation in one transaction, before opening the API
+or resuming the queue. Thread IDs, command receipts and pending events remain
+available for recovery. The new adapter subscribes to retained active turns
+through the existing AppServer session, without starting a new turn. Other
+sessions reattach when accessed. The previous adapter does not start. The live
+generation activation endpoint retains its existing handoff behavior.
+The durable outbox can replay committed events. Output from the detached
+interval is available through a subsequent native history read once Codex
+has materialized it.
 
 New-Thread routing is a Server-side composition choice, not a Host default. The
 daemon/engine-host accepts an optional private per-engine bridge configuration;

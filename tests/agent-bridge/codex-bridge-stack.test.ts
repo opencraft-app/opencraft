@@ -63,6 +63,9 @@ test(
       const first = await owner(root);
       assert.equal(first.children.length, 3);
       assert.ok(first.children.every(alive));
+      const config = JSON.parse(await readFile(join(root, "state/engine-host.json"), "utf8"));
+      assert.equal(config.cutoverCodex, true);
+      assert.equal(config.generations[0].id, config.activate);
       first.child.kill("SIGKILL");
       for (let attempt = 0; attempt < 100 && first.children.some(alive); attempt++) await delay(50);
       assert.deepEqual(first.children.filter(alive), [], "no child outlives a killed daemon");

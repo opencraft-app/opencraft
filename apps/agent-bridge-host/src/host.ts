@@ -89,6 +89,11 @@ export interface HostOptions {
   backend: SandboxBackend;
   maxSpoolBytes?: number;
   requestTimeoutMs?: number;
+  startup?: {
+    generations?: readonly Generation[];
+    activate?: string;
+    cutoverCodex?: boolean;
+  };
 }
 interface PendingCliIssue {
   readonly commandId: string;
@@ -182,16 +187,52 @@ export class BridgeHost {
       host.pool = await createSandboxPool(options.policy, options.backend);
       const snapshot = await host.storage.call("snapshot");
       for (const row of snapshot.generations) if (!row.retired) host.generations.set(row.id, row.config);
-      for (const row of snapshot.routes) {
+      for (const generation of options.startup?.generations ?? []) await host.add(generation);
+      const target = options.startup?.activate;
+      let routes = snapshot.routes;
+      let activeRecovery: { peer: Peer; routes: string[] } | undefined;
+      if (options.startup?.cutoverCodex) {
+        const provider = target && host.generations.get(target)?.provider;
+        if (!target || !provider || provider.providerId !== "codex" || !provider.capabilities.adoption)
+          throw Error("Codex startup cutover requires a Codex generation that supports adoption");
+        // No queue or API can start the old adapter. Probe the replacement first,
+        // then switch all bindings before any command or history read is admitted.
+        const peer = await host.peer(target);
+        if (!host.capabilities.get(target)?.adoption)
+          throw Error("Codex startup cutover requires negotiated adoption");
+        const replacement = await host.storage.call("activate", { id: target, expected: snapshot.current, cutoverCodex: true });
+        routes = replacement.routes;
+        activeRecovery = { peer, routes: replacement.activeRoutes };
+      } else if (target) {
+        // Preserve the restart fence for other providers during their probe.
+        for (const row of routes) host.retainedAfterCrash.add(row.generation);
+        await host.activate(target, snapshot.current);
+      }
+      for (const row of routes) {
         host.retainedAfterCrash.add(row.generation);
         host.rebinding.add(row.route);
       }
+      if (activeRecovery?.routes.length)
+        host.restoreActiveCodex(activeRecovery.peer, activeRecovery.routes, snapshot.epoch);
       await host.queue.resume();
       return host;
     } catch (error) {
-      await host.storage.close().catch(() => {});
+      if (host.pool) await host.close().catch(() => {});
+      else await host.storage.close().catch(() => {});
       throw error;
     }
+  }
+  private restoreActiveCodex(peer: Peer, routes: readonly string[], epoch: number): void {
+    const task = (async () => {
+      for (const route of routes) {
+        if (this.closing) return;
+        // Try one at a time. A failed attachment stays in rebinding for the
+        // next access (or queue reconciliation) to retry.
+        await this.bound(peer, route, epoch).catch(() => undefined);
+      }
+    })();
+    this.tasks.add(task);
+    void task.finally(() => this.tasks.delete(task));
   }
   async add(config: Generation): Promise<void> {
     if (this.closing) throw Error("Host closing");
@@ -414,8 +455,12 @@ export class BridgeHost {
     )
       throw Error("Unsupported command");
     // An adopted session keeps its identity: the public Thread is the native session it names.
-    if (command.method === "session/adopt" && command.params.providerThreadId !== command.threadId)
-      throw hostRefusal(command, "An adopted session keeps its own Thread ID");
+    if (command.method === "session/adopt") {
+      if (command.params.providerThreadId !== command.threadId)
+        throw hostRefusal(command, "An adopted session keeps its own Thread ID");
+      if (command.params.recoverActive !== undefined)
+        throw hostRefusal(command, "Only the Host can recover a retained execution");
+    }
     const { gitEnvironment, ...durableParams } = command.params;
     if (gitEnvironment !== undefined && (
       command.method !== "turn/start" || typeof gitEnvironment !== "object" || gitEnvironment === null ||
@@ -487,6 +532,7 @@ export class BridgeHost {
           threadId: route,
           providerThreadId: native.native_id,
           openTurns,
+          ...(peer.config.provider.providerId === "codex" ? { recoverActive: true } : {}),
           executionEpoch: epoch,
         });
         if (!successful(reply))

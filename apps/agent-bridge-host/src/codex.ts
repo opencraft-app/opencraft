@@ -101,6 +101,9 @@ export class CodexBridge {
       throw new CodexBridgeError("explicit-reject", "Session already bound");
     this.sessions.set(threadId, { nativeId, endedTurns: new Set(), openedTurns: new Set(), inputs: new Map() });
   }
+  forgetBinding(threadId: string): void {
+    this.sessions.delete(threadId);
+  }
   private session(threadId: string): Session {
     const session = this.sessions.get(threadId);
     if (!session) throw new CodexBridgeError("explicit-reject", "Session is not bound");
@@ -147,13 +150,24 @@ export class CodexBridge {
     await this.owner.request("thread/unsubscribe", { threadId: session.nativeId });
     this.sessions.delete(threadId);
   }
-  /** After recovery: turns the Host still held open ended while unobserved; report their native outcome. */
+  /** Reconcile retained turns and join the still-running native turn. */
   recovered(threadId: string, turns: readonly { nativeTurnId: string; status: string }[]): void {
     const session = this.session(threadId),
       scope = { threadId };
     const deltas: BridgeDelta[] = [];
     for (const { nativeTurnId, status } of turns) {
+      if (session.endedTurns.has(nativeTurnId)) continue;
+      if (status === "inProgress") {
+        if (session.activeTurn && session.activeTurn !== nativeTurnId) continue;
+        session.activeTurn = nativeTurnId;
+        if (!session.openedTurns.has(nativeTurnId)) {
+          session.openedTurns.add(nativeTurnId);
+          deltas.push({ op: "turn.open", scope, nativeTurnId });
+        }
+        continue;
+      }
       session.endedTurns.add(nativeTurnId);
+      if (session.activeTurn === nativeTurnId) session.activeTurn = undefined;
       deltas.push({
         op: "turn.close",
         scope,

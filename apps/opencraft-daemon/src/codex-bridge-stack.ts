@@ -250,6 +250,7 @@ async function prepareEngineHost(options: {
       },
       generations: [{ id, ...generation }],
       activate: id,
+      cutoverCodex: true,
       ...(options.cli ? { cli: options.cli } : {}),
       ...(options.socketPath ? { socketPath: options.socketPath } : {}),
     }),
