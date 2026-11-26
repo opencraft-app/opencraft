@@ -1,4 +1,5 @@
 import type { WorkspacePlacement } from '@opencraft/chat-core';
+import type { PersonalMachinesMethodMap } from "./personal-machines";
 import type { AppServerBotMethodMap } from "./bot-conversations";
 import type { PersonalAssistantMethodMap } from "./personal-assistant";
 import type { ServerSpaceCommand } from "./server-spaces";
@@ -394,7 +395,7 @@ import type {
   McpServerToolCallResponse, ListMcpServerStatusParams, ListMcpServerStatusResponse,
 } from "./generated/v2";
 
-export interface AppServerMethodMap extends AppServerBotMethodMap, ThreadAccessMethodMap, AgentUsageMethodMap, AgentOnboardingMethodMap, ThreadNoteMethodMap, SharedInteractionMethodMap, TurnRecoveryMethodMap, AppServerCodexAccountMethodMap, AppServerProcessMethodMap, AppServerAttachmentMethodMap, ProfileSkillsMethodMap, ThreadPinsMethodMap, TasksMethodMap, ConversationSchedulesMethodMap, SkillCatalogMethodMap, ChannelsMethodMap, PersonalAssistantMethodMap {
+export interface AppServerMethodMap extends PersonalMachinesMethodMap, AppServerBotMethodMap, ThreadAccessMethodMap, AgentUsageMethodMap, AgentOnboardingMethodMap, ThreadNoteMethodMap, SharedInteractionMethodMap, TurnRecoveryMethodMap, AppServerCodexAccountMethodMap, AppServerProcessMethodMap, AppServerAttachmentMethodMap, ProfileSkillsMethodMap, ThreadPinsMethodMap, TasksMethodMap, ConversationSchedulesMethodMap, SkillCatalogMethodMap, ChannelsMethodMap, PersonalAssistantMethodMap {
   "workspace/files/scope": {params: {threadId:string};result: import('./workspace-catalog').WorkspaceFileLocation};
   "workspace/catalog/read": {params: Record<string, never>;result: import('./workspace-catalog').WorkspaceCatalog};
 

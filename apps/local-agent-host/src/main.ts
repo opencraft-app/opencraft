@@ -1,5 +1,7 @@
 import { ServerSpacesRuntime } from "@opencraft/access-control/server-spaces";
 import { SERVER_SPACES_METHOD, SERVER_SPACES_CHANGED, type ServerSpaceCommand } from "@opencraft/appserver-protocol/server-spaces";
+import { MACHINE_SELF_UPDATE_METHOD, PERSONAL_MACHINES_METHOD, type PersonalMachineCommand } from "@opencraft/appserver-protocol/personal-machines";
+import { PersonalMachines, type PersonalMachinesOptions } from "./personal-machines.js";
 import { OPENCRAFT_TERMINAL_RESTORE_EXTENSION, OPENCRAFT_STEER_EVIDENCE_EXTENSION, SHARED_INTERACTIONS_EXTENSION, SHARED_INTERACTIONS_CHANGED, SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND } from "@opencraft/appserver-protocol";
 import { InteractionFault } from "@opencraft/app-host-server/interactions";
 import { nodeObserver } from "@opencraft/observability-contract/node";
@@ -188,6 +190,8 @@ export async function startLocalAgentHost(options: {
   readonly bridge?: { readonly claudeCode?: BridgeEngineProviderOptions };
   /** Explicit Pi Engine composition owns its own model authority. */
   readonly nativePi?: boolean;
+  readonly personalMachines?: Omit<PersonalMachinesOptions, "directory" | "ownerActorId" | "ownerToken">;
+  readonly selfUpdate?: () => Promise<{ readonly started: boolean }>;
 } = {}) {
   nodeObserver("dsh");
   const storage = options.storage ?? await openLocalAgentStorageWithWorker({ dataDirectory: options.dataDirectory });
@@ -638,6 +642,10 @@ export async function startLocalAgentHost(options: {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
     response.setHeader("cache-control", "no-store");
     response.setHeader("content-type", "application/json; charset=utf-8");
+    if (personalMachines && url.pathname.startsWith("/__opencraft_machines")) {
+      void personalMachines.http(request, response);
+      return;
+    }
     if (url.pathname === "/host-inputs") {
       void handleHostInput(request, response, token, options.ownerHandoff ? rawInputs : inputs, options.authorizeHostInput, options.ownerHandoff); return;
     }
@@ -654,14 +662,28 @@ export async function startLocalAgentHost(options: {
     response.statusCode = 404;
     response.end(`${JSON.stringify({ ok: false, error: "Not found" })}\n`);
   });
+  const personalMachines = options.personalMachines
+    ? new PersonalMachines({
+        directory: productDataRoot,
+        ownerActorId: spaces.context().actorId,
+        ownerToken: token,
+        ...options.personalMachines,
+      })
+    : undefined;
+  if (personalMachines) {
+    cleanup.push(() => personalMachines.close());
+    await personalMachines.ready();
+  }
   const websocketServer = new WebSocketServer({ noServer: true });
   stopAccepting = async () => {
     closing = true;
+    await personalMachines?.close();
     for (const client of websocketServer.clients) client.close(1001, "OpenCraft is quitting");
     websocketServer.close();
     if (server.listening) await new Promise<void>(resolve => server.close(() => resolve()));
   };
   server.on("upgrade", (request, socket, head) => {
+    if (personalMachines?.upgrade(request, socket, head)) return;
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
     if (url.pathname !== "/rpc" || url.searchParams.get("token") !== token) {
       socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
@@ -888,6 +910,15 @@ export async function startLocalAgentHost(options: {
         if (request.method === "runtime/machine/read") {
           send(socket, { jsonrpc: "2.0", id: request.id, result: { machine: machineIdentity, agent: "OpenCraft" } }); return;
         }
+        if (request.method === MACHINE_SELF_UPDATE_METHOD) {
+          if (!options.selfUpdate) throw Object.assign(new Error("Machine self-update is unavailable on this host"), { rpcCode: -32601 });
+          send(socket, { jsonrpc: "2.0", id: request.id, result: await options.selfUpdate() }); return;
+        }
+        if (request.method === PERSONAL_MACHINES_METHOD) {
+          if (!personalMachines) throw Object.assign(new Error("Personal machine enrollment is unavailable"), { rpcCode: -32601 });
+          const result = await personalMachines.command(request.params as PersonalMachineCommand);
+          send(socket, { jsonrpc: "2.0", id: request.id, result }); return;
+        }
         if (request.method.startsWith("storage/documents/")) {
           const result = hostDocuments.handle(request.method, request.params);
           send(socket, { jsonrpc: "2.0", id: request.id, result }); return;
@@ -1077,6 +1108,8 @@ export async function startLocalAgentHost(options: {
                 "opencraft/scoped-model-catalog": { version: 1 },
                 "opencraft/agent-usage": { version: 1, providers: ["codex", "cursor"] },
                 "opencraft/server-spaces": {version:1},
+                ...(personalMachines ? { "opencraft/personal-machines": { version: 1 } } : {}),
+                ...(options.selfUpdate ? { "opencraft/machine-runtime": { version: 1, selfUpdate: true } } : {}),
                 ...(claudeBridge === undefined ? {} : {
                   [OPENCRAFT_STEER_EVIDENCE_EXTENSION]: claudeBridge.extensions[OPENCRAFT_STEER_EVIDENCE_EXTENSION],
 

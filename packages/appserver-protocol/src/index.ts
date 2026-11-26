@@ -22,6 +22,7 @@ export * from "./message-sender";
 
 export * from "./tasks";
 export * from "./machine";
+export * from "./personal-machines";
 
 export * from "./conversation-schedules";
 export * from "./schedule-time";

@@ -27,7 +27,8 @@
     "./channels": "./src/channels.ts",
     "./channel-images": "./src/channel-images.ts",
     "./forwarded-record": "./src/forwarded-record.ts",
-    "./tasks": "./src/tasks.ts"
+    "./tasks": "./src/tasks.ts",
+    "./personal-machines": "./src/personal-machines.ts"
   },
   "dependencies": {
     "@opencraft/document-storage": "0.1.0",

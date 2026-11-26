@@ -268,6 +268,8 @@ export class HostConnectionProviderRegistry {
 }
 
 export interface HostConnectionProfile {
+  /** Live deployment observation, never client connection/readiness or persisted recipe data. */
+  readonly machinePresence?: "online" | "offline";
   readonly machineIdentity?: RuntimeMachineIdentity | null;
   readonly agent?: "OpenCraft" | "Codex" | null;
   readonly hostId: string;

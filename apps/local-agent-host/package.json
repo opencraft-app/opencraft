@@ -70,6 +70,7 @@
     "@opencraft/sandbox-node": "0.1.0",
     "@opencraft/agent-bridge-host": "0.1.0",
     "@opencraft/access-control": "0.1.0",
+    "@opencraft/relay-protocol": "0.1.0",
     "@opencraft/observability-contract": "0.1.0",
     "@opencraft/execution-environment": "0.1.0",
     "@opencraft/agent-bridge-protocol": "0.1.0"
