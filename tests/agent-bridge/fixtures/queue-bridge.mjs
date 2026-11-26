@@ -75,7 +75,8 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       scope = { threadId: p.threadId };
     if (process.env.DROP_NATIVE_ON_INPUT && process.env.DROP_NATIVE_ON_INPUT === clientId) {
       appendFileSync(process.env.EXECUTIONS, clientId + "\n");
-      process.stderr.write("codex-native-fault:unknown:connection\n", () => process.exit(1));
+      if (process.env.EXIT_WITHOUT_NATIVE_FAULT) process.exit(1);
+      else process.stderr.write("codex-native-fault:unknown:connection\n", () => process.exit(1));
       return;
     }
     const turn = {

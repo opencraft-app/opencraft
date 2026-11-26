@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { BRIDGE_MAX_FRAME_BYTES, isBridgeCallback, decodeFrame, splitLines, encodeFrame, isRequest, isNotification, isSuccess, type BridgeWireMessage, type BridgeCommand } from '@opencraft/agent-bridge-protocol';
 import { createSandbox, type SandboxPool, type Sandbox, type SandboxProcess } from '@opencraft/sandbox';
 import type { Generation } from './types.js';
+type PeerFailure = 'transport' | 'protocol' | 'callback' | 'lease-cleanup' | 'closed';
 /** One pinned generation owns one sandbox and bridge. No gateway lifetime here. */
 export class Peer {
   private sandbox?: Sandbox;
@@ -11,8 +12,9 @@ export class Peer {
   private decoder = new StringDecoder('utf8');
   private lines = { carry: '', discarding: false };
   private failed?: Error;
+  private failure: PeerFailure | null = null;
   private nativeFault: string | null = null;
-  diagnostic() { return { failed: !!this.failed, nativeFault: this.nativeFault }; }
+  diagnostic() { return { failed: !!this.failed, failure: this.failure, nativeFault: this.nativeFault }; }
   private callbackSequence = 0;
   private incarnation = randomUUID();
   private cleanup?: Promise<void>;
@@ -32,18 +34,19 @@ export class Peer {
         }
         const batch = splitLines(this.decoder.write(Buffer.from(output.data)), this.lines);
         this.lines = batch;
-        if (batch.oversized.length) this.fail(Error('Bridge frame too large'));
+        if (batch.oversized.length) this.fail(Error('Bridge frame too large'), 'protocol');
         for (const line of batch.lines) {
           this.incoming = this.incoming.then(() => this.receive(line), () => this.receive(line));
-          void this.incoming.catch(error => { void this.abort(error).catch(() => {}); });
+          void this.incoming.catch(error => { void this.abort(error, 'protocol').catch(() => {}); });
         }
       });
-      void this.child.exited.then(() => { void this.abort(Error('Bridge EOF')).catch(() => {}); }, error => { void this.abort(error).catch(() => {}); });
+      void this.child.exited.then(() => { void this.abort(Error('Bridge EOF'), 'transport').catch(() => {}); }, error => { void this.abort(error, 'transport').catch(() => {}); });
     } catch (error) { await this.sandbox.close(); throw error; }
   }
-  private fail(error: Error): void {
+  private fail(error: Error, failure: PeerFailure): void {
     if (this.failed) return;
     this.failed = error;
+    this.failure = failure;
     for (const waiter of this.pending.values()) { clearTimeout(waiter.timer); waiter.reject(error); }
     this.pending.clear();
     this.transportLifetime.abort(error);
@@ -67,7 +70,7 @@ export class Peer {
       catch (error) {
         // Persistence loss ends execution custody. Do not wait on this incoming
         // chain from cleanup: close() drains it after the environment is gone.
-        void this.abort(error as Error).catch(() => {});
+        void this.abort(error as Error, 'callback').catch(() => {});
         return;
       }
       if (isRequest(message)) this.queueReply({ jsonrpc: '2.0', id: message.id, result: { durable: true } });
@@ -82,7 +85,7 @@ export class Peer {
     if (this.failed) return;
     // Storage commits stay ordered independently of stdin backpressure.
     this.replies = this.replies.then(() => this.writeReply(message));
-    void this.replies.catch(error => { void this.abort(error).catch(() => {}); });
+    void this.replies.catch(error => { void this.abort(error, 'transport').catch(() => {}); });
   }
   private async writeReply(message: BridgeWireMessage): Promise<void> {
     if (this.failed) return;
@@ -97,7 +100,7 @@ export class Peer {
     try {
       await Promise.race([this.write(message), interrupted]);
     } catch (error) {
-      if (!this.failed) void this.abort(error as Error).catch(() => {});
+      if (!this.failed) void this.abort(error as Error, 'transport').catch(() => {});
     } finally {
       clearTimeout(timer);
       signal.removeEventListener('abort', onClosed);
@@ -118,22 +121,22 @@ export class Peer {
         const error = Error('Native request outcome unknown');
         reject(error);
         // An unconfirmed write may still be queued in the sandbox transport.
-        if (!written) void this.abort(error).catch(() => {});
+        if (!written) void this.abort(error, 'transport').catch(() => {});
       }, this.timeoutMs);
       this.pending.set(id, { resolve, reject, timer });
     });
     void this.write({ jsonrpc: '2.0', id, method, params }).then(
       () => { written = true; },
-      error => { this.fail(error as Error); },
+      error => { this.fail(error as Error, 'transport'); },
     );
     return response;
   }
-  abort(error: Error): Promise<void> {
-    this.fail(error);
+  abort(error: Error, failure: PeerFailure): Promise<void> {
+    this.fail(error, failure);
     return this.cleanup ??= this.sandbox?.close() ?? Promise.resolve();
   }
   async close(): Promise<void> {
-    await this.abort(Error('Bridge owner closing'));
+    await this.abort(Error('Bridge owner closing'), 'closed');
     await this.incoming; // drain every frame already received, even after EOF
     await this.replies;
   }

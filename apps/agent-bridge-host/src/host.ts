@@ -25,6 +25,7 @@ import { Peer, successful } from "./peer.js";
 import { object, identifier, isArchiveCommand, oversizedBridgeRequest, routeKey, type BridgeHistorySelection, type Command, type Generation, type Receipt } from "./types.js";
 import { HostQueue } from "./queue.js";
 const CODEX_RECONNECT_DELAY_MS = 1_000;
+type CliFailureStage = "source" | "previous-lease" | "issue" | "reservation" | "cancelled" | "provider" | "native-configuration";
 class CodexAttachmentUnavailable extends Error {
   constructor() {
     super("Codex provider attachment is unavailable");
@@ -259,15 +260,19 @@ export class BridgeHost {
     return (
       this.generations.get(id)?.provider.providerId === "codex" &&
       this.recoverable(id) &&
-      diagnostic?.failed === true &&
-      diagnostic.nativeFault === "codex-native-fault:unknown:connection"
+      diagnostic?.failure === "transport" &&
+      (diagnostic.nativeFault === null || diagnostic.nativeFault === "codex-native-fault:unknown:connection")
     );
   }
   private peer(id: string): Promise<Peer> {
     const pending = this.peers.get(id);
     if (pending) {
       return pending.then((peer) => {
-        if (!this.lostCodexAttachment(id, peer)) return peer;
+        if (!this.lostCodexAttachment(id, peer)) {
+          if (peer.diagnostic().failed && this.generations.get(id)?.provider.providerId === "codex")
+            throw new CodexAttachmentUnavailable();
+          return peer;
+        }
         const current = this.peers.get(id);
         if (current && current !== pending) return current;
         if (this.closing || current !== pending || Date.now() < (this.reconnectAfter.get(id) ?? 0))
@@ -332,7 +337,7 @@ export class BridgeHost {
             // A durable callback does not wait for lease filesystem cleanup.
             // Keep each lease registered until its own revocation confirms.
             for (const lease of [active, reserved]) {
-              if (lease) this.trackCliCleanup(this.revokeRouteLease(route, lease).catch(error => peer.abort(error)));
+              if (lease) this.trackCliCleanup(this.revokeRouteLease(route, lease).catch(error => peer.abort(error, "lease-cleanup")));
             }
           }
         },
@@ -447,7 +452,8 @@ export class BridgeHost {
   }
   private async admit(raw: unknown): Promise<Receipt> {
     if (this.closing) throw Error("Host closing");
-    const command = structuredClone(object(raw)) as unknown as Command;
+    const { retryRejectedTurn, ...body } = structuredClone(object(raw));
+    const command = body as unknown as Command;
     identifier(command.commandId);
     identifier(command.serverId);
     identifier(command.threadId);
@@ -465,19 +471,30 @@ export class BridgeHost {
       if (command.params.recoverActive !== undefined)
         throw hostRefusal(command, "Only the Host can recover a retained execution");
     }
-    const { gitEnvironment, ...durableParams } = command.params;
+    if (retryRejectedTurn !== undefined) {
+      const native = object(command.params.native);
+      const inputId = identifier(native.clientUserMessageId);
+      const id = createHash("sha256").update(JSON.stringify([command.threadId, command.method, inputId])).digest("hex");
+      if (retryRejectedTurn !== true || command.method !== "turn/start" || command.commandId !== `bridge-mutation:${id}`)
+        throw hostRefusal(command, "Invalid rejected Turn retry");
+    }
+    const { gitEnvironment, ...legacyParams } = command.params;
     if (gitEnvironment !== undefined && (
       command.method !== "turn/start" || typeof gitEnvironment !== "object" || gitEnvironment === null ||
       Array.isArray(gitEnvironment) || Object.entries(gitEnvironment).some(([name, value]) =>
         !/^(PATH|BASH_ENV|OPENCRAFT_GIT_[A-Z0-9_]+)$/u.test(name) || typeof value !== "string" || value.includes("\0"))
     )) throw hostRefusal(command, "Invalid Git execution environment");
-    // The short-lived seal may change when an identical request is retried.
-    // The admitted command's input stays immutable, and only the first
-    // admission can dispatch with the launch material it received.
+    // The session MCP configuration and Git seal are launch material. A
+    // replay of an admitted attempt must not dispatch with different material.
+    const { sessionMcp: _sessionMcp, ...turnParams } = legacyParams;
+    const durableParams = retryRejectedTurn === true ? turnParams : legacyParams;
     const durableCommand = { ...command, params: durableParams };
     const serialized = stable(durableCommand);
-    if (Buffer.byteLength(gitEnvironment === undefined ? serialized : stable(command)) > BRIDGE_MAX_COMMAND_BYTES) throw oversizedBridgeRequest(BRIDGE_MAX_COMMAND_BYTES);
+    if (Buffer.byteLength(gitEnvironment === undefined && durableParams === legacyParams ? serialized : stable(command)) > BRIDGE_MAX_COMMAND_BYTES) throw oversizedBridgeRequest(BRIDGE_MAX_COMMAND_BYTES);
     const digest = createHash("sha256").update(serialized).digest("hex");
+    const legacyDigest = retryRejectedTurn === true
+      ? createHash("sha256").update(stable({ ...command, params: legacyParams })).digest("hex")
+      : undefined;
     const route = routeKey(command.serverId, command.threadId);
     if (command.method === "session/resume") {
       const state = await this.storage.call<{ nativeSession: { native_id: string; restorable: number } | null }>(
@@ -498,6 +515,8 @@ export class BridgeHost {
     const result = await this.storage.call<{ receipt: Receipt; fresh: boolean }>("admit", {
       command: durableCommand,
       digest,
+      legacyDigest,
+      retryRejectedTurn,
       route,
       maxSpoolBytes: this.options.maxSpoolBytes ?? 64 * 1024 ** 2,
     }).catch((error: unknown) => {
@@ -505,7 +524,7 @@ export class BridgeHost {
       throw error;
     });
     if (result.fresh) {
-      const task = this.dispatch(command, result.receipt).finally(() => {
+      const task = this.dispatch({ ...command, commandId: result.receipt.commandId }, result.receipt).finally(() => {
         if (!this.closing && isArchiveCommand(command.method)) this.queue.schedule(route);
       });
       this.tasks.add(task);
@@ -664,16 +683,16 @@ export class BridgeHost {
     if (!pending.cancelled || reason === "session-ended") pending.cancelled = reason;
     // The command has not been dispatched. Its receipt can settle before
     // the separate responsibility to reclaim the in-flight lease.
-    await this.rejectCliCommand(pending.commandId);
+    await this.rejectCliCommand(pending.commandId, "cancelled");
   }
-  private rejectCliCommand(commandId: string): Promise<void> {
+  private rejectCliCommand(commandId: string, cliStage: CliFailureStage): Promise<void> {
     return this.storage.call("settle", {
       id: commandId,
       state: "rejected",
       response: {
         jsonrpc: "2.0",
         id: "host-command:" + commandId,
-        error: { code: -32001, kind: "unsupported", message: "cliUnavailable" },
+        error: { code: -32001, kind: "unsupported", message: "cliUnavailable", data: { cliStage } },
       },
     });
   }
@@ -781,7 +800,7 @@ export class BridgeHost {
             this.cliPending.get(receipt.route) === pending) {
           await this.cancelPendingCliIssue(receipt.route, "stop");
           try { await this.retryUnsentCliCleanup(receipt.route, pending, peer); }
-          catch { await this.rejectCliCommand(command.commandId); return; }
+          catch { await this.rejectCliCommand(command.commandId, "previous-lease"); return; }
           await this.storage.call("settle", {
             id: command.commandId,
             state: "accepted",
@@ -809,7 +828,7 @@ export class BridgeHost {
           this.cliReservations.set(receipt.route, { generation: receipt.generation, lease });
           cliEnvironment = lease.environment;
         } catch {
-          await this.rejectCliCommand(command.commandId);
+          await this.rejectCliCommand(command.commandId, "reservation");
           return;
         }
       }
@@ -825,18 +844,22 @@ export class BridgeHost {
         !queuedWithoutSource
       ) {
         const pending: PendingCliIssue = { commandId: command.commandId };
+        let cliStage: CliFailureStage = "source";
         try {
           const credential = command.params.executionSource;
           if (typeof credential !== "string" || credential.length > 4096) throw Error("cliUnavailable");
+          cliStage = "previous-lease";
           const reserved = this.cliReservations.get(receipt.route)?.lease;
           if (this.cliLeases.has(receipt.route) || this.cliPending.has(receipt.route) ||
               (reserved && this.cliRevocations.has(reserved))) throw Error("cliUnavailable");
           this.cliPending.set(receipt.route, pending);
+          cliStage = "issue";
           const lease = await this.options.executionCli.issue({
             serverId: command.serverId,
             threadId: command.threadId,
             credential,
           });
+          cliStage = "cancelled";
           if (this.cliReservations.get(receipt.route)?.lease === reserved) this.cliReservations.delete(receipt.route);
           const mayDispatch = () => !pending.cancelled && !this.closing && !peer.diagnostic().failed;
           let ready = false;
@@ -853,7 +876,7 @@ export class BridgeHost {
           this.cliGenerations.set(receipt.route, receipt.generation);
           cliEnvironment = lease.environment;
         } catch {
-          await this.rejectCliCommand(command.commandId);
+          await this.rejectCliCommand(command.commandId, cliStage);
           return;
         } finally {
           this.finishPendingCliIssue(receipt.route, pending, peer);
@@ -862,7 +885,7 @@ export class BridgeHost {
       const { executionSource: _executionSource, gitEnvironment, ...providerParams } = command.params;
       if (gitEnvironment !== undefined) {
         if (this.generations.get(receipt.generation)?.provider.providerId !== "codex") {
-          await this.rejectCliCommand(command.commandId);
+          await this.rejectCliCommand(command.commandId, "provider");
           return;
         }
         const git = gitEnvironment as Record<string, string>;
@@ -879,7 +902,7 @@ export class BridgeHost {
       if (!dispatched) await recordDispatch();
       const start = command.method === "turn/start" ? { observed: false, commandId: command.commandId } : undefined;
       if (start) this.cliStarts.set(receipt.route, start);
-      const response = await peer.request(`host-command:${command.commandId}`, command.method, {
+      let response = await peer.request(`host-command:${command.commandId}`, command.method, {
         ...providerParams,
         ...(cliEnvironment ? { cliEnvironment } : {}),
         ...(cliEnvironment || command.params.sessionMcp !== undefined
@@ -891,6 +914,10 @@ export class BridgeHost {
         threadId: receipt.route,
         executionEpoch: receipt.epoch,
       });
+      if (command.method === "turn/start" && "error" in response && response.error.message === "cliUnavailable") {
+        const cliStage: CliFailureStage = "native-configuration";
+        response = { ...response, error: { ...response.error, data: { cliStage } } };
+      }
       let state = dispatchSettlement(response);
       if (start && this.cliStarts.get(receipt.route) === start) this.cliStarts.delete(receipt.route);
       if (state === "rejected" && start?.observed) state = "unknown";

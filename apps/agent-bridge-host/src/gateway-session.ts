@@ -814,12 +814,17 @@ export class BridgeGatewaySession {
     method: string,
     params: Record<string, unknown>,
     beforeDispatch?: () => void,
+    options?: { retryRejectedTurn?: true; onAcceptedReplay?: () => void },
   ): Promise<unknown> {
     await this.hydrateThread(threadId);
-    const body = { serverId: this.ports.serverId, threadId, commandId, method, params };
+    const body = { serverId: this.ports.serverId, threadId, commandId, method, params,
+      ...(options?.retryRejectedTurn ? { retryRejectedTurn: true } : {}) };
     beforeDispatch?.();
+    let alreadyAccepted = false;
     try {
-      await this.rpc("/command", body);
+      const admitted = await this.rpc<Receipt>("/command", body);
+      commandId = admitted?.commandId ?? commandId;
+      alreadyAccepted = admitted?.state === "accepted";
     } catch (error) {
       throw Object.assign(error as Error, { commandId });
     }
@@ -843,6 +848,7 @@ export class BridgeGatewaySession {
         // The owner polling loop delivers events for commands with receipt identities.
         // Other operations and legacy Hosts still rely on the ordered event read.
         else if (identities === undefined) await this.pull().catch(() => {});
+        if (alreadyAccepted) options?.onAcceptedReplay?.();
         return receipt.response && "result" in receipt.response ? receipt.response.result : null;
       }
       if (receipt.state === "rejected" || receipt.state === "unknown") {

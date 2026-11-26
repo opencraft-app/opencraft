@@ -36,6 +36,8 @@ type BridgeQueueRow = {
 };
 type BridgeClient = { evidence: boolean; sharedInteractions: boolean; epoch: number };
 type BridgeSubscription = { mode: "observing" | "live" | "archive" };
+/** Internal reply metadata consumed by BridgeExecutionAdmissionTransport. */
+export const BRIDGE_ACCEPTED_REPLAY = "__opencraftBridgeAcceptedReplay";
 const object = (v: unknown): Record<string, unknown> =>
   v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 
@@ -1033,6 +1035,7 @@ export class CodexProviderBridgeSession implements DuplexTransport {
     const historyRead = ["thread/read", "thread/turns/list", "thread/items/list", "thread/searchOccurrences"].includes(method);
     const execute = async () => {
       let result: unknown;
+      let acceptedReplay = false;
       if (!historyRead) await this.gateway.hydrateThread(threadId);
       context.resourceOwner?.assertCurrent();
       if (!context.commitExecution && ["turn/start", "turn/steer", "turn/interrupt"].includes(method))
@@ -1114,6 +1117,11 @@ export class CodexProviderBridgeSession implements DuplexTransport {
                   throw Object.assign(Error("Host execution admission expired"), { kind: "explicit-reject" });
                 }
                 dispatching = true;
+              }, {
+                ...(context.collaborationRequestId === undefined && !String(requestKey).startsWith("actor-input:")
+                  ? { retryRejectedTurn: true }
+                  : {}),
+                onAcceptedReplay: () => { acceptedReplay = true; },
               });
             } catch (error) {
               const rejected = !dispatching || ["explicit-reject", "invalid", "stale-target", "unsupported", "frame-too-large"].includes(String(object(error).kind));
@@ -1121,7 +1129,8 @@ export class CodexProviderBridgeSession implements DuplexTransport {
               throw error;
             }
             const nativeTurnId = this.nativeTurnOf(threadId, object(object(started).turn).id);
-            preparation?.settle(nativeTurnId ? "accepted" : "unknown", nativeTurnId);
+            if (acceptedReplay) preparation?.settle("rejected");
+            else preparation?.settle(nativeTurnId ? "accepted" : "unknown", nativeTurnId);
             return started;
           },
           (value) => object(object(value).turn).id,
@@ -1258,6 +1267,7 @@ export class CodexProviderBridgeSession implements DuplexTransport {
         this.emit(
           {
             id: frame.id,
+            ...(acceptedReplay && p.opencraftExecutionAdmission !== undefined ? { [BRIDGE_ACCEPTED_REPLAY]: true } : {}),
             result:
               this.policy.projectHistory && ["thread/read", "thread/resume", "thread/turns/list", "thread/items/list"].includes(method)
                 ? this.policy.projectHistory(method, { ...p, threadId }, visible)
@@ -1299,6 +1309,9 @@ export class CodexProviderBridgeSession implements DuplexTransport {
                 ...(historyRead && size.code === "THREAD_ARCHIVED" ? { code: size.code } : {}),
                 ...(size.code === "BRIDGE_REQUEST_TOO_LARGE" && typeof size.maxBytes === "number"
                   ? { code: size.code, maxBytes: size.maxBytes } : {}),
+                ...(error.message === "cliUnavailable" && typeof size.cliStage === "string"
+                  && ["source", "previous-lease", "issue", "reservation", "cancelled", "provider", "native-configuration"].includes(size.cliStage)
+                  ? { cliStage: size.cliStage } : {}),
                 ...(cause instanceof InteractionFault ? cause.domainData : {}),
                 submissionOutcome: oversizedHistory || rejected ? "rejected" : "unknown",
                 retryable: false,
