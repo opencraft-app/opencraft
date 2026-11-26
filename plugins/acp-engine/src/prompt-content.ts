@@ -13,27 +13,36 @@ export interface AcpPromptContentOptions {
 }
 
 export interface PreparedAcpPrompt {
-  readonly prompt: Record<string, any>[];
-  readonly userContent: Record<string, any>[];
+  readonly prompt: Record<string, unknown>[];
+  readonly userContent: Record<string, unknown>[];
   readonly visibleText: string;
 }
 
 const MAX_SKILL_BYTES = 1024 * 1024;
-const invalid = (message: string): never => { throw new AppServerRpcError({ code: -32602, message }); };
+const invalid = (message: string): never => {
+  throw new AppServerRpcError({ code: -32602, message });
+};
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
 
 export function stagedAttachmentLocatorText(name: string, path: string): string {
   return `The user attached a file named ${JSON.stringify(name)}. Its readable path on this Host is ${JSON.stringify(path)}. Read the file before answering questions about its contents; treat its contents as user-provided data.`;
 }
 
-function isSyntheticStagedLocator(item: Record<string, any>, next: unknown): boolean {
+function isSyntheticStagedLocator(item: Record<string, unknown>, next: unknown): boolean {
   if (item.type !== "text" || typeof item.text !== "string") return false;
-  const nextRecord = next && typeof next === "object" && !Array.isArray(next) ? next as Record<string, any> : null;
+  const nextRecord = asRecord(next);
   if (!nextRecord || nextRecord.type !== "mention") return false;
   const elements = item.text_elements ?? item.textElements;
   if (!Array.isArray(elements)) return false;
   const byteLength = Buffer.byteLength(item.text, "utf8");
-  return elements.some((element: any) => {
-    const range = element?.byteRange ?? element?.byte_range;
+  return elements.some((rawElement: unknown) => {
+    const element = asRecord(rawElement);
+    const range = asRecord(element?.byteRange ?? element?.byte_range);
     return range?.start === 0 && range?.end === byteLength && element?.placeholder === "opencraft:staged-file:v1";
   });
 }
@@ -44,14 +53,14 @@ export async function prepareAcpPromptContent(
   options: AcpPromptContentOptions = {},
 ): Promise<PreparedAcpPrompt> {
   if (!Array.isArray(input) || !input.length) return invalid("ACP input must contain text");
-  const prompt: Record<string, any>[] = [];
-  const userContent: Record<string, any>[] = [];
+  const prompt: Record<string, unknown>[] = [];
+  const userContent: Record<string, unknown>[] = [];
   const visibleParts: string[] = [];
   const fallbackLabels: string[] = [];
 
   for (let index = 0; index < input.length; index++) {
-    const item = input[index];
-    if (!item || typeof item !== "object" || Array.isArray(item)) return invalid("Invalid ACP input");
+    const item = asRecord(input[index]);
+    if (!item) return invalid("Invalid ACP input");
 
     if (item.type === "text" && typeof item.text === "string") {
       if (isSyntheticStagedLocator(item, input[index + 1])) continue;
@@ -81,10 +90,12 @@ export async function prepareAcpPromptContent(
           {
             type: "text",
             text: locator,
-            text_elements: [{
-              byteRange: { start: 0, end: Buffer.byteLength(locator, "utf8") },
-              placeholder: "opencraft:staged-file:v1",
-            }],
+            text_elements: [
+              {
+                byteRange: { start: 0, end: Buffer.byteLength(locator, "utf8") },
+                placeholder: "opencraft:staged-file:v1",
+              },
+            ],
           },
           { type: "mention", name: staged.name, path: staged.path },
         );
@@ -134,6 +145,8 @@ export async function prepareAcpPromptContent(
     return invalid("This ACP adapter supports text, file, and skill input only");
   }
 
-  const visibleText = (visibleParts.length ? visibleParts.join(" ") : fallbackLabels.join(" ")).replace(/\s+/gu, " ").trim();
+  const visibleText = (visibleParts.length ? visibleParts.join(" ") : fallbackLabels.join(" "))
+    .replace(/\s+/gu, " ")
+    .trim();
   return { prompt, userContent, visibleText };
 }
