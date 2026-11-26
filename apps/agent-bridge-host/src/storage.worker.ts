@@ -21,11 +21,13 @@ const readOnly = workerData.role === 'rollback-identities';
 if (!readOnly) mkdirSync(dirname(workerData.path), { recursive: true, mode: 0o700 });
 const release = readOnly ? () => {} : acquireProcessWriter(`${workerData.path}.writer`);
 const { database: db, outcome } = (() => {
-  const options = { schemaId: "agent-bridge-host", path: workerData.path, migrations, legacyPolicy: 'reject' } as const;
   try {
     // Native session bindings first shipped in v2. Reading a legacy prefix
     // does not require taking the Bridge writer lock or migrating the store.
-    return readOnly ? openManagedDatabase({ ...options, readOnly: { minimumVersion: 2 } }) : openManagedDatabase(options);
+    return openManagedDatabase({
+      schemaId: "agent-bridge-host", path: workerData.path, migrations, legacyPolicy: 'reject',
+      readOnly: readOnly ? { minimumVersion: 2 } : undefined,
+    });
   }
   catch (error) { release(); throw error; }
 })();

@@ -36,6 +36,11 @@ interface ManagedDatabaseSnapshotOptions extends ManagedDatabaseOptions {
   readonly readOnly: { readonly minimumVersion: number };
 }
 
+interface ManagedDatabaseOpen<Outcome = DatabaseOutcome> {
+  database: DatabaseSync;
+  outcome: Outcome;
+}
+
 /** Read-only preflight uses the same ledger authority as a managed writer open. */
 export function verifyManagedDatabaseHistory(database: DatabaseSync, migrations: readonly Migration[]): void {
   if (validateHistory(database, prepareMigrations(migrations)) !== migrations.length) {
@@ -87,11 +92,11 @@ export function createMissingLegacyObjects(sql: string): NonNullable<ManagedData
   };
 }
 
-export function openManagedDatabase(options: ManagedDatabaseSnapshotOptions): {
-  database: DatabaseSync; outcome: Pick<DatabaseOutcome, "appliedVersion">;
-};
-export function openManagedDatabase(options: ManagedDatabaseOptions): { database: DatabaseSync; outcome: DatabaseOutcome };
-export function openManagedDatabase(options: ManagedDatabaseOptions | ManagedDatabaseSnapshotOptions) {
+export function openManagedDatabase(options: ManagedDatabaseSnapshotOptions): ManagedDatabaseOpen<Pick<DatabaseOutcome, "appliedVersion">>;
+export function openManagedDatabase(options: ManagedDatabaseOptions): ManagedDatabaseOpen;
+export function openManagedDatabase(options: ManagedDatabaseOptions & Partial<Pick<ManagedDatabaseSnapshotOptions, "readOnly">>):
+  ManagedDatabaseOpen<DatabaseOutcome | Pick<DatabaseOutcome, "appliedVersion">>;
+export function openManagedDatabase(options: ManagedDatabaseOptions & Partial<Pick<ManagedDatabaseSnapshotOptions, "readOnly">>) {
   let database: DatabaseSync | undefined;
   try {
     const migrations = prepareMigrations(options.schemaId === undefined ? options.migrations : resolveStoreMigrations(options.schemaId, options.migrations));
@@ -100,7 +105,7 @@ export function openManagedDatabase(options: ManagedDatabaseOptions | ManagedDat
       || (options.schemaId !== undefined && options.legacyVersion !== undefined && options.legacyVersion !== legacyVersion)) {
       throw new SqliteLifecycleError("history-mismatch", "Invalid legacy migration boundary");
     }
-    const snapshot = "readOnly" in options ? options.readOnly : undefined;
+    const snapshot = options.readOnly;
     const keep = options.backup?.keep ?? 3;
     if (!Number.isSafeInteger(keep) || keep < 1) throw new SqliteLifecycleError("io", "Backup keep must be a positive integer");
     assertRecoveryState(options.path);
