@@ -36,6 +36,7 @@ test("onboarding still sees exactly the user-installed agents it saw before", ()
     codex: "codex",
     cursor: "cursor",
     claude: "claude-code",
+    gemini: "gemini",
     codebuddy: "codebuddy",
   });
   assert.deepEqual(
@@ -73,6 +74,17 @@ test("onboarding still sees exactly the user-installed agents it saw before", ()
         signInEnv: {},
         installPackage: null,
         installUrl: "https://code.claude.com/docs/en/setup",
+      },
+      {
+        id: "gemini",
+        name: "Gemini",
+        commands: ["gemini"],
+        versionArgs: ["--version"],
+        statusArgs: [],
+        signInArgs: [],
+        signInEnv: {},
+        installPackage: "@google/gemini-cli",
+        installUrl: "https://github.com/google-gemini/gemini-cli",
       },
       {
         id: "codebuddy",
