@@ -1,14 +1,31 @@
 import { CursorError } from "../../../apps/cursor-bridge/src/cursor.js";
 import { InputFiles } from "../../../apps/cursor-bridge/src/input.js";
+import { appendFileSync } from "node:fs";
 import { access, appendFile } from "node:fs/promises";
+import { setTimeout as delay } from "node:timers/promises";
 import { runCursorStdio } from "../../../apps/cursor-bridge/src/main.js";
 import type { CursorRun } from "../../../apps/cursor-bridge/src/types.js";
 import type { RunResult } from "@cursor/sdk";
+const outcome = process.env.CURSOR_FIXTURE_OUTCOME;
+const nativeLog = process.env.CURSOR_FIXTURE_LOG;
+async function waitForStartRelease() {
+  while (!await access(nativeLog + ".start-release").then(() => true, () => false)) await delay(5);
+}
 let unblockPreparation: (() => void) | undefined;
 let preparations = 0;
 const prepare = InputFiles.prototype.prepare;
 InputFiles.prototype.prepare = async function () {
   if (process.env.CURSOR_FIXTURE_OUTCOME === "preparing-cleanup" && ++preparations > 1) await new Promise<void>((resolve) => { unblockPreparation = resolve; });
+  if (process.env.CURSOR_FIXTURE_OUTCOME === "start-preparation-retry" && ++preparations === 1) {
+    await prepare.call(this);
+    throw Error("fixture attachment staging failed");
+  }
+  if (outcome === "start-stop-before-send") {
+    const prepared = await prepare.call(this);
+    await appendFile(nativeLog!, "preparing\n");
+    await waitForStartRelease();
+    return prepared;
+  }
   return prepare.call(this);
 };
 const dispose = InputFiles.prototype.dispose;
@@ -21,15 +38,21 @@ InputFiles.prototype.dispose = async function () {
 let closes = 0;
 let count = 0;
 let creates = 0;
+const shutdownLog = process.env.CURSOR_FIXTURE_OUTCOME === "stdio-shutdown" ? process.env.CURSOR_FIXTURE_LOG : undefined;
+if (shutdownLog) process.on("SIGTERM", () => appendFileSync(shutdownLog, "signal\n"));
 runCursorStdio({ hasCredentials: async () => process.env.CURSOR_FIXTURE_AUTH !== "missing", models: async () => [{ id: "fixture", name: "Fixture" }], create: async () => {
   if (process.env.CURSOR_FIXTURE_OUTCOME === "create-retry" && creates++ === 0) throw new CursorError("invalid", "Check the requested model");
   return ({
-  agentId: "fixture-agent", close: async () => { if (process.env.CURSOR_FIXTURE_OUTCOME === "close-retry" && closes++ === 0) throw Error("fixture close blocked"); }, send: async () => {
+  agentId: "fixture-agent", close: async () => {
+    if (process.env.CURSOR_FIXTURE_OUTCOME === "close-retry" && closes++ === 0) throw Error("fixture close blocked");
+    if (shutdownLog) await appendFile(shutdownLog, "closed\n");
+  }, send: async () => {
     const id = `fixture-run-${++count}`;
-    if (process.env.CURSOR_FIXTURE_LOG) await appendFile(process.env.CURSOR_FIXTURE_LOG, "send\n");
+    if (nativeLog) await appendFile(nativeLog, "send\n");
+    if (outcome === "start-stop-during-send") await waitForStartRelease();
     let resolve!: (r: RunResult) => void;
     const terminal = new Promise<RunResult>((r) => { resolve = r; });
-    const timer = setTimeout(() => resolve({ id, status: "finished" }), 200);
+    const timer = shutdownLog || outcome === "start-stop-during-send" ? undefined : setTimeout(() => resolve({ id, status: "finished" }), 200);
     const run: CursorRun = {
       id, steer: async () => {
         if (process.env.CURSOR_FIXTURE_LOG) await appendFile(process.env.CURSOR_FIXTURE_LOG, "steer\n");
@@ -41,7 +64,15 @@ runCursorStdio({ hasCredentials: async () => process.env.CURSOR_FIXTURE_AUTH !==
         await terminal;
         yield { type: "tool_call", agent_id: "fixture-agent", run_id: id, call_id: `tool-${count}`, name: "shell", status: "completed" };
       },
-      wait: () => terminal, cancel: async () => { clearTimeout(timer); unblockPreparation?.(); resolve({ id, status: "cancelled" }); },
+      wait: () => terminal, cancel: async () => {
+        clearTimeout(timer);
+        unblockPreparation?.();
+        if (shutdownLog) {
+          await appendFile(shutdownLog, "cancel\n");
+          while (!await access(shutdownLog + ".release").then(() => true, () => false)) await delay(5);
+        }
+        resolve({ id, status: "cancelled" });
+      },
     };
     return run;
   },

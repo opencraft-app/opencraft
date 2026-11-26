@@ -26,8 +26,11 @@ export function parseInput(value: unknown): CursorInput {
 export class InputFiles {
   private directory?: string;
   private conversion?: Promise<string>;
+  private disposing = false;
+  private disposal?: Promise<void>;
   constructor(private readonly input: CursorInput, private readonly parent = tmpdir()) {}
   prepare(): Promise<string> {
+    if (this.disposing) return Promise.reject(Error("Cursor input files are being disposed"));
     return this.conversion ??= this.convert();
   }
   private async convert(): Promise<string> {
@@ -49,8 +52,14 @@ export class InputFiles {
   private async clean(): Promise<void> {
     if (this.directory) await rm(this.directory, { recursive: true, force: true });
   }
-  async dispose(): Promise<void> {
-    await this.conversion?.catch(() => {});
-    await this.clean();
+  dispose(): Promise<void> {
+    this.disposing = true;
+    return this.disposal ??= (async () => {
+      await this.conversion?.catch(() => {});
+      await this.clean();
+    })().catch(error => {
+      this.disposal = undefined;
+      throw error;
+    });
   }
 }
