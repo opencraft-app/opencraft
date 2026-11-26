@@ -11,8 +11,26 @@ const normalize = (extra: Partial<TimelineSourceTurn>) => normalizeTurnUserMessa
 const payload = (item: TimelineSourceItem | undefined) => item!.payload as Record<string, unknown>;
 
 test("comparison keys keep exact text and image counts without interpreting other parts", () => {
-  assert.deepEqual(userMessageCompareKey(["a", "", { type: "text", text: " b " }, { type: "image" }, { type: "localImage" }, { type: "input_image" }, null]), { rawText: "a\n\n b ", imageCount: 2 });
+  assert.deepEqual(userMessageCompareKey(["a", "", { type: "text", text: " b " }, { type: "image" }, { type: "localImage" }, { type: "local_image" }, { type: "input_image" }, null]), { rawText: "a\n\n b ", imageCount: 3 });
   assert.deepEqual(userMessageCompareKey({ text: "hidden" }), { rawText: "", imageCount: 0 });
+});
+
+test("media projector accepts snake_case local media and image_url aliases", () => {
+  const { messages } = projectedMessages({
+    items: [user("u-1", [
+      { type: "image", image_url: "https://example.com/a.png" },
+      { type: "image", imageUrl: "https://example.com/b.png" },
+      { type: "local_image", path: "/tmp/c.png" },
+      { type: "local_audio", path: "/tmp/d.wav" },
+    ])],
+  });
+  assert.equal(messages.length, 1);
+  assert.deepEqual(messages[0]?.content, [
+    { type: "image", source: "https://example.com/a.png", detail: null },
+    { type: "image", source: "https://example.com/b.png", detail: null },
+    { type: "local-image", source: "/tmp/c.png", detail: null },
+    { type: "local-audio", source: "/tmp/d.wav" },
+  ]);
 });
 
 test("empty string params own a message; nullish and empty array input do not", () => {

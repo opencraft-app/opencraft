@@ -117,10 +117,11 @@ function userMessageContent(value: unknown): readonly UserMessageContentPart[] {
         }];
       }
       case "image": {
-        const url = string(source.url);
+        const url = string(source.url) ?? string(source.image_url) ?? string(source.imageUrl);
         return url === null ? [] : [{ type: "image", source: url, detail: string(source.detail) }];
       }
-      case "localImage": {
+      case "localImage":
+      case "local_image": {
         const path = string(source.path);
         return path === null ? [] : [{ type: "local-image", source: path, detail: string(source.detail) }];
       }
@@ -128,7 +129,8 @@ function userMessageContent(value: unknown): readonly UserMessageContentPart[] {
         const url = string(source.url);
         return url === null ? [] : [{ type: "audio", source: url }];
       }
-      case "localAudio": {
+      case "localAudio":
+      case "local_audio": {
         const path = string(source.path);
         return path === null ? [] : [{ type: "local-audio", source: path }];
       }
