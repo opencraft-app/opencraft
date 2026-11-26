@@ -4,6 +4,7 @@ import type {
   PrepareConversationNavigationTargetOptions,
   ConversationNavigationSnapshot,
   ConversationNavigationSource,
+  LocatedConversationNavigationTarget,
 } from "./types";
 
 /** Deduplicates hover reads while leaving authoritative state in the source. */
@@ -75,6 +76,14 @@ export class ConversationNavigationController implements ConversationNavigationS
   ): Promise<PreparedConversationNavigationTarget | null> {
     if (this.disposed) return Promise.resolve(null);
     return this.source.prepareTarget(anchorId, options);
+  }
+
+  prepareLocatedTarget(
+    target: LocatedConversationNavigationTarget,
+    signal: AbortSignal,
+  ): Promise<PreparedConversationNavigationTarget | null> {
+    if (this.disposed) return Promise.resolve(null);
+    return this.source.prepareLocatedTarget?.(target, signal) ?? Promise.resolve(null);
   }
 
   dispose(): void {

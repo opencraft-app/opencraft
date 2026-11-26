@@ -5,7 +5,7 @@ import { ThreadPinWriter } from "./thread-pin-writer";
 import type { HostScheduleCatalog } from "./scheduled-task-catalog-context";
 import type { ConversationScheduleSummary, ConversationSchedulesRequestPort } from "@opencraft/appserver-protocol";
 import { ApplicationBrandingRegistry } from "./application-branding";
-import { createAppServerContentSearchSource, type ConversationSearchSource } from "./conversation-content-search";
+import type { ConversationSearchSource } from "./conversation-content-search";
 import { IdentityAvatarContributionRegistry } from "./identity-avatar-contributions";
 import { useAccountModelDefaults } from "./use-account-model-defaults";
 import { readModelSelection, rememberModelSelection } from "./model-selection-preferences";
@@ -838,7 +838,7 @@ export function useMultiHostThreadCatalog(): {
     application.profiles.find(profile => profile.hostId === host.hostId)?.revision,
     host.kind === "remote-ssh" ? application.managedHostCatalog?.getAuthorizationEpoch() : null,
     application.registry.peekRuntime(host.hostId)?.getSnapshot().connectionGeneration, phases[index], admitted[index], displayable[index]]));
-  const conversationSources = useMemo(() => hosts.map(host => {
+  const searchSources = useMemo(() => hosts.map((host): ConversationSearchSource => {
     const profile = application.hostProfiles.getSnapshot().profiles.find(value => value.hostId === host.hostId)!;
     const runtime = application.registry.peekRuntime(host.hostId);
     const epoch = host.kind === "remote-ssh" ? application.managedHostCatalog?.getAuthorizationEpoch() : null;
@@ -861,19 +861,23 @@ export function useMultiHostThreadCatalog(): {
     const protocol: import("@opencraft/workbench-runtime").AppServerProtocolResourcePort = {
       request: (method, params, options) => runtime!.resources.protocol.request(method, params, options),
     };
-    const scope = {
+    const descriptor = {
       key: JSON.stringify([host.hostId, profile.revision, epoch, generation, available]),
-      hostId: host.hostId, available, assertCurrent,
-      protocol,
+      hostId: host.hostId, label: host.label, available, supported,
     };
-    return { search: createAppServerContentSearchSource({
-      ...scope, label: host.label, supported,
-      project: thread => ({ ...projectAppServerThread(thread),
-        ...legacyDirectServerProjectionFromHost({ hostId: host.hostId, hostKind: host.kind, label: host.label }),
-        connectionHostId: host.hostId, interactionAvailable: true }),
-    }) };
+    let source: Promise<ConversationSearchSource> | undefined;
+    const getSource = () => source ??= import("./conversation-content-search")
+      .then(({ createAppServerContentSearchSource }) => createAppServerContentSearchSource({
+        ...descriptor, assertCurrent, protocol,
+        project: thread => ({ ...projectAppServerThread(thread),
+          ...legacyDirectServerProjectionFromHost({ hostId: host.hostId, hostKind: host.kind, label: host.label }),
+          connectionHostId: host.hostId, interactionAvailable: true }),
+      }));
+    return { ...descriptor,
+      search: (...args) => getSource().then(reader => reader.search(...args)),
+      locate: (...args) => getSource().then(reader => reader.locate(...args)),
+    };
   }), [application, hosts, searchScope]);
-  const searchSources = useMemo(() => conversationSources.map(source => source.search), [conversationSources]);
   const catalogs = useMemo(() => hosts.map((host, index) => ({
       hostId: host.hostId,
       label: host.label,

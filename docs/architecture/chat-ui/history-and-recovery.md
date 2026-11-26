@@ -317,6 +317,32 @@ background-drain option remains available to non-interactive callers. Navigation
 seeds its loaded window and starts enumeration at the older boundary, not at the
 tail already read by Resume.
 
+Legacy Resume providers can return Turn headers followed by separate Item pages.
+The initial Item budget is shared, but each Turn retains its own unread, partial,
+or complete state. Received Item entries count before deduplication. The existing
+older-history action can continue those Item pages after the Turn list reaches
+its end. It preserves each Turn's cursor and commits a page only while the
+admitting history source is current. Full Turn
+pages can be displayed without loading the deferred Item reader.
+
+When a passive preview cursor expires, the older-page owner starts at the current
+history head and looks for the oldest loaded Turn by ID. It publishes only Turns
+beyond that boundary in canonical order. Bounded requests retain the verified
+search position for further demand, including a temporary workspace sleep.
+The existing history source owns the search state and discards it when replaced.
+A history that lacks the loaded boundary leaves the transcript visible and reports
+that paging could not continue.
+
+The older-page owner rejects cursors already consumed in the same history traversal
+before committing the page. A validated checkpoint rebase starts a fresh traversal.
+An embedded first page and a separately requested page use the same validation.
+Both preserve the first occurrence of each Turn ID in provider order. An overlapping
+passive page keeps the oldest boundary of the contiguous loaded range for recovery.
+If the optional background drain settles coverage while a manual page is in flight,
+the manual result or failure leaves the completed range in place.
+Overlapping drain pages retain the first observation of each Turn in descending
+page order before publishing the chronological transcript.
+
 `ThreadView.historyCheckpoint` is a provider-owned epoch and native sequence,
 independent of connection generation. A capable provider can return unchanged,
 append or replace. Unchanged keeps the exact transcript array while control state,
@@ -329,11 +355,86 @@ connection generation. A binding keeps a weak immutable projection cache across
 Replica source replacements. The V3 compatibility Replica epoch remains honest
 about its connection-local revision model; it is not a durable server journal.
 
-Recovery navigation caches bind to provider epoch **and nextSeq**, so unchanged
-reconnects retain the index while changed history revokes its completeness.
+Recovery navigation caches bind to the effective history mode and provider
+epoch **and nextSeq**. Unchanged reconnects retain the index. A mode or history
+change retires the previous index and aborts its in-flight reads.
 Enumeration checks that version before publication; a superseded read cannot
-mark newer history complete. Discovery begins when rail/search calls prepare,
-not merely because a conversation is retained in the cache.
+mark newer history complete. A continuation that revisits a cursor stops discovery
+with an error before the index is published. Incidental View updates keep the
+failed attempt settled at its generation. Explicit demand can retry, and a new
+history generation can rediscover. Discovery begins when rail/search calls
+prepare, not merely because a conversation is retained in the cache.
+Loading notifications can share the scan that is already registered. When a
+checkpoint supplies an older boundary, only the contiguous loaded range at
+and after that boundary seeds the index. Older Turns located independently by
+search take their position from the provider's pages.
+When the View covers the complete Turn range, navigation can settle from its
+ordered Turns and retire the old scan. Retirement settles its caller even if
+the transport delivers a late reply. Locally indexed Turns carry an ID and
+display order. Missing Items for those Turns are read by ID because local
+ordering can contain live observations absent from native history pages.
+Workbench admits navigation from the current passive `thread/read` or resumed
+history View. The passive owner can search and position a tool-only Turn using
+read requests. Retiring the connection removes the navigation View. Search
+positioning owns its deadline and cancellation from the start of preparation,
+and the body and occurrence queries carry the consumer's abort signal.
+An occurrence can supply an opaque inclusive Turn cursor. After admitting a
+readable View, navigation can use that cursor to fetch the matching Turn and
+verify the Item before projecting it. An absent, stale or mismatched locator
+can fall back to bounded discovery. The exact read does not advance ordinary
+history coverage. While a Turn's position lies beyond that coverage and the
+provider index, it remains outside the rail and ahead of the contiguous tail.
+The View holds one such search selection. A later successful selection replaces
+the earlier one unless provider order now places it in history. A newer exact
+request cancels an older pending selection. The projected timeline carries the
+unplaced Turn identity and the Turns outside the contiguous window. Display
+continuity uses the ordinary history window to extend a proven cached prefix.
+Opening an indexed Turn ahead of the boundary leaves the stored preview intact.
+When an initial page is empty, the View records which Turns navigation added.
+The first ordinary page keeps those independently read Turns outside its
+coverage until a page admits their IDs. Navigation observations do not
+establish an active or continuable task. A live Turn-start event can admit the
+same ID and place it at the live tail if it had no established position.
+An ordinary page that reaches an independently read Turn makes its hydrated
+content eligible for preview retention. A Resume that installs a new page takes its oldest
+boundary and continuation from that page together, even when the View retains
+independently opened Turns ahead of it. Older pages can extend that boundary or
+leave it in place. An overlap can advance the continuation without moving the
+oldest covered Turn forward.
+
+A complete ordinary traversal or a complete Resume baseline retires unchanged
+navigation-only Turns absent from the ordinary history it admitted. Live Turns,
+independent reads committed during the request, and explicitly unresolved
+execution admissions in a Resume keep their respective ownership. The navigation
+rail adopts the covered View and discards stale metadata locators. An earlier
+exact response arriving after completion cannot restore an absent Turn.
+
+A continuous snapshot refresh can preserve the loaded prefix and its cursor
+when the refreshed page starts at a shared ordinary history anchor within the
+same checkpoint epoch. A Turn opened independently by navigation cannot prove
+that overlap. A refreshed page that admits only such an anchor establishes its
+own boundary and continuation. Replacing the source retires its pending
+derived reads before publishing the new cursor, while the snapshot follower
+continues to own the baseline. Navigation discovery and exact reads use the
+View's baseline revision as well as the provider checkpoint, so a local
+snapshot replacement can invalidate navigation even on the same connection.
+Message-window refresh publishes navigation completeness together with the
+new pagination boundary.
+Overlapping pages retain the first locator for each Turn in descending provider
+order. The locator keeps the original request cursor and the row's offset
+within that response. Target hydration replays the same direction, counts the
+rows actually returned while seeking the offset, and checks the target Turn ID
+before publishing the single full Turn.
+Partial Item coverage preserves the marker ID while deferring its first-prompt
+preview. A jump to an Item already present can use the current View. A jump to
+a missing Item shares the preview's full-Turn read. A committed full Turn
+settles its Item continuation in the same View revision, so an Item page
+admitted by older coverage cannot replace those Items or publish its error.
+When a full Turn exceeds the response budget, navigation reads its header at
+the same position and verifies its ID before using adaptive Item pages. Preview
+and jump share this read. A superseded navigation generation aborts its
+transport requests. A single Item that exceeds the budget retains its typed
+read error.
 
 
 ### Recovery technical details
@@ -511,6 +612,10 @@ are deterministic and cannot opt into automatic history retries.
 The Host stays ready for other Threads. Recovery hints, reconnect and manual
 restore cannot resume a retired Thread; successful explicit unarchive reopens it.
 An archive fences pending hydration, so late success cannot restore authority.
+Opening or reconnecting a conversation only reads that Thread. If its metadata
+omits archive state, Workbench relies on that Thread's lifecycle receipts,
+notifications or a typed read refusal. Archive directory pagination belongs to
+the explicit archive browser.
 The Browser Application clears only matching Host/account selection memory and
 replaces an active invalid route with the existing Home and conversation list.
 Late failures cannot clear a newer selection or replace a newer navigation intent.

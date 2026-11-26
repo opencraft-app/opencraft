@@ -1,0 +1,6 @@
+CREATE INDEX `inbox_history_native_id` ON `inbox` (`route`,`(CASE WHEN json_extract(payload`,`'$.event.kind') = 'turn.started'
+  THEN json_extract(payload`,`'$.event.nativeTurnId') ELSE json_extract(payload`,`'$.event.item.nativeKey') END)`,`seq`) WHERE json_extract(payload,'$.event.kind') IN ('turn.started','item.started','item.completed');--> statement-breakpoint
+CREATE INDEX `inbox_history_public_turn` ON `inbox` (`route`,`json_extract(payload`,`'$.event.turnId')`,`seq`) WHERE json_extract(payload,'$.event.kind') = 'turn.started';--> statement-breakpoint
+CREATE INDEX `outbox_history_native_id` ON `outbox` (`route`,`(CASE WHEN json_extract(payload`,`'$.event.kind') = 'turn.started'
+  THEN json_extract(payload`,`'$.event.nativeTurnId') ELSE json_extract(payload`,`'$.event.item.nativeKey') END)`,`seq`) WHERE json_extract(payload,'$.event.kind') IN ('turn.started','item.started','item.completed');--> statement-breakpoint
+CREATE INDEX `outbox_history_public_turn` ON `outbox` (`route`,`json_extract(payload`,`'$.event.turnId')`,`seq`) WHERE json_extract(payload,'$.event.kind') = 'turn.started';

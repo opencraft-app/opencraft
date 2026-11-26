@@ -637,6 +637,10 @@ test("Codex desktop authorization reads the engine Thread and retires logical Cl
   assert.ok(revoked.some(key => key !== oldKey && key !== foreignKey));
 });
 
+function isQuestionRequest(frame: Record<string, unknown>, itemId: string): boolean {
+  return frame.method === "item/tool/requestUserInput" && (frame.params as { itemId?: string } | undefined)?.itemId === itemId;
+}
+
 test("Codex Engine shares one physical initialize and restores logical client routing", async () => {
   const root = await mkdtemp(join(tmpdir(), "opencraft-codex-engine-"));
   const nativeCodexHomeDirectory = join(root, "native-codex");
@@ -707,9 +711,9 @@ test("Codex Engine shares one physical initialize and restores logical client ro
     assert.ok(diagnostics.some(event => event.event === "client-disconnect" && event.clientId === "client-b"));
     assert.ok(diagnostics.some(event => event.event === "client-initialize" && event.clientId === "client-a" && event.outcome === "succeeded"));
     assert.doesNotMatch(JSON.stringify(diagnostics), /must not be logged/);
-    const serverRequest = await waitFor(frames, frame => frame.id === 900 && frame.method === "item/tool/requestUserInput");
+    const serverRequest = await waitFor(frames, frame => isQuestionRequest(frame, "question-1"));
     assert.equal(serverRequest[LOGICAL_CLIENT_FIELD], "client-a");
-    await adapter.send(JSON.stringify({ id: 900, result: { answers: {} }, [LOGICAL_CLIENT_FIELD]: "client-a" }));
+    await adapter.send(JSON.stringify({ id: serverRequest.id, result: { answers: {} }, [LOGICAL_CLIENT_FIELD]: "client-a" }));
     const resolved = await waitFor(frames, frame => frame.method === "serverRequest/resolved");
     assert.equal(resolved[LOGICAL_CLIENT_FIELD], "client-a");
     await adapter.send(JSON.stringify({ id: "a:resume", method: "thread/resume", params: { threadId: "fixture-thread-1" }, [LOGICAL_CLIENT_FIELD]: "client-a" }));
@@ -837,11 +841,11 @@ test("a Client that detaches during resume cannot regain notifications or intera
     await send("client-b", "b:emit", "test/emitServerRequest", { threadId });
     const emitted = await waitFor(frames, frame => frame.id === "b:emit");
     const requestId = (emitted.result as { requestId: number }).requestId;
-    assert.equal(frames.some(frame => frame.id === requestId && frame.method === "item/tool/requestUserInput"), false);
+    assert.equal(frames.some(frame => isQuestionRequest(frame, `question-${requestId}`)), false);
     await initializeClient(adapter, frames, "client-c");
     await send("client-c", "c:resume", "thread/resume", { threadId });
     await waitFor(frames, frame => frame.id === "c:resume");
-    assert.equal((await waitFor(frames, frame => frame.id === requestId && frame.method === "item/tool/requestUserInput"))[LOGICAL_CLIENT_FIELD], "client-c");
+    assert.equal((await waitFor(frames, frame => isQuestionRequest(frame, `question-${requestId}`)))[LOGICAL_CLIENT_FIELD], "client-c");
   } finally {
     await adapter.close();
     await rm(root, { recursive: true, force: true });
@@ -1232,8 +1236,8 @@ test("last viewer leaving preserves background turns and queued work until the H
     await initializeClient(adapter, frames, "client-a");
     await initializeClient(adapter, frames, "client-b");
     await request("client-a", "thread/start", { cwd: root });
-    await waitFor(frames, frame => frame.id === 900 && frame.method === "item/tool/requestUserInput");
-    await adapter.send(JSON.stringify({ id: 900, result: { answers: {} }, [LOGICAL_CLIENT_FIELD]: "client-a" }));
+    const question = await waitFor(frames, frame => isQuestionRequest(frame, "question-1"));
+    await adapter.send(JSON.stringify({ id: question.id, result: { answers: {} }, [LOGICAL_CLIENT_FIELD]: "client-a" }));
     await waitFor(frames, frame => frame.method === "serverRequest/resolved");
     await request("client-a", "turn/start", { threadId, input: [{ type: "text", text: "first" }], clientUserMessageId: "first" });
     await request("client-a", "thread/queue/add", { threadId, input: [{ type: "text", text: "second" }], clientUserMessageId: "second" });
@@ -1284,8 +1288,8 @@ test("a closed client releases its thread subscriptions and native Codex context
     await initializeClient(adapter, frames, "client-a");
     await initializeClient(adapter, frames, "client-b");
     await request("client-a", "thread/start", { cwd: root });
-    await waitFor(frames, frame => frame.id === 900 && frame.method === "item/tool/requestUserInput");
-    await adapter.send(JSON.stringify({ id: 900, result: { answers: {} }, [LOGICAL_CLIENT_FIELD]: "client-a" }));
+    const question = await waitFor(frames, frame => isQuestionRequest(frame, "question-1"));
+    await adapter.send(JSON.stringify({ id: question.id, result: { answers: {} }, [LOGICAL_CLIENT_FIELD]: "client-a" }));
     await waitFor(frames, frame => frame.method === "serverRequest/resolved");
     assert.deepEqual((await request("client-a", "test/emitThreadNotification", { threadId })).result, { nativeSubscribed: true });
     await request("client-a", "turn/start", { threadId, input: [{ type: "text", text: "accepted" }], clientUserMessageId: "disconnect-input" });
@@ -1424,7 +1428,7 @@ test("Codex Fork subscribes only its requester to the child and late disconnecte
     await adapter.send(JSON.stringify({ id: "a:emit", method: "test/emitServerRequest", params: { threadId: "fixture-fork-late" }, [LOGICAL_CLIENT_FIELD]: "client-a" }));
     const emitted = await waitFor(frames, frame => frame.id === "a:emit");
     const requestId = (emitted.result as { requestId: number }).requestId;
-    assert.equal(frames.some(frame => frame.id === requestId && frame.method === "item/tool/requestUserInput"), false);
+    assert.equal(frames.some(frame => isQuestionRequest(frame, `question-${requestId}`)), false);
   } finally {
     await adapter.close();
     await rm(root, { recursive: true, force: true });
@@ -1441,7 +1445,7 @@ test("pending Codex server requests follow the resumed Thread owner, not an arbi
     await initializeClient(adapter, frames, "client-b");
     await adapter.send(JSON.stringify({ id: "a:start", method: "thread/start", params: { cwd: root }, [LOGICAL_CLIENT_FIELD]: "client-a" }));
     await waitFor(frames, frame => frame.id === "a:start");
-    const original = await waitFor(frames, frame => frame.id === 900 && frame.method === "item/tool/requestUserInput");
+    const original = await waitFor(frames, frame => isQuestionRequest(frame, "question-1"));
     assert.equal(original[LOGICAL_CLIENT_FIELD], "client-a");
 
     await adapter.send(JSON.stringify({ method: "runtime/client/disconnect", [LOGICAL_CLIENT_FIELD]: "client-a" }));
@@ -1451,24 +1455,27 @@ test("pending Codex server requests follow the resumed Thread owner, not an arbi
     await adapter.send(JSON.stringify({ id: "b:emit", method: "test/emitServerRequest", params: { threadId: "fixture-thread-1" }, [LOGICAL_CLIENT_FIELD]: "client-b" }));
     const emitted = await waitFor(frames, frame => frame.id === "b:emit");
     const requestId = (emitted.result as { requestId: number }).requestId;
-    assert.equal(frames.some(frame => frame.id === requestId && frame.method === "item/tool/requestUserInput"), false);
-    await adapter.send(JSON.stringify({ id: 900, result: { answers: {} }, [LOGICAL_CLIENT_FIELD]: "client-a" }));
+    assert.equal(frames.some(frame => isQuestionRequest(frame, `question-${requestId}`)), false);
+    await adapter.send(JSON.stringify({ id: original.id, result: { answers: {} }, [LOGICAL_CLIENT_FIELD]: "client-a" }));
+    // Client B never received an offer for the new request.
     await adapter.send(JSON.stringify({ id: requestId, result: { answers: {} }, [LOGICAL_CLIENT_FIELD]: "client-b" }));
 
     await initializeClient(adapter, frames, "client-c");
     await adapter.send(JSON.stringify({ id: "c:resume", method: "thread/resume", params: { threadId: "fixture-thread-1" }, [LOGICAL_CLIENT_FIELD]: "client-c" }));
     await waitFor(frames, frame => frame.id === "c:resume");
-    const replayedOriginal = frames.filter(frame => frame.id === 900 && frame.method === "item/tool/requestUserInput");
+    const replayedOriginal = frames.filter(frame => isQuestionRequest(frame, "question-1"));
     assert.deepEqual(replayedOriginal.map(frame => frame[LOGICAL_CLIENT_FIELD]), ["client-a", "client-c"]);
-    const replayedNew = frames.filter(frame => frame.id === requestId && frame.method === "item/tool/requestUserInput");
+    const replayedNew = frames.filter(frame => isQuestionRequest(frame, `question-${requestId}`));
     assert.deepEqual(replayedNew.map(frame => frame[LOGICAL_CLIENT_FIELD]), ["client-c"]);
     assert.equal(frames.some(frame => frame.method === "serverRequest/resolved"), false);
 
-    await adapter.send(JSON.stringify({ id: 900, result: { answers: {} }, [LOGICAL_CLIENT_FIELD]: "client-c" }));
-    await adapter.send(JSON.stringify({ id: requestId, result: { answers: {} }, [LOGICAL_CLIENT_FIELD]: "client-c" }));
-    await waitFor(frames, frame => frame.method === "serverRequest/resolved" && (frame.params as any).requestId === requestId);
+    const resumedId = replayedNew[0].id;
+    assert.equal(replayedOriginal[1].id, original.id);
+    await adapter.send(JSON.stringify({ id: original.id, result: { answers: {} }, [LOGICAL_CLIENT_FIELD]: "client-c" }));
+    await adapter.send(JSON.stringify({ id: resumedId, result: { answers: {} }, [LOGICAL_CLIENT_FIELD]: "client-c" }));
+    await waitFor(frames, frame => frame.method === "serverRequest/resolved" && (frame.params as any).requestId === resumedId);
     const resolved = frames.filter(frame => frame.method === "serverRequest/resolved");
-    assert.deepEqual(resolved.map(frame => (frame.params as any).requestId), [900, requestId]);
+    assert.deepEqual(resolved.map(frame => (frame.params as any).requestId), [original.id, resumedId]);
     assert.ok(resolved.every(frame => frame[LOGICAL_CLIENT_FIELD] === "client-c"));
   } finally {
     await adapter.close();
@@ -1491,15 +1498,15 @@ test("a late Thread resume response cannot reclaim ownership for a disconnected 
     await adapter.send(JSON.stringify({ id: "b:emit", method: "test/emitServerRequest", params: { threadId: "fixture-thread-1" }, [LOGICAL_CLIENT_FIELD]: "client-b" }));
     const emitted = await waitFor(frames, frame => frame.id === "b:emit");
     const requestId = (emitted.result as { requestId: number }).requestId;
-    assert.equal(frames.some(frame => frame.id === requestId && frame.method === "item/tool/requestUserInput"), false);
+    assert.equal(frames.some(frame => isQuestionRequest(frame, `question-${requestId}`)), false);
 
     await adapter.send(JSON.stringify({ id: "b:wrong-resume", method: "thread/resume", params: { threadId: "fixture-thread-1", testWrongThreadId: true }, [LOGICAL_CLIENT_FIELD]: "client-b" }));
     await waitFor(frames, frame => frame.id === "b:wrong-resume");
-    assert.equal(frames.some(frame => frame.id === requestId && frame.method === "item/tool/requestUserInput"), false);
+    assert.equal(frames.some(frame => isQuestionRequest(frame, `question-${requestId}`)), false);
 
     await adapter.send(JSON.stringify({ id: "b:resume", method: "thread/resume", params: { threadId: "fixture-thread-1" }, [LOGICAL_CLIENT_FIELD]: "client-b" }));
     await waitFor(frames, frame => frame.id === "b:resume");
-    const request = await waitFor(frames, frame => frame.id === requestId && frame.method === "item/tool/requestUserInput");
+    const request = await waitFor(frames, frame => isQuestionRequest(frame, `question-${requestId}`));
     assert.equal(request[LOGICAL_CLIENT_FIELD], "client-b");
   } finally {
     await adapter.close();
@@ -1839,6 +1846,119 @@ test("scheduled Codex completion is observed from native events without a histor
     const done = await request("opencraft/schedules/read", { threadId }); assert.equal(done.runs[0].state, "completed");
     assert.equal(inspections, 0); assert.equal((await request("test/readAcceptedInputs", {})).data.length, 1);
   } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test("the existing schedule store dispatches a Bridge Thread through its owner and records completion", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-bridge-schedule-"));
+  const frames: Record<string, unknown>[] = [];
+  const threadId = "bridge:codex:scheduled", turnId = "bridge-turn";
+  const adapter = createRoutingAdapter(root, frames);
+  const submissions: Record<string, unknown>[] = [];
+  (adapter as any).options.bridgeThreadRequest = async (method: string, params: Record<string, unknown>) => {
+    assert.equal(params.threadId, threadId);
+    if (method === "thread/read") return { thread: { id: threadId, cwd: root, status: { type: "idle" } } };
+    if (method === "thread/queue/list") return { data: [] };
+    if (method === "turn/start") { submissions.push(params); return { turn: { id: turnId } }; }
+    assert.fail(`Unexpected routed request ${method}`);
+  };
+  let sequence = 0;
+  const request = async (method: string, params: Record<string, unknown>) => {
+    const id = `bridge-schedule:${++sequence}`;
+    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "writer" }));
+    const frame = await waitFor(frames, value => value.id === id);
+    assert.equal(frame.error, undefined);
+    return frame.result as any;
+  };
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "writer");
+    await request("opencraft/schedules/save", {
+      threadId, expectedRevision: 0, prompt: "fixture", nextRunAt: Date.now(), intervalMinutes: null, timeZone: "UTC",
+    });
+    await (adapter as any).schedules.tick();
+    const progress = await request("opencraft/schedules/read", { threadId });
+    assert.equal(progress.runs[0].state, "running");
+    assert.equal(submissions.length, 1);
+    assert.equal(submissions[0].clientUserMessageId, progress.runs[0].id);
+    adapter.bridgeOwners().projectNotification({ method: "turn/completed", params: { threadId, turn: { id: turnId, status: "completed" } } });
+    await (adapter as any).schedules.tick();
+    const settled = await request("opencraft/schedules/read", { threadId });
+    assert.equal(settled.runs[0].state, "completed");
+    assert.equal(submissions.length, 1);
+    assert.deepEqual(await request("opencraft/turn-recovery/read", { threadId }), { recovery: null });
+  } finally {
+    await adapter.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("the Docker Codex Host recovers and retries Bridge Turns through its existing stores", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-bridge-recovery-"));
+  const frames: Record<string, unknown>[] = [];
+  const adapter = createRoutingAdapter(root, frames);
+  const owner = adapter.bridgeOwners(), internals = adapter as any;
+  const interrupted = "bridge:codex:interrupted", overloaded = "bridge:codex:overloaded", goal = "bridge:codex:goal";
+  const stopped = "bridge:codex:stopped";
+  const latest = new Map<string, Record<string, unknown>>();
+  const admitted: { threadId: string; inputId: string }[] = [];
+  const goalUpdates: string[] = [];
+  const emit = (threadId: string, method: string, params: Record<string, unknown> = {}) => {
+    if (method === "turn/completed") latest.set(threadId, params.turn as Record<string, unknown>);
+    owner.projectNotification({ method, params: { ...params, threadId } });
+  };
+  internals.options.bridgeThreadRequest = async (method: string, params: Record<string, unknown>, commit?: () => boolean) => {
+    const threadId = String(params.threadId);
+    if (method === "thread/read") return { thread: { id: threadId, status: { type: "idle" } } };
+    if (method === "thread/queue/list") return { data: [] };
+    if (method === "thread/turns/list") return { data: latest.has(threadId) ? [latest.get(threadId)] : [] };
+    if (method === "thread/goal/get") return { goal: { status: threadId === goal ? "active" : "complete" } };
+    if (method === "thread/goal/set") { goalUpdates.push(threadId); return { goal: { status: "active" } }; }
+    assert.equal(method, "turn/start");
+    assert.deepEqual(params.input, []);
+    assert.equal(commit?.(), true);
+    const inputId = String(params.clientUserMessageId);
+    admitted.push({ threadId, inputId });
+    const turn = { id: `${threadId}-continuation` };
+    emit(threadId, "turn/started", { turn });
+    return { turn };
+  };
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "viewer");
+    emit(interrupted, "turn/started", { turn: { id: "original" } });
+    emit(interrupted, "provider/recovery", { kind: "restartRecommended" });
+    emit(interrupted, "turn/completed", { turn: { id: "original", status: "interrupted" } });
+    await internals.recovery.recover();
+    assert.equal(internals.recovery.snapshot(interrupted).turnId, `${interrupted}-continuation`);
+    assert.match(admitted[0].inputId, /^restart-recovery:/);
+    assert.equal(admitted.length, 1);
+    emit(interrupted, "turn/completed", { turn: { id: "original", status: "interrupted" } });
+    assert.equal(internals.recovery.snapshot(interrupted).state, "running", "a late old completion cannot retire the successor");
+
+    emit(stopped, "turn/started", { turn: { id: "stopped-turn" } });
+    owner.beforeUserInput("turn/interrupt", stopped);
+    emit(stopped, "turn/completed", { turn: { id: "stopped-turn", status: "interrupted" } });
+    await internals.recovery.recover();
+    assert.equal(internals.recovery.snapshot(stopped).handledReason, "user_stop");
+    assert.ok(!admitted.some(row => row.threadId === stopped));
+
+    emit(overloaded, "turn/started", { turn: { id: "overloaded-turn" } });
+    emit(overloaded, "turn/completed", { turn: { id: "overloaded-turn", status: "failed",
+      error: { codexErrorInfo: "serverOverloaded" } } });
+    const pendingRetry = internals.providerRetry.snapshot(overloaded);
+    assert.equal(pendingRetry.state, "waiting");
+    internals.providerRetry.now = () => pendingRetry.retryAt + 1;
+    await internals.providerRetry.recover();
+    assert.match(admitted[1].inputId, /^provider-retry:/);
+    assert.equal(internals.providerRetry.snapshot(overloaded).turnId, `${overloaded}-continuation`);
+
+    owner.observeIdentityResult("thread/goal/set", { threadId: goal }, { goal: { status: "active" } }, null);
+    emit(goal, "turn/started", { turn: { id: "goal-turn" } });
+    emit(goal, "turn/completed", { turn: { id: "goal-turn", status: "completed" } });
+    for (let tries = 0; tries < 50 && !goalUpdates.length; tries++) await new Promise(r => setTimeout(r, 10));
+    assert.deepEqual(goalUpdates, [goal]);
+  } finally {
+    await adapter.close();
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 for (const [legacyItems, smallHistoryBudget, unsupportedItems] of [[false, false, false], [true, false, false], [true, true, false], [false, false, true], [false, true, true]]) test(`cached Codex history opens without Resume, models, or ownership (legacy Items=${legacyItems}, small budget=${smallHistoryBudget}, unsupported Items=${unsupportedItems})`, async () => {
@@ -2518,7 +2638,7 @@ for (const lostTerminal of [false,true]) test(`stopped deferred follow-up keeps 
   } finally {await adapter.close();await rm(root,{recursive:true,force:true});}
 });
 
-test('completed MCP media outputs enter the shared artifact catalog through engine notifications', async () => {
+for (const route of ['native', 'bridge']) test(`completed MCP media outputs enter the shared artifact catalog through ${route} notifications`, async () => {
   const root = await mkdtemp(join(tmpdir(), 'codex-artifact-output-')), frames: Array<Record<string, unknown>> = [];
   const adapter = createRoutingAdapter(root, frames);
   try {
@@ -2529,7 +2649,9 @@ test('completed MCP media outputs enter the shared artifact catalog through engi
       { type: 'resource', resource: { mimeType: 'application/pdf', blob: Buffer.from('document').toString('base64') } },
     ] } };
     const internals = adapter as any;
-    internals.receivePhysicalLine(JSON.stringify({ method: 'item/completed', params: { threadId: 'fixture-thread-1', turnId: 'turn', item } }));
+    const notification = { method: 'item/completed', params: { threadId: 'fixture-thread-1', turnId: 'turn', item } };
+    if (route === 'bridge') adapter.bridgeOwners().projectNotification(notification);
+    else internals.receivePhysicalLine(JSON.stringify(notification));
     await Promise.all([...internals.artifactOutputs]);
     const catalog = internals.attachmentStaging.catalog;
     for (const [index, bytes] of ['audio', 'video', 'document'].entries()) {

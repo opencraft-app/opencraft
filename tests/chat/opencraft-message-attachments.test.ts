@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import type { AttachmentRef } from "@opencraft/appserver-protocol";
+import { CodexEngineAdapter } from "../../apps/opencraft-daemon/src/codex-engine-adapter.ts";
 import { OpenCraftMessageAttachments } from "../../apps/opencraft-daemon/src/opencraft-message-attachments.ts";
 import {
   projectThreadAttachmentNotification,
@@ -79,6 +80,37 @@ test("Thread live acknowledgement and paged history receive the same typed file 
     assert.deepEqual(itemPage.data[0]?.item.attachments, live);
     store.close();
   } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("Bridge live acknowledgements and forks preserve the same recorded attachments", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "bridge-message-projection-"));
+  const store = new OpenCraftMessageAttachments(directory);
+  const adapter = new CodexEngineAdapter({
+    executable: process.execPath,
+    runtimeDirectory: directory,
+    dataDirectory: directory,
+    nativeCodexHomeDirectory: join(directory, "native"),
+    upstreamBaseUrl: "http://127.0.0.1:9/backend-api/codex",
+    bridgeThreadRequest: async () => assert.fail("Attachment projection must not execute a Bridge request"),
+  });
+  try {
+    Object.assign(adapter, { messageAttachments: store });
+    const owners = adapter.bridgeOwners();
+    const source = "bridge:codex:source", fork = "bridge:codex:fork";
+    store.record(source, "client-1", [file]);
+    const item = { type: "userMessage", clientId: "client-1" };
+    const live = owners.projectNotification({ method: "item/completed", params: { threadId: source, item } });
+    owners.observeIdentityResult("thread/fork", { threadId: source }, { thread: { id: fork } });
+    const history = owners.projectHistory("thread/items/list", { threadId: fork }, { data: [{ item }] }) as {
+      data: Array<{ item: { attachments: Array<{ id: string }> } }>;
+    };
+    const liveItem = (live.params as { item: { attachments: unknown } }).item;
+    assert.deepEqual(liveItem.attachments, history.data[0].item.attachments);
+    assert.equal(history.data[0].item.attachments[0].id, file.id);
+  } finally {
+    await adapter.close();
     await rm(directory, { recursive: true, force: true });
   }
 });

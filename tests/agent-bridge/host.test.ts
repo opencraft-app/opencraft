@@ -7,18 +7,23 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
-import { openManagedDatabase } from "@opencraft/sqlite-node";
+import { openManagedDatabase, resolveStoreMigrations } from "@opencraft/sqlite-node";
 import {
   BridgeHost,
   GatewayInbox,
   attachGateway,
   dispatchSettlement,
   type Generation,
+  type OutboxEvent,
 } from "../../apps/agent-bridge-host/src/index.js";
 import { Storage } from "../../apps/agent-bridge-host/src/storage.js";
+import { HostQueue } from "../../apps/agent-bridge-host/src/queue.js";
+import { BridgeGatewaySession, BridgeOutboxReadError, pullBridgeInbox } from "../../apps/agent-bridge-host/src/gateway-session.js";
 import { migrations } from "../../apps/agent-bridge-host/src/migrations.js";
 import { localTestBackend } from "./fixtures/local-backend.js";
-import { negotiateHandshake, type BridgeDeclaration } from "@opencraft/agent-bridge-protocol";
+import {
+  BRIDGE_MAX_COMMAND_BYTES, BRIDGE_MAX_FRAME_BYTES, BRIDGE_OUTBOX_FRAGMENT_BYTES, negotiateHandshake, type BridgeDeclaration,
+} from "@opencraft/agent-bridge-protocol";
 const token = "test-private-token-000000000000000000000";
 const declaration: BridgeDeclaration = {
   providerId: "fake",
@@ -119,6 +124,515 @@ async function rpc(url: string, path: string, body?: unknown): Promise<any> {
   assert.equal(response.status, 200);
   return response.json();
 }
+
+test("a durable accepted receipt retains canonical identities while event delivery fails", async () => {
+  let release!: () => void;
+  const blocked = new Promise<void>(resolve => { release = resolve; });
+  const gateway = new BridgeGatewaySession({
+    serverId: "server-1",
+    async request(path) {
+      if (path === "/command") return Response.json({ state: "registered" });
+      return Response.json({ state: "accepted", response: { result: { turn: { id: "native-turn" } } },
+        identities: { nativeThreadId: "native-thread", turn: { nativeId: "native-turn", id: "public-turn" } } });
+    },
+    inbox: { async cursor() { return 0; }, async read() { return []; }, async readIdentities() { return []; }, async readPendingInteractions() { return []; },
+      async pull() { await blocked; throw Error("event stream unavailable"); }, async close() {} },
+  }, () => assert.fail("No stream event was produced"));
+  try {
+    const result = await gateway.command("public-thread", "accepted", "turn/start", {});
+    assert.deepEqual(gateway.history("public-thread", result), { turn: { id: "public-turn" } });
+    assert.equal(gateway.nativeThread("public-thread"), "native-thread");
+    assert.ok(gateway.owns("public-thread"));
+    assert.equal(gateway.nativeTurn("public-thread", "public-turn"), "native-turn");
+    const pull = gateway.pull();
+    release();
+    await assert.rejects(pull, /event stream unavailable/);
+  } finally {
+    release();
+    await gateway.close();
+  }
+});
+
+test("a failed producer acknowledgement does not suppress committed inbox events", async () => {
+  const row = {
+    seq: 1, route: '["server-1","public-thread"]', generation: "g1",
+    payload: { method: "thread/name/updated", params: { threadName: "Committed" } },
+  };
+  let committed = false;
+  let failAck = true;
+  const acked: number[] = [];
+  const delivered: unknown[] = [];
+  const gateway = new BridgeGatewaySession({
+    serverId: "server-1",
+    async request() { return Response.json(null); },
+    inbox: {
+      async cursor() { return Number(committed); },
+      async read(after) { return committed && after < row.seq ? [row] : []; },
+      async readIdentities() { return []; }, async readPendingInteractions() { return []; },
+      pull: () => pullBridgeInbox(async (path, body) => {
+        if (path === "/ack") {
+          if (failAck) throw Error("connection reset");
+          acked.push((body as { cursor: number }).cursor);
+          return Response.json(null);
+        }
+        return Response.json(committed ? [] : [row]);
+      }, {
+        cursor: () => Number(committed),
+        apply(batch) {
+          committed ||= batch.length > 0;
+          return { cursor: Number(committed), inserted: [...batch] };
+        },
+      }),
+      async close() {},
+    },
+  }, (_threadId, event) => delivered.push(event));
+  try {
+    await gateway.pull();
+    assert.deepEqual(acked, []);
+    assert.deepEqual(delivered, [{ method: "thread/name/updated", params: { threadId: "public-thread", threadName: "Committed" } }]);
+    failAck = false;
+    await gateway.pull();
+    assert.deepEqual(acked, [1]);
+    assert.equal(delivered.length, 1);
+  } finally {
+    await gateway.close();
+  }
+});
+
+test("passive metadata succeeds independently of the live outbox without exposing native turn IDs", async () => {
+  const threadId = "public-thread";
+  const requests: string[] = [];
+  let pulls = 0;
+  const gateway = new BridgeGatewaySession({
+    serverId: "server-1",
+    async request(path) {
+      requests.push(path);
+      assert.equal(path, "/observe");
+      return Response.json({ thread: { id: "native-thread", turns: [{ id: "native-turn", items: [{ id: "native-item" }] }] } });
+    },
+    inbox: {
+      async cursor() { return 0; },
+      async read() { return []; },
+      async readIdentities() { return []; }, async readPendingInteractions() { return []; },
+      async pull() { pulls++; throw Error("outbox unavailable"); },
+      async close() {},
+    },
+  }, () => assert.fail("A history read must not publish an event"));
+  try {
+    const metadata = await gateway.observe(threadId, { view: "thread", includeTurns: false });
+    assert.deepEqual(gateway.history(threadId, metadata), { thread: { id: threadId, turns: [] } });
+    assert.deepEqual(requests, ["/observe"]);
+    assert.equal(pulls, 0);
+    await assert.rejects(gateway.observe(threadId, { view: "thread", includeTurns: true }), /outbox unavailable/);
+    assert.equal(pulls, 1, "complete history continues to require a current Turn and Item projection");
+  } finally {
+    await gateway.close();
+  }
+});
+
+test("the Host HTTP route accepts commands past the old ceiling and reports oversize before custody", async (t) => {
+  const { host } = await setup(t);
+  await host.accept(command("create"));
+  await accepted(host, "create");
+  const endpoint = await attachGateway(host, token);
+  t.after(() => endpoint.close());
+  const input = (size: number) => ({ input: [{ type: "text", text: "x".repeat(size) }] });
+  await rpc(endpoint.url, "/command", command("above-old-cap", "turn/start", input(550 * 1024)));
+  await accepted(host, "above-old-cap");
+  const response = await fetch(endpoint.url + "/command", {
+    method: "POST", headers: { authorization: `Bearer ${token}` },
+    body: JSON.stringify(command("over-limit", "turn/start", input(BRIDGE_MAX_COMMAND_BYTES))),
+  });
+  assert.equal(response.status, 409);
+  const error = await response.json();
+  assert.equal(error.kind, "explicit-reject");
+  assert.deepEqual(error.data, { code: "BRIDGE_REQUEST_TOO_LARGE", maxBytes: BRIDGE_MAX_COMMAND_BYTES });
+  assert.equal(await host.query("over-limit"), null);
+});
+
+function seedOutbox(path: string, sizesMiB: readonly number[]) {
+  const { database } = openManagedDatabase({ path, schemaId: "agent-bridge-host", migrations });
+  try {
+    const put = database.prepare("INSERT INTO outbox (route,generation,payload) VALUES (?,?,?)");
+    for (const size of sizesMiB) {
+      const payload = { method: "fixture", params: { text: "x".repeat(size * 1024 * 1024) } };
+      put.run('["server-1","thread-1"]', "g1", JSON.stringify(payload));
+    }
+  } finally {
+    database.close();
+  }
+}
+
+test("outbox pages and a retained oversized event both advance the same fenced cursor", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "bridge-outbox-pages-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const path = join(root, "host.db");
+  seedOutbox(path, [9, 9, 18, 0]);
+  const host = await BridgeHost.open({ path, policy, backend: localTestBackend() });
+  const endpoint = await attachGateway(host, token);
+  try {
+    let cursor = 0;
+    const batches: number[][] = [];
+    let corrupt = false;
+    let unavailableOffset: number | undefined;
+    const request = async (url: string, body?: unknown) => {
+      if (unavailableOffset !== undefined && url.endsWith(`&fragment=${unavailableOffset}`))
+        return new Response(null, { status: 503 });
+      const value = await rpc(endpoint.url, url, body);
+      assert.ok(Buffer.byteLength(JSON.stringify(value)) <= BRIDGE_MAX_FRAME_BYTES + 2 * 1024 * 1024);
+      if (corrupt && value.fragment?.offset === 0) {
+        const { data } = value.fragment;
+        value.fragment.data = (data.startsWith("A") ? "B" : "A") + data.slice(1);
+      }
+      return Response.json(value);
+    };
+    const store = { cursor: () => cursor, apply(batch: readonly { seq: number; payload: unknown }[], fence?: { acknowledged: number }) {
+      assert.equal(fence?.acknowledged, cursor);
+      for (const row of batch) assert.equal(row.seq, ++cursor);
+      batches.push(batch.map(row => row.seq));
+      return { cursor, inserted: [...batch] as any };
+    } };
+    const pull = () => pullBridgeInbox(request, store, { fenced: true, fragmentOversized: true });
+    await pull();
+    await pull();
+    const continuationPath = `/events?cursor=2&fenced=1&fragment=${BRIDGE_OUTBOX_FRAGMENT_BYTES}`;
+    const continuation = await rpc(endpoint.url, continuationPath);
+    const first = await rpc(endpoint.url, "/events?cursor=2&fenced=1&fragment=0");
+    assert.equal(continuation.outboxId, first.outboxId);
+    assert.equal(continuation.fragment.seq, first.fragment.seq);
+    assert.equal(continuation.fragment.digest, first.fragment.digest);
+    assert.equal(continuation.fragment.offset, BRIDGE_OUTBOX_FRAGMENT_BYTES);
+    const misaligned = await fetch(endpoint.url + "/events?cursor=2&fenced=1&fragment=1", {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    assert.equal(misaligned.status, 409);
+    unavailableOffset = BRIDGE_OUTBOX_FRAGMENT_BYTES;
+    await assert.rejects(pull(), { constructor: BridgeOutboxReadError, status: 503, retryable: true });
+    assert.equal(cursor, 2);
+    assert.equal((await host.events(cursor, 256, true)).acknowledged, 2);
+    unavailableOffset = undefined;
+    corrupt = true;
+    await assert.rejects(pull(), /Outbox event digest changed/);
+    assert.equal(cursor, 2);
+    assert.equal((await host.events(cursor, 256, true)).acknowledged, 2);
+    corrupt = false;
+    await pull();
+    const acknowledgedContinuation = await fetch(endpoint.url + continuationPath, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    assert.equal(acknowledgedContinuation.status, 409);
+    await pull();
+    assert.deepEqual(batches, [[1], [2], [3], [4]]);
+    assert.equal((await host.events(cursor, 256, true)).acknowledged, 4);
+  } finally {
+    await endpoint.close();
+    await host.close();
+  }
+});
+test("the Node inbox reads fragments without copying the full event out of the worker and stores one row", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "bridge-node-outbox-fragments-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const path = join(root, "host.db");
+  seedOutbox(path, [0, 18]);
+  const host = await BridgeHost.open({ path, policy, backend: localTestBackend() });
+  const endpoint = await attachGateway(host, token);
+  const inboxPath = join(root, "inbox.db");
+  const inbox = new GatewayInbox(inboxPath);
+  const workerReplies: unknown[] = [];
+  const readEvents = host.events.bind(host);
+  host.events = async (...args) => {
+    const page = await readEvents(...args);
+    const event = Array.isArray(page) ? page[0] : page.events?.[0];
+    workerReplies.push(page.fragment
+      ? { offset: page.fragment.offset, bytes: Buffer.byteLength(page.fragment.data, "base64") }
+      : { fullBytes: event?.payload?.params?.text?.length ?? 0 });
+    return page;
+  };
+  const offsets: number[] = [];
+  endpoint.server.on("request", request => {
+    const url = new URL(request.url!, endpoint.url);
+    if (url.pathname === "/events" && url.searchParams.has("fragment"))
+      offsets.push(Number(url.searchParams.get("fragment")));
+  });
+  try {
+    // The producer can put the small event alone in its first response.
+    assert.deepEqual((await inbox.pull(endpoint.url, token)).map(row => row.seq), [1]);
+    assert.deepEqual(offsets, [0]);
+    const [large] = await inbox.pull(endpoint.url, token);
+    assert.equal(large?.seq, 2);
+    assert.ok(offsets.some(offset => offset > 0), "the Node reader requested the remaining fragments");
+    const total = Buffer.byteLength(JSON.stringify(large));
+    assert.deepEqual(workerReplies.slice(1), offsets.slice(1).map(offset => ({
+      offset, bytes: Math.min(BRIDGE_OUTBOX_FRAGMENT_BYTES, total - offset),
+    })), "large fragment requests transfer only the fragment from the storage worker");
+    assert.equal((await host.events(2, 256, true)).acknowledged, 2);
+    assert.deepEqual((await inbox.read()).map(row => row.seq), [1], "leave an oversized row for its own replay page");
+    assert.deepEqual(await inbox.read(1), [{ ...large, projection: [] }],
+      "the next replay page contains the complete event and its stored projection");
+    assert.deepEqual(await inbox.read(2), []);
+    assert.equal(await inbox.cursor(), 2, "replay reads leave the durable cursor unchanged");
+  } finally {
+    await inbox.close();
+    await endpoint.close();
+    await host.close();
+  }
+  const database = new DatabaseSync(inboxPath, { readOnly: true });
+  try {
+    const rows = database.prepare("SELECT seq, length(json_extract(payload, '$.params.text')) AS size FROM inbox ORDER BY seq").all();
+    assert.deepEqual(rows.map(row => [row.seq, row.size]), [[1, 0], [2, 18 * 1024 * 1024]]);
+  } finally {
+    database.close();
+  }
+});
+test("history joins route identities across pending outbox pages and an acknowledgement race", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "bridge-history-identities-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const path = join(root, "host.db");
+  const published = resolveStoreMigrations("agent-bridge-host", migrations);
+  const { database } = openManagedDatabase({ path, migrations: published.filter(({ version }) => version < 6) });
+  const route = '["server-1","thread-1"]';
+  const put = database.prepare("INSERT INTO outbox (route,generation,payload) VALUES (?,'g1',?)");
+  for (let index = 0; index < 256; index++) put.run('["server-1","other"]', JSON.stringify({ method: "other" }));
+  for (let index = 0; index < 256; index++) put.run(route, JSON.stringify({ kind: "canonical", event: {
+    kind: "turn.started", nativeTurnId: `native-turn-${index}`, turnId: `public-turn-${index}`, atMs: 0,
+  } }));
+  put.run(route, JSON.stringify({ kind: "canonical", event: {
+    kind: "item.completed", turnId: "public-turn-255", atMs: 1,
+    item: { nativeKey: "native-item", itemId: "public-item", shape: { kind: "agentMessage", text: "ready" } },
+  } }));
+  database.close();
+
+  const host = await BridgeHost.open({ path, policy, backend: localTestBackend() });
+  const inbox = new GatewayInbox(join(root, "inbox.db"));
+  const endpoint = await attachGateway(host, token);
+  const raw = { data: [{ id: "native-turn-255", items: [{ id: "native-item" }] }, { id: "old-native-turn", items: [] }] };
+  const expected = { data: [{ id: "public-turn-255", items: [{ id: "public-item" }] }, { id: "old-native-turn", items: [] }] };
+  const observed: unknown[] = [];
+  let identityPages = 0;
+  let historyPulls = 0;
+  const afters: number[] = [];
+  const committedReads: number[][] = [];
+  const gateway = new BridgeGatewaySession({
+    serverId: "server-1",
+    async request(path, body) {
+      if (path === "/observe") {
+        observed.push(body);
+        return Response.json(raw);
+      }
+      const reply = await rpc(endpoint.url, path, body);
+      if (path === "/snapshot") delete reply.historyIdentitySelection;
+      if (path.startsWith("/history-identities?")) {
+        afters.push(Number(new URL(path, endpoint.url).searchParams.get("after")));
+        identityPages++;
+      }
+      if (path.startsWith("/history-identities?") && identityPages === 1) {
+        assert.equal(reply.identities.length, 256);
+        assert.equal(reply.acknowledged, 0);
+        // Another attachment commits and acknowledges the tail between identity pages.
+        for (let index = 0; index < 3; index++) await inbox.pull(endpoint.url, token);
+      }
+      return Response.json(reply);
+    },
+    inbox: {
+      cursor: () => inbox.cursor(),
+      read: after => inbox.read(after),
+      readIdentities: (route, after, through) => {
+        committedReads.push([after, through]);
+        return inbox.readIdentities(route, after, through);
+      },
+      readPendingInteractions: (route, after, through, ids) => inbox.readPendingInteractions(route, after, through, ids),
+      async pull() { historyPulls++; return inbox.pull(endpoint.url, token); },
+      close: () => inbox.close(),
+    },
+  }, () => {});
+  try {
+    assert.equal((await host.snapshot()).databaseOutcome.status, "migrated");
+    await gateway.open({ live: false });
+    assert.deepEqual(await gateway.observe("thread-1", { limit: 2 }), expected);
+    assert.equal(identityPages, 2);
+    assert.equal(historyPulls, 0);
+    committedReads.length = 0;
+    assert.deepEqual(await gateway.observe("thread-1", { turnId: "public-turn-255" }), expected);
+    assert.equal((observed.at(-1) as { params: { turnId: string } }).params.turnId, "native-turn-255");
+    assert.equal(historyPulls, 0);
+    assert.deepEqual(afters.slice(2), [0, 513], "project the reply using only identities added since target resolution");
+    assert.deepEqual(committedReads, [[0, 513], [512, 513]], "read the acknowledged prefix only once");
+  } finally {
+    await gateway.close();
+    await endpoint.close();
+    await host.close();
+  }
+
+  const current = new DatabaseSync(path);
+  const version = 6;
+  current.prepare("UPDATE schema_migrations SET checksum='tampered' WHERE version=?").run(version);
+  current.close();
+  const broken = new Storage(path);
+  try {
+    await assert.rejects(broken.ready, /migration history/);
+  } finally {
+    await broken.close().catch(() => {});
+  }
+});
+
+test("exact history reads include newly acknowledged items and reject a changed producer or rewind", async () => {
+  const id = "1".repeat(32), replacement = "2".repeat(32);
+  let nativeRead = false;
+  let transition: "replace" | "rewind" | "advance" = "replace";
+  const cursors: number[] = [];
+  const inboxRanges: number[][] = [];
+  const session = new BridgeGatewaySession({
+    serverId: "server",
+    async request(path, body) {
+      if (path === "/snapshot") return Response.json({ historyIdentityPages: true, nativeSessions: [], routes: [], interactions: [] });
+      if (path === "/observe") {
+        assert.equal((body as { params: { turnId: string } }).params.turnId, "turn-native");
+        nativeRead = true;
+        return Response.json({ data: [{ turnId: "turn-native", item: { id: "new-native" } }] });
+      }
+      const url = new URL(path, "http://bridge.invalid");
+      assert.equal(url.pathname, "/history-identities");
+      cursors.push(Number(url.searchParams.get("after")));
+      if (nativeRead && transition === "rewind")
+        return Response.json({ outboxId: id, acknowledged: 0, high: 0, identities: [] });
+      return Response.json(nativeRead
+        ? { outboxId: transition === "replace" ? replacement : id, acknowledged: 2, high: 2, identities: [] }
+        : { outboxId: id, acknowledged: 0, high: 1, identities: [{ seq: 1, turn: { nativeId: "turn-native", id: "turn-public" } }] });
+    },
+    inbox: {
+      async cursor() { return nativeRead ? 2 : 0; },
+      async readIdentities(_, after, through) {
+        inboxRanges.push([after, through]);
+        return [{ seq: 2, item: { nativeId: "new-native", id: "new-public" } }];
+      },
+      async readPendingInteractions() { return []; },
+      async read() { return []; },
+      async pull() { assert.fail("history must not pull the live inbox"); },
+      async close() {},
+    },
+  }, () => assert.fail("history must not publish live events"));
+  try {
+    await session.open({ live: false });
+    await assert.rejects(session.observe("thread", { turnId: "turn-public" }), /Invalid Bridge history identity fence/);
+    nativeRead = false;
+    transition = "rewind";
+    await assert.rejects(session.observe("thread", { turnId: "turn-public" }), /Invalid Bridge history identity fence/);
+    assert.deepEqual(inboxRanges, [], "a replacement producer cannot read the old request's prefix");
+    nativeRead = false;
+    transition = "advance";
+    cursors.length = 0;
+    assert.deepEqual(await session.observe("thread", { turnId: "turn-public" }),
+      { data: [{ turnId: "turn-public", item: { id: "new-public" } }] });
+    assert.deepEqual(cursors, [0, 1]);
+    assert.deepEqual(inboxRanges, [[1, 2]]);
+  } finally {
+    await session.close();
+  }
+});
+
+test("a Bridge history page transfers only the aliases for its returned Turns and items", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "bridge-history-selection-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const path = join(root, "host.db");
+  const { database } = openManagedDatabase({ path, schemaId: "agent-bridge-host", migrations });
+  const route = '["server","thread"]';
+  const put = database.prepare("INSERT INTO outbox (route,generation,payload) VALUES (?,'g',?)");
+  const turn = (nativeTurnId: string, turnId: string) => put.run(route, JSON.stringify({
+    kind: "canonical", event: { kind: "turn.started", nativeTurnId, turnId },
+  }));
+  database.exec("BEGIN");
+  turn("native-root", "public-root");
+  for (let index = 0; index < 290; index++) turn(`unused-native-${index}`, `unused-public-${index}`);
+  turn("native-turn", "public-turn");
+  put.run(route, JSON.stringify({ kind: "canonical", event: { kind: "item.completed",
+    item: { nativeKey: "native-item", itemId: "public-item" },
+  } }));
+  put.run('["server","peer"]', JSON.stringify({ kind: "canonical", event: {
+    kind: "turn.started", nativeTurnId: "native-turn", turnId: "peer-turn",
+  } }));
+  database.exec("COMMIT");
+  database.close();
+
+  const host = await BridgeHost.open({ path, policy, backend: localTestBackend() });
+  const endpoint = await attachGateway(host, token);
+  const inbox = new GatewayInbox(join(root, "inbox.db"));
+  const raw = { data: [{ id: "native-turn", rootTurnId: "native-root", items: [{ id: "native-item" }] }] };
+  const expected = { data: [{ id: "public-turn", rootTurnId: "public-root", items: [{ id: "public-item" }] }] };
+  let hostRows = 0, inboxRows = 0;
+  let widePage = false;
+  const extraItems = Array.from({ length: 1024 }, (_, index) => ({ id: `native-only-item-${index}` }));
+  const session = new BridgeGatewaySession({
+    serverId: "server",
+    async request(path, body) {
+      if (path === "/observe") {
+        const requested = (body as { params: { turnId?: string } }).params.turnId;
+        if (requested !== undefined) assert.equal(requested, "native-turn");
+        return Response.json(widePage ? { data: [{ ...raw.data[0], items: [...raw.data[0]!.items, ...extraItems] }] } : raw);
+      }
+      const reply = await rpc(endpoint.url, path, body);
+      if (path.startsWith("/history-identities")) hostRows += reply.identities.length;
+      return Response.json(reply);
+    },
+    inbox: {
+      cursor: () => inbox.cursor(),
+      async readIdentities(...args) {
+        const rows = await inbox.readIdentities(...args);
+        inboxRows += rows.length;
+        return rows;
+      },
+      readPendingInteractions: (...args) => inbox.readPendingInteractions(...args),
+      async read() { assert.fail("history must not replay event payloads"); },
+      async pull() { assert.fail("history must not advance the committed cursor"); },
+      close: () => inbox.close(),
+    },
+  }, () => assert.fail("history must not publish live events"));
+  try {
+    assert.deepEqual((await inbox.pull(endpoint.url, token)).length, 256);
+    await session.open({ live: false });
+    assert.deepEqual(await session.observe("thread", { limit: 1 }), expected);
+    assert.deepEqual([inboxRows, hostRows], [1, 2], "a one-Turn page excludes all unrelated IDs");
+    inboxRows = hostRows = 0;
+    assert.deepEqual(await session.observe("thread", { turnId: "public-turn" }), expected);
+    assert.deepEqual([inboxRows, hostRows], [1, 3], "the exact Turn lookup adds only one mapping");
+    widePage = true;
+    assert.deepEqual(await session.observe("thread", { limit: 1 }), {
+      data: [{ ...expected.data[0], items: [...expected.data[0]!.items, ...extraItems] }],
+    }, "a page exceeding the selector budget keeps the full identity projection");
+  } finally {
+    await session.close();
+    await endpoint.close();
+    await host.close();
+  }
+});
+
+test("selected history rejects a remapped public Turn even when the native reply is empty", async () => {
+  const session = new BridgeGatewaySession({
+    serverId: "server",
+    async request(path, body) {
+      if (path === "/snapshot") return Response.json({
+        historyIdentityPages: true, historyIdentitySelection: true, routes: [], nativeSessions: [], interactions: [],
+      });
+      if (path === "/observe") return Response.json({ data: [] });
+      assert.equal(path, "/history-identities");
+      const { selection } = body as { selection: { nativeIds: string[]; publicTurnId?: string } };
+      const identities = selection.publicTurnId ? [{ seq: 1, turn: { nativeId: "native", id: "retired" } }]
+        : selection.nativeIds.includes("native") ? [{ seq: 2, turn: { nativeId: "native", id: "current" } }] : [];
+      return Response.json({ outboxId: "1".repeat(32), acknowledged: 0, high: 2, identities });
+    },
+    inbox: {
+      async cursor() { return 0; }, async read() { return []; }, async readIdentities() { return []; },
+      async readPendingInteractions() { return []; }, async close() {},
+      async pull() { assert.fail("history must not pull the live inbox"); },
+    },
+  }, () => assert.fail("history must not publish live events"));
+  try {
+    await session.open({ live: false });
+    await assert.rejects(session.observe("thread", { turnId: "retired" }), /History Turn identity changed/);
+  } finally {
+    await session.close();
+  }
+});
+
 function child(file: string, env: Record<string, string>): ChildProcess {
   return fork(resolve("tests/agent-bridge/fixtures/" + file), {
     execArgv: ["--import", "tsx"],
@@ -205,6 +719,584 @@ test("real gateway process restart leaves independent Host/bridge PID and Turn r
     first.events.length + second.events.length,
   );
   assert.equal((await readFile(join(root, "executions"), "utf8")).trim().split("\n").length, 1);
+});
+
+test("queue recovery settles only receipts for the matching attempt", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "bridge-queue-refusal-recovery-"));
+  const path = join(root, "host.db");
+  let storage = new Storage(path, "host");
+  t.after(async () => {
+    await storage.close();
+    await rm(root, { recursive: true, force: true });
+  });
+  await storage.ready;
+  await storage.call("add", await config(root));
+  await storage.call("activate", { id: "g1", expected: "" });
+  const route = JSON.stringify(["server-1", "thread-1"]);
+  const admit = (request: ReturnType<typeof command>) =>
+    storage.call("admit", { command: request, route, digest: JSON.stringify(request), maxSpoolBytes: 1 << 20 });
+  await admit(command("create"));
+  await storage.call("dispatch", { id: "create" });
+  await storage.call("settle", { id: "create", state: "accepted" });
+
+  const cases = [
+    { clientId: "start-not-sent", kind: "start", target: "unknown", queueState: "queued", admission: "rejected", paused: "delivery-rejected" },
+    { clientId: "steer-not-sent", kind: "steer", target: "turn-id", queueState: "queued", admission: "rejected", paused: null },
+    { clientId: "start-accepted", kind: "start", target: "unknown", queueState: "delivered", admission: "accepted", paused: null,
+      result: { turn: { id: "new-turn" } }, recoveredTarget: "new-turn" },
+    { clientId: "steer-accepted", kind: "steer", target: "turn-id", queueState: "steering", admission: "accepted", paused: null,
+      result: { turnId: "turn-id" }, recoveredTarget: "turn-id" },
+    { clientId: "steer-closed", kind: "steer", target: "completed-turn", queueState: "closed", admission: "accepted", paused: null,
+      result: { turnId: "completed-turn" }, recoveredTarget: "completed-turn", terminal: true },
+    { clientId: "steer-wrong-turn", kind: "steer", target: "turn-id", queueState: "unknown", admission: "unknown", paused: "steer-delivery-unconfirmed",
+      result: { turnId: "different-turn" } },
+    { clientId: "invalid-start-ack", kind: "start", target: "unknown", queueState: "unknown", admission: "unknown", paused: "steer-delivery-unconfirmed",
+      result: { turn: { id: {} } } },
+    { clientId: "refusal-already-saved", kind: "start", target: "unknown", queueState: "queued", admission: "rejected", paused: "delivery-rejected" },
+    { clientId: "maybe-sent", kind: "start", target: "unknown", queueState: "unknown", admission: "unknown", paused: "steer-delivery-unconfirmed" },
+    { clientId: "other-revision", kind: "start", target: "unknown", queueState: "unknown", admission: "unknown", paused: "steer-delivery-unconfirmed" },
+  ];
+  const commandIds = new Map<string, string>();
+  for (const fixture of cases) {
+    const row = await storage.call("queue", { method: "add", args: [route, fixture.clientId, [{ type: "text", text: fixture.clientId }]] });
+    const claimed = await storage.call("queue", { method: "claim", args: [route, row.id, fixture.target] });
+    const revision = claimed.delivery.revision + Number(fixture.clientId === "other-revision");
+    const key = createHash("sha256").update(JSON.stringify([route, fixture.clientId, fixture.target, revision])).digest("hex");
+    const id = "queue-" + fixture.kind + ":" + key;
+    commandIds.set(fixture.clientId, id);
+    await admit(command(id, "turn/" + fixture.kind));
+    if (fixture.clientId === "maybe-sent" || fixture.result) await storage.call("dispatch", { id });
+    if (fixture.clientId === "refusal-already-saved") await storage.call("settle", { id, state: "rejected" });
+    if (fixture.terminal) await storage.call("queue", { method: "finishTurn", args: [route, fixture.target, "completed"] });
+    if (fixture.result) await storage.call("settle", {
+      id, state: "accepted", response: { jsonrpc: "2.0", id: "host-command:" + id, result: fixture.result },
+    });
+  }
+  // The process stops with persisted queue claims and no queue settlement.
+  await storage.close();
+  storage = new Storage(path, "host");
+  await storage.ready;
+  for (const fixture of cases) {
+    const recovered = await storage.call("queue", { method: "findByClientId", args: [route, fixture.clientId] });
+    assert.equal(recovered.state, fixture.queueState, fixture.clientId);
+    assert.equal(recovered.pausedReason, fixture.paused, fixture.clientId);
+    assert.equal(recovered.delivery.nativeAdmission, fixture.admission, fixture.clientId);
+    assert.equal(recovered.targetTurnId, fixture.queueState === "queued" ? null : fixture.recoveredTarget ?? fixture.target);
+    if (fixture.terminal) assert.equal(recovered.delivery.execution, "completed");
+    assert.equal(recovered.delivery.context, "unobserved");
+    const receipt = await storage.call("query", { id: commandIds.get(fixture.clientId) });
+    assert.equal(receipt.state, fixture.result ? "accepted" : fixture.clientId === "maybe-sent" ? "unknown" : "rejected");
+  }
+  const recoveredEvents = await storage.call<OutboxEvent[]>("events", { cursor: 0, limit: 10 });
+  assert.deepEqual(recoveredEvents.map(({ route, generation, payload }) => ({ route, generation, payload })), [
+    { route, generation: "g1", payload: { method: "thread/queue/changed", params: { threadId: route } } },
+  ]);
+  await storage.close();
+  storage = new Storage(path, "host");
+  await storage.ready;
+  assert.deepEqual(await storage.call("events", { cursor: 0, limit: 10 }), recoveredEvents);
+});
+
+test("Bridge queue shares history within reconciliation and reads again after idle before retrying", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "bridge-queue-history-"));
+  const storage = new Storage(join(root, "host.db"), "host");
+  t.after(async () => {
+    await storage.close();
+    await rm(root, { recursive: true, force: true });
+  });
+  await storage.ready;
+  const route = JSON.stringify(["server-1", "thread-1"]);
+  await storage.call("add", await config(root));
+  await storage.call("activate", { id: "g1", expected: "" });
+  await storage.call("admit", { command: command("create"), route, digest: "create", maxSpoolBytes: 1 << 20 });
+  await storage.call("dispatch", { id: "create" });
+  await storage.call("settle", { id: "create", state: "accepted" });
+  const store = (method: string, ...args: unknown[]) => storage.call("queue", { method, args: [route, ...args] });
+  const historyReads: boolean[] = [];
+  let idle = false;
+  let retry = false;
+  const queue = new HostQueue(storage, {
+    command: async () => assert.fail("Reconciliation must not dispatch"),
+    recover: async () => assert.fail("Queue list must not resume the provider"),
+    dispatchable: async () => false,
+    canReconcile: async () => true,
+    isIdle: async () => {
+      idle = retry;
+      return idle;
+    },
+    history: async () => {
+      historyReads.push(idle);
+      return {
+        thread: {
+          turns: [
+            { id: "first", status: "inProgress", items: [
+              { type: "userMessage", clientId: "seen-first" },
+              { type: "userMessage", clientId: "other-turn" },
+              { type: "agentMessage", clientId: "missing" },
+            ] },
+            { id: "second", status: idle ? "completed" : "inProgress", items: [
+              { type: "userMessage", clientId: "seen-second" },
+              ...(idle ? [{ type: "userMessage", clientId: "late" }] : []),
+            ] },
+          ],
+        },
+      };
+    },
+  });
+  t.after(() => queue.close());
+
+  const stage = async (clientId: string, turnId: string) => {
+    const row = await store("add", clientId, [{ type: "text", text: clientId }]);
+    await store("claim", row.id, turnId);
+    await store("settle", row.id, "unknown");
+    return row.id;
+  };
+  const first = await stage("seen-first", "first");
+  const second = await stage("seen-second", "second");
+  const missing = await stage("missing", "first");
+  await queue.request(route, "thread/queue/list", { receiptTurnIds: ["first"] });
+  await until(() => store("find", second), row => row.state === "delivered");
+  assert.deepEqual(historyReads, [false]);
+  assert.equal((await store("find", first)).delivery.context, "recorded");
+  assert.equal((await store("find", second)).delivery.context, "recorded");
+  assert.equal((await store("find", missing)).state, "unknown");
+  await store("discardUnknown", missing, "first");
+
+  const late = await stage("late", "second");
+  await store("requestRetry", late, "second");
+  retry = true;
+  historyReads.length = 0;
+  await queue.request(route, "thread/queue/list", { receiptTurnIds: ["second"] });
+  await until(() => store("find", late), row => row.state === "delivered");
+  assert.deepEqual(historyReads, [false, true]);
+  assert.equal((await store("find", late)).delivery.context, "recorded");
+
+  const ended = await stage("other-turn", "second");
+  const alsoEnded = await stage("unobserved", "second");
+  idle = false;
+  historyReads.length = 0;
+  await queue.request(route, "thread/queue/list", { receiptTurnIds: [] });
+  await until(() => store("find", alsoEnded), row => row.state === "closed");
+  assert.deepEqual(historyReads, [false, true]);
+  for (const id of [ended, alsoEnded]) {
+    const recovered = await store("find", id);
+    assert.equal(recovered.state, "closed");
+    assert.equal(recovered.delivery.execution, "completed");
+    assert.equal(recovered.delivery.context, "unobserved");
+  }
+});
+
+test("Bridge queue reads durable rows while provider history and the live outbox are held", { timeout: 6000 }, async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "bridge-queue-passive-list-"));
+  const storage = new Storage(join(root, "host.db"), "host");
+  const history = Promise.withResolvers<unknown>();
+  const enteredHistory = Promise.withResolvers<void>();
+  const live = Promise.withResolvers<OutboxEvent[]>();
+  const route = JSON.stringify(["server-1", "thread-1"]);
+  const errors: Record<string, unknown>[] = [];
+  let historyReads = 0;
+  let outboxReads = 0;
+  const notifications: unknown[] = [];
+  const queue = new HostQueue(storage, {
+    command: async () => assert.fail("Listing cannot dispatch"),
+    recover: async () => assert.fail("Listing cannot resume the provider"),
+    dispatchable: async () => false,
+    canReconcile: async () => true,
+    isIdle: async () => false,
+    history: async () => {
+      historyReads++;
+      if (historyReads > 1) return { thread: { turns: [{ id: "native-turn", items: [{ type: "userMessage", clientId: "unknown" }] }] } };
+      enteredHistory.resolve();
+      return history.promise;
+    },
+  }, entry => errors.push(entry));
+  const session = new BridgeGatewaySession({
+    serverId: "server-1",
+    async request(path, body) {
+      assert.equal(path, "/queue");
+      const { method, params } = body as { method: string; params: Record<string, unknown> };
+      return Response.json(await queue.request(route, method, params));
+    },
+    inbox: {
+      cursor: async () => 0,
+      read: (cursor = 0) => storage.call<OutboxEvent[]>("events", { cursor, limit: 10 }),
+      readIdentities: async () => [],
+      readPendingInteractions: async () => [],
+      pull: () => { outboxReads++; return live.promise; },
+      close: async () => {},
+    },
+  }, (_threadId, event) => notifications.push(event));
+  t.after(async () => {
+    queue.close();
+    history.resolve({ thread: { turns: [] } });
+    live.resolve([]);
+    await session.close();
+    await storage.close();
+    await rm(root, { recursive: true, force: true });
+  });
+  await storage.ready;
+  await storage.call("add", await config(root));
+  await storage.call("activate", { id: "g1", expected: "" });
+  await storage.call("admit", { command: command("create"), route, digest: "create", maxSpoolBytes: 1 << 20 });
+  await storage.call("dispatch", { id: "create" });
+  await storage.call("settle", { id: "create", state: "accepted" });
+  const store = (method: string, ...args: unknown[]) => storage.call("queue", { method, args: [route, ...args] });
+  const old = await store("add", "unknown", [{ type: "text", text: "old" }]);
+  await store("claim", old.id, "native-turn");
+  await store("settle", old.id, "unknown");
+  await store("add", "waiting", [{ type: "text", text: "new" }]);
+
+  const before = session.pull();
+  const list = () => session.queue("thread-1", "thread/queue/list", { receiptTurnIds: ["native-turn"] }) as Promise<{
+    data: { clientUserMessageId: string }[];
+    steering: { clientUserMessageId: string }[];
+  }>;
+  const first = list();
+  await enteredHistory.promise;
+  const result = await first;
+  assert.deepEqual(result.data.map(row => row.clientUserMessageId), ["waiting"]);
+  assert.deepEqual(result.steering.map(row => row.clientUserMessageId), ["unknown"]);
+  assert.deepEqual(await list(), result);
+  assert.equal(historyReads, 1);
+  assert.equal(outboxReads, 1);
+
+  history.reject(Error("Fixture history unavailable"));
+  await until(() => errors.length, count => count === 1);
+  assert.equal((await store("find", old.id)).state, "unknown");
+  await list();
+  await until(() => store("find", old.id), row => row.state === "delivered");
+  assert.equal(historyReads, 2);
+  assert.deepEqual((await list()).steering, []);
+  live.resolve([]);
+  await before;
+  assert.deepEqual(notifications, [{ method: "thread/queue/changed", params: { threadId: "thread-1" } }]);
+});
+
+test("Bridge queue scopes closed receipts by public Turn before the live inbox catches up", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "bridge-queue-receipt-scope-"));
+  const path = join(root, "host.db");
+  const storage = new Storage(path, "host");
+  const route = JSON.stringify(["server-1", "thread-1"]);
+  await storage.ready;
+  try {
+    await storage.call("add", await config(root));
+    await storage.call("activate", { id: "g1", expected: "" });
+    await storage.call("admit", { command: command("create"), route, digest: "create", maxSpoolBytes: 1 << 20 });
+    await storage.call("dispatch", { id: "create" });
+    await storage.call("settle", { id: "create", state: "accepted" });
+    const store = (method: string, ...args: unknown[]) => storage.call("queue", { method, args: [route, ...args] });
+    for (const nativeTurnId of ["native-first", "native-second", "native-hidden", "legacy-native-only"]) {
+      const row = await store("add", nativeTurnId, [{ type: "text", text: "queued" }]);
+      await store("claim", row.id, nativeTurnId);
+      await store("settle", row.id, "steering");
+      await store("finishTurn", nativeTurnId, "completed");
+      if (nativeTurnId === "legacy-native-only") continue;
+      await storage.call("callback", {
+        id: nativeTurnId, generation: "g1", method: "thread/delta", params: {
+          threadId: route, deltas: [
+            { op: "turn.open", nativeTurnId, scope: { threadId: route } },
+            { op: "turn.close", nativeTurnId, status: "completed", scope: { threadId: route } },
+          ],
+        },
+      });
+    }
+  } finally {
+    await storage.close();
+  }
+
+  const host = await BridgeHost.open({ path, policy, backend: localTestBackend() });
+  const endpoint = await attachGateway(host, token);
+  const selected: unknown[] = [];
+  const gateway = new BridgeGatewaySession({
+    serverId: "server-1",
+    async request(path, body) {
+      if (path === "/history-identities") selected.push((body as { selection: unknown }).selection);
+      return Response.json(await rpc(endpoint.url, path, body));
+    },
+    inbox: {
+      cursor: async () => 0, read: async () => [], readIdentities: async () => [],
+      readPendingInteractions: async () => [],
+      pull: async () => assert.fail("A scoped queue list must not wait for the live outbox"),
+      close: async () => {},
+    },
+  }, () => assert.fail("Listing does not replay live notifications"));
+  t.after(async () => {
+    await gateway.close();
+    await endpoint.close();
+    await host.close();
+    await rm(root, { recursive: true, force: true });
+  });
+  await gateway.open({ live: false });
+  const list = (receiptTurnIds: unknown[]) => gateway.queue("thread-1", "thread/queue/list", { receiptTurnIds }) as Promise<{
+    steering: { targetTurnId: string; clientUserMessageId: string; delivery: { targetTurnId: string; execution: string } }[];
+  }>;
+  const result = await list(["t1.2", "legacy-native-only", "t1.1", "t1.2"]);
+  assert.deepEqual(result.steering.map(row => [
+    row.clientUserMessageId, row.targetTurnId, row.delivery.targetTurnId, row.delivery.execution,
+  ]), [
+    ["native-first", "t1.1", "t1.1", "completed"],
+    ["native-second", "t1.2", "t1.2", "completed"],
+    ["legacy-native-only", "legacy-native-only", "legacy-native-only", "completed"],
+  ]);
+  assert.deepEqual(selected, [{ nativeIds: [], publicTurnIds: ["t1.2", "legacy-native-only", "t1.1"] }]);
+  assert.deepEqual((await list([])).steering, []);
+});
+
+test("Bridge queue transfers only the requested page and evidence rows from its storage worker", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "bridge-queue-sql-page-"));
+  const storage = new Storage(join(root, "host.db"), "host");
+  const queue = new HostQueue(storage, {
+    command: async () => assert.fail("Listing cannot dispatch"),
+    recover: async () => assert.fail("Listing cannot resume execution"),
+    dispatchable: async () => false,
+    canReconcile: async () => true,
+    isIdle: async () => false,
+    history: async () => ({ thread: { turns: [] } }),
+  });
+  t.after(async () => {
+    queue.close();
+    await storage.close();
+    await rm(root, { recursive: true, force: true });
+  });
+  await storage.ready;
+  const route = JSON.stringify(["server-1", "thread-1"]);
+  await storage.call("add", await config(root));
+  await storage.call("activate", { id: "g1", expected: "" });
+  await storage.call("admit", { command: command("create"), route, digest: "create", maxSpoolBytes: 1 << 20 });
+  await storage.call("dispatch", { id: "create" });
+  await storage.call("settle", { id: "create", state: "accepted" });
+  const store = (method: string, ...args: unknown[]) => storage.call("queue", { method, args: [route, ...args] });
+  for (const [clientId, turnId] of [["included", "included-turn"], ["excluded", "excluded-turn"], ["uncertain", "uncertain-turn"]]) {
+    const row = await store("add", clientId, [{ type: "text", text: clientId }]);
+    await store("claim", row.id, turnId);
+    await store("settle", row.id, clientId === "uncertain" ? "unknown" : "steering");
+    if (clientId !== "uncertain") await store("finishTurn", turnId, "completed");
+  }
+  for (let index = 0; index < 30; index++)
+    await store("add", "pending-" + index, [{ type: "text", text: "x".repeat(4096) }]);
+
+  const worker = storage.call.bind(storage);
+  const transfers: { method: string; rows: number }[] = [];
+  storage.call = async <T>(op: string, params?: unknown): Promise<T> => {
+    const result = await worker<T>(op, params);
+    if (op === "queue") {
+      const { method } = params as { method: string };
+      const page = result as { queued?: unknown[]; receipts?: unknown[] };
+      if (method === "listReconciliation")
+        assert.ok(Array.isArray(result) && result.every(row => !Object.hasOwn(row, "input")));
+      transfers.push({ method, rows: Array.isArray(result) ? result.length : (page.queued?.length ?? 0) + (page.receipts?.length ?? 0) });
+    }
+    return result;
+  };
+  const list = (cursor: string | null) => queue.request(route, "thread/queue/list", {
+    cursor, limit: 2, receiptTurnIds: ["included-turn"],
+  }) as Promise<{
+    data: { clientUserMessageId: string }[];
+    steering?: { clientUserMessageId: string }[];
+    nextCursor: string | null;
+  }>;
+  const first = await list(null);
+  assert.deepEqual(first.data.map(row => row.clientUserMessageId), ["pending-0", "pending-1"]);
+  assert.deepEqual(first.steering?.map(row => row.clientUserMessageId), ["included", "uncertain"]);
+  assert.equal(first.nextCursor, "2");
+  const last = await list("28");
+  assert.deepEqual(last.data.map(row => row.clientUserMessageId), ["pending-28", "pending-29"]);
+  assert.equal(last.nextCursor, null);
+  assert.equal(last.steering, undefined);
+  await until(() => transfers.length, count => count >= 3);
+  assert.deepEqual(transfers.sort((a, b) => a.rows - b.rows).map(transfer => transfer.rows), [2, 2, 4],
+    "the worker returns two pending pages and a receipt-only reconciliation");
+});
+
+for (const refusal of ["spool", "size"] as const) {
+  test("a queue dispatch refused before Host admission keeps unsent custody: " + refusal, async (t) => {
+    const { host, root } = await setup(t, refusal === "spool" ? 1 : undefined);
+    await host.accept(command("create"));
+    await accepted(host, "create");
+    await until(() => host.events(0), rows => rows.length > 0);
+    const queue = (method: string, params: Record<string, unknown>) =>
+      host.queueRequest({ serverId: "server-1", threadId: "thread-1", method, params });
+    await queue("thread/queue/add", {
+      clientUserMessageId: "pending",
+      input: [{ type: "text", text: refusal === "size" ? "x".repeat(BRIDGE_MAX_COMMAND_BYTES) : "Hello" }],
+    });
+    const retained = await until(
+      () => queue("thread/queue/find", { clientUserMessageId: "pending" }) as Promise<any>,
+      result => ["unknown", "rejected"].includes(result.queuedSubmission.delivery.nativeAdmission),
+    );
+    assert.equal(retained.queuedSubmission.state, "queued");
+    assert.equal(retained.queuedSubmission.targetTurnId, null);
+    assert.equal(retained.queuedSubmission.delivery.nativeAdmission, "rejected");
+    const page = await queue("thread/queue/list", { receiptTurnIds: [] }) as { data: { pausedReason: string }[] };
+    assert.equal(page.data[0]?.pausedReason, "delivery-rejected");
+    assert.deepEqual(await host.maintenance(), { queued: 1, unknown: 0, inFlight: 0 });
+    await assert.rejects(readFile(join(root, "executions")), { code: "ENOENT" });
+  });
+}
+
+test("archived Bridge queues stay dormant across restart and resume on confirmed unarchive", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "bridge-archived-queue-"));
+  const path = join(root, "host.db"), executions = join(root, "executions"), reads = join(root, "history-reads");
+  await writeFile(executions, "");
+  await writeFile(reads, "");
+  const fixture = await config(root);
+  const artifact = resolve("tests/agent-bridge/fixtures/queue-bridge.mjs");
+  const provider = {
+    ...fixture.provider,
+    capabilities: { ...fixture.provider.capabilities, history: true, lifecycle: true, adoption: true },
+  };
+  const handshake = negotiateHandshake({ protocolVersion: 1, grammarRange: { min: 1, max: 1 } }, provider);
+  assert(handshake.ok);
+  const open = () => BridgeHost.open({ path, policy, backend: localTestBackend() });
+  let host = await open();
+  t.after(async () => {
+    await host.close();
+    await rm(root, { recursive: true, force: true });
+  });
+  await host.add({
+    ...fixture, provider, artifact, digest: createHash("sha256").update(await readFile(artifact)).digest("hex"),
+    launch: { cwd: root, command: [process.execPath, artifact],
+      env: { EXECUTIONS: executions, HISTORY_READS: reads, HANDSHAKE: JSON.stringify(handshake.result) } },
+  });
+  await host.activate("g1", "");
+  await host.accept(command("create"));
+  await accepted(host, "create");
+
+  // A closed receipt remains visible for this history scope, and is not a pending delivery.
+  const route = JSON.stringify(["server-1", "thread-1"]);
+  const storage = (host as unknown as { storage: Storage }).storage;
+  const closed = await storage.call("queue", { method: "add", args: [route, "previous", [{ type: "text", text: "old" }]] });
+  await storage.call("queue", { method: "claim", args: [route, closed.id, "closed-turn"] });
+  await storage.call("queue", { method: "settle", args: [route, closed.id, "steering"] });
+  await storage.call("queue", { method: "finishTurn", args: [route, "closed-turn", "completed"] });
+
+  await host.accept(command("archive", "session/archive"));
+  await accepted(host, "archive");
+  await assert.rejects(host.accept(command("archived-send", "turn/start")), { kind: "invalid", message: /archive/i });
+  const queue = (method: string, params: Record<string, unknown> = {}) =>
+    host.queueRequest({ serverId: "server-1", threadId: "thread-1", method, params });
+  await queue("thread/queue/add", { clientUserMessageId: "waiting", input: [{ type: "text", text: "new" }] });
+  await host.close();
+  host = await open();
+  const listed = await queue("thread/queue/list", { receiptTurnIds: ["closed-turn"] }) as {
+    data: { id: string; clientUserMessageId: string }[];
+    steering: { clientUserMessageId: string }[];
+  };
+  assert.deepEqual(listed.data.map(row => row.clientUserMessageId), ["waiting"]);
+  assert.deepEqual(listed.steering.map(row => row.clientUserMessageId), ["previous"]);
+  await assert.rejects(queue("thread/queue/start", { queuedSubmissionId: listed.data[0]!.id }));
+  assert.equal(await readFile(reads, "utf8"), "", "startup and queue reconciliation must not read archived history");
+  assert.equal(await readFile(executions, "utf8"), "", "no queued input reached the archived provider");
+  const observe = (params: Record<string, unknown>) =>
+    host.observe({ serverId: "server-1", threadId: "thread-1", method: "history/read", params });
+  for (const params of [
+    { view: "thread", includeTurns: true }, { limit: 1 }, { view: "items" }, { view: "occurrences" },
+  ]) {
+    await assert.rejects(observe(params), { code: -32071 });
+  }
+  assert.equal(await readFile(reads, "utf8"), "", "ordinary history does not reach the archived provider");
+  await observe({ view: "thread", includeTurns: false });
+  await observe({ view: "thread", includeTurns: true, openArchivedHistory: true });
+  assert.equal(await readFile(reads, "utf8"), (route + "\n").repeat(2));
+
+  await host.accept(command("unarchive", "session/unarchive"));
+  await accepted(host, "unarchive");
+  const sent = await until(() => readFile(executions, "utf8"), value => value.includes("waiting"));
+  assert.equal(sent.split("\n").filter(line => line === "waiting").length, 1);
+});
+
+test("Bridge archive upgrade preserves queued inputs and fences legacy or interrupted archive commands", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "bridge-archive-upgrade-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const path = join(root, "host.db");
+  const v7 = resolveStoreMigrations("agent-bridge-host", migrations).filter(({ version }) => version <= 7);
+  const { database } = openManagedDatabase({ path, migrations: v7 });
+  database.prepare("INSERT INTO generations (id,config) VALUES (?,?)").run("g1", JSON.stringify(await config(root)));
+  const route = (id: string) => JSON.stringify(["server-1", id]);
+  const old = [
+    { id: "archived", commands: [["session/archive", "accepted"]], active: false },
+    { id: "reopened", commands: [["session/archive", "accepted"], ["session/unarchive", "accepted"]], active: true },
+    { id: "unconfirmed", commands: [["session/archive", "dispatching"]], active: false },
+  ];
+  for (const fixture of old) {
+    database.prepare("INSERT INTO routes (route,generation) VALUES (?,'g1')").run(route(fixture.id));
+    const insert = database.prepare("INSERT INTO commands(id,digest,epoch,route,generation,method,state) VALUES (?,? ,1,?,'g1',?,?)");
+    for (const [index, [method, state]] of fixture.commands.entries()) {
+      const id = fixture.id + "-" + index;
+      insert.run(id, id, route(fixture.id), method!, state!);
+    }
+  }
+  database.prepare(`INSERT INTO opencraft_host_queue (id,thread_id,client_id,input_json,position,created_at_ms,updated_at_ms,state)
+    VALUES ('waiting',?,'client','[{"type":"text","text":"still here"}]',1,1,1,'queued')`).run(route("archived"));
+  database.close();
+
+  let store = new Storage(path, "host");
+  try {
+    assert.equal((await store.ready).status, "migrated");
+    for (const fixture of old) {
+      const state = await store.call("observationRoute", { route: route(fixture.id), forQueue: true });
+      assert.equal(state.queueActive, fixture.active, fixture.id);
+    }
+    const retained = await store.call("queue", { method: "find", args: [route("archived"), "waiting"] });
+    assert.deepEqual(retained.input, [{ type: "text", text: "still here" }]);
+    const archive = command("new-archive", "session/archive", {}, "reopened");
+    await store.call("admit", { command: archive, route: route("reopened"), digest: "new-archive", maxSpoolBytes: 1 << 20 });
+    assert.equal((await store.call("observationRoute", { route: route("reopened"), forQueue: true })).queueActive, false,
+      "archive admission immediately fences the queue");
+    await store.call("dispatch", { id: "new-archive" });
+    await store.close();
+
+    store = new Storage(path, "host");
+    await store.ready;
+    assert.equal((await store.call("query", { id: "new-archive" })).state, "unknown");
+    assert.equal((await store.call("observationRoute", { route: route("reopened"), forQueue: true })).queueActive, false);
+  } finally {
+    await store.close();
+  }
+  const tamper = new DatabaseSync(path);
+  tamper.exec("UPDATE schema_migrations SET checksum='tampered' WHERE version=8");
+  tamper.close();
+  const broken = new Storage(path, "host");
+  await assert.rejects(broken.ready, /migration history/);
+  await broken.close().catch(() => {});
+});
+
+test("Host SIGKILL during CLI issuance recovers a definite refusal without native dispatch", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "bridge-crash-before-cli-issue-"));
+  const marker = join(root, "cli-issue");
+  const environment = { TEST_DB: join(root, "host.db"), TEST_TOKEN: token, TEST_CLI_ISSUE_MARKER: marker };
+  let proc = child("host-process.ts", environment);
+  let nativePid: number | undefined;
+  t.after(async () => {
+    if (proc.exitCode === null && proc.signalCode === null) await stop(proc);
+    if (nativePid) {
+      try { process.kill(-nativePid, "SIGKILL"); } catch {}
+    }
+    await rm(root, { recursive: true, force: true });
+  });
+  let [descriptor] = await once(proc, "message");
+  await rpc(descriptor.url, "/generation/add", await config(root, "g1", descriptor.pid, true));
+  await rpc(descriptor.url, "/generation/activate", { id: "g1", expected: "" });
+  await rpc(descriptor.url, "/command", command("create"));
+  nativePid = (await until(
+    () => rpc(descriptor.url, "/command?id=create"),
+    r => r.state === "accepted",
+  )).response.result.pid;
+  const start = command("preparing", "turn/start", { executionSource: "source" });
+  await rpc(descriptor.url, "/command", start);
+  await until(() => readFile(marker, "utf8").catch(() => ""), text => text === "waiting");
+  const exited = once(proc, "exit");
+  assert.equal(proc.kill("SIGKILL"), true);
+  await exited;
+
+  proc = child("host-process.ts", environment);
+  [descriptor] = await once(proc, "message");
+  const recovered = await rpc(descriptor.url, "/command?id=preparing");
+  assert.equal(recovered.state, "rejected");
+  assert.equal(recovered.epoch, 1);
+  assert.equal(recovered.response.error.kind, "explicit-reject");
+  assert.equal((await rpc(descriptor.url, "/command", start)).state, "rejected");
+  await assert.rejects(readFile(join(root, "executions")), { code: "ENOENT" });
 });
 
 test("Host SIGKILL after native send recovers unknown and never performs second native execution", async (t) => {
@@ -353,6 +1445,410 @@ test("durable inbox transaction deduplicates replay including ack-loss and rejec
   assert.deepEqual((await reopened.storage.call("inbox", { batch: [event, next] })).inserted, [next]);
   assert.deepEqual((await reopened.read()).map(({ seq }) => seq), [1, 2]);
   await reopened.close();
+});
+
+test("a transient producer read drains an already committed inbox page exactly once", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "bridge-committed-delivery-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const inbox = new GatewayInbox(join(root, "inbox.db"));
+  const route = '["server","thread"]';
+  const append = (seq: number) => inbox.storage.call("inbox", { batch: [{
+    seq, route, generation: "g", payload: { method: "thread/name/updated", params: { threadName: "name-" + seq } },
+  }] });
+  let status = 503;
+  const request = async (path: string) => {
+    if (path === "/snapshot") return Response.json({ routes: [], nativeSessions: [], interactions: [] });
+    if (path === "/ack") return Response.json(null);
+    return status === 200 ? Response.json([]) : new Response(null, { status });
+  };
+  const titles: string[] = [];
+  const session = new BridgeGatewaySession({
+    serverId: "server",
+    request,
+    inbox: {
+      cursor: () => inbox.cursor(),
+      read: cursor => inbox.read(cursor),
+      readIdentities: (route, after, through) => inbox.readIdentities(route, after, through),
+      readPendingInteractions: (route, after, through, ids) => inbox.readPendingInteractions(route, after, through, ids),
+      pull: () => pullBridgeInbox(request, {
+        cursor: () => inbox.cursor(), apply: batch => inbox.storage.call("inbox", { batch }),
+      }),
+      close: () => inbox.close(),
+    },
+  }, (_, frame) => titles.push((frame as { params: { threadName: string } }).params.threadName));
+  try {
+    await session.open({ live: false });
+    await append(1);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await assert.rejects(session.pull(), { status: 503 });
+      assert.deepEqual(titles, ["name-1"]);
+    }
+    await append(2);
+    status = 409;
+    await assert.rejects(session.pull(), { status: 409 });
+    assert.deepEqual(titles, ["name-1"]);
+    status = 200;
+    await session.pull();
+    assert.deepEqual(titles, ["name-1", "name-2"]);
+  } finally { await session.close(); }
+});
+
+test("an older interaction snapshot cannot prune a concurrently committed request", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "bridge-interaction-snapshot-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const inbox = new GatewayInbox(join(root, "inbox.db"));
+  const route = '["server","thread"]', id = "pending";
+  const snapshot = (interactions: { route: string; id: string }[]) => Response.json({
+    routes: [], nativeSessions: [], interactions,
+  });
+  const held = Promise.withResolvers<Response>();
+  const entered = Promise.withResolvers<void>();
+  const heldActive = Promise.withResolvers<Response>();
+  const enteredActive = Promise.withResolvers<void>();
+  let snapshots = 0;
+  const session = new BridgeGatewaySession({
+    serverId: "server",
+    async request(path) {
+      assert.equal(path, "/snapshot");
+      if (++snapshots === 1) return snapshot([]);
+      if (snapshots === 2) {
+        entered.resolve();
+        return held.promise;
+      }
+      if (snapshots === 4) {
+        enteredActive.resolve();
+        return heldActive.promise;
+      }
+      return snapshot([{ route, id }]);
+    },
+    inbox: {
+      cursor: () => inbox.cursor(),
+      read: cursor => inbox.read(cursor),
+      readIdentities: (scope, after, through) => inbox.readIdentities(scope, after, through),
+      readPendingInteractions: (scope, after, through, ids) => inbox.readPendingInteractions(scope, after, through, ids),
+      async pull() {},
+      close: () => inbox.close(),
+    },
+  }, () => {});
+  try {
+    await session.open({ live: false });
+    const older = session.pendingInteractions("thread");
+    await entered.promise;
+    const payload = { method: "interaction/request", params: { interactionId: id } };
+    await inbox.storage.call("inbox", { batch: [{ seq: 1, route, generation: "g", payload }] });
+    await session.pull();
+    held.resolve(snapshot([]));
+    assert.deepEqual(await older, []);
+    const restored = await session.pendingInteractions("thread");
+    assert.deepEqual(restored, [{ ...payload, params: { ...payload.params, threadId: "thread" } }]);
+
+    const outdatedActive = session.pendingInteractions("thread");
+    await enteredActive.promise;
+    await inbox.storage.call("inbox", { batch: [{
+      seq: 2, route, generation: "g", payload: { ...payload, method: "interaction/resolved" },
+    }] });
+    await session.pull();
+    heldActive.resolve(snapshot([{ route, id }]));
+    assert.deepEqual(await outdatedActive, []);
+  } finally {
+    held.resolve(snapshot([]));
+    heldActive.resolve(snapshot([]));
+    await session.close();
+  }
+});
+
+test("a committed approval can be restored while outbox reads are temporarily unavailable", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "bridge-committed-approval-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const inbox = new GatewayInbox(join(root, "inbox.db"));
+  const route = '["server","thread"]', id = "retained";
+  const payload = { method: "interaction/request", params: { interactionId: id } };
+  const interactions = [{ route, id }];
+  let status = 503;
+  const session = new BridgeGatewaySession({
+    serverId: "server",
+    async request(path) {
+      assert.equal(path, "/snapshot");
+      return Response.json({ routes: [], nativeSessions: [], interactions });
+    },
+    inbox: {
+      cursor: () => inbox.cursor(),
+      read: cursor => inbox.read(cursor),
+      readIdentities: (scope, after, through) => inbox.readIdentities(scope, after, through),
+      readPendingInteractions: (scope, after, through, ids) => inbox.readPendingInteractions(scope, after, through, ids),
+      async pull() { throw new BridgeOutboxReadError(status); },
+      close: () => inbox.close(),
+    },
+  }, () => assert.fail("recovering a committed approval must not replay its old live event"));
+  try {
+    await inbox.storage.call("inbox", { batch: [{ seq: 1, route, generation: "g", payload }] });
+    await session.open({ live: false });
+    assert.deepEqual(await session.pendingInteractions("thread"), [
+      { ...payload, params: { ...payload.params, threadId: "thread" } },
+    ]);
+    interactions.push({ route, id: "not-committed" });
+    await assert.rejects(session.pendingInteractions("thread"), { status: 503 });
+    interactions.pop();
+    status = 409;
+    await assert.rejects(session.pendingInteractions("thread"), { status: 409 });
+  } finally { await session.close(); }
+});
+
+test("history and targeted approval recovery are independent of another retained approval body", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "bridge-approval-recovery-isolated-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const inbox = new GatewayInbox(join(root, "inbox.db"));
+  const route = '["server","thread"]';
+  const pending = ["blocked", "ready"];
+  const selections: string[][] = [];
+  let bodyUnavailable = true;
+  const readPending = (scope: string, after: number, through: number, ids: readonly string[]) => {
+    selections.push([...ids]);
+    if (bodyUnavailable && ids.includes("blocked")) throw Error("Fixture approval body unavailable");
+    return inbox.readPendingInteractions(scope, after, through, ids);
+  };
+  const session = new BridgeGatewaySession({
+    serverId: "server",
+    async request(path) {
+      if (path.startsWith("/history-identities?"))
+        return Response.json({ high: 3, acknowledged: 3, outboxId: "1".repeat(32), identities: [] });
+      assert.equal(path, "/snapshot");
+      return Response.json({ routes: [], nativeSessions: [], historyIdentityPages: true,
+        interactions: pending.map(id => ({ route, id })) });
+    },
+    inbox: {
+      cursor: () => inbox.cursor(),
+      read: after => inbox.read(after),
+      readIdentities: (scope, after, through) => inbox.readIdentities(scope, after, through),
+      readPendingInteractions: readPending,
+      async pull() {},
+      close: () => inbox.close(),
+    },
+  }, () => assert.fail("Retained approvals must not be republished"));
+  try {
+    await inbox.storage.call("inbox", { batch: [
+      { seq: 1, route, generation: "g", payload: { event: {
+        kind: "turn.started", nativeTurnId: "native-turn", turnId: "public-turn",
+      } } },
+      ...pending.map((interactionId, index) => ({
+        seq: index + 2, route, generation: "g", payload: { method: "interaction/request", params: { interactionId } },
+      })),
+    ] });
+    await session.open({ live: false });
+    assert.deepEqual(await session.readProjectedHistory("thread", async () => ({ data: [{ id: "native-turn", items: [] }] })),
+      { data: [{ id: "public-turn", items: [] }] });
+    assert.deepEqual(selections, []);
+    await assert.rejects(session.pendingInteractions("thread"), /Fixture approval body unavailable/);
+    const request = (interactionId: string) => ({ method: "interaction/request", params: { threadId: "thread", interactionId } });
+    assert.deepEqual(await session.pendingInteractions("thread", "ready"), [request("ready")]);
+    assert.deepEqual(selections, [["blocked", "ready"], ["ready"]]);
+    bodyUnavailable = false;
+    assert.deepEqual(await session.pendingInteractions("thread"), [request("ready"), request("blocked")]);
+  } finally { await session.close(); }
+});
+
+test("pending approval delivery and settlement stay scoped when two routes use the same producer ID", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "bridge-approval-route-scope-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const inbox = new GatewayInbox(join(root, "inbox.db"));
+  const route = (threadId: string) => JSON.stringify(["server", threadId]);
+  const id = "producer-approval";
+  let pending = ["left", "right"];
+  const published: unknown[] = [];
+  const session = new BridgeGatewaySession({
+    serverId: "server",
+    async request(path) {
+      assert.equal(path, "/snapshot");
+      return Response.json({ routes: [], nativeSessions: [],
+        interactions: pending.map(threadId => ({ route: route(threadId), id })) });
+    },
+    inbox: {
+      cursor: () => inbox.cursor(),
+      read: after => inbox.read(after),
+      readIdentities: (...args) => inbox.readIdentities(...args),
+      readPendingInteractions: (...args) => inbox.readPendingInteractions(...args),
+      async pull() {},
+      close: () => inbox.close(),
+    },
+  }, (threadId, value) => published.push({ threadId, value }));
+  try {
+    await inbox.storage.call("inbox", { batch: pending.map((threadId, index) => ({
+      seq: index + 1, route: route(threadId), generation: "g",
+      payload: { method: "interaction/request", params: { interactionId: id, title: threadId } },
+    })) });
+    await session.open({ live: false });
+    const approval = (threadId: string) => ({
+      method: "interaction/request", params: { interactionId: id, title: threadId, threadId },
+    });
+    assert.deepEqual(await session.pendingInteractions("left"), [approval("left")]);
+    assert.deepEqual(await session.pendingInteractions("right"), [approval("right")]);
+    assert.deepEqual(await session.pendingInteractions("left", id), [approval("left")]);
+
+    pending = ["right"];
+    assert.deepEqual(await session.pendingInteractions("left"), []);
+    assert.deepEqual(await session.pendingInteractions("right", id), [approval("right")]);
+    pending = [];
+    await inbox.storage.call("inbox", { batch: ["right", "left"].map((threadId, index) => ({
+      seq: index + 3, route: route(threadId), generation: "g",
+      payload: { method: "interaction/resolved", params: { interactionId: id, reason: "resolved" } },
+    })) });
+    await session.pull();
+    assert.deepEqual(await session.pendingInteractions("right"), []);
+    assert.deepEqual(published, ["left", "right"].map(threadId => ({ threadId, value: {
+      method: "interaction/resolved", params: { interactionId: id, threadId, reason: "resolved" },
+    } })));
+  } finally { await session.close(); }
+});
+
+test("a healthy first outbox page does not make an incomplete approval snapshot authoritative", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "bridge-approval-pages-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const inbox = new GatewayInbox(join(root, "inbox.db"));
+  const route = '["server","thread"]';
+  const page = (seq: number, id: string) => [{ seq, route, generation: "g", payload: {
+    method: "interaction/request", params: { interactionId: id },
+  } }];
+  let deliverSecond = false;
+  const session = new BridgeGatewaySession({
+    serverId: "server",
+    async request(path) {
+      assert.equal(path, "/snapshot");
+      return Response.json({ routes: [], nativeSessions: [], interactions: [
+        { route, id: "first" }, { route, id: "second" },
+      ] });
+    },
+    inbox: {
+      cursor: () => inbox.cursor(),
+      read: cursor => inbox.read(cursor),
+      readIdentities: (scope, after, through) => inbox.readIdentities(scope, after, through),
+      readPendingInteractions: (scope, after, through, ids) => inbox.readPendingInteractions(scope, after, through, ids),
+      async pull() {
+        const cursor = await inbox.cursor();
+        const batch = cursor === 0 ? page(1, "first") : deliverSecond && cursor === 1 ? page(2, "second") : [];
+        await inbox.storage.call("inbox", { batch });
+      },
+      close: () => inbox.close(),
+    },
+  }, () => {});
+  try {
+    await session.open({ live: false });
+    await assert.rejects(session.pendingInteractions("thread"), { name: "BridgeInteractionSnapshotIncomplete" });
+    deliverSecond = true;
+    assert.deepEqual(await session.pendingInteractions("thread"), [
+      ...page(1, "first"), ...page(2, "second"),
+    ].map(({ payload }) => ({ ...payload, params: { ...payload.params, threadId: "thread" } })));
+  } finally { await session.close(); }
+});
+
+test("an accepted approval receipt settles before the independent outbox read returns", async () => {
+  const route = '["server","thread"]', id = "approval";
+  const payload = { method: "interaction/request", params: { interactionId: id } };
+  const events = [{ seq: 1, route, generation: "g", payload }];
+  const observed: unknown[] = [];
+  let block = false;
+  const held = Promise.withResolvers<void>();
+  const receipt = Promise.withResolvers<void>();
+  const session = new BridgeGatewaySession({
+    serverId: "server",
+    async request(path) {
+      if (path === "/snapshot") return Response.json({ routes: [], nativeSessions: [], interactions: [{ route, id }] });
+      if (path === "/command") return Response.json(null);
+      assert.equal(path, "/command?id=approval-answer");
+      receipt.resolve();
+      return Response.json({ state: "accepted", response: { result: {} } });
+    },
+    inbox: {
+      async cursor() { return 0; }, async read(after) { return events.filter(row => row.seq > after); },
+      async readIdentities() { return []; }, async readPendingInteractions() { return []; }, async close() {},
+      async pull() { if (block) await held.promise; },
+    },
+  }, (_, value) => observed.push(value));
+  let pending: Promise<unknown> | undefined;
+  try {
+    await session.open();
+    block = true;
+    const background = session.pull();
+    let result: unknown;
+    pending = session.command("thread", "approval-answer", "interaction/resolve", {
+      interactionId: id, result: { decision: "decline" },
+    }).then(value => { result = value; return value; });
+    await receipt.promise;
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(result, {});
+    assert.deepEqual(observed.map(value => (value as { method: string }).method), ["interaction/request", "interaction/resolved"]);
+    events.push({ seq: 2, route, generation: "g", payload: { ...payload, method: "interaction/resolved" } });
+    held.resolve();
+    await background;
+    assert.equal(observed.length, 2, "late outbox resolution must not publish the receipt twice");
+  } finally {
+    held.resolve();
+    await pending;
+    await session.close();
+  }
+});
+
+test("gateway startup skips the old event log and lazily projects one retained route after inbox upgrade", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "bridge-projection-upgrade-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const path = join(root, "inbox.db"), route = '["server","selected"]', other = '["server","other"]';
+  const { database } = openManagedDatabase({ path, migrations: resolveStoreMigrations("agent-bridge-host", migrations).filter(({ version }) => version < 5) });
+  const insert = database.prepare("INSERT INTO inbox VALUES (?,?,?,?,'[]')");
+  const add = (seq: number, scope: string, payload: unknown) => insert.run(seq, scope, "g", JSON.stringify(payload));
+  database.exec("BEGIN");
+  for (let seq = 1; seq <= 1000; seq++) add(seq, other, { method: "thread/status/changed" });
+  add(1001, route, { kind: "canonical", event: { kind: "turn.started", nativeTurnId: "native-turn", turnId: "public-turn" } });
+  add(1002, route, { kind: "canonical", event: { kind: "item.completed", item: { nativeKey: "native-item", itemId: "public-item", text: "synthetic" } } });
+  add(1003, route, { method: "interaction/request", params: { interactionId: "retained", payload: { method: "item/tool/requestUserInput" } } });
+  add(1004, route, { method: "interaction/request", params: { interactionId: "already-settled", payload: { text: "x".repeat(3 * 1024 * 1024) } } });
+  add(1005, route, { method: "interaction/request", params: { interactionId: "peer-only", payload: { method: "item/tool/requestUserInput" } } });
+  database.exec("UPDATE meta SET value='1005' WHERE key='ack'; COMMIT");
+  database.close();
+  const inbox = new GatewayInbox(path);
+  assert.equal((await inbox.storage.ready).status, "migrated");
+  const reads: number[] = [], selected: string[] = [];
+  const restoredIds: string[] = [];
+  const snapshot = { routes: [{ route, generation: "g" }], nativeSessions: [{ route, native_id: "native-thread", restorable: 1 }],
+    interactions: [{ route, id: "retained" }, { route: other, id: "peer-only" }] };
+  const session = new BridgeGatewaySession({
+    serverId: "server",
+    async request() { return Response.json(snapshot); },
+    inbox: {
+      cursor: () => inbox.cursor(), close: () => inbox.close(), async pull() {},
+      read(cursor) { reads.push(cursor); return inbox.read(cursor); },
+      readIdentities(scope, after, through) {
+        selected.push(scope);
+        return inbox.readIdentities(scope, after, through);
+      },
+      async readPendingInteractions(scope, after, through, ids) {
+        const page = await inbox.readPendingInteractions(scope, after, through, ids);
+        restoredIds.push(...page.map(row => row.id));
+        return page;
+      },
+    },
+  }, () => assert.fail("Retained events must not be republished"));
+  try {
+    await session.open();
+    assert.deepEqual(reads, [1005]);
+    assert.deepEqual(selected, []);
+    assert.equal(session.publicThread("native-thread"), "selected");
+    await session.hydrateThread("selected");
+    assert.deepEqual(new Set(selected), new Set([route]));
+    assert.deepEqual(restoredIds, []);
+    assert.equal(session.nativeTurn("selected", "public-turn"), "native-turn");
+    assert.deepEqual(session.history("selected", { turnId: "native-turn", itemId: "native-item" }),
+      { turnId: "public-turn", itemId: "public-item" });
+    assert.deepEqual((await session.pendingInteractions("selected")).map((frame: any) => frame.params.interactionId), ["retained"]);
+    assert.deepEqual(restoredIds, ["retained"], "only this route's pending bodies cross the storage worker boundary");
+    assert.deepEqual((await inbox.readIdentities(route, 0, 1005)).map(row => row.seq), [1001, 1002]);
+  } finally {
+    await session.close();
+  }
+  const tamper = new DatabaseSync(path);
+  tamper.exec("UPDATE schema_migrations SET checksum='tampered' WHERE version=5");
+  tamper.close();
+  const broken = new GatewayInbox(path);
+  await assert.rejects(broken.storage.ready, /migration history/);
+  await broken.close().catch(() => {});
 });
 
 test("selected sandbox backend failure rejects execution and has no local fallback", async (t) => {
@@ -574,6 +2070,61 @@ test("execution CLI issuance follows custody admission, refuses missing proof an
   assert.equal(issued, 1);
 });
 
+test("a held CLI revocation leaves other Threads free to commit and keeps its own lease fenced", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "bridge-cli-revocation-"));
+  const held = Promise.withResolvers<void>();
+  const issued: string[] = [];
+  const revoked: string[] = [];
+  const host = await BridgeHost.open({
+    path: join(root, "host.db"),
+    policy,
+    backend: localTestBackend(),
+    executionCli: {
+      async issue({ threadId }) {
+        issued.push(threadId);
+        return {
+          environment: { OPENCRAFT_THREAD_CLI: "fixture" },
+          async revoke() {
+            revoked.push(threadId);
+            if (threadId === "thread-1") {
+              await held.promise;
+            }
+          },
+        };
+      },
+    },
+  });
+  t.after(async () => {
+    held.resolve();
+    await host.close();
+    await rm(root, { recursive: true, force: true });
+  });
+  await host.add(await config(root, "g1", process.pid, true));
+  await host.activate("g1", "");
+  await host.accept(command("create"));
+  await accepted(host, "create");
+  const params = { executionSource: "signed-source", closeBeforeRefusal: true };
+  await host.accept(command("first", "turn/start", params));
+  await until(async () => revoked.includes("thread-1"), Boolean);
+
+  await host.accept(command("create-other", "session/create", {}, "thread-2"));
+  await accepted(host, "create-other");
+  await host.accept(command("other", "turn/start", params, "thread-2"));
+  await accepted(host, "other");
+  await accepted(host, "first");
+  const other = (await host.events(0)).filter(event => event.route === JSON.stringify(["server-1", "thread-2"]));
+  assert.ok(other.some(event => (event.payload as any).event?.kind === "turn.completed"));
+
+  await host.accept(command("fenced", "turn/start", params));
+  const refused = await until(() => host.query("fenced"), receipt => receipt?.state === "rejected");
+  assert.equal((refused!.response as any).error.message, "cliUnavailable");
+  await host.accept(command("stop", "turn/stop"));
+  await accepted(host, "stop");
+  assert.deepEqual(issued, ["thread-1", "thread-2"]);
+  assert.deepEqual(revoked, ["thread-1", "thread-2"]);
+  held.resolve();
+});
+
 test("a rejected concurrent CLI admission cannot clear another command reservation", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "bridge-cli-reservation-"));
   let release!: () => void,
@@ -619,6 +2170,231 @@ test("a rejected concurrent CLI admission cannot clear another command reservati
   release();
   await accepted(host, "first");
 });
+
+for (const terminal of ["receipt", "callback"] as const)
+  test("closing a Thread fences a pending CLI issuance on its " + terminal, async (t) => {
+    const root = await mkdtemp(join(tmpdir(), "bridge-cli-close-during-issue-"));
+    const held = Promise.withResolvers<void>();
+    let issued = 0, revoked = 0;
+    const host = await BridgeHost.open({
+      path: join(root, "host.db"),
+      policy,
+      backend: localTestBackend(),
+      executionCli: {
+        async issue() {
+          issued++;
+          await held.promise;
+          return {
+            environment: { OPENCRAFT_THREAD_CLI: "fixture" },
+            async revoke() { revoked++; },
+          };
+        },
+      },
+    });
+    t.after(async () => {
+      held.resolve();
+      await host.close();
+      await rm(root, { recursive: true, force: true });
+    });
+    await host.add(await config(root, "g1", process.pid, true));
+    await host.activate("g1", "");
+    await host.accept(command("create"));
+    await accepted(host, "create");
+    await host.accept(command("pending", "turn/start", { executionSource: "source", closeBeforeRefusal: true }));
+    await until(async () => issued, count => count === 1);
+
+    await host.accept(command("end-session", "session/close", { holdAfterSessionEnd: terminal === "callback" }));
+    if (terminal === "receipt") await accepted(host, "end-session");
+    else {
+      await until(() => readFile(join(root, "executions.end-ack"), "utf8").catch(() => ""), text => text === "durable\n");
+      assert.equal((await host.query("end-session"))?.state, "dispatching");
+    }
+    const receipt = await host.query("pending");
+    assert.equal(receipt?.state, "rejected", "the start receipt settles before the CLI lease returns");
+    assert.equal((receipt?.response as any).error.message, "cliUnavailable");
+    assert.equal(revoked, 0);
+    if (terminal === "receipt") {
+      const events = await host.events(0);
+      await host.ack(events.at(-1)!.seq);
+      await assert.rejects(host.releaseThread("server-1", "thread-1"), /still has work/);
+    }
+    held.resolve();
+    await until(async () => revoked, count => count === 1);
+    if (terminal === "receipt") await until(async () => {
+      try { await host.releaseThread("server-1", "thread-1"); return true; }
+      catch (error) { assert.match(String(error), /still has work/); return false; }
+    }, Boolean);
+    assert.deepEqual(await host.query("pending"), receipt);
+    await assert.rejects(readFile(join(root, "executions")), { code: "ENOENT" });
+    assert.equal((await host.diagnostics()).some(peer => peer.failed), false);
+  });
+
+for (const scope of ["pending", "targeted", "active"] as const)
+  test("Stop preserves its scope during CLI issuance with " + scope + " work", async (t) => {
+    const localStop = scope === "pending";
+    const root = await mkdtemp(join(tmpdir(), "bridge-cli-stop-during-issue-"));
+    const held = Promise.withResolvers<void>();
+    let issued = 0, restored = 0, revoked = 0;
+    const host = await BridgeHost.open({
+      path: join(root, "host.db"),
+      policy,
+      backend: localTestBackend(),
+      executionCli: {
+        async reserve() {
+          return { environment: { OPENCRAFT_THREAD_CLI: "fixture" }, async revoke() {} };
+        },
+        async issue() {
+          issued++;
+          await held.promise;
+          return {
+            environment: { OPENCRAFT_THREAD_CLI: "fixture" },
+            async rejectBeforeStart() {
+              restored++;
+              return { environment: { OPENCRAFT_THREAD_CLI: "fixture" }, async revoke() {} };
+            },
+            async revoke() { revoked++; },
+          };
+        },
+      },
+    });
+    t.after(async () => {
+      held.resolve();
+      await host.close();
+      await rm(root, { recursive: true, force: true });
+    });
+    await host.add(await config(root, "g1", process.pid, true));
+    await host.activate("g1", "");
+    await host.accept(command("create"));
+    await accepted(host, "create");
+    if (scope === "active") {
+      await host.accept(command("queue-start:existing", "turn/start", { hold: true }));
+      await accepted(host, "queue-start:existing");
+    }
+    await host.accept(command("pending", "turn/start", { executionSource: "source", closeBeforeRefusal: true }));
+    await until(async () => issued, count => count === 1);
+
+    // The fake provider refuses the Stop so this setup also covers engines that
+    // require a native Turn ID, which a pre-dispatch start does not have.
+    await host.accept(command("stop", "turn/stop", scope === "targeted"
+      ? { refuse: true, expectedTurnId: "old-native-turn" }
+      : { refuse: true }));
+    const stop = await until(() => host.query("stop"), receipt => receipt?.state === "accepted" || receipt?.state === "rejected");
+    assert.equal(stop?.state, localStop ? "accepted" : "rejected");
+    if (localStop) {
+      assert.deepEqual((stop?.response as any).result, { stopped: true });
+      assert.equal((await host.query("pending"))?.state, "rejected", "Stop settles the start while CLI issuance is still held");
+      assert.equal((await host.accept(command("pending", "turn/start", { executionSource: "source", closeBeforeRefusal: true }))).state, "rejected");
+      await host.accept(command("retry-during-cleanup", "turn/start", { executionSource: "source" }));
+      await until(() => host.query("retry-during-cleanup"), receipt => receipt?.state === "rejected");
+      assert.equal(issued, 1, "the pending lease still owns the route until cleanup");
+      assert.equal(restored, 0);
+    }
+
+    held.resolve();
+    const start = await until(() => host.query("pending"), receipt => receipt?.state === "accepted" || receipt?.state === "rejected");
+    assert.equal(start?.state, localStop ? "rejected" : "accepted");
+    if (!localStop) {
+      assert.equal(restored, 0);
+      assert.match(await readFile(join(root, "executions"), "utf8"), /host-command:pending/);
+    } else {
+      await until(async () => restored, count => count === 1);
+      assert.equal(revoked, 0);
+      assert.deepEqual(await host.query("pending"), start);
+      await assert.rejects(readFile(join(root, "executions")), { code: "ENOENT" });
+    }
+  });
+
+for (const recovery of ["normal", "stop", "shutdown", "shutdown-failed"] as const)
+  test("cancelled CLI cleanup retains queue custody through " + recovery, async (t) => {
+    const root = await mkdtemp(join(tmpdir(), "bridge-cli-queue-wakeup-"));
+    const issueGate = Promise.withResolvers<void>();
+    const cleanupGate = Promise.withResolvers<void>();
+    const cleanupFailed = Promise.withResolvers<void>();
+    let issued = 0, revoking = 0, closed = false;
+    const host = await BridgeHost.open({
+      path: join(root, "host.db"),
+      policy,
+      backend: localTestBackend(),
+      executionCli: {
+        async issue() {
+          issued++;
+          await issueGate.promise;
+          return {
+            environment: { OPENCRAFT_THREAD_CLI: "fixture" },
+            async revoke() {
+              const attempt = ++revoking;
+              await cleanupGate.promise;
+              if ((recovery !== "normal" && attempt === 1) || recovery === "shutdown-failed") {
+                cleanupFailed.resolve();
+                throw Error("fixture could not revoke lease");
+              }
+            },
+          };
+        },
+      },
+    });
+    t.after(async () => {
+      issueGate.resolve();
+      cleanupGate.resolve();
+      if (!closed) await host.close();
+      await rm(root, { recursive: true, force: true });
+    });
+    const generation = await config(root, "g1", process.pid, true);
+    const artifact = resolve("tests/agent-bridge/fixtures/queue-bridge.mjs");
+    const provider = { ...generation.provider, capabilities: { ...generation.provider.capabilities, history: true } };
+    const handshake = negotiateHandshake({ protocolVersion: 1, grammarRange: { min: 1, max: 1 } }, provider);
+    assert(handshake.ok);
+    await host.add({
+      ...generation, artifact, provider, digest: createHash("sha256").update(await readFile(artifact)).digest("hex"),
+      launch: {
+        ...generation.launch, command: [process.execPath, artifact],
+        env: { ...generation.launch.env, HANDSHAKE: JSON.stringify(handshake.result) },
+      },
+    });
+    await host.activate("g1", "");
+    await host.accept(command("create"));
+    await accepted(host, "create");
+    await host.accept(command("held-start", "turn/start", { executionSource: "source" }));
+    await until(async () => issued, count => count === 1);
+    await host.accept(command("stop", "turn/stop"));
+    await accepted(host, "stop");
+    assert.equal((await host.query("held-start"))?.state, "rejected");
+
+    const queue = (method: string, params: Record<string, unknown> = {}) =>
+      host.queueRequest({ serverId: "server-1", threadId: "thread-1", method, params });
+    await queue("thread/queue/add", { clientUserMessageId: "next", input: [{ type: "text", text: "queued" }] });
+    const listed = await queue("thread/queue/list") as { data: unknown[] };
+    assert.equal(listed.data.length, 1);
+    issueGate.resolve();
+    await until(async () => revoking, count => count === 1);
+    await assert.rejects(readFile(join(root, "executions")), { code: "ENOENT" });
+
+    cleanupGate.resolve();
+    if (recovery !== "normal") {
+      await cleanupFailed.promise;
+      const receipt = await host.query("held-start");
+      assert.equal(receipt?.state, "rejected");
+      await assert.rejects(queue("thread/queue/start"), /Thread is not idle/);
+      await assert.rejects(readFile(join(root, "executions")), { code: "ENOENT" });
+      if (recovery === "shutdown" || recovery === "shutdown-failed") {
+        const closing = host.close();
+        closed = true;
+        if (recovery === "shutdown-failed") await assert.rejects(closing, /Bridge owner cleanup unconfirmed/);
+        else await closing;
+        assert.equal(revoking, 2);
+        await assert.rejects(readFile(join(root, "executions")), { code: "ENOENT" });
+        return;
+      }
+      await host.accept(command("retry-stop", "turn/stop"));
+      await accepted(host, "retry-stop");
+      assert.equal(revoking, 2);
+    }
+    const executions = await until(() => readFile(join(root, "executions"), "utf8").catch(() => ""), Boolean);
+    assert.equal(executions, "next\n");
+    await until(() => queue("thread/queue/list") as Promise<{ data: unknown[] }>, state => state.data.length === 0);
+    assert.equal(await readFile(join(root, "executions"), "utf8"), "next\n");
+    assert.equal(issued, 1);
+  });
 
 test("a late CLI lease is revoked when its provider exits during issuance", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "bridge-cli-late-"));
@@ -854,7 +2630,7 @@ test("v4 thread queue migration keeps existing custody, serves the shared queue 
       .prepare("SELECT version FROM schema_migrations ORDER BY version")
       .all()
       .map((row) => row.version),
-    [1, 2, 3, 4],
+    resolveStoreMigrations("agent-bridge-host", migrations).map(row => row.version),
   );
   database.exec("UPDATE schema_migrations SET checksum='tampered' WHERE version=4");
   database.close();

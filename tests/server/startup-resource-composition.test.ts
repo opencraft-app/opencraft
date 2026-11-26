@@ -15,7 +15,7 @@ test("bounded gzip precompression preserves bytes and never grows the former enc
     const encoded = gzipAsset(raw);
     assert.deepEqual(gunzipSync(encoded), raw);
     assert.deepEqual(gzipAsset(raw), encoded, "same input yields the same sidecar");
-    assert.equal(encoded.length, Math.min(...[4, 5, 6, 7, 8, 9].map(memLevel => gzipSync(raw, { level: 9, memLevel }).length)));
+    assert.equal(encoded.length, Math.min(...[3, 4, 5, 6, 7, 8, 9].map(memLevel => gzipSync(raw, { level: 9, memLevel }).length)));
     assert.ok(encoded.length <= gzipSync(raw, { level: 9 }).length);
   }
 });
@@ -77,4 +77,5 @@ test("startup leaf consolidation excludes optional implementations and recursive
   assert.ok(startupLeafGroups.every(group => group.includeDependenciesRecursively === false));
   assert.ok(startupLeafGroups.some(group => group.test.test("/fixture/apps/workbench-web/src/runtime/mobile-container.ts")));
   assert.equal(startupLeafGroups.some(group => group.test.test("/fixture/apps/workbench-web/src/components/conversation-search-dialog.tsx")), false);
+  assert.equal(startupLeafGroups.some(group => group.test.test("/fixture/apps/workbench-web/src/runtime/conversation-content-search.ts")), false);
 });

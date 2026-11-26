@@ -83,7 +83,10 @@ jobs:
 
   distribute:
     needs: docker-compose
-    if: github.repository == 'opencraft-app/opencraft' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    # The PR-only plan is skipped on main. Use the direct build result.
+    if: >-
+      !cancelled() && needs.docker-compose.result == 'success'
+      && github.repository == 'opencraft-app/opencraft' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     permissions:
       contents: read
       packages: write
@@ -116,7 +119,9 @@ jobs:
 
   promote:
     needs: distribute
-    if: github.repository == 'opencraft-app/opencraft' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: >-
+      !cancelled() && needs.distribute.result == 'success'
+      && github.repository == 'opencraft-app/opencraft' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:

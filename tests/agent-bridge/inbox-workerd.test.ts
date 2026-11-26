@@ -63,4 +63,50 @@ testScenariosOnMiniflare("bridge-inbox", [
       }
     },
   },
+  {
+    name: "Workspace Bridge upgrades its inbox and commits oversized events within the Workerd row budget",
+    async run({ runtime }) {
+      const instance = await runtime.start(worker);
+      try {
+        const request = async (action: string) => {
+          const response = await instance.fetch(`${instance.origin}/workspace/${action}`);
+          assert.equal(response.status, 200, await response.clone().text());
+          return response.json();
+        };
+        assert.equal(await request("v3"), 1);
+        assert.equal(await request("apply"), 2);
+        await instance.fetch(`${instance.origin}/workspace/evict`).catch(() => undefined);
+        assert.deepEqual(await request("state"), {
+          cursor: 2, entries: [1], matches: true,
+          identities: [{ seq: 2, item: { nativeId: "native-item", id: "public-item" } }],
+        });
+        assert.deepEqual(await request("restore"), { cursor: 1, archived: 19, live: 0 });
+      } finally {
+        await runtime.stop(instance);
+      }
+    },
+  },
+  {
+    name: "Workspace Bridge restores only the selected pending approval's chunks",
+    async run({ runtime }) {
+      const instance = await runtime.start(worker);
+      try {
+        const response = await instance.fetch(`${instance.origin}/workspace/select-approvals`);
+        assert.equal(response.status, 200, await response.clone().text());
+        const result = await response.json() as { removed: number };
+        assert.ok(result.removed > 1, "the settled approval did occupy multiple chunks");
+        assert.deepEqual(result, {
+          removed: result.removed,
+          history: [{ seq: 1, turn: { nativeId: "native", id: "public" } }],
+          selected: [3],
+          next: [4],
+          pendingMatches: true,
+          laterMatches: true,
+          cursor: 4,
+        });
+      } finally {
+        await runtime.stop(instance);
+      }
+    },
+  },
 ]);

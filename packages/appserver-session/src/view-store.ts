@@ -1,6 +1,7 @@
 import { Context, Service } from "@deepseek-ai/cordis";
-import type { AppServerThread } from "@opencraft/appserver-protocol";
+import type { AppServerThread, AppServerTurn } from "@opencraft/appserver-protocol";
 
+import { reconcileHydratedTurn } from "./merge-turns";
 import {
   createEmptyThreadView,
   type ThreadPendingInteraction,
@@ -26,6 +27,11 @@ export interface ThreadViewFrameScheduler {
 }
 
 type ViewUpdater = (current: ThreadView) => Omit<ThreadView, "revision">;
+interface HistoryAdmission {
+  readonly turns: readonly AppServerTurn[];
+  /** The View observed before the operation that completed history coverage. */
+  readonly completeAgainst?: readonly AppServerTurn[];
+}
 interface PendingProjection {
   readonly generation: number;
   readonly project: ViewUpdater;
@@ -173,7 +179,52 @@ export class ThreadViewStoreService extends Service {
     }));
   }
 
-  update(threadId: string, updater: ViewUpdater): ThreadView {
+  applyPendingInteractionPatch(threadId: string, { remove, upsert }: {
+    readonly remove: readonly string[];
+    readonly upsert: readonly ThreadPendingInteraction[];
+  }): ThreadView | null {
+    if (upsert.some(interaction => interaction.threadId !== threadId))
+      throw new Error("Pending interaction belongs to another Thread");
+    if (upsert.length === 0 && (remove.length === 0 || !this.views.has(threadId))) return this.views.get(threadId) ?? null;
+    const replaced = new Set(remove);
+    for (const interaction of upsert) replaced.add(interaction.requestId);
+    return this.update(threadId, current => ({
+      ...current,
+      pendingInteractions: [
+        ...current.pendingInteractions.filter(interaction => !replaced.has(interaction.requestId)),
+        ...upsert,
+      ],
+    }));
+  }
+
+  hydrateNavigationTurn(threadId: string, turn: AppServerTurn, order: readonly string[], baseline: AppServerTurn | undefined,
+    intent?: "search"): ThreadView {
+    return this.update(threadId, current => {
+      let { turns, unplacedSearchTurnId } = current;
+      if (intent === "search") {
+        const previous = turns.find(candidate => candidate.id === unplacedSearchTurnId);
+        const previousIsOrdered = previous !== undefined && order.includes(previous.id);
+        if (previous && (previous.id !== turn.id || previousIsOrdered)) {
+          turns = turns.filter(candidate => candidate.id !== previous.id);
+          if (previousIsOrdered) turns = reconcileHydratedTurn(turns, previous, order);
+        }
+        // Keep one unmatched selection. An indexed or already placed Turn can
+        // stay in ordinary history with its provider-backed position.
+        unplacedSearchTurnId = !order.includes(turn.id) &&
+          (previous?.id === turn.id || !turns.some(candidate => candidate.id === turn.id)) ? turn.id : undefined;
+      }
+      const navigationOnlyTurnIds = current.turns.some(candidate => candidate.id === turn.id)
+        ? current.navigationOnlyTurnIds : [...current.navigationOnlyTurnIds ?? [], turn.id];
+      turns = reconcileHydratedTurn(turns, turn, order, { turn: baseline });
+      const finishItems = turn.itemsView === "full" && current.itemsPaginationByTurnId[turn.id]?.hasLoadedOldest === false
+        && turns.find(candidate => candidate.id === turn.id)?.itemsView === "full";
+      return { ...current, turns, unplacedSearchTurnId, navigationOnlyTurnIds, itemsPaginationByTurnId: finishItems
+        ? { ...current.itemsPaginationByTurnId, [turn.id]: { olderCursor: null, hasLoadedOldest: true } }
+        : current.itemsPaginationByTurnId };
+    });
+  }
+
+  update(threadId: string, updater: ViewUpdater, history?: HistoryAdmission): ThreadView {
     const entries = this.pending.get(threadId) ?? [];
     this.pending.delete(threadId);
     this.pendingCount -= entries.length;
@@ -185,12 +236,34 @@ export class ThreadViewStoreService extends Service {
       this.pendingBytes = 0;
       this.pendingCount = 0;
     }
-    const current = this.views.get(threadId) ?? this.getOrCreate(threadId);
+    // Creating and updating a View are one publication. The explicit
+    // getOrCreate entry point is for callers that want an empty View.
+    const current = this.views.get(threadId) ?? createEmptyThreadView(this.hostId, threadId);
     const projected = entries.reduce<ThreadView>((view, entry) => {
       if (this.connectionGeneration !== undefined && entry.generation !== this.connectionGeneration()) return view;
       return { ...entry.project(view), revision: view.revision };
     }, current);
-    const next: ThreadView = { ...updater(projected), revision: current.revision + 1 };
+    let next: ThreadView = { ...updater(projected), revision: current.revision + 1 };
+    if (next.navigationOnlyTurnIds && (history || next.turns !== current.turns)) {
+      const admitted = new Set(history?.turns.map(turn => turn.id));
+      let turns = next.turns;
+      if (history?.completeAgainst) {
+        const baseline = new Set(history.completeAgainst);
+        const independent = new Set(next.navigationOnlyTurnIds);
+        // Completed coverage retires only unchanged navigation observations.
+        turns = turns.filter(turn => !independent.has(turn.id) || admitted.has(turn.id) || !baseline.has(turn));
+      }
+      const remaining = new Set(turns.map(turn => turn.id));
+      for (const id of admitted) remaining.delete(id);
+      const ids = next.navigationOnlyTurnIds.filter(id => remaining.has(id));
+      if (ids.length !== next.navigationOnlyTurnIds.length || turns.length !== next.turns.length)
+        next = { ...next, turns, navigationOnlyTurnIds: ids.length ? ids : undefined };
+    }
+    if (next.unplacedSearchTurnId && next.turns !== current.turns) {
+      const focus = next.turns.findIndex(turn => turn.id === next.unplacedSearchTurnId);
+      const boundary = next.turns.findIndex(turn => turn.id === next.turnsPagination.oldestLoadedTurnId);
+      if (focus < 0 || (boundary >= 0 && focus >= boundary)) next = { ...next, unplacedSearchTurnId: undefined };
+    }
     if (next.hostId !== this.hostId || next.threadId !== threadId) {
       throw new Error("Thread View identity cannot change during an update");
     }

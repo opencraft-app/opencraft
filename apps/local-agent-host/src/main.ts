@@ -1,6 +1,7 @@
 import { ServerSpacesRuntime } from "@opencraft/access-control/server-spaces";
 import { SERVER_SPACES_METHOD, SERVER_SPACES_CHANGED, type ServerSpaceCommand } from "@opencraft/appserver-protocol/server-spaces";
 import { OPENCRAFT_TERMINAL_RESTORE_EXTENSION, OPENCRAFT_STEER_EVIDENCE_EXTENSION, SHARED_INTERACTIONS_EXTENSION, SHARED_INTERACTIONS_CHANGED, SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND } from "@opencraft/appserver-protocol";
+import { InteractionFault } from "@opencraft/app-host-server/interactions";
 import { nodeObserver } from "@opencraft/observability-contract/node";
 import { dshHostInputs } from "./dsh-host-inputs.js";
 import { handleHostInput } from "./host-input-http.js";
@@ -87,7 +88,7 @@ interface LogicalClient {
   readonly key: string;
   readonly clientId: string;
   readonly owner: import("./dsh-execution-authority.js").DshExecutionOwner;
-  readonly offered: Set<string>;
+  readonly offered: Map<string, string>;
   readonly openedThreads: Set<string>;
   selectedSpaceId?: string;
   initialized?: boolean;
@@ -677,7 +678,7 @@ export async function startLocalAgentHost(options: {
       let state = clients.get(clientId);
       if (!state) {
         const key = physicalId + ":" + clientId + ":" + randomUUID();
-        state = { key, clientId, owner: { connectionId: key, identity: { id: "local-user", username: "local" } }, offered: new Set(), openedThreads: new Set() };
+        state = { key, clientId, owner: { connectionId: key, identity: { id: "local-user", username: "local" } }, offered: new Map(), openedThreads: new Set() };
         clients.set(clientId, state);
       }
       return state;
@@ -705,8 +706,11 @@ export async function startLocalAgentHost(options: {
     };
     const unsubscribe = adapter.subscribe(deliver);
     const unsubscribeAgents = connectedAgents.subscribe((method, params) => { if (method !== "thread/name/updated") deliver(method, params); });
+    const observesInteraction = (state: LogicalClient, threadId: string) =>
+      socket.readyState === WebSocket.OPEN && clients.get(state.clientId) === state && state.initialized === true &&
+        (state.openedThreads.has(threadId) || lifecycle.receivesNotifications(state.key, threadId));
     const publishShared = (threadId: string, state: LogicalClient) => {
-      if (!state.sharedInteractions || !state.initialized || !(state.openedThreads.has(threadId) || lifecycle.receivesNotifications(state.key, threadId))) return;
+      if (!state.sharedInteractions || !observesInteraction(state, threadId)) return;
       sendClient(socket, state.clientId, { jsonrpc: "2.0", method: SHARED_INTERACTIONS_CHANGED,
         params: adapter.interactions.shared.snapshot(threadId, true) });
     };
@@ -753,9 +757,15 @@ export async function startLocalAgentHost(options: {
       if (request.method === "runtime/client/disconnect" && !("id" in request)) { await disconnectClient(state); return; }
       if (request && typeof request === "object" && typeof request.id === "string" && !("method" in request) && ("result" in request || "error" in request)) {
         if (capabilities.respond(owner, request.id, request.result, request.error)) return;
-        if (!offered.has(request.id)) return;
-        try { await adapter.interactions.respond(request.id, request); }
-        catch (error) {
+        const interactionId = request.id, threadId = offered.get(interactionId);
+        if (!threadId || state.sharedInteractions || !observesInteraction(state, threadId)) return;
+        try {
+          await adapter.interactions.respond(interactionId, request, () => {
+            if (state.sharedInteractions || offered.get(interactionId) !== threadId || !observesInteraction(state, threadId))
+              throw new Error("Interaction subscription expired");
+          });
+        } catch (error) {
+          if (error instanceof InteractionFault) return;
           console.error("[opencraft local host] interaction response failed", error);
           socket.close(1011, "Interaction response failed; reconnect to recover pending requests");
         }
@@ -763,14 +773,16 @@ export async function startLocalAgentHost(options: {
       }
       if (request && typeof request === "object" && "id" in request && (request.method === SHARED_INTERACTIONS_READ || request.method === SHARED_INTERACTIONS_RESPOND)) {
         const p = (request.params ?? {}) as Record<string, unknown>, threadId = typeof p.threadId === "string" ? p.threadId : "";
-        if (!state.initialized || !(openedThreads.has(threadId) || lifecycle.receivesNotifications(state.key, threadId))) {
+        if (!observesInteraction(state, threadId)) {
           send(socket, { id: request.id, error: { code: 403, message: "Conversation subscription required" } }); return;
         }
         try {
           if (request.method === SHARED_INTERACTIONS_READ) { send(socket, { id: request.id, result: adapter.interactions.shared.snapshot(threadId, true) }); return; }
           if (typeof p.interactionId !== "string" || !p.interactionId || typeof p.submissionId !== "string" || !p.submissionId
             || typeof p.result !== "object" || p.result === null || Array.isArray(p.result)) throw new Error("Invalid interaction response");
-          const disposition = await adapter.interactions.respondShared(threadId, p.interactionId, p.submissionId, p.result);
+          const disposition = await adapter.interactions.respondShared(threadId, p.interactionId, p.submissionId, p.result, () => {
+            if (!observesInteraction(state, threadId)) throw new Error("Interaction subscription expired");
+          });
           if (clients.get(clientId) === state) send(socket, { id: request.id, result: { disposition, snapshot: adapter.interactions.shared.snapshot(threadId, true) } });
         } catch (error) { if (clients.get(clientId) === state) send(socket, { id: request.id, error: rpcError(error) }); }
         return;
@@ -1079,6 +1091,10 @@ export async function startLocalAgentHost(options: {
         if (request.method === "thread/delete" && typeof targetThread === "string") await adapter.invalidateTranscriptCache(targetThread);
         const capabilityThreadId = (result as { thread?: { id?: string } } | null)?.thread?.id
           ?? (request.params as { threadId?: string } | undefined)?.threadId;
+        if (request.method === "thread/unsubscribe" && typeof capabilityThreadId === "string") {
+          openedThreads.delete(capabilityThreadId);
+          for (const [id, threadId] of offered) if (threadId === capabilityThreadId) offered.delete(id);
+        }
         if (typeof capabilityThreadId === "string" && ["thread/start", "thread/resume", "thread/fork", "thread/read", "turn/start"].includes(request.method)) publishShared(capabilityThreadId, state);
         if (request.method === "turn/start" && typeof capabilityThreadId === "string") lifecycle.acceptedTurn(capabilityThreadId, request.params as Record<string, unknown>);
         send(socket, { jsonrpc: "2.0", id: request.id, result }, request.method);
@@ -1091,8 +1107,9 @@ export async function startLocalAgentHost(options: {
           if (typeof threadId === "string") openedThreads.add(threadId);
           state.unsubscribeInteractions?.();
           state.unsubscribeInteractions = adapter.interactions.subscribe(interaction => {
-            if (state.sharedInteractions || !openedThreads.has(interaction.params.threadId) || offered.has(interaction.id)) return;
-            offered.add(interaction.id);
+            const threadId = interaction.params.threadId;
+            if (state.sharedInteractions || !openedThreads.has(threadId) || !observesInteraction(state, threadId) || offered.has(interaction.id)) return;
+            offered.set(interaction.id, threadId);
             sendClient(socket, clientId, { jsonrpc: "2.0", ...interaction });
           });
         }

@@ -78,6 +78,8 @@ export interface InstallationCoreEnv {
   /** Enable the native project catalog within isolated Codex workspaces. */
   readonly OPENCRAFT_WORKSPACE_CODEX_PROJECTS?: string;
   readonly OPENCRAFT_WORKSPACE_CODEX_TURNS?: string;
+  /** Lets Client DO advertise on-demand archived history from workspace snapshots. */
+  readonly OPENCRAFT_WORKSPACE_CODEX_SNAPSHOTS?: string;
   /** The installation's single InstallationCore object. */
   readonly INSTALLATION_CORE: InstallationCoreNamespace;
   /**

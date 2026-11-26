@@ -14,5 +14,37 @@
     "sqlChecksum": "679269c6d2c5a0a5ba83f07a7785f7e678192efbcfecb421a524c227b6d25390",
     "snapshotChecksum": "48e561dbd72f6dc90c5dc618feeadcbbed12bd95af804e5d5bf271be12d54552",
     "compiledChecksum": "dcf35e8f452adfa8707354e989b3683febd04747b583b074d85b93e15e799bde"
+  },
+  {
+    "tag": "0002_inbox_route_projection",
+    "when": 1795620047175,
+    "version": 5,
+    "sqlChecksum": "e341dc9bfa565e363b562890f5dfaaab2291edcf60c3d68b3cc9815763e88552",
+    "snapshotChecksum": "f161ca9b72843af315c4152fe0968406b9e8d0bd5ed6e3f92d93a48317b76d87",
+    "compiledChecksum": "480a4d2939b3494839d11f6be4ab42cb6514ac1b3f671b4e742daebd0474591a"
+  },
+  {
+    "tag": "0003_outbox_history_identities",
+    "when": 1795623636583,
+    "version": 6,
+    "sqlChecksum": "abb2308ebd1559bb74e0cff6e5973f3d3d791ebfaf4f2c7c207d1dcd92fcb358",
+    "snapshotChecksum": "71cfbbf0a93b62fb0826cb1366ec8b5b07436ed9ffcb1192fcff88fcdf1a9722",
+    "compiledChecksum": "8f7db0fcb6c99fbdb306245699901538f2eb5d3b7bb315a487d75afd513b5053"
+  },
+  {
+    "tag": "0004_history_selection_indexes",
+    "when": 1795641084522,
+    "version": 7,
+    "sqlChecksum": "d689c8e4c60673be6d2ca71f940319ca2314f82fc6d23443b5602fa5f0432d7f",
+    "snapshotChecksum": "0e2bb2bcf648fc4b81b504edf83ffe37ad8ff36d8ed8150bc1979d01a950c0ec",
+    "compiledChecksum": "1a451b949961f59ac6f35a48e5951b7bbde6a14892f4192aea7eb1fbf1d6bca2"
+  },
+  {
+    "tag": "0005_route_archive_state",
+    "when": 1795648907392,
+    "version": 8,
+    "sqlChecksum": "f4df192320d6996ebb654421ce4c8f7f17b4609996dd4c7d391010d10fa30749",
+    "snapshotChecksum": "56b3c66ccf95e0d22a71c4156d248791436c7103f7a76924a73b82f2cfc8b6c5",
+    "compiledChecksum": "f4df192320d6996ebb654421ce4c8f7f17b4609996dd4c7d391010d10fa30749"
   }
 ]

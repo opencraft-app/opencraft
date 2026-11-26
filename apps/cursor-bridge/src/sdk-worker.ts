@@ -14,7 +14,41 @@ function record(event: Record<string, unknown>): Promise<void> {
   return new Promise((resolve) => { if (trace) trace.write(JSON.stringify(event) + "\n", () => resolve()); else resolve(); });
 }
 let agent: SDKAgent | undefined;
-const runs = new Map<string, Run>();
+let currentRun: { handle: Run; output: AbortController } | undefined;
+
+async function nextOutput(iterator: ReturnType<Run["stream"]>, signal: AbortSignal) {
+  if (signal.aborted) return;
+  let onAbort!: () => void;
+  const aborted = new Promise<undefined>(resolve => {
+    onAbort = () => resolve(undefined);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+  try { return await Promise.race([iterator.next(), aborted]); }
+  finally { signal.removeEventListener("abort", onAbort); }
+}
+
+async function forwardOutput(run: Run, signal: AbortSignal): Promise<void> {
+  let iterator: ReturnType<Run["stream"]> | undefined;
+  try {
+    iterator = run.stream();
+    while (!signal.aborted) {
+      const next = await nextOutput(iterator, signal);
+      if (!next || next.done || signal.aborted) break;
+      const message = next.value;
+      await record({ operation: "stream", runId: run.id, type: message.type,
+        ...(message.type === "tool_call" ? { callId: message.call_id, name: message.name, status: message.status } : {}) });
+      if (!signal.aborted) port.postMessage({ event: "message", runId: run.id, message });
+    }
+  } catch {
+    if (!signal.aborted) port.postMessage({ event: "stream-error", runId: run.id });
+    return;
+  } finally {
+    // SDK iterators can keep next() pending. Ask them to return without joining
+    // that wait once the Host has deliberately stopped observing output.
+    if (signal.aborted) void iterator?.return().catch(() => {});
+  }
+  if (!signal.aborted) port.postMessage({ event: "stream-end", runId: run.id });
+}
 port.on("message", async (request: { id: number; method: string; params: Record<string, string> }) => {
   const { id, method, params: p } = request;
   try {
@@ -40,16 +74,14 @@ port.on("message", async (request: { id: number; method: string; params: Record<
     } else if (method === "send") {
       if (!agent) throw Error("agent unavailable");
       const run = await agent.send(p.text);
-      runs.set(run.id, run);
+      const output = new AbortController();
+      currentRun = { handle: run, output };
       await record({ operation: "send", runId: run.id });
       port.postMessage({ id, result: { id: run.id, supportsSteer: typeof run.steer === "function" } });
+      void forwardOutput(run, output.signal);
+      // Native completion can precede the final buffered stream messages.
       void (async () => {
         try {
-          for await (const message of run.stream()) {
-            await record({ operation: "stream", runId: run.id, type: message.type,
-              ...(message.type === "tool_call" ? { callId: message.call_id, name: message.name, status: message.status } : {}) });
-            port.postMessage({ event: "message", runId: run.id, message });
-          }
           const terminal = await run.wait();
           await record({ operation: "terminal", runId: run.id, status: terminal.status });
           port.postMessage({ event: "terminal", runId: run.id, result: terminal });
@@ -57,17 +89,21 @@ port.on("message", async (request: { id: number; method: string; params: Record<
       })();
       return;
     } else if (method === "steer") {
-      const run = runs.get(p.runId);
-      if (!run?.steer) throw Error("SDK run has no steer");
+      const run = currentRun?.handle;
+      if (!run || run.id !== p.runId || !run.steer) throw Error("SDK run has no steer");
       const delivery = run.steer(p.text);
       void delivery.catch(() => {});
       await record({ operation: "steer-dispatch", runId: run.id });
       result = await delivery;
       await record({ operation: "steer", runId: run.id, outcome: result });
     } else if (method === "cancel") {
-      const run = runs.get(p.runId);
-      if (!run) throw Error("SDK run unavailable");
+      const run = currentRun?.handle;
+      if (!run || run.id !== p.runId) throw Error("SDK run unavailable");
       await run.cancel(); result = await run.wait();
+    } else if (method === "discard-output") {
+      const run = currentRun;
+      if (!run || run.handle.id !== p.runId) throw Error("SDK run unavailable");
+      run.output.abort();
     } else if (method === "close") { if (agent) await agent[Symbol.asyncDispose](); result = {}; }
     else throw Error("unsupported SDK operation");
     port.postMessage({ id, result });

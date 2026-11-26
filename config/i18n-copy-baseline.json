@@ -2110,12 +2110,6 @@
       "count": 1
     },
     {
-      "file": "apps/workbench-web/src/components/user-message-navigation-rail.tsx",
-      "kind": "jsx-expression",
-      "text": "(No content)",
-      "count": 1
-    },
-    {
       "file": "apps/workbench-web/src/components/workbench-tool-navigation.tsx",
       "kind": "aria-label",
       "text": "Work tools",

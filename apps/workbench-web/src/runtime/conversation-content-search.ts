@@ -24,7 +24,7 @@ export interface ConversationSearchSource {
     readonly matches: readonly ConversationSearchRow[];
     readonly nextCursor: string | null;
   }>;
-  locate(term: string, threadId: string, signal: AbortSignal): Promise<{ turnId: string; itemId: string } | null>;
+  locate(term: string, threadId: string, signal: AbortSignal): Promise<{ turnId: string; itemId: string; turnCursor?: string } | null>;
 }
 
 export function mergeConversationSearchResults(titles: readonly ConversationSearchRow[], bodies: readonly ConversationSearchRow[]) {
@@ -43,7 +43,7 @@ export function isUnsupportedSearch(error: unknown): boolean {
  * deadline separate from foreground metadata RPCs (normally 30 seconds). */
 const CONTENT_SEARCH_TIMEOUT_MS = 120_000;
 
-/** At most one native scan per source. Obsolete queued queries never execute. */
+/** Serialize client requests per source. Obsolete queued queries never execute. */
 export function serializeContentSearch() {
   let tail: Promise<unknown> = Promise.resolve();
   return <T>(signal: AbortSignal, read: () => Promise<T>): Promise<T> => {
@@ -70,13 +70,13 @@ export function createAppServerContentSearchSource(input: {
     search: (term, cursor, signal) => serialize(signal, async () => {
       input.assertCurrent();
       const result = await input.protocol.request("thread/search", { searchTerm: term, cursor, limit: 30,
-        archived: false, sortKey: "updated_at", sortDirection: "desc" }, { timeoutMs: CONTENT_SEARCH_TIMEOUT_MS });
+        archived: false, sortKey: "updated_at", sortDirection: "desc" }, { timeoutMs: CONTENT_SEARCH_TIMEOUT_MS, signal });
       input.assertCurrent();
       return { matches: result.data.map(match => ({ ...input.project(match.thread), snippet: match.snippet, searchTerm: term })), nextCursor: result.nextCursor };
     }),
     locate: (term, threadId, signal) => serialize(signal, async () => {
       input.assertCurrent();
-      const page = await input.protocol.request("thread/searchOccurrences", { threadId, searchTerm: term, limit: 1 }, { timeoutMs: CONTENT_SEARCH_TIMEOUT_MS });
+      const page = await input.protocol.request("thread/searchOccurrences", { threadId, searchTerm: term, limit: 1 }, { timeoutMs: CONTENT_SEARCH_TIMEOUT_MS, signal });
       input.assertCurrent();
       return page.data[0] ?? null;
     }),

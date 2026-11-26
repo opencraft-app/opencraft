@@ -3,7 +3,7 @@ import "./conversation-search-position.scss";
 import { useEffect, useRef, useState } from "react";
 import { useIntl } from "@opencraft/i18n/react";
 import type { ConversationNavigationSource } from "@opencraft/chat-navigation";
-import { waitForSearchNavigationAnchor } from "../runtime/conversation-search-navigation";
+import { prepareSearchNavigationTarget } from "../runtime/conversation-search-navigation";
 import type { WebVirtualizedTurnListApi } from "./conversation/virtualized-conversation-turns";
 import type { ConversationSearchTarget } from "./conversation-search";
 
@@ -32,10 +32,8 @@ export function ConversationSearchPosition({ source, target, api, scrollElement 
       // commit before asking the measured list to change its position.
       await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
       if (abort.signal.aborted) return;
-      const anchor = await waitForSearchNavigationAnchor(source,
-        { turnId: target.turnId, itemId: target.itemId }, abort.signal);
-      if (abort.signal.aborted) return;
-      const prepared = await source.prepareTarget(anchor.id, { signal: abort.signal, itemId: target.itemId });
+      const prepared = await prepareSearchNavigationTarget(source,
+        { turnId: target.turnId, itemId: target.itemId, turnCursor: target.turnCursor }, abort.signal);
       if (abort.signal.aborted) return;
       if (!prepared || prepared.generation !== source.getSnapshot().generation) throw new Error("Matching turn changed");
       // Hydrating a distant Turn changes the measured window. Verify that its

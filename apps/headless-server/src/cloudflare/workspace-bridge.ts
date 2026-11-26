@@ -5,14 +5,14 @@ import {
   type WorkspacePlacementRecord,
   type WorkspaceRuntime,
 } from "@opencraft/sandbox";
-import { BridgeGatewaySession, pullBridgeInbox } from "@opencraft/agent-bridge-host/gateway-session";
+import { BridgeGatewaySession, BridgeOutboxReadError, pullBridgeInbox, type BridgeHistorySelection } from "@opencraft/agent-bridge-host/gateway-session";
 import { createWorkspaceBridgeInboxStore } from "@opencraft/agent-bridge-host/inbox-store";
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
 import type { DuplexTransport } from "@opencraft/appserver-client/transport";
-import { CodexProviderBridgeSession } from "@opencraft/opencraft-daemon/codex-provider-bridge-session";
+import { CodexProviderBridgeSession, observeCodexBridgeHistory } from "@opencraft/opencraft-daemon/codex-provider-bridge-session";
 import type { SqlDatabase } from "@opencraft/sql";
 import type { CodexHistoryRead } from "./codex-thread-read.js";
-import { endpointHttpRequest, type EndpointWebSocket } from "./workspace-link.js";
+import { EndpointHttpInterrupted, endpointHttpRequest, type EndpointWebSocket } from "./workspace-link.js";
 
 const bridgeEndpoint = (workspaceId: string) =>
   parseWorkspaceEndpointUri(`workspace://${workspaceId}/endpoints/codex-bridge`);
@@ -107,7 +107,10 @@ export function createWorkspaceBridge(
             return committed;
           },
         },
-        true,
+        {
+          fenced: true, fragmentOversized: true,
+          isReadInterrupted: error => error instanceof EndpointHttpInterrupted,
+        },
       );
     })().finally(() => {
       if (pulling?.result === result) pulling = undefined;
@@ -117,20 +120,50 @@ export function createWorkspaceBridge(
   };
   return {
     request,
+    async canSleep(receipt: SandboxReceipt): Promise<boolean> {
+      try {
+        const response = await request("/maintenance", undefined, receipt);
+        if (!response.ok) {
+          await response.body?.cancel();
+          return false;
+        }
+        const state = (await response.json()) as { inFlight?: unknown } | null;
+        return state?.inFlight === 0;
+      } catch {
+        return false;
+      }
+    },
     async pull() {
       const { receipt, restoredFrom } = await binding();
       return pull(receipt, restoredFrom);
     },
-    async attach(expected?: SandboxReceipt) {
+    async attach(expected?: SandboxReceipt, { synchronizeInbox = true } = {}) {
       const { receipt, restoredFrom } = await binding(expected);
       const key = placementKey(receipt);
-      if (store.placement() !== key) await pull(receipt, restoredFrom);
+      const ensureInboxPlacement = async () => {
+        if (store.placement() !== key) await pull(receipt, restoredFrom);
+      };
+      if (synchronizeInbox) await ensureInboxPlacement();
+      const assertPlacement = () => {
+        if (store.placement() !== key) throw new Error("Workspace Bridge inbox placement changed");
+      };
       return {
         receipt,
+        ensureInboxPlacement,
+        withCurrentPlacement: <T>(operation: () => Promise<T>) => runtime.fenced(endpoint, operation, receipt),
         request: (path: string, body?: unknown) => request(path, body, receipt),
-        read(cursor: number) {
-          if (store.placement() !== key) throw new Error("Workspace Bridge inbox placement changed");
-          return store.read(cursor);
+        async cursor() { assertPlacement(); return store.cursor(); },
+        async read(cursor: number) { assertPlacement(); return store.read(cursor); },
+        async readIdentities(route: string, after: number, through: number, selection?: BridgeHistorySelection) {
+          assertPlacement();
+          return store.readIdentities(route, after, through, selection);
+        },
+        async readAcknowledgedIdentities(route: string, after: number, through: number, outboxId: string, selection?: BridgeHistorySelection) {
+          return store.readAcknowledgedIdentities(route, after, through, outboxId, selection);
+        },
+        async readPendingInteractions(route: string, after: number, through: number, ids: readonly string[]) {
+          assertPlacement();
+          return store.readPendingInteractions(route, after, through, ids);
         },
         pull: () => pull(receipt, restoredFrom),
       };
@@ -145,12 +178,16 @@ function workspaceBridgeGateway(
   serverId: string,
   attachment: WorkspaceBridgeAttachment,
   publish: (threadId: string, value: unknown) => void,
+  { passiveHistory = false } = {},
 ) {
   return new BridgeGatewaySession(
     {
       serverId,
       request: attachment.request,
-      inbox: { read: async (cursor) => attachment.read(cursor), pull: attachment.pull, close: async () => {} },
+      inbox: { cursor: attachment.cursor, read: attachment.read, readIdentities: attachment.readIdentities,
+        ...(passiveHistory ? { readAcknowledgedIdentities: attachment.readAcknowledgedIdentities } : {}),
+        readPendingInteractions: attachment.readPendingInteractions,
+        pull: attachment.pull, close: async () => {} },
     },
     publish,
   );
@@ -166,26 +203,38 @@ export async function readWorkspaceBridgeHistory(
     params: Record<string, unknown>,
     receipt: SandboxReceipt,
   ) => Promise<unknown>,
-  receipt?: SandboxReceipt,
+  { receipt, passiveNative }: { receipt?: SandboxReceipt; passiveNative: boolean },
 ): Promise<unknown> {
-  const attachment = await transport.attach(receipt);
-  const gateway = workspaceBridgeGateway(serverId, attachment, () => {});
+  const metadataOnly = method === "thread/read" && params.includeTurns !== true;
+  const attachment = await transport.attach(receipt, { synchronizeInbox: false });
+  const gateway = workspaceBridgeGateway(serverId, attachment, () => {}, { passiveHistory: true });
   try {
-    await gateway.open();
-    const { threadId, turnId, ...query } = params;
-    const nativeId = gateway.nativeThread(threadId);
-    if (!nativeId && (gateway.owns(threadId) || threadId.startsWith("bridge:codex:") || gateway.publicThread(threadId)))
-      throw new SandboxFault("SANDBOX_UNAVAILABLE", "Workspace Codex Bridge history identity unavailable");
-    const result = await read(
-      method,
-      {
-        ...query,
-        threadId: nativeId ?? threadId,
-        ...(typeof turnId === "string" ? { turnId: nativeId ? gateway.nativeTurn(threadId, turnId) : turnId } : {}),
-      },
-      attachment.receipt,
-    );
-    return nativeId ? gateway.history(threadId, result) : result;
+    return await attachment.withCurrentPlacement(async () => {
+      const historyIdentityPages = await gateway.loadRouteSnapshot();
+      const { threadId, turnId, openArchivedHistory: _intent, ...query } = params;
+      const nativeId = gateway.nativeThread(threadId);
+      if (!nativeId && (gateway.owns(threadId) || threadId.startsWith("bridge:codex:") || gateway.publicThread(threadId)))
+        throw new SandboxFault("SANDBOX_UNAVAILABLE", "Workspace Codex Bridge history identity unavailable");
+      if (nativeId && !metadataOnly && !historyIdentityPages) {
+        // A producer predating identity pages still uses the compatible inbox replay path.
+        await attachment.ensureInboxPlacement();
+        await gateway.open({ live: false });
+      }
+      if (nativeId && !passiveNative) return observeCodexBridgeHistory(gateway, threadId, method, params);
+      const readNative = (nativeTurnId?: string) => read(
+        method,
+        {
+          ...query,
+          threadId: nativeId ?? threadId,
+          ...(nativeTurnId === undefined ? {} : { turnId: nativeTurnId }),
+        },
+        attachment.receipt,
+      );
+      const requestedTurn = typeof turnId === "string" ? turnId : undefined;
+      return nativeId
+        ? gateway.readProjectedHistory(threadId, readNative, { turnId: requestedTurn, metadataOnly })
+        : readNative(requestedTurn);
+    });
   } finally {
     await gateway.close();
   }
@@ -226,7 +275,7 @@ export async function openWorkspaceBridgeLane<T extends EndpointWebSocket>(
   const adapter = new CodexProviderBridgeSession(
     legacy,
     (publish) => workspaceBridgeGateway(serverId, attachment, publish),
-    { newThreads: true, manualPull: true },
+    { newThreads: true, manualPull: true, retryInitialEventPull: observe },
   );
   const stop = adapter.subscribeMessage(onFrame);
   let end!: () => void;
@@ -247,11 +296,20 @@ export async function openWorkspaceBridgeLane<T extends EndpointWebSocket>(
     throw error;
   });
   void native.closed.then(() => close().catch(() => {}));
-  const poll = () => {
+  const poll = (delay = 125) => {
     if (finished) return;
     timer = setTimeout(() => {
-      void adapter.pull().then(poll, () => close().catch(() => {}));
-    }, 125);
+      void adapter.pull().then(
+        () => poll(),
+        error => {
+          if (error instanceof EndpointHttpInterrupted || (error instanceof BridgeOutboxReadError && error.retryable)) {
+            poll(Math.min(delay * 2, 2000));
+          } else {
+            void close().catch(() => {});
+          }
+        },
+      );
+    }, delay);
   };
   if (observe) poll();
   return {

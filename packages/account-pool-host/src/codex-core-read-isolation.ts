@@ -1,7 +1,7 @@
 import type WebSocket from "ws";
 import { openCodexNativeSocket } from "./codex-native-endpoint.js";
 
-const HISTORY_READS = new Set(["thread/read", "thread/turns/list", "thread/items/list"]);
+const HISTORY_READS = new Set(["thread/read", "thread/turns/list", "thread/items/list", "thread/searchOccurrences"]);
 export function isIsolatedCoreRead(message: { method?: unknown; id?: unknown }): boolean {
   return message.id !== undefined && typeof message.method === "string" && HISTORY_READS.has(message.method);
 }

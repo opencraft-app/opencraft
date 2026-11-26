@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { AppServerRpcError, projectedTurnsPage } from "@opencraft/appserver-client";
 import type {
   AppServerTurn,
   ReplicaJsonValue,
@@ -252,7 +253,7 @@ test("V3 source enumerates lightweight Turns and hydrates only the hovered Turn"
     turnKey: "turn-2",
     itemId: "turn-2:user",
     anchorId: "v3:turn-2:user:0",
-    generation: "appserver-v3:ssh:fixture:7",
+    generation: source.getSnapshot().generation,
     projectionRevision: 23,
     targetVersion: '["turn-2","turn-2:user"]',
   });
@@ -310,6 +311,300 @@ test("V3 navigation carries the pre-read baseline through cached preview hydrati
   } finally { release({ data: [], nextCursor: null }); source.dispose(); }
 });
 
+test("V3 previews and explicit jumps complete a partially loaded Turn without changing the marker ID", async () => {
+  const original = { id: "original", type: "userMessage", content: "First prompt" };
+  const steering = { id: "steering", type: "steeringUserMessage", content: "Later steering" };
+  const items = [original, { id: "original-answer", type: "agentMessage", text: "First answer" },
+    steering, { id: "steering-answer", type: "agentMessage", text: "Later answer" }];
+  const fullTurn: AppServerTurn = { id: "target", itemsView: "full", items };
+  const partialTurn: AppServerTurn = { ...fullTurn, itemsView: "summary", items: items.slice(2) };
+  let view: ThreadView = { ...createEmptyThreadView("local", "thread-one"), resumeState: "resumed", turns: [partialTurn] };
+  const listeners = new Set<() => void>();
+  let fullReads = 0;
+  const source = createV3ConversationNavigationSource({ threadId: view.threadId, port: {
+    getView: () => view,
+    subscribeView(listener) { listeners.add(listener); return () => listeners.delete(listener); },
+    async listTurns(params) {
+      if (params.itemsView === "full") {
+        fullReads++;
+        return { data: [fullTurn], nextCursor: null };
+      }
+      return { data: [{ id: fullTurn.id }], nextCursor: null };
+    },
+    projectionBarrier: { waitUntilProjected: async commit => commit.viewRevision },
+    commitHydratedTurn(hydrated, order, baseline) {
+      assert.equal(baseline, partialTurn);
+      view = { ...view, revision: view.revision + 1,
+        turns: reconcileHydratedTurn(view.turns, hydrated, order, { turn: baseline }) };
+      for (const listener of listeners) listener();
+      return { hostId: view.hostId, threadId: view.threadId, connectionGeneration: view.connectionGeneration, viewRevision: view.revision };
+    },
+  } });
+  try {
+    await source.prepare();
+    const marker = source.getSnapshot().anchors[0]!;
+    assert.equal((await source.prepareTarget(marker.id, { itemId: steering.id }))?.itemId, steering.id);
+    assert.equal(fullReads, 0);
+    assert.equal(marker.isLoaded, false);
+    assert.equal(marker.itemId, null);
+    const [preview, target] = await Promise.all([
+      source.loadPreview(marker.id),
+      source.prepareTarget(marker.id, { itemId: original.id }),
+    ]);
+    assert.deepEqual(preview, { label: "First prompt", response: "First answer", outputs: [] });
+    assert.equal(target?.itemId, original.id);
+    assert.equal(fullReads, 1);
+    assert.equal(source.getSnapshot().anchors[0]?.id, marker.id);
+    assert.equal(source.getSnapshot().anchors[0]?.itemId, original.id);
+    assert.equal(source.getSnapshot().anchors[0]?.isLoaded, true);
+  } finally { source.dispose(); }
+});
+
+test("V3 navigation keeps the first locator and its original offset across overlapping pages", async () => {
+  const view = { ...createEmptyThreadView("local", "thread-one"), resumeState: "resumed" as const };
+  const calls: Array<[string | null, number | null | undefined, string | undefined]> = [];
+  let committedOrder: readonly string[] = [];
+  const commit = { hostId: view.hostId, threadId: view.threadId, connectionGeneration: view.connectionGeneration, viewRevision: 1 };
+  const source = createV3ConversationNavigationSource({ threadId: view.threadId, pageSize: 4, port: {
+    getView: () => view,
+    subscribeView: () => () => undefined,
+    async listTurns({ cursor, limit, itemsView }) {
+      calls.push([cursor ?? null, limit, itemsView]);
+      if (cursor === "at-middle" && itemsView === "full")
+        return { data: [turn("middle", "Middle prompt", "Middle answer")], nextCursor: "older" };
+      if (cursor === null && limit === 2)
+        return { data: [turn("latest"), turn("latest")], nextCursor: "at-middle" };
+      if (cursor === null)
+        return { data: ["latest", "latest", "middle", "oldest-loaded"].map(id => turn(id)), nextCursor: "older" };
+      return { data: [turn("middle"), turn("earlier")], nextCursor: null };
+    },
+    projectionBarrier: { waitUntilProjected: async () => 1 },
+    commitHydratedTurn(hydrated, ids) {
+      assert.equal(hydrated.id, "middle");
+      committedOrder = ids;
+      return commit;
+    },
+  } });
+  try {
+    await source.prepare();
+    const order = ["earlier", "oldest-loaded", "middle", "latest"];
+    assert.deepEqual(source.getSnapshot().anchors.map(anchor => anchor.turnKey), order);
+    const middle = source.getSnapshot().anchors[2]!;
+    assert.equal((await source.loadPreview(middle.id))?.response, "Middle answer");
+    assert.equal((await source.prepareTarget(middle.id))?.turnKey, "middle");
+    assert.deepEqual(committedOrder, order);
+    assert.deepEqual(calls, [
+      [null, 4, "notLoaded"], ["older", 4, "notLoaded"], [null, 2, "notLoaded"], ["at-middle", 1, "full"],
+    ]);
+  } finally { source.dispose(); }
+});
+
+test("V3 navigation replays the original page cursor in a projected history reader", async () => {
+  const view = { ...createEmptyThreadView("local", "thread-one"), resumeState: "resumed" as const };
+  const turns = ["oldest", "middle", "latest"].map(id => {
+    const row = turn(id, id, `${id} answer`);
+    return { ...row, items: [...row.items!] };
+  });
+  const source = createV3ConversationNavigationSource({ threadId: view.threadId, pageSize: 2, port: {
+    getView: () => view,
+    subscribeView: () => () => undefined,
+    async listTurns(params) {
+      return projectedTurnsPage({ id: view.threadId, turns }, params) as ThreadTurnsListResponse;
+    },
+    projectionBarrier: { waitUntilProjected: async () => 1 },
+    commitHydratedTurn: () => ({
+      hostId: view.hostId, threadId: view.threadId, connectionGeneration: view.connectionGeneration, viewRevision: view.revision,
+    }),
+  } });
+  try {
+    await source.prepare();
+    for (const anchor of source.getSnapshot().anchors) {
+      assert.equal((await source.loadPreview(anchor.id))?.response, `${anchor.turnKey} answer`);
+    }
+  } finally { source.dispose(); }
+});
+
+test("V3 navigation counts actual rows when a locator seek returns a short page", async () => {
+  const view = { ...createEmptyThreadView("local", "thread-one"), resumeState: "resumed" as const };
+  const reads: Array<[string | null, number | null | undefined, string | undefined]> = [];
+  const source = createV3ConversationNavigationSource({ threadId: view.threadId, pageSize: 3, port: {
+    getView: () => view,
+    subscribeView: () => () => undefined,
+    async listTurns({ cursor, limit, itemsView }) {
+      reads.push([cursor ?? null, limit, itemsView]);
+      if (cursor === null && limit === 3)
+        return { data: ["latest", "middle", "target"].map(id => turn(id)), nextCursor: null };
+      if (cursor === null) return { data: [turn("latest")], nextCursor: "middle" };
+      if (cursor === "middle") return { data: [turn("middle")], nextCursor: "target" };
+      return { data: [turn("target", "Target prompt", "Target answer")], nextCursor: null };
+    },
+    projectionBarrier: { waitUntilProjected: async () => 1 },
+    commitHydratedTurn: () => ({
+      hostId: view.hostId, threadId: view.threadId, connectionGeneration: view.connectionGeneration, viewRevision: view.revision,
+    }),
+  } });
+  try {
+    await source.prepare();
+    const target = source.getSnapshot().anchors[0]!;
+    assert.equal((await source.loadPreview(target.id))?.response, "Target answer");
+    assert.deepEqual(reads, [
+      [null, 3, "notLoaded"], [null, 2, "notLoaded"], ["middle", 1, "notLoaded"], ["target", 1, "full"],
+    ]);
+  } finally { source.dispose(); }
+});
+
+test("V3 adopts a completed history View after a capped index scan", async () => {
+  let view: ThreadView = { ...createEmptyThreadView("local", "thread"), resumeState: "resumed",
+    historyMode: "paginated", historyCheckpoint: { epoch: "stable", nextSeq: 4 },
+    turns: [turn("latest", "Latest")],
+    turnsPagination: { olderCursor: "older", oldestLoadedTurnId: "latest", hasLoadedOldest: false, isLoadingOlder: false } };
+  let notify = () => {};
+  const cursors: (string | null)[] = [];
+  const source = createV3ConversationNavigationSource({ threadId: view.threadId, maxPages: 1, port: {
+    getView: () => view,
+    subscribeView(listener) { notify = listener; return () => {}; },
+    async listTurns({ cursor }) { cursors.push(cursor); return { data: [turn("middle")], nextCursor: "more" }; },
+    projectionBarrier: { waitUntilProjected: async commit => commit.viewRevision },
+    commitHydratedTurn() { throw new Error("A materialized target does not need a new commit"); },
+  } });
+  try {
+    await source.prepare();
+    const partial = source.getSnapshot();
+    assert.equal(partial.completeness, "partial");
+    view = { ...view, revision: 8, tailHydrationComplete: true,
+      turns: [turn("earliest", "First prompt"), turn("middle", "Middle prompt"), ...view.turns],
+      turnsPagination: { ...view.turnsPagination, olderCursor: null, oldestLoadedTurnId: "earliest", hasLoadedOldest: true } };
+    notify();
+    const full = source.getSnapshot();
+    assert.equal(full.phase, "ready");
+    assert.equal(full.completeness, "complete");
+    assert.equal(full.generation, partial.generation);
+    assert.deepEqual(full.anchors.map(anchor => anchor.turnKey), ["earliest", "middle", "latest"]);
+    assert.equal((await source.prepareTarget(full.anchors[0]!.id))?.projectionRevision, 8);
+    await source.prepare();
+    assert.deepEqual(cursors, ["older"]);
+  } finally { source.dispose(); }
+});
+
+test("V3 reads locally indexed partial Turns by ID even when a live Turn is not in provider history", async () => {
+  const older = { ...turn("older", "Original prompt", "Original reply"), itemsView: "full" as const };
+  const persisted = [older, turn("latest", "Latest")];
+  let view: ThreadView = { ...createEmptyThreadView("local", "thread"), resumeState: "resumed", historyMode: "paginated",
+    turns: [{ ...older, itemsView: "summary", items: [] }, persisted[1]!, { id: "live", status: "inProgress" }],
+    turnsPagination: { olderCursor: null, oldestLoadedTurnId: older.id, hasLoadedOldest: true, isLoadingOlder: false } };
+  const turnReads: number[] = [];
+  const itemReads: string[] = [];
+  const source = createV3ConversationNavigationSource({ threadId: view.threadId, port: {
+    getView: () => view,
+    subscribeView: () => () => {},
+    async listTurns(params) {
+      turnReads.push(params.limit ?? 0);
+      const turns = persisted.map(row => ({ ...row, items: [...row.items!] }));
+      return projectedTurnsPage({ id: view.threadId, turns }, params) as ThreadTurnsListResponse;
+    },
+    async listItems({ turnId }) {
+      itemReads.push(turnId);
+      return { data: older.items!.map(item => ({ turnId, item })), nextCursor: null };
+    },
+    projectionBarrier: { waitUntilProjected: async commit => commit.viewRevision },
+    commitHydratedTurn(hydrated, order, baseline) {
+      view = { ...view, revision: view.revision + 1, turns: reconcileHydratedTurn(view.turns, hydrated, order, { turn: baseline }) };
+      return { hostId: view.hostId, threadId: view.threadId, connectionGeneration: view.connectionGeneration, viewRevision: view.revision };
+    },
+  } });
+  try {
+    await source.prepare();
+    const marker = source.getSnapshot().anchors.find(anchor => anchor.turnKey === older.id)!;
+    assert.equal((await source.loadPreview(marker.id))?.response, "Original reply");
+    assert.equal((await source.prepareTarget(marker.id, { itemId: "older:user" }))?.itemId, "older:user");
+    assert.deepEqual(turnReads, []);
+    assert.deepEqual(itemReads, ["older"]);
+  } finally { source.dispose(); }
+});
+
+test("V3 navigation falls back to bounded Item pages when a whole Turn exceeds the response budget", async () => {
+  const oversized = new AppServerRpcError({ code: -32072, message: "History response exceeds budget" });
+  const items = turn("target", "Original prompt", "Original reply").items!;
+  const reads: string[] = [];
+  let view: ThreadView = { ...createEmptyThreadView("local", "thread-one"), resumeState: "resumed" };
+  let oneItemTooLarge = true;
+  const source = createV3ConversationNavigationSource({ threadId: view.threadId, port: {
+    getView: () => view,
+    subscribeView: () => () => undefined,
+    async listTurns({ itemsView }) {
+      reads.push(itemsView);
+      if (itemsView === "full") throw oversized;
+      return { data: [{ id: "target", itemsView: "notLoaded", items: [] }], nextCursor: null };
+    },
+    async listItems({ threadId, turnId, cursor, limit, sortDirection }) {
+      assert.deepEqual([threadId, turnId, sortDirection], [view.threadId, "target", "asc"]);
+      reads.push(`items:${cursor}:${limit}`);
+      if (limit > 1 || oneItemTooLarge) throw oversized;
+      return cursor === null
+        ? { data: [{ turnId, item: items[0]!, startedAtMs: 10 }], nextCursor: "reply" }
+        : { data: [{ turnId, item: items[1]! }], nextCursor: null };
+    },
+    projectionBarrier: { waitUntilProjected: async commit => commit.viewRevision },
+    commitHydratedTurn(hydrated) {
+      view = { ...view, revision: view.revision + 1, turns: [hydrated] };
+      return { hostId: view.hostId, threadId: view.threadId, connectionGeneration: view.connectionGeneration, viewRevision: view.revision };
+    },
+  } });
+  try {
+    await source.prepare();
+    const anchor = source.getSnapshot().anchors[0]!;
+    await assert.rejects(source.loadPreview(anchor.id), error => error === oversized);
+    assert.equal(reads.at(-1), "items:null:1");
+    assert.deepEqual(view.turns, []);
+    reads.length = 0;
+    oneItemTooLarge = false;
+    const [preview, target] = await Promise.all([
+      source.loadPreview(anchor.id), source.prepareTarget(anchor.id, { itemId: "target:user" }),
+    ]);
+    assert.equal(preview?.response, "Original reply");
+    assert.equal(target?.itemId, "target:user");
+    assert.equal(view.turns[0]?.itemsView, "full");
+    assert.equal(view.turns[0]?.items?.[0]?.startedAtMs, 10);
+    assert.deepEqual(reads, ["full", "notLoaded", ...[100, 50, 25, 12, 6, 3, 1].map(limit => `items:null:${limit}`), "items:reply:1"]);
+  } finally { source.dispose(); }
+});
+
+test("V3 cancels an Item fallback when the navigation checkpoint changes", async () => {
+  let view: ThreadView = { ...createEmptyThreadView("local", "thread-one"), resumeState: "resumed", connectionGeneration: 1 };
+  let notify = () => {};
+  let itemSignal: AbortSignal | undefined;
+  let itemReads = 0;
+  const held = Promise.withResolvers<import("@opencraft/appserver-protocol").ThreadItemsListResponse>();
+  const oversized = new AppServerRpcError({ code: -32072, message: "History response exceeds budget" });
+  const source = createV3ConversationNavigationSource({ threadId: view.threadId, port: {
+    getView: () => view,
+    subscribeView(listener) { notify = listener; return () => {}; },
+    async listTurns({ itemsView }) {
+      if (itemsView === "full") throw oversized;
+      return { data: [{ id: "target", itemsView: "notLoaded" }], nextCursor: null };
+    },
+    async listItems(_params, signal) { itemReads++; itemSignal = signal; return held.promise; },
+    projectionBarrier: { waitUntilProjected: async () => 0 },
+    commitHydratedTurn() { throw new Error("A superseded page cannot commit"); },
+  } });
+  try {
+    await source.prepare();
+    const reading = source.loadPreview(source.getSnapshot().anchors[0]!.id);
+    await waitFor(() => itemSignal !== undefined);
+    view = { ...view, connectionGeneration: 2 };
+    notify();
+    assert.equal(itemSignal?.aborted, true);
+    held.resolve({ data: [{ id: "stale", type: "userMessage", content: "Old prompt" }], nextCursor: "more" });
+    assert.equal(await reading, null);
+    await source.prepare();
+    assert.equal(itemReads, 1);
+    assert.equal(source.getSnapshot().anchors[0]?.itemId, null);
+  } finally {
+    held.resolve({ data: [], nextCursor: null });
+    source.dispose();
+  }
+});
+
 test("V3 source fails closed when the bounded prompt-index scan is incomplete", async () => {
   const view = { ...createEmptyThreadView("local", "long-thread"), resumeState: "resumed" as const };
   const source = createV3ConversationNavigationSource({
@@ -336,6 +631,50 @@ test("V3 source fails closed when the bounded prompt-index scan is incomplete", 
   assert.equal(source.getSnapshot().phase, "degraded");
   assert.equal(source.getSnapshot().completeness, "partial");
   source.dispose();
+});
+
+test("V3 navigation stops at a cursor cycle and can retry from the head", async () => {
+  let view = { ...createEmptyThreadView("local", "thread-one"), resumeState: "resumed" as const };
+  const cursors: (string | null)[] = [];
+  let repaired = false;
+  let notify = () => {};
+  const source = createV3ConversationNavigationSource({ threadId: view.threadId, port: {
+    getView: () => view,
+    subscribeView(listener) { notify = listener; return () => {}; },
+    async listTurns({ cursor }) {
+      cursors.push(cursor ?? null);
+      if (cursor == null) return { data: [turn("latest")], nextCursor: "a" };
+      if (cursor === "a") return { data: [turn("middle")], nextCursor: "b" };
+      return { data: [turn("oldest")], nextCursor: repaired ? null : "a" };
+    },
+    projectionBarrier: { waitUntilProjected: async () => 0 },
+    commitHydratedTurn: () => ({
+      hostId: view.hostId, threadId: view.threadId, connectionGeneration: view.connectionGeneration, viewRevision: view.revision,
+    }),
+  } });
+  try {
+    await source.prepare();
+    const failed = source.getSnapshot();
+    assert.deepEqual(cursors, [null, "a", "b"]);
+    assert.equal(failed.phase, "degraded");
+    assert.equal(failed.completeness, "partial");
+    assert.match(failed.error?.message ?? "", /repeated a cursor/u);
+    assert.deepEqual(failed.anchors, []);
+
+    for (let i = 0; i < 3; i++) {
+      view = { ...view, revision: view.revision + 1 };
+      notify();
+      await new Promise(resolve => setImmediate(resolve));
+    }
+    assert.deepEqual(cursors, [null, "a", "b"]);
+    repaired = true;
+    await source.prepare();
+    const recovered = source.getSnapshot();
+    assert.deepEqual(cursors, [null, "a", "b", null, "a", "b"]);
+    assert.equal(recovered.completeness, "complete");
+    assert.equal(recovered.error, null);
+    assert.deepEqual(recovered.anchors.map(anchor => anchor.turnKey), ["oldest", "middle", "latest"]);
+  } finally { source.dispose(); }
 });
 
 test("V4 Replica prompt index applies live entries and epoch replacement without leaking cursors to UI", async () => {
@@ -515,6 +854,119 @@ test("navigation controller never lets a stale in-flight preview repopulate a ne
   controller.dispose();
 });
 
+test("V3 recovery indexing seeds only the contiguous loaded history range", async () => {
+  const view: ThreadView = { ...createEmptyThreadView("local", "thread"), resumeState: "resumed",
+    historyMode: "paginated", historyCheckpoint: { epoch: "checkpoint", nextSeq: 3 },
+    turns: [turn("isolated", "Previously picked from search"), turn("boundary", "Boundary"), turn("latest", "Latest")],
+    turnsPagination: { olderCursor: "older", oldestLoadedTurnId: "boundary", hasLoadedOldest: false, isLoadingOlder: false },
+  };
+  const cursors: (string | null)[] = [];
+  const source = createV3ConversationNavigationSource({ threadId: view.threadId, port: {
+    getView: () => view,
+    subscribeView: () => () => undefined,
+    async listTurns({ cursor }) {
+      cursors.push(cursor);
+      return { data: ["between", "isolated", "earliest"].map(id => turn(id)), nextCursor: null };
+    },
+    projectionBarrier: { waitUntilProjected: async () => 0 },
+    commitHydratedTurn() { throw new Error("Index only reads metadata"); },
+  } });
+  try {
+    await source.prepare();
+    assert.deepEqual(cursors, ["older"]);
+    assert.deepEqual(source.getSnapshot().anchors.map(anchor => anchor.turnKey),
+      ["earliest", "isolated", "between", "boundary", "latest"]);
+  } finally { source.dispose(); }
+});
+
+test("V3 switches from a message window to an index in the same connection generation", async () => {
+  let view: ThreadView = { ...createEmptyThreadView("local", "thread"), resumeState: "resumed", connectionGeneration: 5,
+    historyMode: "message-window", tailHydrationComplete: true, turns: [turn("window", "Previous prompt")] };
+  let notify = () => {};
+  let scans = 0;
+  const source = createV3ConversationNavigationSource({ threadId: view.threadId, port: {
+    getView: () => view,
+    subscribeView(listener) { notify = listener; return () => {}; },
+    async listTurns() { scans++; return { data: [turn("older"), turn("oldest")], nextCursor: null }; },
+    projectionBarrier: { waitUntilProjected: async () => 0 },
+    commitHydratedTurn() { throw new Error("Preview does not commit history"); },
+  } });
+  try {
+    await source.prepare();
+    assert.equal(scans, 0);
+    const prior = source.getSnapshot();
+    const oldPreview = source.loadPreview(prior.anchors[0]!.id);
+    view = { ...view, historyMode: "paginated", tailHydrationComplete: false, turns: [] };
+    notify();
+    await source.prepare();
+    assert.equal(scans, 1);
+    assert.notEqual(source.getSnapshot().generation, prior.generation);
+    assert.deepEqual(source.getSnapshot().anchors.map(anchor => anchor.turnKey), ["oldest", "older"]);
+    assert.equal(await oldPreview, null);
+  } finally { source.dispose(); }
+});
+
+test("V3 aborts an old index read when the same checkpoint switches to a message window", async () => {
+  let view: ThreadView = { ...createEmptyThreadView("local", "thread"), resumeState: "resumed",
+    historyMode: "paginated", historyCheckpoint: { epoch: "stable", nextSeq: 2 } };
+  let notify = () => {};
+  let signal: AbortSignal | undefined;
+  const held = Promise.withResolvers<ThreadTurnsListResponse>();
+  const source = createV3ConversationNavigationSource({ threadId: view.threadId, port: {
+    getView: () => view,
+    subscribeView(listener) { notify = listener; return () => {}; },
+    async listTurns(_params, operation) { signal = operation; return held.promise; },
+    projectionBarrier: { waitUntilProjected: async () => 0 },
+    commitHydratedTurn() { throw new Error("Old scan must not commit"); },
+  } });
+  try {
+    let settled = false;
+    const scanning = source.prepare().then(() => { settled = true; });
+    await waitFor(() => signal !== undefined || source.getSnapshot().phase === "loading");
+    const before = source.getSnapshot().generation;
+    view = { ...view, historyMode: "message-window", tailHydrationComplete: true, turns: [turn("window", "New prompt")] };
+    notify();
+    await source.prepare();
+    assert.equal(signal?.aborted, true);
+    assert.equal(source.getSnapshot().phase, "ready");
+    assert.notEqual(source.getSnapshot().generation, before);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(settled, true, "a retired transport must not hold the original prepare call open");
+    held.resolve({ data: [turn("stale")], nextCursor: null });
+    await scanning;
+    assert.deepEqual(source.getSnapshot().anchors.map(anchor => anchor.turnKey), ["window"]);
+  } finally {
+    held.resolve({ data: [], nextCursor: null });
+    source.dispose();
+  }
+});
+
+test("V3 publishes a single scan owner before notifying loading listeners", async () => {
+  const view: ThreadView = { ...createEmptyThreadView("local", "thread"), resumeState: "resumed" };
+  let repeat: Promise<void> | undefined;
+  let requested = false;
+  let scans = 0;
+  const source = createV3ConversationNavigationSource({ threadId: view.threadId, port: {
+    getView: () => view,
+    subscribeView: () => () => {},
+    async listTurns() { scans++; return { data: [turn("one")], nextCursor: null }; },
+    projectionBarrier: { waitUntilProjected: async () => 0 },
+    commitHydratedTurn() { throw new Error("Index only reads metadata"); },
+  } });
+  const unsubscribe = source.subscribe(() => {
+    if (source.getSnapshot().phase === "loading" && !requested) {
+      requested = true;
+      repeat = source.prepare();
+    }
+  });
+  try {
+    const initial = source.prepare();
+    await initial;
+    assert.equal(repeat, initial);
+    assert.equal(scans, 1);
+  } finally { unsubscribe(); source.dispose(); }
+});
+
 test("V3 recovery index is demand driven, preserves unchanged reconnects and fences changed history", async () => {
   let view: ThreadView = { ...createEmptyThreadView("local", "thread-one"), resumeState: "resumed",
     historyMode: "paginated", historyCheckpoint: { epoch: "provider", nextSeq: 4 }, turns: [turn("tail-1", "One")],
@@ -541,12 +993,12 @@ test("V3 recovery index is demand driven, preserves unchanged reconnects and fen
     view = { ...view, connectionGeneration: view.connectionGeneration + 1 }; notify(); await source.prepare();
     assert.equal(reads, 1); assert.equal(source.getSnapshot().generation, stable);
     view = { ...view, historyCheckpoint: { epoch: "provider", nextSeq: 8 }, turns: [turn("tail-2", "Two")],
-      turnsPagination: { ...view.turnsPagination, olderCursor: "older-2" } }; notify();
+      turnsPagination: { ...view.turnsPagination, olderCursor: "older-2", oldestLoadedTurnId: "tail-2" } }; notify();
     await waitFor(() => reads === 2);
     let publishedStale = false;
     source.subscribe(() => { publishedStale ||= source.getSnapshot().anchors.some(a => a.turnKey === "stale"); });
     view = { ...view, historyCheckpoint: { epoch: "provider", nextSeq: 12 }, turns: [turn("tail-3", "Three")],
-      turnsPagination: { ...view.turnsPagination, olderCursor: "older-3" } }; notify();
+      turnsPagination: { ...view.turnsPagination, olderCursor: "older-3", oldestLoadedTurnId: "tail-3" } }; notify();
     release({ data: [turn("stale", "Obsolete")], nextCursor: null });
     await waitFor(() => reads === 3 && source.getSnapshot().phase === "ready");
     assert.equal(publishedStale, false);

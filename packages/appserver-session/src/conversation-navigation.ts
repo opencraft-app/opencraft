@@ -1,54 +1,40 @@
 import type {
-  AppServerThreadItem,
   AppServerTurn,
-  MessageSender,
+  ThreadItemsListRequest,
+  ThreadItemsListResponse,
   ThreadTurnsListRequest,
   ThreadTurnsListResponse,
 } from "@opencraft/appserver-protocol";
 import type {
   ConversationNavigationAnchor,
-  ConversationNavigationOutput,
   ConversationNavigationSnapshot,
   ConversationNavigationSource,
 } from "@opencraft/chat-navigation";
 import { conversationNavigationTargetVersion } from "@opencraft/chat-navigation";
 
 import type { ThreadView } from "./models";
+import type { HydratedTurnNavigation, TurnPromptPreview } from "./derived-history";
+import { isNavigationPromptItem, navigationItemText } from "./navigation-items";
 import type {
   ThreadViewProjectionBarrier,
   ThreadViewProjectionCommit,
 } from "./projection-barrier";
 
-interface V3TurnLocator {
-  readonly turnId: string;
-  readonly pageBackwardsCursor: string | null;
-  readonly descendingOffset: number;
-}
-
-interface TurnPromptPreview {
-  readonly sender?: MessageSender;
-  readonly itemId: string;
-  readonly label: string;
-  readonly response: string;
-  readonly outputs: readonly ConversationNavigationOutput[];
-  readonly isHeartbeat: boolean;
-}
-
-interface HydratedTurnNavigation {
-  readonly turn: AppServerTurn;
-  readonly baselineTurn: AppServerTurn | undefined;
-  readonly turnCursor: string | null;
-  readonly prompts: readonly TurnPromptPreview[];
-}
+export type V3TurnLocator = { readonly turnId: string } & (
+  { readonly local: true } | { readonly pageCursor: string | null; readonly descendingOffset: number }
+);
 
 export interface V3ConversationNavigationPort {
+  /** An admitted history baseline, independent of execution activation. */
   getView(): ThreadView | null;
   subscribeView(listener: () => void): () => void;
-  listTurns(params: ThreadTurnsListRequest): Promise<ThreadTurnsListResponse>;
+  listTurns(params: ThreadTurnsListRequest, signal?: AbortSignal): Promise<ThreadTurnsListResponse>;
+  listItems?(params: ThreadItemsListRequest, signal: AbortSignal): Promise<ThreadItemsListResponse>;
   commitHydratedTurn(
     turn: AppServerTurn,
     chronologicalTurnIds: readonly string[],
     baselineTurn: AppServerTurn | undefined,
+    intent?: "search",
   ): ThreadViewProjectionCommit;
   readonly projectionBarrier: ThreadViewProjectionBarrier;
 }
@@ -60,108 +46,15 @@ export interface V3ConversationNavigationConfig {
   readonly pageSize?: number;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function textFrom(value: unknown): string {
-  if (typeof value === "string") return value;
-  if (!Array.isArray(value)) return "";
-  return value.flatMap((entry) => {
-    if (typeof entry === "string") return [entry];
-    if (!isRecord(entry)) return [];
-    return typeof entry.text === "string" ? [entry.text] : [];
-  }).join("\n");
-}
-
-function itemText(item: AppServerThreadItem): string {
-  return textFrom(item.content ?? item.text ?? item.message ?? item.fragments);
-}
-
-function isUserMessage(item: AppServerThreadItem): boolean {
-  return item.type === "userMessage" || item.type === "steeringUserMessage" || item.type === "hookPrompt";
-}
-
-function isAssistantMessage(item: AppServerThreadItem): boolean {
-  return item.type === "agentMessage" || item.type === "assistantMessage";
-}
-
-function outputForItem(item: AppServerThreadItem): ConversationNavigationOutput[] {
-  if (item.type === "imageGeneration") return [{ kind: "image", label: null }];
-  if (item.type === "fileChange") {
-    const changes = Array.isArray(item.changes) ? item.changes : [];
-    return changes.flatMap((change) => {
-      if (!isRecord(change)) return [];
-      const path = typeof change.path === "string" ? change.path : null;
-      return [{ kind: "file" as const, label: path?.split(/[\\/]/).at(-1) ?? null }];
-    });
-  }
-  if (item.type === "mcpToolCall" || item.type === "dynamicToolCall") {
-    const name = typeof item.tool === "string"
-      ? item.tool
-      : typeof item.name === "string"
-        ? item.name
-        : "";
-    if (/pull.?request|create.?pr/i.test(name)) return [{ kind: "pull-request", label: null }];
-    if (/commit/i.test(name)) return [{ kind: "commit", label: null }];
-    if (/website|preview/i.test(name)) return [{ kind: "website", label: null }];
-  }
-  return [];
-}
-
-function deduplicateOutputs(outputs: readonly ConversationNavigationOutput[]): ConversationNavigationOutput[] {
-  const seen = new Set<string>();
-  return outputs.filter((output) => {
-    const key = `${output.kind}:${output.label ?? ""}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-function projectTurnPrompts(turn: AppServerTurn): readonly TurnPromptPreview[] {
-  const prompts: Array<{
-    itemId: string;
-    sender?: MessageSender;
-    label: string;
-    response: string;
-    outputs: ConversationNavigationOutput[];
-    isHeartbeat: boolean;
-  }> = [];
-  for (const item of turn.items ?? []) {
-    if (isUserMessage(item)) {
-      const sender = isRecord(item.sender) && item.sender.kind === "employee"
-        && typeof item.sender.loginName === "string" && item.sender.loginName.trim()
-        ? { kind: "employee" as const, loginName: item.sender.loginName } : undefined;
-      prompts.push({
-        ...(sender ? { sender } : {}),
-        itemId: item.id,
-        label: itemText(item).trim(),
-        response: "",
-        outputs: [],
-        isHeartbeat: item.type === "hookPrompt",
-      });
-      continue;
-    }
-    const current = prompts.at(-1);
-    if (current === undefined) continue;
-    if (isAssistantMessage(item)) {
-      const response = itemText(item).trim();
-      if (response.length > 0) current.response = response;
-    }
-    current.outputs.push(...outputForItem(item));
-  }
-  return prompts.map((prompt) => ({
-    ...prompt,
-    outputs: deduplicateOutputs(prompt.outputs),
-  }));
+function hasPartialItems(turn: AppServerTurn): boolean {
+  return turn.itemsView === "summary" || turn.itemsView === "notLoaded";
 }
 
 function navigationAnchorId(turnId: string, promptIndex: number): string {
   return `v3:${turnId}:user:${promptIndex}`;
 }
 
-function projectionCommitForView(view: ThreadView): ThreadViewProjectionCommit {
+export function projectionCommitForView(view: ThreadView): ThreadViewProjectionCommit {
   return {
     hostId: view.hostId,
     threadId: view.threadId,
@@ -169,6 +62,8 @@ function projectionCommitForView(view: ThreadView): ThreadViewProjectionCommit {
     viewRevision: view.revision,
   };
 }
+
+const supersededSearch = new DOMException("Search selection superseded", "AbortError");
 
 /**
  * AppServer V3 compatibility source. It enumerates lightweight Turn stubs, then
@@ -190,9 +85,9 @@ export function createV3ConversationNavigationSource(
   const firstPrompt = (turn: AppServerTurn): PromptAnchor | null => {
     const cached = promptAnchors.get(turn);
     if (cached !== undefined) return cached;
-    const item = turn.items?.find(isUserMessage);
+    const item = turn.items?.find(isNavigationPromptItem);
     const prompt = item ? {
-      itemId: item.id, label: itemText(item).trim(), isHeartbeat: item.type === "hookPrompt",
+      itemId: item.id, label: navigationItemText(item).trim(), isHeartbeat: item.type === "hookPrompt",
     } : null;
     promptAnchors.set(turn, prompt);
     return prompt;
@@ -201,45 +96,56 @@ export function createV3ConversationNavigationSource(
   const hydrationOperations = new Map<string, {
     readonly generation: string;
     readonly promise: Promise<HydratedTurnNavigation | null>;
+    readonly controller: AbortController;
   }>();
+  let locatedRead: AbortController | null = null;
+  const resetHydration = () => {
+    hydratedByTurnId.clear();
+    for (const operation of hydrationOperations.values()) operation.controller.abort();
+    hydrationOperations.clear();
+    locatedRead?.abort();
+    locatedRead = null;
+  };
   let locators: readonly V3TurnLocator[] = [];
+  let adoptedTurns: ThreadView["turns"] | undefined;
+  const orderedTurnIds = () => locators.map(locator => locator.turnId);
   let completeness: "complete" | "partial" = "partial";
   let phase: ConversationNavigationSnapshot["phase"] = "empty";
   let error: Error | null = null;
   let revision = 0;
   let disposed = false;
-  let prepareOperation: Promise<void> | null = null;
-  let preparedGeneration: string | null = null;
+  let prepareOperation: { cancel: () => void; promise: Promise<void> } | null = null;
+  let scannedGeneration: string | null = null;
   let requested = false;
   let snapshot: ConversationNavigationSnapshot;
+  const findAnchor = (id: string) => snapshot.anchors.find(anchor => anchor.id === id);
 
-  const generation = (): string | null => {
-    const view = config.port.getView();
-    return view === null ? null : `appserver-v3:${view.hostId}:${view.historyCheckpoint ? `${view.historyCheckpoint.epoch}:${view.historyCheckpoint.nextSeq}` : view.connectionGeneration}`;
-  };
+  const generation = (view = config.port.getView()): string | null =>
+    view === null ? null : `appserver-v3:${view.hostId}:${view.historyCheckpoint ? `${view.historyCheckpoint.epoch}:${view.historyCheckpoint.nextSeq}` : view.connectionGeneration}:${view.historyMode}:${view.historyBaselineRevision ?? 0}`;
 
-  const anchors = (): readonly ConversationNavigationAnchor[] => {
-    const view = config.port.getView();
+  const anchors = (view: ThreadView | null): readonly ConversationNavigationAnchor[] => {
     const loaded = new Map<string, PromptAnchor>();
     for (const turn of view?.turns ?? []) {
+      if (hasPartialItems(turn)) continue;
       const prompt = firstPrompt(turn);
       if (prompt) loaded.set(turn.id, prompt);
     }
-    const orderedTurnIds: string[] = [];
-    const seen = new Set<string>();
-    for (const locator of locators) {
-      if (!seen.has(locator.turnId)) {
-        seen.add(locator.turnId);
-        orderedTurnIds.push(locator.turnId);
-      }
-    }
-    for (const turn of view?.turns ?? []) {
-      if (!seen.has(turn.id) && firstPrompt(turn) !== null) {
+    const turnIds = orderedTurnIds();
+    const seen = new Set(turnIds);
+    const turns = view?.turns ?? [];
+    const independent = adoptedTurns ? view?.navigationOnlyTurnIds : undefined;
+    const boundary = view?.historyMode === "paginated"
+      ? turns.findIndex(turn => turn.id === view.turnsPagination.oldestLoadedTurnId) : -1;
+    // A sparse search hit becomes a rail anchor only when its order is known.
+    for (let index = Math.max(0, boundary); index < turns.length; index++) {
+      const turn = turns[index]!;
+      if (turn.id !== view?.unplacedSearchTurnId && !independent?.includes(turn.id) &&
+          !seen.has(turn.id) && firstPrompt(turn) !== null) {
         seen.add(turn.id);
-        orderedTurnIds.push(turn.id);
+        turnIds.push(turn.id);
       }
     }
-    return orderedTurnIds.map((turnId, order): ConversationNavigationAnchor => {
+    return turnIds.map((turnId, order): ConversationNavigationAnchor => {
       const prompt = loaded.get(turnId) ?? hydratedByTurnId.get(turnId)?.prompts[0];
       return {
         // V3 exposes only a lightweight Turn index. Hydration may enrich this
@@ -263,9 +169,9 @@ export function createV3ConversationNavigationSource(
     snapshot = {
       revision,
       phase,
-      generation: generation(),
+      generation: generation(view),
       completeness,
-      anchors: anchors(),
+      anchors: anchors(view),
       error,
     };
   };
@@ -276,57 +182,74 @@ export function createV3ConversationNavigationSource(
   };
   rebuild();
 
-  const enumerate = async (): Promise<void> => {
-    const expectedGeneration = generation();
-    const current = () => !disposed && generation() === expectedGeneration;
+  const stopScan = () => {
+    const previous = prepareOperation;
+    prepareOperation = null;
+    previous?.cancel();
+  };
+
+  const retireGeneration = (next: string | null): boolean => {
+    if (next === snapshot.generation) return false;
+    stopScan();
+    resetHydration();
+    locators = [];
+    adoptedTurns = undefined;
+    completeness = "partial";
+    phase = "empty";
+    error = null;
+    scannedGeneration = null;
+    return true;
+  };
+
+  const adoptCompleteView = (view: ThreadView | null, owner: string | null): boolean => {
+    if (!view || view.historyMode === "message-window" ||
+        !view.turnsPagination.hasLoadedOldest || view.turnsPagination.olderCursor !== null) {
+      if (adoptedTurns) {
+        adoptedTurns = undefined;
+        locators = [];
+        scannedGeneration = null;
+        phase = "empty";
+        completeness = "partial";
+      }
+      return false;
+    }
+    if (adoptedTurns === view.turns) return false;
+    adoptedTurns = view.turns;
+    locators = [...new Set(view.turns.map(turn => turn.id))]
+      .filter(turnId => turnId !== view.unplacedSearchTurnId && !view.navigationOnlyTurnIds?.includes(turnId))
+      .map(turnId => ({ turnId, local: true }));
+    completeness = "complete";
+    phase = "ready";
+    error = null;
+    scannedGeneration = owner;
+    stopScan();
+    return true;
+  };
+
+  const enumerate = async (expectedGeneration: string | null, signal: AbortSignal): Promise<void> => {
+    const current = () => !disposed && !signal.aborted && generation() === expectedGeneration;
+    if (!current()) return;
     phase = "loading";
     error = null;
     publish();
-    const view = config.port.getView();
-    // Resume already owns this full page; start index discovery at its older
-    // boundary instead of rereading the same tail (or all history if complete).
-    const seeded = view?.historyMode === "paginated" && view.historyCheckpoint !== undefined;
-    const loaded = seeded ? [...view.turns].reverse() : [];
-    const nextLocators: V3TurnLocator[] = loaded.map((turn, descendingOffset) => ({
-      turnId: turn.id, pageBackwardsCursor: null, descendingOffset,
-    }));
-    let cursor: string | null = seeded ? view.turnsPagination.olderCursor : null;
-    let complete = seeded && view.turnsPagination.hasLoadedOldest;
+    if (!current()) return;
     try {
-      for (let pageIndex = 0; !complete && pageIndex < maxPages; pageIndex += 1) {
-        const page = await config.port.listTurns({
-          threadId: config.threadId,
-          cursor,
-          limit: pageSize,
-          itemsView: "notLoaded",
-          sortDirection: "desc",
-        });
-        if (!current()) return;
-        page.data.forEach((turn, descendingOffset) => {
-          nextLocators.push({
-            turnId: turn.id,
-            pageBackwardsCursor: page.backwardsCursor ?? cursor,
-            descendingOffset,
-          });
-        });
-        if (page.nextCursor === null) {
-          complete = true;
-          break;
-        }
-        if (page.nextCursor === cursor) throw new Error("thread/turns/list repeated a cursor");
-        cursor = page.nextCursor;
-      }
-      if (!current()) return;
-      locators = nextLocators.reverse();
+      const { discoverNavigationTurns } = await import("./derived-history");
+      const index = await discoverNavigationTurns(config.threadId, (params, signal) => config.port.listTurns(params, signal),
+        config.port.getView(), pageSize, maxPages, signal, current);
+      if (!index || !current()) return;
+      const { complete } = index;
+      locators = index.locators;
       completeness = complete ? "complete" : "partial";
       phase = complete ? "ready" : "degraded";
-      preparedGeneration = expectedGeneration;
+      scannedGeneration = expectedGeneration;
       publish();
     } catch (cause) {
       if (!current()) return;
       error = cause instanceof Error ? cause : new Error(String(cause));
       phase = "degraded";
       completeness = "partial";
+      scannedGeneration = expectedGeneration;
       publish();
     }
   };
@@ -335,29 +258,41 @@ export function createV3ConversationNavigationSource(
     requested = true;
     if (disposed) return Promise.resolve();
     const view = config.port.getView();
-    // Resume owns discovery of the history model. Enumerating before it has
-    // settled can accidentally turn a message-window provider into a second
-    // all-history reader, competing with foreground hydration.
-    if (view === null || view.resumeState !== "resumed") return Promise.resolve();
+    const nextGeneration = generation(view);
+    const changed = retireGeneration(nextGeneration);
+    if (view === null) {
+      if (changed) publish();
+      return Promise.resolve();
+    }
     if (view.historyMode === "message-window") {
       locators = [];
       completeness = view.tailHydrationComplete ? "complete" : "partial";
       phase = view.tailHydrationComplete ? "ready" : "degraded";
-      preparedGeneration = generation();
+      scannedGeneration = nextGeneration;
       publish();
       return Promise.resolve();
     }
-    if (preparedGeneration === generation() && (phase === "ready" || phase === "degraded")) {
+    if (adoptCompleteView(view, nextGeneration)) {
+      publish();
       return Promise.resolve();
     }
-    if (prepareOperation !== null) return prepareOperation;
-    const expectedGeneration = generation();
-    const operation = enumerate().finally(() => {
-      if (prepareOperation === operation) prepareOperation = null;
-      if (!disposed && generation() !== expectedGeneration) void prepare();
+    if (scannedGeneration === nextGeneration && error === null && (phase === "ready" || phase === "degraded")) {
+      return Promise.resolve();
+    }
+    if (prepareOperation !== null) return prepareOperation.promise;
+    const controller = new AbortController();
+    let finish = () => {};
+    const promise = new Promise<void>((resolve, reject) => {
+      finish = resolve;
+      void Promise.resolve().then(() => enumerate(nextGeneration, controller.signal)).then(resolve, reject);
+    }).finally(() => {
+      if (prepareOperation?.promise !== promise) return;
+      prepareOperation = null;
+      if (!disposed && generation() !== nextGeneration) void prepare();
     });
-    prepareOperation = operation;
-    return operation;
+    prepareOperation = { promise, cancel: () => { finish(); controller.abort(); } };
+    if (changed) publish();
+    return promise;
   };
 
   const fetchHydratedTurn = (
@@ -366,8 +301,10 @@ export function createV3ConversationNavigationSource(
   ): Promise<HydratedTurnNavigation | null> => {
     if (disposed || expectedGeneration === null || generation() !== expectedGeneration) return Promise.resolve(null);
     const loaded = config.port.getView()?.turns.find((turn) => turn.id === turnId);
-    if (loaded !== undefined && firstPrompt(loaded) !== null) {
-      return Promise.resolve({ turn: loaded, baselineTurn: loaded, turnCursor: null, prompts: projectTurnPrompts(loaded) });
+    if (loaded !== undefined && !hasPartialItems(loaded) && firstPrompt(loaded) !== null) {
+      return import("./derived-history").then(({ projectTurnPrompts }) => ({
+        turn: loaded, baselineTurn: loaded, prompts: projectTurnPrompts(loaded),
+      }));
     }
     const cached = hydratedByTurnId.get(turnId);
     if (cached !== undefined) return Promise.resolve(cached);
@@ -375,70 +312,43 @@ export function createV3ConversationNavigationSource(
     if (pending?.generation === expectedGeneration) return pending.promise;
     const locator = locators.find((candidate) => candidate.turnId === turnId);
     if (locator === undefined) return Promise.resolve(null);
+    const controller = new AbortController();
+    const current = () => !disposed && !controller.signal.aborted && generation() === expectedGeneration;
     const promise = (async () => {
-      let cursor = locator.pageBackwardsCursor;
-      if (locator.descendingOffset > 0) {
-        const skipped = await config.port.listTurns({
-          threadId: config.threadId,
-          cursor,
-          limit: locator.descendingOffset,
-          itemsView: "notLoaded",
-          sortDirection: "desc",
-        });
-        if (disposed || generation() !== expectedGeneration) return null;
-        cursor = skipped.nextCursor;
-        if (cursor === null) return null;
-      }
-      const page = await config.port.listTurns({
-        threadId: config.threadId,
-        cursor,
-        limit: 1,
-        itemsView: "full",
-        sortDirection: "desc",
-      });
-      if (disposed || generation() !== expectedGeneration) return null;
-      const turn = page.data[0];
-      if (turn === undefined || turn.id !== turnId) return null;
+      const { projectTurnPrompts, readNavigationTurn } = await import("./derived-history");
+      if (!current()) return null;
+      const turn = await readNavigationTurn(config.port, config.threadId, locator, loaded, controller.signal, current);
+      if (!current() || !turn) return null;
       const result: HydratedTurnNavigation = {
         turn,
         baselineTurn: loaded,
-        turnCursor: page.backwardsCursor ?? cursor,
         prompts: projectTurnPrompts(turn),
       };
       if (disposed) return null;
       hydratedByTurnId.set(turnId, result);
       publish();
       return result;
-    })().finally(() => {
+    })().catch(error => {
+      if (!current()) return null;
+      throw error;
+    }).finally(() => {
       if (hydrationOperations.get(turnId)?.promise === promise) hydrationOperations.delete(turnId);
     });
-    hydrationOperations.set(turnId, { generation: expectedGeneration, promise });
+    hydrationOperations.set(turnId, { generation: expectedGeneration, promise, controller });
     return promise;
   };
 
   const removeViewListener = config.port.subscribeView(() => {
     if (disposed) return;
     const view = config.port.getView();
-    // Index discovery is requested by the rail/search consumer, not retention.
-    if (!requested) { publish(); return; }
-    if (view?.historyMode === "message-window" || (preparedGeneration === null && view?.resumeState === "resumed")) {
-      publish();
-      void prepare();
-      return;
-    }
-    const nextGeneration = generation();
-    if (preparedGeneration !== null && nextGeneration !== preparedGeneration) {
-      locators = [];
-      hydratedByTurnId.clear();
-      hydrationOperations.clear();
-      completeness = "partial";
-      phase = "empty";
-      preparedGeneration = null;
-      publish();
-      void prepare();
-      return;
-    }
+    const owner = generation(view);
+    retireGeneration(owner);
+    if (requested) adoptCompleteView(view, owner);
     publish();
+    // Index discovery is requested by the rail/search consumer, not retention.
+    if (requested && view && (view.historyMode === "message-window" || scannedGeneration === null)) {
+      void prepare();
+    }
   });
 
   return {
@@ -451,90 +361,58 @@ export function createV3ConversationNavigationSource(
     prepare,
     async loadPreview(anchorId) {
       if (disposed) return null;
-      const anchor = snapshot.anchors.find((candidate) => candidate.id === anchorId);
+      const anchor = findAnchor(anchorId);
       if (anchor === undefined) return null;
-      const hydrated = await fetchHydratedTurn(anchor.turnKey, generation());
-      if (hydrated === null || disposed) return null;
-      const prompt = hydrated.prompts.find((candidate) => candidate.itemId === anchor.itemId)
-        ?? hydrated.prompts[0];
-      return prompt === undefined ? null : {
-        ...(prompt.sender ? { sender: prompt.sender } : {}),
-        label: prompt.label,
-        response: prompt.response,
-        outputs: prompt.outputs,
-      };
+      const expectedGeneration = snapshot.generation;
+      const { selectNavigationPreview } = await import("./derived-history");
+      const hydrated = await fetchHydratedTurn(anchor.turnKey, expectedGeneration);
+      if (hydrated === null || disposed || generation() !== expectedGeneration || !findAnchor(anchorId)) return null;
+      return selectNavigationPreview(hydrated.prompts, anchor.itemId);
     },
     async prepareTarget(anchorId, options) {
       const isAborted = () => disposed || options?.signal?.aborted === true;
-      const anchor = snapshot.anchors.find((candidate) => candidate.id === anchorId);
+      const anchor = findAnchor(anchorId);
       if (anchor === undefined) return null;
-      const expectedGeneration = generation();
-      if (expectedGeneration === null || isAborted()) return null;
-      if (anchor.isLoaded) {
-        const currentView = config.port.getView();
-        if (currentView === null) return null;
-        const projectionRevision = await config.port.projectionBarrier.waitUntilProjected(
-          projectionCommitForView(currentView),
-          options,
-        );
-        if (isAborted() || generation() !== expectedGeneration) return null;
-        const itemId = options?.itemId ?? anchor.itemId;
-        if (itemId !== null && !config.port.getView()?.turns.find(turn => turn.id === anchor.turnKey)?.items?.some(item => item.id === itemId)) return null;
-        const target = { turnKey: anchor.turnKey, itemId, projectionRevision };
-        const currentAnchor = snapshot.anchors.find((candidate) => candidate.id === anchorId);
-        if (
-          currentAnchor === undefined
-          || (options?.itemId === undefined && conversationNavigationTargetVersion(currentAnchor) !== conversationNavigationTargetVersion(target))
-        ) return null;
-        return {
-          ...target,
-          anchorId,
-          generation: expectedGeneration,
-          targetVersion: conversationNavigationTargetVersion(target),
-        };
+      const expectedGeneration = snapshot.generation;
+      if (expectedGeneration === null || isAborted() || generation() !== expectedGeneration) return null;
+      const { projectNavigationAnchorTarget } = await import("./derived-history");
+      return projectNavigationAnchorTarget(config.port, anchor, expectedGeneration, options, {
+        current: () => !isAborted() && generation() === expectedGeneration,
+        getAnchor: () => findAnchor(anchorId),
+        orderedTurnIds,
+        hydrate: () => fetchHydratedTurn(anchor.turnKey, expectedGeneration),
+      });
+    },
+    async prepareLocatedTarget(target, signal) {
+      const owner = generation();
+      if (!owner || disposed || signal.aborted) return null;
+      const controller = new AbortController();
+      const abort = () => controller.abort(signal.reason);
+      const current = () => !disposed && !controller.signal.aborted && generation() === owner;
+      locatedRead?.abort(supersededSearch);
+      locatedRead = controller;
+      signal.addEventListener("abort", abort, { once: true });
+      let prepared;
+      try {
+        const { projectLocatedNavigationTarget } = await import("./derived-history");
+        prepared = await projectLocatedNavigationTarget(config.port, target, orderedTurnIds, controller.signal, current);
+      } catch (error) {
+        if (current()) throw error;
+      } finally {
+        signal.removeEventListener("abort", abort);
+        if (locatedRead === controller) locatedRead = null;
       }
-      const hydrated = await fetchHydratedTurn(anchor.turnKey, expectedGeneration);
-      if (
-        hydrated === null
-        || isAborted()
-        || generation() !== expectedGeneration
-      ) return null;
-      const prompt = hydrated.prompts.find((candidate) => candidate.itemId === anchor.itemId)
-        ?? hydrated.prompts[0];
-      if (prompt === undefined && options?.itemId === undefined) return null;
-      if (options?.itemId !== undefined && !hydrated.turn.items?.some(item => item.id === options.itemId)) return null;
-      const commit = config.port.commitHydratedTurn(
-        hydrated.turn,
-        locators.map((locator) => locator.turnId),
-        hydrated.baselineTurn,
-      );
-      const projectionRevision = await config.port.projectionBarrier.waitUntilProjected(commit, options);
-      if (isAborted() || generation() !== expectedGeneration) return null;
-      const target = {
-        turnKey: anchor.turnKey,
-        itemId: options?.itemId ?? prompt!.itemId,
-        projectionRevision,
-      };
-      if (options?.itemId !== undefined && !config.port.getView()?.turns.find(turn => turn.id === anchor.turnKey)?.items?.some(item => item.id === options.itemId)) return null;
-      const currentAnchor = snapshot.anchors.find((candidate) => candidate.id === anchorId);
-      if (
-        currentAnchor === undefined
-        || (options?.itemId === undefined && conversationNavigationTargetVersion(currentAnchor) !== conversationNavigationTargetVersion(target))
-      ) return null;
-      return {
-        ...target,
-        anchorId,
-        generation: expectedGeneration,
-        targetVersion: conversationNavigationTargetVersion(target),
-      };
+      if (controller.signal.reason === supersededSearch) throw supersededSearch;
+      return prepared && current() ? { ...prepared, anchorId: navigationAnchorId(target.turnId, 0),
+        generation: owner, targetVersion: conversationNavigationTargetVersion(prepared) } : null;
     },
     dispose() {
       if (disposed) return;
       disposed = true;
+      stopScan();
       removeViewListener();
       listeners.clear();
-      hydratedByTurnId.clear();
-      hydrationOperations.clear();
+      resetHydration();
     },
   };
 }

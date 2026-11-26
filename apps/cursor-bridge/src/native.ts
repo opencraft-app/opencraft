@@ -9,7 +9,8 @@ import type { CursorAgent, CursorFactory, CursorRun } from "./types.js";
 
 class StreamRun implements CursorRun {
   private messages: SDKMessage[] = [];
-  private terminal = false;
+  private streamEnded = false;
+  private streamError?: Error;
   private wake?: () => void;
   private resolve!: (result: RunResult) => void;
   private reject!: (error: Error) => void;
@@ -19,43 +20,69 @@ class StreamRun implements CursorRun {
     void this.completed.catch(() => {});
     if (supportsSteer) this.steer = async (text) => await client.call("steer", { runId: id, text }) as "complete_delivered" | "revert_to_followup";
   }
-  push(message: SDKMessage): void { this.messages.push(message); this.wake?.(); }
-  finish(result?: RunResult): void {
-    this.terminal = true;
-    if (result) this.resolve(result); else this.reject(Error("SDK run outcome unknown"));
+  push(message: SDKMessage): void {
+    if (this.streamEnded) return;
+    this.messages.push(message);
     this.wake?.();
   }
-  async *stream(): AsyncIterable<SDKMessage> {
-    while (true) {
-      const next = this.messages.shift();
-      if (next) { yield next; continue; }
-      if (this.terminal) break;
-      await new Promise<void>((resolve) => { this.wake = resolve; });
+  finishStream(failed: boolean): void {
+    if (this.streamEnded) return;
+    this.streamEnded = true;
+    if (failed) this.streamError = Error("Cursor SDK stream unavailable");
+    this.wake?.();
+  }
+  finish(result?: RunResult): void {
+    if (result) this.resolve(result); else this.reject(Error("SDK run outcome unknown"));
+  }
+  async *stream(signal?: AbortSignal): AsyncIterable<SDKMessage> {
+    const discardOutput = () => {
+      this.messages.length = 0;
+      this.finishStream(false);
+      void this.client.call("discard-output", { runId: this.id }).catch(() => {});
+    };
+    if (signal?.aborted) discardOutput();
+    else signal?.addEventListener("abort", discardOutput, { once: true });
+    try {
+      while (true) {
+        const next = this.messages.shift();
+        if (next) { yield next; continue; }
+        if (this.streamError) throw this.streamError;
+        if (this.streamEnded) break;
+        await new Promise<void>((resolve) => { this.wake = resolve; });
+        this.wake = undefined;
+      }
+      await this.completed;
+    } finally {
+      signal?.removeEventListener("abort", discardOutput);
     }
-    await this.completed;
   }
   wait(): Promise<RunResult> { return this.completed; }
   async cancel(): Promise<void> { await this.client.call("cancel", { runId: this.id }); }
 }
 declare const CURSOR_WORKER_SHA256: string;
 class Client {
-  static async create(): Promise<Client> {
+  static async create(signal?: AbortSignal): Promise<Client> {
+    signal?.throwIfAborted();
     const bytes = await readFile(new URL("./sdk-worker.mjs", import.meta.url));
     if (createHash("sha256").update(bytes).digest("hex") !== CURSOR_WORKER_SHA256) throw Error("Cursor worker digest mismatch");
+    signal?.throwIfAborted();
     return new Client();
   }
   private worker = new Worker(new URL("./sdk-worker.mjs", import.meta.url), { stdout: true, stderr: true });
   private serial = 0;
   private dead = false;
+  private closing?: Promise<void>;
   private pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void; method: string }>();
-  private runs = new Map<string, StreamRun>();
+  private run?: StreamRun;
   constructor() {
     this.worker.stdout?.resume(); this.worker.stderr?.resume();
     this.worker.on("message", (m) => {
       if (m.event) {
-        const run = this.runs.get(m.runId);
-        if (m.event === "message") run?.push(m.message);
-        else run?.finish(m.result);
+        const run = this.run;
+        if (!run || run.id !== m.runId) return;
+        if (m.event === "message") run.push(m.message);
+        else if (m.event === "terminal") run.finish(m.result);
+        else if (m.event === "stream-end" || m.event === "stream-error") run.finishStream(m.event === "stream-error");
         return;
       }
       const pending = this.pending.get(m.id);
@@ -71,7 +98,8 @@ class Client {
       }
       if (pending.method === "send") {
         const run = new StreamRun(m.result.id, this, m.result.supportsSteer === true);
-        this.runs.set(run.id, run); pending.resolve(run);
+        this.run = run;
+        pending.resolve(run);
       } else pending.resolve(m.result);
     });
     this.worker.on("error", () => this.lost());
@@ -81,7 +109,9 @@ class Client {
     this.dead = true;
     for (const p of this.pending.values()) p.reject(Error("Cursor worker lost; outcome unknown"));
     this.pending.clear();
-    for (const run of this.runs.values()) run.finish();
+    this.run?.finish();
+    this.run?.finishStream(true);
+    this.run = undefined;
   }
   call(method: string, params: Record<string, string> = {}): Promise<unknown> {
     if (this.dead) return Promise.reject(Error("Cursor worker unavailable; no replay"));
@@ -91,24 +121,53 @@ class Client {
       this.worker.postMessage({ id, method, params });
     });
   }
-  async close(): Promise<void> { await this.worker.terminate(); this.lost(); }
+  close(): Promise<void> {
+    return this.closing ??= (async () => {
+      await this.worker.terminate();
+      this.lost();
+    })().catch(error => { this.closing = undefined; throw error; });
+  }
 }
+
+async function withProvisionalClient<T>(signal: AbortSignal | undefined, work: (client: Client) => Promise<T>): Promise<T> {
+  const client = await Client.create(signal);
+  const onAbort = () => { void client.close().catch(() => {}); };
+  signal?.addEventListener("abort", onAbort, { once: true });
+  try {
+    signal?.throwIfAborted();
+    const result = await work(client);
+    signal?.throwIfAborted();
+    return result;
+  } catch (error) {
+    await client.close();
+    signal?.throwIfAborted();
+    throw error;
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
+  }
+}
+
 export const cursorFactory: CursorFactory = {
-  async hasCredentials() {
-    const client = await Client.create();
-    try { return await client.call("auth") === true; } finally { await client.close(); }
+  async hasCredentials(signal) {
+    return withProvisionalClient(signal, async client => {
+      const available = await client.call("auth") === true;
+      await client.close();
+      return available;
+    });
   },
-  async models() {
-    const client = await Client.create();
-    try { return await client.call("models") as { id: string; name: string }[]; } finally { await client.close(); }
+  async models(signal) {
+    return withProvisionalClient(signal, async client => {
+      const models = await client.call("models") as { id: string; name: string }[];
+      await client.close();
+      return models;
+    });
   },
-  async create(cwd, model, stateDirectory): Promise<CursorAgent> {
-    const client = await Client.create();
-    try {
+  async create(cwd, model, stateDirectory, signal): Promise<CursorAgent> {
+    return withProvisionalClient(signal, async client => {
       const result = await client.call("create", { cwd, model, stateDirectory }) as { agentId: string };
       const close = localOwnerClose(() => client.call("close"), () => client.close());
       return { agentId: result.agentId, send: async (text) => await client.call("send", { text }) as CursorRun,
         close };
-    } catch (error) { await client.close(); throw error; }
+    });
   },
 };

@@ -3,7 +3,7 @@ import { collaborationQueueGuard, type CodexBridgeOwners } from "./codex-bridge-
 import { prepareHistoryImages } from "./history-image-resources.js";
 import { readInputCompletion } from "./input-completion.js";
 import { CodexAccountOperationError, classifyAccountFailure, logAccountFailure } from "@opencraft/account-pool-host";
-import { inputExecutionEnded, isThreadGoalPauseRequest } from "@opencraft/appserver-protocol";
+import { inputExecutionEnded, isThreadGoalPauseRequest, THREAD_QUEUE_RECEIPT_TURN_LIMIT } from "@opencraft/appserver-protocol";
 import { bindModelGatewaySponsor, requiresModelGateway, configuredModelGatewayPath, ModelGatewayStore, ModelGatewayError } from "@opencraft/account-pool-host";
 import { captureGeneratedOutputs } from "@opencraft/local-agent-host/artifacts/tool-output";
 import { generatedFileRootsFromEnvironment } from "@opencraft/local-agent-host/artifacts/host-capture";
@@ -13,7 +13,7 @@ import { SERVER_REQUEST_CANCEL, SERVER_REQUEST_CANCELLATION_EXTENSION } from '@o
 import { assertModelPolicy, readPolicy, resolvePolicySelection, ModelPolicyError } from '@opencraft/model-usage-policy/native';
 import { ProvisionalThreads } from "./provisional-threads.js";
 import { nativeEmptyCreation } from "./native-empty-creation.js";
-import { HostInteractions, InteractionFault } from "@opencraft/app-host-server/interactions";
+import { HostInteractions, InteractionFault, InteractionResponseNotDispatched } from "@opencraft/app-host-server/interactions";
 import { COLLABORATION_CAPABILITIES, type CollaborationCapabilities } from '@opencraft/appserver-protocol/collaboration';
 import { SHARED_INTERACTIONS_EXTENSION, SHARED_INTERACTIONS_CHANGED, SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND, isHumanInteraction, type InteractionSourceRequest } from "@opencraft/appserver-protocol";
 import { projectThreadTopologyResult } from "./thread-orchestration-projection.js";
@@ -62,6 +62,7 @@ import { TokenUsageTelemetry } from "./token-usage-telemetry.js";
 import { TokenUsageQueryService } from "./token-usage-query-service.js";
 import { TokenUsageQueryError } from "./token-usage-query.js";
 import { COLLABORATION_METHOD, CONVERSATION_TOOLS, THREAD_ORCHESTRATION_TOOLS, type ThreadOrchestrationSnapshot } from "@opencraft/appserver-protocol/collaboration";
+import { routedCodexScheduleExecution } from "./codex-schedules-service.js";
 import { ConversationSchedules, ScheduleFault, type ScheduleExecutionPort, type ScheduleExecutionEvent } from "./conversation-schedules.js";
 import { CONVERSATION_SCHEDULES, CONVERSATION_SCHEDULES_EXTENSION, type ConversationScheduleRun } from "@opencraft/appserver-protocol";
 import type { DatabaseOutcome } from "@opencraft/sqlite-node";
@@ -364,6 +365,8 @@ interface LocalCodexEngineOptions extends SharedCodexRoutingOptions {
   readonly coreRuntime?: CodexRuntimeEndpoints;
   /** Headless owns downstream overlays while the independent core owns only native/accounts. */
   readonly coreHostOverlays?: boolean;
+  /** Uses the public Thread router for scheduled work owned by a provider bridge. */
+  readonly bridgeThreadRequest?: (method: string, params: Record<string, unknown>, commitExecution?: () => boolean) => Promise<unknown>;
   /** Trusted in-process native transport decoration; never supplied by an RPC. */
   readonly decorateNativeTransport?: (transport: DuplexTransport,
     admission: (requestId: string | number) => CodexNativeRequestAdmission | null) => DuplexTransport;
@@ -484,7 +487,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   private readonly collaborationCalls = new Map<string, symbol>();
   private readonly nativeToolCalls = new Map<string, { threadId: string; turnId: string; abort: AbortController }>();
   private readonly serverRequests = new Map<string, PendingServerRequest>();
-  private readonly humanInteractions = new HostInteractions();
+  private readonly humanInteractions = new HostInteractions({ isolateLegacyIds: true });
   private readonly sharedInteractionClients = new Set<string>();
   private readonly removeHumanInteractionListener = this.humanInteractions.subscribe(threadId => {
     for (const clientId of this.threadTargets(threadId)) this.publishHumanInteractions(threadId, clientId);
@@ -1216,7 +1219,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     }
     if (this.coreBridge) {
       if (context.sender !== null) throw new Error("Codex core mode does not support verified sender attribution");
-      return this.coreBridge.send(frame);
+      return this.coreBridge.sendWithContext(frame, context);
     }
     if (this.statusValue.state !== "open" || !this.physicalAvailable || this.coreReinitializing) throw new Error("Codex Engine is not connected");
     const message = record(JSON.parse(frame));
@@ -1225,6 +1228,27 @@ export class CodexEngineAdapter implements DuplexTransport {
       JSON.stringify([message[LOGICAL_CLIENT_FIELD], message.id])));
     try { await this.sendClientMessage(message, context); }
     finally { if (admission !== null) this.admissionsInFlight.delete(admission); }
+  }
+
+  private observesInteraction(threadId: string, clientId: string): boolean {
+    return this.initializedClients.has(clientId) &&
+      (this.threadClients.get(threadId)?.has(clientId) === true || this.historyWatchers.get(threadId)?.has(clientId) === true);
+  }
+
+  private interactionWriter(threadId: string, clientId: string, resourceOwner: TransportSubmissionContext["resourceOwner"], legacyId?: string | number) {
+    const epoch = this.clientEpoch(clientId);
+    return (source: InteractionSourceRequest, result: RpcRecord, assertCurrent: () => void) => {
+      try {
+        if (this.clientEpoch(clientId) !== epoch || !this.observesInteraction(threadId, clientId) ||
+            (legacyId !== undefined && (this.sharedInteractionClients.has(clientId) || !this.humanInteractions.wasOffered(legacyId, clientId))))
+          throw new Error("Interaction subscription expired");
+        resourceOwner?.assertCurrent();
+        assertCurrent();
+      } catch (cause) {
+        throw new InteractionResponseNotDispatched(cause);
+      }
+      return this.writePhysical({ id: source.id, result, __opencraftInteractionKey: source.__opencraftInteractionKey });
+    };
   }
 
   private async sendClientMessage(message: RpcRecord, context: TransportSubmissionContext): Promise<void> {
@@ -1294,31 +1318,25 @@ export class CodexEngineAdapter implements DuplexTransport {
     const id = responseId(message.id);
     if (id !== null && (message.method === SHARED_INTERACTIONS_READ || message.method === SHARED_INTERACTIONS_RESPOND)) {
       const p = record(message.params), threadId = string(p.threadId);
-      const reader = this.threadClients.get(threadId)?.has(clientId) || this.historyWatchers.get(threadId)?.has(clientId);
-      if (!this.initializedClients.has(clientId) || !reader) { this.emit({ id, error: { code: 403, message: "Conversation subscription required" } }, clientId); return; }
+      if (!this.observesInteraction(threadId, clientId)) { this.emit({ id, error: { code: 403, message: "Conversation subscription required" } }, clientId); return; }
       // A read subscription does not start execution. Answering an existing
       // human wait is an explicit command under the instance's current access.
-      const canRespond = reader === true;
       const epoch = this.clientEpoch(clientId);
       try {
         if (message.method === SHARED_INTERACTIONS_READ) {
-          this.emit({ id, result: this.humanInteractions.snapshot(threadId, canRespond) }, clientId); return;
+          this.emit({ id, result: this.humanInteractions.snapshot(threadId, true) }, clientId); return;
         }
-        context.resourceOwner?.assertCurrent();
-        if (!canRespond) throw new InteractionFault({ code: "READ_ONLY" }, "This subscription cannot answer interactions");
         if (!string(p.interactionId) || !string(p.submissionId) || !p.result || typeof p.result !== "object" || Array.isArray(p.result))
           throw new InteractionFault({ code: "INVALID_RESPONSE" }, "Invalid interaction response");
-        const disposition = await this.humanInteractions.respond(threadId, string(p.interactionId), string(p.submissionId), record(p.result),
-          async (source, result) => {
-            if (!this.initializedClients.has(clientId) || this.clientEpoch(clientId) !== epoch || !(this.threadClients.get(threadId)?.has(clientId) || this.historyWatchers.get(threadId)?.has(clientId))) throw new Error("Interaction subscription expired");
-            context.resourceOwner?.assertCurrent();
-            await this.writePhysical({ id: source.id, result, __opencraftInteractionKey: source.__opencraftInteractionKey });
-          });
+        const writer = this.interactionWriter(threadId, clientId, context.resourceOwner);
+        context.resourceOwner?.assertCurrent();
+        const disposition = await this.humanInteractions.respond(threadId, string(p.interactionId), string(p.submissionId), record(p.result), writer);
         if (this.initializedClients.has(clientId) && this.clientEpoch(clientId) === epoch)
           this.emit({ id, result: { disposition, snapshot: this.humanInteractions.snapshot(threadId, true) } }, clientId);
       } catch (cause) {
         if (this.initializedClients.has(clientId) && this.clientEpoch(clientId) === epoch) this.emit({ id, error: { code: cause instanceof InteractionFault ? cause.rpcCode : -32000,
-          message: cause instanceof Error ? cause.message : "Interaction submission failed" } }, clientId);
+          message: cause instanceof Error ? cause.message : "Interaction submission failed",
+          ...(cause instanceof InteractionResponseNotDispatched ? { data: { ...cause.domainData, submissionOutcome: "rejected" } } : {}) } }, clientId);
       }
       return;
     }
@@ -1475,11 +1493,11 @@ export class CodexEngineAdapter implements DuplexTransport {
       return;
     }
     if (id !== null && message.method === undefined && ("result" in message || "error" in message)) {
-      const humanThread = this.humanInteractions.threadForNative(id);
+      const humanThread = this.humanInteractions.threadForLegacy(id);
       if (humanThread !== null) {
         if (!this.initializedClients.has(clientId) || !this.humanInteractions.wasOffered(id, clientId) || this.sharedInteractionClients.has(clientId)) return;
-        if ("result" in message) await this.humanInteractions.respondNative(id, `legacy:${clientId}:${JSON.stringify(id)}`, record(message.result),
-          (source, result) => this.writePhysical({ id: source.id, result, __opencraftInteractionKey: source.__opencraftInteractionKey }));
+        if ("result" in message) await this.humanInteractions.respondLegacy(id, clientId, `legacy:${clientId}:${JSON.stringify(id)}`, record(message.result),
+          this.interactionWriter(humanThread, clientId, context.resourceOwner, id));
         return;
       }
       const request = this.serverRequests.get(JSON.stringify(id));
@@ -2562,12 +2580,8 @@ export class CodexEngineAdapter implements DuplexTransport {
           } else if (pending.method === "thread/goal/clear" && record(message.result).cleared === true) {
             this.noteGoal(string(pending.params.threadId), null);
           }
-          if (pending.method === "thread/fork") {
-            const source=string(pending.params.threadId),target=string(record(record(message.result).thread).id);
-            this.messageAttachments?.cloneThread(source,target);
-            if (source && target && this.attachmentStaging instanceof LocalAttachmentStagingService)
-              this.attachmentStaging.catalog.cloneReferences(JSON.stringify(['thread',source]),JSON.stringify(['thread',target]));
-          }
+          if (pending.method === "thread/fork")
+            this.cloneThreadAttachments(string(pending.params.threadId), string(record(record(message.result).thread).id));
           this.noteNativeSubscription(pending, message.result);
           this.commitThreadSubscription(pending, message.result);
           if (pending.method === "thread/archive" || pending.method === "thread/delete") this.schedules?.suspend(string(pending.params.threadId));
@@ -2633,6 +2647,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     }
     nodeObserver(this.options.observationComponent ?? 'gateway').execution('codex', String(message.method), message.params);
     const threadId = string(record(message.params).threadId) || string(record(record(message.params).thread).id);
+    let legacyResolutions: string[] | undefined;
     try { this.tokenUsage?.notification(string(message.method),record(message.params)); } catch { this.diagnostic({event:"token-usage-partial",category:"notification"}); }
     if (["item/started", "item/completed"].includes(string(message.method))) {
       const p = record(message.params), item = record(p.item);
@@ -2671,7 +2686,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       const gatewayPath=configuredModelGatewayPath();
       if(gatewayPath) {const ledger=new ModelGatewayStore(gatewayPath);try {if(string(turn.id))ledger.finishedExecution(threadId,string(turn.id));}finally{ledger.close();}}
       if (['completed', 'failed', 'interrupted'].includes(string(turn.status))) this.cancelTurnTools(threadId, string(turn.id));
-      this.humanInteractions.resolveTurn(threadId, string(turn.id));
+      legacyResolutions = this.humanInteractions.resolveTurn(threadId, endedId);
       this.executionLeases?.finished(threadId, string(turn.id));
       this.options.executionAuthority?.ended(threadId, string(turn.id));
       this.recovery?.finished(threadId, string(turn.id));
@@ -2702,7 +2717,8 @@ export class CodexEngineAdapter implements DuplexTransport {
     if ((message.method === "thread/archived" || message.method === "thread/deleted") && threadId) this.providerRetry?.handled(threadId);
     if (message.method === "serverRequest/resolved") {
       const rawId = responseId(record(message.params).requestId);
-      if (rawId !== null) this.humanInteractions.resolveNative(rawId, threadId);
+      const legacyId = rawId === null ? undefined : this.humanInteractions.resolveNative(rawId, threadId);
+      if (legacyId) legacyResolutions = [legacyId];
       const requestId = responseId(record(message.params).requestId);
       if (requestId !== null) {
         const key = JSON.stringify(requestId);
@@ -2727,7 +2743,14 @@ export class CodexEngineAdapter implements DuplexTransport {
     const targets = threadId ? this.threadTargets(threadId) : [];
     if (threadId && targets.length === 0) return;
     if (targets.length === 0) this.emit(message);
-    else for (const target of targets) this.emit(message, target);
+    else for (const target of targets) {
+      if (!this.sharedInteractionClients.has(target) && legacyResolutions?.length) {
+        for (const requestId of legacyResolutions)
+          this.emit({ method: "serverRequest/resolved", params: { threadId, requestId } }, target);
+        if (message.method === "serverRequest/resolved") continue;
+      }
+      this.emit(message, target);
+    }
   };
 
   private observeUsageAttempt(attemptId:string|undefined,method:string,params:RpcRecord,message:RpcRecord):void {
@@ -3511,7 +3534,45 @@ export class CodexEngineAdapter implements DuplexTransport {
   /** A bridge Thread's live notification with the sender recorded by prepareExternalInput. */
   private projectExternalNotification(message: RpcRecord): RpcRecord {
     this.observeThreadIdentityNotification(message);
-    return this.messageSenders ? projectThreadMessageNotification(this.projectSender, message) as RpcRecord : message;
+    const params = record(message.params);
+    const turn = record(params.turn);
+    const threadId = string(params.threadId), turnId = string(turn.id);
+    if (this.bridgeThreadRequest(threadId)) {
+      if (message.method === "turn/started" && turnId) {
+        this.recovery?.started(threadId, turnId);
+        this.providerRetry?.started(threadId, turnId);
+      } else if (message.method === "provider/recovery" && params.kind === "restartRecommended") {
+        this.recovery?.lost(threadId);
+        this.recovery?.wake();
+      } else if (message.method === "turn/completed" && turnId) {
+        if (turn.status === "interrupted") {
+          if (this.recovery?.snapshot(threadId)?.turnId === turnId) {
+            this.recovery.lost(threadId);
+            this.recovery.wake();
+          }
+        } else {
+          this.recovery?.finished(threadId, turnId);
+          if (turn.status === "failed") void this.scheduleProviderFailure(threadId, turnId, turn.error);
+          else {
+            this.providerRetry?.finished(threadId, turnId);
+            this.scheduleGoalContinuation(threadId);
+          }
+        }
+      } else if (message.method === "thread/goal/updated") this.noteGoal(threadId, params.goal);
+      else if (message.method === "thread/goal/cleared") this.noteGoal(threadId, null);
+    }
+    if (message.method === "turn/completed" && string(turn.id) && ["completed", "failed", "interrupted"].includes(string(turn.status))) {
+      for (const listener of this.scheduleObservers) listener({
+        threadId: string(params.threadId), turnId: string(turn.id),
+        state: turn.status === "completed" && !turn.error ? "completed" : "failed",
+      });
+    }
+    if (message.method === "item/completed") this.captureArtifactOutput(string(params.threadId), record(params.item), string(params.turnId));
+    const attributed = this.messageSenders ? projectThreadMessageNotification(this.projectSender, message) as RpcRecord : message;
+    const attachments = this.messageAttachments;
+    return attachments
+      ? projectThreadAttachmentNotification({ list: (threadId, clientId) => attachments.peek(threadId, clientId) }, attributed)
+      : attributed;
   }
   private observeThreadIdentityNotification(message: RpcRecord): void {
     try { this.identity?.observeNotification(message); }
@@ -3523,8 +3584,19 @@ export class CodexEngineAdapter implements DuplexTransport {
     result: unknown,
     sender?: TransportSubmissionContext["sender"],
   ): void {
-    try { this.threadMetadata?.observeResult(method, params, result, sender); }
-    catch { this.diagnostic({ event: "thread-metadata-observation-failed" }); }
+    try {
+      if (method === "thread/fork") this.cloneThreadAttachments(string(params.threadId), string(record(record(result).thread).id));
+      const threadId = string(params.threadId);
+      if (method === "thread/goal/set" || method === "thread/goal/get") this.noteGoal(threadId, record(result).goal);
+      if (method === "thread/goal/clear") this.noteGoal(threadId, null);
+      if (method === "thread/archive" || method === "thread/delete") {
+        this.schedules?.suspend(threadId);
+        this.noteGoal(threadId, null);
+        this.recovery?.handled(threadId);
+        this.providerRetry?.handled(threadId);
+      }
+      this.threadMetadata?.observeResult(method, params, result, sender);
+    } catch { this.diagnostic({ event: "thread-metadata-observation-failed" }); }
   }
   /** The trusted submission lookup for collection, which names bridge Threads by their native session. */
   private usageSubmissionByRecord() {
@@ -3597,6 +3669,11 @@ export class CodexEngineAdapter implements DuplexTransport {
       projectNotification: (message) => this.projectExternalNotification(message),
       observeTitle: (method, params, result) => this.observeExternalTitle(method, params, result),
       observeIdentityResult: (method, params, result, sender) => this.observeExternalIdentityResult(method, params, result, sender),
+      beforeUserInput: (method, threadId) => {
+        if (!this.bridgeThreadRequest(threadId)) return;
+        this.recovery?.handled(threadId, method === "turn/interrupt" ? "user_stop" : "user_input");
+        this.providerRetry?.handled(threadId);
+      },
       // The Host opens its sender storage when it connects, after a bridge is assembled.
       senderAttribution: () => this.externalSenderAttribution,
       usage: {
@@ -3609,6 +3686,13 @@ export class CodexEngineAdapter implements DuplexTransport {
       bindThreadIdentities: (identities) => this.bindExternalThreadIdentities(identities),
     };
   }
+  private cloneThreadAttachments(source: string, target: string): void {
+    if (!source || !target) return;
+    this.messageAttachments?.cloneThread(source, target);
+    if (this.attachmentStaging instanceof LocalAttachmentStagingService)
+      this.attachmentStaging.catalog.cloneReferences(JSON.stringify(["thread", source]), JSON.stringify(["thread", target]));
+  }
+
   /** Attachments recorded by prepareExternalInput, projected onto that Thread's history. */
   private projectExternalHistory(method: string, params: RpcRecord, result: unknown): unknown {
     const attached = this.messageAttachments ? projectThreadAttachmentResult(this.messageAttachments, method, params, result) : result;
@@ -3742,17 +3826,51 @@ export class CodexEngineAdapter implements DuplexTransport {
     }
   }
 
+  private bridgeThreadRequest(threadId: string) {
+    return this.options.kind !== "remote" && (threadId.startsWith("bridge:codex:") ||
+      this.externalThreadIdentities?.toNative(threadId) !== undefined) ? this.options.bridgeThreadRequest : undefined;
+  }
+
+  private continuationRequest(method: string, threadId: string, params: RpcRecord = {}) {
+    const bridge = this.bridgeThreadRequest(threadId);
+    return bridge ? bridge(method, { ...params, threadId }) : this.requestPhysical(method, { ...params, threadId });
+  }
+
+  private async bridgeQueuePending(threadId: string): Promise<boolean> {
+    const queue = record(await this.continuationRequest("thread/queue/list", threadId));
+    return (Array.isArray(queue.data) && queue.data.length > 0) ||
+      (Array.isArray(queue.steering) && queue.steering.length > 0);
+  }
+
+  private async continueBridgeTurn(turn: { threadId: string; turnId: string; inputId?: string | null },
+    request: NonNullable<LocalCodexEngineOptions["bridgeThreadRequest"]>, current: () => boolean, admit: () => boolean): Promise<string | null> {
+    if (!current()) return null;
+    const inputId = turn.inputId!;
+    this.options.collaboration?.continuing?.(turn.threadId, turn.turnId, inputId);
+    try {
+      const result = record(await request("turn/start", { threadId: turn.threadId, input: [], clientUserMessageId: inputId }, admit));
+      return string(record(result.turn).id) || null;
+    } catch (cause) {
+      if (record(record(cause).data).submissionOutcome === "rejected")
+        throw new RecoveryNotSubmitted("Bridge continuation was rejected before dispatch", { cause });
+      throw cause;
+    }
+  }
+
   private async inspectInterruptedTurn(turn: Readonly<RecoveryTurn>): Promise<"live" | "lost" | "finished" | "handled" | "unknown"> {
     if (!this.physicalInitialized || this.statusValue.state !== "open") return "unknown";
-    const queued=this.queue?.firstUnsettled(turn.threadId);
+    const bridge = this.bridgeThreadRequest(turn.threadId);
+    if (bridge && await this.bridgeQueuePending(turn.threadId)) return "handled";
+    const queued = bridge ? null : this.queue?.firstUnsettled(turn.threadId);
     if (queued && !(await this.knownSystemInput(turn.threadId,queued.clientUserMessageId))) return "handled";
-    const result = record(await this.requestPhysical("thread/read", { threadId: turn.threadId, includeTurns: false }));
+    const result = record(await this.continuationRequest("thread/read", turn.threadId, { includeTurns: false }));
     const thread = record(result.thread);
     if (thread.ephemeral || thread.archived || thread.canAcceptDirectInput === false) return "handled";
-    if (!await this.queueThreadIsIdle(turn.threadId, false, undefined, turn.turnId)) return "live";
-    const goal = record(await this.requestPhysical("thread/goal/get", { threadId: turn.threadId }));
+    if (bridge ? !["idle", "notLoaded"].includes(string(record(thread.status).type)) :
+      !await this.queueThreadIsIdle(turn.threadId, false, undefined, turn.turnId)) return "live";
+    const goal = record(await this.continuationRequest("thread/goal/get", turn.threadId));
     if (record(goal.goal).status === "active") { this.noteGoal(turn.threadId, goal.goal); this.scheduleGoalContinuation(turn.threadId); return "handled"; }
-    const page = record(await this.requestPhysical("thread/turns/list", { threadId: turn.threadId, limit: 1, sortDirection: "desc", itemsView: "notLoaded" }));
+    const page = record(await this.continuationRequest("thread/turns/list", turn.threadId, { limit: 1, sortDirection: "desc", itemsView: "notLoaded" }));
     const latest = record(Array.isArray(page.data) ? page.data[0] : null);
     if (!latest.id) return "unknown";
     if (latest.id !== turn.turnId) return "handled";
@@ -3802,13 +3920,19 @@ export class CodexEngineAdapter implements DuplexTransport {
       void this.withThreadOperation(threadId, async () => {
         if (this.recovery?.snapshot(threadId)?.handledReason === "execution_fault"
           || !this.activeGoalThreads.has(threadId) || this.activeTurns.has(threadId)) return;
-        if (this.queue?.firstAwaitingAdmission(threadId)) return;
-        if (!(await this.queueThreadIsIdle(threadId))) return;
-        const result = record(await this.requestPhysical("thread/goal/get", { threadId }));
+        if (this.bridgeThreadRequest(threadId)) {
+          if (await this.bridgeQueuePending(threadId)) return;
+          const thread = record(record(await this.continuationRequest("thread/read", threadId, { includeTurns: false })).thread);
+          if (thread.archived || thread.ephemeral || thread.canAcceptDirectInput === false ||
+              !["idle", "notLoaded"].includes(string(record(thread.status).type))) return;
+        } else {
+          if (this.queue?.firstAwaitingAdmission(threadId) || !await this.queueThreadIsIdle(threadId)) return;
+        }
+        const result = record(await this.continuationRequest("thread/goal/get", threadId));
         this.noteGoal(threadId, result.goal);
         if (this.recovery?.snapshot(threadId)?.handledReason === "execution_fault"
           || !this.activeGoalThreads.has(threadId) || this.activeTurns.has(threadId)) return;
-        await this.requestPhysical("thread/goal/set", { threadId, status: "active" });
+        await this.continuationRequest("thread/goal/set", threadId, { status: "active" });
       }).catch(error => this.diagnostic({ event: "goal-continuation-failed", threadId, reason: errorMessage(error) }));
     }, 150);
     timer.unref();
@@ -3829,7 +3953,7 @@ export class CodexEngineAdapter implements DuplexTransport {
         if (this.closeOperation || this.providerRetry !== owner || JSON.stringify(this.recovery?.snapshot(threadId)) !== intent) return;
         // Pool routing owns readiness; native global quotas can belong to another account.
         failure.retryAt = pooledRetryAt(accounts, Date.now());
-        const page = record(await this.requestPhysical("thread/turns/list", { threadId, limit: 1, sortDirection: "desc", itemsView: "notLoaded" }));
+        const page = record(await this.continuationRequest("thread/turns/list", threadId, { limit: 1, sortDirection: "desc", itemsView: "notLoaded" }));
         const latest = record(Array.isArray(page.data) ? page.data[0] : null);
         if (latest.id === turnId && latest.status === "failed") owner.failed(threadId, turnId, failure);
       } catch { this.diagnostic({ event: "provider-retry-skipped", threadId, reason: "pool-unavailable" }); }
@@ -3838,12 +3962,14 @@ export class CodexEngineAdapter implements DuplexTransport {
 
   private async inspectProviderRetry(turn: Readonly<ProviderRetry>): Promise<"live" | "finished" | "handled" | "unknown" | { failure: ProviderFailure }> {
     if (!this.physicalInitialized || !this.physicalAvailable || this.admissionPaused()) return "unknown";
-    if (this.queue?.firstUnsettled(turn.threadId)) return "handled";
-    const result = record(await this.requestPhysical("thread/read", { threadId: turn.threadId, includeTurns: false }));
+    const bridge = this.bridgeThreadRequest(turn.threadId);
+    if (bridge ? await this.bridgeQueuePending(turn.threadId) : this.queue?.firstUnsettled(turn.threadId)) return "handled";
+    const result = record(await this.continuationRequest("thread/read", turn.threadId, { includeTurns: false }));
     const thread = record(result.thread);
     if (thread.ephemeral || thread.archived || thread.canAcceptDirectInput === false) return "handled";
-    if (!await this.queueThreadIsIdle(turn.threadId, true, undefined, turn.turnId)) return "live";
-    const page = record(await this.requestPhysical("thread/turns/list", { threadId: turn.threadId, limit: 1, sortDirection: "desc", itemsView: "notLoaded" }));
+    if (bridge ? !["idle", "notLoaded", "systemError"].includes(string(record(thread.status).type)) :
+      !await this.queueThreadIsIdle(turn.threadId, true, undefined, turn.turnId)) return "live";
+    const page = record(await this.continuationRequest("thread/turns/list", turn.threadId, { limit: 1, sortDirection: "desc", itemsView: "notLoaded" }));
     const latest = record(Array.isArray(page.data) ? page.data[0] : null);
     if (!latest.id) return "unknown";
     if (latest.id !== turn.turnId) return "handled";
@@ -3875,9 +4001,10 @@ export class CodexEngineAdapter implements DuplexTransport {
       partial ||= coverage.coverage === "partial" || coverage.coverage === "unknown" || coverage.state === "error" || coverage.state === "warming";
       if (!Array.isArray(response.data)) throw new Error("Codex Thread list has no data");
       for (const thread of response.data) {
-        const threadId = string(record(thread).id);
+        const nativeId = string(record(thread).id);
+        const threadId = this.externalThreadIdentities?.toPublic?.(nativeId) ?? nativeId;
         if (!threadId || this.ephemeralThreads.has(threadId)) continue;
-        const result = record(await this.requestPhysical("thread/goal/get", { threadId }));
+        const result = record(await this.continuationRequest("thread/goal/get", threadId));
         this.noteGoal(threadId, result.goal);
         if (this.activeGoalThreads.has(threadId)) this.scheduleGoalContinuation(threadId);
       }
@@ -3910,6 +4037,8 @@ export class CodexEngineAdapter implements DuplexTransport {
       serialize: (threadId, operation) => this.withThreadOperation(threadId, operation),
       inspect: turn => this.inspectInterruptedTurn(turn),
       continue: async (turn, current, admit) => {
+        const bridge = this.bridgeThreadRequest(turn.threadId);
+        if (bridge) return this.continueBridgeTurn(turn, bridge, current, admit);
         await this.prepareSessionMcp(turn.threadId);
         if (!current()) return null;
         const inputId = turn.inputId!;
@@ -3936,6 +4065,12 @@ export class CodexEngineAdapter implements DuplexTransport {
       serialize: (threadId, operation) => this.withThreadOperation(threadId, operation),
       inspect: turn => this.inspectProviderRetry(turn),
       continue: async (turn, current, admit) => {
+        const bridge = this.bridgeThreadRequest(turn.threadId);
+        if (bridge) {
+          const turnId = await this.continueBridgeTurn(turn, bridge, current, admit);
+          if (turnId) this.options.collaboration?.continued?.(turn.threadId, turn.turnId, turnId);
+          return turnId;
+        }
         await this.prepareSessionMcp(turn.threadId);
         if (!current()) return null;
         const inputId = turn.inputId!;
@@ -3963,10 +4098,21 @@ export class CodexEngineAdapter implements DuplexTransport {
   /** Adapter only: scheduling policy and persistence live outside Codex. */
   private readonly scheduleObservers = new Set<(event: ScheduleExecutionEvent) => void>();
   private scheduleExecutionPort(): ScheduleExecutionPort {
+    const subscribe: ScheduleExecutionPort["subscribe"] = listener => {
+      this.scheduleObservers.add(listener);
+      return () => { this.scheduleObservers.delete(listener); };
+    };
+    const request = this.options.kind === "remote" ? undefined : this.options.bridgeThreadRequest;
+    const bridge = request ? routedCodexScheduleExecution((method, params) => request(method, params), {
+      request: (method, params) => this.requestPhysical(method, params),
+    }, () => !this.admissionPaused() && !this.closeOperation, subscribe) : undefined;
+    const ownsBridgeThread = (threadId: string) => !!this.bridgeThreadRequest(threadId);
     return {
-      subscribe: listener => { this.scheduleObservers.add(listener); return () => { this.scheduleObservers.delete(listener); }; },
-      validate: threadId => this.assertDurableQueueThread(threadId),
+      subscribe,
+      validate: threadId => bridge && ownsBridgeThread(threadId)
+        ? bridge.validate(threadId) : this.assertDurableQueueThread(threadId),
       permissionProfiles: async threadId => {
+        if (bridge && ownsBridgeThread(threadId)) return bridge.permissionProfiles?.(threadId) ?? [];
         const { thread } = record(await this.requestPhysical("thread/read", { threadId, includeTurns: false }));
         const profiles: OpenCraftPermissionProfile[] = [];
         let cursor: string | null = null;
@@ -3980,7 +4126,8 @@ export class CodexEngineAdapter implements DuplexTransport {
         }
         throw new Error("Codex permission catalog is too long");
       },
-      submit: (run, prompt, canAdmit) => this.withThreadOperation(run.threadId, async () => {
+      submit: (run, prompt, canAdmit) => bridge && ownsBridgeThread(run.threadId)
+        ? bridge.submit(run, prompt, canAdmit) : this.withThreadOperation(run.threadId, async () => {
         const queue = this.queueStore();
         const prior = queue.findByClientId(run.threadId, run.id);
         if (prior) {
@@ -4004,7 +4151,7 @@ export class CodexEngineAdapter implements DuplexTransport {
           return { state: "unknown" };
         }
       }),
-      inspect: async run => this.inspectScheduledRun(run),
+      inspect: run => bridge && ownsBridgeThread(run.threadId) ? bridge.inspect(run) : this.inspectScheduledRun(run),
     };
   }
 
@@ -4390,7 +4537,7 @@ export class CodexEngineAdapter implements DuplexTransport {
         const limit = params.limit == null ? 50 : Number(params.limit);
         if (!Number.isSafeInteger(cursor) || cursor < 0 || !Number.isSafeInteger(limit) || limit < 1) throw new OpenCraftQueueRpcError(-32602, "Invalid queue pagination");
         const receiptTurnIds = params.receiptTurnIds;
-        if (receiptTurnIds !== undefined && (!Array.isArray(receiptTurnIds) || receiptTurnIds.length>1000
+        if (receiptTurnIds !== undefined && (!Array.isArray(receiptTurnIds) || receiptTurnIds.length > THREAD_QUEUE_RECEIPT_TURN_LIMIT
           || receiptTurnIds.some(id=>typeof id!=="string"||!id))) throw new OpenCraftQueueRpcError(-32602,"Invalid receipt Turn scope");
         await this.withThreadOperation(threadId, () => this.reconcileQueue(threadId,receiptTurnIds as string[] | undefined));
         const rows = queue.list(threadId,receiptTurnIds as string[] | undefined);

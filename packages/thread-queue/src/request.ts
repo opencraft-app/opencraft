@@ -1,11 +1,12 @@
-import { inputExecutionEnded } from "@opencraft/appserver-protocol";
+import { inputExecutionEnded, THREAD_QUEUE_RECEIPT_TURN_LIMIT } from "@opencraft/appserver-protocol";
 import type { QueueStoreAccess } from "./dispatch.js";
-import type { QueuedSubmission } from "./queue-store.js";
+import type { QueueListPage, QueuedSubmission } from "./queue-store.js";
 
 type Awaitable<T> = T | Promise<T>;
 
 /** The queue operations request handling needs beyond reconciliation and dispatch. */
 export interface QueueRequestStore<S> extends QueueStoreAccess<S> {
+  listPage(threadId: string, offset: number, limit: number, receiptTurnIds?: readonly string[]): Awaitable<QueueListPage<S>>;
   add(threadId: string, clientId: string, input: readonly unknown[]): Awaitable<QueuedSubmission<S>>;
   update(threadId: string, id: string, input: readonly unknown[]): Awaitable<QueuedSubmission<S> | null>;
   delete(threadId: string, id: string): Awaitable<boolean>;
@@ -20,6 +21,8 @@ export interface QueueRequestPort {
   isIdle(): Promise<boolean>;
   historyHasInput(clientId: string, targetTurnId: string | null): Promise<boolean>;
   reconcile(receiptTurnIds?: readonly string[]): Promise<void>;
+  /** Refresh evidence for a list snapshot in the background. */
+  scheduleReconciliation(receiptTurnIds?: readonly string[]): void;
   dispatchStart(id: string): Promise<unknown>;
   dispatchSteer(id: string, expectedTurnId: string): Promise<unknown>;
   /** Serialize work on this Thread with the owner's other Thread operations. */
@@ -101,22 +104,19 @@ export async function threadQueueRequest<S>(
       if (
         receiptTurnIds !== undefined &&
         (!Array.isArray(receiptTurnIds) ||
-          receiptTurnIds.length > 1000 ||
+          receiptTurnIds.length > THREAD_QUEUE_RECEIPT_TURN_LIMIT ||
           receiptTurnIds.some((id) => typeof id !== "string" || !id))
       )
         refuse("Invalid receipt Turn scope", -32602);
-      await port.exclusive(() => port.reconcile(receiptTurnIds as string[] | undefined));
-      const rows = await queue.list(threadId, receiptTurnIds as string[] | undefined);
-      const queued = rows.filter((row) => row.state === "queued");
-      const page = queued.slice(cursor, cursor + Math.min(limit, 100));
+      const scope = receiptTurnIds as string[] | undefined;
+      const page = await queue.listPage(threadId, cursor, Math.min(limit, 100), scope);
+      if (cursor === 0) port.scheduleReconciliation(scope);
       return {
-        data: page.map(projectQueuedSubmission),
-        nextCursor: cursor + page.length < queued.length ? String(cursor + page.length) : null,
-        ...(cursor === 0
+        data: page.queued.map(projectQueuedSubmission),
+        nextCursor: page.nextCursor === null ? null : String(page.nextCursor),
+        ...(page.receipts
           ? {
-              steering: rows
-                .filter((row) => ["steering", "unknown", "dispatching", "closed"].includes(row.state))
-                .map((row) => ({
+              steering: page.receipts.map((row) => ({
                   ...projectQueuedSubmission(row),
                   targetTurnId: row.targetTurnId ?? "unknown",
                   retryable:

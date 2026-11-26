@@ -1,5 +1,5 @@
 import { ThreadCatalogPublisher } from "@opencraft/app-host-server/thread-catalog";
-import { HostInteractions, InteractionFault } from "@opencraft/app-host-server/interactions";
+import { HostInteractions, InteractionFault, InteractionResponseNotDispatched } from "@opencraft/app-host-server/interactions";
 import { SHARED_INTERACTIONS_EXTENSION, SHARED_INTERACTIONS_CHANGED, SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND, isHumanInteraction, type InteractionSourceRequest } from "@opencraft/appserver-protocol";
 import { CodexCoreSocket } from "./codex-core-socket";
 import { CODEX_MAINTENANCE_READ, CODEX_MAINTENANCE_EXTENSION, CODEX_MAINTENANCE_CAPABILITY, codexAdmissionKey, codexMaintenanceError, isCodexAdmission } from "./codex-maintenance.js";
@@ -9,7 +9,7 @@ import {
   OPENCRAFT_FIRST_TURN_DURABILITY_CAPABILITY,
   OPENCRAFT_THREAD_START_DURABILITY_EXTENSION,
 } from "@opencraft/appserver-protocol";
-import type { DuplexTransport, TransportStatus } from "@opencraft/appserver-client/transport";
+import type { DuplexTransport, TransportStatus, TransportSubmissionContext } from "@opencraft/appserver-client/transport";
 
 type RpcRecord = Record<string, unknown>;
 interface Pending {
@@ -46,7 +46,7 @@ export class CodexCoreBridge implements DuplexTransport {
   }
   private readonly revisions = new Map<string, number>();
   private readonly serverRequests = new Map<string, string>();
-  private readonly human = new HostInteractions();
+  private readonly human = new HostInteractions({ isolateLegacyIds: true });
   private readonly sharedClients = new Set<string>();
   private readonly clientEpochs = new Map<string, number>();
   private readonly removeHuman = this.human.subscribe(threadId => {
@@ -83,7 +83,27 @@ export class CodexCoreBridge implements DuplexTransport {
   private write(message: RpcRecord): void {
     this.connection.send(JSON.stringify(message));
   }
-  async send(frame: string): Promise<void> {
+  private interactionWriter(threadId: string, clientId: string, resourceOwner: TransportSubmissionContext["resourceOwner"], legacyId?: string | number) {
+    const epoch = this.clientEpochs.get(clientId);
+    return async (source: InteractionSourceRequest, result: RpcRecord, assertCurrent: () => void) => {
+      try {
+        if (this.clientEpochs.get(clientId) !== epoch || !this.canObserve(threadId, clientId) ||
+            (legacyId !== undefined && (this.sharedClients.has(clientId) || !this.human.wasOffered(legacyId, clientId))))
+          throw new Error("Interaction subscription expired");
+        resourceOwner?.assertCurrent();
+        assertCurrent();
+      } catch (cause) {
+        throw new InteractionResponseNotDispatched(cause);
+      }
+      this.write({ id: source.id, result, __opencraftInteractionKey: source.__opencraftInteractionKey });
+    };
+  }
+
+  send(frame: string): Promise<void> {
+    return this.sendWithContext(frame, { sender: null });
+  }
+
+  async sendWithContext(frame: string, { resourceOwner }: TransportSubmissionContext): Promise<void> {
     if (this.connection.status.state !== "open") throw new Error("Codex Engine is not connected");
     const message = record(JSON.parse(frame));
     const clientId = string(message[LOGICAL_CLIENT_FIELD]);
@@ -99,12 +119,17 @@ export class CodexCoreBridge implements DuplexTransport {
       try {
         if (message.method === SHARED_INTERACTIONS_READ) { this.emit({ id, result: this.human.snapshot(threadId, true) }, clientId); return; }
         if (!string(p.interactionId) || !string(p.submissionId) || !p.result || typeof p.result !== "object" || Array.isArray(p.result)) throw new Error("Invalid interaction response");
-        const disposition = await this.human.respond(threadId, string(p.interactionId), string(p.submissionId), record(p.result), async (source, result) => {
-          if (!allowed() || epoch !== this.clientEpochs.get(clientId)) throw new Error("Interaction subscription expired");
-          this.write({ id: source.id, result, __opencraftInteractionKey: source.__opencraftInteractionKey });
-        });
+        const writer = this.interactionWriter(threadId, clientId, resourceOwner);
+        resourceOwner?.assertCurrent();
+        const disposition = await this.human.respond(threadId, string(p.interactionId), string(p.submissionId), record(p.result), writer);
         if (allowed() && epoch === this.clientEpochs.get(clientId)) this.emit({ id, result: { disposition, snapshot: this.human.snapshot(threadId, true) } }, clientId);
-      } catch (cause) { if (epoch === this.clientEpochs.get(clientId)) this.emit({ id, error: { code: cause instanceof InteractionFault ? cause.rpcCode : -32000, message: cause instanceof Error ? cause.message : "Interaction submission failed" } }, clientId); }
+      } catch (cause) {
+        if (epoch === this.clientEpochs.get(clientId)) this.emit({ id, error: {
+          code: cause instanceof InteractionFault ? cause.rpcCode : -32000,
+          message: cause instanceof Error ? cause.message : "Interaction submission failed",
+          ...(cause instanceof InteractionResponseNotDispatched ? { data: { ...cause.domainData, submissionOutcome: "rejected" } } : {}),
+        } }, clientId);
+      }
       return;
     }
     if (message.method === CODEX_MAINTENANCE_READ && id !== null) {
@@ -137,9 +162,11 @@ export class CodexCoreBridge implements DuplexTransport {
     }
     if (message.method === "initialized") return;
     if (id !== null && typeof message.method !== "string") {
-      if (this.human.threadForNative(id) !== null) {
+      const humanThread = this.human.threadForLegacy(id);
+      if (humanThread !== null) {
         if (this.initialized.has(clientId) && !this.sharedClients.has(clientId) && this.human.wasOffered(id, clientId) && "result" in message)
-          await this.human.respondNative(id, `legacy:${clientId}:${JSON.stringify(id)}`, record(message.result), async (source, result) => { this.write({ id: source.id, result, __opencraftInteractionKey: source.__opencraftInteractionKey }); });
+          await this.human.respondLegacy(id, clientId, `legacy:${clientId}:${JSON.stringify(id)}`, record(message.result),
+            this.interactionWriter(humanThread, clientId, resourceOwner, id));
         return;
       }
       if (this.serverRequests.get(JSON.stringify(id)) !== clientId) return;
@@ -234,13 +261,23 @@ export class CodexCoreBridge implements DuplexTransport {
     }
     this.catalogChanges.observeNotification(String(message.method), message.params);
     const threadId = string(record(message.params).threadId) || string(record(record(message.params).thread).id);
-    if (message.method === "turn/completed") this.human.resolveTurn(threadId, string(record(record(message.params).turn).id));
+    let legacyResolutions: string[] | undefined;
+    if (message.method === "turn/completed")
+      legacyResolutions = this.human.resolveTurn(threadId, string(record(record(message.params).turn).id));
     if (message.method === "serverRequest/resolved") {
       const raw = idOf(record(message.params).requestId);
-      if (raw !== null) this.human.resolveNative(raw, threadId);
+      const legacyId = raw === null ? undefined : this.human.resolveNative(raw, threadId);
+      if (legacyId) legacyResolutions = [legacyId];
     }
     const targets = threadId ? [...new Set([...this.targets(threadId), ...(this.readers.get(threadId) ?? [])])] : [...this.initialized];
-    for (const target of targets) this.emit(message, target);
+    for (const target of targets) {
+      if (!this.sharedClients.has(target) && legacyResolutions?.length) {
+        for (const requestId of legacyResolutions)
+          this.emit({ method: "serverRequest/resolved", params: { threadId, requestId } }, target);
+        if (message.method === "serverRequest/resolved") continue;
+      }
+      this.emit(message, target);
+    }
   }
   private targets(threadId: string): string[] { return [...(this.threads.get(threadId) ?? [])]; }
   private subscribe(threadId: string, clientId: string, confirmed = false): void {

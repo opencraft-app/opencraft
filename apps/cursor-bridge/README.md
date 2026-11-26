@@ -51,18 +51,54 @@ is declared. Queue, interrupt and queue fallback policies are refused.
 - Stop checks a supplied expectedTurnId/turnId against the active turn; an
   unscoped Stop targets the current active run. It cleans attachments before
   waiting for SDK send/cancel acknowledgement, and retries cleanup without
-  skipping native cancellation on a removal error. Confirmed Stop permits a new
-  explicit turn; uncertain cancellation retains a write fence. A failed close
+  skipping native cancellation on a removal error. It cancels a dispatched SDK
+  run while the Turn-open acknowledgement is pending. Stop before dispatch
+  rejects the start. A dispatched run still reports its open and interrupted
+  close when Stop occurs before the SDK returns its handle. Stop and session
+  close join the same cancellation and cleanup. Confirmed Stop permits a new explicit
+  turn. Uncertain cancellation retains a write fence. A failed close
   keeps the session owned and reports that it remains open for cleanup. A local
   removal error after confirmed native completion is explicitly rejected; files
   remain owned for retry. After confirmed Stop, Worker termination is the local
-  close boundary; SDK disposal is best effort, and failed termination can retry.
+  close boundary. The SDK gets up to three seconds for best-effort disposal
+  before the Bridge terminates the Worker. Failed Worker termination can retry.
 
 Input is `{text, attachments?: [{data: "<base64>"}]}` (64 KiB encoded total,
 16 attachments). Generated private local paths are passed as text; this is not
 rich SDK attachment support. Each input owns its directory through run completion,
 rejection, withdrawal or Stop. Cleanup joins conversion to prevent late writes.
+A local attachment preparation failure rejects the start before SDK dispatch.
+After cleanup, the session can accept an explicit retry. A lost SDK send
+receipt keeps the outcome unknown and fences further writes.
+SDK terminal confirmation controls normal cleanup independently of callback
+delivery and stream drain. Normal completion drains the final messages before
+closing the Turn. After an explicit Stop confirms native completion, the
+Bridge drops unread output and asks the SDK iterator to return. The Stop can
+finish while an outstanding SDK read remains pending. A stream failure fences
+further writes and keeps run-owned files
+until the SDK confirms terminal state or an explicit Stop or close cleans up.
+The Worker and adapter keep one run handle per session. Starting the next Turn
+releases the previous handle, and operations must target the current run.
+Steer rechecks the originating run after admission and attachment preparation.
 Slashes, image fields and unknown input fields are rejected.
+
+Closing a session fences further mutations and joins concurrent close requests.
+Local SDK disposal is retained if the Host rejects the final callback, so a
+retry can finish reporting closure. A lost stdio pipe stops callback delivery.
+Delta acknowledgements are ordered within each session. A pending
+acknowledgement in one session leaves the others free to send their deltas.
+The Host still owns durable callback ordering.
+The first shutdown trigger owns process exit and gives local cleanup up to
+ten seconds. If cleanup is still pending, stdio exits with failure and the
+Host retains ownership of sandbox reclamation.
+
+Creation admits input after the Host acknowledges the session identity.
+Shutdown cancels provisional credential, model catalog, and session Workers.
+It joins their cleanup, including disposal for any agent already returned.
+Late results cannot publish a model list or a ready session after shutdown.
+Concurrent model lists share a single lookup for this Bridge's credentials.
+The credential and catalog queries have a combined ten-second budget. A
+timeout closes the Worker and allows the next request to try again.
 
 The shared assembler owns canonical events and existing AppServer projection.
 No CLI/history/resume/usage/reasoning capability is claimed. The smoke's process

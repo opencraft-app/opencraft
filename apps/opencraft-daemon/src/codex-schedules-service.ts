@@ -5,7 +5,7 @@ import {
   projectPermissionProfileCatalog,
   type OpenCraftPermissionProfile,
 } from "@opencraft/appserver-protocol";
-import { ConversationSchedules, ScheduleFault, type ScheduleExecutionEvent } from "@opencraft/host-schedules";
+import { ConversationSchedules, ScheduleFault, type ScheduleExecutionEvent, type ScheduleExecutionPort } from "@opencraft/host-schedules";
 import type { CodexHostService, CodexHostServiceClients, CodexNativeRequests } from "./codex-host-services.js";
 
 type Value = Record<string, unknown>;
@@ -22,24 +22,21 @@ export interface CodexSchedulesOptions {
   readonly admissionOpen: () => boolean;
 }
 
-/**
- * Conversation schedules for every Thread on the provider bridge. A due run is
- * sent as an ordinary turn through Thread routing under the run's ID as its
- * client message ID; the bridge's command ledger makes a repeated submission
- * of the same run a replay, never a second execution.
- */
-export function codexSchedulesService(options: CodexSchedulesOptions): CodexHostService {
-  const { clients } = options;
-  const request = (method: string, params: Value) => clients.request(method, params);
+/** The execution side of the schedule store, for Threads whose owner is reached by RPC. */
+export function routedCodexScheduleExecution(
+  request: CodexHostServiceClients["request"],
+  native: CodexNativeRequests,
+  admissionOpen: () => boolean,
+  subscribe: ScheduleExecutionPort["subscribe"],
+): ScheduleExecutionPort {
   const thread = async (threadId: string) =>
     object(object(await request("thread/read", { threadId, includeTurns: false })).thread);
-  const listeners = new Set<(event: ScheduleExecutionEvent) => void>();
   /** The turn a run's input produced, found in history by its exact client message ID. */
   const runTurn = async (threadId: string, clientId: string, turnId: string | null) => {
     let cursor: unknown = null;
     for (let page = 0; page < 20; page++) {
       const result = object(
-        await request("thread/turns/list", { threadId, limit: 20, cursor, sortDirection: "desc", itemsView: "full" }),
+        await request("thread/turns/list", { threadId, limit: 20, cursor, sortDirection: "desc", itemsView: turnId ? "notLoaded" : "full" }),
       );
       for (const turn of (Array.isArray(result.data) ? result.data : []).map(object)) {
         if (turnId && turn.id === turnId) return turn;
@@ -51,64 +48,72 @@ export function codexSchedulesService(options: CodexSchedulesOptions): CodexHost
     }
     return undefined;
   };
+  return {
+    subscribe,
+    validate: async (threadId) => {
+      const current = await thread(threadId);
+      if (current.id === undefined || current.ephemeral === true || current.archived === true || current.canAcceptDirectInput === false)
+        throw new ScheduleFault(-32600, "This conversation cannot run scheduled tasks");
+    },
+    permissionProfiles: async (threadId) => {
+      const cwd = (await thread(threadId)).cwd;
+      const profiles: OpenCraftPermissionProfile[] = [];
+      let cursor: string | null = null;
+      for (let page = 0; page < 10; page++) {
+        const response = object(await native.request("permissionProfile/list", { limit: 100, cwd, cursor }));
+        if (!Array.isArray(response.data)) throw new Error("Codex permission catalog is unavailable");
+        profiles.push(...(response.data as OpenCraftPermissionProfile[]));
+        if (response.nextCursor == null)
+          return projectPermissionProfileCatalog(profiles, (profile) => codexPermissionMode(profile.id));
+        if (typeof response.nextCursor !== "string" || response.nextCursor === cursor)
+          throw new Error("Codex permission catalog did not advance");
+        cursor = response.nextCursor;
+      }
+      throw new Error("Codex permission catalog is too long");
+    },
+    submit: async (run, prompt, canAdmit) => {
+      const current = await thread(run.threadId);
+      if (!["idle", "notLoaded", undefined].includes(object(current.status).type as string))
+        return { state: "waiting" };
+      const queued = object(await request("thread/queue/list", { threadId: run.threadId }));
+      if (Array.isArray(queued.data) && queued.data.length) return { state: "waiting" };
+      if (!canAdmit() || !admissionOpen()) return { state: "waiting" };
+      try {
+        // Scheduled provenance is explicit text, never a forged person.
+        const result = object(
+          await request("turn/start", {
+            threadId: run.threadId,
+            clientUserMessageId: run.id,
+            ...(run.permissions ? { permissions: run.permissions, cwd: current.cwd } : {}),
+            input: [{ type: "text", text: `[Scheduled task]\n${prompt}`, text_elements: [] }],
+          }),
+        );
+        return { state: "running", turnId: text(object(result.turn).id) || undefined };
+      } catch (error) {
+        return { state: object(object(error).data).submissionOutcome === "rejected" ? "failed" : "unknown" };
+      }
+    },
+    inspect: async (run) => {
+      const turn = await runTurn(run.threadId, run.id, run.turnId ?? null);
+      if (!turn) return { state: "unknown" };
+      const turnId = text(turn.id);
+      if (turn.status === "completed") return { state: "completed", turnId };
+      if (turn.status === "failed" || turn.status === "interrupted") return { state: "failed", turnId };
+      return { state: "running", turnId };
+    },
+  };
+}
+
+/** A single schedule store for the Host, with due work sent through its Thread router. */
+export function codexSchedulesService(options: CodexSchedulesOptions): CodexHostService {
+  const { clients } = options;
+  const listeners = new Set<(event: ScheduleExecutionEvent) => void>();
   const schedules = new ConversationSchedules(
     options.directory,
-    {
-      subscribe: (listener) => {
-        listeners.add(listener);
-        return () => void listeners.delete(listener);
-      },
-      validate: async (threadId) => {
-        const current = await thread(threadId);
-        if (current.id === undefined || current.ephemeral === true || current.archived === true)
-          throw new ScheduleFault(-32600, "This conversation cannot run scheduled tasks");
-      },
-      permissionProfiles: async (threadId) => {
-        const cwd = (await thread(threadId)).cwd;
-        const profiles: OpenCraftPermissionProfile[] = [];
-        let cursor: string | null = null;
-        for (let page = 0; page < 10; page++) {
-          const response = object(await options.native.request("permissionProfile/list", { limit: 100, cwd, cursor }));
-          if (!Array.isArray(response.data)) throw new Error("Codex permission catalog is unavailable");
-          profiles.push(...(response.data as OpenCraftPermissionProfile[]));
-          if (response.nextCursor == null)
-            return projectPermissionProfileCatalog(profiles, (profile) => codexPermissionMode(profile.id));
-          if (typeof response.nextCursor !== "string" || response.nextCursor === cursor)
-            throw new Error("Codex permission catalog did not advance");
-          cursor = response.nextCursor;
-        }
-        throw new Error("Codex permission catalog is too long");
-      },
-      submit: async (run, prompt, canAdmit) => {
-        const current = await thread(run.threadId);
-        if (!["idle", "notLoaded", undefined].includes(object(current.status).type as string))
-          return { state: "waiting" };
-        const queued = object(await request("thread/queue/list", { threadId: run.threadId }));
-        if (Array.isArray(queued.data) && queued.data.length) return { state: "waiting" };
-        if (!canAdmit() || !options.admissionOpen()) return { state: "waiting" };
-        try {
-          // Scheduled provenance is explicit text, never a forged person.
-          const result = object(
-            await request("turn/start", {
-              threadId: run.threadId,
-              clientUserMessageId: run.id,
-              input: [{ type: "text", text: `[Scheduled task]\n${prompt}`, text_elements: [] }],
-            }),
-          );
-          return { state: "running", turnId: text(object(result.turn).id) || undefined };
-        } catch (error) {
-          return { state: object(object(error).data).submissionOutcome === "rejected" ? "failed" : "unknown" };
-        }
-      },
-      inspect: async (run) => {
-        const turn = await runTurn(run.threadId, run.id, run.turnId ?? null);
-        if (!turn) return { state: "unknown" };
-        const turnId = text(turn.id);
-        if (turn.status === "completed") return { state: "completed", turnId };
-        if (turn.status === "failed" || turn.status === "interrupted") return { state: "failed", turnId };
-        return { state: "running", turnId };
-      },
-    },
+    routedCodexScheduleExecution(
+      (method, params) => clients.request(method, params), options.native, options.admissionOpen,
+      listener => { listeners.add(listener); return () => { listeners.delete(listener); }; },
+    ),
     Date.now,
     (event) => console.warn("[codex-host-services]", JSON.stringify(event)),
     () => clients.broadcast("opencraft/schedules/changed", {}),
@@ -117,9 +122,9 @@ export function codexSchedulesService(options: CodexSchedulesOptions): CodexHost
   schedules.start();
   return {
     handles: (method) => method.startsWith("opencraft/schedules/"),
-    request: async (method, params) => {
+    request: async (method, params, context) => {
       try {
-        return method === CONVERSATION_SCHEDULES.list ? schedules.list() : await schedules.handle(method, params, null);
+        return method === CONVERSATION_SCHEDULES.list ? schedules.list() : await schedules.handle(method, params, context.sender?.loginName ?? null);
       } catch (error) {
         throw Object.assign(
           new Error(error instanceof ScheduleFault ? error.message : "Schedule request could not be completed"),

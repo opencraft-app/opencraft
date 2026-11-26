@@ -35,6 +35,7 @@ const legacy = createMissingLegacyObjects(OPENCRAFT_MESSAGE_ATTACHMENTS_BASELINE
 /** Durable display metadata; Codex's native `mention` remains the execution input. */
 export class OpenCraftMessageAttachments {
   private readonly db: DatabaseSync;
+  private readonly recent = new Map<string, AttachmentRef[]>();
   readonly outcome: DatabaseOutcome;
   readonly path: string;
   private readonly releaseLease: () => void;
@@ -51,7 +52,7 @@ export class OpenCraftMessageAttachments {
     } catch (error) { this.releaseLease(); throw error; }
   }
 
-  close(): void { try { this.db.close(); } finally { this.releaseLease(); } }
+  close(): void { this.recent.clear(); try { this.db.close(); } finally { this.releaseLease(); } }
 
   /** Record before dispatch. A retry may repeat the same identity, never replace it. */
   record(threadId: string, clientMessageId: string, refs: readonly AttachmentRef[]): void {
@@ -70,17 +71,33 @@ export class OpenCraftMessageAttachments {
         (thread_id,client_message_id,attachment_id,ordinal,ref_json) VALUES(?,?,?,?,?)`);
       refs.forEach((ref, ordinal) => insert.run(threadId, clientMessageId, ref.id, ordinal, JSON.stringify(ref)));
       this.db.exec("COMMIT");
+      this.remember(threadId, clientMessageId, [...refs]);
     } catch (error) {
       this.db.exec("ROLLBACK");
       throw error;
     }
   }
 
+  /** Live messages reuse already staged or read metadata, without a storage read. */
+  peek(threadId: string, clientMessageId: string): readonly AttachmentRef[] {
+    return this.recent.get(JSON.stringify([threadId, clientMessageId])) ?? [];
+  }
+
+  private remember(threadId: string, clientMessageId: string, refs: AttachmentRef[]): void {
+    if (!refs.length) return;
+    const key = JSON.stringify([threadId, clientMessageId]);
+    this.recent.delete(key);
+    this.recent.set(key, refs);
+    if (this.recent.size > 128) this.recent.delete(this.recent.keys().next().value!);
+  }
+
   list(threadId: string, clientMessageId: string): AttachmentRef[] {
-    return this.db.prepare(`SELECT ref_json FROM opencraft_message_attachments
+    const refs = this.db.prepare(`SELECT ref_json FROM opencraft_message_attachments
       WHERE thread_id=? AND client_message_id=? ORDER BY ordinal`)
       .all(threadId, clientMessageId)
       .map(row => JSON.parse(String(row.ref_json)) as AttachmentRef);
+    this.remember(threadId, clientMessageId, refs);
+    return refs;
   }
 
   hasReference(attachmentId: string): boolean {

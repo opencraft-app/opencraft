@@ -25,6 +25,7 @@ import { durableObjectSqlDatabase } from "@opencraft/storage-cloudflare/sql";
 import { TestAccountCore } from "./account-core-do-worker.ts";
 import { containerDouble } from "./workspace-container-double.ts";
 import { INSTALLATION_CORE_OBJECT } from "../../../apps/headless-server/src/cloudflare/installation-core.ts";
+import { CODEX_TURN_AUTHORITY_PATH } from "../../../apps/headless-server/src/cloudflare/codex-turn.ts";
 import { WORKSPACE_THREAD_RESOURCES_PATH } from "../../../apps/headless-server/src/cloudflare/terminal-authority.ts";
 import {
   CLIENT_ADMISSION_PATH,
@@ -61,8 +62,22 @@ export class ClientDO {
 }
 
 export class InstallationCore extends ProductionInstallation {
+  #rejectTurnAuthority: { threadId: string; after: number } | undefined;
+
   override async fetch(request: Request): Promise<Response> {
     const { pathname } = new URL(request.url);
+    if (pathname === "/__installation/reject-turn-authority-once") {
+      this.#rejectTurnAuthority = await request.json();
+      return new Response(null, { status: 204 });
+    }
+    const rejection = this.#rejectTurnAuthority;
+    if (pathname === CODEX_TURN_AUTHORITY_PATH && rejection) {
+      const { threadId } = await request.clone().json() as { threadId: string };
+      if (this.#rejectTurnAuthority === rejection && threadId === rejection.threadId && rejection.after-- === 0) {
+        this.#rejectTurnAuthority = undefined;
+        return new Response(null, { status: 403 });
+      }
+    }
     if (pathname === "/__installation/codex-server") {
       return Response.json(this.services().codexServerId);
     }
@@ -187,6 +202,8 @@ export class TestWorkspaceHost extends WorkspaceHost {
             modelIntercepts: double.modelIntercepts,
             inputs: double.inputs,
             served: double.served,
+            historyReads: double.historyReads,
+            bridgeIdentityCursors: double.bridgeIdentityCursors,
           },
           families: sqlMigrationFamilyRows(database, MIGRATION_FAMILY_LEDGER_TABLE),
           bridgeCursor: services ? Number(database.prepare("SELECT value FROM bridge_inbox_meta WHERE key='ack'").get()?.value) : null,
@@ -211,9 +228,88 @@ export class TestWorkspaceHost extends WorkspaceHost {
       case "/__test/reject-next-snapshot":
         double.rejectNextSnapshot = true;
         return Response.json(null);
+      case "/__test/reject-next-restore":
+        double.rejectNextRestore = true;
+        return Response.json(null);
       case "/__test/publish-bridge-title":
         double.publishBridgeTitle(url.searchParams.get("title") ?? "");
         return Response.json(null);
+      case "/__test/publish-bridge-history":
+        double.publishBridgeHistory(url.searchParams.get("threadId") ?? "", url.searchParams.get("suffix") ?? "");
+        return Response.json(null);
+      case "/__test/replace-bridge-outbox-id":
+        double.replaceBridgeOutboxId();
+        return Response.json(null);
+      case "/__test/restore-runtime-only": {
+        const { runtime } = this.services();
+        const slept = await runtime.sleep();
+        if (!slept.some(entry => entry.slept)) return new Response(null, { status: 409 });
+        await runtime.observe();
+        return Response.json(null);
+      }
+      case "/__test/limit-bridge-history":
+        double.bridgeHistoryPageLimit = Number(url.searchParams.get("limit") ?? 1);
+        return Response.json(null);
+      case "/__test/bridge-history-identities":
+        double.bridgeHistoryIdentityPages = url.searchParams.get("enabled") === "true";
+        double.bridgeHistoryIdentitySelection = url.searchParams.get("selection") === "true";
+        return Response.json(null);
+      case "/__test/bridge-maintenance":
+        double.bridgeInFlight = Number(url.searchParams.get("inFlight") ?? 0);
+        if (url.searchParams.get("unavailable") === "true") double.nextBridgeFault = { path: "/maintenance", status: 503 };
+        return Response.json(null);
+      case "/__test/fail-next-bridge-read":
+        double.nextBridgeFault = { path: "/events", status: 503 };
+        return Response.json(null);
+      case "/__test/watch-bridge-after-failure": {
+        const { bridge, codex, identity } = this.services();
+        if (!codex || !bridge) return new Response(null, { status: 404 });
+        const stage = url.searchParams.get("stage");
+        const precommit = stage === "committed";
+        const duringOpen = stage === "open";
+        const path = stage === "read" || precommit || duringOpen ? "/events" : "/ack";
+        const status = url.searchParams.get("status") === "disconnect" ? "disconnect" : Number(url.searchParams.get("status") ?? 503);
+        const fault = { path, status, persistent: precommit } satisfies NonNullable<typeof double.nextBridgeFault>;
+        if (duringOpen) double.nextBridgeFault = fault;
+        return codex.withMutationLane(async lane => {
+          const created = await lane.request("thread/start", { historyMode: "paginated" }) as { thread: { id: string } };
+          const route = JSON.stringify([`server:${identity.machine}:codex`, created.thread.id]);
+          const received = Promise.withResolvers<"continued">();
+          const titles: string[] = [];
+          let deliveredWhileUnavailable = false;
+          const unsubscribe = lane.subscribe(message => {
+            if (!("method" in message) || message.method !== "thread/name/updated") return;
+            const { threadId, threadName } = message.params as { threadId: string; threadName: string };
+            if (threadId !== created.thread.id) return;
+            titles.push(threadName);
+            if (threadName === "first") {
+              if (precommit && double.nextBridgeFault === fault) {
+                deliveredWhileUnavailable = true;
+                double.nextBridgeFault = undefined;
+              }
+              double.publishBridgeTitle("second", route);
+            }
+            if (threadName === "second") received.resolve("continued");
+          });
+          const timeout = Promise.withResolvers<"timeout">();
+          const timer = setTimeout(() => timeout.resolve("timeout"), 3000);
+          try {
+            if (!precommit && !duringOpen) double.nextBridgeFault = fault;
+            double.publishBridgeTitle("first", route);
+            if (precommit) {
+              await bridge.pull();
+              double.nextBridgeFault = fault;
+            }
+            const outcome = await Promise.race([received.promise, timeout.promise, lane.closed.then(() => "closed")]);
+            return Response.json({ outcome, titles, ...(precommit ? { deliveredWhileUnavailable } : {}) });
+          } finally {
+            clearTimeout(timer);
+            unsubscribe();
+          }
+        }).finally(() => {
+          if (double.nextBridgeFault === fault) double.nextBridgeFault = undefined;
+        });
+      }
       case "/__test/terminal-cleanup":
         double.terminalCleanupUnavailable = url.searchParams.get("unavailable") === "true";
         return Response.json(null);

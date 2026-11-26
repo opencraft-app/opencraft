@@ -65,8 +65,6 @@ import {
 import { usePresentationActive, useStableEvent } from "@opencraft/react-runtime";
 import { useTurnHistoryBackfill } from "@opencraft/timeline-react";
 import type { TimelineBlockRendererProps } from "@opencraft/timeline-render-react";
-import { UserMessageNavigationRail } from "./user-message-navigation-rail";
-import { ConversationSearchPosition } from "./conversation-search-position";
 import { DisclosureReflowContext } from "./use-disclosure-reflow";
 import { useLatestTurnFollowContentRef } from "./latest-turn-follow-content";
 import { AlertIcon as AlertCircle, ArrowRightIcon as ArrowRight, CalendarIcon as CalendarClock, CodeFileIcon as FileCode2 } from "@opencraft/design-system-web/action-icons";
@@ -163,6 +161,13 @@ export type {
   ToolCallIconRenderer,
 } from "./conversation-renderers/render-contexts";
 export type { ConversationDetailLevel } from "./conversation-renderers/activity/agent-activity-renderers";
+
+const ConversationSearchPosition = lazy(async () => ({
+  default: (await import("./conversation-search-position")).ConversationSearchPosition,
+}));
+const UserMessageNavigationRail = lazy(async () => ({
+  default: (await import("./user-message-navigation-rail")).UserMessageNavigationRail,
+}));
 
 function fileChangeVerb(
   kind: Extract<TimelineBlock, { type: "patch" }>["changes"][number]["kind"],
@@ -1227,15 +1232,17 @@ export function Conversation({
                     {footerElement}
                   </div>
                   <ConversationSelectionMenu root={scrollElement} onAddToChat={onAddSelectionToChat} />
-                  {navigationSource !== null && virtualizedTurnListApi !== null ? (
+                  {navigationSource !== null && virtualizedTurnListApi !== null ? <Suspense fallback={null}>
                     <UserMessageNavigationRail
                       getScrollElement={() => scrollRef.current}
                       source={navigationSource}
                       virtualizedTurnListApi={virtualizedTurnListApi}
                     />
-                  ) : null}
-                  {searchTarget && navigationSource && virtualizedTurnListApi ? <ConversationSearchPosition
-                    source={navigationSource} target={searchTarget} api={virtualizedTurnListApi} scrollElement={scrollElement} /> : null}
+                  </Suspense> : null}
+                  {searchTarget && navigationSource && virtualizedTurnListApi ? <Suspense fallback={null}>
+                    <ConversationSearchPosition source={navigationSource} target={searchTarget}
+                      api={virtualizedTurnListApi} scrollElement={scrollElement} />
+                  </Suspense> : null}
                 </div>
               </ConversationDocumentContext.Provider></ConversationSearchTargetContext.Provider>
             </SubagentNavigationContext.Provider>

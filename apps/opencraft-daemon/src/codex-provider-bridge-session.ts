@@ -1,6 +1,10 @@
+import { ThreadCatalogPublisher } from "@opencraft/app-host-server/thread-catalog";
+import { HostInteractions, InteractionFault, InteractionResponseNotDispatched } from "@opencraft/app-host-server/interactions";
 import { createHash, randomUUID } from "node:crypto";
 import { OPENCRAFT_DESKTOP_ATTACH } from "@opencraft/appserver-protocol/desktop";
-import type { BridgeGatewaySession } from "@opencraft/agent-bridge-host/gateway-session";
+import {
+  BridgeInteractionSnapshotIncomplete, BridgeOutboxReadError, type BridgeGatewaySession,
+} from "@opencraft/agent-bridge-host/gateway-session";
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
 import type {
   DuplexTransport,
@@ -12,6 +16,11 @@ import {
   OPENCRAFT_STEER_EVIDENCE_EXTENSION,
   OPENCRAFT_THREAD_GOAL_EXTENSION,
   OPENCRAFT_THREAD_QUEUE_EXTENSION,
+  SHARED_INTERACTIONS_CHANGED,
+  SHARED_INTERACTIONS_EXTENSION,
+  SHARED_INTERACTIONS_READ,
+  SHARED_INTERACTIONS_RESPOND,
+  isHumanInteraction,
   type InputCompletion,
 } from "@opencraft/appserver-protocol";
 import { CODEX_MAINTENANCE_READ, codexMaintenanceError, isCodexAdmission } from "./codex-admission-policy.js";
@@ -24,11 +33,62 @@ type BridgeQueueRow = {
   targetTurnId: string | null;
   delivery?: unknown;
 };
+type BridgeClient = { evidence: boolean; sharedInteractions: boolean; epoch: number };
+type BridgeSubscription = { mode: "observing" | "live" | "archive" };
 const object = (v: unknown): Record<string, unknown> =>
   v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 
+// Renderers that negotiated item details with an earlier Bridge may still
+// ask for presentation pages. Codex's native page modes include full only
+// for reads that require the whole Item.
+const bridgeHistoryItemsView = (view: unknown): unknown => view === "presentation" ? "full" : view;
+
+export async function observeCodexBridgeHistory(
+  gateway: Pick<BridgeGatewaySession, "observe">,
+  threadId: string,
+  method: "thread/read" | "thread/turns/list" | "thread/items/list",
+  params: Record<string, unknown>,
+  onMetadata?: (archived: boolean) => void,
+): Promise<unknown> {
+  const archive = params.openArchivedHistory === true ? { openArchivedHistory: true } : {};
+  if (method === "thread/read") {
+    const includeTurns = params.includeTurns === true;
+    // Admit a live watch before its first body snapshot, even for callers
+    // that request Thread metadata and the complete transcript together.
+    if (onMetadata && includeTurns) {
+      const metadata = await gateway.observe(threadId, { view: "thread", includeTurns: false, ...archive });
+      onMetadata(object(object(metadata).thread).archived === true);
+    }
+    const result = await gateway.observe(threadId, { view: "thread", includeTurns, ...archive });
+    onMetadata?.(object(object(result).thread).archived === true);
+    if (!params.initialTurnsPage) return result;
+    const { limit, sortDirection, itemsView } = object(params.initialTurnsPage);
+    const initialTurnsPage = await gateway.observe(threadId, {
+      limit, sortDirection, itemsView: bridgeHistoryItemsView(itemsView), ...archive,
+    });
+    return { ...object(result), initialTurnsPage };
+  }
+  const { turnId, cursor, limit, sortDirection, itemsView } = params;
+  if (method === "thread/turns/list" && params.detailItemId !== undefined)
+    throw Object.assign(Error("Item details are unavailable for Bridge history"), { code: -32601, kind: "unsupported" });
+  return gateway.observe(threadId, {
+    ...archive,
+    cursor: cursor ?? null,
+    ...(limit !== undefined ? { limit } : {}),
+    ...(sortDirection !== undefined ? { sortDirection } : {}),
+    ...(method === "thread/items/list"
+      ? { view: "items", ...(turnId != null ? { turnId } : {}) }
+      : itemsView !== undefined ? { itemsView: bridgeHistoryItemsView(itemsView) } : {}),
+  });
+}
+
 /** Opt-in composition around the existing Core path. No gateway child/owner. */
 /** Turn notifications usage collection follows (see the local Host's token usage runtime). */
+const PASSIVE_THREAD_REQUESTS = new Set([
+  "thread/turns/list", "thread/items/list", "thread/searchOccurrences", "thread/history/cancel", "thread/unsubscribe",
+  "thread/queue/list", "thread/queue/find", "thread/queue/collaborationReceipt", "thread/goal/get", "opencraft/steer/status",
+]);
+
 const USAGE_NOTIFICATIONS = new Set([
   "turn/started",
   "turn/completed",
@@ -39,11 +99,17 @@ const USAGE_NOTIFICATIONS = new Set([
 export class CodexProviderBridgeSession implements DuplexTransport {
   private gateway: BridgeGatewaySession;
   private listeners = new Set<(frame: string) => void>();
-  private clients = new Map<string, { evidence: boolean; epoch: number }>();
+  private clients = new Map<string, BridgeClient>();
   private clientEpoch = 0;
-  private subscriptions = new Map<string, Set<string>>();
-  private pending = new Map<string, { method: string; client: string }>();
+  // Bridge admission and identities are already durable in Engine Host. Retain
+  // its directory updates until the native index reports them.
+  private readonly catalog = new ThreadCatalogPublisher((method, params) => {
+    for (const client of this.clients.keys()) this.emit({ method, params }, client);
+  }, true);
+  private subscriptions = new Map<string, Map<string, BridgeSubscription>>();
+  private pending = new Map<string, { method: string; client: string; params?: Record<string, unknown> }>();
   private interactions = new Map<string, { threadId: string; clients: Map<string, number> }>();
+  private readonly humanInteractions = new HostInteractions();
   private poll?: ReturnType<typeof setInterval>;
   private closed = false;
   private connecting?: Promise<void>;
@@ -126,6 +192,9 @@ export class CodexProviderBridgeSession implements DuplexTransport {
       newThreads?: boolean;
       /** A request-scoped owner may drive event pulls itself. */
       manualPull?: boolean;
+      initialEventPull?: boolean;
+      /** The caller provides a live retry loop when it drives event pulls. */
+      retryInitialEventPull?: boolean;
       /**
        * The bridge owns every Thread (no legacy Host underneath): new Threads are
        * created here, and any other Thread moves here on its first Thread request.
@@ -145,19 +214,25 @@ export class CodexProviderBridgeSession implements DuplexTransport {
         result: unknown,
         sender: TransportSubmissionContext["sender"],
       ) => void;
+      beforeUserInput?: (method: string, threadId: string) => void;
     } = {},
   ) {
     this.gateway = createGateway((threadId, value) => {
       const frame = object(value);
+      this.observeSubscriptionLifecycle(threadId, frame.method);
+      if (typeof frame.method === "string" && frame.id === undefined) {
+        this.catalog.observeNotification(frame.method, { ...object(frame.params), threadId });
+      }
       this.observeEvent(threadId, frame);
       if (frame.method === "interaction/resolved") {
         const id = object(frame.params).interactionId;
         if (typeof id !== "string") return;
         this.interactions.delete(id);
+        this.humanInteractions.resolveNative(id, threadId);
         // Resolved elsewhere (the Turn ended): a Host tool still running stops and answers nothing.
         this.hostTools.get(id)?.abort();
         this.hostTools.delete(id);
-        for (const client of this.subscriptions.get(threadId) ?? [])
+        for (const client of this.liveSubscribers(threadId))
           this.emit({ method: "serverRequest/resolved", params: { threadId, requestId: id } }, client);
         return;
       }
@@ -173,22 +248,25 @@ export class CodexProviderBridgeSession implements DuplexTransport {
         frame.params = { ...params, turnId: this.gateway.canonicalTurn(threadId, params.turnId) ?? params.turnId };
       // Live user messages carry their recorded sender, as history reads do.
       const outgoing = this.policy.projectNotification ? this.policy.projectNotification(frame) : frame;
-      for (const client of this.subscriptions.get(threadId) ?? []) {
-        if (outgoing.method === OPENCRAFT_STEER_EVIDENCE_NOTIFICATION && !this.clients.get(client)?.evidence) continue;
-        this.emit(outgoing, client);
-      }
+      this.deliverThreadNotification(threadId, outgoing);
     });
     legacy.subscribeMessage((frame) => {
       void this.receiveLegacy(frame).catch(() => {});
+    });
+    this.humanInteractions.subscribe(threadId => {
+      for (const client of this.liveSubscribers(threadId))
+        if (this.clients.get(client)?.sharedInteractions)
+          this.emit({ method: SHARED_INTERACTIONS_CHANGED, params: this.humanInteractions.snapshot(threadId, true) }, client);
     });
   }
   /**
    * Settle whether `method` on `threadId` runs on the bridge: an existing local Thread this
    * bridge would adopt for it is adopted now. Execution admission asks before it admits.
    */
-  async prepareRoute(method: string, threadId: string): Promise<boolean> {
+  async prepareRoute(method: string, threadId: string, watch?: unknown): Promise<boolean> {
+    const passive = (method === "thread/read" && watch !== true) || PASSIVE_THREAD_REQUESTS.has(method);
     const adopting = this.policy.exclusive
-      ? !["thread/history/cancel", "thread/unsubscribe"].includes(method)
+      ? !passive
       : method === "turn/start" && this.policy.adoptExisting;
     if (adopting && threadId && !threadId.startsWith("bridge:codex:") && !this.gateway.owns(threadId))
       await this.adopt(threadId);
@@ -336,17 +414,32 @@ export class CodexProviderBridgeSession implements DuplexTransport {
     return true;
   }
   private offerInteraction(threadId: string, frame: Record<string, unknown>, onlyClient?: string): void {
-    if (this.claimHostTool(threadId, frame)) return;
     const params = object(frame.params),
       payload = object(params.payload);
     if (typeof params.interactionId !== "string" || typeof payload.method !== "string") return;
+    const source = {
+      id: params.interactionId,
+      method: payload.method,
+      params: { ...object(this.gateway.history(threadId, payload.params)), threadId },
+      __opencraftInteractionKey: params.interactionId,
+    };
+    if (isHumanInteraction(source.method, source.params)) {
+      if (!this.humanInteractions.threadForNative(source.id)) this.humanInteractions.capture(source);
+      for (const client of onlyClient ? [onlyClient] : this.liveSubscribers(threadId)) {
+        const identity = this.clients.get(client);
+        if (identity && !identity.sharedInteractions && this.isLiveSubscriber(threadId, client))
+          this.humanInteractions.offerLegacy(threadId, client, ({ id, method, params }) => this.emit({ id, method, params }, client));
+      }
+      return;
+    }
+    if (this.claimHostTool(threadId, frame)) return;
     const interaction = this.interactions.get(params.interactionId) ?? { threadId, clients: new Map<string, number>() };
     this.interactions.set(params.interactionId, interaction);
-    for (const client of onlyClient ? [onlyClient] : (this.subscriptions.get(threadId) ?? [])) {
+    for (const client of onlyClient ? [onlyClient] : this.liveSubscribers(threadId)) {
       const identity = this.clients.get(client);
       if (
         !identity ||
-        !this.subscriptions.get(threadId)?.has(client) ||
+        !this.isLiveSubscriber(threadId, client) ||
         interaction.clients.get(client) === identity.epoch
       )
         continue;
@@ -360,6 +453,55 @@ export class CodexProviderBridgeSession implements DuplexTransport {
         client,
       );
     }
+  }
+  private assertInteractionSubscription(threadId: string, client: string, identity: BridgeClient,
+    context: TransportSubmissionContext, expected?: BridgeSubscription): BridgeSubscription {
+    context.resourceOwner?.assertCurrent();
+    const current = this.subscriptions.get(threadId)?.get(client);
+    if (this.closed || this.clients.get(client) !== identity || current?.mode !== "live" || (expected && current !== expected))
+      throw new InteractionFault({ code: "SOURCE_UNAVAILABLE" }, "Interaction subscription expired");
+    return current;
+  }
+  private async replyToInteraction(threadId: string, client: string, identity: BridgeClient, context: TransportSubmissionContext,
+    interactionId: string, result: Record<string, unknown>, assertCurrent: () => void, subscription: BridgeSubscription): Promise<void> {
+    await this.gateway.command(threadId, `interaction:${interactionId}`, "interaction/resolve", { interactionId, result }, () => {
+      try {
+        this.assertInteractionSubscription(threadId, client, identity, context, subscription);
+        assertCurrent();
+      } catch (cause) { throw new InteractionResponseNotDispatched(cause); }
+    });
+  }
+  private async restorePendingInteractions(threadId: string, client: string, identity: BridgeClient,
+    context: TransportSubmissionContext, interactionId?: string): Promise<BridgeSubscription> {
+    const subscription = this.assertInteractionSubscription(threadId, client, identity, context);
+    const requests = await this.gateway.pendingInteractions(threadId, interactionId).catch(error => {
+      if (error instanceof BridgeInteractionSnapshotIncomplete)
+        throw new InteractionFault({ code: "SOURCE_UNAVAILABLE" }, error.message);
+      throw error;
+    });
+    for (const pending of requests) {
+      this.assertInteractionSubscription(threadId, client, identity, context, subscription);
+      this.offerInteraction(threadId, object(pending), client);
+    }
+    return subscription;
+  }
+  private async sharedInteractionRequest(method: string, threadId: string, client: string, identity: BridgeClient,
+    params: Record<string, unknown>, context: TransportSubmissionContext) {
+    if (!identity.sharedInteractions) throw new InteractionFault({ code: "UNSUPPORTED" }, "Shared interactions were not negotiated");
+    if (method === SHARED_INTERACTIONS_READ) {
+      const subscription = await this.restorePendingInteractions(threadId, client, identity, context);
+      this.assertInteractionSubscription(threadId, client, identity, context, subscription);
+      return this.humanInteractions.snapshot(threadId, true);
+    }
+    const { interactionId, submissionId, result } = params;
+    if (typeof interactionId !== "string" || !interactionId || typeof submissionId !== "string" ||
+      !submissionId || !result || typeof result !== "object" || Array.isArray(result))
+      throw new InteractionFault({ code: "INVALID_RESPONSE" }, "Invalid interaction response");
+    const subscription = await this.restorePendingInteractions(threadId, client, identity, context, interactionId);
+    this.assertInteractionSubscription(threadId, client, identity, context, subscription);
+    const disposition = await this.humanInteractions.respond(threadId, interactionId, submissionId, object(result),
+      (source, answer, assertCurrent) => this.replyToInteraction(threadId, client, identity, context, String(source.id), answer, assertCurrent, subscription));
+    return { disposition, snapshot: this.humanInteractions.snapshot(threadId, true) };
   }
   private eventObservers = new Set<(method: string, params: Record<string, unknown>) => void>();
   /** Every Thread event the bridge delivers, whether or not a client watches that Thread (Host duties). */
@@ -461,15 +603,58 @@ export class CodexProviderBridgeSession implements DuplexTransport {
       ]),
     );
   }
+  private isLiveSubscriber(threadId: string, client: string): boolean {
+    return this.subscriptions.get(threadId)?.get(client)?.mode === "live";
+  }
+  private *liveSubscribers(threadId: string): Iterable<string> {
+    for (const [client, subscription] of this.subscriptions.get(threadId) ?? [])
+      if (subscription.mode === "live") yield client;
+  }
+  private archiveSubscriptions(threadId: string): void {
+    const subscribers = this.subscriptions.get(threadId);
+    if (!subscribers) return;
+    for (const client of subscribers.keys()) {
+      // Replacing the token fences history that was still awaiting metadata.
+      subscribers.set(client, { mode: "archive" });
+      this.forgetInteractionOffers(client, threadId);
+    }
+  }
+  private observeSubscriptionLifecycle(threadId: string, method: unknown): void {
+    if (method === "thread/archived" || method === "thread/deleted") this.archiveSubscriptions(threadId);
+    if (method === "thread/unarchived") {
+      const subscribers = this.subscriptions.get(threadId);
+      if (!subscribers) return;
+      for (const [client, subscription] of subscribers)
+        if (subscription.mode !== "live") subscribers.set(client, { mode: "observing" });
+    }
+  }
+  private deliverThreadNotification(threadId: string, frame: Record<string, unknown>): void {
+    const lifecycle = frame.method === "thread/archived" || frame.method === "thread/unarchived" || frame.method === "thread/deleted";
+    for (const [client, subscription] of this.subscriptions.get(threadId) ?? []) {
+      if (subscription.mode !== "live" && !lifecycle) continue;
+      if (frame.method === OPENCRAFT_STEER_EVIDENCE_NOTIFICATION && !this.clients.get(client)?.evidence) continue;
+      this.emit(frame, client);
+    }
+  }
   /** Native sends lifecycle notifications only to the bridge's own connection; mirror them for subscribers. */
   private notify(threadId: string, method: string, params: Record<string, unknown>): void {
-    for (const client of this.subscriptions.get(threadId) ?? []) this.emit({ method, params }, client);
+    this.observeSubscriptionLifecycle(threadId, method);
+    const frame = { method, params };
+    this.observeEvent(threadId, frame);
+    this.deliverThreadNotification(threadId, frame);
   }
-  private revokeClient(client: string, threadId?: string): void {
-    for (const [thread, subscribers] of this.subscriptions)
-      if (!threadId || thread === threadId) subscribers.delete(client);
+  private forgetInteractionOffers(client: string, threadId?: string): void {
+    this.humanInteractions.forgetClient(client, threadId);
     for (const interaction of this.interactions.values())
       if (!threadId || interaction.threadId === threadId) interaction.clients.delete(client);
+  }
+  private revokeClient(client: string, threadId?: string): void {
+    for (const [thread, subscribers] of this.subscriptions) {
+      if (threadId && thread !== threadId) continue;
+      subscribers.delete(client);
+      if (!subscribers.size) this.subscriptions.delete(thread);
+    }
+    this.forgetInteractionOffers(client, threadId);
   }
   get status() {
     return this.legacy.status;
@@ -486,7 +671,10 @@ export class CodexProviderBridgeSession implements DuplexTransport {
   connect(signal?: AbortSignal): Promise<void> {
     if (this.closed) return Promise.reject(Error("Bridge gateway is closed"));
     return (this.connecting ??= (async () => {
-      await this.gateway.open();
+      await this.gateway.open({ live: this.policy.initialEventPull ?? true }).catch(error => {
+        const canRetry = !this.policy.manualPull || this.policy.retryInitialEventPull;
+        if (!canRetry || !(error instanceof BridgeOutboxReadError && error.retryable)) throw error;
+      });
       await this.legacy.connect(signal);
       if (!this.policy.manualPull)
         this.poll = setInterval(() => {
@@ -546,6 +734,8 @@ export class CodexProviderBridgeSession implements DuplexTransport {
           query: true,
         };
         const threadCapabilities = {
+          [SHARED_INTERACTIONS_EXTENSION]: { version: 1 },
+          "opencraft/read-history": { version: 1, initialTurnsPage: true, cancellation: false },
           "opencraft/thread-follow-up": { version: 1, queue: true, steer: evidence },
           // Host-owned queue on the shared thread-queue core.
           [OPENCRAFT_THREAD_QUEUE_EXTENSION]: {
@@ -563,6 +753,7 @@ export class CodexProviderBridgeSession implements DuplexTransport {
             injectItems: false,
             rename: true,
             archive: true,
+            openArchivedHistory: true,
             unsubscribe: true,
             delete: true,
           },
@@ -608,15 +799,17 @@ export class CodexProviderBridgeSession implements DuplexTransport {
           },
         };
       }
-      if (
-        (pending.method === "thread/list" || pending.method === "opencraft/thread-pins/list") &&
-        Array.isArray(result.data)
-      )
-        result.data = result.data.map((thread: unknown) => {
-          const id = object(thread).id;
-          const route = typeof id === "string" ? this.gateway.publicThread(id) : undefined;
-          return route ? this.gateway.history(route, thread) : thread;
-        });
+      if (Array.isArray(result.data)) {
+        if (pending.method === "thread/list" || pending.method === "opencraft/thread-pins/list") {
+          result.data = result.data.map(thread => this.gateway.catalogThread(thread));
+        } else if (pending.method === "thread/search") {
+          result.data = result.data.map(match => ({ ...object(match), thread: this.gateway.catalogThread(object(match).thread) }));
+        }
+      }
+      if (pending.method === "thread/list" && "result" in frame) {
+        this.catalog.observeResult(pending.method, pending.params, result);
+        frame.result = this.catalog.projectList(pending.params, result);
+      }
     }
     this.emit(frame);
   }
@@ -644,6 +837,7 @@ export class CodexProviderBridgeSession implements DuplexTransport {
       this.revokeClient(client);
       this.clients.set(client, {
         evidence: !!object(object(p.capabilities).extensions)[OPENCRAFT_STEER_EVIDENCE_EXTENSION],
+        sharedInteractions: !!object(object(p.capabilities).extensions)[SHARED_INTERACTIONS_EXTENSION],
         epoch: ++this.clientEpoch,
       });
     }
@@ -651,6 +845,19 @@ export class CodexProviderBridgeSession implements DuplexTransport {
       this.clients.delete(client);
       this.revokeClient(client);
       return this.legacy.send(raw);
+    }
+    if (method === undefined && typeof frame.id === "string") {
+      const threadId = this.humanInteractions.threadForNative(frame.id);
+      if (threadId) {
+        const identity = this.clients.get(client);
+        const subscription = this.subscriptions.get(threadId)?.get(client);
+        if (!identity || identity.sharedInteractions || subscription?.mode !== "live" ||
+          !this.humanInteractions.wasOffered(frame.id, client) || !("result" in frame))
+          throw Error("Interaction subscription required");
+        await this.humanInteractions.respondNative(frame.id, `legacy:${identity.epoch}:${frame.id}`, object(frame.result),
+          (source, result, assertCurrent) => this.replyToInteraction(threadId, client, identity, context, String(source.id), result, assertCurrent, subscription));
+        return;
+      }
     }
     if (
       method === undefined &&
@@ -664,7 +871,7 @@ export class CodexProviderBridgeSession implements DuplexTransport {
       if (
         interaction.clients.get(client) !== this.clients.get(client)?.epoch ||
         !this.clients.has(client) ||
-        !this.subscriptions.get(interaction.threadId)?.has(client) ||
+        !this.isLiveSubscriber(interaction.threadId, client) ||
         !("result" in frame)
       )
         throw Error("Interaction subscription required");
@@ -714,7 +921,11 @@ export class CodexProviderBridgeSession implements DuplexTransport {
     const behind = this.gateway.publicThread(threadId);
     if (!optIn && behind !== undefined && behind !== threadId)
       throw Error("Use the bridge thread identity; native owner bypass refused");
-    if (!optIn && method !== undefined) await this.prepareRoute(method, threadId);
+    if (method?.startsWith("opencraft/schedules/") || method === "opencraft/turn-recovery/read") {
+      if (frame.id !== undefined) this.pending.set(JSON.stringify([client, frame.id]), { method, client });
+      return this.legacy.sendWithContext ? this.legacy.sendWithContext(raw, context) : this.legacy.send(raw);
+    }
+    if (!optIn && method !== undefined) await this.prepareRoute(method, threadId, p.watch);
     // Maintenance pauses new work on bridge threads exactly as on legacy ones;
     // steering, reads and approvals of admitted work continue.
     const admission = (optIn || this.gateway.owns(threadId)) && isCodexAdmission(method, p);
@@ -742,42 +953,46 @@ export class CodexProviderBridgeSession implements DuplexTransport {
       if (threadId.startsWith("bridge:codex:"))
         throw Error("Bridge thread has no retained owner; native fallback refused");
       if (typeof method === "string" && frame.id !== undefined)
-        this.pending.set(JSON.stringify([client, frame.id]), { method, client });
+        this.pending.set(JSON.stringify([client, frame.id]), { method, client, params: p });
       if (this.legacy.sendWithContext) return this.legacy.sendWithContext(raw, context);
       return this.legacy.send(raw);
     }
     if (method === undefined) throw Error("Bridge request method required");
     const identity = this.clients.get(client);
     if (!identity || frame.id === undefined) throw Error("Initialized client and request ID required");
-    const subscribers = this.subscriptions.get(threadId) ?? new Set<string>();
-    this.subscriptions.set(threadId, subscribers);
-    // Opening, sending and thread operations (which a list may issue without opening) subscribe the client.
+    const subscribers = this.subscriptions.get(threadId) ?? new Map<string, BridgeSubscription>();
+    const watchedRead = method === "thread/read" && p.watch === true;
+    const passive = PASSIVE_THREAD_REQUESTS.has(method);
+    let watching = watchedRead ? subscribers.get(client) : undefined;
+    if (watchedRead && (!watching || watching.mode === "observing")) {
+      watching = { mode: "observing" };
+      subscribers.set(client, watching);
+    }
+    // Execution operations can subscribe before their first event. History
+    // reads earn a live subscription only after the route's metadata arrives.
     if (
       optIn ||
       [
         "thread/resume",
-        "thread/read",
-        "thread/turns/list",
-        "thread/items/list",
         "turn/start",
         "thread/fork",
         "thread/name/set",
         "thread/archive",
         "thread/unarchive",
         "thread/delete",
-        "thread/goal/get",
         "thread/goal/set",
         "thread/goal/clear",
       ].includes(method) ||
-      method.startsWith("thread/queue/") ||
-      ["thread/settings/update", "thread/history/cancel"].includes(method)
-    )
-      subscribers.add(client);
-    if (forkedId) {
-      const forked = new Set<string>([client]);
-      this.subscriptions.set(forkedId, forked);
+      (method.startsWith("thread/queue/") && !passive) ||
+      method === "thread/settings/update"
+    ) {
+      const previous = subscribers.get(client);
+      if (!previous || previous.mode === "observing") subscribers.set(client, { mode: "live" });
     }
-    if (!subscribers.has(client)) throw Error("Conversation subscription required");
+    if (subscribers.size) this.subscriptions.set(threadId, subscribers);
+    if (forkedId) this.subscriptions.set(forkedId, new Map([[client, { mode: "live" }]]));
+    if (!subscribers.has(client) && !passive && method !== "thread/read")
+      throw Error("Conversation subscription required");
     const requestKey = optIn ? optInRequest.clientRequestId : p.clientUserMessageId;
     const commandId =
       typeof requestKey === "string" && requestKey
@@ -795,8 +1010,13 @@ export class CodexProviderBridgeSession implements DuplexTransport {
       this.policy.prepareInput && Array.isArray(input)
         ? this.policy.prepareInput(threadId, clientId, input, context)
         : input;
+    const historyRead = ["thread/read", "thread/turns/list", "thread/items/list", "thread/searchOccurrences"].includes(method);
     const execute = async () => {
       let result: unknown;
+      if (!historyRead) await this.gateway.hydrateThread(threadId);
+      context.resourceOwner?.assertCurrent();
+      if (!context.commitExecution && ["turn/start", "turn/steer", "turn/interrupt"].includes(method))
+        this.policy.beforeUserInput?.(method, threadId);
       if (typeof p.permissions === "string" && this.policy.resolvePermissions) {
         try {
           p = { ...p, ...(await this.policy.resolvePermissions(p.permissions, p.cwd)) };
@@ -807,7 +1027,9 @@ export class CodexProviderBridgeSession implements DuplexTransport {
           });
         }
       }
-      if (optIn) {
+      if (method === SHARED_INTERACTIONS_READ || method === SHARED_INTERACTIONS_RESPOND) {
+        result = await this.sharedInteractionRequest(method, threadId, client, identity, p, context);
+      } else if (optIn) {
         if (!threadId || typeof requestKey !== "string" || !requestKey)
           throw Error("Bridge thread and client request identities required");
         const { agentBridge: _, ...declared } = p;
@@ -840,12 +1062,16 @@ export class CodexProviderBridgeSession implements DuplexTransport {
           String(requestKey),
           "start",
           context,
-          () =>
-            command("turn/start", {
+          () => {
+            context.resourceOwner?.assertCurrent();
+            if (context.commitExecution && !context.commitExecution())
+              throw Object.assign(Error("Host execution admission expired"), { kind: "explicit-reject" });
+            return command("turn/start", {
               native,
               executionSource: opencraftExecutionAdmission,
               ...(opencraftSessionMcp !== undefined ? { sessionMcp: opencraftSessionMcp } : {}),
-            }),
+            });
+          },
           (value) => object(object(value).turn).id,
         );
         const nativeThread = this.gateway.nativeThread(threadId);
@@ -880,24 +1106,22 @@ export class CodexProviderBridgeSession implements DuplexTransport {
       else if (method === "thread/resume")
         result = await command(
           "session/resume",
-          typeof p.excludeTurns === "boolean" ? { excludeTurns: p.excludeTurns } : {},
+          { excludeTurns: p.excludeTurns, native: {
+            model: p.model, modelProvider: p.modelProvider, serviceTier: p.serviceTier,
+            approvalPolicy: p.approvalPolicy, approvalsReviewer: p.approvalsReviewer,
+            permissions: p.permissions, sandbox: p.sandbox,
+          } },
         );
-      else if (method === "thread/read")
-        result = await this.gateway.observe(threadId, { view: "thread", includeTurns: p.includeTurns === true });
-      else if (method === "thread/turns/list")
-        result = await this.gateway.observe(threadId, {
-          cursor: p.cursor ?? null,
-          ...(p.limit !== undefined ? { limit: p.limit } : {}),
-          ...(p.sortDirection !== undefined ? { sortDirection: p.sortDirection } : {}),
-          ...(p.itemsView !== undefined ? { itemsView: p.itemsView } : {}),
-        });
-      else if (method === "thread/items/list")
-        result = await this.gateway.observe(threadId, {
-          turnId: this.gateway.nativeTurn(threadId, p.turnId),
-          cursor: p.cursor ?? null,
-          ...(p.limit !== undefined ? { limit: p.limit } : {}),
-        });
-      else if (method === "thread/fork") {
+      else if (method === "thread/read" || method === "thread/turns/list" || method === "thread/items/list")
+        result = await observeCodexBridgeHistory(this.gateway, threadId, method, p, watchedRead ? archived => {
+          if (!watching || subscribers.get(client) !== watching || this.clients.get(client) !== identity || this.closed) return;
+          if (archived) this.archiveSubscriptions(threadId);
+          else if (watching.mode === "observing") watching.mode = "live";
+        } : undefined);
+      else if (method === "thread/searchOccurrences") {
+        result = await this.gateway.observe(threadId, { view: "occurrences",
+          searchTerm: p.searchTerm, limit: p.limit, cursor: p.cursor });
+      } else if (method === "thread/fork") {
         const { threadId: _, ...native } = p;
         result = await this.gateway.command(forkedId!, commandId, "session/fork", { sourceThreadId: threadId, native });
       } else if (method === "thread/name/set") {
@@ -939,10 +1163,9 @@ export class CodexProviderBridgeSession implements DuplexTransport {
                   ).queuedSubmission;
                   return found ? (found as BridgeQueueRow) : null;
                 },
-                (row) => readQueuedInputCompletion(row, async (turnId, cursor) => this.gateway.history(
-                  threadId,
-                  await this.gateway.observe(threadId, { turnId: this.gateway.nativeTurn(threadId, turnId), cursor, limit: 100 }),
-                )),
+                (row) => readQueuedInputCompletion(row, (turnId, cursor) =>
+                  this.gateway.observe(threadId, { turnId, cursor, limit: 100 }),
+                ),
               )
               .catch((error: Error & { code?: number }) => {
                 throw Object.assign(error, { kind: "explicit-reject" });
@@ -957,9 +1180,11 @@ export class CodexProviderBridgeSession implements DuplexTransport {
             params.input,
             typeof params.clientUserMessageId === "string" ? params.clientUserMessageId : undefined,
           );
-        result = guarded
-          ? guarded.result
-          : this.publicTurns(threadId, await this.gateway.queue(threadId, method, params));
+        if (guarded) result = guarded.result;
+        else {
+          const queued = await this.gateway.queue(threadId, method, params);
+          result = method === "thread/queue/list" ? queued : this.publicTurns(threadId, queued);
+        }
       } else if (method === "thread/unsubscribe") {
         this.revokeClient(client, threadId);
         result = {};
@@ -969,27 +1194,26 @@ export class CodexProviderBridgeSession implements DuplexTransport {
           throw Object.assign(Error("Invalid input IDs"), { code: -32602 });
         result = await this.gateway.status(threadId, inputIds);
       } else throw Object.assign(Error("Method unavailable for this bridge thread"), { code: -32601 });
-      const visible = this.gateway.history(forkedId ?? threadId, result);
+      const visible = historyRead ? result : this.gateway.history(forkedId ?? threadId, result);
       // An accepted operation still belongs to the Thread after its sending client disconnects.
+      this.catalog.observeResult(method, { ...p, threadId }, visible);
       this.policy.observeIdentityResult?.(method, { ...p, threadId }, visible, context.sender);
-      const pendingInteractions = ["thread/resume", "thread/read"].includes(method)
-        ? await this.gateway.pendingInteractions(threadId)
-        : [];
       if (this.clients.get(client) === identity) {
         this.emit(
           {
             id: frame.id,
             result:
-              this.policy.projectHistory && ["thread/read", "thread/turns/list", "thread/items/list"].includes(method)
+              this.policy.projectHistory && ["thread/read", "thread/resume", "thread/turns/list", "thread/items/list"].includes(method)
                 ? this.policy.projectHistory(method, { ...p, threadId }, visible)
                 : visible,
           },
           client,
         );
-        for (const pending of pendingInteractions) {
-          if (this.clients.get(client) !== identity) break;
-          this.offerInteraction(threadId, object(pending), client);
-        }
+        // The history reply owns its own result. Approval recovery and
+        // subscription retirement are independent of that read.
+        const ownsWatch = watchedRead && subscribers.get(client) === watching;
+        if (this.isLiveSubscriber(threadId, client) && (method === "thread/resume" || ownsWatch))
+          void this.restorePendingInteractions(threadId, client, identity, context).catch(() => {});
       }
     };
     if (admission) this.admissionsInFlight++;
@@ -1000,10 +1224,11 @@ export class CodexProviderBridgeSession implements DuplexTransport {
     try {
       await task;
     } catch (cause) {
-      const error = cause as Error & { code?: number; kind?: string; commandId?: string };
-      const oversizedHistory = error.kind === "frame-too-large"
-        && ["thread/read", "thread/turns/list", "thread/items/list"].includes(method);
-      const rejected =
+      const error = cause as Error & { code?: number; kind?: string; commandId?: string; data?: unknown };
+      const size = object(error.data);
+      const oversizedHistory = error.kind === "frame-too-large" && historyRead;
+      if (watchedRead && error.code === -32071 && subscribers.get(client) === watching) this.archiveSubscriptions(threadId);
+      const rejected = cause instanceof InteractionResponseNotDispatched ||
         ["explicit-reject", "stale-target", "invalid", "unsupported"].includes(error.kind ?? "") ||
         [-32002, -32601, -32602].includes(error.code ?? 0);
       if (this.clients.get(client) === identity)
@@ -1011,10 +1236,14 @@ export class CodexProviderBridgeSession implements DuplexTransport {
           {
             id: frame.id,
             error: {
-              code: oversizedHistory ? -32072 : error.code ?? -32005,
+              code: cause instanceof InteractionFault ? cause.rpcCode : oversizedHistory ? -32072 : error.code ?? -32005,
               message: error.message,
               data: {
                 ...(oversizedHistory ? { code: "HISTORY_RESPONSE_TOO_LARGE" } : {}),
+                ...(historyRead && size.code === "THREAD_ARCHIVED" ? { code: size.code } : {}),
+                ...(size.code === "BRIDGE_REQUEST_TOO_LARGE" && typeof size.maxBytes === "number"
+                  ? { code: size.code, maxBytes: size.maxBytes } : {}),
+                ...(cause instanceof InteractionFault ? cause.domainData : {}),
                 submissionOutcome: oversizedHistory || rejected ? "rejected" : "unknown",
                 retryable: false,
                 bridgeErrorKind: error.kind ?? (rejected ? "explicit-reject" : "unknown-outcome"),
@@ -1025,6 +1254,7 @@ export class CodexProviderBridgeSession implements DuplexTransport {
           client,
         );
     } finally {
+      if (watching?.mode === "observing" && subscribers.get(client) === watching) this.revokeClient(client, threadId);
       this.creations.delete(task);
     }
   }

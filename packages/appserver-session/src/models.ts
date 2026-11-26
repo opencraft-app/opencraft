@@ -88,9 +88,15 @@ export interface ThreadView {
   readonly streamRole: ThreadStreamRole | null;
   readonly thread: AppServerThread | null;
   readonly turns: readonly AppServerTurn[];
+  /** The current search Turn whose place in ordinary history is still unknown. */
+  readonly unplacedSearchTurnId?: string;
+  /** Turns introduced by navigation and awaiting admission by ordinary history. */
+  readonly navigationOnlyTurnIds?: readonly string[];
   readonly historySource: ThreadHistorySource | null;
   readonly historyMode: string;
   readonly historyCheckpoint?: import("@opencraft/appserver-protocol").ThreadHistoryCheckpoint;
+  /** View revision at which the current history baseline replaced its predecessor. */
+  readonly historyBaselineRevision?: number;
   readonly tailHydrationComplete: boolean;
   readonly turnsPagination: ThreadTurnsPagination;
   readonly itemsPaginationByTurnId: Readonly<Record<string, ThreadItemsPagination>>;

@@ -20,6 +20,8 @@ export interface TransportSubmissionContext {
   /** Trusted Hub orchestration only; never parsed from a client frame. */
   readonly orchestrationOperationId?: string;
   readonly orchestrationCanAdmit?: () => boolean;
+  /** Commit an already prepared Host-owned execution at the dispatch boundary. */
+  readonly commitExecution?: () => boolean;
 }
 
 export type TransportState =

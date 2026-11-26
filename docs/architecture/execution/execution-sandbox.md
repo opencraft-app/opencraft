@@ -292,7 +292,9 @@ fails with `SANDBOX_UNAVAILABLE`. A caller that supplies a receipt can use only 
 already bound environment. Its endpoint calls cannot start a replacement or retry
 there. The placement records `restoredFrom` only after a provider starts the receipt
 from the recorded checkpoint. That evidence survives reattachment of the same
-receipt. Execution leases and recovery consume the agent's reports through the
+receipt. `restoreExisting(address, snapshotId)` binds the selected environment
+from that checkpoint and fails if it cannot recover it. The owner can then scope
+reads to the returned receipt. Execution leases and recovery consume the agent's reports through the
 provider's channel. The endpoint conformance suite exercises the fence for each harness.
 
 | Provider | Process channel | `receipt.instanceId` | `attach` |

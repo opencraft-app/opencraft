@@ -562,6 +562,7 @@ export function registerBuiltinThreadProjectors(ctx: Context): () => void {
             plan: params?.plan ?? [],
           });
         }
+        let base = view;
         if (notification.method === "turn/started") {
           // Lifecycle observation belongs to this session, never a mounted
           // renderer. Prefer the server clock when it is available.
@@ -569,12 +570,19 @@ export function registerBuiltinThreadProjectors(ctx: Context): () => void {
           turn.turnStartedAtMs = previous?.turnStartedAtMs
             ?? turn.turnStartedAtMs
             ?? (typeof turn.startedAt === "number" ? turn.startedAt * 1_000 : Date.now());
+          if (previous && view.navigationOnlyTurnIds?.includes(turn.id)) {
+            const ids = view.navigationOnlyTurnIds.filter(id => id !== turn.id);
+            const unplaced = view.unplacedSearchTurnId === turn.id;
+            base = { ...view, navigationOnlyTurnIds: ids.length ? ids : undefined,
+              ...(unplaced ? { unplacedSearchTurnId: undefined,
+                turns: [...view.turns.filter(candidate => candidate.id !== turn.id), previous] } : {}) };
+          }
         }
         const ownsFullItemMembership = notification.method === "turn/completed"
           && turn.itemsView === "full";
         return {
-          ...view,
-          turns: mergeTurns(view.turns, [turn], {
+          ...base,
+          turns: mergeTurns(base.turns, [turn], {
             itemsMode: ownsFullItemMembership ? "replace" : "merge",
           }),
         };

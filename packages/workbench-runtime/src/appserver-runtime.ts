@@ -66,6 +66,7 @@ import type {
 import {
   OPENCRAFT_ATTACHMENT_STAGING_EXTENSION,
   OPENCRAFT_THREAD_QUEUE_EXTENSION,
+  THREAD_QUEUE_RECEIPT_TURN_LIMIT,
   OPENCRAFT_THREAD_GOAL_EXTENSION,
   OPENCRAFT_THREAD_LIFECYCLE_EXTENSION,
   OPENCRAFT_THREAD_PINS_EXTENSION,
@@ -109,7 +110,6 @@ import {
   createThreadViewReplicaSource,
   createCordisThreadSessionRuntime,
   createThreadViewReplicaProjectionBarrier,
-  reconcileHydratedTurn,
   projectThreadViewForReplica,
   type AppServerHostKind,
   type CordisThreadSessionRuntime,
@@ -501,6 +501,7 @@ interface ConversationBinding {
   queueRefreshRequested: boolean;
   refreshQueue: () => Promise<void>;
   retainCount: number;
+  historyViewCount: number;
   visibleCount: number;
   touchedAt: number;
   hydrationOperation: Promise<void> | null;
@@ -1228,7 +1229,7 @@ export function createAppServerWorkbenchRuntime(
         commands: baselineGatedCommands,
         history: {
           loadOlder: async () => {
-            try { await currentSession.resume.loadOlder(threadId); }
+            try { await currentSession.resume.loadOlder(threadId, undefined, archivedHistoryDemand(bindings.get(threadId))); }
             catch (error) {
               // Local history retirement is normal navigation/recovery, not a
               // cached history failure for the next View.
@@ -1243,22 +1244,20 @@ export function createAppServerWorkbenchRuntime(
         createV3ConversationNavigationSource({
           threadId,
           port: {
-            getView: () => currentSession.views.get(threadId),
+            getView: () => currentSession.resume.navigationView(threadId),
             subscribeView: (listener) =>
               currentSession.views.subscribeThread(threadId, listener),
-            listTurns: (params) =>
-              currentClient.request("thread/turns/list", params, {
-                priority: "background", historySource: "navigation",
+            listTurns: (params, signal) =>
+              currentClient.request("thread/turns/list", { ...params, ...archivedHistoryDemand(bindings.get(threadId)) }, {
+                priority: "background", historySource: "navigation", signal,
+              }),
+            listItems: (params, signal) =>
+              currentClient.request("thread/items/list", { ...params, ...archivedHistoryDemand(bindings.get(threadId)) }, {
+                priority: "background", historySource: "navigation", signal,
               }),
             projectionBarrier,
-            commitHydratedTurn: (turn, chronologicalTurnIds, baselineTurn) => {
-              const committedView = currentSession.views.update(
-                threadId,
-                (current) => ({
-                  ...current,
-                  turns: reconcileHydratedTurn(current.turns, turn, chronologicalTurnIds, { turn: baselineTurn }),
-                }),
-              );
+            commitHydratedTurn: (turn, chronologicalTurnIds, baselineTurn, intent) => {
+              const committedView = currentSession.views.hydrateNavigationTurn(threadId, turn, chronologicalTurnIds, baselineTurn, intent);
               return {
                 hostId: committedView.hostId,
                 threadId: committedView.threadId,
@@ -1282,6 +1281,7 @@ export function createAppServerWorkbenchRuntime(
         queueRefreshRequested: false,
         refreshQueue: () => Promise.resolve(),
         retainCount: 0,
+        historyViewCount: 0,
         visibleCount: 0,
         touchedAt: ++logicalClock,
         hydrationOperation: null,
@@ -1348,18 +1348,37 @@ export function createAppServerWorkbenchRuntime(
           interactionRecovery: value.interactionRecovery ?? null,
         });
       });
+      const canReadQueue = () => canRequest("thread/queue/list") &&
+        executionEngineExtension(currentClient.initializeResult?.capabilities?.extensions, threadId, "opencraft/thread-follow-up")?.queue !== false;
       let previousActivity = bindingActivity(binding);
-      let receiptScope = "";
+      let receiptFrames: ConversationRuntimeSnapshot["timeline"]["frames"] = [];
+      let receiptTurnIds: readonly string[] = [];
+      const turnsForReceipts = (frames: typeof receiptFrames) => {
+        if (frames === receiptFrames) return receiptTurnIds;
+        const sameSequence = frames.length === receiptFrames.length &&
+          receiptFrames.every((frame, index) => frame.turnId === frames[index]?.turnId);
+        receiptFrames = frames;
+        if (sameSequence) return receiptTurnIds;
+        const ids = [...new Set(frames.map(frame => String(frame.turnId)))];
+        if (ids.length !== receiptTurnIds.length || ids.some((id, index) => id !== receiptTurnIds[index]))
+          receiptTurnIds = ids;
+        return receiptTurnIds;
+      };
+      let requestedReceiptScope: { turnIds: readonly string[]; loading: boolean } | undefined;
       binding.removeRuntimeListener = conversation.subscribe(() => {
         if (binding.disposed) return;
         const previousAcceptedCount = binding.acceptedTurnIds.size;
         const previousPhase = binding.phase;
         const currentSnapshot = binding.runtime.getSnapshot();
-        const receiptFrames=currentSnapshot.timeline.frames;
-        const nextScope=`${receiptFrames.length}:${receiptFrames[0]?.turnId??''}:${receiptFrames.at(-1)?.turnId??''}:${currentSnapshot.history.loading}`;
-        if (currentSnapshot.authoritative && nextScope!==receiptScope) {
-          receiptScope=nextScope;
-          queueMicrotask(()=>{if(!binding.disposed) void binding.refreshQueue?.().catch(()=>undefined);});
+        if (currentSnapshot.authoritative && canReadQueue()) {
+          const turnIds = turnsForReceipts(currentSnapshot.timeline.frames);
+          const loading = currentSnapshot.history.loading;
+          if (requestedReceiptScope?.turnIds !== turnIds || requestedReceiptScope.loading !== loading) {
+            requestedReceiptScope = { turnIds, loading };
+            queueMicrotask(() => {
+              if (!binding.disposed) void binding.refreshQueue().catch(() => undefined);
+            });
+          }
         }
         for (const turnId of binding.acceptedTurnIds) {
           const frame = currentSnapshot.timeline.frames.find(
@@ -1392,7 +1411,7 @@ export function createAppServerWorkbenchRuntime(
         }
       });
       const refreshQueue = (): Promise<void> => {
-        if (!canRequest("thread/queue/list") || executionEngineExtension(currentClient.initializeResult?.capabilities?.extensions, threadId, "opencraft/thread-follow-up")?.queue === false) return Promise.resolve();
+        if (!canReadQueue()) return Promise.resolve();
         if (binding.queueRefreshOperation !== null) {
           binding.queueRefreshRequested = true;
           return binding.queueRefreshOperation;
@@ -1401,31 +1420,39 @@ export function createAppServerWorkbenchRuntime(
           do {
             binding.queueRefreshRequested = false;
             const queueGeneration = currentClient.connectionGeneration;
+            const stillCurrent = () => !disposed && !binding.disposed && client === currentClient
+              && queueGeneration === currentClient.connectionGeneration && !binding.queueRefreshRequested;
             const submissions: ProtocolQueuedSubmission[] = [];
-            const steering: ProtocolSteeringSubmission[] = [];
+            const steering = new Map<string, ProtocolSteeringSubmission>();
+            const receiptTurnIds = turnsForReceipts(conversation!.getSnapshot().timeline.frames);
+            const readPage = async (cursor: string | null, limit: number, scope: readonly string[]) => {
+              const page: ThreadQueueListResponse = await currentClient.request(
+                "thread/queue/list", { threadId, cursor, limit, receiptTurnIds: scope }, { priority: "background" },
+              );
+              for (const row of page.steering ?? []) steering.set(row.id, row);
+              return page;
+            };
+            const queueCursors = new Set<string>();
             let cursor: string | null = null;
             do {
-              const page: ThreadQueueListResponse = await currentClient.request(
-                "thread/queue/list",
-                {
-                  threadId,
-                  cursor,
-                  limit: 100,
-                  receiptTurnIds: [...new Set(conversation!.getSnapshot().timeline.frames.map(frame => String(frame.turnId)))],
-                },
-                { priority: "background" },
-              );
+              const page = await readPage(cursor, 100, cursor === null ? receiptTurnIds.slice(0, THREAD_QUEUE_RECEIPT_TURN_LIMIT) : []);
+              const next = page.nextCursor;
+              if (next !== null) {
+                if (typeof next !== "string" || !next || queueCursors.has(next))
+                  throw new Error("Invalid or repeated thread/queue/list cursor");
+                queueCursors.add(next);
+              }
               submissions.push(...page.data);
-              steering.push(...(page.steering ?? []));
-              cursor = page.nextCursor;
-            } while (cursor !== null);
-            // A change notification received during this read invalidates its
-            // snapshot. Publish only the next complete read, keeping the current
-            // queue visible while it refreshes (including optimistic additions).
-            if (!disposed && !binding.disposed && client === currentClient
-              && queueGeneration === currentClient.connectionGeneration && !binding.queueRefreshRequested) {
-              conversation!.replaceQueuedSubmissions(submissions, steering);
+              cursor = next;
+            } while (cursor !== null && stillCurrent());
+            // Additional receipt scopes use only the first page. The pending
+            // queue has already been paginated, and active receipts repeat.
+            for (let offset = THREAD_QUEUE_RECEIPT_TURN_LIMIT; offset < receiptTurnIds.length && stillCurrent();
+              offset += THREAD_QUEUE_RECEIPT_TURN_LIMIT) {
+              await readPage(null, 1, receiptTurnIds.slice(offset, offset + THREAD_QUEUE_RECEIPT_TURN_LIMIT));
             }
+            // An overlapping notification invalidates the entire snapshot.
+            if (stillCurrent()) conversation!.replaceQueuedSubmissions(submissions, [...steering.values()]);
           } while (
             binding.queueRefreshRequested &&
             !disposed &&
@@ -1480,6 +1507,13 @@ export function createAppServerWorkbenchRuntime(
       replica.dispose();
       throw cause;
     }
+  };
+
+  const archivedHistoryDemand = (binding: ConversationBinding | undefined): { openArchivedHistory?: true } => {
+    if (!binding?.historyViewCount) return {};
+    const extensions = client?.initializeResult?.capabilities?.extensions;
+    return parseThreadLifecycleCapability(executionEngineExtension(extensions, binding.threadId, OPENCRAFT_THREAD_LIFECYCLE_EXTENSION))
+      ?.openArchivedHistory === true ? { openArchivedHistory: true } : {};
   };
 
   const createBinding = (threadId: string): Promise<ConversationBinding> => {
@@ -1551,24 +1585,6 @@ export function createAppServerWorkbenchRuntime(
       }, true).catch(() => undefined);
     }
     publish();
-  };
-
-  const discoverArchivedThread = async (threadId: string): Promise<boolean> => {
-    if (unavailableThreads.has(threadId)) return false;
-    const current = requireClient(), generation = current.connectionGeneration;
-    const revision = availabilityRevisions.get(threadId) ?? 0;
-    let cursor: string | null = null;
-    const cursors = new Set<string>();
-    do {
-      const page: { data: ProtocolThread[]; nextCursor: string | null } = await current.request("thread/list", { archived: true, limit: 100, cursor });
-      if (disposed || client !== current || current.connectionGeneration !== generation
-        || (availabilityRevisions.get(threadId) ?? 0) !== revision) return false;
-      if (page.data.some(thread => thread.id === threadId)) return true;
-      cursor = page.nextCursor;
-      if (cursor !== null && cursors.has(cursor)) throw new Error("Archive catalog did not advance");
-      if (cursor !== null) cursors.add(cursor);
-    } while (cursor !== null);
-    return false;
   };
 
   const captureHistoryCheckpoint = (binding: ConversationBinding) => {
@@ -1672,7 +1688,7 @@ export function createAppServerWorkbenchRuntime(
         try {
           if (unavailableThreads.get(binding.threadId)?.reason === "archived") {
             // Archived history is passive: never activate a legacy provider or sync approvals.
-            await currentSession.resume.read(binding.threadId, { signal: controller.signal });
+            await currentSession.resume.read(binding.threadId, { signal: controller.signal, ...archivedHistoryDemand(binding) });
           } else if (ephemeralThreadIds.has(binding.threadId)) {
             const view = currentSession.views.get(binding.threadId);
             if (view?.resumeState !== "resumed" || view.connectionGeneration !== requireClient().connectionGeneration) {
@@ -1687,12 +1703,10 @@ export function createAppServerWorkbenchRuntime(
           } else {
             const { threadId } = binding;
             const unresolvedTurnIds = [...binding.acceptedTurnIds];
-            const view = await currentSession.resume.read(threadId, { signal: controller.signal, historyCheckpoint, unresolvedTurnIds });
+            const view = await currentSession.resume.read(threadId, {
+              signal: controller.signal, historyCheckpoint, unresolvedTurnIds, ...archivedHistoryDemand(binding),
+            });
             archived = view.thread?.archived === true;
-            if (view.thread?.archived === undefined && current() &&
-              parseThreadLifecycleCapability(executionEngineExtension(extensions, threadId, OPENCRAFT_THREAD_LIFECYCLE_EXTENSION))?.archiveStateInRead) {
-              archived = await discoverArchivedThread(threadId);
-            }
             const canResume = parseAppServerMethodAccess(executionEngineExtension(extensions, threadId, OPENCRAFT_METHOD_ACCESS_EXTENSION))
               ?.methods.includes("thread/resume");
             const historyCapability = executionEngineExtension(extensions, threadId, OPENCRAFT_RESUME_HISTORY_EXTENSION);
@@ -2215,14 +2229,15 @@ export function createAppServerWorkbenchRuntime(
     }
     return owner;
   };
-  const leaseBinding = (binding: ConversationBinding, recover: boolean): AppServerThreadRuntimeLease => {
+  const leaseBinding = (binding: ConversationBinding, opensHistory: boolean): AppServerThreadRuntimeLease => {
     const threadId = binding.threadId;
     binding.retainCount += 1;
+    if (opensHistory) binding.historyViewCount += 1;
     touchBinding(binding);
     binding.phase =
       binding.hydrationOperation === null ? "resident" : binding.phase;
     publish();
-    if (recover && !binding.runtime.getSnapshot().authoritative) {
+    if (opensHistory && !binding.runtime.getSnapshot().authoritative) {
       // A retained Timeline remains readable while recovery runs. Only Resume
       // plus canonical history can restore authority; local borrowing does not.
       if (client?.status.state === "open") void recovery.recover({ key: binding, demand: () => recoveryDemand(binding),
@@ -2378,6 +2393,7 @@ export function createAppServerWorkbenchRuntime(
         if (released) return;
         released = true;
         if (visible) binding.visibleCount = Math.max(0, binding.visibleCount - 1);
+        if (opensHistory) binding.historyViewCount -= 1;
         binding.retainCount = Math.max(0, binding.retainCount - 1);
         retireUnobservedHistory(binding);
         if (recoveryDemand(binding) === "cache") { recovery.remove(binding); binding.cancelHydration?.(); }

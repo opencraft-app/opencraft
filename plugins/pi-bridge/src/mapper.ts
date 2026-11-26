@@ -67,7 +67,10 @@ function toolOutput(item: Value): string | null {
   return null;
 }
 
-function itemShape(item: Value): Exclude<ItemShape, { kind: "fileChange" }> | null {
+type TextShape = Extract<ItemShape, { kind: "agentMessage" | "reasoning" | "plan" }>;
+type PiItemShape = TextShape | Extract<ItemShape, { kind: "userMessage" | "tool" | "command" }>;
+
+function itemShape(item: Value): PiItemShape | null {
   if (item.type === "userMessage") {
     return {
       kind: "userMessage",
@@ -98,8 +101,6 @@ function itemShape(item: Value): Exclude<ItemShape, { kind: "fileChange" }> | nu
   }
   return null;
 }
-
-type TextShape = Extract<ItemShape, { kind: "agentMessage" | "reasoning" | "plan" }>;
 
 function isTextShape(shape: ItemShape): shape is TextShape {
   return shape.kind === "agentMessage" || shape.kind === "reasoning" || shape.kind === "plan";
