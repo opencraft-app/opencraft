@@ -14,6 +14,7 @@ import type {
   TurnStatus,
 } from "@opencraft/agent-bridge-protocol";
 import type {
+  AgentMessagePresentation,
   AssembleContext,
   AssembleDiagnostic,
   AssembleResult,
@@ -41,13 +42,6 @@ interface OpenTurn {
   readonly startedAtMs: number;
 }
 
-interface StreamState {
-  readonly itemId: string;
-  readonly channel: TextChannel;
-  readonly text: string;
-  readonly turnId: string | null;
-}
-
 interface MutableState {
   schemaVersion: number;
   sessionEpoch: number;
@@ -60,7 +54,7 @@ interface MutableState {
   lastTurnId: string | null;
   settledNativeTurns: Record<string, string>;
   openItems: Record<string, CanonicalItem>;
-  streams: Record<string, StreamState>;
+  streams: Record<string, AssemblerState["streams"][string]>;
   settledKeys: Record<string, true>;
   inputs: Record<string, CanonicalInputState>;
   pendingAccepted: string[];
@@ -90,10 +84,10 @@ function cloneState(source: AssemblerState): MutableState {
   };
 }
 
-function textShape(channel: TextChannel, text: string): ItemShape {
+function textShape(channel: TextChannel, text: string, agentMessage?: AgentMessagePresentation): ItemShape {
   if (channel === "reasoning") return { kind: "reasoning", text };
   if (channel === "plan") return { kind: "plan", text };
-  return { kind: "agentMessage", text };
+  return { kind: "agentMessage", text, ...agentMessage };
 }
 
 function channelForShape(shape: ItemShape): TextChannel | null {
@@ -293,6 +287,9 @@ export function assemble(
             channel,
             text: textOfShape(shape),
             turnId: item.turnId,
+            ...(shape.kind === "agentMessage" && (shape.phase || shape.delivery) ? {
+              agentMessage: { phase: shape.phase, delivery: shape.delivery },
+            } : {}),
           };
         } else {
           state.openItems[key] = item;
@@ -364,7 +361,7 @@ export function assemble(
           nativeKey: key,
           threadId,
           turnId,
-          shape: textShape(channel, finalText),
+          shape: textShape(channel, finalText, stream?.agentMessage),
         };
         emit({ kind: "item.completed", threadId, turnId, item });
         state.settledKeys[key] = true;
@@ -385,7 +382,10 @@ export function assemble(
           delete state.openItems[key];
           delete state.streams[key];
         } else if (stream !== undefined) {
-          item = { itemId: stream.itemId, nativeKey: key, threadId, turnId: stream.turnId, shape: delta.shape };
+          const shape = delta.shape.kind === "agentMessage" && stream.agentMessage
+            ? { ...stream.agentMessage, ...delta.shape }
+            : delta.shape;
+          item = { itemId: stream.itemId, nativeKey: key, threadId, turnId: stream.turnId, shape };
           delete state.streams[key];
         } else {
           // A close with no open turn is an orphan: diagnose only, never mint

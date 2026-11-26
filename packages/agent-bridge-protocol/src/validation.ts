@@ -61,6 +61,9 @@ function isItemShape(value: unknown): boolean {
         && (value.content === undefined || Array.isArray(value.content) && value.content.every(part => isRecord(part) && isString(part.type))
           && JSON.stringify(value.content).length <= 65_536);
     case "agentMessage":
+      return isString(value.text) &&
+        (value.phase === undefined || isOneOf(value.phase, ["commentary", "final_answer"])) &&
+        (value.delivery === undefined || value.delivery === "async");
     case "plan":
       return isString(value.text);
     case "reasoning":

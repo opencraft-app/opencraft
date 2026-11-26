@@ -139,10 +139,13 @@ interface OpenTurn {
   readonly startedAtMs: number;
 }
 
+export type AgentMessagePresentation = Pick<Extract<ItemShape, { kind: "agentMessage" }>, "phase" | "delivery">;
+
 interface StreamState {
   readonly itemId: string;
   readonly channel: "agentMessage" | "reasoning" | "plan";
   readonly text: string;
+  readonly agentMessage?: AgentMessagePresentation;
   readonly turnId: string | null;
 }
 

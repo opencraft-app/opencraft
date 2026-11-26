@@ -53,7 +53,12 @@ export type ItemShape =
        */
       readonly content?: readonly Readonly<Record<string, unknown>>[];
     }
-  | { readonly kind: "agentMessage"; readonly text: string }
+  | {
+      readonly kind: "agentMessage";
+      readonly text: string;
+      readonly phase?: "commentary" | "final_answer";
+      readonly delivery?: "async";
+    }
   | { readonly kind: "reasoning"; readonly text: string; readonly summary?: readonly string[]; readonly content?: readonly string[] }
   | { readonly kind: "plan"; readonly text: string }
   | {

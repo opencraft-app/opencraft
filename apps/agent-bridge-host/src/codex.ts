@@ -371,9 +371,15 @@ export class CodexBridge {
         nativeTurnId = id(p.turnId);
       if (method === "item/completed") session.streams?.delete(nativeKey);
       let shape: ItemShape;
-      if (item.type === "agentMessage" && typeof item.text === "string")
-        shape = { kind: "agentMessage", text: item.text };
-      else if (item.type === "plan" && typeof item.text === "string") shape = { kind: "plan", text: item.text };
+      if (item.type === "agentMessage" && typeof item.text === "string") {
+        shape = {
+          kind: "agentMessage",
+          text: item.text,
+          ...(item.phase === "commentary" || item.phase === "final_answer" ? { phase: item.phase } : {}),
+          ...(item.delivery === "async" || (Array.isArray(item.questions) && item.questions.length > 0)
+            ? { delivery: "async" } : {}),
+        };
+      } else if (item.type === "plan" && typeof item.text === "string") shape = { kind: "plan", text: item.text };
       else if (item.type === "reasoning" && Array.isArray(item.content)) {
         const content = item.content.filter((v): v is string => typeof v === "string");
         const summary = Array.isArray(item.summary) ? item.summary.filter((v): v is string => typeof v === "string") : [];

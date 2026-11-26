@@ -230,3 +230,4 @@ text retains its independent working cadence.
 ## 会话时间线所有权
 
 - Conversation 中“执行轮次”与“展示分段”不是同一所有权：一个 Turn 可以包含异步提问、多次回答与 Steer，必须按原顺序投影连续片段，不能将用户消息、回答和工作记录分别全局收集后重排。折叠只改变片段可见性；异步提问不因原生 final phase 获得最终回答资格。顺序、片段身份和当前响应判定归共享 `chat-core`，Web/Native 不各自补排序。执行状态与总用时仍只有一个 Turn owner，Thinking 最多一个当前 owner；测试必须覆盖同轮次多次跟进、折叠、补历史、刷新和流式 DOM 身份。
+- Codex Bridge 在实时消息、检查点和流结束事件中保留原生的消息阶段与异步投递标记。进度消息进入工作区段，最终回答和异步提问按自己的语义呈现。

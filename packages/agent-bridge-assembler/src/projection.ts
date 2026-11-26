@@ -86,9 +86,9 @@ function toThreadItem(item: CanonicalItem): ThreadItem {
         type: "agentMessage",
         id: item.itemId,
         text: shape.text,
-        phase: null,
+        phase: shape.phase ?? null,
         memoryCitation: null,
-        delivery: null,
+        delivery: shape.delivery ?? null,
         questions: null,
       };
     case "reasoning":
