@@ -60,6 +60,21 @@ test('catalog reopening preserves content and reference protection',async t=>{
   finally {catalog.close();}
 });
 
+test('artifact checks can be cancelled before open and while acquiring the file', async t => {
+  const { catalog } = await setup(t);
+  const bytes = Buffer.alloc(150 * 1024, 42);
+  const artifact = await catalog.ingest(
+    { scope: 'a', key: 'image' }, metadata, Readable.from([bytes]), { ...options, maxBytes: bytes.length },
+  );
+  const beforeOpen = AbortSignal.abort();
+  await assert.rejects(inspectArtifactFile(artifact.path, beforeOpen), { name: 'AbortError' });
+  const controller = new AbortController();
+  const pending = inspectArtifactFile(artifact.path, controller.signal);
+  controller.abort();
+  await assert.rejects(pending, { name: 'AbortError' });
+  assert.deepEqual(await inspectArtifactFile(artifact.path), { size: artifact.size, sha256: artifact.sha256 });
+});
+
 test('AIGC output ingestion shares the catalog, preserves slots and can become an input attachment',async t=>{
   const {catalog,root}=await setup(t);
   const {captureGeneratedImage}=await import('../../apps/local-agent-host/src/artifacts/generated-output.js');
