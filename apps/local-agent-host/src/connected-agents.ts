@@ -18,7 +18,7 @@ import {
   type OnboardingDeps,
 } from "./agent-onboarding.js";
 
-type EngineId = "codex" | "cursor" | "claude-code" | "codebuddy" | "pi";
+type EngineId = "codex" | "cursor" | "claude-code" | "gemini" | "codebuddy" | "pi";
 type ConnectedEngine = AcpEngine | PiEngine;
 type Params = Record<string, unknown>;
 interface ConnectedAgentModel {
@@ -38,6 +38,7 @@ export function connectedAgentModelId(agentId: OnboardingAgentId): string {
 
 export function connectedAgentEngineId(modelOrThread: string): EngineId | null {
   if (modelOrThread.startsWith("claude-code:") || modelOrThread.startsWith("claude_")) return "claude-code";
+  if (modelOrThread.startsWith("gemini:") || modelOrThread.startsWith("gemini_")) return "gemini";
   if (modelOrThread.startsWith("cursor:") || modelOrThread.startsWith("cursor_")) return "cursor";
   if (modelOrThread.startsWith("codebuddy:") || modelOrThread.startsWith("codebuddy_")) return "codebuddy";
   if (modelOrThread.startsWith("pi:") || modelOrThread.startsWith("pi_")) return "pi";
@@ -49,6 +50,7 @@ const LABELS: Record<EngineId, string> = {
   codex: "Codex",
   cursor: "Cursor",
   "claude-code": "Claude Code",
+  gemini: "Gemini",
   codebuddy: "CodeBuddy",
   pi: "Pi",
 };
@@ -156,7 +158,7 @@ export class ConnectedAgentHost {
   private catalogRefresh: Promise<void> | null = null;
   private async readSavedModels(): Promise<void> {
     await (this.savedModels ??= (async () => {
-      const ids: EngineId[] = ["codex", "cursor", "claude-code", "codebuddy"];
+      const ids: EngineId[] = ["codex", "cursor", "claude-code", "gemini", "codebuddy"];
       if (this.options.nativePi !== false && this.deps.env && await resolveExecutable(["pi"], this.deps)) ids.push("pi");
       await Promise.allSettled(ids.map(async id => {
         const engine = await this.engine(id);
@@ -444,6 +446,11 @@ export class ConnectedAgentHost {
       const command = await resolveExecutable(["cursor-agent"], this.deps);
       if (!command) throw new Error("Cursor is not installed");
       return { engineId, command, args: ["acp"] };
+    }
+    if (engineId === "gemini") {
+      const command = await resolveExecutable(["gemini"], this.deps);
+      if (!command) throw new Error("Gemini CLI is not installed");
+      return { engineId, command, args: ["--experimental-acp"] };
     }
     if (engineId === "codebuddy") {
       const command = await resolveExecutable(["codebuddy", "cbc"], this.deps);

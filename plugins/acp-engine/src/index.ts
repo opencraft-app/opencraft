@@ -20,7 +20,7 @@ import { prepareAcpPromptContent, type PreparedAcpPrompt, type StagedAttachmentL
 export interface AcpEngineOptions {
   executionCli?: ScopedExecutionCliPort;
   executionEnvironment?: ExecutionEnvironmentRuntime;
-  id?: "acp" | "dsh-acp" | "claude-code" | "cursor" | "codebuddy" | "codex";
+  id?: "acp" | "dsh-acp" | "claude-code" | "cursor" | "gemini" | "codebuddy" | "codex";
   timeoutMs?: number;
   label?: string;
   command: string;
@@ -84,7 +84,7 @@ const safeId = (id: unknown): id is string => typeof id === "string" && /^[a-zA-
  * downloaded, and no engine is started inside the execution gateway.
  */
 export class AcpEngine implements ExecutionEngineProvider {
-  readonly id: "acp" | "dsh-acp" | "claude-code" | "cursor" | "codebuddy" | "codex";
+  readonly id: "acp" | "dsh-acp" | "claude-code" | "cursor" | "gemini" | "codebuddy" | "codex";
   readonly label: string;
   readonly threadPrefix: string;
   readonly modelPrefix: string;
@@ -134,7 +134,7 @@ export class AcpEngine implements ExecutionEngineProvider {
   constructor(private readonly options: AcpEngineOptions) {
     if (!isAbsolute(options.cwd) || !isAbsolute(options.dataDirectory) || !options.command.trim()) throw new Error("ACP requires explicit absolute workspace and data paths and an installed command");
     this.id = options.id ?? "acp";
-    this.label = options.label ?? (this.id === "claude-code" ? "Claude Code" : this.id === "dsh-acp" ? "DSH" : this.id === "cursor" ? "Cursor" : this.id === "codebuddy" ? "CodeBuddy" : this.id === "codex" ? "Codex" : "Agent");
+    this.label = options.label ?? (this.id === "claude-code" ? "Claude Code" : this.id === "gemini" ? "Gemini" : this.id === "dsh-acp" ? "DSH" : this.id === "cursor" ? "Cursor" : this.id === "codebuddy" ? "CodeBuddy" : this.id === "codex" ? "Codex" : "Agent");
     this.threadPrefix = this.id === "claude-code" ? "claude_" : this.id.replaceAll("-", "_") + "_";
     this.modelPrefix = this.id + ":";
     this.baseExtensions = Object.freeze({

@@ -108,6 +108,35 @@ test("a signed-in agent becomes a selectable model and owns its later threads", 
   assert.equal(connectedAgentEngineId("dsh-model:deepseek:v4"), null);
   assert.equal(connectedAgentCatalogEntry("codex").displayName, "Codex");
   assert.equal(connectedAgentCatalogEntry("codex").groupLabel, "Codex");
+  assert.equal(connectedAgentModelId("gemini"), "gemini:current");
+  assert.equal(connectedAgentEngineId("gemini:gemini-2.5-pro"), "gemini");
+  assert.equal(connectedAgentEngineId("gemini_native_session"), "gemini");
+});
+
+test("Gemini CLI (@google/gemini-cli) is configured for onboarding discovery and install", async () => {
+  const files = new Set(["/opt/homebrew/bin/gemini"]);
+  const deps = { env: { PATH: "/usr/bin", GEMINI_API_KEY: "test-key" }, homedir: "/Users/me", exists: async (file: string) => files.has(file), cursorVersions: async () => [] };
+  assert.equal(await resolveExecutable(["gemini"], deps), "/opt/homebrew/bin/gemini");
+  const onboardingDeps: OnboardingDeps = {
+    ...deps,
+    async exec(_cmd, args) {
+      if (args[0] === "--version") return { stdout: "0.9.0\n", stderr: "", code: 0 };
+      return { stdout: "", stderr: "", code: 0 };
+    },
+    spawn() {
+      return { kill() {}, exited: new Promise(() => undefined), onOutput() {} };
+    },
+  };
+  const service = new AgentOnboardingService(onboardingDeps);
+  try {
+    const gemini = (await service.status()).agents.find(agent => agent.id === "gemini")!;
+    assert.equal(gemini.installed, true);
+    assert.equal(gemini.version, "0.9.0");
+    assert.equal(gemini.authenticated, true);
+    assert.equal(gemini.canInstallPackage, true);
+  } finally {
+    service.close();
+  }
 });
 
 test("package install uses the fixed package name", async () => {

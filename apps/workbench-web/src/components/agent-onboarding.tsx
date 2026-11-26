@@ -20,6 +20,7 @@ const AGENT_NAMES: Record<string, { id: string; defaultMessage: string }> = {
   codex: { id: "onboard.agent.codex", defaultMessage: "Codex" },
   cursor: { id: "onboard.agent.cursor", defaultMessage: "Cursor" },
   claude: { id: "onboard.agent.claude", defaultMessage: "Claude Code" },
+  gemini: { id: "onboard.agent.gemini", defaultMessage: "Gemini" },
   codebuddy: { id: "onboard.agent.codebuddy", defaultMessage: "CodeBuddy" },
 };
 
