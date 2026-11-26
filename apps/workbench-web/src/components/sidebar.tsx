@@ -383,6 +383,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   const needle = query.trim().toLocaleLowerCase();
   const matchingDraftRows = pendingDraftRows.filter(row => (!serverFilter.serverId || row.serverId === serverFilter.serverId)
     && (!needle || row.title.toLocaleLowerCase().includes(needle)));
+  const activeDraftKey = matchingDraftRows.find(row => row.active)?.key;
   const { matching, matchingById, tree, matchingReferences, taskFlow } = useMemo(() => {
     const allowed = new Set((JSON.parse(allowedKeys) as [string, string][]).map(key => JSON.stringify(key)));
     const matching = threads.filter(thread => thread.visibility !== "hidden"
@@ -415,7 +416,8 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   const selectedRoot = tree.rootByIdentity.get(selection) ?? selection;
   const containsSelected = (rows: readonly SidebarThread[]) => rows.some(thread => identity(thread) === selectedRoot);
   let initialSection: string | null;
-  if (!preferenceState.values["sidebar.scheduledCollapsed"] && taskFlow.scheduled.some(thread => identity(thread) === selection)) initialSection = flowKey("scheduled");
+  if (activeDraftKey !== undefined) initialSection = flowKey("recent");
+  else if (!preferenceState.values["sidebar.scheduledCollapsed"] && taskFlow.scheduled.some(thread => identity(thread) === selection)) initialSection = flowKey("scheduled");
   else if (containsSelected(taskFlow.mine)) initialSection = flowKey("mine");
   else if (groupedSections) {
     const group = groupedSections.find(group => !group.collapsed && group.threads.some(ref => JSON.stringify([ref.hostId, ref.threadId]) === selectedRoot))
@@ -432,6 +434,15 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   // (selection first, then the first non-empty section) instead of a browsing
   // choice the filter may have emptied, which would leave every result hidden.
   const accordion = useSidebarAccordion(JSON.stringify([threadListGrouping?.id ?? null, grouping.mode, Boolean(needle)]), initialSection, contentViewport, activityList);
+  const { reveal: revealSection, openKey } = accordion;
+  const lastActiveDraftKey = useRef<string | undefined>(undefined);
+  useLayoutEffect(() => {
+    const previous = lastActiveDraftKey.current;
+    lastActiveDraftKey.current = activeDraftKey;
+    if (activeDraftKey === previous) return;
+    if (activeDraftKey !== undefined) revealSection("flow:recent");
+    else if (openKey === "flow:recent" && initialSection !== null) revealSection(initialSection);
+  }, [activeDraftKey, initialSection, openKey, revealSection]);
   const sectionCollapsed = (key: string) => accordion.collapsed(flowKey(key));
   const toggleSection = (key: string, button: HTMLElement) => {
     const next = accordion.toggle(flowKey(key), button);
@@ -504,7 +515,8 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
     return node ? <ul className="sidebar-thread-tree" role="list">{renderTreeNode(node, attention, projectGrouped)}</ul> : null;
   };
   const renderFlowSection = (key: string, title: string, rows: readonly SidebarThread[], limit?: number, update?: (count: number) => void, nativeProject = false) => {
-    if (!rows.length && key !== "mine") return null;
+    const draftRows = key === "recent" ? matchingDraftRows : [];
+    if (!rows.length && !draftRows.length && key !== "mine") return null;
     const collapsed = sectionCollapsed(key);
     const visible = limit === undefined ? rows : rows.slice(0, limit);
     const headings = key === "recent" ? sidebarRecentHeadings(visible) : null;
@@ -514,8 +526,11 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
     const summaryId = `${rowIdPrefix}-summary-${key}`;
     const hasSummary = counts !== null && (counts.unread + counts.attention + counts.running) > 0;
     const contentId = `${rowIdPrefix}-flow-${key}`;
+    const inProgress = () => <h4 className="sidebar-activity-group__heading">
+      {intl.formatMessage({ id: "sidebar.activity.inProgress", defaultMessage: "In progress" })}
+    </h4>;
     return <SidebarConversationGroup key={key} title={title} contentId={contentId}
-      collapsed={collapsed} hasRows={visible.length > 0} nativeProject={nativeProject}
+      collapsed={collapsed} hasRows={visible.length > 0 || draftRows.length > 0} nativeProject={nativeProject}
       heading={<button type="button" className="sidebar-thread-group-toggle" aria-expanded={!collapsed} aria-controls={contentId}
         aria-label={title} aria-describedby={hasSummary ? summaryId : undefined}
         onClick={event => toggleSection(key, event.currentTarget)}>
@@ -523,12 +538,18 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
         {counts ? <SidebarActivitySummary id={summaryId} counts={counts} /> : null}
       </button>}>
         {key === "mine" && !rows.length ? <NavigationEmpty className="sidebar-activity-empty"><SidebarEmptyIcon />{text("sidebar.access.empty", "No private conversations yet")}</NavigationEmpty> : null}
+        {draftRows.length ? inProgress() : null}
+        {draftRows.map(row => {
+          const label = row.title || text("onboard.history.untitled", "Untitled conversation");
+          return <SidebarActivityItem key={row.key} title={label} tooltip={label}
+            conversationKey={`draft:${row.key}`} active={row.active} selected={row.active}
+            pending status="ready" project="" unread={false} onInvoke={() => dismissAfter(row.onSelect)} />;
+        })}
         {visible.map(thread => {
           const heading = headings?.get(thread);
           return <div key={identity(thread)}>
-            {heading === "running" ? <h4 className="sidebar-activity-group__heading">
-              {intl.formatMessage({ id: "sidebar.activity.inProgress", defaultMessage: "In progress" })}
-            </h4> : heading === "date" ? <SidebarDateHeading timestampMs={thread.updatedAt * 1_000} /> : null}
+            {heading === "running" && !draftRows.length ? inProgress()
+              : heading === "date" ? <SidebarDateHeading timestampMs={thread.updatedAt * 1_000} /> : null}
             {key === "scheduled" ? renderThread(thread) : renderThreadTree(thread, key === "attention", nativeProject)}
           </div>;
         })}
@@ -566,7 +587,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
       !group.collapsed && group.threads.some(ref => JSON.stringify([ref.hostId, ref.threadId]) === (group.id === "scheduled" ? key : rootKey)));
     if (!visible) menus.close();
   });
-  const selectedKey = JSON.stringify(pendingHostId !== null && pendingThreadId !== null
+  const selectedKey = activeDraftKey !== undefined ? `draft:${activeDraftKey}` : JSON.stringify(pendingHostId !== null && pendingThreadId !== null
     ? [pendingHostId, pendingThreadId] : [activeHostId, activeThreadId]);
   const onConversationShortcut = useStableEvent((event: KeyboardEvent) => {
     if (!canHandleWorkbenchShortcut(event)) return;
@@ -598,8 +619,8 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   const containsSelection = (group: typeof visibleSections[number]) => group.threads.some(ref =>
     JSON.stringify([ref.hostId, ref.threadId]) === (group.id === "scheduled" ? selectedKey : selectedRootKey));
   const selectedSection = visibleSections.find(group => !group.collapsed && containsSelection(group)) ?? visibleSections.find(containsSelection);
-  const selectedSectionId = selectedSection?.id;
-  const selectedVisible = selectedSection !== undefined && !selectedSection.collapsed;
+  const selectedSectionId = activeDraftKey !== undefined ? "recent" : selectedSection?.id;
+  const selectedVisible = activeDraftKey !== undefined ? !sectionCollapsed("recent") : selectedSection !== undefined && !selectedSection.collapsed;
   const previousSelection = useRef({ key: selectedKey, pinnedLimit, recentLimit, mineLimit, projectLimits });
   useLayoutEffect(() => {
     const previous = previousSelection.current;
@@ -608,7 +629,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
     if (previous.key === selectedKey && (pinnedLimit > previous.pinnedLimit || recentLimit > previous.recentLimit || mineLimit > previous.mineLimit || Object.entries(projectLimits).some(([key,limit])=>limit>(previous.projectLimits[key]??6)))) return;
     if (accordion.disclosureChanged || !selectedVisible) return;
     const content = contentViewport.current;
-    const sectionId = selectedSectionId === "scheduled" || selectedSectionId === "mine" || !groupedSections
+    const sectionId = activeDraftKey !== undefined || selectedSectionId === "scheduled" || selectedSectionId === "mine" || !groupedSections
       ? `${rowIdPrefix}-flow-${selectedSectionId}` : `${rowIdPrefix}-group-${encodeURIComponent(selectedSectionId ?? "")}`;
     const row = document.getElementById(sectionId)?.querySelector<HTMLElement>(".sidebar-activity-item.is-selected");
     if (!content || !row) return;
@@ -673,9 +694,6 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
             aria-label={text("sidebar.search", "Search conversations")} placeholder={text("sidebar.search", "Search conversations")}
             value={query} onChange={event => setQuery(event.currentTarget.value)} /></label> : null}
           <div className="sidebar-activity-list" ref={activityList}>
-            {matchingDraftRows.map(row =>
-              <SidebarNavigationItem key={row.key} active={row.active} icon={<SquarePen size={16} />}
-                title={row.title || text("sidebar.newChat", "New chat")} onInvoke={() => dismissAfter(row.onSelect)} />)}
             {grouping.notice ? <NavigationEmpty className="sidebar-activity-empty">{label(grouping.notice)}</NavigationEmpty> : null}
             {renderFlowSection("scheduled", text("schedules.catalog.title", "Scheduled tasks"), taskFlow.scheduled, scheduledLimit, setScheduledLimit)}
             {groupedSections ? groupedSections.map(group => {
@@ -711,7 +729,8 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
               {nativeProjects.map(group => renderFlowSection(`native-project:${group.key}`, group.label, group.threads, projectLimits[group.key] ?? 6,
                 count => setProjectLimits(current => ({ ...current, [group.key]: count })), true))}
             </div> : null}
-            {!groupedSections ? renderFlowSection("recent", text("sidebar.flow.recent", "Recent"), recentWithoutProjects, recentLimit, setRecentLimit) : null}
+            {!groupedSections || matchingDraftRows.length ? renderFlowSection("recent", text("sidebar.flow.recent", "Recent"),
+              groupedSections ? [] : recentWithoutProjects, recentLimit, setRecentLimit) : null}
             {empty ? <NavigationEmpty className="sidebar-activity-empty">{text("sidebar.empty", "No tasks yet")}</NavigationEmpty> : null}
             {catalogErrors.map(catalog => retryFeedback(catalog.hostId, intl.formatMessage(catalog.cachedAt !== undefined
               ? { id: "sidebar.catalog.cached", defaultMessage: "Showing saved {server} conversations; refresh failed" }

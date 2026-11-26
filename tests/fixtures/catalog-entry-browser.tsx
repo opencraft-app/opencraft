@@ -44,6 +44,7 @@ function App() {
   const preferences = useUiPreferencesRuntime();
   const [revision, setRevision] = useState(1);
   const [enabled, setEnabled] = useState(true);
+  const [activeThreadId, setActiveThreadId] = useState("");
   const key = sidebarThreadCatalogQueryKey('fixture', { revision, authorizationEpoch: null });
   const [query] = useCatalog([{ profile: { ...profile, revision }, currentProfile: () => current, management: null, registry, enabled, queryKey: key }]);
   const rows = enabled ? query!.data?.data ?? [] : [];
@@ -74,6 +75,7 @@ function App() {
         threadId, turnId: "fixture-turn", acceptedAt: Date.now(), replayed: false });
       scopes.beginPromotion(draftId);
       scopes.promoteDraft(draftId);
+      setActiveThreadId(threadId);
     },
     commitDraft: () => notify({ method: "opencraft/thread-catalog/changed", params: { version: 1, source: "fixture-catalog", revision: 1,
       change: { type: "upsert", thread: { id: threadId, name: draftTitle, preview: draftTitle, cwd: "/fixture", createdAt: 5000, updatedAt: 5000,
@@ -85,9 +87,9 @@ function App() {
     replace: () => { current = { ...profile, revision: revision + 1 }; setRevision(revision + 1); },
     disconnect: () => { phase = 'reconnecting'; setEnabled(false); },
   };
-  return <div style={{ width: 320, height: '100vh', display: 'flex' }}><Sidebar threads={threads} activeHostId="fixture" activeThreadId=""
+  return <div style={{ width: 320, height: '100vh', display: 'flex' }}><Sidebar threads={threads} activeHostId="fixture" activeThreadId={activeThreadId}
     pendingDraftRows={pendingDraftRows.map(row => ({ key: row.draftId, title: row.preview, serverId: "fixture", active: true, onSelect: async () => true }))}
-    sidebarLayout={layout} threadCatalogs={[catalog]} showFooter={false}
+    sidebarLayout={layout} threadCatalogs={[catalog]} showFooter={false} showNewChat showStart={false}
     onRetryThreadCatalog={() => { void client.refetchQueries({ queryKey: key }); }}
     onSelectThread={(_, id) => actions.push(id)} onNewTask={() => {}} onOpenSettings={() => {}} /></div>;
 }

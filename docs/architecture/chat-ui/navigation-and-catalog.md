@@ -199,6 +199,10 @@ rows nor selected-route execution state are invented to force a group placement.
 Running precedes attention, pins and recent in the existing task-flow projection.
 The default Sidebar places the private Mine section after pinned conversations
 and before Recent. Contributed grouping modes retain their independent Mine section.
+Submitting a draft shows a temporary conversation row in Recent. The row uses the
+submitted message as its preview and remains available through draft promotion.
+The matching Host and Thread in the catalog replace the temporary row. New chat
+keeps its own label and action throughout.
 
 The row container paints one continuous selected/hover background across title,
 project, status, participants and actions. Server marks are omitted; provenance
