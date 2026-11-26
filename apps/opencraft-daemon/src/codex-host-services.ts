@@ -24,6 +24,7 @@ import {
 } from "@opencraft/appserver-protocol";
 import { CodexThreadPins } from "./codex-thread-pins.js";
 import { CodexThreadTitles } from "./codex-thread-titles.js";
+import { projectNativeCodexModelCatalog } from "./codex-native-surface.js";
 import {
   CODEX_MAINTENANCE_CAPABILITY,
   CODEX_MAINTENANCE_EXTENSION,
@@ -388,8 +389,9 @@ export function codexModelsService(
     handles: (method) => method === "model/list" || method === "permissionProfile/list",
     capabilities: () => ({ [OPENCRAFT_PERMISSION_MODES_EXTENSION]: OPENCRAFT_PERMISSION_MODES_CAPABILITY }),
     request: async (method, params, context) => {
-      const result = object(await native.request(method, object(params)));
-      if (method === "permissionProfile/list")
+      const reply = await native.request(method, object(params));
+      if (method === "permissionProfile/list") {
+        const result = object(reply);
         return {
           ...result,
           data: Array.isArray(result.data)
@@ -399,6 +401,8 @@ export function codexModelsService(
               )
             : result.data,
         };
+      }
+      const result = object(projectNativeCodexModelCatalog(reply));
       const gatewayPath = configuredModelGatewayPath();
       if (!gatewayPath || !Array.isArray(result.data)) return result;
       const ledger = new ModelGatewayStore(gatewayPath);

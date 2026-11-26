@@ -26,7 +26,7 @@ for (const method of ["model/list", "thread/list", "thread/read", "thread/turns/
     sessionMcp: async () => { entered(); await hold; return null; },
     spawnAppServer: ({ cwd, env }) => spawn(process.execPath,
       [new URL("../fixtures/fake-codex-stdio-appserver.mjs", import.meta.url).pathname],
-      { cwd, env: { CODEX_HOME: env.CODEX_HOME, OPENCRAFT_TEST_AUTO_TITLES: "1" }, stdio: ["pipe", "pipe", "pipe"] }),
+      { cwd, env: { CODEX_HOME: env.CODEX_HOME, OPENCRAFT_TEST_AUTO_TITLES: "1", OPENCRAFT_TEST_CLI_MODEL_OPTIONS: "1" }, stdio: ["pipe", "pipe", "pipe"] }),
   });
   const server = new AppHostServer({ logicalClientRouting: true, createTransport: () => adapter });
   const { port1, port2 } = new MessageChannel();
@@ -46,14 +46,19 @@ for (const method of ["model/list", "thread/list", "thread/read", "thread/turns/
     const readStarted = performance.now();
     const params = method === "thread/read" ? { threadId: started.thread.id, includeTurns: false }
       : method === "thread/turns/list" ? { threadId: started.thread.id, limit: 1, itemsView: "full", sortDirection: "desc" }
-      : method === "thread/items/list" ? { threadId: started.thread.id, limit: 1, sortDirection: "asc" } : {};
+      : method === "thread/items/list" ? { threadId: started.thread.id, limit: 1, sortDirection: "asc" }
+      : method === "model/list" ? { threadId: started.thread.id, limit: 1 } : {};
     const catalog = await client.request(method, params as never, { timeoutMs: preparationMs ? preparationMs + 2_000 : 500 });
     const readMs = performance.now() - readStarted;
     if (preparationMs) console.log(JSON.stringify({ synthetic: true, boundary: "AppHost-before-Core", method, preparationMs, readMs }));
     assert.ok(readMs < 10_000, `${method} waited ${readMs}ms for unrelated tool preparation`);
     if (method === "thread/read") assert.equal(catalog.thread.id, started.thread.id);
     else assert.ok(Array.isArray(catalog.data));
-    if (method === "model/list") assert.ok(catalog.data.length > 0);
+    if (method === "model/list") {
+      assert.deepEqual(catalog.data.map(({ id, model, agentId, agentLabel }) => ({ id, model, agentId, agentLabel })),
+        [{ id: "fixture-model", model: "fixture-model", agentId: "codex", agentLabel: "Codex" }]);
+      assert.equal(catalog.nextCursor, "1");
+    }
     release();
     await turn;
   } finally {

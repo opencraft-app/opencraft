@@ -1621,10 +1621,10 @@ export function App({
         errorKind: group.hostId === snapshot.hostId ? composerCatalog.modelErrorKind : undefined,
         retry: group.hostId === snapshot.hostId ? composerCatalog.retryModels : group.retry,
         select: async (model) => {
-          if (canContinueWithAgent && model.agentId === conversationAgent) composerController.dispatch({ type: "cancel-agent-handoff" });
-          if (canContinueWithAgent && activeThreadId && model.agentId !== conversationAgent) {
+          if (canContinueWithAgent && (!model.agentId || model.agentId === conversationAgent)) composerController.dispatch({ type: "cancel-agent-handoff" });
+          if (canContinueWithAgent && activeThreadId && model.agentId && model.agentId !== conversationAgent) {
             try {
-              await hostCatalog.continueWithAgent({ hostId: snapshot.hostId, threadId: activeThreadId, historyTitle: intl.formatMessage({ id: "composer.context.conversationHistory", defaultMessage: "Conversation history" }), agentId: model.agentId!, model: model.value, effort: model.defaultEffort, permissionProfile: snapshot.conversation?.execution.permissionProfile ?? null, serviceTier: null });
+              await hostCatalog.continueWithAgent({ hostId: snapshot.hostId, threadId: activeThreadId, historyTitle: intl.formatMessage({ id: "composer.context.conversationHistory", defaultMessage: "Conversation history" }), agentId: model.agentId, model: model.value, effort: model.defaultEffort, permissionProfile: snapshot.conversation?.execution.permissionProfile ?? null, serviceTier: null });
             } catch (error) {
               throw new Error(intl.formatMessage({ id: "chat.continueWithAgent.failed", defaultMessage: "Could not prepare the conversation for this Agent. Your original conversation and draft are unchanged. Finish any active response and try again." }));
             }

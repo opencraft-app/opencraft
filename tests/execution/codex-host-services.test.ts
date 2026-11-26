@@ -264,7 +264,9 @@ test("models, permission profiles and pins are read from native Codex by the fro
           data: [
             { id: "gpt-x", model: "gpt-x" },
             { id: "configured/provider-a/m", model: "configured/provider-a/m" },
+            { id: "cursor-x", model: "cursor-x", agentId: "cursor", agentLabel: "Cursor" },
           ],
+          nextCursor: "next",
         };
       if (method === "permissionProfile/list")
         return { data: [{ id: ":workspace" }, { id: ":danger-no-sandbox" }], nextCursor: null };
@@ -288,11 +290,14 @@ test("models, permission profiles and pins are read from native Codex by the fro
   const context = { sender: null } as any;
   const models = codexModelsService(native),
     pins = codexPinsService(native, clients, identities);
-  assert.equal(
-    ((await models.request("model/list", {}, context)) as any).data.length,
-    2,
-    "without a model gateway every native model is listed",
-  );
+  assert.deepEqual(await models.request("model/list", {}, context), {
+    data: [
+      { id: "gpt-x", model: "gpt-x", agentId: "codex", agentLabel: "Codex" },
+      { id: "configured/provider-a/m", model: "configured/provider-a/m", agentId: "codex", agentLabel: "Codex" },
+      { id: "cursor-x", model: "cursor-x", agentId: "cursor", agentLabel: "Cursor" },
+    ],
+    nextCursor: "next",
+  });
   const profiles = (await models.request("permissionProfile/list", {}, context)) as any;
   assert.ok(
     Array.isArray(profiles.data) && profiles.data.length > 0,
@@ -302,7 +307,7 @@ test("models, permission profiles and pins are read from native Codex by the fro
   process.env.OPENCRAFT_MODEL_GATEWAY_DATABASE = join(directory, "gateway.sqlite");
   try {
     // An unregistered provider stays visible; a registered, unshared one is hidden from others.
-    assert.equal(((await models.request("model/list", {}, context)) as any).data.length, 2);
+    assert.equal(((await models.request("model/list", {}, context)) as any).data.length, 3);
     const { ModelGatewayStore } = await import("@opencraft/account-pool-host");
     const store = new ModelGatewayStore(join(directory, "gateway.sqlite"));
     try {
@@ -312,7 +317,7 @@ test("models, permission profiles and pins are read from native Codex by the fro
     }
     assert.deepEqual(
       ((await models.request("model/list", {}, context)) as any).data.map((row: any) => row.id),
-      ["gpt-x"],
+      ["gpt-x", "cursor-x"],
       "a configured gateway model is hidden from whom it may not serve",
     );
   } finally {

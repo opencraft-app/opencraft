@@ -9,6 +9,7 @@ import { BridgeHost } from '../../../apps/agent-bridge-host/src/host.js';
 import { attachGateway } from '../../../apps/agent-bridge-host/src/server.js';
 import { codexDeclaration } from '../../../apps/agent-bridge-host/src/codex-declaration.js';
 import { CodexProviderBridge } from '../../../apps/opencraft-daemon/src/codex-provider-bridge.js';
+import { createCodexBridgeHost } from '../../../apps/opencraft-daemon/src/codex-bridge-host.js';
 import { localTestBackend } from './local-backend.js';
 import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
 
@@ -93,7 +94,12 @@ export async function createCodexPreview() {
     };
     return new CodexProviderBridge(legacy, { url: endpoint.url, token, serverId: 'preview-server', inboxPath: join(root, 'gateway.db') });
   };
-  return { publicId, createTransport, gatewayOptions: { url: endpoint.url, token, serverId: 'preview-server', inboxPath: join(root, 'gateway.db') }, counts: () => ({ starts, steers }),
+  const gatewayOptions = { url: endpoint.url, token, serverId: 'preview-server', inboxPath: join(root, 'gateway.db') };
+  return { publicId, createTransport, gatewayOptions, counts: () => ({ starts, steers }),
+    createHost: () => createCodexBridgeHost({
+      coreEndpoint: join(root, 'control.sock'), coreAuthToken: token,
+      bridge: gatewayOptions, codexDataDirectory: join(root, 'codex-data'),
+    }),
     confirm() { if (!pendingInput) throw Error('No pending fixture steer'); items.push(pendingInput); itemEvent('item/started', pendingInput); itemEvent('item/completed', pendingInput); pendingInput = undefined; },
     finish() { active = false; const tool = items.find(i => i.type === 'commandExecution'); Object.assign(tool, { status: 'completed', aggregatedOutput: 'P2a fixture tool output' }); itemEvent('item/completed', tool); const answer = { type: 'agentMessage', id: 'native-answer', text: 'P2a bridge fixture completed', phase: 'final_answer', memoryCitation: null, delivery: null, questions: null }; items.push(answer); itemEvent('item/started', answer); itemEvent('item/completed', answer); emit('turn/completed', { threadId: nativeId, turn: turn() }); },
     async close() { await endpoint.close(); await host.close(); ws.close(); await Promise.all([new Promise<void>(r => native.close(() => r())), new Promise<void>(r => control.close(() => r()))]); await rm(root, { recursive: true, force: true }); },

@@ -10,6 +10,7 @@ initializeAppearanceTheme();
 const params = new URLSearchParams(location.search);
 const existingThread = params.has("thread");
 const singleAgent = params.has("single");
+const lateCatalog = params.has("lateCatalog");
 const handoffEnabled = params.get("handoff") !== "0";
 let sequence = 0;
 const controller = createComposerController((existingThread ? {
@@ -38,21 +39,26 @@ function Fixture() {
   const [disabledAgents, setDisabledAgents] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isFetching, setFetching] = useState(false);
-  Object.assign(window, { modelBrowserFixture: { controller, models, sent, remembered, handoffs, existingThread, singleAgent, handoffEnabled, setError, setFetching, setDisabledAgents, setChatActive,
+  const [catalogReady, setCatalogReady] = useState(!lateCatalog);
+  Object.assign(window, { modelBrowserFixture: { controller, models, sent, remembered, handoffs, existingThread, singleAgent, handoffEnabled, setError, setFetching, setDisabledAgents, setChatActive, setCatalogReady,
     setThemePreference, setAppearanceThemeId,
     selections: () => controller.getSnapshot().draft.selections,
   } });
-  const available = models.filter(model => !disabledAgents.includes(model.agentId!) && (!singleAgent || model.agentId === "codex"));
-  const agentGroup: ComposerAgentModelGroup = { id: "fixture", label: "Fixture", active: true, models: available,
+  const available = catalogReady ? models.filter(model => !disabledAgents.includes(model.agentId!) && (!singleAgent || model.agentId === "codex")) : [];
+  if (lateCatalog && catalogReady) available.push({ ...model("legacy-model", "Legacy Host model"), agentId: null, agentLabel: null });
+  const agentGroup: ComposerAgentModelGroup = { id: "fixture", label: lateCatalog ? "Codex" : "Fixture", active: true, models: available, loading: !catalogReady,
     select: async model => {
-      if (existingThread && model.agentId !== "codex") { handoffs.push(model.value); return { selection: "handled" as const }; }
+      if (existingThread && model.agentId && model.agentId !== "codex") { handoffs.push(model.value); return { selection: "handled" as const }; }
       if (existingThread) return;
     },
   };
+  const agentGroups = lateCatalog ? [agentGroup, {
+    id: "other-host", label: "Codex", active: false, models: [model("codex:other", "Other Host model")],
+  }] : [agentGroup];
   const composer = <OpenCraftComposer controller={controller} resolveAgentCycleShortcut={cycleAgentShortcut}
     selectionCatalog={{ agentsDisabled: disabledAgents.length > 0, models: available, permissionProfiles: [], modelError: error,
       ...(existingThread ? {
-        agentGroups: [agentGroup], currentAgentId: "codex", currentAgentLabel: "Codex",
+        agentGroups, currentAgentId: "codex", currentAgentLabel: "Codex",
         ...(handoffEnabled ? { agentContinuation: { startsNewThread: true } } : {}),
       } : {}),
       onConfigureAgents: () => remembered.push("agents"),
