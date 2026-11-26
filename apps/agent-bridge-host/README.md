@@ -302,6 +302,10 @@ available for recovery. The new adapter subscribes to retained active turns
 through the existing AppServer session, without starting a new turn. Other
 sessions reattach when accessed. The previous adapter does not start. The live
 generation activation endpoint retains its existing handoff behavior.
+A rejected legacy adoption without native or execution evidence remains
+eligible for adoption on a later send. Goal-read receipts alone do not
+establish custody. An unresolved adoption or other mutation still fences
+another attempt.
 The durable outbox can replay committed events. Output from the detached
 interval is available through a subsequent native history read once Codex
 has materialized it.

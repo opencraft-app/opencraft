@@ -1134,8 +1134,8 @@ export class BridgeHost {
   query(id: string): Promise<Receipt | null> {
     return this.storage.call("query", { id });
   }
-  async snapshot(): Promise<any> {
-    return { ...(await this.storage.call("snapshot")), databaseOutcome: await this.storage.ready };
+  async snapshot(adoptionOwnership = false): Promise<any> {
+    return { ...(await this.storage.call("snapshot", { adoptionOwnership })), databaseOutcome: await this.storage.ready };
   }
   events(cursor: number, limit = 256, fenced = false, fragmentOffset?: number): Promise<any> {
     return this.storage.call("events", { cursor, limit, fenced, fragmentOffset });

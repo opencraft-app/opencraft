@@ -11,6 +11,7 @@ type BridgeSnapshot = {
   historyIdentityPages?: true;
   historyIdentitySelection?: true;
   historyPublicTurnBatch?: true;
+  retryableAdoptionRoutes?: string[];
   current: string | null;
   generations: { id: string; retired: number; config?: Generation }[];
   routes: { route: string; generation: string }[];
@@ -271,13 +272,19 @@ export class BridgeGatewaySession {
   }
   /** Resolve public Thread identities for a passive metadata-only reader. */
   async loadRouteSnapshot(): Promise<boolean> {
-    const snapshot = await this.rpc("/snapshot");
+    const snapshot = await this.rpc<BridgeSnapshot>("/snapshot?adoptionOwnership=1");
     this.historyIdentityPages = snapshot.historyIdentityPages === true;
     this.historyIdentitySelection = this.historyIdentityPages && snapshot.historyIdentitySelection === true;
     this.historyPublicTurnBatch = this.historyIdentitySelection && snapshot.historyPublicTurnBatch === true;
+    const retryableAdoptions = new Set(snapshot.retryableAdoptionRoutes);
     for (const row of snapshot.routes) {
-      const route = JSON.parse(row.route);
-      if (route[0] === this.ports.serverId) this.pinned.add(route[1]);
+      const [serverId, threadId] = JSON.parse(row.route);
+      if (serverId !== this.ports.serverId) continue;
+      if (!threadId.startsWith("bridge:") && retryableAdoptions.has(row.route) && !this.routes.has(threadId)) {
+        this.pinned.delete(threadId);
+      } else {
+        this.pinned.add(threadId);
+      }
     }
     for (const row of snapshot.nativeSessions) {
       const route = JSON.parse(row.route);

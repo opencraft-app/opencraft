@@ -420,7 +420,7 @@ test("history joins route identities across pending outbox pages and an acknowle
         return Response.json(raw);
       }
       const reply = await rpc(endpoint.url, path, body);
-      if (path === "/snapshot") delete reply.historyIdentitySelection;
+      if (path.split("?")[0] === "/snapshot") delete reply.historyIdentitySelection;
       if (path.startsWith("/history-identities?")) {
         afters.push(Number(new URL(path, endpoint.url).searchParams.get("after")));
         identityPages++;
@@ -484,7 +484,7 @@ test("exact history reads include newly acknowledged items and reject a changed 
   const session = new BridgeGatewaySession({
     serverId: "server",
     async request(path, body) {
-      if (path === "/snapshot") return Response.json({ historyIdentityPages: true, nativeSessions: [], routes: [], interactions: [] });
+      if (path.split("?")[0] === "/snapshot") return Response.json({ historyIdentityPages: true, nativeSessions: [], routes: [], interactions: [] });
       if (path === "/observe") {
         assert.equal((body as { params: { turnId: string } }).params.turnId, "turn-native");
         nativeRead = true;
@@ -609,7 +609,7 @@ test("selected history rejects a remapped public Turn even when the native reply
   const session = new BridgeGatewaySession({
     serverId: "server",
     async request(path, body) {
-      if (path === "/snapshot") return Response.json({
+      if (path.split("?")[0] === "/snapshot") return Response.json({
         historyIdentityPages: true, historyIdentitySelection: true, routes: [], nativeSessions: [], interactions: [],
       });
       if (path === "/observe") return Response.json({ data: [] });
@@ -1457,7 +1457,7 @@ test("a transient producer read drains an already committed inbox page exactly o
   }] });
   let status = 503;
   const request = async (path: string) => {
-    if (path === "/snapshot") return Response.json({ routes: [], nativeSessions: [], interactions: [] });
+    if (path.split("?")[0] === "/snapshot") return Response.json({ routes: [], nativeSessions: [], interactions: [] });
     if (path === "/ack") return Response.json(null);
     return status === 200 ? Response.json([]) : new Response(null, { status });
   };
@@ -1509,7 +1509,7 @@ test("an older interaction snapshot cannot prune a concurrently committed reques
   const session = new BridgeGatewaySession({
     serverId: "server",
     async request(path) {
-      assert.equal(path, "/snapshot");
+      assert.equal(path.split("?")[0], "/snapshot");
       if (++snapshots === 1) return snapshot([]);
       if (snapshots === 2) {
         entered.resolve();
@@ -1568,7 +1568,7 @@ test("a committed approval can be restored while outbox reads are temporarily un
   const session = new BridgeGatewaySession({
     serverId: "server",
     async request(path) {
-      assert.equal(path, "/snapshot");
+      assert.equal(path.split("?")[0], "/snapshot");
       return Response.json({ routes: [], nativeSessions: [], interactions });
     },
     inbox: {
@@ -1612,7 +1612,7 @@ test("history and targeted approval recovery are independent of another retained
     async request(path) {
       if (path.startsWith("/history-identities?"))
         return Response.json({ high: 3, acknowledged: 3, outboxId: "1".repeat(32), identities: [] });
-      assert.equal(path, "/snapshot");
+      assert.equal(path.split("?")[0], "/snapshot");
       return Response.json({ routes: [], nativeSessions: [], historyIdentityPages: true,
         interactions: pending.map(id => ({ route, id })) });
     },
@@ -1658,7 +1658,7 @@ test("pending approval delivery and settlement stay scoped when two routes use t
   const session = new BridgeGatewaySession({
     serverId: "server",
     async request(path) {
-      assert.equal(path, "/snapshot");
+      assert.equal(path.split("?")[0], "/snapshot");
       return Response.json({ routes: [], nativeSessions: [],
         interactions: pending.map(threadId => ({ route: route(threadId), id })) });
     },
@@ -1712,7 +1712,7 @@ test("a healthy first outbox page does not make an incomplete approval snapshot 
   const session = new BridgeGatewaySession({
     serverId: "server",
     async request(path) {
-      assert.equal(path, "/snapshot");
+      assert.equal(path.split("?")[0], "/snapshot");
       return Response.json({ routes: [], nativeSessions: [], interactions: [
         { route, id: "first" }, { route, id: "second" },
       ] });
@@ -1751,7 +1751,7 @@ test("an accepted approval receipt settles before the independent outbox read re
   const session = new BridgeGatewaySession({
     serverId: "server",
     async request(path) {
-      if (path === "/snapshot") return Response.json({ routes: [], nativeSessions: [], interactions: [{ route, id }] });
+      if (path.split("?")[0] === "/snapshot") return Response.json({ routes: [], nativeSessions: [], interactions: [{ route, id }] });
       if (path === "/command") return Response.json(null);
       assert.equal(path, "/command?id=approval-answer");
       receipt.resolve();
