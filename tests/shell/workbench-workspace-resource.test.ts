@@ -38,6 +38,22 @@ test("workspace resource URLs retain host paths and source locations", () => {
   );
 });
 
+test("sandbox links resolve to local paths without accepting an authority", () => {
+  assert.deepEqual(
+    parseWorkspaceResource("sandbox:/mnt/data/field%20report.txt#L7"),
+    { path: "/mnt/data/field report.txt", line: 7, column: null },
+  );
+  for (const target of [
+    "sandbox:relative.txt",
+    "sandbox://other-host/mnt/data/report.txt",
+    "sandbox:/%2Fother-host/report.txt",
+    "sandbox:/%5Cother-host/report.txt",
+    "sandbox:/mnt/data/%ZZ",
+  ]) {
+    assert.equal(parseWorkspaceResource(target).path, target);
+  }
+});
+
 test("preview-only workspace resources reject writes before touching the Host or blob cache", async () => {
   const calls: string[] = [];
   const target = { hostId: "host-a", path: "/repo/README.md", key: workspaceDraftKey("host-a", "/repo/README.md"), text: "updated" };

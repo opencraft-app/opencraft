@@ -63,6 +63,14 @@ export function parseWorkspaceResource(resource: string): WorkspaceResourceLocat
     const url = new URL(withoutFragment);
     path = decodeURIComponent(url.pathname);
     if (/^\/[a-z]:\//iu.test(path)) path = path.slice(1);
+  } else if (/^sandbox:\/(?!\/)/iu.test(withoutFragment)) {
+    // The preview's existing Host and workspace scope authorize the file read.
+    try {
+      const decoded = decodeURIComponent(new URL(withoutFragment).pathname);
+      if (/^\/(?!\/)/u.test(decoded) && !decoded.includes("\\") && !decoded.includes("\0")) path = decoded;
+    } catch {
+      // A malformed URI remains unresolved.
+    }
   }
   return {
     path: path.replaceAll("\\", "/"),

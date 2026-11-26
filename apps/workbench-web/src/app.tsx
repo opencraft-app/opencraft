@@ -1435,10 +1435,11 @@ export function App({
   const activeProtocolThread = catalog.protocolThreads.find(
     (thread) => thread.id === activeThreadId,
   );
-  const queueImageCwd = snapshot.conversation?.execution.cwd ?? activeProtocolThread?.cwd ?? null;
+  // A conversation can already be answering while its catalog entry is still pending.
+  const conversationCwd = snapshot.conversation?.execution.cwd ?? activeProtocolThread?.cwd ?? null;
   const loadQueuedImage = useMemo(() => createQueuedImageLoader(loadMediaSource, {
-    conversationId: activeThreadId, hostId: snapshot.hostId, cwd: queueImageCwd,
-  }), [loadMediaSource, activeThreadId, snapshot.hostId, queueImageCwd]);
+    conversationId: activeThreadId, hostId: snapshot.hostId, cwd: conversationCwd,
+  }), [loadMediaSource, activeThreadId, snapshot.hostId, conversationCwd]);
   const explicitSetupModel = useSyncExternalStore(composerController.subscribe,
     () => composerController.getSnapshot().draft.selections.model,
     () => composerController.getSnapshot().draft.selections.model);
@@ -2248,7 +2249,7 @@ export function App({
       turnId={snapshot.conversation?.activeTurn?.turnId ?? null}
       documentContext={{
         conversationId: activeThreadId,
-        cwd: activeProtocolThread?.cwd ?? null,
+        cwd: conversationCwd,
         hostId: snapshot.hostId,
         onOpenResource: openChatResource,
         onReviewTurnDiff: openTurnDiffReview,
@@ -2628,7 +2629,7 @@ export function App({
                     submissionRecovery: showingDisplayCache ? undefined : deliveryRecoveryActions,
                     beginImageEdit: beginConversationImageEdit,
                     mcpApps: mcpAppOwner ?? undefined,
-                    cwd: activeProtocolThread?.cwd ?? null,
+                    cwd: conversationCwd,
                     hostId: snapshot.hostId,
                     loadMediaSource,
                     onOpenResource: openChatResource,
@@ -2751,7 +2752,7 @@ export function App({
                           return composerController.appendQuote(text);
                         } : undefined,
                       }}
-                      documentContext={{ conversationId: activeThreadId, beginImageEdit: beginConversationImageEdit, cwd: activeProtocolThread?.cwd ?? null, hostId: snapshot.hostId, loadMediaSource, onOpenResource: openChatResource, onReviewTurnDiff: openTurnDiffReview, composerChangeSummaryTurnId: snapshot.conversation?.activeTurn?.turnId ?? null, theme: appearanceTheme.resolvedTheme }}
+                      documentContext={{ conversationId: activeThreadId, beginImageEdit: beginConversationImageEdit, cwd: conversationCwd, hostId: snapshot.hostId, loadMediaSource, onOpenResource: openChatResource, onReviewTurnDiff: openTurnDiffReview, composerChangeSummaryTurnId: snapshot.conversation?.activeTurn?.turnId ?? null, theme: appearanceTheme.resolvedTheme }}
                     >
                     <div
                       className="thread-composer-region"
