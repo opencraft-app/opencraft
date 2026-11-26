@@ -3543,9 +3543,19 @@ export class CodexEngineAdapter implements DuplexTransport {
    * Stage attachments for a Thread this Host does not execute (a bridge Thread):
    * the same model-readable locator as local Threads, recorded for display.
    */
-  private async prepareExternalInput(threadId: string, clientId: string | undefined, input: readonly unknown[], context?: TransportSubmissionContext): Promise<unknown[]> {
+  private async prepareExternalInput(
+    threadId: string,
+    clientId: string | undefined,
+    input: readonly unknown[],
+    context: TransportSubmissionContext,
+    purpose?: "queue-edit",
+  ): Promise<unknown[]> {
+    if (purpose === "queue-edit") {
+      assertSubmissionIdentity(context);
+      return (await this.modelVisibleAttachmentInput(input, threadId, undefined, context)).input;
+    }
     // Attribution is recorded before anything is staged, exactly as for this Host's own Threads.
-    if (context && (clientId || context.sender)) {
+    if (clientId || context.sender) {
       if (!this.identity) {
         if (context.sender) throw new Error("Message sender storage is unavailable");
       } else this.identity.recordSubmission({ threadId, clientUserMessageId: clientId ?? "" }, context);
@@ -3687,7 +3697,7 @@ export class CodexEngineAdapter implements DuplexTransport {
    */
   bridgeOwners(): CodexBridgeOwners {
     return {
-      prepareInput: (threadId, clientId, input, context) => this.prepareExternalInput(threadId, clientId, input, context),
+      prepareInput: (threadId, clientId, input, context, purpose) => this.prepareExternalInput(threadId, clientId, input, context, purpose),
       projectHistory: (method, params, result) => this.projectExternalHistory(method, params, result),
       projectNotification: (message) => this.projectExternalNotification(message),
       observeTitle: (method, params, result) => this.observeExternalTitle(method, params, result),

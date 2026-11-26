@@ -1620,6 +1620,14 @@ test("Host binds each submission to its trusted sender and keeps queued authors 
     } finally { state.close(); }
     const withoutId = await request("a", "turn/steer", { threadId, expectedTurnId: turnId, input: [{ type: "text", text: "no id" }] });
     assert.match(withoutId.error.message, /Message identity/);
+    const prepare = adapter.bridgeOwners().prepareInput;
+    const editedInput = [{ type: "text", text: "edited" }, { type: "localImage", path: "/work/image.png" }];
+    const editor = { sender: b, validUntil: Date.now() + 60_000 };
+    await assert.rejects(prepare(threadId, undefined, editedInput, editor), /Message identity/);
+    assert.deepEqual(await prepare(threadId, undefined, editedInput, editor, "queue-edit"), editedInput);
+    await assert.rejects(prepare(threadId, undefined, editedInput, {
+      ...editor, validUntil: Date.now() - 1,
+    }, "queue-edit"), /expired/);
   } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
 });
 
