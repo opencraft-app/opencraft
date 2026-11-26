@@ -381,6 +381,7 @@
   "chat.message.turnEnded": "已接收，本轮已结束",
   "chat.message.unconfirmed": "发送待确认",
   "chat.message.goal": "已作为目标发送",
+  "chat.message.slashCommand": "命令 /{name}",
   "chat.message.hookFeedback": "钩子反馈",
   "chat.message.reviewMode": "审查模式",
   "chat.message.prFix": "修复 PR",

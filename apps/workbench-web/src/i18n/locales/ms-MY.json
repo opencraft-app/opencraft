@@ -254,6 +254,7 @@
   "chat.message.turnEnded": "Diterima; giliran tamat",
   "chat.message.unconfirmed": "Penghantaran tidak disahkan",
   "chat.message.goal": "Dihantar sebagai matlamat",
+  "chat.message.slashCommand": "Arahan /{name}",
   "chat.message.hookFeedback": "Maklum balas hook",
   "chat.message.reviewMode": "Mod semakan",
   "chat.message.prFix": "Pembaikan PR",

@@ -207,6 +207,7 @@
   "chat.message.comments": "{count, plural, one {# comment} other {# comments}}",
   "chat.message.copy": "Copy message",
   "chat.message.goal": "Sent as goal",
+  "chat.message.slashCommand": "Command /{name}",
   "chat.message.hookBlocked": "Hook blocked this message",
   "chat.message.hookFeedback": "Hook feedback",
   "chat.message.noContent": "(No content)",

@@ -255,6 +255,7 @@
   "chat.message.turnEnded": "รับข้อความแล้ว รอบสิ้นสุดแล้ว",
   "chat.message.unconfirmed": "การจัดส่งยังไม่ได้รับการยืนยัน",
   "chat.message.goal": "ส่งเป็นเป้าหมาย",
+  "chat.message.slashCommand": "คำสั่ง /{name}",
   "chat.message.hookFeedback": "ความคิดเห็นเกี่ยวกับฮุค",
   "chat.message.reviewMode": "โหมดตรวจทาน",
   "chat.message.prFix": "แก้ไข PR",
