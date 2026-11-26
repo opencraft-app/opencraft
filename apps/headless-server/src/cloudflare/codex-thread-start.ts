@@ -56,6 +56,7 @@ function parseCodexStartOptions(params: unknown): CodexNewThreadOptions | null {
           "dynamicTools",
           "collaborationSpaceId",
           "model",
+          "serviceTier",
           "draftScopeId",
           "projectId",
           "cwd",
@@ -67,6 +68,8 @@ function parseCodexStartOptions(params: unknown): CodexNewThreadOptions | null {
     !empty(value.dynamicTools) ||
     (hasProject ? !project : value.cwd !== undefined || !empty(value.runtimeWorkspaceRoots)) ||
     (value.model != null && !isCodexModelId(value.model)) ||
+    // Native null inherits the default tier, matching turn/start.
+    value.serviceTier != null ||
     (value.draftScopeId !== undefined && !isTerminalResourceScopeId(value.draftScopeId))
   )
     return null;
