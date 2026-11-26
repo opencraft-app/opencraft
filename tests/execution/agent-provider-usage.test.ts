@@ -53,9 +53,10 @@ test("Cursor reads both dashboard resources and never starts inference", async t
   const calls: string[] = [];
   const f = await setup(t, (async (url, init) => {
     calls.push(String(url)); assert.equal(init?.method, "POST"); assert.equal(init?.body, "{}");
-    return Response.json(String(url).endsWith("GetPlanInfo") ? { planInfo: { planName: "Team" } } : cursor);
+    return Response.json(String(url).endsWith("GetPlanInfo") ? { planInfo: { planName: "Team" }, email: "team@example.com" } : cursor);
   }) as typeof fetch);
   const result = await f.service.read("cursor"); assert.equal(result.status, "ok"); assert.equal(result.windows.length, 2);
+  assert.equal(result.account, "team@example.com");
   assert.deepEqual(calls.sort(), ["GetCurrentPeriodUsage", "GetPlanInfo"].map(method => `https://api2.cursor.sh/aiserver.v1.DashboardService/${method}`).sort());
 });
 
