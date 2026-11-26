@@ -27,6 +27,11 @@ control reflects pending state in place; selection validation still gates
 submission. Actionable setup/authentication failures retain their existing
 recovery UI, and asynchronous operation failures use the Workbench notice owner.
 
+A session model picker uses its managed tooltip for a failed model catalog.
+Keyboard focus and pointer hover can reveal the localized failure description
+while the button keeps its model name and the menu retains its retry action.
+Healthy model labels use a tooltip only when truncated.
+
 ## Browser reconnect outbox
 
 Delivery uncertainty is owned by the conversation runtime, not by connection

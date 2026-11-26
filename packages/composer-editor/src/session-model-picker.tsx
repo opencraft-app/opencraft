@@ -47,13 +47,14 @@ export function SessionModelPicker({ catalog, label, selected, disabled, open, o
     return () => observer.disconnect();
   }, [label]);
   const failedLabel = intl.formatMessage({ id: "composer.model.loadError", defaultMessage: "Couldn't load models. Try again." });
+  const tooltipLabel = catalog?.modelError ? failedLabel : truncated ? label : null;
   return <DropdownMenu.Root open={open} onOpenChange={onOpenChange}>
     <div className="opencraft-composer-picker opencraft-composer-picker--intelligence">
       <Tooltip.Provider delayDuration={300} skipDelayDuration={100}>
-        <Tooltip.Root open={truncated && !open ? undefined : false}>
+        <Tooltip.Root open={tooltipLabel !== null && !open ? undefined : false}>
           <Tooltip.Trigger asChild><DropdownMenu.Trigger asChild>
             <DisclosureButton {...focus.triggerProps} className="opencraft-composer-mode opencraft-composer-mode--intelligence" type="button" disabled={disabled}
-              aria-label={label} title={catalog?.modelError ? failedLabel : undefined}>
+              aria-label={label}>
               <BrainCircuit className="opencraft-composer-mode__model-icon" size={16} aria-hidden="true" />
               <span ref={labelRef} className="opencraft-composer-mode__model-label">{models.length === 0 && !catalog?.modelError
                 ? <span className="opencraft-composer-mode__model-skeleton" aria-hidden="true" /> : label}</span>
@@ -61,7 +62,7 @@ export function SessionModelPicker({ catalog, label, selected, disabled, open, o
             </DisclosureButton>
           </DropdownMenu.Trigger></Tooltip.Trigger>
           <Tooltip.Portal container={portalContainer ?? undefined}><Tooltip.Content className="opencraft-composer-model-name-tooltip" side="top" sideOffset={8} collisionPadding={8}>
-            {label}<Tooltip.Arrow className="opencraft-composer-model-name-tooltip__arrow" width={10} height={6} />
+            {tooltipLabel}<Tooltip.Arrow className="opencraft-composer-model-name-tooltip__arrow" width={10} height={6} />
           </Tooltip.Content></Tooltip.Portal>
         </Tooltip.Root>
       </Tooltip.Provider>
