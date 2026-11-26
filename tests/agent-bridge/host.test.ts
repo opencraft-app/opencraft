@@ -3002,6 +3002,50 @@ test("after an update, a Thread whose old provider cannot hand it over moves on 
   assert.equal(snapshot.routes.find((row: any) => row.route === '["server-1","thread-1"]').generation, "new");
 });
 
+test("a retained failed Codex adoption binds once and sends after Host restart", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "codex-retry-adoption-"));
+  const path = join(root, "host.db");
+  const executions = join(root, "executions");
+  const artifact = resolve("tests/agent-bridge/fixtures/queue-bridge.mjs");
+  const provider = { ...declaration, providerId: "codex", capabilities: { ...declaration.capabilities, adoption: true, cliExecutable: true } };
+  const handshake = negotiateHandshake({ protocolVersion: 1, grammarRange: { min: 1, max: 1 } }, provider);
+  assert.ok(handshake.ok);
+  const generation = {
+    id: "codex-test", artifact, provider, digest: createHash("sha256").update(await readFile(artifact)).digest("hex"),
+    launch: { command: [process.execPath, artifact], cwd: root,
+      env: { HANDSHAKE: JSON.stringify(handshake.result), EXECUTIONS: executions, REFUSE_DUPLICATE_ADOPTION: "1" } },
+  };
+  const open = (executionCli?: Parameters<typeof BridgeHost.open>[0]["executionCli"]) =>
+    BridgeHost.open({ path, policy, backend: localTestBackend(), executionCli,
+      startup: { generations: [generation], activate: generation.id, cutoverCodex: true } });
+  let host = await open({
+    async reserve() { throw Error("fixture CLI temporarily unavailable"); },
+    async issue() { throw Error("fixture must not issue a CLI"); },
+  });
+  t.after(async () => {
+    await host.close();
+    await rm(root, { recursive: true, force: true });
+  });
+  const adoption = (id: string) => command(id, "session/adopt", { providerThreadId: "thread-1" });
+  await host.accept(adoption("failed-adoption"));
+  const rejected = await until(() => host.query("failed-adoption"), receipt => receipt?.state === "rejected");
+  assert.equal(rejected?.response && "error" in rejected.response && rejected.response.error.message, "cliUnavailable");
+  assert.deepEqual((await host.snapshot()).nativeSessions, []);
+  assert.equal((await host.snapshot()).routes.length, 1);
+  await host.close();
+
+  host = await open();
+  await host.accept(adoption("retry-adoption"));
+  const bound = await accepted(host, "retry-adoption");
+  assert.equal(bound?.identities?.nativeThreadId, "thread-1");
+  await host.accept(command("continue", "turn/start", {
+    native: { clientUserMessageId: "after-adoption", input: [{ type: "text", text: "continue the same thread" }] },
+  }));
+  const send = await until(() => host.query("continue"), receipt => receipt?.state === "accepted" || receipt?.state === "rejected");
+  assert.equal(send?.state, "accepted");
+  assert.deepEqual((await readFile(executions, "utf8")).trim().split("\n"), ["adopt:thread-1", "after-adoption"]);
+});
+
 test("Codex startup switches all existing bindings before serving, preserving history identity and unknown receipts", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "codex-cutover-"));
   const path = join(root, "host.db");
