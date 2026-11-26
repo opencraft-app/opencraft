@@ -8,6 +8,7 @@ import { createServer } from 'node:http';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { build } from 'esbuild';
 import { BridgeHost } from '../../apps/agent-bridge-host/src/host.js';
+import type { Storage } from '../../apps/agent-bridge-host/src/storage.js';
 import { attachGateway } from '../../apps/agent-bridge-host/src/server.js';
 import { codexDeclaration } from '../../apps/agent-bridge-host/src/codex-declaration.js';
 import { createServerCodexBridge } from '../../apps/opencraft-daemon/src/bridge-execution-admission';
@@ -44,7 +45,7 @@ for (const { status, manualPull, connects } of [
   }, publish => new BridgeGatewaySession({
     serverId: 'fixture',
     async request(path) {
-      assert.equal(path, '/snapshot');
+      assert.equal(path.split('?')[0], '/snapshot');
       return Response.json({ routes: [], nativeSessions: [], interactions: [] });
     },
     inbox: {
@@ -339,7 +340,7 @@ test('a ledger-confirmed settlement clears the shared approval before its outbox
     serverId: 'fixture',
     async request(path) {
       if (path === '/observe') return Response.json({ thread: { id: threadId, turns: [] } });
-      assert.equal(path, '/snapshot');
+      assert.equal(path.split('?')[0], '/snapshot');
       return Response.json({ routes: [{ route, generation: 'g' }], nativeSessions: [],
         interactions: pending ? [
           { route, id: interactionId }, ...(delayedBody ? [{ route, id: 'later' }] : []),
@@ -399,7 +400,7 @@ test('a displayed approval can be answered while another request body is in flig
       if (path === '/observe') return Response.json({ thread: { id: threadId, turns: [] } });
       if (path === '/command') { commands.push(body); return Response.json(null); }
       if (path.startsWith('/command?id=')) return Response.json({ state: 'accepted', response: { result: {} } });
-      assert.equal(path, '/snapshot');
+      assert.equal(path.split('?')[0], '/snapshot');
       return Response.json({ routes: [{ route, generation: 'g' }], nativeSessions: [], interactions: [
         { route, id: 'visible' }, ...(late ? [{ route, id: 'still-in-transit' }] : []),
       ] });
@@ -457,7 +458,7 @@ for (const at of ['publication', 'hydration', 'resolution']) test(`an expired ap
         if (path === '/observe') return Response.json({ thread: { id: threadId, turns: [] } });
         if (path === '/command') { commands.push(body); return Response.json(null); }
         if (path.startsWith('/command?id=')) return Response.json({ state: 'accepted', response: { result: {} } });
-        assert.equal(path, '/snapshot');
+        assert.equal(path.split('?')[0], '/snapshot');
         return Response.json({ routes: [{ route, generation: 'g' }], nativeSessions: [], interactions: [{ route, id: 'approval' }] });
       },
       inbox: {
@@ -1297,11 +1298,37 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
     // Declined: the local Host keeps a busy Thread, and its turn goes there.
     await request('turn/start',{threadId:'native-old',clientUserMessageId:'old-1',input:[{type:'text',text:'still local'}]});
     assert.equal(startsToLegacy(),1); assert.equal(currentGateway().owns('native-old'),false); assert.equal(oldStarts.length,0);
-    // Released: the bridge adopts the Thread under the same ID; the turn reaches native Codex through the bridge.
+    // Model a rejected reservation and a goal probe whose reply was lost.
+    const storage = (host as unknown as { storage: Storage }).storage;
+    const recordOutcome = async (threadId: string, commandId: string, method: string, state: 'rejected' | 'unknown') => {
+      const route = JSON.stringify(['server', threadId]);
+      await storage.call('admit', { route, digest: commandId, maxSpoolBytes: 1024 * 1024,
+        command: { serverId: 'server', threadId, commandId, method, params: {} } });
+      if (state === 'unknown') await storage.call('dispatch', { id: commandId });
+      await storage.call('settle', { id: commandId, state, response: state === 'rejected' ?
+        { jsonrpc: '2.0', id: commandId, error: { code: -32001, message: 'cliUnavailable' } } : null });
+    };
+    await recordOutcome('native-old', 'old-adopt-rejected', 'session/adopt', 'rejected');
+    await recordOutcome('native-old', 'old-goal-unknown', 'goal/get', 'unknown');
+    await recordOutcome('native-uncertain', 'uncertain-adopt-rejected', 'session/adopt', 'rejected');
+    await recordOutcome('native-uncertain', 'uncertain-adopt-unknown', 'session/adopt', 'unknown');
+    await transport.close();
+    transport = await createTransport();
+    await request('initialize');
+    await request('thread/resume', { threadId: 'bridge:codex:public-new' });
+    assert.equal(currentGateway().owns('native-old'), false, 'a failed adoption cannot pin a native Thread after restart');
+    assert.equal(currentGateway().owns('native-uncertain'), true, 'unknown adoption retains ownership fencing');
+    await assert.rejects(host.accept({
+      serverId: 'server', threadId: 'native-uncertain', commandId: 'uncertain-adopt-retry',
+      method: 'session/adopt', params: { providerThreadId: 'native-uncertain' },
+    }), /Thread already exists/);
+
+    // Retry only the retryable adoption; retain the public ID and send exactly once.
     releaseAnswer=true;
     await request('turn/start',{threadId:'native-old',clientUserMessageId:'old-2',input:[{type:'text',text:'now bridged'}]});
     assert.equal(currentGateway().owns('native-old'),true);
     assert.equal(startsToLegacy(),1,'the adopted turn never reaches the local Host');
+    assert.equal(oldStarts.length,1);
     assert.equal(oldStarts.at(-1).threadId,'native-old'); assert.equal(oldStarts.at(-1).clientUserMessageId,'old-2');
     assert.deepEqual(releaseCalls,['native-old','native-old']);
     const adoptedRead=await request('thread/read',{threadId:'native-old'});

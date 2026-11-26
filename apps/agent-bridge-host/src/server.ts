@@ -49,7 +49,7 @@ function gatewayServer(host: BridgeHost, token: string): Server {
             );
             break;
           }
-          case '/snapshot': result = await host.snapshot(); break;
+          case '/snapshot': result = await host.snapshot(url.searchParams.get('adoptionOwnership') === '1'); break;
           case '/maintenance': result = await host.maintenance(); break;
           default: response.writeHead(404).end(); return;
         }

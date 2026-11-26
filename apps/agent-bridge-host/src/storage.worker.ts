@@ -175,6 +175,23 @@ const busy = (route: string): boolean => {
 const turnIdle = (route: string, excludingCommandId = ''): boolean =>
   !get("SELECT 1 FROM commands WHERE route=? AND id<>? AND method IN ('turn/start','turn/steer') AND state IN ('registered','dispatching','unknown')", route, excludingCommandId)
   && Object.keys(checkpoint(route).openTurns).length === 0;
+// Goal reads can time out on an unbound route, but never take execution custody.
+const adoptionReceiptConflict = "state<>'rejected' AND method<>'goal/get'";
+function retryableAdoptionRoutes(): string[] {
+  const candidates = all(`
+    SELECT c.route FROM commands c
+    JOIN routes r ON r.route=c.route
+    LEFT JOIN native_sessions n ON n.route=c.route
+    WHERE r.archive_state='active' AND n.route IS NULL
+    GROUP BY c.route
+    HAVING count(*) FILTER (WHERE c.method='session/adopt' AND c.state='rejected') > 0
+       AND count(*) FILTER (WHERE ${adoptionReceiptConflict}) = 0
+  `);
+  return candidates.flatMap(({ route }) =>
+    get('SELECT 1 FROM checkpoints WHERE route=?', route) || get('SELECT 1 FROM outbox WHERE route=?', route)
+      ? [] : [route]);
+}
+
 const operations: Record<string, (args: any) => any> = {
   scriptAdmit: ({key,digest}:any) => tx(()=>{
     const previous=get('SELECT * FROM automation_scripts WHERE key=?',key);
@@ -215,8 +232,13 @@ const operations: Record<string, (args: any) => any> = {
     (!forQueue || queueActive(route)) && turnIdle(route, excludingCommandId),
   queueChanged: ({ route }: { route: string }) => tx(() =>
     require(publishQueueChanged(route), 'Queue Thread has no route')),
-  snapshot: () => ({ epoch: Number(meta('epoch')), current: meta('current'), ack: Number(meta('ack')), historyIdentityPages: true, historyIdentitySelection: true, historyPublicTurnBatch: true,
-    generations: all('SELECT * FROM generations').map(row => ({ ...row, config: JSON.parse(row.config) })), routes: all('SELECT * FROM routes'), nativeSessions: all('SELECT * FROM native_sessions'), interactions: all('SELECT * FROM interactions') }),
+  snapshot: ({ adoptionOwnership = false }: { adoptionOwnership?: boolean } = {}) => ({
+    epoch: Number(meta('epoch')), current: meta('current'), ack: Number(meta('ack')),
+    historyIdentityPages: true, historyIdentitySelection: true, historyPublicTurnBatch: true,
+    generations: all('SELECT * FROM generations').map(row => ({ ...row, config: JSON.parse(row.config) })),
+    routes: all('SELECT * FROM routes'), nativeSessions: all('SELECT * FROM native_sessions'), interactions: all('SELECT * FROM interactions'),
+    ...(adoptionOwnership ? { retryableAdoptionRoutes: retryableAdoptionRoutes() } : {}),
+  }),
   add: (config: Generation) => tx(() => {
     const previous = get('SELECT * FROM generations WHERE id=?', config.id);
     require(!previous || previous.config === JSON.stringify(config), 'Generation configuration is immutable');
@@ -252,13 +274,14 @@ const operations: Record<string, (args: any) => any> = {
     require(![...CREATES,'turn/start','turn/steer'].includes(command.method) || Number(get('SELECT coalesce(sum(length(CAST(payload AS BLOB))),0) AS bytes FROM outbox').bytes) < maxSpoolBytes, 'Spool full; new admissions stopped');
     let binding = get('SELECT generation,archive_state FROM routes WHERE route=?', route);
     if (binding && CREATES.includes(command.method)) {
-      // A rejected first create left only a route binding, no native session,
-      // outbox or accepted command. Allow that Thread identity to retry rather
-      // than bricking it; any accepted/unsettled command or native fact still
-      // means "already exists".
+      // A legacy adoption may retry after a read-only probe, including an
+      // unknown reply to that probe. Native facts and unresolved writes still
+      // fence another attempt. Create and fork retain their stricter gate.
+      const adoption = command.method === 'session/adopt';
       require(!get('SELECT 1 FROM native_sessions WHERE route=?', route)
         && !get('SELECT 1 FROM outbox WHERE route=?', route)
-        && !get("SELECT 1 FROM commands WHERE route=? AND state<>'rejected'", route),
+        && (!adoption || binding.archive_state === 'active' && !get('SELECT 1 FROM checkpoints WHERE route=?', route))
+        && !get(`SELECT 1 FROM commands WHERE route=? AND ${adoption ? adoptionReceiptConflict : "state<>'rejected'"}`, route),
         'Thread already exists');
     }
     if (!binding) {
