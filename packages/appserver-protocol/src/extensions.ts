@@ -95,6 +95,8 @@ export interface OpenCraftThreadLifecycleCapability {
   readonly archive?: boolean;
   /** A passive thread/read supplies the authorized archive state when known. */
   readonly archiveStateInRead?: boolean;
+  /** Explicit history viewing may restore the placed archive's checkpoint. */
+  readonly openArchivedHistory?: boolean;
   readonly delete?: boolean;
 }
 
@@ -113,6 +115,7 @@ export function parseThreadLifecycleCapability(value: unknown): OpenCraftThreadL
     rename: capability.rename === true,
     archive: capability.archive === true,
     ...(capability.archiveStateInRead === true ? { archiveStateInRead: true } : {}),
+    ...(capability.openArchivedHistory === true ? { openArchivedHistory: true } : {}),
     delete: capability.delete === true,
   };
 }

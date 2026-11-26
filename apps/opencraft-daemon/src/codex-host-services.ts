@@ -113,7 +113,7 @@ export class CodexHostServices implements DuplexTransport, CodexHostServiceClien
     }
   }
 
-  request(method: string, params: Value, timeoutMs = 30_000): Promise<unknown> {
+  request(method: string, params: Value, timeoutMs = 30_000, context: TransportSubmissionContext = { sender: null }): Promise<unknown> {
     const send = (id: string, frame: Value) =>
       new Promise<unknown>((resolve, reject) => {
         const timer = setTimeout(() => {
@@ -124,7 +124,9 @@ export class CodexHostServices implements DuplexTransport, CodexHostServiceClien
         this.internal.set(id, { resolve, reject, timer });
         const raw = JSON.stringify({ jsonrpc: "2.0", ...frame, id, [LOGICAL_CLIENT_FIELD]: CODEX_HOST_CLIENT });
         void (
-          this.routing.sendWithContext ? this.routing.sendWithContext(raw, { sender: null }) : this.routing.send(raw)
+          this.routing.sendWithContext
+            ? this.routing.sendWithContext(raw, frame.method === "initialize" ? { sender: null } : context)
+            : this.routing.send(raw)
         ).catch((error) => {
           const pending = this.internal.get(id);
           if (!pending) return;

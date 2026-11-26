@@ -23,6 +23,9 @@ export class BridgeGateway extends BridgeGatewaySession {
       serverId: options.serverId,
       request,
       inbox: {
+        cursor: () => inbox.cursor(),
+        readIdentities: (route, after, through, selection) => inbox.readIdentities(route, after, through, selection),
+        readPendingInteractions: (route, after, through, ids) => inbox.readPendingInteractions(route, after, through, ids),
         read: (cursor) => inbox.read(cursor),
         pull: () => inbox.pull(options.url, options.token),
         close: () => inbox.close(),

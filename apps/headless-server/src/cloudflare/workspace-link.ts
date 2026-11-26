@@ -40,6 +40,13 @@ const HEADER_LIMIT = 64 * 1024;
 const TOKEN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/u;
 const unavailable = (message: string) => new SandboxFault("SANDBOX_UNAVAILABLE", message);
 
+/** A request interrupted after dialing, distinct from invalid framing or lost placement. */
+export class EndpointHttpInterrupted extends SandboxFault {
+  constructor(message: string) {
+    super("SANDBOX_UNAVAILABLE", message);
+  }
+}
+
 function concat(chunks: readonly Uint8Array[]): Uint8Array {
   const out = new Uint8Array(chunks.reduce((size, chunk) => size + chunk.byteLength, 0));
   let at = 0;
@@ -86,26 +93,44 @@ function parseHead(bytes: Uint8Array): { status: number; headers: Map<string, st
   return { status: Number(status[1]), headers, size: end };
 }
 
-/** Decodes a complete chunked body; null while more bytes are needed. */
-function dechunk(bytes: Uint8Array): Uint8Array | null {
+/** Consumes HTTP chunks across arbitrary endpoint frame boundaries. */
+function chunkedBodyReader(maxBytes: number) {
   const parts: Uint8Array[] = [];
-  let at = 0;
-  for (;;) {
-    let line = -1;
-    for (let i = at + 1; i < bytes.byteLength; i++)
-      if (bytes[i - 1] === 13 && bytes[i] === 10) {
-        line = i - 1;
-        break;
+  const sizeLine: number[] = [];
+  let remaining = 0;
+  let delimiter = 0;
+  let declared = 0;
+  return (bytes: Uint8Array): Uint8Array | undefined => {
+    let offset = 0;
+    while (offset < bytes.byteLength) {
+      if (remaining > 0) {
+        const end = Math.min(offset + remaining, bytes.byteLength);
+        parts.push(bytes.subarray(offset, end));
+        remaining -= end - offset;
+        offset = end;
+        if (!remaining) delimiter = 2;
+        continue;
       }
-    if (line < 0) return null;
-    const size = Number.parseInt(decoder.decode(bytes.subarray(at, line)).split(";")[0]!.trim(), 16);
-    if (!Number.isSafeInteger(size) || size < 0) throw unavailable("Invalid endpoint response chunk");
-    at = line + 2;
-    if (size === 0) return concat(parts);
-    if (bytes.byteLength < at + size + 2) return null;
-    parts.push(bytes.subarray(at, at + size));
-    at += size + 2;
-  }
+      const byte = bytes[offset++]!;
+      if (delimiter > 0) {
+        if (byte !== (delimiter === 2 ? 13 : 10)) throw unavailable("Invalid endpoint response chunk delimiter");
+        delimiter--;
+        continue;
+      }
+      sizeLine.push(byte);
+      if (sizeLine.length > HEADER_LIMIT) throw unavailable("Endpoint response chunk header exceeds its budget");
+      if (byte !== 10) continue;
+      if (sizeLine.at(-2) !== 13) throw unavailable("Invalid endpoint response chunk");
+      sizeLine.length -= 2;
+      const hex = decoder.decode(Uint8Array.from(sizeLine)).split(";")[0]!.trim();
+      sizeLine.length = 0;
+      if (!/^[0-9a-f]+$/iu.test(hex)) throw unavailable("Invalid endpoint response chunk");
+      remaining = Number.parseInt(hex, 16);
+      if (!remaining) return concat(parts);
+      declared += remaining;
+      if (declared > maxBytes) throw unavailable("Endpoint response exceeds its budget");
+    }
+  };
 }
 
 /**
@@ -127,10 +152,15 @@ export async function endpointHttpRequest(
       ...(body ? { "content-length": String(body.byteLength) } : {}),
     }) + "\r\n",
   );
-  const chunks: Uint8Array[] = [];
-  let received = 0,
-    settle!: (value: EndpointHttpResponse | Error) => void,
-    done = false;
+  const headParts: Uint8Array[] = [];
+  const bodyParts: Uint8Array[] = [];
+  let parsed: NonNullable<ReturnType<typeof parseHead>> | undefined;
+  let readChunked: ReturnType<typeof chunkedBodyReader> | undefined;
+  let contentLength: number | undefined;
+  let received = 0;
+  let bodyBytes = 0;
+  let settle!: (value: EndpointHttpResponse | Error) => void;
+  let done = false;
   const outcome = new Promise<EndpointHttpResponse | Error>((resolve) => {
     settle = (value) => {
       if (!done) {
@@ -148,31 +178,6 @@ export async function endpointHttpRequest(
       text: () => decoder.decode(payload),
       json: () => JSON.parse(decoder.decode(payload)),
     });
-  /** Settles once the response is complete; `ended` when the owner closed the connection. */
-  const evaluate = (ended: boolean) => {
-    try {
-      const bytes = concat(chunks);
-      const parsed = parseHead(bytes);
-      if (!parsed) {
-        if (ended) settle(unavailable("Endpoint closed before its response"));
-        return;
-      }
-      const rest = bytes.subarray(parsed.size);
-      const length = parsed.headers.get("content-length");
-      if (parsed.headers.get("transfer-encoding")?.toLowerCase() === "chunked") {
-        const decoded = dechunk(rest);
-        if (decoded) respond(parsed.status, parsed.headers, decoded);
-        else if (ended) settle(unavailable("Endpoint response ended early"));
-      } else if (length !== undefined) {
-        const size = Number(length);
-        if (!/^\d{1,12}$/u.test(length) || size > maxBytes) throw unavailable("Invalid endpoint response length");
-        if (rest.byteLength >= size) respond(parsed.status, parsed.headers, rest.slice(0, size));
-        else if (ended) settle(unavailable("Endpoint response ended early"));
-      } else if (ended) respond(parsed.status, parsed.headers, rest.slice());
-    } catch (error) {
-      settle(error instanceof Error ? error : unavailable("Invalid endpoint response"));
-    }
-  };
   const connection = await dial((data) => {
     if (done) return;
     received += data.byteLength;
@@ -180,11 +185,48 @@ export async function endpointHttpRequest(
       settle(unavailable("Endpoint response exceeds its budget"));
       return;
     }
-    chunks.push(data.slice());
-    evaluate(false);
+    try {
+      // Own each retained endpoint frame while assembling the response.
+      let bytes: Uint8Array = data.slice();
+      if (!parsed) {
+        headParts.push(bytes);
+        const headBytes = headParts.length === 1 ? bytes : concat(headParts);
+        const complete = parseHead(headBytes);
+        if (!complete) return;
+        parsed = complete;
+        headParts.length = 0;
+        bytes = headBytes.subarray(parsed.size);
+        const length = parsed.headers.get("content-length");
+        if (parsed.headers.get("transfer-encoding")?.toLowerCase() === "chunked") {
+          readChunked = chunkedBodyReader(maxBytes);
+        } else if (length !== undefined) {
+          contentLength = Number(length);
+          if (!/^\d{1,12}$/u.test(length) || contentLength > maxBytes)
+            throw unavailable("Invalid endpoint response length");
+        }
+      }
+      if (readChunked) {
+        const payload = readChunked(bytes);
+        if (payload) respond(parsed.status, parsed.headers, payload);
+        return;
+      }
+      const retained = contentLength === undefined ? bytes : bytes.subarray(0, contentLength - bodyBytes);
+      bodyBytes += retained.byteLength;
+      if (bodyBytes > maxBytes) throw unavailable("Endpoint response exceeds its budget");
+      if (retained.byteLength) bodyParts.push(retained);
+      if (bodyBytes === contentLength) respond(parsed.status, parsed.headers, concat(bodyParts));
+    } catch (error) {
+      settle(error instanceof Error ? error : unavailable("Invalid endpoint response"));
+    }
   });
-  void connection.closed.then(() => evaluate(true));
-  const timer = setTimeout(() => settle(unavailable("Endpoint request timed out")), options.timeoutMs ?? 5000);
+  void connection.closed.then(result => {
+    if (done) return;
+    if (result === "failed") settle(new EndpointHttpInterrupted("Endpoint connection failed before the response completed"));
+    else if (!parsed) settle(new EndpointHttpInterrupted("Endpoint closed before its response"));
+    else if (readChunked || contentLength !== undefined) settle(new EndpointHttpInterrupted("Endpoint response ended early"));
+    else respond(parsed.status, parsed.headers, concat(bodyParts));
+  });
+  const timer = setTimeout(() => settle(new EndpointHttpInterrupted("Endpoint request timed out")), options.timeoutMs ?? 5000);
   try {
     await connection.write(body ? concat([head, body]) : head);
     const result = await outcome;

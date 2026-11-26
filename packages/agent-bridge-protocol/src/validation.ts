@@ -66,6 +66,17 @@ function isItemShape(value: unknown): boolean {
     case "reasoning":
       return isString(value.text) && (value.summary === undefined || isStringArray(value.summary)) &&
         (value.content === undefined || isStringArray(value.content));
+    case "appServerItem": {
+      const item = value.item;
+      if (!isRecord(item) || !isString(item.status) || Object.hasOwn(item, "id")) return false;
+      if (item.type === "imageGeneration")
+        return isString(item.result) && (item.savedPath === undefined || isString(item.savedPath));
+      if (item.type === "mcpToolCall")
+        return isString(item.server) && isString(item.tool) && (item.result == null ||
+          isRecord(item.result) && Array.isArray(item.result.content));
+      return item.type === "dynamicToolCall" && isString(item.tool) &&
+        (item.contentItems == null || Array.isArray(item.contentItems));
+    }
     case "tool":
       return isString(value.name) && isOneOf(value.status, ITEM_TOOL_STATUSES)
         && (value.output === undefined || value.output === null || isString(value.output));

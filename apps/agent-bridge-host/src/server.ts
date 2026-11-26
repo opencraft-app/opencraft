@@ -3,7 +3,9 @@ import { timingSafeEqual } from 'node:crypto';
 import { chmod } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
 import { BridgeHost } from './host.js';
-import { object, identifier, isOutboxId, type Generation } from './types.js';
+import { BRIDGE_MAX_FRAME_BYTES } from '@opencraft/agent-bridge-protocol';
+import { BRIDGE_HISTORY_SELECTION_LIMIT, object, identifier, isOutboxId, oversizedBridgeRequest, type Generation } from './types.js';
+
 function gatewayServer(host: BridgeHost, token: string): Server {
   if (Buffer.byteLength(token) < 32) throw Error('Private Host requires a token of at least 32 bytes');
   const server = createServer(async (request, response) => {
@@ -32,8 +34,21 @@ function gatewayServer(host: BridgeHost, token: string): Server {
           case '/script/show': result=await host.scriptResult(identifier(url.searchParams.get('key')));break;
           case '/health': result = { pid: process.pid, incarnation: host.incarnation, generations: host.diagnostics() }; break;
           case '/command': result = await host.query(identifier(url.searchParams.get('id'))); break;
-          case '/events': result = await host.events(Number(url.searchParams.get('cursor') ?? 0), undefined, url.searchParams.get('fenced') === '1'); break;
+          case '/events': {
+            const fragment = url.searchParams.get('fragment');
+            result = await host.events(Number(url.searchParams.get('cursor') ?? 0), undefined,
+              url.searchParams.get('fenced') === '1', fragment === null ? undefined : Number(fragment));
+            break;
+          }
           case '/thread': result = await host.threadState(identifier(url.searchParams.get('serverId')), identifier(url.searchParams.get('threadId'))); break;
+          case '/history-identities': {
+            const through = url.searchParams.get('through');
+            result = await host.historyIdentities(
+              identifier(url.searchParams.get('serverId')), identifier(url.searchParams.get('threadId')),
+              Number(url.searchParams.get('after') ?? 0), through === null ? undefined : Number(through),
+            );
+            break;
+          }
           case '/snapshot': result = await host.snapshot(); break;
           case '/maintenance': result = await host.maintenance(); break;
           default: response.writeHead(404).end(); return;
@@ -41,13 +56,31 @@ function gatewayServer(host: BridgeHost, token: string): Server {
       } else if (request.method === 'POST') {
         let length = 0; const chunks: Buffer[] = [];
         for await (const chunk of request) {
-          length += chunk.length; if (length > 600 * 1024) throw Error('Request too large'); chunks.push(chunk);
+          length += chunk.length;
+          if (length > BRIDGE_MAX_FRAME_BYTES) throw oversizedBridgeRequest(BRIDGE_MAX_FRAME_BYTES);
+          chunks.push(chunk);
         }
         const body = object(JSON.parse(Buffer.concat(chunks).toString('utf8')));
         switch (url.pathname) {
           case '/script/run': result=await host.script(body);break;
           case '/command': result = await host.accept(body); break;
           case '/observe': result = await host.observe(body); break;
+          case '/history-identities': {
+            const { nativeIds, publicTurnId, publicTurnIds } = object(body.selection);
+            if (!Array.isArray(nativeIds) || nativeIds.length > BRIDGE_HISTORY_SELECTION_LIMIT ||
+                (publicTurnIds !== undefined && (!Array.isArray(publicTurnIds) ||
+                  publicTurnIds.length + nativeIds.length > BRIDGE_HISTORY_SELECTION_LIMIT)))
+              throw Error('Invalid history identity selection');
+            if (typeof body.after !== 'number' || (body.through !== undefined && typeof body.through !== 'number'))
+              throw Error('Invalid history identity cursor');
+            result = await host.historyIdentities(identifier(body.serverId), identifier(body.threadId),
+              body.after, body.through, {
+                nativeIds: nativeIds.map(identifier),
+                ...(publicTurnId === undefined ? {} : { publicTurnId: identifier(publicTurnId) }),
+                ...(publicTurnIds === undefined ? {} : { publicTurnIds: publicTurnIds.map(identifier) }),
+              });
+            break;
+          }
           case '/queue': result = await host.queueRequest(body); break;
           case '/ack': {
             const { outboxId } = body;
@@ -64,12 +97,12 @@ function gatewayServer(host: BridgeHost, token: string): Server {
       } else { response.writeHead(405).end(); return; }
       response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(result ?? null));
     } catch (error) {
-      const refusal = error as Error & { code?: number; kind?: string };
+      const refusal = error as Error & { code?: number; kind?: string; data?: unknown };
       const typed = typeof refusal.code === 'number' && typeof refusal.kind === 'string';
       // The caller only learns to query custody; the operator sees why.
       if (!typed) process.stderr.write(`host-request-refused:${request.url}:${String(refusal?.message ?? refusal).slice(0, 300)}\n`);
       response.writeHead(409, { 'content-type': 'application/json' }).end(JSON.stringify(typed
-        ? { error: refusal.message, code: refusal.code, kind: refusal.kind }
+        ? { error: refusal.message, code: refusal.code, kind: refusal.kind, data: refusal.data }
         : { error: 'Host request refused; query the original commandId for custody' }));
     }
   });

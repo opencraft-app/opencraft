@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { CodexCoreBridge } from "../../apps/opencraft-daemon/src/codex-core-bridge";
 import { CodexEngineAdapter } from "../../apps/opencraft-daemon/src/codex-engine-adapter";
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
 import { SHARED_INTERACTIONS_EXTENSION, SHARED_INTERACTIONS_CHANGED, SHARED_INTERACTIONS_RESPOND, SHARED_INTERACTIONS_READ } from "@opencraft/appserver-protocol";
@@ -57,6 +58,131 @@ test("all subscribed clients, late readers and legacy viewers see human waits wi
   assert.equal(f.frames.filter(frame => frame.method === "serverRequest/resolved" && frame.params.requestId === 901 && frame[LOGICAL_CLIENT_FIELD] === "b").length, 1);
 });
 
+for (const shared of [true, false]) {
+  test(`native approval releases a revoked submitter before delivery (shared=${shared})`, async t => {
+    const f = await fixture(t);
+    await f.init("a", shared);
+    await f.init("b");
+    const threadId = "fixture-thread-1";
+    await f.rpc("a", "thread/start", { cwd: f.root, testNoServerRequest: true });
+    await f.rpc("b", "thread/resume", { threadId });
+
+    let current = true;
+    f.adapter.subscribeMessage(raw => {
+      const frame = JSON.parse(raw);
+      if (frame[LOGICAL_CLIENT_FIELD] === "b" && frame.method === SHARED_INTERACTIONS_CHANGED &&
+          frame.params.requests[0]?.state === "responding") current = false;
+    });
+    f.emit();
+    const interactionId = f.snapshot("b").requests[0].id;
+    const legacy = f.frames.find(frame => frame.method === "item/commandExecution/requestApproval" && frame[LOGICAL_CLIENT_FIELD] === "a");
+    if (!shared) assert.ok(legacy);
+    const answer = { decision: "decline" };
+    const submission = shared
+      ? { id: "first-answer", method: SHARED_INTERACTIONS_RESPOND, params: { threadId, interactionId, submissionId: "first", result: answer } }
+      : { id: legacy.id, result: answer };
+    const submitted = f.adapter.sendWithContext(JSON.stringify({ ...submission, [LOGICAL_CLIENT_FIELD]: "a" }), {
+      sender: null,
+      resourceOwner: { id: "fixture-owner", assertCurrent() { if (!current) throw Error("Expired owner"); } },
+    });
+    if (shared) {
+      await submitted;
+      const refusal = await until(() => f.frames.find(frame => frame.id === "first-answer"));
+      assert.equal(refusal.error.data?.submissionOutcome, "rejected");
+    } else {
+      await assert.rejects(submitted, /subscription expired/);
+    }
+    assert.equal(current, false);
+    assert.equal(f.snapshot("b").requests[0]?.state, "pending");
+
+    const peer = await f.rpc("b", SHARED_INTERACTIONS_RESPOND, {
+      threadId, interactionId, submissionId: "peer", result: { decision: "accept" },
+    });
+    assert.equal(peer.result?.disposition, "submitted");
+    await until(() => f.snapshot("b").requests.length === 0 ? true : undefined);
+    assert.equal(f.frames.filter(frame => frame.method === "serverRequest/resolved" &&
+      frame.params.requestId === 901 && frame[LOGICAL_CLIENT_FIELD] === "b").length, 1);
+  });
+}
+
+for (const shared of [true, false]) {
+  test(`split Codex Core releases a revoked submitter before delivery (shared=${shared})`, async t => {
+    const bridge = new CodexCoreBridge("/fixture-unused", "fixture-token");
+    t.after(() => bridge.close());
+    const native = bridge as any;
+    const nativeResponses: unknown[] = [], frames: any[] = [];
+    const threadId = "fixture-thread-1";
+    native.connection.value = { state: "open" };
+    native.connection.send = (raw: string) => {
+      const frame = JSON.parse(raw);
+      if (frame.method === "initialize" || frame.method === "thread/resume") {
+        native.receive(JSON.stringify({ id: frame.id, result: frame.method === "initialize"
+          ? { capabilities: {} } : { thread: { id: threadId } } }));
+      } else if (frame.id === 901) {
+        nativeResponses.push(frame.result);
+      }
+    };
+    let current = true;
+    const resourceOwner = { id: "fixture-owner", assertCurrent() { if (!current) throw Error("Expired owner"); } };
+    bridge.subscribeMessage(raw => {
+      const frame = JSON.parse(raw);
+      frames.push(frame);
+      if (frame[LOGICAL_CLIENT_FIELD] === "b" && frame.method === SHARED_INTERACTIONS_CHANGED &&
+          frame.params.requests[0]?.state === "responding") current = false;
+    });
+    const send = (client: string, message: Record<string, unknown>, owner?: typeof resourceOwner) =>
+      bridge.sendWithContext(JSON.stringify({ ...message, [LOGICAL_CLIENT_FIELD]: client }), { sender: null, resourceOwner: owner });
+    for (const client of ["a", "b"]) {
+      const extensions = shared || client === "b" ? { [SHARED_INTERACTIONS_EXTENSION]: { version: 1 } } : {};
+      await send(client, { id: "init", method: "initialize", params: { capabilities: { extensions } } });
+      await send(client, { id: "resume", method: "thread/resume", params: { threadId } });
+    }
+    native.receive(JSON.stringify({ id: 901, method: "item/commandExecution/requestApproval",
+      params: { threadId, turnId: "turn", itemId: "item", command: "echo fixture" } }));
+    const snapshot = () => frames.filter(frame => frame[LOGICAL_CLIENT_FIELD] === "b" && frame.method === SHARED_INTERACTIONS_CHANGED).at(-1).params;
+    const interactionId = snapshot().requests[0].id;
+    const legacy = frames.find(frame => frame.method === "item/commandExecution/requestApproval" && frame[LOGICAL_CLIENT_FIELD] === "a");
+    if (!shared) assert.ok(legacy);
+    const result = { decision: "decline" };
+    const submission = shared
+      ? { id: "first", method: SHARED_INTERACTIONS_RESPOND, params: { threadId, interactionId, submissionId: "first", result } }
+      : { id: legacy.id, result };
+    const submitted = send("a", submission, resourceOwner);
+    if (shared) {
+      await submitted;
+      assert.equal(frames.find(frame => frame.id === "first")?.error?.data?.submissionOutcome, "rejected");
+    } else {
+      await assert.rejects(submitted, /subscription expired/);
+    }
+    assert.equal(current, false);
+    assert.equal(snapshot().requests[0]?.state, "pending");
+    assert.deepEqual(nativeResponses, []);
+
+    await send("b", { id: "peer", method: SHARED_INTERACTIONS_RESPOND, params: {
+      threadId, interactionId, submissionId: "peer", result: { decision: "accept" },
+    } });
+    assert.equal(frames.find(frame => frame.id === "peer")?.result?.disposition, "submitted");
+    assert.deepEqual(nativeResponses, [{ decision: "accept" }]);
+    if (!shared) {
+      native.receive(JSON.stringify({ method: "serverRequest/resolved", params: { threadId, requestId: 901 } }));
+      assert.ok(frames.some(frame => frame.method === "serverRequest/resolved" &&
+        frame[LOGICAL_CLIENT_FIELD] === "a" && frame.params.requestId === legacy.id));
+      native.receive(JSON.stringify({ id: 901, method: "item/commandExecution/requestApproval",
+        params: { threadId, turnId: "new-turn", itemId: "new-item", command: "echo fixture" } }));
+      const fresh = frames.filter(frame => frame.method === "item/commandExecution/requestApproval" &&
+        frame[LOGICAL_CLIENT_FIELD] === "a").at(-1);
+      assert.notEqual(fresh.id, legacy.id);
+      await send("a", { id: legacy.id, result: { decision: "accept" } });
+      assert.deepEqual(nativeResponses, [{ decision: "accept" }]);
+      native.receive(JSON.stringify({ method: "turn/completed", params: { threadId, turn: { id: "new-turn", status: "completed" } } }));
+      assert.ok(frames.some(frame => frame.method === "serverRequest/resolved" &&
+        frame[LOGICAL_CLIENT_FIELD] === "a" && frame.params.requestId === fresh.id));
+      await send("a", { id: fresh.id, result: { decision: "decline" } });
+      assert.deepEqual(nativeResponses, [{ decision: "accept" }]);
+    }
+  });
+}
+
 test("a pre-write response failure preserves a shared unconfirmed wait", async t => {
   const f = await fixture(t); await f.init("a"); await f.init("b");
   await f.rpc("a", "thread/start", { cwd: f.root, testNoServerRequest: true }); await f.rpc("b", "thread/resume", { threadId: "fixture-thread-1" });
@@ -93,4 +219,42 @@ test('adapter sends the stable approval identity after a reused native route rec
   const fresh=await f.rpc('a',SHARED_INTERACTIONS_RESPOND,{threadId:'fixture-thread-1',interactionId:'fresh',submissionId:'fresh',result:{decision:'decline'}});
   assert.equal(fresh.error,undefined);
   assert.deepEqual(writes,[{id:901,result:{decision:'decline'},__opencraftInteractionKey:'fresh'}]);
+});
+
+test("a legacy Codex reply cannot answer a newer approval that reused its native request ID", async t => {
+  const f = await fixture(t);
+  await f.init("legacy", false);
+  await f.init("peer");
+  const threadId = "fixture-thread-1";
+  await f.rpc("legacy", "thread/start", { cwd: f.root, testNoServerRequest: true });
+  await f.rpc("peer", "thread/resume", { threadId });
+  const native = f.adapter as any;
+  const writes: unknown[] = [];
+  const write = native.writePhysical.bind(native);
+  native.writePhysical = (message: any, ...args: unknown[]) => {
+    if (message.id === 901 && message.result) writes.push(message.result);
+    return write(message, ...args);
+  };
+  const offers = () => f.frames.filter(frame => frame[LOGICAL_CLIENT_FIELD] === "legacy" &&
+    frame.method === "item/commandExecution/requestApproval");
+  const answer = (id: string | number, decision: string) =>
+    f.adapter.send(JSON.stringify({ id, result: { decision }, [LOGICAL_CLIENT_FIELD]: "legacy" }));
+
+  f.emit();
+  const firstId = offers()[0].id;
+  await answer(firstId, "accept");
+  await until(() => f.frames.find(frame => frame[LOGICAL_CLIENT_FIELD] === "legacy" &&
+    frame.method === "serverRequest/resolved" && frame.params.requestId === firstId));
+  assert.deepEqual(writes, [{ decision: "accept" }]);
+
+  f.emit();
+  const secondId = offers()[1].id;
+  await answer(firstId, "accept");
+  assert.deepEqual(writes, [{ decision: "accept" }]);
+  assert.notEqual(secondId, firstId);
+  assert.equal(f.snapshot("peer").requests[0].state, "pending");
+  await answer(secondId, "decline");
+  await until(() => f.frames.find(frame => frame[LOGICAL_CLIENT_FIELD] === "legacy" &&
+    frame.method === "serverRequest/resolved" && frame.params.requestId === secondId));
+  assert.deepEqual(writes, [{ decision: "accept" }, { decision: "decline" }]);
 });

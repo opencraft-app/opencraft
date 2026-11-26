@@ -1,5 +1,6 @@
 import { isAbsolute } from "node:path";
 import { randomUUID } from "node:crypto";
+import { isHumanInteraction } from "@opencraft/appserver-protocol";
 import {
   BRIDGE_ERROR_CODES,
   negotiateHandshake,
@@ -75,16 +76,7 @@ export class CodexBridgeRuntime {
     this.adapter.notification(method, params);
   }
   interaction(nativeId: string | number, method: string, raw: unknown): void {
-    if (
-      ![
-        "item/commandExecution/requestApproval",
-        "item/fileChange/requestApproval",
-        "item/tool/requestUserInput",
-        "mcpServer/elicitation/request",
-        // The client's own dynamic tools (declared at thread/start) are answered by that client.
-        "item/tool/call",
-      ].includes(method)
-    ) {
+    if (method !== "item/tool/call" && !isHumanInteraction(method, raw)) {
       this.owner.reject?.(nativeId);
       return;
     }
@@ -103,10 +95,35 @@ export class CodexBridgeRuntime {
         ? "approval"
         : method === "item/tool/call"
           ? "codex/dynamic-tool"
-          : "question",
+            : "question",
       payload: { method, params },
       providerNativeIds: true,
     });
+  }
+  private readHistory(method: string, params: Record<string, unknown>): Promise<unknown> {
+    return this.owner.readHistory?.(method, params) ?? this.owner.request(method, params);
+  }
+  private async readOpenTurnOutcomes(nativeId: string, open: readonly string[]) {
+    const statuses = new Map(open.map(id => [id, "interrupted"]));
+    const remaining = new Set(open);
+    let cursor: string | null = null;
+    for (let page = 0; page < 20; page++) {
+      const response = object(await this.readHistory("thread/turns/list", {
+        threadId: nativeId, cursor, limit: 20, sortDirection: "desc", itemsView: "notLoaded",
+      }));
+      if (!Array.isArray(response.data)) throw new CodexBridgeError("unknown-outcome", "Native Turn page unavailable");
+      for (const value of response.data) {
+        const turn = object(value);
+        if (typeof turn.id === "string" && remaining.delete(turn.id))
+          statuses.set(turn.id, String(turn.status ?? "interrupted"));
+      }
+      if (!remaining.size || response.nextCursor == null)
+        return open.map(nativeTurnId => ({ nativeTurnId, status: statuses.get(nativeTurnId)! }));
+      if (typeof response.nextCursor !== "string" || response.nextCursor === cursor)
+        throw new CodexBridgeError("unknown-outcome", "Native Turn pagination did not advance");
+      cursor = response.nextCursor;
+    }
+    throw new CodexBridgeError("unknown-outcome", "Native Turn reconciliation exceeded its page limit");
   }
   async handle(request: BridgeRequest): Promise<void> {
     try {
@@ -218,26 +235,15 @@ export class CodexBridgeRuntime {
           const status = object(read.status).type;
           if (read.id !== nativeId || !["idle", "notLoaded"].includes(String(status)))
             throw new CodexBridgeError("explicit-reject", "Only an idle existing session can be adopted");
+          const open = Array.isArray(p.openTurns) ? p.openTurns.map(identifier) : [];
+          // Complete bounded reconciliation before this process claims the route.
+          const outcomes = open.length ? await this.readOpenTurnOutcomes(nativeId, open) : [];
           const result = object(await this.owner.request("thread/resume", { threadId: nativeId, excludeTurns: true }));
           if (object(result.thread).id !== nativeId)
             throw new CodexBridgeError("explicit-reject", "Native session identity changed during adoption");
           this.adapter.bind(threadId, nativeId);
           this.callback("thread/identity", { threadId, providerThreadId: nativeId, sessionRestorable: true });
-          const open = Array.isArray(p.openTurns)
-            ? p.openTurns.filter((id): id is string => typeof id === "string")
-            : [];
-          if (open.length) {
-            // The session is idle natively, so each turn the Host held open has ended; use its native outcome.
-            const turns = (object(
-              object(await this.owner.request("thread/read", { threadId: nativeId, includeTurns: true })).thread,
-            ).turns ?? []) as unknown[];
-            const status = (id: string) =>
-              String(object(turns.map(object).find((turn) => turn.id === id)).status ?? "interrupted");
-            this.adapter.recovered(
-              threadId,
-              open.map((nativeTurnId) => ({ nativeTurnId, status: status(nativeTurnId) })),
-            );
-          }
+          if (outcomes.length) this.adapter.recovered(threadId, outcomes);
           return result;
         } finally {
           this.creating.delete(threadId);
@@ -272,7 +278,11 @@ export class CodexBridgeRuntime {
         // cannot be adopted by asking for an arbitrary native session ID.
         if (p.excludeTurns !== undefined && typeof p.excludeTurns !== "boolean")
           throw new CodexBridgeError("invalid", "Invalid resume history selection");
-        return this.owner.request("thread/resume", { threadId: nativeId, excludeTurns: p.excludeTurns ?? true });
+        const native = p.native === undefined ? {} : object(p.native);
+        const overrides = Object.fromEntries(Object.entries(native).filter(([key]) =>
+          ["model", "modelProvider", "serviceTier", "approvalPolicy", "approvalsReviewer", "permissions", "sandbox"].includes(key),
+        ));
+        return this.owner.request("thread/resume", { ...overrides, threadId: nativeId, excludeTurns: p.excludeTurns ?? true });
       }
       case "session/close":
         await this.adapter.close(threadId);
@@ -308,7 +318,12 @@ export class CodexBridgeRuntime {
         throw new CodexBridgeError("unsupported", "Native input withdrawal is unavailable");
       case "history/read": {
         const read = (method: string, params: Record<string, unknown>) =>
-          this.owner.readHistory?.(method, params) ?? this.owner.request(method, params);
+          this.readHistory(method, params);
+        if (p.view === "occurrences") {
+          return read("thread/searchOccurrences", {
+            threadId: this.adapter.nativeSession(threadId), searchTerm: p.searchTerm, limit: p.limit, cursor: p.cursor,
+          });
+        }
         if (p.view === "thread") {
           const nativeId = this.adapter.nativeSession(threadId);
           // Between turn/start and native recording the first user message the session has no
@@ -333,12 +348,13 @@ export class CodexBridgeRuntime {
           }
         }
         const nativeId = this.adapter.nativeSession(threadId);
-        if (p.turnId !== undefined)
+        if (p.view === "items" || p.turnId != null)
           return read("thread/items/list", {
             threadId: nativeId,
-            turnId: identifier(p.turnId),
+            ...(p.turnId != null ? { turnId: identifier(p.turnId) } : {}),
             limit: p.limit ?? 100,
             cursor: p.cursor ?? null,
+            ...(p.sortDirection !== undefined ? { sortDirection: p.sortDirection } : {}),
           });
         return read("thread/turns/list", {
           threadId: nativeId,

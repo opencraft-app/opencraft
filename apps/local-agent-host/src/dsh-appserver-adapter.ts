@@ -533,7 +533,7 @@ export class DshAppServerAdapter {
       };
       const tasks = [
         this.client.stream("/api/events.mux", (frame) => {
-          const value = { ...frame.payload, rpcId: frame.rpcId };
+          const value = { ...frame.payload, rpcId: frame.rpcId, nativeSessionId: frame.nativeSessionId };
           if (recovering) buffered.push(value); else this.onMuxFrame(value);
         }, generation.signal, onOpen),
         this.client.stream("/api/events.host", (frame) => this.onHostFrame(frame.payload), generation.signal, onOpen),
@@ -544,6 +544,7 @@ export class DshAppServerAdapter {
         if (!this.abort.signal.aborted) console.warn("[opencraft local host] restarting DSH stream generation", error);
       } finally {
         generation.abort();
+        if (!this.abort.signal.aborted) this.interactions.markSourceUnavailable();
         await Promise.allSettled(tasks);
         this.abort.signal.removeEventListener("abort", stopGeneration);
         // DSH omits empty queues from a reconnect baseline. Invalidate the
@@ -623,6 +624,7 @@ export class DshAppServerAdapter {
       if (signal.aborted) return;
       const recovered = foldEvents(sessionId, entries, summary.cwd ?? homedir()).get(position.turn);
       if (!recovered) throw new Error("DSH recovery has no active Turn evidence");
+      if (recovered.execution.ended) this.interactions.resolveTurn(sessionId, turnId(sessionId, position.turn));
       if (!summary.running && !recovered.execution.ended) recovered.execution.fail("DSH stopped without terminal evidence");
       const turn = recovered.execution.snapshot();
       this.latestTurns.set(sessionId, recovered);
@@ -775,6 +777,7 @@ export class DshAppServerAdapter {
     }
     if (sessionId === "" || turn < 0) return;
     const appTurn = { id: turnId(sessionId, turn), items: [], itemsView: "notLoaded", status: "inProgress", error: null, startedAt: appTimestamp(event.time), completedAt: null, durationMs: null };
+    if (event.type === "turn/end") this.interactions.resolveTurn(sessionId, appTurn.id);
     if (this.completedLiveTurns.has(appTurn.id)) return;
     this.livePosition.set(sessionId, { ...position, turn });
     const toolScope = appTurn.id;

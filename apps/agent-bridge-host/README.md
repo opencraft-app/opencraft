@@ -81,8 +81,64 @@ commits before its receipt. An IO/SQL/Worker failure fences storage; no main-thr
 fallback exists. Storage loss stops the owned sandbox groups; cleanup failures
 remain observable on close and never release pool capacity. Close drains accepted Worker messages before releasing the writer.
 
-Before any native request write, the command is durably `dispatching`. A process
-crash converts it to `unknown`; EOF, timeout and ambiguous failure also stay unknown.
+A command stays `registered` during preparation, including CLI issuance.
+A Host restart rejects those undispatched requests without replay. Before
+writing a native request, the Host durably records `dispatching`. A crash
+after that point, EOF, timeout, or ambiguous failure preserves an unknown outcome.
+Startup reconciles pending queue claims against the exact attempt's command
+receipt. A valid acceptance restores native admission and the target Turn,
+including a steer whose Turn ended before the queue update. A refused start
+stays queued for an explicit retry. A refused steer returns to the editable
+queue while its Turn is open. Unconfirmed attempts remain unknown. The queue
+changes and their outbox notifications commit together.
+Admission refusals before a command receipt exists also retain unsent queue
+custody. Storage loss and interrupted native dispatch preserve unknown outcomes.
+Queue listing returns the Host's durable snapshot independently of provider
+history and the live event pull. The first page schedules background
+reconciliation for its receipt scope. Subscribers refresh from queue change
+notifications once evidence has changed the snapshot.
+The Gateway translates scoped public Turn IDs and projects the resulting
+receipts back to public IDs. Hosts advertising batched identity lookup resolve
+missing aliases from the route's indexed committed and retained events.
+The Host records archive state with the route. While an archive transition is
+pending, the Thread is archived, or the result is unconfirmed, the Host fences
+Turn admission and background queue reconciliation. Durable queue rows and
+metadata remain readable. Ordinary history observations require active archive
+state. An explicit archive history read supplies `openArchivedHistory: true`
+to the Host, which consumes the intent before calling the provider. Confirmed
+unarchive wakes the queued work.
+The Gateway admits a live history watch after Thread metadata confirms the
+read. Archived views receive lifecycle updates and retain read-only history.
+An archive retires live interaction offers and fences any approval lookup
+still in progress. Unarchive permits a fresh watch or execution admission.
+Codex Bridge history advertises native Turn pagination. A cached renderer
+requesting presentation mode receives a full page and can reduce the page size
+on a size refusal. The deferred Item detail extension belongs to the native
+transcript-cache reader.
+The command deadline covers stdin backpressure as well as the native reply.
+If the deadline expires before stdin write completion, the Host retires the
+peer and starts sandbox cleanup. A late reply cannot change the receipt.
+The Host commits callbacks in receive order and sends durable acknowledgements
+on a separate ordered queue. A blocked acknowledgement leaves callback
+commits running. Its deadline retires the peer, and a closed transport
+releases the acknowledgement queue while received callbacks finish committing.
+A terminal callback starts revoking its execution CLI lease without holding
+the inbound commit queue. The original Thread keeps its lease registered
+until revocation confirms, so a new lease cannot overlap that cleanup.
+An accepted session close or a durable session-ended callback invalidates any
+pending CLI issuance for that session. A lease returned later is revoked
+before the original Turn can reach the provider.
+A Thread-wide Stop can cancel a Turn waiting for CLI issuance when no other
+Turn is in custody. A targeted Stop still goes to the provider. A reusable
+first-turn CLI reservation can be restored after a local Stop.
+The cancelled start settles as rejected before a pending lease returns.
+The Host still owns that pending issuance, and the route stays held for
+lease cleanup before release, migration, or queued work.
+When a pre-dispatch Stop leaves the session open, completed CLI cleanup
+wakes its queued work. There is no native Turn completion for this case.
+If revocation fails, the Host keeps the lease and its route fence. A further
+Thread-wide Stop can retry cleanup. Host shutdown also joins a retry and
+reports failure if cleanup remains unconfirmed.
 Late responses cannot erase uncertainty. No recovery path resends mutations.
 `accepted` records a native RPC success, never model-context evidence. Only an
 explicit native rejection is recorded `rejected`; steer evidence remains P1a's

@@ -8,7 +8,8 @@ import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { nodeSqlDatabase, resolveStoreMigrations } from "@opencraft/sqlite-node";
-import { createBridgeInboxStore, createWorkspaceBridgeInboxStore } from "@opencraft/agent-bridge-host/inbox-store";
+import { createBridgeInboxStore, createWorkspaceBridgeInboxStore, prepareSelectedHistory } from "@opencraft/agent-bridge-host/inbox-store";
+import { migrations as legacyBridgeMigrations } from "../../apps/agent-bridge-host/src/migrations.js";
 import { applySqlMigrations, hashSqlMigrations, SqlMigrationError } from "@opencraft/sql/migrations";
 import {
   applySqlMigrationFamilies as applyFamilies,
@@ -168,11 +169,11 @@ test("WorkspaceHost upgrades to the Bridge inbox without rewriting existing data
   applySqlMigrationFamilies(database, previous);
   database.prepare("INSERT INTO opencraft_thread_catalog (thread_id,metadata_json,updated_at,archived,observed_at_ms,revision) VALUES ('kept','{}',12,0,13,1)").run();
   const before = readSqlMigrationFamilies(database);
-  assert.deepEqual(migrateWorkspaceHostSql(database).at(-1), { id: "workspace-bridge-inbox", status: "fresh", applied: 2, version: 2 });
+  assert.deepEqual(migrateWorkspaceHostSql(database).at(-1), { id: "workspace-bridge-inbox", status: "fresh", applied: 5, version: 5 });
   const { "workspace-bridge-inbox": bridge, ...after } = readSqlMigrationFamilies(database);
   assert.deepEqual(after, before);
   assert.equal(database.prepare("SELECT thread_id FROM opencraft_thread_catalog").get()?.thread_id, "kept");
-  assert.equal(bridge?.length, 2);
+  assert.equal(bridge?.length, 5);
   database.prepare("UPDATE schema_family_migrations SET checksum=? WHERE family='workspace-bridge-inbox' AND version=1").run("0".repeat(64));
   assert.throws(() => migrateWorkspaceHostSql(database), refused("history-mismatch"));
 });
@@ -186,7 +187,7 @@ test("the Bridge placement migration preserves the original inbox and only a ver
   const legacy = createBridgeInboxStore(database, "workspace");
   const events = [{ ...event, seq: 1 }, { ...event, seq: 2 }];
   legacy.apply(events, producer);
-  assert.deepEqual(applySqlMigrationFamilies(database, [inbox]), [{ id: inbox.id, status: "migrated", applied: 1, version: 2 }]);
+  assert.deepEqual(applySqlMigrationFamilies(database, [inbox]), [{ id: inbox.id, status: "migrated", applied: 4, version: 5 }]);
 
   const store = createWorkspaceBridgeInboxStore(database);
   store.adoptPlacement("container-1");
@@ -205,4 +206,69 @@ test("the Bridge placement migration preserves the original inbox and only a ver
   assert.deepEqual(store.read().map(row => row.seq), [1]);
   assert.deepEqual(database.prepare("SELECT placement,seq,payload FROM bridge_inbox_archive").all().map(row => ({ ...row })),
     [{ placement: "container-1", seq: 2, payload: JSON.stringify(event.payload) }]);
+});
+
+test("Bridge selected history seeks native and public IDs after upgrading the previous inbox and outbox", () => {
+  const node = hashSqlMigrations(resolveStoreMigrations("agent-bridge-host", legacyBridgeMigrations), sha256Hex);
+  const workspace = workspaceHostSqlFamilies().find(({ id }) => id === "workspace-bridge-inbox")!;
+  const route = '["server","thread"]';
+  const selection = { nativeIds: ["native-turn", "native-item"], publicTurnId: "public-turn" };
+  for (const table of ["inbox", "outbox", "bridge_inbox"] as const) {
+    const database = memory();
+    const isWorkspace = table === "bridge_inbox";
+    const previous = isWorkspace ? workspace.migrations.slice(0, -1) : node.slice(0, -1);
+    assert.equal(previous.at(-1)?.version, isWorkspace ? 4 : 6);
+    if (isWorkspace) applySqlMigrationFamilies(database, [{ ...workspace, migrations: previous }]);
+    else applySqlMigrations(database, previous);
+    const insert = database.prepare(table === "outbox"
+      ? "INSERT INTO outbox (seq,route,generation,payload) VALUES (?,?,'g',?)"
+      : `INSERT INTO ${table} (seq,route,generation,payload,projection) VALUES (?,?,'g',?,'[]')`);
+    const turn = JSON.stringify({ event: { kind: "turn.started", nativeTurnId: "native-turn", turnId: "public-turn" } });
+    const item = JSON.stringify({ event: { kind: "item.completed", item: { nativeKey: "native-item", itemId: "public-item" } } });
+    insert.run(1, '["server","peer"]', turn);
+    insert.run(2, route, turn);
+    insert.run(3, route, item);
+    insert.run(4, route, item);
+    for (let seq = 5; seq <= 264; seq++) insert.run(seq, route, item);
+    const expected = [
+      { seq: 2, turn: { nativeId: "native-turn", id: "public-turn" } },
+      { seq: 3, item: { nativeId: "native-item", id: "public-item" } },
+    ];
+    const retained = database.prepare(`SELECT * FROM ${table} ORDER BY seq`).all();
+    const version = isWorkspace ? 5 : 7;
+    if (isWorkspace) assert.deepEqual(applySqlMigrationFamilies(database, [workspace]),
+      [{ id: workspace.id, status: "migrated", applied: 1, version }]);
+    else {
+      applySqlMigrations(database, node);
+      assert.equal(database.prepare("SELECT max(version) AS version FROM schema_migrations").get()?.version, version);
+    }
+
+    const indexed = prepareSelectedHistory({
+      ...database,
+      prepare(statement) {
+        const plan = database.prepare("EXPLAIN QUERY PLAN " + statement).all(
+          route, JSON.stringify(selection.nativeIds), 0, 3, route, selection.publicTurnId, 0, 3,
+        );
+        for (const index of [`${table}_history_native_id`, `${table}_history_public_turn`])
+          assert.ok(plan.some(row => String(row.detail).includes(`${index} (route=? AND <expr>=? AND seq>? AND seq<?)`)),
+            JSON.stringify(plan));
+        return database.prepare(statement);
+      },
+    }, table);
+    assert.deepEqual(database.prepare(`SELECT * FROM ${table} ORDER BY seq`).all(), retained);
+    assert.deepEqual(indexed(route, 0, 3, selection), expected);
+    assert.deepEqual(indexed(route, 2, 4, selection), [...expected.slice(1), { ...expected[1], seq: 4 }]);
+    const first = indexed(route, 0, 264, selection);
+    assert.equal(first.length, 256);
+    assert.deepEqual([...first, ...indexed(route, first.at(-1)!.seq, 264, selection)].map(row => row.seq),
+      Array.from({ length: 263 }, (_, index) => index + 2));
+    if (isWorkspace) {
+      database.prepare("UPDATE schema_family_migrations SET checksum=? WHERE family=? AND version=?")
+        .run("0".repeat(64), workspace.id, version);
+      assert.throws(() => applySqlMigrationFamilies(database, [workspace]), refused("history-mismatch"));
+    } else {
+      database.prepare("UPDATE schema_migrations SET checksum=? WHERE version=?").run("0".repeat(64), version);
+      assert.throws(() => applySqlMigrations(database, node), refused("history-mismatch"));
+    }
+  }
 });

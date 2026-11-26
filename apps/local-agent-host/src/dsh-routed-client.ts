@@ -1,4 +1,5 @@
-import { DshClient, type DshHistoryEntry, type DshStreamEnvelope } from "./dsh-client.js";
+import { InteractionResponseNotDispatched } from "@opencraft/app-host-server/interactions";
+import { DshClient, type DshHistoryEntry, type DshInteractionSource, type DshStreamEnvelope } from "./dsh-client.js";
 import type { DshRoutingReader } from "./dsh-routing-projection.js";
 
 /** Only transport identifiers change. Renderer protocol identities stay logical. */
@@ -51,6 +52,16 @@ export class DshRoutedClient extends DshClient {
     }
     return result;
   }
+  override async respond(rpcId: string, result: unknown, source?: DshInteractionSource) {
+    try {
+      if (source && this.routing.native(source.logicalSessionId) !== source.nativeSessionId)
+        throw new Error("DSH interaction route changed");
+    } catch (cause) {
+      throw new InteractionResponseNotDispatched(cause);
+    }
+    return super.respond(rpcId, result, source);
+  }
+
   override async stream(path: "/api/events.mux" | "/api/events.host", onFrame: (frame: DshStreamEnvelope) => void, signal: AbortSignal, onOpen?: () => void): Promise<void> {
     const failed = new AbortController();
     const lifetime = AbortSignal.any([signal, failed.signal]);

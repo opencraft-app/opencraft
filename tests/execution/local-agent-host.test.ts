@@ -7,9 +7,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import WebSocket from "ws";
+import {
+  SHARED_INTERACTIONS_CHANGED, SHARED_INTERACTIONS_EXTENSION, SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND,
+} from "@opencraft/appserver-protocol";
 import { WebSocketServer } from "ws";
 
-import { openLocalAgentStorage, startLocalAgentHost } from "../../apps/local-agent-host/src/main.js";
+import { openLocalAgentStorage, openLocalAgentStorageWithWorker, startLocalAgentHost } from "../../apps/local-agent-host/src/main.js";
 import { seedNewerHostStorage } from "../support/local-agent-storage-fixture.js";
 import { ConnectedAgentHost, connectedAgentCatalogEntry } from "../../apps/local-agent-host/src/connected-agents.js";
 import { ThreadCatalog } from "../../apps/local-agent-host/src/thread-catalog.js";
@@ -184,9 +187,15 @@ test("local Agent Host resolves a missing Draft cwd to a Projectless ~/OpenCraft
   }
 });
 
-async function fakeDsh(options: { home?: string } = {}) {
+async function fakeDsh(options: {
+  home?: string;
+  sessionId?: string;
+  respond?: (response: Record<string, any>) => unknown;
+} = {}) {
   const responses: Array<Record<string, any>> = [];
   const streams = new Map<WebSocket, string>();
+  let muxReplay: readonly Record<string, unknown>[] = [];
+  let muxReopened: (() => void) | undefined;
   const calls: Array<{ method: string; payload: Record<string, unknown> }> = [];
   const activeSessions = new Set<string>();
   const queues = new Map<string, Array<Record<string, any>>>();
@@ -212,7 +221,7 @@ async function fakeDsh(options: { home?: string } = {}) {
     if (url.pathname === "/api/respond") {
       responses.push(envelope);
       response.setHeader("content-type", "application/json");
-      response.end(JSON.stringify({ accepted: true }));
+      response.end(JSON.stringify(options.respond?.(envelope) ?? { accepted: true }));
       return;
     }
     calls.push({ method: envelope.method, payload: envelope.payload });
@@ -263,7 +272,7 @@ async function fakeDsh(options: { home?: string } = {}) {
     if (envelope.method === "llm.providers") value = {
       providers: [{ provider: "deepseek", displayName: "DeepSeek", settingsNs: "llm-deepseek", settingsPath: [], active: true }],
     };
-    if (envelope.method === "session.list") value = { items: [{ sessionId: "s1", updatedAt: 1_788_000_000_000, running: false, blank: false, cwd: "/workspace/demo", projections: { asOfSeq: 8, values: { title: "Demo" } } }] };
+    if (envelope.method === "session.list") value = { items: [{ sessionId: options.sessionId ?? "s1", updatedAt: 1_788_000_000_000, running: false, blank: false, cwd: "/workspace/demo", projections: { asOfSeq: 8, values: { title: "Demo" } } }] };
     if (envelope.method === "session.history") value = {
       events: [
         { event: { type: "permission/preset", seq: 0, time: 1_788_000_000_000, data: { preset: "workspace-write" } } },
@@ -365,6 +374,12 @@ async function fakeDsh(options: { home?: string } = {}) {
   downlinks.on("connection", (socket, request) => {
     const path = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
     streams.set(socket, path);
+    if (path === "/api/events.mux") {
+      for (const pending of muxReplay) socket.send(JSON.stringify(pending));
+      muxReplay = [];
+      muxReopened?.();
+      muxReopened = undefined;
+    }
     socket.once("close", () => streams.delete(socket));
   });
   await new Promise<void>((resolve, reject) => {
@@ -384,6 +399,13 @@ async function fakeDsh(options: { home?: string } = {}) {
     },
     publish(envelope: Record<string, unknown>) {
       for (const [stream, path] of streams) if (path === "/api/events.mux") stream.send(JSON.stringify(envelope));
+    },
+    reconnectMux(replay: readonly Record<string, unknown>[] = []) {
+      const reopened = Promise.withResolvers<void>();
+      muxReopened = reopened.resolve;
+      muxReplay = replay;
+      for (const [stream, path] of streams) if (path === "/api/events.mux") stream.close(1012, "Fixture stream loss");
+      return reopened.promise;
     },
     async close() {
       for (const stream of streams.keys()) stream.close();
@@ -520,6 +542,241 @@ test("DSH questions cross the real mux and AppServer WebSocket, survive reconnec
     socket.send(JSON.stringify({ jsonrpc: "2.0", method: "initialized" }));
     assert.ok(await request(socket, 3, "thread/list", {}));
   } finally { preflight.close(); socket.close(); await host.close(); await dsh.close(); }
+});
+
+function waitForDshFrame(socket: WebSocket, predicate: (frame: any) => boolean): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { socket.off("message", listener); reject(Error("Missing DSH test frame")); }, 3000);
+    const listener = (raw: WebSocket.RawData) => {
+      const frame = JSON.parse(raw.toString());
+      if (!predicate(frame)) return;
+      clearTimeout(timer);
+      socket.off("message", listener);
+      resolve(frame);
+    };
+    socket.on("message", listener);
+  });
+}
+
+const sharedDshClient = { capabilities: { extensions: { [SHARED_INTERACTIONS_EXTENSION]: { version: 1 } } } };
+function publishDshApproval(dsh: Awaited<ReturnType<typeof fakeDsh>>, rpcId: string, sessionId = "s1") {
+  dsh.publish({ payload: { type: "session/event", sessionId, event: { type: "turn/start", seq: 90, time: 100, data: { turn: 2 } } } });
+  dsh.publish({ rpcId, payload: { type: "approval/requested", sessionId, approvalId: rpcId + "-audit", toolName: "fixture" } });
+}
+
+test("DSH explicit response refusal leaves the approval answerable and not-pending reports settlement", async t => {
+  let rejected = false;
+  const dsh = await fakeDsh({ respond: envelope => {
+    if (envelope.rpcId === "already-settled") return { accepted: false, reason: "not-pending" };
+    if (envelope.rpcId === "malformed-receipt") return { accepted: "false", reason: "not-pending" };
+    if (!rejected) {
+      rejected = true;
+      return { accepted: false, reason: "bad-response" };
+    }
+    return { accepted: true };
+  } });
+  const dataDirectory = await mkdtemp(join(tmpdir(), "opencraft-dsh-approval-"));
+  t.after(() => rm(dataDirectory, { recursive: true, force: true }));
+  const host = await startLocalAgentHost({ dshUrl: dsh.url, dataDirectory });
+  const first = await connect(host.websocketUrl);
+  const peer = await connect(host.websocketUrl);
+  try {
+    for (const socket of [first, peer]) {
+      await request(socket, 1, "initialize", sharedDshClient);
+      await request(socket, 2, "thread/resume", { threadId: "s1" });
+    }
+    const pending = () => waitForDshFrame(peer, frame => frame.method === SHARED_INTERACTIONS_CHANGED &&
+      frame.params.requests.some((item: any) => item.state === "pending"));
+    const shown = pending();
+    publishDshApproval(dsh, "pending-approval");
+    const interactionId = (await shown).params.requests[0].id;
+    const params = { threadId: "s1", interactionId, submissionId: "original", result: { decision: "decline" } };
+    const response = await request(first, 3, SHARED_INTERACTIONS_RESPOND, params).catch(error => error);
+    assert.equal((await request(peer, 3, SHARED_INTERACTIONS_READ, { threadId: "s1" })).requests[0].state, "pending");
+    assert.equal(response.data?.submissionOutcome, "rejected");
+    const accepted = await request(peer, 4, SHARED_INTERACTIONS_RESPOND, {
+      ...params, submissionId: "peer", result: { decision: "accept" },
+    });
+    assert.equal(accepted.disposition, "submitted");
+    assert.deepEqual(accepted.snapshot.requests, []);
+    assert.deepEqual(dsh.responses.map(value => value.result.value.outcome), ["rejected", "allowed-once"]);
+
+    const next = pending();
+    publishDshApproval(dsh, "already-settled");
+    const staleId = (await next).params.requests[0].id;
+    const settled = await request(peer, 5, SHARED_INTERACTIONS_RESPOND, { ...params, interactionId: staleId, submissionId: "late" });
+    assert.equal(settled.disposition, "resolved");
+    assert.deepEqual(settled.snapshot.requests, []);
+
+    const unknown = pending();
+    publishDshApproval(dsh, "malformed-receipt");
+    const unknownId = (await unknown).params.requests[0].id;
+    const retried = { ...params, interactionId: unknownId, submissionId: "unknown" };
+    await assert.rejects(request(first, 6, SHARED_INTERACTIONS_RESPOND, retried), {
+      data: { code: "DSH_RESPONSE_UNKNOWN", retryable: false },
+    });
+    const uncertain = await request(peer, 6, SHARED_INTERACTIONS_RESPOND, { ...retried, submissionId: "peer-unknown" });
+    assert.equal(uncertain.disposition, "already-submitted");
+    assert.equal(uncertain.snapshot.requests[0].state, "unconfirmed");
+    assert.equal(dsh.responses.filter(value => value.rpcId === "malformed-receipt").length, 1);
+  } finally { first.close(); peer.close(); await host.close(); await dsh.close(); }
+});
+
+test("DSH answers use the native approval session for a recovered logical Thread", async t => {
+  const dsh = await fakeDsh({ sessionId: "s1.g1", respond: response =>
+    response.result.value.sessionId === "s1.g1"
+      ? { accepted: true } : { accepted: false, reason: "bad-response" } });
+  const dataDirectory = await mkdtemp(join(tmpdir(), "opencraft-dsh-approval-routing-"));
+  t.after(() => rm(dataDirectory, { recursive: true, force: true }));
+  const storage = await openLocalAgentStorageWithWorker({ dataDirectory });
+  await storage.routing.publish("s1", { logicalId: "s1", nativeId: "s1.g1", generation: 1,
+    seedThroughSeq: -1, seedThroughTurn: 0, previousLastSeq: 99, previousLastTurn: 2 });
+  const host = await startLocalAgentHost({ dshUrl: dsh.url, dataDirectory, storage });
+  const socket = await connect(host.websocketUrl);
+  try {
+    await request(socket, 1, "initialize", sharedDshClient);
+    await request(socket, 2, "thread/resume", { threadId: "s1" });
+    const shown = waitForDshFrame(socket, frame => frame.method === SHARED_INTERACTIONS_CHANGED && frame.params.requests.length > 0);
+    publishDshApproval(dsh, "recovered-approval", "s1.g1");
+    const { params: snapshot } = await shown;
+    const item = snapshot.requests[0];
+    assert.equal(snapshot.threadId, "s1");
+    assert.equal(item.params.threadId, "s1");
+    const reply = await request(socket, 3, SHARED_INTERACTIONS_RESPOND, {
+      threadId: "s1", interactionId: item.id, submissionId: "answer", result: { decision: "accept" },
+    });
+    assert.equal(reply.disposition, "submitted");
+    assert.deepEqual(reply.snapshot.requests, []);
+    assert.deepEqual(dsh.responses.map(value => value.result.value.sessionId), ["s1.g1"]);
+
+    const old = waitForDshFrame(socket, frame => frame.method === SHARED_INTERACTIONS_CHANGED && frame.params.requests.length > 0);
+    publishDshApproval(dsh, "retired-approval", "s1.g1");
+    const oldId = (await old).params.requests[0].id;
+    await storage.routing.publish("s1.g1", { logicalId: "s1", nativeId: "s1.g2", generation: 2,
+      seedThroughSeq: 90, seedThroughTurn: 2, previousLastSeq: 190, previousLastTurn: 4 });
+    await assert.rejects(request(socket, 4, SHARED_INTERACTIONS_RESPOND, {
+      threadId: "s1", interactionId: oldId, submissionId: "retired", result: { decision: "accept" },
+    }), { data: { code: "SOURCE_UNAVAILABLE", submissionOutcome: "rejected" } });
+    assert.deepEqual(dsh.responses.map(value => value.rpcId), ["recovered-approval"]);
+  } finally { socket.close(); await host.close(); await dsh.close(); }
+});
+
+for (const shared of [true, false]) {
+  test(`DSH unsubscribe revokes an offered approval (shared=${shared})`, async t => {
+    const dsh = await fakeDsh();
+    const dataDirectory = await mkdtemp(join(tmpdir(), "opencraft-dsh-approval-unsubscribe-"));
+    t.after(() => rm(dataDirectory, { recursive: true, force: true }));
+    const host = await startLocalAgentHost({ dshUrl: dsh.url, dataDirectory });
+    const former = await connect(host.websocketUrl);
+    const peer = await connect(host.websocketUrl);
+    try {
+      await request(former, 1, "initialize", shared ? sharedDshClient : {});
+      await request(peer, 1, "initialize", sharedDshClient);
+      await request(former, 2, "thread/resume", { threadId: "s1" });
+      await request(peer, 2, "thread/resume", { threadId: "s1" });
+      const shown = waitForDshFrame(peer, frame => frame.method === SHARED_INTERACTIONS_CHANGED && frame.params.requests.length > 0);
+      const raw = shared ? null : waitForDshFrame(former, frame => frame.method === "item/commandExecution/requestApproval");
+      publishDshApproval(dsh, "native-approval");
+      const interactionId = (await shown).params.requests[0].id;
+      if (raw) assert.equal((await raw).id, "native-approval");
+      assert.deepEqual(await request(former, 3, "thread/unsubscribe", { threadId: "s1" }), { status: "unsubscribed" });
+
+      const answer = { threadId: "s1", interactionId, submissionId: "revoked", result: { decision: "decline" } };
+      if (shared) {
+        await assert.rejects(request(former, 4, SHARED_INTERACTIONS_READ, { threadId: "s1" }), { code: 403 });
+        await assert.rejects(request(former, 5, SHARED_INTERACTIONS_RESPOND, answer), { code: 403 });
+      } else {
+        former.send(JSON.stringify({ id: "native-approval", result: answer.result }));
+        await request(former, 4, "thread/list");
+      }
+      const receipt = await request(peer, 3, SHARED_INTERACTIONS_RESPOND, { ...answer, submissionId: "peer", result: { decision: "accept" } });
+      assert.equal(receipt.disposition, "submitted");
+      assert.deepEqual(dsh.responses.map(value => value.result.value.outcome), ["allowed-once"]);
+    } finally { former.close(); peer.close(); await host.close(); await dsh.close(); }
+  });
+}
+
+test("DSH mux replay restores only the exact pending approval without replacing its public identity", async t => {
+  const dataDirectory = await mkdtemp(join(tmpdir(), "opencraft-dsh-approval-reconnect-"));
+  t.after(() => rm(dataDirectory, { recursive: true, force: true }));
+  const dsh = await fakeDsh();
+  const host = await startLocalAgentHost({ dshUrl: dsh.url, dataDirectory });
+  const socket = await connect(host.websocketUrl);
+  const legacy = await connect(host.websocketUrl);
+  try {
+    await request(socket, 1, "initialize", sharedDshClient);
+    await request(socket, 2, "thread/resume", { threadId: "s1" });
+    await request(legacy, 1, "initialize");
+    await request(legacy, 2, "thread/resume", { threadId: "s1" });
+    const wait = (canRespond: boolean) => waitForDshFrame(socket, frame => frame.method === SHARED_INTERACTIONS_CHANGED &&
+      frame.params.requests[0]?.canRespond === canRespond);
+    const approval = { rpcId: "replayed-approval", payload: {
+      type: "approval/requested", sessionId: "s1", approvalId: "native-audit", toolName: "fixture",
+    } };
+    const initial = wait(true);
+    const offered = waitForDshFrame(legacy, frame => frame.id === approval.rpcId);
+    dsh.publish(approval);
+    const interactionId = (await initial).params.requests[0].id;
+    await offered;
+
+    const unavailable = wait(false);
+    const reopened = dsh.reconnectMux();
+    const offline = await unavailable;
+    legacy.send(JSON.stringify({ id: approval.rpcId, result: { decision: "decline" } }));
+    const legacyStillConnected = waitForDshFrame(legacy, frame => frame.id === 3);
+    legacy.send(JSON.stringify({ id: 3, method: "thread/list", params: {} }));
+    assert.ok((await legacyStillConnected).result);
+    assert.deepEqual(dsh.responses, []);
+
+    await reopened;
+    const restored = wait(true);
+    dsh.publish(approval);
+    dsh.publish(approval);
+    const live = await restored;
+    assert.equal(offline.params.requests[0].id, interactionId);
+    assert.equal(live.params.requests[0].id, interactionId);
+    assert.equal(live.params.requests[0].state, "pending");
+    assert.ok(offline.params.revision < live.params.revision);
+
+    const sent = await request(socket, 3, SHARED_INTERACTIONS_RESPOND, {
+      threadId: "s1", interactionId, submissionId: "after-mux-replay", result: { decision: "accept" },
+    });
+    assert.equal(sent.disposition, "submitted");
+    assert.deepEqual(sent.snapshot.requests, []);
+    assert.deepEqual(dsh.responses.map(response => response.rpcId), ["replayed-approval"]);
+  } finally { socket.close(); legacy.close(); await host.close(); await dsh.close(); }
+});
+
+test("DSH retirement uses the terminal Turn recovered across a missing resolution frame", async t => {
+  const dataDirectory = await mkdtemp(join(tmpdir(), "opencraft-dsh-approval-terminal-"));
+  t.after(() => rm(dataDirectory, { recursive: true, force: true }));
+  const dsh = await fakeDsh();
+  const host = await startLocalAgentHost({ dshUrl: dsh.url, dataDirectory });
+  const socket = await connect(host.websocketUrl);
+  try {
+    await request(socket, 1, "initialize", sharedDshClient);
+    await request(socket, 2, "thread/resume", { threadId: "s1" });
+    const shown = waitForDshFrame(socket, frame => frame.method === SHARED_INTERACTIONS_CHANGED && frame.params.requests.length > 0);
+    const approval = { rpcId: "terminal-approval", payload: {
+      type: "approval/requested", sessionId: "s1", approvalId: "native-audit", toolName: "fixture",
+    } };
+    dsh.publish({ payload: { type: "session/event", sessionId: "s1", event: { type: "turn/start", seq: 3, time: 100, data: { turn: 1 } } } });
+    dsh.publish(approval);
+    const initial = (await shown).params.requests[0];
+    assert.equal(initial.params.turnId, "dsh-turn-s1-1");
+
+    const completed = waitForDshFrame(socket, frame => frame.method === "turn/completed" && frame.params.turn.id === initial.params.turnId);
+    // The stream opened with a stale pending frame. The history cut already
+    // contains that Turn's native terminal event.
+    dsh.reconnectMux([approval]);
+    assert.equal((await completed).params.turn.status, "completed");
+    assert.deepEqual((await request(socket, 3, SHARED_INTERACTIONS_READ, { threadId: "s1" })).requests, []);
+    const late = await request(socket, 4, SHARED_INTERACTIONS_RESPOND, {
+      threadId: "s1", interactionId: initial.id, submissionId: "after-turn-ended", result: { decision: "accept" },
+    });
+    assert.equal(late.disposition, "resolved");
+    assert.deepEqual(dsh.responses, []);
+  } finally { socket.close(); await host.close(); await dsh.close(); }
 });
 
 test("process RPC survives WebSocket replacement without contacting the Agent harness", async t => {

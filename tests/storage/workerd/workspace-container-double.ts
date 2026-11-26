@@ -29,6 +29,7 @@ import { brokerSource } from "@opencraft/sandbox/broker";
 import { endpointRelaySource } from "@opencraft/sandbox/endpoint";
 import { SIDE_CHAT_INSTRUCTIONS, type ProcessSnapshot } from "@opencraft/appserver-protocol";
 import type { Project } from "@opencraft/appserver-protocol/generated/v2";
+import type { BridgeInboxIdentity } from "../../../apps/agent-bridge-host/src/inbox-store.js";
 import {
   encodeTerminalOwnerFrame, terminalOwnerFrameReader, TERMINAL_OWNER_PROTOCOL,
 } from "../../../apps/local-agent-host/src/terminal-owner-wire.ts";
@@ -122,6 +123,8 @@ export class ContainerDouble implements DurableObjectContainer {
   destroys = 0;
   /** Engine Host routes and JSON-RPC methods served, in order (`GET /health`, `rpc thread/turns/list`, …). */
   readonly served: string[] = [];
+  readonly historyReads: { threadId: string; method: string; includeTurns?: boolean }[] = [];
+  readonly bridgeIdentityCursors: number[] = [];
   #current: Instance | undefined;
   #last: Instance | undefined;
   readonly #snapshots = new Map<string, Pick<ReturnType<typeof newAgent>,
@@ -132,7 +135,13 @@ export class ContainerDouble implements DurableObjectContainer {
   holdNextCodexTurnReply = false;
   rejectNextCodexInitialize = false;
   rejectNextSnapshot = false;
+  rejectNextRestore = false;
+  bridgeInFlight = 0;
+  nextBridgeFault?: { path: "/events" | "/ack" | "/maintenance"; status: number | "disconnect"; persistent?: boolean };
   terminalCleanupUnavailable = false;
+  bridgeHistoryIdentityPages = true;
+  bridgeHistoryIdentitySelection = false;
+  bridgeHistoryPageLimit?: number;
   #modelEgress?: { host: string; entry: { fetch(request: Request): Promise<Response> } };
 
   async interceptOutboundHttp(host: string, entry: { fetch(request: Request): Promise<Response> }): Promise<void> {
@@ -177,15 +186,42 @@ export class ContainerDouble implements DurableObjectContainer {
     return this.#current?.agent.id;
   }
 
-  publishBridgeTitle(title: string) {
+  publishBridgeTitle(title: string, route?: string) {
     const agent = this.#current?.agent;
     if (!this.running || !agent || !title) throw new Error("Bridge fixture is unavailable");
-    agent.bridgeEvents.push({ ...agent.bridgeEvents[0]!, seq: agent.bridgeEvents.length + 1,
+    agent.bridgeEvents.push({ ...agent.bridgeEvents[0]!, route: route ?? agent.bridgeEvents[0]!.route,
+      seq: agent.bridgeEvents.length + 1,
       payload: { method: "thread/name/updated", params: { threadName: title } } });
+  }
+
+  replaceBridgeOutboxId() {
+    if (!this.#current || !this.running) throw Error("Bridge fixture is unavailable");
+    this.#current.agent.bridgeOutboxId = hex(16);
+  }
+
+  publishBridgeHistory(threadId: string, suffix = "") {
+    const agent = this.#current?.agent;
+    const binding = [...(agent?.bridgeThreads ?? [])].find(([route]) => JSON.parse(route)[1] === threadId);
+    if (!agent || !binding) throw Error("Missing Bridge history fixture route");
+    const [route, thread] = binding;
+    const item = { id: "native-fixture-item" + suffix, type: "agentMessage", text: "retained" };
+    const turn = { id: "native-fixture-turn" + suffix, status: "inProgress", items: [item] };
+    thread.turns = suffix ? [...thread.turns, turn] : [turn];
+    const publicTurnId = "public-fixture-turn" + suffix;
+    const add = (event: unknown) => agent.bridgeEvents.push({
+      seq: agent.bridgeEvents.length + 1, route, generation: "fixture-generation", payload: { kind: "canonical", event },
+    });
+    add({ kind: "turn.started", nativeTurnId: turn.id, turnId: publicTurnId, atMs: 0 });
+    add({ kind: "item.completed", turnId: publicTurnId, atMs: 1,
+      item: { nativeKey: item.id, itemId: "public-fixture-item" + suffix, shape: { kind: "agentMessage", text: item.text } } });
   }
 
   start(options: ContainerStartOptions): void {
     if (this.running) throw new Error("Container is already running");
+    if (options.containerSnapshot && this.rejectNextRestore) {
+      this.rejectNextRestore = false;
+      throw new Error("Container snapshot restore unavailable");
+    }
     const saved = options.containerSnapshot && this.#snapshots.get(options.containerSnapshot.id);
     if (!(options.image || saved) || typeof options.enableInternet !== "boolean") throw new RangeError("Invalid start options");
     this.starts.push(options);
@@ -553,16 +589,51 @@ export class ContainerDouble implements DurableObjectContainer {
       const token = name === "files" ? agent.fileToken : agent.token;
       if (headers.get("authorization") !== `Bearer ${token}`) return respond(401, { error: "unauthorized" });
       if (name === "codex-bridge") {
+        const fault = this.nextBridgeFault;
+        if (fault?.path === url.pathname) {
+          if (!fault.persistent) this.nextBridgeFault = undefined;
+          if (fault.status === "disconnect") return peer.end();
+          return respond(fault.status, { error: "injected Bridge endpoint failure" });
+        }
         if (method === "GET" && url.pathname === "/health")
           return respond(200, { pid: 43, incarnation: `bridge:${agent.id}`, generations: [] });
+        if (method === "GET" && url.pathname === "/maintenance")
+          return respond(200, { queued: 0, unknown: 0, inFlight: this.bridgeInFlight });
         if (method === "GET" && url.pathname === "/snapshot")
-          return respond(200, { ack: agent.bridgeAck, routes: [...agent.bridgeThreads.keys()].map(route => ({ route })),
+          return respond(200, { ack: agent.bridgeAck, ...(this.bridgeHistoryIdentityPages ? { historyIdentityPages: true } : {}),
+            ...(this.bridgeHistoryIdentitySelection ? { historyIdentitySelection: true } : {}),
+            routes: [...agent.bridgeThreads.keys()].map(route => ({ route })),
             nativeSessions: [...agent.bridgeThreads].map(([route, thread]) => ({ route, native_id: thread.id, restorable: 1 })), interactions: [] });
         if (method === "GET" && url.pathname === "/events" && url.searchParams.get("fenced") === "1") {
           const cursor = Number(url.searchParams.get("cursor"));
           if (cursor < agent.bridgeAck || cursor > agent.bridgeEvents.length) return respond(409, { error: "invalid cursor" });
           return respond(200, { outboxId: agent.bridgeOutboxId, acknowledged: agent.bridgeAck, high: agent.bridgeEvents.length,
             events: agent.bridgeEvents.slice(cursor) });
+        }
+        if ((method === "GET" || method === "POST") && url.pathname === "/history-identities") {
+          const query = method === "POST" ? JSON.parse(body) : Object.fromEntries(url.searchParams);
+          const route = JSON.stringify([query.serverId, query.threadId]);
+          const after = Number(query.after);
+          this.bridgeIdentityCursors.push(after);
+          const high = agent.bridgeEvents.length;
+          const through = Number(query.through ?? high);
+          const selection = query.selection as { nativeIds: string[]; publicTurnId?: string } | undefined;
+          const identities = agent.bridgeEvents.flatMap<BridgeInboxIdentity>(row => {
+            if (row.route !== route || row.seq <= Math.max(after, agent.bridgeAck) || row.seq > through) return [];
+            const event = (row.payload as { event?: {
+              kind: string; turnId: string; nativeTurnId: string; item?: { nativeKey: string; itemId: string };
+            } }).event;
+            if (selection && !(event && (selection.nativeIds.includes(event.nativeTurnId) ||
+              (event.item && selection.nativeIds.includes(event.item.nativeKey)) ||
+              (event.kind === "turn.started" && event.turnId === selection.publicTurnId)))) return [];
+            if (event?.kind === "turn.started")
+              return [{ seq: row.seq, turn: { id: event.turnId, nativeId: event.nativeTurnId } }];
+            if (event?.item)
+              return [{ seq: row.seq, item: { id: event.item.itemId, nativeId: event.item.nativeKey } }];
+            return [];
+          });
+          return respond(200, { outboxId: agent.bridgeOutboxId, acknowledged: agent.bridgeAck, high,
+            identities: identities.slice(0, 256) });
         }
         if (method === "POST" && url.pathname === "/ack") {
           const { outboxId, cursor } = JSON.parse(body);
@@ -586,9 +657,19 @@ export class ContainerDouble implements DurableObjectContainer {
         if (method === "GET" && url.pathname === "/command")
           return respond(200, agent.bridgeCommands.get(url.searchParams.get("id") ?? "") ?? null);
         if (method === "POST" && url.pathname === "/observe") {
-          const { threadId, serverId } = JSON.parse(body);
+          const { threadId, serverId, params } = JSON.parse(body);
           const thread = agent.bridgeThreads.get(JSON.stringify([serverId, threadId]));
-          return thread ? respond(200, { thread }) : respond(404, { error: "missing" });
+          if (!thread) return respond(404, { error: "missing" });
+          if (params.view === "thread") return respond(200, { thread });
+          if (this.bridgeHistoryPageLimit !== undefined && params.limit > this.bridgeHistoryPageLimit &&
+              params.itemsView !== "notLoaded")
+            return respond(409, { code: -32007, kind: "frame-too-large", error: "History response is too large" });
+          const turns = thread.turns as { id: string; items: unknown[] }[];
+          const data = params.view === "items" || params.turnId != null
+            ? turns.filter(turn => params.turnId == null || turn.id === params.turnId)
+                .flatMap(turn => turn.items.map(item => ({ turnId: turn.id, item })))
+            : turns;
+          return respond(200, { data, nextCursor: null, backwardsCursor: null });
         }
         return respond(404, { error: "missing" });
       }
@@ -686,6 +767,10 @@ export class ContainerDouble implements DurableObjectContainer {
         return;
       }
       this.served.push(`rpc ${message.method}`);
+      if (name === "codex-native" && ["thread/read", "thread/turns/list", "thread/items/list"].includes(message.method)) {
+        const { threadId, includeTurns } = message.params;
+        this.historyReads.push({ threadId, method: message.method, includeTurns });
+      }
       if (name === "codex-native" && message.method === "initialize" && this.rejectNextCodexInitialize) {
         this.rejectNextCodexInitialize = false;
         frameOut(JSON.stringify({ id: message.id, error: { code: -32603, message: "initialization failed" } }));

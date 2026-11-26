@@ -50,21 +50,22 @@ test("bridge engine provider maps AppServer new Threads and steer onto one Host 
   const root = await mkdtemp(join(tmpdir(), "bridge-provider-"));
   const host = await BridgeHost.open({ path: join(root, "host.db"), policy, backend: localTestBackend() });
   const gateway = await attachGateway(host, token);
+  let provider: BridgeEngineProvider | undefined;
   t.after(async () => {
+    await provider?.close().catch(() => {});
     await gateway.close().catch(() => {});
     await host.close().catch(() => {});
     await rm(root, { recursive: true, force: true });
   });
   await host.add(await generation(root));
   await host.activate("fixture-g1", "");
-  const provider = new BridgeEngineProvider({
+  provider = new BridgeEngineProvider({
     id: "fixture", label: "Fixture", engine: "pi",
     threadPrefix: "fixture_bridge_", modelPrefix: "fixture:",
     defaultCwd: root, defaultModel: "fixture/model",
     models: [{ id: "fixture/model", name: "Fixture model", isDefault: true }],
     gateway: { url: gateway.url, token, serverId: "server-1", inboxPath: join(root, "inbox.db") },
   });
-  t.after(() => provider.close().catch(() => {}));
   await provider.start();
   assert.equal(provider.ownsThread("fixture_bridge_id"), true);
   assert.equal(provider.ownsThread("legacy"), false);
@@ -75,6 +76,11 @@ test("bridge engine provider maps AppServer new Threads and steer onto one Host 
   assert.equal(created.thread.cwd, root);
   assert.equal(created.thread.model, "fixture:model");
 
+  const { promise: completed, resolve: receiveCompletion } = Promise.withResolvers<string>();
+  const unsubscribe = provider.subscribe((method, params) => {
+    if (method === "turn/completed") receiveCompletion(String((params.turn as { id: string }).id));
+  });
+  t.after(unsubscribe);
   const started = await provider.request("turn/start", {
     threadId: created.thread.id,
     clientUserMessageId: "client-input-1",
@@ -93,6 +99,12 @@ test("bridge engine provider maps AppServer new Threads and steer onto one Host 
   }, { request: async () => ({}), notify() {} });
   assert.equal(steered.turnId, started.turn.id);
   assert.equal(steered.disposition, "steered");
+  // The provider must deliver terminal events without a later client request pulling them.
+  const signal = AbortSignal.timeout(5000);
+  const turnId = await Promise.race([completed, new Promise<never>((_, reject) => {
+    signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+  })]);
+  assert.equal(turnId, started.turn.id);
 
   const models = await provider.request("model/list", {}, { request: async () => ({}), notify() {} });
   assert.equal(models.data[0].id, "fixture/model");

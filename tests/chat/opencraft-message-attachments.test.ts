@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import type { AttachmentRef } from "@opencraft/appserver-protocol";
+import { CodexEngineAdapter } from "../../apps/opencraft-daemon/src/codex-engine-adapter.ts";
 import { OpenCraftMessageAttachments } from "../../apps/opencraft-daemon/src/opencraft-message-attachments.ts";
 import {
   projectThreadAttachmentNotification,
@@ -79,6 +80,26 @@ test("Thread live acknowledgement and paged history receive the same typed file 
     assert.deepEqual(itemPage.data[0]?.item.attachments, live);
     store.close();
   } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("Bridge live acknowledgements and forks preserve the same recorded attachments", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "bridge-message-projection-"));
+  const store = new OpenCraftMessageAttachments(directory);
+  try {
+    const adapter = Object.create(CodexEngineAdapter.prototype);
+    adapter.messageAttachments = store;
+    const source = "bridge:codex:source", fork = "bridge:codex:fork";
+    store.record(source, "client-1", [file]);
+    const item = { type: "userMessage", clientId: "client-1" };
+    const live = adapter.projectExternalNotification({ method: "item/completed", params: { threadId: source, item } });
+    adapter.observeExternalIdentityResult("thread/fork", { threadId: source }, { thread: { id: fork } });
+    const history = adapter.projectExternalHistory("thread/items/list", { threadId: fork }, { data: [{ item }] });
+    assert.deepEqual(live.params.item.attachments, history.data[0].item.attachments);
+    assert.equal(history.data[0].item.attachments[0].id, file.id);
+  } finally {
+    store.close();
     await rm(directory, { recursive: true, force: true });
   }
 });

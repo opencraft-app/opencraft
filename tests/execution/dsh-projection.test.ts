@@ -258,3 +258,81 @@ test("source loss during a DSH context lookup cannot revive an obsolete native r
   const receiving = bridge.receive(question); bridge.markSourceUnavailable(); release(); await receiving;
   assert.equal(bridge.shared.snapshot("s", true).requests.length, 0); bridge.close();
 });
+
+test("legacy DSH observers receive an offer only once the replay confirms a pending native request", async () => {
+  const bridge = new DshInteractions({ respond: async () => ({ accepted: true }) },
+    async () => ({ turnId: "turn" }), () => {});
+  try {
+    await bridge.receive(question);
+    bridge.markSourceUnavailable();
+    const offered: InteractionRequest[] = [];
+    bridge.subscribe(value => offered.push(value));
+    assert.equal(offered.length, 0);
+    await assert.rejects(bridge.receive({ ...question, nativeSessionId: "another-generation" }), /source changed/);
+    assert.equal(bridge.shared.snapshot("s", true).requests[0].canRespond, false);
+    await bridge.receive(question);
+    await bridge.receive(question);
+    assert.deepEqual(offered.map(value => value.id), ["q1"]);
+  } finally { bridge.close(); }
+});
+
+test("DSH replay does not reopen an answer whose submission outcome was unknown", async () => {
+  let writes = 0;
+  const bridge = new DshInteractions({ respond: async () => {
+    writes++;
+    throw Error("Reply delivery unknown");
+  } }, async () => ({ turnId: "turn" }), () => {});
+  try {
+    await bridge.receive(question);
+    const interaction = bridge.shared.snapshot("s", true).requests[0];
+    const answer = { answers: { q: { answers: ["A"] } } };
+    await assert.rejects(bridge.respondShared("s", interaction.id, "first", answer), /delivery unknown/);
+    bridge.markSourceUnavailable();
+    await bridge.receive(question);
+    const [current] = bridge.shared.snapshot("s", true).requests;
+    assert.equal(current.canRespond, true);
+    assert.equal(current.state, "unconfirmed");
+    bridge.subscribe(() => assert.fail("An unconfirmed answer must not be offered again"));
+    assert.equal(await bridge.respondShared("s", interaction.id, "second", answer), "already-submitted");
+    assert.equal(writes, 1);
+  } finally { bridge.close(); }
+});
+
+test("native DSH terminal proof prevents a held context lookup from recreating a question", async () => {
+  const context = Promise.withResolvers<{ turnId: string }>();
+  const bridge = new DshInteractions({ respond: async () => ({ accepted: true }) },
+    () => context.promise, () => {});
+  try {
+    const receiving = bridge.receive(question);
+    bridge.resolveTurn("s", "ended-turn");
+    context.resolve({ turnId: "ended-turn" });
+    await receiving;
+    assert.deepEqual(bridge.shared.snapshot("s", true).requests, []);
+  } finally { bridge.close(); }
+});
+
+test("a native DSH terminal fences every wait before publishing individual settlements", async () => {
+  let writes = 0;
+  const bridge = new DshInteractions({ respond: async () => { writes++; return { accepted: true }; } },
+    async () => ({ turnId: "ended-turn" }), () => {});
+  try {
+    await bridge.receive(question);
+    await bridge.receive({ ...question, rpcId: "q2" });
+    const [first, second] = bridge.shared.snapshot("s", true).requests;
+    let late: Promise<unknown> | undefined;
+    const unsubscribe = bridge.shared.subscribe(() => {
+      const requests = bridge.shared.snapshot("s", true).requests;
+      if (!late && !requests.some(item => item.id === first.id) && requests.some(item => item.id === second.id)) {
+        // The first settlement is observed before the second card is removed.
+        late = bridge.respondShared("s", second.id, "late", { answers: { q: { answers: ["A"] } } });
+      }
+    });
+    try {
+      bridge.resolveTurn("s", "ended-turn");
+      assert.ok(late);
+      await assert.rejects(late, { domainData: { code: "SOURCE_UNAVAILABLE", submissionOutcome: "rejected" } });
+      assert.equal(writes, 0);
+      assert.deepEqual(bridge.shared.snapshot("s", true).requests, []);
+    } finally { unsubscribe(); }
+  } finally { bridge.close(); }
+});

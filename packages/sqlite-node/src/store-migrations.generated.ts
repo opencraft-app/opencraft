@@ -33,6 +33,26 @@ export const STORE_MIGRATIONS = {
         "version": 4,
         "name": "0001_thread_queue",
         "sql": "CREATE TABLE `opencraft_host_queue` (\n\t`id` text PRIMARY KEY NOT NULL,\n\t`thread_id` text NOT NULL,\n\t`client_id` text NOT NULL,\n\t`input_json` text NOT NULL,\n\t`position` integer NOT NULL,\n\t`created_at_ms` integer NOT NULL,\n\t`updated_at_ms` integer NOT NULL,\n\t`state` text NOT NULL,\n\t`target_turn_id` text,\n\t`paused_reason` text,\n\tCONSTRAINT \"opencraft_host_queue_check_0\" CHECK(state IN ('queued','dispatching','steering','unknown','delivered','discarded','closed'))\n) STRICT;\n--> statement-breakpoint\nCREATE INDEX `opencraft_host_queue_state` ON `opencraft_host_queue` (`state`, `thread_id`);--> statement-breakpoint\nCREATE INDEX `opencraft_host_queue_turn` ON `opencraft_host_queue` (`thread_id`, `target_turn_id`, `state`);--> statement-breakpoint\nCREATE INDEX `opencraft_host_queue_order` ON `opencraft_host_queue` (`thread_id`, `position`, `created_at_ms`);--> statement-breakpoint\nCREATE UNIQUE INDEX `opencraft_host_queue_client` ON `opencraft_host_queue` (`thread_id`, `client_id`);--> statement-breakpoint\nCREATE TABLE `opencraft_input_delivery` (\n\t`thread_id` text NOT NULL,\n\t`client_id` text NOT NULL,\n\t`native_admission` text NOT NULL,\n\t`context_state` text NOT NULL,\n\t`revision` integer NOT NULL,\n\tPRIMARY KEY(`thread_id`, `client_id`),\n\tFOREIGN KEY (`thread_id`,`client_id`) REFERENCES `opencraft_host_queue`(`thread_id`,`client_id`) ON UPDATE no action ON DELETE no action,\n\tCONSTRAINT \"opencraft_input_delivery_check_0\" CHECK(native_admission IN ('pending','accepted','unknown','rejected')),\n\tCONSTRAINT \"opencraft_input_delivery_check_1\" CHECK(context_state IN ('unobserved','recorded'))\n) STRICT;\n--> statement-breakpoint\nCREATE TABLE `opencraft_turn_delivery` (\n\t`thread_id` text NOT NULL,\n\t`turn_id` text NOT NULL,\n\t`outcome` text NOT NULL,\n\t`observed_at_ms` integer NOT NULL,\n\tPRIMARY KEY(`thread_id`, `turn_id`),\n\tCONSTRAINT \"opencraft_turn_delivery_check_0\" CHECK(outcome IN ('completed','interrupted','failed'))\n) STRICT;\n"
+      },
+      {
+        "version": 5,
+        "name": "0002_inbox_route_projection",
+        "sql": "CREATE INDEX `inbox_route_projection` ON `inbox` (`route`, `seq`) WHERE (json_extract(payload,'$.event.kind') IN ('turn.started','item.started','item.completed')\n    OR json_extract(payload,'$.method') = 'interaction/request');"
+      },
+      {
+        "version": 6,
+        "name": "0003_outbox_history_identities",
+        "sql": "CREATE INDEX `outbox_route_history_identities` ON `outbox` (`route`, `seq`) WHERE json_extract(payload,'$.event.kind') IN ('turn.started','item.started','item.completed');"
+      },
+      {
+        "version": 7,
+        "name": "0004_history_selection_indexes",
+        "sql": "CREATE INDEX `inbox_history_native_id` ON `inbox` (`route`, (CASE WHEN json_extract(payload,'$.event.kind') = 'turn.started'\n  THEN json_extract(payload,'$.event.nativeTurnId') ELSE json_extract(payload,'$.event.item.nativeKey') END), `seq`) WHERE json_extract(payload,'$.event.kind') IN ('turn.started','item.started','item.completed');--> statement-breakpoint\nCREATE INDEX `inbox_history_public_turn` ON `inbox` (`route`, json_extract(payload,'$.event.turnId'), `seq`) WHERE json_extract(payload,'$.event.kind') = 'turn.started';--> statement-breakpoint\nCREATE INDEX `outbox_history_native_id` ON `outbox` (`route`, (CASE WHEN json_extract(payload,'$.event.kind') = 'turn.started'\n  THEN json_extract(payload,'$.event.nativeTurnId') ELSE json_extract(payload,'$.event.item.nativeKey') END), `seq`) WHERE json_extract(payload,'$.event.kind') IN ('turn.started','item.started','item.completed');--> statement-breakpoint\nCREATE INDEX `outbox_history_public_turn` ON `outbox` (`route`, json_extract(payload,'$.event.turnId'), `seq`) WHERE json_extract(payload,'$.event.kind') = 'turn.started';"
+      },
+      {
+        "version": 8,
+        "name": "0005_route_archive_state",
+        "sql": "ALTER TABLE `routes` ADD `archive_state` text DEFAULT 'active' NOT NULL;--> statement-breakpoint\nCREATE INDEX `commands_pending_archive` ON `commands` (`route`) WHERE method IN ('session/archive','session/unarchive') AND state IN ('registered','dispatching');--> statement-breakpoint\nWITH latest_archive AS (\n  SELECT route, method, state, row_number() OVER (PARTITION BY route ORDER BY rowid DESC) AS position\n  FROM commands\n  WHERE method IN ('session/archive','session/unarchive')\n    AND state IN ('accepted','unknown','dispatching')\n)\nUPDATE routes\nSET archive_state=COALESCE((\n  SELECT CASE\n    WHEN state != 'accepted' THEN 'unconfirmed'\n    WHEN method = 'session/archive' THEN 'archived'\n    ELSE 'active'\n  END\n  FROM latest_archive WHERE latest_archive.route=routes.route AND position=1\n), 'active');\n"
       }
     ]
   },

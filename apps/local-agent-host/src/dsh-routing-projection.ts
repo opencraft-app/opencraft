@@ -105,7 +105,7 @@ export class DshRoutingProjection {
       if (!event) return null;
       payload.event = event;
     }
-    return { ...frame, payload };
+    return { ...frame, payload, nativeSessionId: nativeId };
   }
 }
 

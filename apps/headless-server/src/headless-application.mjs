@@ -813,6 +813,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           coreAuthToken: options.codexCoreAuthToken,
           ...(options.codexRuntime ? { coreRuntime: options.codexRuntime } : {}),
           coreHostOverlays: options.codexCoreEndpoint !== undefined,
+          ...(codexEngineHost ? { bridgeThreadRequest: (method, params, commitExecution) =>
+            codexFront.request(method, params, 45_000, { sender: null, commitExecution }) } : {}),
           observationComponent: 'gateway',
           ...createCodexWorkspaceHooks(workspaceRouting ?? composition, hostId),
           nativeCodexHomeDirectory: join(dataDirectory, "native-codex"),
@@ -821,13 +823,14 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           admit:async (threadId,inputId,input,context)=>{
             if(context.collaborationRequestId) {
               if(inputId!=='actor-input:'+context.collaborationRequestId)throw Error('Invalid admitted input');
-            } else {
+            } else if(!context.commitExecution) {
               // An anonymous deployment's input carries no actor of its own: the agent driver admits it
               // as the deployment operator, which this admission then authorizes as it would a login.
               const actor=context.actorContext??operator.context();
               if(!actor)throw Error('Execution admission required');
               actorCollaboration.authorizeExecution(actor,threadId,inputId,input);
             }
+            // Continuation uses the previous Turn's recorded delegation.
             await actorCollaboration.admittedExecution(threadId,inputId);
             return {serverId:conversationExecution.serverForThread(threadId),threadId,
               execution:{inputId,executionId:createHash('sha256').update(JSON.stringify([threadId,inputId])).digest('hex')}};

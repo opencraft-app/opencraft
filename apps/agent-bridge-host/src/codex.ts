@@ -1,6 +1,9 @@
 import { isAbsolute } from "node:path";
+import { threadCatalogStatus } from "@opencraft/appserver-protocol";
 import {
+  BRIDGE_MAX_INPUT_BYTES,
   BRIDGE_THREAD_NOTIFICATIONS,
+  parseDelta,
   type BridgeDelta,
   type BridgeErrorKind,
   type ItemShape,
@@ -38,11 +41,12 @@ function id(value: unknown): string {
     throw new CodexBridgeError("invalid", "Expected identifier");
   return value;
 }
-/** Native user input the bridge forwards: text, images by URL or local path, and file mentions. */
-export const CODEX_INPUT_TYPES = ["text", "image", "localImage", "mention"] as const;
+/** Native input forwarded to Codex, including compiled Skill references. */
+export const CODEX_INPUT_TYPES = ["text", "image", "localImage", "mention", "skill"] as const;
+export const CODEX_INPUT_MAX_BYTES = BRIDGE_MAX_INPUT_BYTES;
 /** An empty start continues the Thread (system continuation after a restart or provider failure); steers need content. */
 function nativeInput(value: unknown, allowEmpty = false): boolean {
-  if (!Array.isArray(value) || (value.length === 0 && !allowEmpty) || Buffer.byteLength(JSON.stringify(value)) > 65536)
+  if (!Array.isArray(value) || (value.length === 0 && !allowEmpty) || Buffer.byteLength(JSON.stringify(value)) > CODEX_INPUT_MAX_BYTES)
     return false;
   return value.every((raw) => {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) return false;
@@ -56,6 +60,7 @@ function nativeInput(value: unknown, allowEmpty = false): boolean {
       case "localImage":
         return path("path");
       case "mention":
+      case "skill":
         return typeof item.name === "string" && path("path");
       default:
         return false;
@@ -177,7 +182,7 @@ export class CodexBridge {
     if (session.activeTurn || session.starting || session.uncertainStart)
       throw new CodexBridgeError("explicit-reject", "Turn already active");
     if (!nativeInput(params.input, true))
-      throw new CodexBridgeError("unsupported", "Input must be bounded text, image, local image or file mention");
+      throw new CodexBridgeError("unsupported", "Unsupported or oversized Codex input");
     // Permission/environment preparation remains the existing owner's responsibility.
     session.starting = true;
     let nativeStartAttempted = false;
@@ -298,7 +303,10 @@ export class CodexBridge {
     if (BRIDGE_THREAD_NOTIFICATIONS.has(method)) {
       const p = record(raw),
         entry = [...this.sessions].find(([, s]) => s.nativeId === p.threadId);
-      if (entry) this.forward(entry[0], method, { ...p, threadId: entry[0] });
+      if (entry && method === "thread/status/changed") {
+        const status = threadCatalogStatus(p.status);
+        if (status) this.forward(entry[0], method, { threadId: entry[0], status });
+      } else if (entry) this.forward(entry[0], method, { ...p, threadId: entry[0] });
       return;
     }
     if (
@@ -371,13 +379,11 @@ export class CodexBridge {
         const summary = Array.isArray(item.summary) ? item.summary.filter((v): v is string => typeof v === "string") : [];
         shape = { kind: "reasoning", text: content.join("\n"), content, summary };
       }
-      else if (item.type === "dynamicToolCall" && typeof item.tool === "string")
-        shape = {
-          kind: "tool",
-          name: item.tool,
-          status: item.status === "completed" ? "completed" : item.status === "failed" ? "failed" : "inProgress",
-          output: item.contentItems ? JSON.stringify(item.contentItems) : null,
-        };
+      else if ((item.type === "imageGeneration" || item.type === "mcpToolCall" || item.type === "dynamicToolCall") &&
+        typeof item.status === "string") {
+        const { id: _nativeId, ...fields } = item;
+        shape = { kind: "appServerItem", item: { ...fields, type: item.type, status: item.status } };
+      }
       else if (item.type === "userMessage" && Array.isArray(item.content)) {
         shape = {
           kind: "userMessage",
@@ -439,9 +445,12 @@ export class CodexBridge {
         this.emit(threadId, [{ op: "unhandled", scope, nativeTurnId, nativeKey, reason: "Unsupported native item" }]);
         return;
       }
-      this.emit(threadId, [
-        { op: method === "item/started" ? "item.open" : "item.close", scope, nativeTurnId, nativeKey, shape },
-      ]);
+      const delta = { op: method === "item/started" ? "item.open" : "item.close", scope, nativeTurnId, nativeKey, shape } as const;
+      if (shape.kind === "appServerItem" && !parseDelta(delta).ok) {
+        this.emit(threadId, [{ op: "unhandled", scope, nativeTurnId, nativeKey, reason: "Invalid native media or tool item" }]);
+        return;
+      }
+      this.emit(threadId, [delta]);
     } else if (method === "thread/tokenUsage/updated") {
       const usage = record(p.tokenUsage);
       const tokens = (raw: unknown) => {

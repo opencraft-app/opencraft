@@ -19,6 +19,15 @@ export interface QueuedSubmission<S> {
   readonly delivery?: InputDeliveryReceipt;
 }
 
+export interface QueueListPage<S> {
+  readonly queued: readonly QueuedSubmission<S>[];
+  readonly receipts?: readonly QueuedSubmission<S>[];
+  readonly nextCursor: number | null;
+}
+
+export type QueueDelivery = Pick<QueuedSubmission<never>,
+  "id" | "threadId" | "clientUserMessageId" | "state" | "targetTurnId" | "pausedReason" | "delivery">;
+
 /** What an engine attaches to queued inputs, and which inputs their owner reconciles. */
 export interface ThreadQueueOptions<S> {
   /** Convert inputs left mid-dispatch by a previous process to unknown. Default true. */
@@ -101,7 +110,7 @@ export class ThreadQueueStore<S = never> {
     return this.db.transaction(write);
   }
 
-  private project(row: Record<string, unknown>): QueuedSubmission<S> {
+  private projectDelivery(row: Record<string, unknown>): QueueDelivery {
     const threadId = requiredText(row.thread_id, "thread id"),
       clientId = requiredText(row.client_id, "client message id");
     const targetTurnId = typeof row.target_turn_id === "string" ? row.target_turn_id : null;
@@ -109,14 +118,21 @@ export class ThreadQueueStore<S = never> {
       id: requiredText(row.id, "queue id"),
       threadId,
       clientUserMessageId: clientId,
-      input: parseInput(JSON.parse(requiredText(row.input_json, "queue input"))),
-      position: Number(row.position),
-      createdAt: Number(row.created_at_ms),
       state: row.state as QueueState,
       targetTurnId,
       pausedReason: typeof row.paused_reason === "string" ? row.paused_reason : null,
       delivery: this.deliveries.receipt(threadId, clientId, targetTurnId),
-      executionSubmission: this.options.submission?.(threadId, clientId) ?? null,
+    };
+  }
+
+  private project(row: Record<string, unknown>): QueuedSubmission<S> {
+    const delivery = this.projectDelivery(row);
+    return {
+      ...delivery,
+      input: parseInput(JSON.parse(requiredText(row.input_json, "queue input"))),
+      position: Number(row.position),
+      createdAt: Number(row.created_at_ms),
+      executionSubmission: this.options.submission?.(delivery.threadId, delivery.clientUserMessageId) ?? null,
     };
   }
   protected row(threadId: string, id: string): QueuedSubmission<S> | null {
@@ -178,18 +194,39 @@ export class ThreadQueueStore<S = never> {
     });
   }
 
-  list(threadId: string, receiptTurnIds?: readonly string[]): QueuedSubmission<S>[] {
-    const open =
-      "SELECT * FROM opencraft_host_queue WHERE thread_id=? AND state IN ('queued','dispatching','steering','unknown')";
-    const closed =
-      receiptTurnIds?.length === 0
-        ? " UNION ALL SELECT * FROM opencraft_host_queue WHERE thread_id=? AND state='closed' AND paused_reason='delivery-retry-requested'"
-        : " UNION ALL SELECT * FROM opencraft_host_queue WHERE thread_id=? AND state='closed'" +
-          (receiptTurnIds === undefined ? "" : ` AND target_turn_id IN (${receiptTurnIds.map(() => "?").join(",")})`);
+  private scopedRows(threadId: string, states: string, receiptTurnIds?: readonly string[], columns = "*") {
+    const select = `SELECT ${columns} FROM opencraft_host_queue WHERE thread_id=? AND state`;
+    const closed = receiptTurnIds?.length === 0
+      ? " AND paused_reason='delivery-retry-requested'"
+      : receiptTurnIds === undefined ? "" : ` AND target_turn_id IN (${receiptTurnIds.map(() => "?").join(",")})`;
     return this.db
-      .prepare(open + closed + " ORDER BY position,created_at_ms,id")
-      .all(threadId, ...(closed ? [threadId, ...(receiptTurnIds ?? [])] : []))
-      .map((row) => this.project(row));
+      .prepare(`${select} IN (${states}) UNION ALL ${select}='closed'${closed} ORDER BY position,created_at_ms,id`)
+      .all(threadId, threadId, ...(receiptTurnIds ?? []));
+  }
+
+  list(threadId: string, receiptTurnIds?: readonly string[]): QueuedSubmission<S>[] {
+    return this.scopedRows(threadId, "'queued','dispatching','steering','unknown'", receiptTurnIds)
+      .map(row => this.project(row));
+  }
+
+  listPage(threadId: string, offset: number, limit: number, receiptTurnIds?: readonly string[]): QueueListPage<S> {
+    const statement = `SELECT * FROM opencraft_host_queue WHERE thread_id=? AND state='queued'
+      ORDER BY position,created_at_ms,id LIMIT ? OFFSET ?`;
+    const rows = this.db.prepare(statement).all(threadId, limit + 1, offset);
+    return {
+      queued: rows.slice(0, limit).map(row => this.project(row)),
+      nextCursor: rows.length > limit ? offset + limit : null,
+      ...(offset === 0 ? {
+        receipts: this.scopedRows(threadId, "'dispatching','steering','unknown'", receiptTurnIds)
+          .map(row => this.project(row)),
+      } : {}),
+    };
+  }
+
+  listReconciliation(threadId: string, receiptTurnIds?: readonly string[]): QueueDelivery[] {
+    return this.scopedRows(threadId, "'steering','unknown'", receiptTurnIds,
+      "id,thread_id,client_id,target_turn_id,paused_reason,state,position,created_at_ms")
+      .map(row => this.projectDelivery(row));
   }
 
   observationCount(threadId: string): number {

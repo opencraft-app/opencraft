@@ -22,7 +22,7 @@ export async function createCodexPreview() {
   const oldItem = { type: 'agentMessage', id: 'old-answer', text: 'Old bridge fixture answer', phase: 'final_answer', memoryCitation: null, delivery: null, questions: null };
   const oldTurn = { id: 'old-turn', status: 'completed', error: null, startedAt: 1_800_000_000, completedAt: 1_800_000_001, durationMs: 1000, itemsView: 'full', items: [{ type: 'userMessage', id: 'old-user', clientId: null, content: [{ type: 'text', text: 'Old fixture question', text_elements: [] }] }, oldItem] };
   const old = () => ({ ...metadata('legacy-preview', 'Legacy preview'), turns: [oldTurn] });
-  let active = false, started = false, starts = 0, steers = 0, pendingInput: any;
+  let active = false, started = false, archived = false, starts = 0, steers = 0, pendingInput: any;
   const items: any[] = [], peers = new Set<WebSocket>();
   const turn = () => ({ id: nativeTurn, rootTurnId: nativeTurn, status: active ? 'inProgress' : 'completed', error: null, itemsView: 'full', startedAt: 1_800_000_000, completedAt: active ? null : 1_800_000_001, durationMs: active ? null : 1000, items });
   const thread = () => ({ ...metadata(nativeId, 'Codex bridge preview', active), turns: started ? [turn()] : [] });
@@ -36,7 +36,12 @@ export async function createCodexPreview() {
       case 'initialize': return { userAgent: 'codex/0.167.0', capabilities: {} };
       case 'runtime/machine/read': return { machine: { machineId: '22345678-1234-4123-8123-123456789abc', name: 'Bridge UI fixture', platform: 'linux' }, agent: 'Codex' };
       case 'model/list': return { data: [{ id: 'fixture-model', model: 'fixture-model', displayName: 'Fixture model', description: 'Synthetic model', hidden: false, isDefault: true, supportedReasoningEfforts: [{ reasoningEffort: 'medium', description: 'Fixture' }], defaultReasoningEffort: 'medium', inputModalities: ['text'], supportsPersonality: false, additionalSpeedTiers: [], serviceTiers: [] }], nextCursor: null };
-      case 'thread/list': return { data: [metadata('legacy-preview', 'Legacy preview'), metadata(nativeId, 'Codex bridge preview', active)], nextCursor: null };
+      case 'thread/list': return { data: [
+        ...(p.archived === true ? [] : [metadata('legacy-preview', 'Legacy preview')]),
+        ...(archived === (p.archived === true) ? [metadata(nativeId, 'Codex bridge preview', active)] : []),
+      ], nextCursor: null };
+      case 'thread/archive': archived = true; return {};
+      case 'thread/unarchive': archived = false; return { thread: thread() };
       case 'threadSection/list': return { data: [], nextCursor: null };
       case 'thread/read': return { thread: target };
       case 'thread/start': return { thread: thread(), model: 'fixture-model', modelProvider: 'openai' };

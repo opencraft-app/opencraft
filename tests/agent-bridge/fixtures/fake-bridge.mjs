@@ -6,7 +6,11 @@ let sequence = 0;
 const callback = (threadId, deltas) => output({ id: `callback:${++sequence}`, method: 'thread/delta', params: { threadId, deltas } });
 createInterface({ input: process.stdin }).on('line', line => {
   const request = JSON.parse(line);
-  if (!request.method) return;
+  if (!request.method) {
+    if (request.id === 'held-session-ended' && request.result?.durable)
+      appendFileSync(process.env.EXECUTIONS + '.end-ack', 'durable\n');
+    return;
+  }
   const p = request.params;
   if (request.method === 'initialize') { output({ id: request.id, result: JSON.parse(process.env.HANDSHAKE) }); return; }
   if (p?.refuse) { output({ id: request.id, error: { code: -32000, kind: 'explicit-reject', message: 'Fixture refusal' } }); return; }
@@ -19,6 +23,12 @@ createInterface({ input: process.stdin }).on('line', line => {
     if (p.unsettled === 'queue') deltas.push({ op: 'input.accepted', inputId: 'late-input', clientRequestId: 'late-client', expectedTurnId: 'old-turn', scope },
       { op: 'input.evidence', inputId: 'late-input', evidenceKind: 'echo', version: 1, scope });
     callback(p.threadId, deltas);
+  }
+  if (request.method === 'session/close' && p.holdAfterSessionEnd) {
+    output({ id: 'held-session-ended', method: 'thread/delta', params: {
+      threadId: p.threadId, deltas: [{ op: 'session.ended', scope: { threadId: p.threadId } }],
+    } });
+    return;
   }
   if (request.method === 'turn/stop' && p.settle) {
     const scope = { threadId: p.threadId };

@@ -142,7 +142,8 @@ export class BridgeExecutionAdmissionTransport implements DuplexTransport {
       }catch {
         const input=this.inputs.get(p.threadId);
         if(input&&input.inputId===p.clientUserMessageId&&!input.turnId){this.port.rejectedBeforeStart?.(p.threadId,p.clientUserMessageId);this.inputs.delete(p.threadId);}
-        const reply=JSON.stringify({id:frame.id,error:{code:-32001,message:'cliUnavailable'},
+        const reply=JSON.stringify({id:frame.id,error:{code:-32001,message:'cliUnavailable',
+          data:{submissionOutcome:'rejected',notSubmitted:true}},
           ...(frame[LOGICAL_CLIENT_FIELD]?{[LOGICAL_CLIENT_FIELD]:frame[LOGICAL_CLIENT_FIELD]}:{})});
         for(const listener of this.listeners)listener(reply);return;
       }

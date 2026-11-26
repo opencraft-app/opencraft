@@ -17,6 +17,8 @@ export class Peer {
   private incarnation = randomUUID();
   private cleanup?: Promise<void>;
   private incoming: Promise<void> = Promise.resolve();
+  private replies: Promise<void> = Promise.resolve();
+  private readonly transportLifetime = new AbortController();
   constructor(readonly config: Generation, private callback: (id: string, method: string, params: unknown) => Promise<void>, private timeoutMs = 30_000, private onFailure?:()=>void) {}
   async start(pool: SandboxPool): Promise<void> {
     this.sandbox = await createSandbox(pool, { owner: `agent-bridge:${this.config.id}:${this.config.digest}` });
@@ -40,18 +42,24 @@ export class Peer {
     } catch (error) { await this.sandbox.close(); throw error; }
   }
   private fail(error: Error): void {
-    if(!this.failed)this.onFailure?.();
-    this.failed ??= error;
+    if (this.failed) return;
+    this.failed = error;
     for (const waiter of this.pending.values()) { clearTimeout(waiter.timer); waiter.reject(error); }
     this.pending.clear();
+    this.transportLifetime.abort(error);
+    this.onFailure?.();
   }
   private async receive(line: string): Promise<void> {
     const decoded = decodeFrame(line);
-    if (decoded.kind === 'error') { try { await this.write({ jsonrpc: '2.0', id: null, error: decoded.error }); } catch {} return; }
+    if (decoded.kind === 'error') {
+      this.queueReply({ jsonrpc: '2.0', id: null, error: decoded.error });
+      return;
+    }
     const message = decoded.message;
     if (isRequest(message) || isNotification(message)) {
       if (!isBridgeCallback(message.method)) {
-        try { await this.write({ jsonrpc: '2.0', id: isRequest(message) ? message.id : null, error: { code: -32601, kind: 'unsupported', message: 'Unsupported bridge callback' } }); } catch {}
+        this.queueReply({ jsonrpc: '2.0', id: isRequest(message) ? message.id : null,
+          error: { code: -32601, kind: 'unsupported', message: 'Unsupported bridge callback' } });
         return;
       }
       const id = isRequest(message) ? `${this.incarnation}:request:${message.id}` : `${this.incarnation}:notification:${++this.callbackSequence}`;
@@ -62,16 +70,38 @@ export class Peer {
         void this.abort(error as Error).catch(() => {});
         return;
       }
-      if (isRequest(message)) {
-        try { await this.write({ jsonrpc: '2.0', id: message.id, result: { durable: true } }); }
-        catch (error) { this.fail(error as Error); } // EOF cannot discard later received frames.
-      }
+      if (isRequest(message)) this.queueReply({ jsonrpc: '2.0', id: message.id, result: { durable: true } });
       return;
     }
     if (message.id === null) return;
     const waiter = this.pending.get(message.id);
     if (!waiter) return; // timed out requests stay unknown, including late success.
     clearTimeout(waiter.timer); this.pending.delete(message.id); waiter.resolve(message);
+  }
+  private queueReply(message: BridgeWireMessage): void {
+    if (this.failed) return;
+    // Storage commits stay ordered independently of stdin backpressure.
+    this.replies = this.replies.then(() => this.writeReply(message));
+    void this.replies.catch(error => { void this.abort(error).catch(() => {}); });
+  }
+  private async writeReply(message: BridgeWireMessage): Promise<void> {
+    if (this.failed) return;
+    const signal = this.transportLifetime.signal;
+    let onClosed!: () => void;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const interrupted = new Promise<never>((_, reject) => {
+      onClosed = () => reject(signal.reason);
+      signal.addEventListener('abort', onClosed, { once: true });
+      timer = setTimeout(() => reject(Error('Bridge callback reply write timed out')), this.timeoutMs);
+    });
+    try {
+      await Promise.race([this.write(message), interrupted]);
+    } catch (error) {
+      if (!this.failed) void this.abort(error as Error).catch(() => {});
+    } finally {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', onClosed);
+    }
   }
   private async write(message: BridgeWireMessage): Promise<void> {
     if (this.failed || !this.child) throw this.failed ?? Error('Bridge unavailable');
@@ -81,14 +111,21 @@ export class Peer {
   }
   async request(id: string, method: BridgeCommand, params: unknown): Promise<BridgeWireMessage> {
     if (this.failed) throw this.failed;
+    let written = false;
     const response = new Promise<BridgeWireMessage>((resolve, reject) => {
-      const timer = setTimeout(() => { this.pending.delete(id); reject(Error('Native request outcome unknown')); }, this.timeoutMs);
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        const error = Error('Native request outcome unknown');
+        reject(error);
+        // An unconfirmed write may still be queued in the sandbox transport.
+        if (!written) void this.abort(error).catch(() => {});
+      }, this.timeoutMs);
       this.pending.set(id, { resolve, reject, timer });
     });
-    // Observe rejection immediately even if write waits for backpressure.
-    void response.catch(() => {});
-    try { await this.write({ jsonrpc: '2.0', id, method, params }); }
-    catch (error) { this.fail(error as Error); }
+    void this.write({ jsonrpc: '2.0', id, method, params }).then(
+      () => { written = true; },
+      error => { this.fail(error as Error); },
+    );
     return response;
   }
   abort(error: Error): Promise<void> {
@@ -98,6 +135,7 @@ export class Peer {
   async close(): Promise<void> {
     await this.abort(Error('Bridge owner closing'));
     await this.incoming; // drain every frame already received, even after EOF
+    await this.replies;
   }
 }
 export const successful = isSuccess;

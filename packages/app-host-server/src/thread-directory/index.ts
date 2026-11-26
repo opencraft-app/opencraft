@@ -88,6 +88,8 @@ export interface ThreadDirectoryPort {
   incrementalScan?: boolean;
   /** Commit metadata per source page and reconcile in bounded rowid windows. */
   streamingSync?: boolean;
+  /** Native catalog observations can recover entries removed from this projection. */
+  sourceOwnsExistence?: boolean;
   nonblockingCold?: boolean;
   /** The owner explicitly refreshes at a point when the source is already available. */
   refreshOnDemandOnly?: boolean;
@@ -145,6 +147,15 @@ export class SqlThreadDirectory {
       && (params.cursor == null || typeof params.cursor === "string" && (params.cursor.startsWith(cursorPrefix) || params.cursor.startsWith(SNAPSHOT_CURSOR)))
       && (params.limit == null || Number.isSafeInteger(params.limit) && Number(params.limit) > 0 && Number(params.limit) <= 1000)
       && params.useStateDbOnly !== false;
+  }
+  /** Point lookup from an owner-verified directory checkpoint. */
+  recordedArchiveState(threadId: string): boolean | undefined {
+    const row = this.#recordedRow(threadId, false);
+    return row && !row.deleted ? Boolean(row.archived) : undefined;
+  }
+  #recordedRow(threadId: string, includeMetadata = true) {
+    return this.database.prepare("SELECT CASE WHEN ? THEN metadata_json END AS metadata_json,archived,deleted FROM opencraft_thread_catalog WHERE thread_id=?")
+      .get(Number(includeMetadata), threadId);
   }
   /** Pure read on the owner's existing connection. Never schedules source refresh. */
   searchNames(request: RecordedNameRead, assertCurrent: () => void = () => {}): RecordedNameWindow {
@@ -427,7 +438,7 @@ export class SqlThreadDirectory {
   #put(row: Thread, archived: number, fence?: number, preserveStatus = false, metric?: DirectoryMeasurement): void {
     archived = this.port.archived ? Number(this.port.archived(row.id)) : archived;
     const old = this.database.prepare("SELECT revision,metadata_json,archived,deleted FROM opencraft_thread_catalog WHERE thread_id=?").get(row.id);
-    if (fence !== undefined && old && (Number(old.revision) > fence || old.deleted)) return;
+    if (fence !== undefined && old && (Number(old.revision) > fence || (old.deleted && !this.port.sourceOwnsExistence))) return;
     if (metric) metric.rows++;
     const nativeStatus = row.status;
     const previousExecutionStatus = this.#execution.get(row.id)?.status;
@@ -615,7 +626,7 @@ export class SqlThreadDirectory {
     }
     const id = row?.id ?? input.threadId;
     if (typeof id !== "string" || !id) return;
-    const stored = this.database.prepare("SELECT metadata_json,archived,deleted FROM opencraft_thread_catalog WHERE thread_id=?").get(id);
+    const stored = this.#recordedRow(id);
     if (!stored) { this.markDirty(id); return; }
     if (stored.deleted) return;
     const current = JSON.parse(String(stored.metadata_json)) as Thread;

@@ -67,6 +67,8 @@ export interface AppServerThread {
 }
 
 export interface ThreadTurnsListRequest {
+  /** From a retained history view, with thread-lifecycle.openArchivedHistory. */
+  openArchivedHistory?: true;
   imageResources?: boolean;
   threadId: string;
   /** Only with read-history itemDetails; never forwarded to native. */
@@ -78,6 +80,7 @@ export interface ThreadTurnsListRequest {
 }
 
 export interface ThreadItemsListRequest {
+  openArchivedHistory?: true;
   threadId: string;
   turnId: string;
   cursor: string | null;

@@ -18,7 +18,8 @@ function remoteQueue(storage: Storage): QueueRequestStore<never> {
     (...args: unknown[]) =>
       storage.call("queue", { method, args });
   const methods = [
-    "list",
+    "listPage",
+    "listReconciliation",
     "find",
     "findByClientId",
     "firstAwaitingAdmission",
@@ -48,8 +49,10 @@ export interface HostQueuePort {
     params: Record<string, unknown>,
   ): Promise<Receipt>;
   history(serverId: string, threadId: string, params: Record<string, unknown>): Promise<unknown>;
+  canReconcile(route: string): Promise<boolean>;
   /** Bind a route's session again after a Host restart; settles turns that ended unobserved. */
   recover(route: string): Promise<void>;
+  isIdle(route: string): Promise<boolean>;
   /** Whether the route's generation can be started without explicit recovery. */
   dispatchable(route: string): Promise<boolean>;
 }
@@ -61,10 +64,25 @@ const object = (value: unknown): Record<string, unknown> =>
 const turns = (thread: Record<string, unknown>): HistoryTurn[] =>
   Array.isArray(thread.turns) ? (thread.turns as HistoryTurn[]) : [];
 const PAUSED = ["delivery-rejected"];
-const items = (thread: Record<string, unknown>) =>
-  turns(thread).flatMap((turn) =>
-    (Array.isArray(turn?.items) ? (turn.items as HistoryItem[]) : []).map((item) => ({ turnId: turn.id, item })),
-  );
+/** Dispatch and recovery must address the same durable receipt for a queue attempt. */
+export function queuedCommandId(
+  kind: "start" | "steer",
+  route: string,
+  row: QueuedSubmission<never>,
+  revision = row.delivery?.revision ?? 0,
+): string {
+  return `queue-${kind}:${createHash("sha256")
+    .update(JSON.stringify([route, row.clientUserMessageId, row.targetTurnId, revision]))
+    .digest("hex")}`;
+}
+
+export function queuedTurnAcknowledgement(response: unknown, expectedTurnId?: string) {
+  const result = object(object(response).result);
+  const turnId = object(result.turn).id ?? result.turnId;
+  if (typeof turnId !== "string" || !turnId || (expectedTurnId !== undefined && turnId !== expectedTurnId))
+    return null;
+  return { turnId, response: result };
+}
 
 /**
  * Queued follow-up input for bridge Threads. Lives in the Engine Host so the
@@ -75,6 +93,7 @@ const items = (thread: Record<string, unknown>) =>
 export class HostQueue {
   private readonly store: QueueRequestStore<never>;
   private readonly chains = new Map<string, Promise<unknown>>();
+  private readonly listScopes = new Map<string, Set<string | null>>();
   private closed = false;
   constructor(
     private readonly storage: Storage,
@@ -105,34 +124,74 @@ export class HostQueue {
     const [serverId, threadId] = JSON.parse(route) as [string, string];
     return [serverId, threadId];
   }
-  private async thread(route: string): Promise<Record<string, unknown>> {
+  private async readHistoryEvidence(route: string) {
     const [serverId, threadId] = this.parts(route);
-    return object(object(await this.port.history(serverId, threadId, { view: "thread", includeTurns: true })).thread);
+    const reply = object(await this.port.history(serverId, threadId, { view: "thread", includeTurns: true }));
+    const turnOutcomes = new Map<string, { status?: unknown }>();
+    const inputTurns = new Map<string, Set<string | undefined>>();
+    for (const turn of turns(object(reply.thread))) {
+      if (typeof turn?.id === "string" && !turnOutcomes.has(turn.id))
+        turnOutcomes.set(turn.id, { status: turn.status });
+      if (!Array.isArray(turn?.items)) continue;
+      for (const item of turn.items as HistoryItem[]) {
+        if (item?.type !== "userMessage" || typeof item.clientId !== "string") continue;
+        let targets = inputTurns.get(item.clientId);
+        if (!targets) {
+          targets = new Set();
+          inputTurns.set(item.clientId, targets);
+        }
+        targets.add(turn.id);
+      }
+    }
+    return {
+      hasInput: (clientId: string, target: string | null) => {
+        const targets = inputTurns.get(clientId);
+        return target === null ? targets !== undefined : targets?.has(target) === true;
+      },
+      turnOutcomes,
+    };
   }
-  private async historyHasInput(route: string, clientId: string, target: string | null): Promise<boolean> {
-    return items(await this.thread(route)).some(
-      ({ turnId, item }) =>
-        (target === null || turnId === target) && item?.type === "userMessage" && item.clientId === clientId,
-    );
-  }
-  private reconcile(route: string, receiptTurnIds?: readonly string[]): Promise<void> {
+  private async reconcile(route: string, receiptTurnIds?: readonly string[]): Promise<void> {
+    if (!(await this.port.canReconcile(route))) return;
+    let evidence: ReturnType<HostQueue["readHistoryEvidence"]> | undefined;
+    const read = () => (evidence ??= this.readHistoryEvidence(route));
     return reconcileThreadQueue(
       this.store,
       route,
       {
-        historyHasInput: (clientId, target) => this.historyHasInput(route, clientId, target),
-        isIdle: () => this.storage.call("routeIdle", { route }),
-        findTurn: async (target) => turns(await this.thread(route)).find((turn) => turn?.id === target),
+        historyHasInput: async (clientId, target) => (await read()).hasInput(clientId, target),
+        isIdle: async () => {
+          const idle = await this.port.isIdle(route);
+          // Retry and terminal proof must observe history after the idle check.
+          if (idle) evidence = undefined;
+          return idle;
+        },
+        findTurn: async (target) => (await read()).turnOutcomes.get(target),
         changed: () => this.changed(route),
       },
       receiptTurnIds,
     );
   }
-  /** Stable per attempt: a restart cannot send twice, while an explicit retry is a new attempt. */
-  private commandId(kind: string, route: string, row: QueuedSubmission<never>): string {
-    return `queue-${kind}:${createHash("sha256")
-      .update(JSON.stringify([route, row.clientUserMessageId, row.targetTurnId, row.delivery?.revision ?? 0]))
-      .digest("hex")}`;
+  private scheduleReconciliation(route: string, receiptTurnIds: readonly string[] | undefined): void {
+    if (this.closed) return;
+    const scope = receiptTurnIds && [...new Set(receiptTurnIds)].sort();
+    const key = scope ? JSON.stringify(scope) : null;
+    let scopes = this.listScopes.get(route);
+    if (!scopes) {
+      scopes = new Set();
+      this.listScopes.set(route, scopes);
+    }
+    if (scopes.has(key) || scopes.has(null)) return;
+    scopes.add(key);
+    const pending = scopes;
+    void this.exclusive(route, async () => {
+      if (!this.closed) await this.reconcile(route, scope);
+    }).catch(error => {
+      this.log({ event: "queue-reconciliation-failed", reason: error instanceof Error ? error.message : "unknown" });
+    }).finally(() => {
+      pending.delete(key);
+      if (pending.size === 0) this.listScopes.delete(route);
+    });
   }
   private port_(route: string, kind: "start" | "steer", expectedTurnId?: string) {
     const [serverId, threadId] = this.parts(route);
@@ -154,7 +213,7 @@ export class HostQueue {
         const receipt = await this.port.command(
           serverId,
           threadId,
-          this.commandId(kind, route, row),
+          queuedCommandId(kind, route, row),
           kind === "start" ? "turn/start" : "turn/steer",
           params,
         );
@@ -163,11 +222,10 @@ export class HostQueue {
           throw Object.assign(Error(String(object(response.error).message ?? "Queued delivery was not accepted")), {
             settlement: receipt.state,
           });
-        const result = object(response.result),
-          turnId = String(object(result.turn).id ?? result.turnId ?? "");
-        if (!turnId || (kind === "steer" && turnId !== expectedTurnId))
+        const acknowledgement = queuedTurnAcknowledgement(response, expectedTurnId);
+        if (!acknowledgement)
           throw Object.assign(Error("Invalid native acknowledgement"), { settlement: "unknown" });
-        return { turnId, response: result };
+        return acknowledgement;
       },
       // Only an explicit rejection proves nothing was sent; it pauses instead of retrying in a loop.
       failed: (error: unknown) =>
@@ -192,7 +250,7 @@ export class HostQueue {
       await this.reconcile(route, []);
       const head = await this.store.firstAwaitingAdmission(route);
       if (!head || head.state !== "queued" || PAUSED.includes(head.pausedReason ?? "")) return;
-      if (!(await this.storage.call("routeIdle", { route }))) return;
+      if (!(await this.port.isIdle(route))) return;
       await dispatchQueuedStart(this.store, route, head.id, this.port_(route, "start"));
     }).catch((error) =>
       this.log({ event: "queue-dispatch-failed", reason: error instanceof Error ? error.message : "unknown" }),
@@ -209,9 +267,10 @@ export class HostQueue {
   }
   request(route: string, method: string, params: Record<string, unknown>): Promise<unknown> {
     return threadQueueRequest(this.store, route, method, params, {
-      isIdle: () => this.storage.call("routeIdle", { route }),
-      historyHasInput: (clientId, target) => this.historyHasInput(route, clientId, target),
+      isIdle: () => this.port.isIdle(route),
+      historyHasInput: async (clientId, target) => (await this.readHistoryEvidence(route)).hasInput(clientId, target),
       reconcile: (receiptTurnIds) => this.reconcile(route, receiptTurnIds),
+      scheduleReconciliation: (receiptTurnIds) => this.scheduleReconciliation(route, receiptTurnIds),
       dispatchStart: (id) => dispatchQueuedStart(this.store, route, id, this.port_(route, "start")),
       dispatchSteer: (id, expectedTurnId) =>
         dispatchQueuedSteer(this.store, route, id, expectedTurnId, this.port_(route, "steer", expectedTurnId), () =>

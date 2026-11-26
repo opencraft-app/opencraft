@@ -1,0 +1,2 @@
+CREATE INDEX `inbox_route_projection` ON `inbox` (`route`,`seq`) WHERE (json_extract(payload,'$.event.kind') IN ('turn.started','item.started','item.completed')
+    OR json_extract(payload,'$.method') = 'interaction/request');

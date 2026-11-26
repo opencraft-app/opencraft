@@ -25,6 +25,9 @@ import { OPENCRAFT_TERMINAL_EXTENSION, SHARED_INTERACTIONS_CHANGED, SHARED_INTER
 import { OPENCRAFT_THREAD_LIFECYCLE_EXTENSION, SIDE_CHAT_INSTRUCTIONS, WORKSPACE_FILE_SCOPE_METHOD, WORKSPACE_PLACEMENT_EXTENSION } from "@opencraft/appserver-protocol";
 import { until, type TestWebSocket, type WorkerInstance, type WorkerScenario, type WorkerSpec } from "../../cloudflare/worker-runtime.ts";
 
+import { AppServerRpcError, type AppServerClient } from "@opencraft/appserver-client";
+import { readTurnsPage } from "../../../packages/appserver-session/src/history-strategies.ts";
+
 import { connectCodex, frameQueue } from "../../cloudflare/codex-apphost-client.ts";
 
 export const WORKSPACE_HOST_DO_SPEC: WorkerSpec = {
@@ -55,12 +58,14 @@ interface State {
   container: {
     running: boolean;
     agent: string | null;
-    starts: { instance: unknown; enableInternet: boolean; labels: string[]; env: Record<string, string> }[];
+    starts: { instance: unknown; enableInternet: boolean; labels: string[]; env: Record<string, string>; restored?: boolean }[];
     destroys: number;
     timeouts: number[];
     modelIntercepts: { host: string; running: boolean }[];
     inputs: { agent: string; threadId: string; inputId: string; text: string; turnId: string }[];
     served: string[];
+    historyReads: { threadId: string; method: string; includeTurns?: boolean }[];
+    bridgeIdentityCursors: number[];
   };
   families: Record<string, { version: number; name: string }[]>;
   tables: string[];
@@ -129,6 +134,15 @@ export const WORKSPACE_HOST_DO_SCENARIOS: readonly WorkerScenario[] = [
         assert.equal((await host.state()).bridgeCursor, 1);
         assert.doesNotMatch(JSON.stringify(awake.body), /"token"/u);
 
+        assert.equal((await host.test("bridge-maintenance", "?inFlight=1")).status, 200);
+        const busy = await host.owner("sleep", {});
+        assert.equal(busy.status, 409, "Bridge-owned input is still being delivered");
+        assert.equal((await host.state()).container.agent, container.agent);
+
+        assert.equal((await host.test("bridge-maintenance", "?unavailable=true")).status, 200);
+        assert.equal((await host.owner("sleep", {})).status, 409, "An unavailable Bridge cannot confirm it is safe to sleep");
+        assert.equal((await host.state()).container.agent, container.agent);
+
         assert.equal((await host.owner("sleep", {})).status, 200);
         assert.equal((await host.owner("wake", {})).status, 200);
         await host.test("publish-bridge-title", "?title=after-checkpoint");
@@ -146,6 +160,43 @@ export const WORKSPACE_HOST_DO_SCENARIOS: readonly WorkerScenario[] = [
         assert.equal((await host.owner("wake", {})).status, 200);
         assert.equal((await host.state()).bridgeCursor, 2, "the new producer may now use that sequence");
         assert.deepEqual((await host.state()).bridgeArchive, restored.bridgeArchive);
+      } finally {
+        await runtime.stop(instance);
+      }
+    },
+  },
+  {
+    name: "Workspace Bridge keeps its live lane after transient outbox failures",
+    async run({ runtime }) {
+      const workspace = workspaceId();
+      const instance = await runtime.start(WORKSPACE_HOST_DO_SPEC, {
+        vars: origin => ({
+          ...vars("resident")(origin),
+          OPENCRAFT_WORKSPACE_ENGINES: "codex,pi",
+          OPENCRAFT_WORKSPACE_CODEX_BRIDGE_ENDPOINT: "true",
+          OPENCRAFT_WORKSPACE_CODEX_EGRESS_ORIGIN: "http://workspace-model.invalid",
+          OPENCRAFT_WORKSPACE_CODEX_EGRESS_PROVIDER: "openai",
+        }),
+        localOrigin: LOCAL_ORIGIN,
+      });
+      try {
+        const host = client(instance, workspace);
+        assert.equal((await host.open()).status, 200);
+        assert.equal((await host.owner("wake", {})).status, 200);
+        for (const query of ["?stage=ack", "?stage=read", "?stage=read&status=disconnect", "?stage=open", "?stage=open&status=disconnect"]) {
+          const transient = await host.test("watch-bridge-after-failure", query);
+          assert.deepEqual(transient, { status: 200, body: { outcome: "continued", titles: ["first", "second"] } }, query);
+        }
+        for (const query of ["?stage=committed", "?stage=committed&status=disconnect"]) {
+          const transient = await host.test("watch-bridge-after-failure", query);
+          assert.deepEqual(transient, { status: 200, body: {
+            outcome: "continued", titles: ["first", "second"], deliveredWhileUnavailable: true,
+          } }, query);
+        }
+        const ackConflict = await host.test("watch-bridge-after-failure", "?stage=ack&status=409");
+        assert.deepEqual(ackConflict, { status: 200, body: { outcome: "closed", titles: ["first"] } });
+        const readConflict = await host.test("watch-bridge-after-failure", "?stage=read&status=409");
+        assert.deepEqual(readConflict, { status: 200, body: { outcome: "closed", titles: [] } });
       } finally {
         await runtime.stop(instance);
       }
@@ -181,11 +232,150 @@ export const WORKSPACE_HOST_DO_SCENARIOS: readonly WorkerScenario[] = [
         assert.ok(created.result, JSON.stringify(created.error));
         const threadId = created.result.thread.id;
         assert.match(threadId, /^bridge:codex:/u);
+        const host = client(instance, workspace);
+        const before = (await host.state()).container.served.length;
+        assert.equal((await host.test("fail-next-bridge-read")).status, 200);
         const read = await rpc("thread/read", { threadId, includeTurns: false });
         assert.equal(read.result?.thread.id, threadId, JSON.stringify(read.error));
-        const state = await client(instance, workspace).state();
+        assert.deepEqual(read.result?.thread.turns, []);
+        const state = await host.state();
+        const reads = state.container.served.slice(before);
+        assert.ok(reads.includes("bridge POST /observe"));
+        assert.ok(!reads.includes("bridge GET /events"), "metadata should only use the route snapshot and observation");
+        assert.ok(!reads.includes("rpc initialize"), "metadata should skip the native callback lane");
         assert.ok(state.container.served.includes("bridge POST /command"));
         assert.ok(!state.container.served.includes("rpc thread/start"));
+
+        assert.equal((await host.test("publish-bridge-history", `?threadId=${encodeURIComponent(threadId)}`)).status, 200);
+        const page = await rpc("thread/turns/list", { threadId, limit: 1, itemsView: "full" });
+        assert.ok(page.result, JSON.stringify(page.error));
+        assert.equal(page.result.data[0]?.id, "public-fixture-turn");
+        assert.equal(page.result.data[0]?.items[0]?.id, "public-fixture-item");
+        const items = await rpc("thread/items/list", { threadId, turnId: "public-fixture-turn", limit: 1 });
+        assert.deepEqual(items.result?.data, [
+          { turnId: "public-fixture-turn", item: { id: "public-fixture-item", type: "agentMessage", text: "retained" } },
+        ], JSON.stringify(items.error));
+        const allItems = await rpc("thread/items/list", { threadId, limit: 1, sortDirection: "desc" });
+        assert.deepEqual(allItems.result?.data, items.result?.data, JSON.stringify(allItems.error));
+        assert.equal((await host.test("limit-bridge-history", "?limit=1")).status, 200);
+        const combined = await rpc("thread/read", { threadId, includeTurns: false,
+          initialTurnsPage: { limit: 4, itemsView: "full", sortDirection: "desc" } });
+        assert.equal(combined.error?.code, -32072, JSON.stringify(combined));
+        assert.equal(combined.error?.data?.code, "HISTORY_RESPONSE_TOO_LARGE");
+        const attempts: { limit: number; cursor: string | null }[] = [];
+        const historyClient = {
+          async request(method: string, params: { limit: number; cursor: string | null }) {
+            attempts.push({ limit: params.limit, cursor: params.cursor });
+            const reply = await rpc(method, params);
+            if (reply.error) throw new AppServerRpcError(reply.error);
+            return reply.result;
+          },
+        } as unknown as AppServerClient;
+        const smaller = await readTurnsPage({ client: historyClient, threadId, requestTimeoutMs: 10_000 }, "next", 4);
+        assert.deepEqual(attempts, [4, 2, 1].map(limit => ({ limit, cursor: "next" })));
+        assert.deepEqual(smaller.data, page.result.data);
+        assert.equal((await host.test("limit-bridge-history", "?limit=0")).status, 200);
+        const oversizedItem = await rpc("thread/items/list", { threadId, turnId: "public-fixture-turn", limit: 1 });
+        assert.equal(oversizedItem.error?.code, -32072);
+        assert.equal(oversizedItem.error?.data?.retryable, false);
+        const after = await host.state();
+        assert.equal(after.bridgeCursor, state.bridgeCursor, "history never advances the live inbox");
+        const historyReads = after.container.served.slice(state.container.served.length);
+        assert.ok(historyReads.includes("bridge GET /history-identities"));
+        assert.ok(!historyReads.includes("bridge GET /events"), "pending aliases need no live payload download");
+      } finally {
+        for (const socket of sockets) socket.close(1000);
+        await runtime.stop(instance);
+      }
+    },
+  },
+  {
+    name: "passive Bridge history joins a restored producer's acknowledged prefix without rebinding its live inbox",
+    async run({ runtime }) {
+      const workspace = workspaceId();
+      const instance = await runtime.start(WORKSPACE_HOST_DO_SPEC, {
+        vars: origin => ({
+          ...vars("resident")(origin),
+          OPENCRAFT_SETUP_TOKEN: LOGIN_PROOF,
+          OPENCRAFT_WORKSPACE_ENGINES: "codex,pi",
+          OPENCRAFT_WORKSPACE_CODEX_DEFAULT: workspace,
+          OPENCRAFT_WORKSPACE_CODEX_TURNS: "true",
+          OPENCRAFT_WORKSPACE_CODEX_BRIDGE_ENDPOINT: "true",
+          OPENCRAFT_WORKSPACE_CODEX_SNAPSHOTS: "true",
+          OPENCRAFT_WORKSPACE_CODEX_EGRESS_ORIGIN: "http://workspace-model.invalid",
+          OPENCRAFT_WORKSPACE_CODEX_EGRESS_PROVIDER: "openai",
+        }),
+        localOrigin: LOCAL_ORIGIN,
+      });
+      const sockets: TestWebSocket[] = [];
+      try {
+        const { owner } = await login({
+          origin: instance.origin,
+          fetch: (path, init) => instance.fetch(instance.origin + path, init),
+          restart: async () => { throw Error("Use WorkspaceHost eviction"); },
+          close: () => runtime.stop(instance),
+        });
+        const { rpc } = await connectCodex(runtime, instance, owner, sockets, "ready");
+        const created = await rpc("thread/start", { ephemeral: false, historyMode: "paginated" });
+        assert.ok(created.result, JSON.stringify(created.error));
+        const threadId = created.result.thread.id;
+        const host = client(instance, workspace);
+        assert.equal((await host.test("publish-bridge-history", `?threadId=${encodeURIComponent(threadId)}`)).status, 200);
+        assert.equal((await host.owner("wake", {})).status, 200);
+        const original = await host.state();
+        assert.ok(original.bridgeCursor >= 3, "the ID mappings are already acknowledged");
+        assert.equal((await host.test("restore-runtime-only")).status, 200);
+        const restored = await host.state();
+        assert.notEqual(restored.container.agent, original.container.agent);
+        assert.ok(restored.container.starts.at(-1)?.restored);
+        assert.equal((await host.test("publish-bridge-history", `?threadId=${encodeURIComponent(threadId)}&suffix=-restored`)).status, 200);
+        assert.equal((await host.test("fail-next-bridge-read")).status, 200);
+
+        const page = await rpc("thread/turns/list", { threadId, limit: 2, itemsView: "full" });
+        assert.deepEqual(page.result?.data.map(turn => [turn.id, turn.items[0]?.id]), [
+          ["public-fixture-turn", "public-fixture-item"],
+          ["public-fixture-turn-restored", "public-fixture-item-restored"],
+        ], JSON.stringify(page.error));
+        const passive = await host.state();
+        assert.equal(passive.bridgeCursor, original.bridgeCursor);
+        const reads = passive.container.served.slice(restored.container.served.length);
+        assert.ok(reads.includes("bridge GET /history-identities"));
+        assert.ok(!reads.includes("bridge GET /events"));
+        assert.ok(!reads.includes("bridge POST /ack"));
+
+        const items = await rpc("thread/items/list", { threadId, turnId: "public-fixture-turn-restored", limit: 1 });
+        assert.deepEqual(items.result?.data, [{
+          turnId: "public-fixture-turn-restored",
+          item: { id: "public-fixture-item-restored", type: "agentMessage", text: "retained" },
+        }], JSON.stringify(items.error));
+        const afterItems = await host.state();
+        assert.deepEqual(afterItems.container.bridgeIdentityCursors.slice(passive.container.bridgeIdentityCursors.length),
+          [0, original.bridgeCursor + 2], "exact item projection resumes at the identity fence used to resolve the Turn");
+
+        assert.equal((await host.test("bridge-history-identities", "?enabled=true&selection=true")).status, 200);
+        const selected = await rpc("thread/items/list", { threadId, turnId: "public-fixture-turn-restored", limit: 1 });
+        assert.deepEqual(selected.result?.data, items.result?.data, JSON.stringify(selected.error));
+        const afterSelected = await host.state();
+        assert.equal(afterSelected.bridgeCursor, original.bridgeCursor);
+        assert.deepEqual(afterSelected.container.served.slice(afterItems.container.served.length).filter(entry =>
+          entry.endsWith("/history-identities")), ["bridge POST /history-identities", "bridge POST /history-identities"]);
+
+        assert.equal((await host.owner("wake", {})).status, 503, "history did not consume the live read's fault");
+        assert.equal((await host.owner("wake", {})).status, 200);
+        assert.equal((await host.state()).bridgeCursor, original.bridgeCursor + 2);
+
+        assert.equal((await host.test("bridge-history-identities", "?enabled=false")).status, 200);
+        assert.equal((await host.test("publish-bridge-history", `?threadId=${encodeURIComponent(threadId)}&suffix=-legacy`)).status, 200);
+        const legacy = await rpc("thread/turns/list", { threadId, limit: 3, itemsView: "full" });
+        assert.equal(legacy.result?.data.at(-1)?.id, "public-fixture-turn-legacy", JSON.stringify(legacy.error));
+        assert.equal((await host.state()).bridgeCursor, original.bridgeCursor + 4);
+
+        assert.equal((await host.test("bridge-history-identities", "?enabled=true")).status, 200);
+        assert.equal((await host.test("replace-bridge-outbox-id")).status, 200);
+        const foreign = await rpc("thread/turns/list", { threadId, limit: 2, itemsView: "full" });
+        assert.equal(foreign.result, undefined, "a different producer cannot use committed ID mappings");
+        assert.equal(foreign.error?.code, -32000);
+        assert.equal((await host.state()).bridgeCursor, original.bridgeCursor + 4);
       } finally {
         for (const socket of sockets) socket.close(1000);
         await runtime.stop(instance);
@@ -218,7 +408,7 @@ export const WORKSPACE_HOST_DO_SCENARIOS: readonly WorkerScenario[] = [
           "opencraft-host-state-database": 17,
           "provider-retry": 1,
           "provisional-threads": 3,
-          "workspace-bridge-inbox": 2,
+          "workspace-bridge-inbox": 5,
         });
         for (const table of ["execution_leases", "interrupted_turns", "opencraft_thread_catalog", "thread_creations"])
           assert.ok(state.tables.includes(table), table);
@@ -1295,7 +1485,7 @@ export const WORKSPACE_HOST_DO_SCENARIOS: readonly WorkerScenario[] = [
 
         const threadCatalog = (archived: boolean) => permitted.rpc("thread/list", { ...list, limit: 30, archived });
         assert.deepEqual(permitted.initialized.capabilities.extensions[OPENCRAFT_THREAD_LIFECYCLE_EXTENSION],
-          { version: 1, fork: true, rename: true, archive: true, sideChatSettings: true, unsubscribe: true });
+          { version: 1, fork: true, rename: true, archive: true, openArchivedHistory: true, sideChatSettings: true, unsubscribe: true });
         assert.equal((await unpermitted.rpc("thread/name/set", { threadId, name: "not allowed" })).error.code, -32004);
         assert.equal((await unpermitted.rpc("thread/archive", { threadId })).error.code, -32004);
         assert.equal((await permitted.rpc("thread/name/set", { threadId, name: " " })).error.code, -32602);
@@ -1309,6 +1499,7 @@ export const WORKSPACE_HOST_DO_SCENARIOS: readonly WorkerScenario[] = [
         assert.deepEqual((await threadCatalog(true)).result.data.map((row: { id: string }) => row.id), [threadId]);
         assert.equal((await unpermitted.rpc("thread/unarchive", { threadId })).error.code, -32004);
         assert.equal((await permitted.rpc("thread/unarchive", { threadId })).result.thread.id, threadId);
+        assert.ok((await permitted.rpc("thread/read", { threadId, includeTurns: true })).result?.thread.turns.length);
         assert.deepEqual((await threadCatalog(true)).result.data, []);
         assert.equal((await threadCatalog(false)).result.data.some((row: { id: string }) => row.id === threadId), true);
         assert.deepEqual((await ws.state()).container.served.filter(method => /^rpc thread\/(name\/set|archive|unarchive)$/u.test(method)),
@@ -1388,8 +1579,16 @@ export const WORKSPACE_HOST_DO_SCENARIOS: readonly WorkerScenario[] = [
         assert.deepEqual((await detachedReader.rpc("thread/unsubscribe", { threadId })).result, { status: "notSubscribed" });
         const reply = { threadId, interactionId: approval.id, submissionId: "fixture-response", result: { decision: "accept" } };
         assert.equal((await unpermitted.rpc(SHARED_INTERACTIONS_RESPOND, reply)).error.code, -32004);
-        const answered = await approvalClient.rpc(SHARED_INTERACTIONS_RESPOND, reply);
-        assert.ok(answered.result, JSON.stringify(answered.error));
+        // Let the ClientDO and WorkspaceHost preflight succeed.
+        // Refuse the WorkspaceHost's post-claim authority read once.
+        assert.equal((await owner.call("/__installation/reject-turn-authority-once", { threadId, after: 2 })).status, 204);
+        const refused = await approvalClient.rpc(SHARED_INTERACTIONS_RESPOND, { ...reply, submissionId: "revoked-at-handoff" });
+        assert.equal((await ws.state()).container.served.filter(value => value === "native approval reply").length, 0);
+        assert.equal((await approvalClient.rpc(SHARED_INTERACTIONS_READ, { threadId })).result.requests[0]?.state, "pending");
+        assert.equal(refused.error?.data?.code, "SOURCE_UNAVAILABLE");
+        assert.ok((await detachedReader.rpc("thread/resume", resume)).result);
+        const answered = await detachedReader.rpc(SHARED_INTERACTIONS_RESPOND, reply);
+        assert.equal(answered.result?.disposition, "submitted", JSON.stringify(answered.error));
         const cleared = await approvalClient.event(SHARED_INTERACTIONS_CHANGED, (params) =>
           params.threadId === threadId && params.requests?.length === 0);
         assert.equal(cleared.params.epoch, approvalList.result.epoch);
@@ -1441,6 +1640,17 @@ export const WORKSPACE_HOST_DO_SCENARIOS: readonly WorkerScenario[] = [
         const mergedAfterSleep = await approvalClient.rpc("thread/read", { threadId, includeTurns: false, initialTurnsPage: page });
         assert.equal(mergedAfterSleep.result?.thread.id, threadId, JSON.stringify(mergedAfterSleep.error));
         assert.deepEqual(mergedAfterSleep.result.initialTurnsPage, view.result);
+        assert.ok(view.result.data.length > 1);
+        const smallPage = { ...page, limit: 1 };
+        const firstTurn = await approvalClient.rpc("thread/read", { threadId, includeTurns: false, initialTurnsPage: smallPage });
+        const firstPreview = firstTurn.result?.initialTurnsPage;
+        assert.deepEqual(firstPreview?.data, view.result.data.slice(0, 1), JSON.stringify(firstTurn.error));
+        assert.ok(firstPreview.nextCursor);
+        const continuation = { ...page, limit: 20, threadId, cursor: firstPreview.nextCursor };
+        await ws.evict();
+        const nextPreview = await approvalClient.rpc("thread/turns/list", continuation);
+        assert.deepEqual(nextPreview.result?.data, view.result.data.slice(1), JSON.stringify(nextPreview.error));
+        assert.equal(nextPreview.result.nextCursor, view.result.nextCursor);
         const unavailable = await approvalClient.rpc("thread/turns/list", { ...nativePage, cursor: "unrecorded" });
         assert.equal(unavailable.error.code, -32073);
         assert.equal((await ws.state()).container.starts.length, 1, "a history miss does not start Linux");
@@ -1450,6 +1660,8 @@ export const WORKSPACE_HOST_DO_SCENARIOS: readonly WorkerScenario[] = [
         const restored = await ws.state();
         assert.notEqual(restored.container.agent, originalAgent);
         assert.equal(restored.container.starts[1]?.restored, true);
+        const afterWakePage = await approvalClient.rpc("thread/turns/list", continuation);
+        assert.deepEqual(afterWakePage.result, nextPreview.result, JSON.stringify(afterWakePage.error));
         const armed = (await ws.state()).alarm;
         assert.ok(armed, "Codex idle deadline is armed");
         await new Promise((done) => setTimeout(done, codexIdleMs / 2));
@@ -1461,6 +1673,9 @@ export const WORKSPACE_HOST_DO_SCENARIOS: readonly WorkerScenario[] = [
         const afterIdle = await approvalClient.rpc("thread/read", { threadId, includeTurns: true });
         assert.equal(afterIdle.result?.thread.name, "Before idle sleep", JSON.stringify(afterIdle.error));
         assert.equal(afterIdle.result.thread.turns.find((turn: { id: string }) => turn.id === approvalTurnId)?.status, "completed");
+        const expired = await approvalClient.rpc("thread/turns/list", continuation);
+        assert.equal(expired.error?.code, -32602);
+        assert.equal(expired.error?.data.code, "HISTORY_PREVIEW_CURSOR_EXPIRED");
         assert.equal((await ws.state()).container.starts.length, 2, "idle history does not start a third container");
         assert.equal(providerHits.length, 3, "idle history does not replay input");
         const forkParams = { threadId, lastTurnId: id, excludeTurns: true };
@@ -1539,6 +1754,53 @@ export const WORKSPACE_HOST_DO_SCENARIOS: readonly WorkerScenario[] = [
         const afterSend = (await ws.state()).container.starts;
         assert.equal(afterSend.length, beforeSend + 1, "sending wakes Linux once");
         assert.equal(afterSend.at(-1)?.restored, true);
+
+        assert.deepEqual((await sideReader.rpc("thread/archive", { threadId })).result, {});
+        const archivedPrivateThreadId = privateFork.result.thread.id;
+        assert.deepEqual((await sideReader.rpc("thread/archive", { threadId: archivedPrivateThreadId })).result, {});
+        await ws.evict();
+        const liveArchiveReads = (await ws.state()).container.historyReads.length;
+        for (const [method, params] of [
+          ["thread/read", { threadId, includeTurns: true }],
+          ["thread/read", { threadId, initialTurnsPage: { ...page, limit: 1 } }],
+          ["thread/turns/list", { ...page, threadId }],
+          ["thread/items/list", { threadId }],
+        ] as const) {
+          const ordinary = await sideReader.rpc(method, params);
+          assert.equal(ordinary.error?.data?.code, "THREAD_ARCHIVED", JSON.stringify(ordinary));
+        }
+        assert.equal((await ws.state()).container.historyReads.length, liveArchiveReads);
+        assert.equal((await sideReader.rpc("thread/read", { threadId })).result?.thread.archived, true);
+        const beforeArchiveSleep = (await ws.state()).container;
+        assert.equal((await ws.owner("sleep", {})).status, 200);
+        const readsAfterSleep = (await ws.state()).container.historyReads.slice(beforeArchiveSleep.historyReads.length);
+        assert.ok(!readsAfterSleep.some(read => read.threadId === threadId || read.threadId === archivedPrivateThreadId), JSON.stringify(readsAfterSleep));
+        await ws.evict();
+        const archives = await sideReader.rpc("thread/list", { ...coldQuery, archived: true, limit: 10 });
+        assert.ok(archives.result?.data.some((entry: { id: string }) => entry.id === threadId), JSON.stringify(archives));
+        const openArchived = { threadId, includeTurns: false, initialTurnsPage: { ...page, limit: 1 }, openArchivedHistory: true };
+        assert.equal((await unpermitted.rpc("thread/read", { ...openArchived, threadId: archivedPrivateThreadId })).error.code, -32004);
+        assert.equal((await sideReader.rpc("thread/turns/list", { ...page, threadId })).error.data?.code, "THREAD_ARCHIVED");
+        assert.equal((await sideReader.rpc("thread/turns/list", {
+          ...page, threadId: sideId, cursor: "unrecorded", openArchivedHistory: true,
+        })).error.code, -32073);
+        assert.equal((await ws.state()).container.starts.length, afterSend.length, "passive and unauthorized requests do not restore");
+        await ws.test("reject-next-restore");
+        assert.equal((await sideReader.rpc("thread/read", openArchived)).error.code, -32073);
+        assert.equal((await ws.state()).container.starts.length, afterSend.length, "failed restore does not start an empty container");
+        const opened = await unpermitted.rpc("thread/read", openArchived);
+        assert.equal(opened.result?.thread.archived, true, JSON.stringify(opened.error));
+        assert.equal(opened.result?.initialTurnsPage.data[0]?.id, fresh.result.turn.id);
+        const archiveStarts = (await ws.state()).container.starts;
+        assert.equal(archiveStarts.length, afterSend.length + 1);
+        assert.equal(archiveStarts.at(-1)?.restored, true);
+        assert.equal((await ws.owner("sleep", {})).status, 200);
+        const olderArchive = await sideReader.rpc("thread/turns/list", {
+          ...page, threadId, cursor: opened.result.initialTurnsPage.nextCursor, openArchivedHistory: true,
+        });
+        assert.ok(olderArchive.result?.data.some((entry: { id: string }) => entry.id === approvalTurnId), JSON.stringify(olderArchive.error));
+        assert.equal((await ws.state()).container.starts.length, archiveStarts.length + 1);
+        assert.equal((await ws.state()).container.inputs.length, beforeArchiveSleep.inputs.length);
 
       } finally {
         release.resolve();

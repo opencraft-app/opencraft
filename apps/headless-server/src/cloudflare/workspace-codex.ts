@@ -156,6 +156,7 @@ export function attachWorkspaceCodex(
     method: CodexHistoryRead["method"],
     params: Record<string, unknown> & { threadId: string },
     receipt?: SandboxReceipt,
+    passiveNative = true,
   ) => {
     if (!receipt) requireAvailable();
     return bridge
@@ -164,7 +165,7 @@ export function attachWorkspaceCodex(
           method,
           params,
           (rpc, query, attached) => requestNative(rpc, query, undefined, attached),
-          receipt,
+          { receipt, passiveNative },
         )
       : requestNative(method, params, undefined, receipt);
   };
@@ -244,11 +245,14 @@ export function attachWorkspaceCodex(
     },
     async readHistory(read: CodexHistoryRead, passiveNative = false, receipt?: SandboxReceipt): Promise<unknown> {
       const invoke = (method: CodexHistoryRead["method"], params: Record<string, unknown> & { threadId: string }) =>
-        passiveNative ? readOnly(method, params, receipt) : request(method, params, undefined, receipt);
+        passiveNative || bridge
+          ? readOnly(method, bridge && read.params.openArchivedHistory === true
+            ? { ...params, openArchivedHistory: true } : params, receipt, passiveNative)
+          : request(method, params, undefined, receipt);
       if (read.method === "thread/read") return readThread(read.params, invoke);
-      const { threadId, cursor } = read.params;
+      const { threadId, cursor, openArchivedHistory: _demand, ...params } = read.params;
       try {
-        return await invoke(read.method, read.params);
+        return await invoke(read.method, { threadId, cursor, ...params });
       } catch (error) {
         if (
           cursor !== null ||
@@ -313,7 +317,7 @@ export function attachWorkspaceCodex(
       return observation;
     },
     readThread(params: CodexThreadRead): Promise<unknown> {
-      return readThread(params, request);
+      return readThread(params, bridge ? readOnly : request);
     },
     listThreads(params: ThreadListParams): Promise<unknown> {
       return request("thread/list", params);
