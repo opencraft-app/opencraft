@@ -22,7 +22,7 @@ for (const [source, path, fragment] of [
     const document = new ChatDocumentCompiler().compile(source!);
     const node = document.nodes[0];
     assert.ok(node && "children" in node);
-    const targetNode = node.children.find(child => child.kind === "link" || child.kind === "image");
+    const targetNode = node.children.find((child) => child.kind === "link" || child.kind === "image");
     assert.ok(targetNode?.kind === "link" || targetNode?.kind === "image");
     const destination = targetNode.kind === "link" ? targetNode.href : targetNode.src;
     const decision = resolveStandardChatResource(destination, context, "url");
@@ -34,8 +34,15 @@ for (const [source, path, fragment] of [
 test("URL cwd stays literal while destinations preserve encoding and line references", () => {
   const ctx = { ...context, cwd: "/workspace/root#%20" };
   const decision = resolveStandardChatResource("./report%20final.md#L12C3", ctx, "url");
-  assert.deepEqual(parseWorkspaceResource(decision.target!), { path: "/workspace/root#%20/report final.md", line: 12, column: 3 });
-  assert.equal(resolveStandardChatResource("https://example.com/a%20b#summary", context, "url").target, "https://example.com/a%20b#summary");
+  assert.deepEqual(parseWorkspaceResource(decision.target!), {
+    path: "/workspace/root#%20/report final.md",
+    line: 12,
+    column: 3,
+  });
+  assert.equal(
+    resolveStandardChatResource("https://example.com/a%20b#summary", context, "url").target,
+    "https://example.com/a%20b#summary",
+  );
   assert.equal(resolveStandardChatResource("javascript:alert(1)", context, "url").allowed, false);
 });
 
@@ -58,7 +65,7 @@ for (const [cwd, source, path] of [
     const document = new ChatDocumentCompiler().compile(source!);
     const node = document.nodes[0];
     assert.ok(node && "children" in node);
-    const targetNode = node.children.find(child => child.kind === "link" || child.kind === "image");
+    const targetNode = node.children.find((child) => child.kind === "link" || child.kind === "image");
     assert.ok(targetNode?.kind === "link" || targetNode?.kind === "image");
     const destination = targetNode.kind === "link" ? targetNode.href : targetNode.src;
     const decision = resolveStandardChatResource(destination, { ...context, cwd }, "url");
@@ -77,21 +84,41 @@ test("resource policies receive input syntax without bypassing their priority or
   const ctx = new Context();
   const fiber = ctx.plugin(ChatResourcePolicyService);
   await fiber;
-  const renderContext = { ...context, documentId: "syntax-test", theme: "light" as const, streaming: false, allowWideBlocks: false };
+  const renderContext = {
+    ...context,
+    documentId: "syntax-test",
+    theme: "light" as const,
+    streaming: false,
+    allowWideBlocks: false,
+  };
   try {
     registerStandardChatResourcePolicy(ctx.chatResourcePolicies, "standard-test");
     const url = ctx.chatResourcePolicies.resolve("./report%20final.md", renderContext, "url");
     const path = ctx.chatResourcePolicies.resolve("./report%20final.md", renderContext);
     assert.equal(parseWorkspaceResource(url.target!).path, "/home/agentuser/output/report final.md");
     assert.equal(parseWorkspaceResource(path.target!).path, "/home/agentuser/output/report%20final.md");
-    assert.equal(ctx.chatResourcePolicies.resolve("https://example.com", { ...renderContext, externalResourcePolicy: "restricted" }, "url").allowed, false);
-    ctx.chatResourcePolicies.register({ name: "host-test", priority: 10,
+    assert.equal(
+      ctx.chatResourcePolicies.resolve(
+        "https://example.com",
+        { ...renderContext, externalResourcePolicy: "restricted" },
+        "url",
+      ).allowed,
+      false,
+    );
+    ctx.chatResourcePolicies.register({
+      name: "host-test",
+      priority: 10,
       matches: (_target, _context, syntax) => syntax === "url",
       resolve: (_target, _context, syntax) => ({ allowed: false, target: null, reason: `Host blocked ${syntax}` }),
     });
-    assert.equal(ctx.chatResourcePolicies.resolve("./report%20final.md", renderContext, "url").reason, "Host blocked url");
+    assert.equal(
+      ctx.chatResourcePolicies.resolve("./report%20final.md", renderContext, "url").reason,
+      "Host blocked url",
+    );
     assert.equal(ctx.chatResourcePolicies.resolve("./report%20final.md", renderContext).allowed, true);
-  } finally { await fiber.dispose(); }
+  } finally {
+    await fiber.dispose();
+  }
 });
 
 for (const path of [
@@ -110,14 +137,34 @@ for (const path of [
 
 test("relative paths and cwd characters are encoded independently of location fragments", () => {
   const resolved = resolveStandardChatResource("report%20#1.md:12:3", { ...context, cwd: "/workspace/a#b%20" });
-  assert.deepEqual(parseWorkspaceResource(resolved.target!), { path: "/workspace/a#b%20/report%20#1.md", line: 12, column: 3 });
+  assert.deepEqual(parseWorkspaceResource(resolved.target!), {
+    path: "/workspace/a#b%20/report%20#1.md",
+    line: 12,
+    column: 3,
+  });
   assert.ok(resolved.target!.endsWith("#L12C3"));
 });
 
 test("Windows automatic paths and Windows cwd retain their exact decoded identity", () => {
-  for (const [path, cwd] of [["C:\\docs\\report%20#1.md", null], ["report%20#1.md", "C:\\docs"]]) {
+  for (const [path, cwd] of [
+    ["C:\\docs\\report%20#1.md", null],
+    ["report%20#1.md", "C:\\docs"],
+  ]) {
     const resolved = resolveStandardChatResource(path!, { ...context, cwd });
     assert.equal(parseWorkspaceResource(resolved.target!).path, "C:/docs/report%20#1.md");
+  }
+});
+
+test("workspaces with trailing separators resolve relative paths and URLs to the same file", () => {
+  for (const [cwd, expected] of [
+    ["/workspace///", "/workspace/report.md"],
+    ["C:////", "C:/report.md"],
+    ["///", "/report.md"],
+  ] as const) {
+    for (const syntax of ["path", "url"] as const) {
+      const resolved = resolveStandardChatResource("report.md", { ...context, cwd }, syntax);
+      assert.equal(parseWorkspaceResource(resolved.target!).path, expected);
+    }
   }
 });
 
@@ -134,7 +181,6 @@ test("explicit file URLs keep one decoding pass and existing line references", (
   const line = resolveStandardChatResource("src/main.ts#L12C3", context);
   assert.equal(line.target, "file:///home/agentuser/output/src/main.ts#L12C3");
 });
-
 
 test("Host filenames preserve URL delimiters when inferring a MIME hint", () => {
   assert.equal(mediaMimeType("/workspace/image#1.svg"), "image/svg+xml");

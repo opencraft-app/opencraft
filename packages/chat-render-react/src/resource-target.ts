@@ -30,13 +30,20 @@ function workspacePathUrl(path: string): string {
   return `file://${windowsPath ? "/" : ""}${encodedPath}`;
 }
 
+function workspaceBase(path: string): string {
+  const normalized = path.replace(/\\/gu, "/");
+  let end = normalized.length;
+  while (normalized[end - 1] === "/") end--;
+  return normalized.slice(0, end);
+}
+
 function workspaceTarget(target: string, cwd: string | null | undefined): string {
   if (fileScheme.test(target)) return target;
   if (windowsDrivePath.test(target) && !windowsAbsolutePath.test(target)) return target;
   if (windowsAbsolutePath.test(target)) return workspacePathUrl(target.replace(/\\/gu, "/"));
   if (posixAbsolutePath.test(target)) return workspacePathUrl(target);
   if (cwd == null || cwd.trim().length === 0) return target;
-  const base = cwd.replace(/\\/gu, "/").replace(/\/+$/u, "");
+  const base = workspaceBase(cwd);
   return workspacePathUrl(`${base}/${target.replace(/^\.\//u, "")}`);
 }
 
@@ -44,7 +51,7 @@ function workspaceUrlTarget(target: string, cwd: string | null | undefined): str
   if (windowsDrivePath.test(target) && !windowsAbsolutePath.test(target)) return target;
   const absoluteWindowsPath = windowsAbsolutePath.test(target);
   if (!fileScheme.test(target) && !absoluteWindowsPath && !posixAbsolutePath.test(target) && !cwd?.trim()) return target;
-  const base = cwd?.replace(/\\/gu, "/").replace(/\/+$/u, "") ?? "";
+  const base = workspaceBase(cwd ?? "");
   try {
     const normalizedTarget = target.replace(/\\/gu, "/");
     const windowsTarget = absoluteWindowsPath ? normalizedTarget
