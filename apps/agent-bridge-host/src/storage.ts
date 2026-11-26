@@ -1,4 +1,5 @@
 import { Worker } from 'node:worker_threads';
+import { stat } from 'node:fs/promises';
 import type { DatabaseOutcome } from '@opencraft/sqlite-node';
 
 /** The owner refused an operation without a storage failure. */
@@ -14,8 +15,12 @@ export class Storage {
   private sealed = false;
   private closing?: Promise<void>;
   readonly ready: Promise<DatabaseOutcome>;
-  constructor(path: string, role: 'host' | 'inbox' = 'host', onFailure?: (error: Error) => void) {
-    this.worker = new Worker(new URL('./storage.worker.mjs', import.meta.url), { workerData: { path, role } });
+  constructor(path: string, role: 'host' | 'inbox' | 'rollback-identities' = 'host', onFailure?: (error: Error) => void) {
+    const source = import.meta.url.endsWith('/storage.ts');
+    this.worker = new Worker(new URL(source ? './storage.worker.ts' : './storage.worker.mjs', import.meta.url), {
+      workerData: { path, role },
+      ...(source ? { execArgv: ['--import', 'tsx'] } : {}),
+    });
     this.worker.on('message', ({ id, value, error, fatal, refused }) => {
       const operation = this.pending.get(id);
       if (!operation) return;
@@ -56,5 +61,28 @@ export class Storage {
         this.pending.clear();
       }
     })();
+  }
+}
+
+export interface RollbackIdentityRow {
+  readonly route: string;
+  readonly native_id: string;
+  readonly restorable: number;
+}
+
+/** Snapshot the former Engine Host's identities before serving Native requests. */
+export async function readRollbackIdentityRows(path: string): Promise<readonly RollbackIdentityRow[]> {
+  try {
+    if (!(await stat(path)).isFile()) throw Error('Invalid Bridge storage path');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw error;
+  }
+  const storage = new Storage(path, 'rollback-identities');
+  try {
+    await storage.ready;
+    return await storage.call<RollbackIdentityRow[]>('rollbackIdentities');
+  } finally {
+    await storage.close().catch(() => {});
   }
 }

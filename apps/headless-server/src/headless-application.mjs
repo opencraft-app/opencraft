@@ -17,7 +17,7 @@ import { LocalAttachmentStagingService } from '@opencraft/local-agent-host/attac
 import { deploymentOperator } from "@opencraft/access-control/deployment-operator";
 import { localExecutionCli } from "@opencraft/session-capabilities/execution-cli";
 import { executionCliSourceToken } from '@opencraft/session-capabilities/credentials';
-import { codexAdmissionPaused,createServerCodexBridge,readCodexBridgeConfiguration } from '@opencraft/opencraft-daemon/bridge-execution-admission';
+import { codexAdmissionPaused,createServerCodexBridge,openCodexRollbackHistory,readCodexBridgeConfiguration } from '@opencraft/opencraft-daemon/bridge-execution-admission';
 import { CodexHostServices, codexAccountsService, codexModelsService, codexPinsService, codexTasksService } from '@opencraft/opencraft-daemon/codex-host-services';
 import { CodexNativeReader } from '@opencraft/opencraft-daemon/codex-native-reader';
 import { startCodexEngineHost } from '@opencraft/opencraft-daemon/codex-bridge-stack';
@@ -574,6 +574,9 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         cli:{directory:join(dataDirectory,'codex-bridge','cli'),signingKey:join(dataDirectory,'session-capabilities.key'),endpoint:cliEndpoint},
         serverId:`server:${machineIdentity.machineId}:codex`,
         log:line=>console.error(line)}) : undefined });
+    const codexRollbackHistory = options.codexCoreEndpoint && !lateCodexBridge.get()
+      ? await openCodexRollbackHistory(join(dataDirectory, "codex-bridge", "engine-host.sqlite"), `server:${machineIdentity.machineId}:codex`)
+      : undefined;
     const startAgent = options.startAgentHost ?? startLocalAgentHost;
     const defaultEngine = options.defaultEngine ?? (engines.includes("dsh") ? "dsh" : "pi");
     // The engines' processes, files and locks are Node constructions; the module decides which run and when.
@@ -813,6 +816,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           coreAuthToken: options.codexCoreAuthToken,
           ...(options.codexRuntime ? { coreRuntime: options.codexRuntime } : {}),
           coreHostOverlays: options.codexCoreEndpoint !== undefined,
+          ...(codexRollbackHistory ? { rollbackHistory: codexRollbackHistory } : {}),
           ...(codexEngineHost ? { bridgeThreadRequest: (method, params, commitExecution) =>
             codexFront.request(method, params, 45_000, { sender: null, commitExecution }) } : {}),
           observationComponent: 'gateway',
@@ -850,7 +854,11 @@ export async function startHeadlessServer(options = {}, composition = {}) {
             }}:{})}), clients => [codexTasksService(join(dataDirectory, "codex", "tasks.sqlite"), clients, reportLocalCodexStorage),
           ...(options.codexCoreEndpoint ? [codexAccountsService(new CodexCoreControlClient(options.codexCoreEndpoint, options.codexCoreAuthToken))] : []),
           ...(codexReader ? [codexModelsService(codexReader, context => context.actorContext && actorStore.isCurrent(context.actorContext) ? actorStore.get(context.actorContext.actorId)?.id ?? null : null),
-            codexPinsService(codexReader, clients, { toNative: id => codexRouting?.threadIdentities?.()?.toNative(id), toPublic: id => codexRouting?.threadIdentities?.()?.toPublic(id) }),
+            codexPinsService(codexReader, clients, {
+              toNative: id => codexRouting?.threadIdentities?.()?.toNative(id),
+              toPublic: id => codexRollbackHistory?.toPublic(id) ?? codexRouting?.threadIdentities?.()?.toPublic(id),
+              pinRefusal: id => codexRollbackHistory?.rejection("opencraft/thread-pins/set", { threadId: id }),
+            }),
             { handles: () => false, request: () => null, close: () => codexReader.close() }] : [])])), mcpApps), hostId);
         },
       },

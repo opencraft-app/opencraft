@@ -1,5 +1,6 @@
 import { ensureNativeCreationIndex } from "./native-empty-thread-index.js";
 import { collaborationQueueGuard, type CodexBridgeOwners } from "./codex-bridge-owners.js";
+import type { CodexRollbackHistory } from "./codex-rollback-history.js";
 import { prepareHistoryImages } from "./history-image-resources.js";
 import { readInputCompletion } from "./input-completion.js";
 import { CodexAccountOperationError, classifyAccountFailure, logAccountFailure } from "@opencraft/account-pool-host";
@@ -365,6 +366,8 @@ interface LocalCodexEngineOptions extends SharedCodexRoutingOptions {
   readonly coreRuntime?: CodexRuntimeEndpoints;
   /** Headless owns downstream overlays while the independent core owns only native/accounts. */
   readonly coreHostOverlays?: boolean;
+  /** Public identities retained by a Gateway with its Bridge Engine Host shut down. */
+  readonly rollbackHistory?: CodexRollbackHistory;
   /** Uses the public Thread router for scheduled work owned by a provider bridge. */
   readonly bridgeThreadRequest?: (method: string, params: Record<string, unknown>, commitExecution?: () => boolean) => Promise<unknown>;
   /** Trusted in-process native transport decoration; never supplied by an RPC. */
@@ -573,6 +576,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   private tokenUsageQueries: TokenUsageQueryService | null = null;
   private identity: ThreadIdentity | null = null;
   private get messageSenders() { return this.identity?.senders ?? null; }
+  private get rollbackHistory() { return this.options.kind === "remote" ? undefined : this.options.rollbackHistory; }
   private get threadMetadata() { return this.identity?.metadata ?? null; }
   private readonly catalogChanges = new ThreadCatalogPublisher((method, params) => {
     const change = params.change;
@@ -692,7 +696,11 @@ export class CodexEngineAdapter implements DuplexTransport {
     });
     if (options.kind !== "remote" && options.coreHostOverlays && !options.coreEndpoint) throw new Error("Host overlays require an explicit core endpoint");
     this.nativeCore = options.kind !== "remote" && options.coreEndpoint && options.coreHostOverlays
-      ? new CodexNativeCoreTransport(options.coreEndpoint, options.coreAuthToken ?? "", createHash("sha256").update(options.dataDirectory).digest("hex"), options.coreRuntime) : null;
+      ? new CodexNativeCoreTransport(options.coreEndpoint, options.coreAuthToken ?? "", createHash("sha256").update(options.dataDirectory).digest("hex"), options.coreRuntime,
+        options.rollbackHistory ? {
+          identities: options.rollbackHistory,
+          methodFor: id => (this.pending.get(String(id)) ?? this.internalRequests.get(String(id)))?.method,
+        } : undefined) : null;
     this.nativeTransport = this.nativeCore
       ? options.kind !== "remote" && options.decorateNativeTransport ? options.decorateNativeTransport(this.nativeCore, id => this.pending.get(String(id))?.nativeAdmission ?? this.internalRequests.get(String(id))?.nativeAdmission ?? null) : this.nativeCore : null;
     this.coreBridge = options.kind !== "remote" && options.coreEndpoint !== undefined && !options.coreHostOverlays
@@ -1002,7 +1010,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       prepareImageResources: this.historyImageResourcesEnabled ? (threadId, turns, signal) =>
         prepareHistoryImages(this.attachmentStaging!.catalog, threadId, turns, this.options.prepareArtifact!, signal) : undefined,
       get nativeHome() { return string(record(adapter.initializeResult).codexHome) || runtimeRoot; },
-      resolveSource: (threadId, path) => nativeStorage.resolve(threadId, path),
+      resolveSource: (threadId, path) => nativeStorage.resolve(this.rollbackHistory?.toNative(threadId) ?? threadId, path),
       listTurnItems: async (threadId, turnId, signal, path) => {
         try { return await listTurnItems(threadId, turnId, signal, path); }
         catch (error) {
@@ -1254,6 +1262,12 @@ export class CodexEngineAdapter implements DuplexTransport {
   private async sendClientMessage(message: RpcRecord, context: TransportSubmissionContext): Promise<void> {
     delete message[EXECUTION_ENVIRONMENT_FIELD]; delete record(message.params)[EXECUTION_ENVIRONMENT_FIELD];
     const params = record(message.params);
+    const rollbackRefusal = this.rollbackHistory?.rejection(string(message.method), params);
+    if (rollbackRefusal) {
+      if (responseId(message.id) !== null)
+        this.emit({ id: message.id, error: rollbackRefusal }, string(message[LOGICAL_CLIENT_FIELD]));
+      return;
+    }
     // The durable collaboration ledger is the authority for this queue
     // admission. No creator credentials exist for the internal connection;
     // the Host verifies the request before accepting it, and dispatch later
@@ -3406,6 +3420,8 @@ export class CodexEngineAdapter implements DuplexTransport {
   }
 
   private async requestPhysical(method: string, params: RpcRecord, timeoutMs = 30_000, signal?: AbortSignal, usageIdentity?:UsageSubmission, admit?: () => boolean, context?:TransportSubmissionContext): Promise<unknown> {
+    const rollbackRefusal = this.rollbackHistory?.rejection(method, params);
+    if (rollbackRefusal) throw this.rpcError(rollbackRefusal);
     if (this.statusValue.state !== "open" || !this.physicalAvailable || !this.physicalInitialized && method !== "initialize") {
       return Promise.reject(method === "turn/start" || method === "turn/steer" ? new RecoveryNotSubmitted("Codex AppServer is not initialized") : new Error("Codex AppServer is not initialized"));
     }
@@ -4006,7 +4022,8 @@ export class CodexEngineAdapter implements DuplexTransport {
       for (const thread of response.data) {
         const nativeId = string(record(thread).id);
         const threadId = this.externalThreadIdentities?.toPublic?.(nativeId) ?? nativeId;
-        if (!threadId || this.ephemeralThreads.has(threadId)) continue;
+        if (!threadId || this.ephemeralThreads.has(threadId)
+          || this.rollbackHistory?.rejection("thread/goal/get", { threadId })) continue;
         const result = record(await this.continuationRequest("thread/goal/get", threadId));
         this.noteGoal(threadId, result.goal);
         if (this.activeGoalThreads.has(threadId)) this.scheduleGoalContinuation(threadId);

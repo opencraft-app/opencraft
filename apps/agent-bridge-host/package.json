@@ -8,7 +8,8 @@
     "./gateway": "./src/gateway.ts",
     "./gateway-session": "./src/gateway-session.ts",
     "./inbox-store": "./src/inbox-store.ts",
-    "./codex-declaration": "./src/codex-declaration.ts"
+    "./codex-declaration": "./src/codex-declaration.ts",
+    "./storage": "./src/storage.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

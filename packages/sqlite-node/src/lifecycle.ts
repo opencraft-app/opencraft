@@ -31,6 +31,16 @@ export interface ManagedDatabaseOptions {
   };
 }
 
+interface ManagedDatabaseSnapshotOptions extends ManagedDatabaseOptions {
+  /** Earliest ledger version whose schema supports the owner's read projection. */
+  readonly readOnly: { readonly minimumVersion: number };
+}
+
+interface ManagedDatabaseOpen<Outcome = DatabaseOutcome> {
+  database: DatabaseSync;
+  outcome: Outcome;
+}
+
 /** Read-only preflight uses the same ledger authority as a managed writer open. */
 export function verifyManagedDatabaseHistory(database: DatabaseSync, migrations: readonly Migration[]): void {
   if (validateHistory(database, prepareMigrations(migrations)) !== migrations.length) {
@@ -82,7 +92,13 @@ export function createMissingLegacyObjects(sql: string): NonNullable<ManagedData
   };
 }
 
-export function openManagedDatabase(options: ManagedDatabaseOptions): { database: DatabaseSync; outcome: DatabaseOutcome } {
+export function openManagedDatabase(options: ManagedDatabaseSnapshotOptions): ManagedDatabaseOpen<Pick<DatabaseOutcome, "appliedVersion">>;
+export function openManagedDatabase(options: ManagedDatabaseOptions & {
+  readonly readOnly: ManagedDatabaseSnapshotOptions["readOnly"] | undefined;
+}):
+  ManagedDatabaseOpen<DatabaseOutcome | Pick<DatabaseOutcome, "appliedVersion">>;
+export function openManagedDatabase(options: ManagedDatabaseOptions): ManagedDatabaseOpen;
+export function openManagedDatabase(options: ManagedDatabaseOptions & Partial<Pick<ManagedDatabaseSnapshotOptions, "readOnly">>) {
   let database: DatabaseSync | undefined;
   try {
     const migrations = prepareMigrations(options.schemaId === undefined ? options.migrations : resolveStoreMigrations(options.schemaId, options.migrations));
@@ -91,12 +107,19 @@ export function openManagedDatabase(options: ManagedDatabaseOptions): { database
       || (options.schemaId !== undefined && options.legacyVersion !== undefined && options.legacyVersion !== legacyVersion)) {
       throw new SqliteLifecycleError("history-mismatch", "Invalid legacy migration boundary");
     }
-    const validateSchema = options.validateSchema ?? createSchemaValidator(migrations.map(m => m.sql).join(";\n"));
+    const snapshot = options.readOnly;
     const keep = options.backup?.keep ?? 3;
     if (!Number.isSafeInteger(keep) || keep < 1) throw new SqliteLifecycleError("io", "Backup keep must be a positive integer");
     assertRecoveryState(options.path);
-    database = openConnection(options.path);
+    database = openConnection(options.path, snapshot !== undefined);
     const applied = validateHistory(database, migrations);
+    if (snapshot) {
+      if (!Number.isSafeInteger(snapshot.minimumVersion) || snapshot.minimumVersion < 1 || applied < snapshot.minimumVersion)
+        throw new SqliteLifecycleError("history-mismatch", "Database is too old for this read-only projection");
+      createSchemaValidator(migrations.slice(0, applied).map(m => m.sql).join(";\n"))(database);
+      return { database, outcome: { appliedVersion: applied } };
+    }
+    const validateSchema = options.validateSchema ?? createSchemaValidator(migrations.map(m => m.sql).join(";\n"));
     let recovery = readRecovery(options.path, migrations, applied);
     const fingerprint = schemaFingerprint(database);
     const nonempty = fingerprint !== "[]";

@@ -374,6 +374,7 @@ export interface CodexNativeRequests {
 export interface CodexThreadIdentities {
   toNative(threadId: string): string | undefined;
   toPublic(nativeId: string): string | undefined;
+  pinRefusal?(threadId: string): { code: number; message: string; data?: unknown } | undefined;
 }
 const text = (value: unknown) => (typeof value === "string" ? value : "");
 
@@ -440,6 +441,10 @@ export function codexPinsService(
     capabilities: () => ({ [OPENCRAFT_THREAD_PINS_EXTENSION]: OPENCRAFT_THREAD_PINS_CAPABILITY }),
     request: async (method, raw) => {
       const params = object(raw);
+      if (method === "opencraft/thread-pins/set" && typeof params.threadId === "string") {
+        const refusal = identities?.pinRefusal?.(params.threadId);
+        if (refusal) throw Object.assign(new Error(refusal.message), refusal);
+      }
       try {
         if (method === "opencraft/thread-pins/list") {
           const listed = await pins.list();

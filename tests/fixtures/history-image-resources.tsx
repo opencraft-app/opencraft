@@ -20,6 +20,7 @@ document.documentElement.dataset.theme = "light";
 for (const [key,value] of Object.entries(buildOpenCraftThemeCssProperties("light"))) document.documentElement.style.setProperty(key,value);
 document.head.insertAdjacentHTML("beforeend", "<style>html,body,#root{height:100%;margin:0}#root{background:var(--color-background-surface);color:var(--color-text)}textarea{margin:12px;width:calc(100% - 24px);box-sizing:border-box;font:inherit}</style>");
 probe.fixture = { ready: false, detailReads: 0 };
+const consumePendingLatestTurnSubmitPlacement = () => null;
 function Demo() {
   const [turns,setTurns] = useState<any[]>([]), [draft,setDraft] = useState("");
   useEffect(() => { void fetch("/fixture-history" + location.search).then(r=>r.json()).then(setTurns); }, []);
@@ -35,6 +36,7 @@ function Demo() {
   const readyKey = useMemo(()=>({}),[turns]);
   return <WorkbenchPresentationRootProvider target={root}><TimelineBlockRendererProvider registry={ctx.timelineBlockRenderers}><Conversation
     timeline={timeline} scrollPolicy="response-placement" threadDetailLevel="STEPS_COMMANDS" visibleContentReadyKey={readyKey}
+    consumePendingLatestTurnSubmitPlacement={consumePendingLatestTurnSubmitPlacement}
     onVisibleContentReady={()=>{ if(turns.length)probe.fixture.ready=true; }} onLoadItemDetails={detail}
     documentContext={{ hostId:"fixture",conversationId:"history",theme:"light",cwd:null,loadMediaSource:loader }}
     footer={<textarea aria-label="Draft" value={draft} onChange={e=>setDraft(e.target.value)}/>}/></TimelineBlockRendererProvider></WorkbenchPresentationRootProvider>;
