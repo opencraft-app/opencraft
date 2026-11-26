@@ -306,6 +306,10 @@ export class BridgeHost {
           await this.storage.call("callback", { generation: id, id: callbackId, method, params: object(params) });
           const p = object(params);
           const route = String(p.threadId);
+          // A retried legacy adoption can attach a route retained at startup.
+          // Recovery already in progress clears its marker after it settles.
+          if (method === "thread/identity" && !this.rebinds.has(route) && !peer.diagnostic().failed)
+            this.rebinding.delete(route);
           if (method === "thread/notification" && p.method === "thread/unarchived") this.queue.schedule(route);
           const deltas = method === "thread/delta" && Array.isArray(p.deltas) ? p.deltas : [];
           const sessionEnded = deltas.some(delta => delta.op === "session.ended");

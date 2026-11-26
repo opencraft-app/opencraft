@@ -29,6 +29,10 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     return;
   }
   if (request.method === "session/adopt") {
+    if (process.env.REFUSE_DUPLICATE_ADOPTION && sessions.has(p.threadId)) {
+      output({ id: request.id, error: { code: -32006, message: "Session already exists" } });
+      return;
+    }
     // A new provider process binds the session the Host recorded before restarting.
     appendFileSync(
       process.env.EXECUTIONS,
