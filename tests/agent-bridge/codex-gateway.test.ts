@@ -1283,6 +1283,25 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
   assert.equal(frames.filter(f => f.id === approval.id && f.method === approval.method).length, 3, 'settled approval must not reappear from inbox replay');
   assert.equal(frames.filter(f => f.id === external.id && f.method === external.method).length, 1, 'external settlement must not reappear after replacement');
   assert.equal(currentGateway().interactions.size, 0, 'historical settled bodies are not retained during replay');
+  if (cli === false) {
+    const notifyChange = (id: string, diff: string) => nativePeer!.send(JSON.stringify({
+      method: 'item/completed',
+      params: { threadId: 'native-new', turnId: 'native-turn', item: {
+        id, type: 'fileChange', status: 'completed',
+        changes: [{ path: '/fixture/output.txt', kind: { type: 'add' }, diff }],
+      } },
+    }));
+    notifyChange('large-file-change', 'x'.repeat(2 * 1024 * 1024));
+    notifyChange('small-file-change', 'small diff');
+    await until(() => frames.find(frame => frame.method === 'item/completed'
+      && frame.params.item.type === 'fileChange'), Boolean);
+    assert.ok(frames.some(frame => frame.method === 'warning'
+      && frame.params.message === 'File change details are unavailable in the live Bridge stream'));
+    const fileChanges = frames.filter(frame => frame.method === 'item/completed'
+      && frame.params.item.type === 'fileChange');
+    assert.deepEqual(fileChanges.map(frame => frame.params.item.changes[0].diff), ['small diff']);
+    assert.equal((host.diagnostics() as Array<{ failed: boolean }>).some(peer => peer.failed), false);
+  }
   nativePeer!.send(JSON.stringify({ method: 'item/completed', params: { threadId: 'native-new', turnId: 'native-turn', item: { type: 'commandExecution', id: 'tool', command: 'cat input.txt', cwd: root, status: 'completed', aggregatedOutput: 'fixture' } } }));
   nativeActive=false;
   nativePeer!.send(JSON.stringify({ method: 'turn/completed', params: { threadId: 'native-new', turn: { id: 'native-turn', status: 'completed' } } }));
