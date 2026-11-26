@@ -158,6 +158,12 @@ and Timeline implementations. The embedded product projects a collapsed preview 
 The session snapshot also carries the AppServer Thread catalog's running state
 for each Thread. The host Sidebar may show activity from that field; selected
 Thread identity and session-list loading are not execution status.
+A trusted embedding product may supply `projectSessionMetadata` to select
+display fields from each catalog Thread's provider metadata. Its return value
+becomes that session row's optional `extra` field in `onSessionsChange`. Rows
+without metadata or a projection retain the default shape. The projector should
+select explicit display fields and keep their interpretation in the embedding
+product. Thread identity, catalog pagination and capabilities stay unchanged.
 Only webpage tabs and read-only files linked from the conversation are exposed.
 
 For the downstream product multi-Bot instances, one embedded Host is identified by
