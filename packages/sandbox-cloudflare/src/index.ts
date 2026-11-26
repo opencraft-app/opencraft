@@ -129,6 +129,7 @@ export function cloudflareSandboxBackend(options: CloudflareSandboxOptions): San
   const python = options.python ?? "/usr/bin/python3",
     diskMb = options.diskMb ?? MAXIMUM.diskMb,
     requestTimeoutMs = options.requestTimeoutMs ?? 30_000,
+    startupTimeoutMs = options.requestTimeoutMs ?? 120_000,
     timeout = options.inactivityTimeoutMs;
   if (
     !container ||
@@ -184,7 +185,7 @@ export function cloudflareSandboxBackend(options: CloudflareSandboxOptions): San
       }
       return JSON.parse(text.trim().split("\n").at(-1) ?? "") as Record<string, unknown>;
     })();
-    const value = await bounded(read, "Cloudflare container identity timed out");
+    const value = await bounded(read, "Cloudflare container identity timed out", startupTimeoutMs);
     const boot = typeof value.boot === "string" ? value.boot.replaceAll("-", "").toLowerCase() : "";
     if (!/^[a-f0-9]{32}$/u.test(boot) || !Number.isSafeInteger(value.cpus) || (value.cpus as number) < 1)
       throw Error("Cloudflare container identity is invalid");
