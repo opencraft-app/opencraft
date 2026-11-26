@@ -268,9 +268,26 @@ const operations: Record<string, (args: any) => any> = {
           AND EXISTS (SELECT 1 FROM json_each(c.state,'$.openTurns'))`, id).map(row => row.route),
     };
   }),
-  admit: ({ command, digest, route, maxSpoolBytes }: any) => tx(() => {
-    const old = receipt(command.commandId);
-    if (old) { require(old.digest === digest, 'commandId reused with different input'); return { receipt: old, fresh: false }; }
+  admit: ({ command, digest, route, maxSpoolBytes, retryRejectedTurn, legacyDigest }: any) => tx(() => {
+    let commandId = command.commandId as string;
+    const prefix = commandId + ':retry:';
+    const previous = retryRejectedTurn === true
+      ? get('SELECT id FROM commands WHERE id>=? AND id<? ORDER BY id DESC LIMIT 1', prefix, commandId + ':retry;')
+      : null;
+    const old = receipt(previous?.id ?? commandId);
+    if (old) {
+      require(old.route === route && old.method === command.method, 'commandId reused outside its original scope');
+      if (retryRejectedTurn === true && old.state === 'rejected') {
+        // Keep the failed receipt for reconciliation. Selecting and inserting
+        // its successor here gives concurrent submissions one attempt.
+        const attempt = previous ? Number(old.commandId.slice(prefix.length)) + 1 : 1;
+        require(Number.isSafeInteger(attempt) && attempt > 0 && attempt < 1e12, 'Invalid Turn attempt');
+        commandId = prefix + String(attempt).padStart(12, '0');
+      } else {
+        require(old.digest === digest || old.digest === legacyDigest, 'commandId reused with different input');
+        return { receipt: old, fresh: false };
+      }
+    }
     require(![...CREATES,'turn/start','turn/steer'].includes(command.method) || Number(get('SELECT coalesce(sum(length(CAST(payload AS BLOB))),0) AS bytes FROM outbox').bytes) < maxSpoolBytes, 'Spool full; new admissions stopped');
     let binding = get('SELECT generation,archive_state FROM routes WHERE route=?', route);
     if (binding && CREATES.includes(command.method)) {
@@ -307,8 +324,8 @@ const operations: Record<string, (args: any) => any> = {
       require(requested === undefined || native.native_id === requested,
         'Resume id does not match the recorded restorable native session');
     }
-    run('INSERT INTO commands(id,digest,epoch,route,generation,method,state) VALUES (?,?,?,?,?,?,?)', command.commandId, digest, Number(meta('epoch')), route, binding.generation, command.method, 'registered');
-    return { receipt: receipt(command.commandId), fresh: true };
+    run('INSERT INTO commands(id,digest,epoch,route,generation,method,state) VALUES (?,?,?,?,?,?,?)', commandId, digest, Number(meta('epoch')), route, binding.generation, command.method, 'registered');
+    return { receipt: receipt(commandId), fresh: true };
   }),
   observationRoute: ({ route, forQueue = false, forHistory = false }: { route: string; forQueue?: boolean; forHistory?: boolean }) => {
     const binding = get('SELECT generation,archive_state FROM routes WHERE route=?', route);

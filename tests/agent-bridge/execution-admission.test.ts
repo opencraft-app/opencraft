@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {LOGICAL_CLIENT_FIELD} from '@opencraft/app-host-protocol';
 import { BridgeExecutionAdmissionTransport,createServerCodexBridge } from '../../apps/opencraft-daemon/src/bridge-execution-admission';
+import { BRIDGE_ACCEPTED_REPLAY } from '../../apps/opencraft-daemon/src/codex-provider-bridge-session';
 
 test('bridge admission signs verified sources and leaves legacy collaboration frames intact',async()=>{
   const sent:string[]=[],started:unknown[]=[],received:any[]=[];let native!:(raw:string)=>void,admissions=0;
@@ -130,6 +131,32 @@ test('an unknown start retains its source until a delayed native Turn can bind i
   await transport.send(JSON.stringify({id:'unknown',method:'turn/start',params:{threadId:'bridge:codex:one',clientUserMessageId:'original',input:[]}}));
   native(JSON.stringify({method:'turn/started',params:{threadId:'bridge:codex:one',turn:{id:'late'}}}));
   assert.equal(started,1);assert.equal(resets,0);
+});
+
+test('an accepted replay releases its preparation without reserving a second native start',async()=>{
+  let receive!:(raw:string)=>void;
+  const sent:string[]=[];
+  const reset:string[]=[];
+  const observed:any[]=[];
+  const inner:any={status:{state:'open'},subscribeStatus:()=>()=>{},
+    subscribeMessage:(listener:typeof receive)=>{receive=listener;return()=>{};},
+    async send(raw:string){
+      const f=JSON.parse(raw);
+      sent.push(f.params.clientUserMessageId);
+      if(f.id==='replay')receive(JSON.stringify({id:f.id,[BRIDGE_ACCEPTED_REPLAY]:true,result:{turn:{id:'old'}}}));
+    }};
+  const transport=new BridgeExecutionAdmissionTransport(inner,{
+    async admit(threadId,inputId){return {serverId:'server',threadId,execution:{inputId,executionId:inputId}};},
+    sign:()=> 'signed',started(){},rejectedBeforeStart(_threadId,inputId){reset.push(inputId);},
+  });
+  transport.subscribeMessage(raw=>observed.push(JSON.parse(raw)));
+  const send=(id:string,inputId:string)=>transport.send(JSON.stringify({id,method:'turn/start',
+    params:{threadId:'bridge:codex:one',clientUserMessageId:inputId,input:[]}}));
+  await send('replay','retained');
+  await send('next','fresh');
+  assert.deepEqual(sent,['retained','fresh']);
+  assert.deepEqual(reset,['retained']);
+  assert.deepEqual(observed,[{id:'replay',result:{turn:{id:'old'}}}]);
 });
 
 test('when the bridge owns every new Thread, an implicit creation is prepared like an explicit one',async()=>{

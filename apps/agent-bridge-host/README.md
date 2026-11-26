@@ -50,6 +50,12 @@ or new user-facing capability is registered.
   epoch, route and state; then return the durable `registered` admission receipt.
   Query `GET /command?id=...` for native outcome. Reusing an ID with changed input
   is rejected. Repeating the same ID returns custody and never sends again.
+  An authenticated Gateway can opt an explicit direct Turn submission into
+  `retryRejectedTurn`. The ID must be derived from its thread and client input.
+  The Host allocates a distinct attempt only after a durable rejection, retaining
+  the prior receipt. The Gateway reads the attempt ID returned by admission.
+  Pending, accepted and unknown attempts keep custody. The execution MCP
+  configuration is launch material and does not affect that attempt's digest.
 - `GET /events?cursor=N`: up to 256 ordered, durable canonical/callback events.
   `POST /ack` with `{cursor}` deletes only the acknowledged prefix. A cursor
   below retention or beyond the produced high watermark is rejected.
@@ -82,6 +88,12 @@ fallback exists. Storage loss stops the owned sandbox groups; cleanup failures
 remain observable on close and never release pool capacity. Close drains accepted Worker messages before releasing the writer.
 
 A command stays `registered` during preparation, including CLI issuance.
+CLI rejections include a bounded stage in the receipt so admission, lease
+issuance and native configuration can be distinguished without credential data.
+A Codex transport failure can replace the attachment even when the provider
+exited before emitting its native connection diagnostic. The Host drains the
+old attachment and applies its existing reconnection backoff. It preserves
+unknown outcomes and does not restart a peer after a callback or protocol fault.
 A Host restart rejects those undispatched requests without replay. Before
 writing a native request, the Host durably records `dispatching`. A crash
 after that point, EOF, timeout, or ambiguous failure preserves an unknown outcome.

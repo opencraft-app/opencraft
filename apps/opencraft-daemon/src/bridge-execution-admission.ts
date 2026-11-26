@@ -1,6 +1,7 @@
 import { bridgeOwnerPolicy, bridgeOwnersOf } from './codex-bridge-owners.js';
 import { lstat,readFile } from 'node:fs/promises';
 import { CodexProviderBridge } from './codex-provider-bridge.js';
+import { BRIDGE_ACCEPTED_REPLAY } from './codex-provider-bridge-session.js';
 import type { BridgeGatewayOptions } from '@opencraft/agent-bridge-host/gateway';
 import { createHash, randomUUID } from 'node:crypto';
 import type { DuplexTransport, TransportSubmissionContext } from '@opencraft/appserver-client/transport';
@@ -52,7 +53,7 @@ export class BridgeExecutionAdmissionTransport implements DuplexTransport {
   private readonly inputs=new Map<string,{inputId:string;turnId?:string}>();
   private readonly preparingCreations=new Set<string>();
   private readonly creations=new Map<string,PreparedBridgeMcp>();
-  private readonly requests=new Map<string,{threadId:string;inputId:string}>();
+  private readonly requests=new Map<string,{threadId:string;inputId:string;ownsInput:boolean}>();
   /** The wrapped bridge's Thread identities, for Host services. */
   threadIdentities(){return (this.inner as Partial<CodexProviderBridge>).threadIdentities?.();}
   constructor(private readonly inner:DuplexTransport,private readonly port:BridgeExecutionAdmissionPort,private readonly ownsNewThreads=false) {
@@ -65,7 +66,11 @@ export class BridgeExecutionAdmissionTransport implements DuplexTransport {
       if(frame.id!==undefined&&request) {
         this.requests.delete(JSON.stringify([frame[LOGICAL_CLIENT_FIELD]??null,frame.id]));
         const input=this.inputs.get(request.threadId);
-        if(frame.error?.data?.submissionOutcome==='rejected'&&input?.inputId===request.inputId&&!input.turnId){
+        const rejected=frame.error?.data?.submissionOutcome==='rejected';
+        const replayed=frame[BRIDGE_ACCEPTED_REPLAY]===true&&request.ownsInput;
+        if((rejected||replayed)&&input?.inputId===request.inputId&&!input.turnId){
+          // The Host returned existing custody, so this request's newly
+          // staged admission will never receive a matching native start.
           this.port.rejectedBeforeStart?.(request.threadId,request.inputId);
           this.inputs.delete(request.threadId);
         }
@@ -76,6 +81,10 @@ export class BridgeExecutionAdmissionTransport implements DuplexTransport {
         this.port.started(p.threadId,input.inputId,p.turn.id);
       }
       if(frame.method==='turn/completed'&&input?.turnId===p.turn?.id){this.inputs.delete(p.threadId);this.port.completed?.(p.threadId);}
+      if(frame[BRIDGE_ACCEPTED_REPLAY]===true) {
+        delete frame[BRIDGE_ACCEPTED_REPLAY];
+        raw=JSON.stringify(frame);
+      }
       for(const listener of this.listeners)listener(raw);
     });
   }
@@ -114,7 +123,8 @@ export class BridgeExecutionAdmissionTransport implements DuplexTransport {
           raw=JSON.stringify(frame);
         } catch {
           prepared?.settle?.('rejected');
-          for(const listener of this.listeners)listener(JSON.stringify({id:frame.id,error:{code:-32001,message:'cliUnavailable'},
+          for(const listener of this.listeners)listener(JSON.stringify({id:frame.id,error:{code:-32001,message:'cliUnavailable',
+            data:{submissionOutcome:'rejected',notSubmitted:true,cliStage:'gateway-session-preparation'}},
             ...(frame[LOGICAL_CLIENT_FIELD]?{[LOGICAL_CLIENT_FIELD]:frame[LOGICAL_CLIENT_FIELD]}:{})}));
           return;
         } finally {if(preparing)this.preparingCreations.delete(creationKey);}
@@ -125,11 +135,15 @@ export class BridgeExecutionAdmissionTransport implements DuplexTransport {
     const bridged=frame.method==='turn/start'&&typeof p.threadId==='string'&&(p.threadId.startsWith('bridge:codex:')
       ||await (this.inner as {prepareRoute?:(method:string,threadId:string)=>Promise<boolean>}).prepareRoute?.('turn/start',p.threadId)===true);
     if(bridged) {
+      let cliStage='gateway-admission';
       try {
         signal?.throwIfAborted();
         if(typeof p.clientUserMessageId!=='string'||!p.clientUserMessageId)throw Error('Stable execution input required');
         const prior=this.inputs.get(p.threadId);
-        if(prior&&prior.inputId!==p.clientUserMessageId)throw Error('Execution already pending');
+        if(prior&&prior.inputId!==p.clientUserMessageId) {
+          cliStage='gateway-pending-input';
+          throw Error('Execution already pending');
+        }
         // Reserve before the asynchronous authority lookup so concurrent intents cannot replace the source.
         if(!prior)this.inputs.set(p.threadId,{inputId:p.clientUserMessageId});
         const session=await this.port.admit(p.threadId,p.clientUserMessageId,p.input??[],context);
@@ -138,13 +152,13 @@ export class BridgeExecutionAdmissionTransport implements DuplexTransport {
         delete p.opencraftSessionMcp;
         if(this.port.sessionMcp)p.opencraftSessionMcp=await this.port.sessionMcp(session);
         signal?.throwIfAborted();context.resourceOwner?.assertCurrent();
-        this.requests.set(JSON.stringify([frame[LOGICAL_CLIENT_FIELD]??null,frame.id]),{threadId:p.threadId,inputId:p.clientUserMessageId});
+        this.requests.set(JSON.stringify([frame[LOGICAL_CLIENT_FIELD]??null,frame.id]),{threadId:p.threadId,inputId:p.clientUserMessageId,ownsInput:!prior});
         raw=JSON.stringify(frame);
       }catch {
         const input=this.inputs.get(p.threadId);
         if(input&&input.inputId===p.clientUserMessageId&&!input.turnId){this.port.rejectedBeforeStart?.(p.threadId,p.clientUserMessageId);this.inputs.delete(p.threadId);}
         const reply=JSON.stringify({id:frame.id,error:{code:-32001,message:'cliUnavailable',
-          data:{submissionOutcome:'rejected',notSubmitted:true}},
+          data:{submissionOutcome:'rejected',notSubmitted:true,cliStage}},
           ...(frame[LOGICAL_CLIENT_FIELD]?{[LOGICAL_CLIENT_FIELD]:frame[LOGICAL_CLIENT_FIELD]}:{})});
         for(const listener of this.listeners)listener(reply);return;
       }

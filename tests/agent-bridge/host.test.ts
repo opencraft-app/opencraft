@@ -17,6 +17,7 @@ import {
   type OutboxEvent,
 } from "../../apps/agent-bridge-host/src/index.js";
 import { Storage } from "../../apps/agent-bridge-host/src/storage.js";
+import { BridgeGateway } from "../../apps/agent-bridge-host/src/gateway.js";
 import { HostQueue } from "../../apps/agent-bridge-host/src/queue.js";
 import { BridgeGatewaySession, BridgeOutboxReadError, pullBridgeInbox } from "../../apps/agent-bridge-host/src/gateway-session.js";
 import { migrations } from "../../apps/agent-bridge-host/src/migrations.js";
@@ -151,6 +152,52 @@ test("a durable accepted receipt retains canonical identities while event delive
     release();
     await gateway.close();
   }
+});
+
+test("a rejected direct input keeps its message identity and only one retried native start", async (t) => {
+  const { host, root } = await setup(t);
+  await host.accept(command("create"));
+  await accepted(host, "create");
+  const endpoint = await attachGateway(host, token);
+  const gateway = new BridgeGateway({ url: endpoint.url, token, serverId: "server-1", inboxPath: join(root, "inbox.db") }, () => {});
+  t.after(async () => { await gateway.close(); await endpoint.close(); });
+  const native = { clientUserMessageId: "draft", input: [{ type: "text", text: "same draft" }] };
+  const id = "bridge-mutation:" + createHash("sha256").update(JSON.stringify(["thread-1", "turn/start", "draft"])).digest("hex");
+  // The old Host stored the digest with the MCP configuration. Keep that
+  // persisted refusal as the predecessor of the retry.
+  await assert.rejects(gateway.command("thread-1", id, "turn/start", {
+    native, refuse: true, sessionMcp: { url: "old-configuration" },
+  }), /Fixture refusal/);
+  const options = { retryRejectedTurn: true } as const;
+  const submit = (url: string) => gateway.command("thread-1", id, "turn/start", {
+    native, sessionMcp: { url },
+  }, undefined, options);
+  const [result, duplicate] = await Promise.all([submit("first-retry"), submit("concurrent-retry")]);
+  assert.deepEqual(result, duplicate);
+  assert.deepEqual(await submit("another-configuration"), result);
+  assert.equal((await host.query(id))?.state, "rejected");
+  assert.equal((await host.query(id + ":retry:000000000001"))?.state, "accepted");
+  assert.equal(await host.query(id + ":retry:000000000002"), null);
+  assert.equal((await readFile(join(root, "executions"), "utf8")).trim().split("\n").length, 1);
+  await assert.rejects(gateway.command("thread-1", id, "turn/start", {
+    native: { ...native, input: [{ type: "text", text: "changed draft" }] },
+  }, undefined, options), /commandId reused with different input/);
+});
+
+test("a replay cannot replace a direct input whose native outcome is unknown", async (t) => {
+  const { host, root } = await setup(t);
+  await host.accept(command("create"));
+  await accepted(host, "create");
+  const native = { clientUserMessageId: "uncertain", input: [{ type: "text", text: "maybe sent" }] };
+  const id = "bridge-mutation:" + createHash("sha256").update(JSON.stringify(["thread-1", "turn/start", "uncertain"])).digest("hex");
+  const request = { ...command(id, "turn/start", { native, refuseAfterStart: true, closeBeforeRefusal: true }), retryRejectedTurn: true };
+  await host.accept(request);
+  await until(() => host.query(id), receipt => receipt?.state === "unknown");
+  const replay = await host.accept({ ...request, params: { ...request.params, sessionMcp: { url: "refreshed" } } });
+  assert.equal(replay.state, "unknown");
+  assert.equal(replay.commandId, id);
+  assert.equal(await host.query(id + ":retry:000000000001"), null);
+  assert.equal((await readFile(join(root, "executions"), "utf8")).trim().split("\n").length, 1);
 });
 
 test("a failed producer acknowledgement does not suppress committed inbox events", async () => {
@@ -2050,6 +2097,7 @@ test("execution CLI issuance follows custody admission, refuses missing proof an
     (r) => r?.state === "rejected",
   );
   assert.equal((denied!.response as any).error.message, "cliUnavailable");
+  assert.deepEqual((denied!.response as any).error.data, { cliStage: "source" });
   assert.equal(issued, 0);
   await assert.rejects(readFile(join(root, "executions")));
   await host.accept(command("allowed", "turn/start", { executionSource: "signed-source" }));
@@ -2787,7 +2835,8 @@ test("after a restart, a provider that adopts sessions takes back the recorded o
   assert.equal((await sent()).filter((row) => row.startsWith("adopt:")).length, 1);
 });
 
-test("a lost Codex attachment recovers once for concurrent new requests without replaying a dispatched input", async (t) => {
+for (const marksConnectionLoss of [true, false])
+test(`a lost Codex attachment recovers without replay, with native fault marker=${marksConnectionLoss}`, async (t) => {
   const root = await mkdtemp(join(tmpdir(), "codex-attachment-"));
   const executions = join(root, "executions"),
     launches = join(root, "launches"),
@@ -2827,6 +2876,7 @@ test("a lost Codex attachment recovers once for concurrent new requests without 
         BRIDGE_LAUNCHES: launches,
         NATIVE_UNAVAILABLE: unavailable,
         DROP_NATIVE_ON_INPUT: "interrupted-input",
+        ...(marksConnectionLoss ? {} : { EXIT_WITHOUT_NATIVE_FAULT: "1" }),
       },
     },
   });
@@ -2843,6 +2893,9 @@ test("a lost Codex attachment recovers once for concurrent new requests without 
     () => host.query(inFlight.commandId),
     (receipt) => receipt?.state === "unknown",
   );
+  const [failed] = host.diagnostics() as { failure: string; nativeFault: string | null }[];
+  assert.equal(failed?.failure, "transport");
+  assert.equal(failed?.nativeFault, marksConnectionLoss ? "codex-native-fault:unknown:connection" : null);
 
   await host.accept(command("during-outage", "session/create", {}, "second-thread"));
   const unavailableReceipt = await until(
