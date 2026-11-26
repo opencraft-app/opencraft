@@ -3,9 +3,21 @@ import type { Duplex } from "node:stream";
 import { createGunzip, createBrotliDecompress, createInflate } from 'node:zlib';
 import { randomBytes, randomUUID, createHash, timingSafeEqual } from "node:crypto";
 import WebSocket, { WebSocketServer } from "ws";
-import { relayDuplex, relayIdleDeadline } from '@opencraft/relay-protocol/node';
+import { relayDuplex, relayIdleDeadline, bridgeRelayDuplex } from '@opencraft/relay-protocol/node';
 import { AssertionSigner, ASSERTION_HEADER, type IdentityProvider } from "@opencraft/identity-core/node";
-import { CONTROL_PATH, DATA_PATH, STREAM_HEADER, RELAY_PROTOCOL, MAX_RELAY_STREAMS, relayPathAllowed, DRAIN_HEADER, DRAIN_CAPABILITY } from "@opencraft/relay-protocol";
+import {
+  CONTROL_PATH,
+  DATA_PATH,
+  STREAM_HEADER,
+  RELAY_PROTOCOL,
+  MAX_RELAY_STREAMS,
+  relayPathAllowed,
+  DRAIN_HEADER,
+  DRAIN_CAPABILITY,
+  MACHINE_GATEWAY_CONTROL_PATH,
+  MACHINE_GATEWAY_DATA_PATH,
+  machineEnrollmentRequest,
+} from "@opencraft/relay-protocol";
 import { RelayAuthentication, type EntryOriginResolver } from './authentication.js';
 import type { RelayClusterPort, RelayHub } from './cluster-port.js';
 import { SERVERS_PATH, LEGACY_SERVERS_PATH, isServerPath, selectedPath, serverBase, selectorPage, scopedHtml, targetCookies, scopedCookies, selectionDefault, parseServerPaths, type ServerPaths } from './selection.js';
@@ -25,7 +37,7 @@ export interface RelayIngress { (request: IncomingMessage, response: ServerRespo
 export type RelayRequestHandler = (request: IncomingMessage, response: ServerResponse) => boolean | Promise<boolean>;
 export type RelayUpgradeHandler = (request: IncomingMessage, socket: Duplex, head: Buffer) => boolean | Promise<boolean>;
 /** Core relay and Hub endpoints are never offered to extension handlers. */
-export function reservedRelayPath(url: string | undefined) { return /^\/__opencraft_(?:relay|hub)(?:[/?]|$)/u.test(url ?? ''); }
+export function reservedRelayPath(url: string | undefined) { return /^\/__opencraft_(?:relay|hub|machine_gateway)(?:[/?]|$)/u.test(url ?? ''); }
 
 export interface RelayRoute {
   readonly instanceId: string;
@@ -49,8 +61,11 @@ function reject(socket: Duplex, code: number) { socket.end(`HTTP/1.1 ${code} Rej
 export const identityHeaders: ReadonlySet<string> = new Set(['timestamp', 'signature', 'x-rio-seq', 'staffid', 'staffname', 'x-ext-data', 'x-tai-identity']);
 export function createRelayServer(routes: readonly RelayRoute[], options: { authentication?: { origin: string; provider: IdentityProvider }; entryOrigin?: EntryOriginResolver; build?: { sourceRevision: string | null; buildId: string | null };
   ingress?: RelayIngress; requestHandlers?: readonly RelayRequestHandler[]; upgradeHandlers?: readonly RelayUpgradeHandler[];
+  machineGateway?: { credential: string; origin: string };
   hub?: RelayHub; cluster?: RelayClusterPort; networkRoute?: (service: HubService) => RelayRoute | null; operator?: { credential: string }; serverSelection?: boolean; selectionDefaults?: ReadonlyMap<string, string>; serverPaths?: ServerPaths } = {}) {
-  if ((!routes.length && !options.hub) || routes.length > 1000) throw new Error('Relay requires explicit routes');
+  if ((!routes.length && !options.hub && !options.machineGateway) || routes.length > 1000) throw new Error('Relay requires explicit routes');
+  if (options.machineGateway && (!/^[A-Za-z0-9_-]{43}$/u.test(options.machineGateway.credential) || new URL(options.machineGateway.origin).origin !== options.machineGateway.origin)) throw new Error('Invalid machine gateway');
+  const gatewayRoute = options.machineGateway ? { instanceId: 'personal-machine-owner', ...options.machineGateway } : undefined;
   const requestHandlers = [...options.requestHandlers ?? []], upgradeHandlers = [...options.upgradeHandlers ?? []];
   if ([...requestHandlers, ...upgradeHandlers].some(handler => typeof handler !== 'function') || requestHandlers.length > 64 || upgradeHandlers.length > 64) throw new Error('Invalid relay extension handlers');
   const byHost = new Map<string, RelayRoute>(), byId = new Map<string, RelayRoute>();
@@ -59,6 +74,7 @@ export function createRelayServer(routes: readonly RelayRoute[], options: { auth
     if (route.origin !== url.origin || !['http:', 'https:'].includes(url.protocol) || !/^[A-Za-z0-9_-]{43}$/u.test(route.credential)
       || route.signer.scope.instanceId !== route.instanceId || route.signer.scope.origin !== route.origin
       || (route.name !== undefined && (typeof route.name !== 'string' || !route.name.trim() || route.name.length>128))
+      || (gatewayRoute && (route.instanceId === gatewayRoute.instanceId || equal(route.credential, gatewayRoute.credential)))
       || byHost.has(url.host) || byId.has(route.instanceId) || [...byId.values()].some(r => equal(r.credential, route.credential))) throw new Error('Invalid or duplicate relay route');
     byHost.set(url.host, route); byId.set(route.instanceId, route);
   }
@@ -134,7 +150,7 @@ export function createRelayServer(routes: readonly RelayRoute[], options: { auth
     connection.socket.terminate();
     for (const stream of connection.streams) stream.destroy();
   };
-  async function channel(route: RelayRoute, signal: AbortSignal): Promise<Duplex> {
+  async function channel(route: Pick<RelayRoute, 'instanceId' | 'hubId'>, signal: AbortSignal): Promise<Duplex> {
     if (route.hubId && options.hub) return options.hub.open(route.hubId, undefined, signal);
     return options.cluster ? options.cluster.open(route.instanceId, signal) : localChannel(route.instanceId, signal);
   }
@@ -303,6 +319,30 @@ export function createRelayServer(routes: readonly RelayRoute[], options: { auth
       if (!accepting) { res.setHeader('connection', 'close'); failure(res, 503); return; }
     }
     await options.cluster?.prepare();
+    if (gatewayRoute && machineEnrollmentRequest(req.url ?? '', req.method ?? '')) {
+      if (req.headers.origin || req.headers.host !== new URL(gatewayRoute.origin).host) { failure(res, 403); return; }
+      const abort = new AbortController(); res.once('close', () => abort.abort());
+      let stream: Duplex | undefined;
+      try {
+        stream = await channel(gatewayRoute, abort.signal);
+        const upstream = httpRequest({
+          host: new URL(gatewayRoute.origin).hostname,
+          method: req.method,
+          path: req.url,
+          headers: Object.fromEntries(Object.entries(req.headers).filter(([key]) => key !== 'cookie')),
+          createConnection: () => stream!,
+        }, response => {
+          res.writeHead(response.statusCode ?? 502, response.headers);
+          response.on('error', () => res.destroy());
+          response.pipe(res);
+        });
+        upstream.on('error', () => { stream?.destroy(); failure(res, 503); });
+        req.on('aborted', () => upstream.destroy());
+        res.once('close', () => { upstream.destroy(); stream?.destroy(); });
+        req.pipe(upstream);
+      } catch { stream?.destroy(); failure(res, 503); }
+      return;
+    }
     if (req.url === '/__opencraft_hub/operator') {
       if (!options.hub || !options.operator || !['127.0.0.1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress ?? '') || !equal(bearer(req), options.operator.credential)) { failure(res, 403); return; }
       if (req.method === 'GET') { res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(options.hub.snapshot())); return; }
@@ -390,7 +430,7 @@ export function createRelayServer(routes: readonly RelayRoute[], options: { auth
     socket.on('error', () => {});
     upgraded.add(socket); socket.once('close', () => upgraded.delete(socket));
     // Pending data upgrades and Hub links remain available while consumers drain.
-    if ((!accepting && ![DATA_PATH, HUB_CONTROL_PATH, HUB_DATA_PATH].includes(req.url ?? '')) || closing) { reject(socket, 503); return; }
+    if ((!accepting && ![DATA_PATH, MACHINE_GATEWAY_DATA_PATH, HUB_CONTROL_PATH, HUB_DATA_PATH].includes(req.url ?? '')) || closing) { reject(socket, 503); return; }
     if (upgradeHandlers.length && !reservedRelayPath(req.url)) for (const handle of upgradeHandlers) {
       let handled: boolean;
       // The handler may already have written a handshake, so a failure destroys the socket.
@@ -406,8 +446,31 @@ export function createRelayServer(routes: readonly RelayRoute[], options: { auth
     await options.cluster?.prepare();
     if (await options.cluster?.forwardUpgrade(req, socket, head)) return;
     if (options.hub?.handleUpgrade(req, socket, head)) return;
-    if (req.url === CONTROL_PATH) {
-      const token = bearer(req), route = [...byId.values()].find(r => token && equal(r.credential, token));
+    if (gatewayRoute && machineEnrollmentRequest(req.url ?? '', req.method ?? '', true)) {
+      if (req.headers.origin || req.headers.host !== new URL(gatewayRoute.origin).host) { reject(socket, 403); return; }
+      const abort = new AbortController(); socket.once('close', () => abort.abort());
+      businessUpgrades.add(socket); socket.once('close', () => businessUpgrades.delete(socket));
+      void (async () => {
+        let stream: Duplex | undefined;
+        try {
+          stream = await channel(gatewayRoute, abort.signal);
+          if (socket.destroyed) { stream.destroy(); return; }
+          const forwarded = Object.entries(req.headers)
+            .filter(([key]) => key !== 'cookie')
+            .flatMap(([key, value]) => (Array.isArray(value) ? value : [value]).map(v => `${key}: ${v}`))
+            .join('\r\n');
+          stream.write(`GET ${req.url} HTTP/1.1\r\n${forwarded}\r\n\r\n`);
+          if (head.length) stream.write(head);
+          bridgeRelayDuplex(stream, socket);
+        } catch { stream?.destroy(); reject(socket, 503); }
+      })();
+      return;
+    }
+    if (req.url === CONTROL_PATH || req.url === MACHINE_GATEWAY_CONTROL_PATH) {
+      const token = bearer(req);
+      const route = req.url === MACHINE_GATEWAY_CONTROL_PATH
+        ? (gatewayRoute && token && equal(gatewayRoute.credential, token) ? gatewayRoute : undefined)
+        : [...byId.values()].find(r => token && equal(r.credential, token));
       if (!route || req.headers['sec-websocket-protocol'] !== RELAY_PROTOCOL || req.headers.origin) { reject(socket, 401); return; }
       controls.handleUpgrade(req, socket, head, ws => {
         const connection: Connection = { instanceId: route.instanceId, socket: ws, streams: new Set(), alive: true, preservesStreams: req.headers[DRAIN_HEADER] === DRAIN_CAPABILITY, detached: false };
@@ -429,7 +492,7 @@ export function createRelayServer(routes: readonly RelayRoute[], options: { auth
         })().catch(() => retire(connection));
       }); return;
     }
-    if (req.url === DATA_PATH) {
+    if (req.url === DATA_PATH || req.url === MACHINE_GATEWAY_DATA_PATH) {
       const id = req.headers[STREAM_HEADER], p = typeof id === 'string' ? pending.get(id) : undefined;
       if (!p || !equal(bearer(req), p.token) || req.headers.origin || req.headers['sec-websocket-protocol'] !== RELAY_PROTOCOL) { reject(socket, 401); return; }
       pending.delete(String(id)); data.handleUpgrade(req, socket, head, ws => p.accept(ws)); return;
