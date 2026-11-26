@@ -249,6 +249,75 @@ test("the desktop starts a new conversation on the built-in Codex Host unless a 
   assert.equal(chooseNewConversationHost([hidden, local], hidden.hostId, deploymentDefaultHostId)?.hostId, "local");
 });
 
+test("multi-route machine selection prefers online direct routes over relay routes and projects PersonalMachineEnvironmentSource", async () => {
+  const { EnvironmentDirectory } = await import("@opencraft/workbench-runtime");
+  const { PersonalMachineEnvironmentSource } = await import("../../apps/workbench-web/src/runtime/personal-machine-environment-source");
+
+  const relayOffline: HostConnectionProfile = {
+    ...profile("personal:11111111-1111-4111-8111-111111111111"),
+    providerId: "opencraft.websocket",
+    hostKind: "remote-control",
+    machinePresence: "offline",
+  };
+  const relayOnline: HostConnectionProfile = { ...relayOffline, machinePresence: "online" };
+  const directSsh: HostConnectionProfile = {
+    ...profile("ssh:devbox"),
+    providerId: "opencraft.ssh",
+    hostKind: "remote-ssh",
+  };
+
+  const mergedOnline = groupWorkInMachines([relayOnline, directSsh])[0]!;
+  assert.equal(chooseWorkInHost(mergedOnline, "OpenCraft").hostId, "ssh:devbox", "direct SSH route preferred over relay route");
+  assert.equal(workInAgentHosts(mergedOnline, "other")[0]?.hostId, "ssh:devbox");
+
+  const mergedOfflineCurrent = groupWorkInMachines([relayOffline, directSsh])[0]!;
+  assert.equal(
+    chooseWorkInHost(mergedOfflineCurrent, "OpenCraft", relayOffline.hostId).hostId,
+    "ssh:devbox",
+    "offline current route falls over to healthy sibling route",
+  );
+
+  const directory = new EnvironmentDirectory();
+  directory.setConfiguredProfiles([directSsh]);
+  const source = new PersonalMachineEnvironmentSource({
+    request: async () => ({
+      hubId: "hub-1",
+      ownerActorId: "human:owner",
+      enrollmentOrigin: "https://relay.example.test",
+      machines: [
+        {
+          id: "11111111-1111-4111-8111-111111111111",
+          name: machine.name,
+          machine,
+          connected: true,
+          phase: "enrolled",
+          expiresAt: null,
+        },
+        {
+          id: "22222222-2222-4222-8222-222222222222",
+          name: "",
+          machine: null,
+          connected: false,
+          phase: "pending",
+          expiresAt: Date.now() + 60_000,
+        },
+      ],
+    }),
+    resolveRpcUrl: (id) => `wss://relay.example.test/__opencraft_machines/${id}/rpc`,
+    pollIntervalMs: 0,
+  });
+  const unregister = directory.register("test", source);
+  await source.refresh();
+  const entries = directory.getSnapshot().entries;
+  assert.equal(entries.length, 2, "configured SSH profile and enrolled personal machine coexist without shadowing");
+  const grouped = groupWorkInMachines(entries.map((entry) => entry.profile), entries);
+  assert.equal(grouped.length, 1, "same reported machineId merges SSH and Relay routes into one WorkInMachine");
+  assert.equal(grouped[0]!.hosts.length, 2);
+  unregister();
+  source.dispose();
+  directory.close();
+});
+
 test("malformed persisted machine identity is rejected rather than replaced", async () => {
   const directory = await mkdtemp(join(tmpdir(), "oc-machine-invalid-"));
   try {

@@ -2662,5 +2662,22 @@
   "loginAdmission.error.selfLock": "Dasar ini akan menolak log masuk anda sendiri. Sertakan akaun anda sebelum menerbitkan.",
   "loginAdmission.error.invalid": "Semak peraturan: satu nilai, syarat atau fungsi tidak sah.",
   "loginAdmission.error.admin": "Hanya pentadbir pelayan boleh menukar kemasukan log masuk.",
-  "loginAdmission.error.generic": "Tidak dapat melengkapkan permintaan. Cuba lagi."
+  "loginAdmission.error.generic": "Tidak dapat melengkapkan permintaan. Cuba lagi.",
+  "settings.machines.retryConnection": "Cuba sambung semula",
+  "settings.machines.notConnected": "Tidak disambungkan",
+  "settings.machines.personal.sectionTitle": "Mesin peribadi",
+  "settings.machines.personal.sectionDescription": "Sambungkan mesin Mac atau Linux anda sendiri melalui geganti songsang tanpa membuka port masuk.",
+  "settings.machines.personal.add": "Tambah mesin",
+  "settings.machines.personal.commandHint": "Jalankan arahan peribadi ini pada mesin jauh dalam masa 15 minit. Jangan kongsikannya.",
+  "settings.machines.personal.copy": "Salin arahan",
+  "settings.machines.personal.copied": "Disalin",
+  "settings.machines.personal.noEntrance": "Pintu masuk pendaftaran jauh belum dikonfigurasikan pada pelayan ini.",
+  "settings.machines.personal.pending": "Menunggu sambungan",
+  "settings.machines.personal.updateAvailable": "Kemas kini tersedia",
+  "settings.machines.personal.updating": "Mengemas kini…",
+  "settings.machines.personal.updateNow": "Kemas kini",
+  "settings.machines.personal.copyUpdate": "Salin arahan kemas kini",
+  "settings.machines.personal.accessTitle": "Akses",
+  "settings.machines.personal.accessDescription": "Pembatalan memutuskan sambungan mesin ini serta-merta dan membiarkan fail serta perbualan tempatannya tidak disentuh.",
+  "settings.machines.personal.revoke": "Batalkan"
 }

@@ -14,7 +14,12 @@ import { LanguageSetting } from "../i18n/language-setting";
 import { TouchDensitySetting } from "./touch-density-setting";
 import { WorkbenchShortcutList } from "./workbench-shortcut-help";
 import { ChatSettings } from "./chat-settings";
-import { AgentManagement } from "./agent-management";
+import { AgentManagement, MachineAgentManagement } from "./agent-management";
+import {
+  getActivePersonalMachines,
+  subscribeActivePersonalMachines,
+  type PersonalMachinesController,
+} from "../runtime/personal-machine-environment-source";
 import { HubNetworkSettings } from "./hub-network-settings";
 import { ServerInformationSettings } from "./server-information-settings";
 import { SshKeysSettings } from "./ssh-keys-settings";
@@ -82,6 +87,8 @@ export interface SettingsContentProps {
   readonly platformViewRenderers: PlatformViewRendererRegistry;
   readonly regions?: PlatformViewRegions;
   readonly archivedConversations?: Omit<ArchivedThreadsSettingsProps, "hostId">;
+  readonly personalMachines?: PersonalMachinesController | null;
+  readonly onRetryMachineConnection?: (hostId: string) => Promise<void>;
 }
 
 export interface SettingsNavigationProps {
@@ -412,11 +419,20 @@ export function SettingsContent({
   platformViewRenderers,
   regions,
   archivedConversations,
+  personalMachines,
+  onRetryMachineConnection,
   onOpenView,
   onPushViewResource,
   onReplaceViewResource,
 }: SettingsContentProps) {
   const notices = useOptionalAsyncNotices();
+  const attachedPersonalMachines = useSyncExternalStore(
+    subscribeActivePersonalMachines,
+    getActivePersonalMachines,
+    () => null,
+  );
+  const resolvedPersonalMachines = personalMachines === undefined ? attachedPersonalMachines : personalMachines;
+  const resolvedRetryMachineConnection = onRetryMachineConnection ?? resolvedPersonalMachines?.retryConnection;
   const intl = useIntl();
   const internalDeveloperMode = useInternalDeveloperMode();
   const platform = currentPlatform();
@@ -479,8 +495,8 @@ export function SettingsContent({
             <div className="settings-page__content">
               {configurationMachine !== null ? <SettingsMachineIdentity machine={configurationMachine} platform={platform} onSectionChange={onSectionChange} /> : null}
               {section === "mobile-connection" && mobileContainer() ? <MobileConnectionSettings onProvisionHost={onProvisionHost} />
-              : section === "machines" ? <SettingsMachines machines={machines} platform={platform} onSectionChange={onSectionChange} />
-              : selectedMachine !== null ? <SettingsMachine machine={selectedMachine} pages={extensionPages.filter(page => page.management === undefined)} platform={platform} onSectionChange={onSectionChange} />
+              : section === "machines" ? <SettingsMachines machines={machines} platform={platform} onSectionChange={onSectionChange} personalMachines={resolvedPersonalMachines} reportError={notices?.error} />
+              : selectedMachine !== null ? <SettingsMachine machine={selectedMachine} pages={extensionPages.filter(page => page.management === undefined)} platform={platform} onSectionChange={onSectionChange} personalMachines={resolvedPersonalMachines} renderAgentManagement={hostId => <MachineAgentManagement hostId={hostId} />} onRetryConnection={resolvedRetryMachineConnection} reportError={notices?.error} />
               : section === 'server-information' && platform === 'web' && import.meta.env.VITE_INCLUDE_HEADLESS_APPHOST === 'true' ? <ServerInformationSettings />
               : section === 'ssh-keys' && platform === 'web' && import.meta.env.VITE_INCLUDE_HEADLESS_APPHOST === 'true' ? <SshKeysSettings />
               : section === 'hub-network' && platform === 'web' && import.meta.env.VITE_INCLUDE_HEADLESS_APPHOST === 'true' ? <HubNetworkSettings />

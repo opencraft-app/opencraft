@@ -1315,6 +1315,18 @@ export async function createWebWorkbenchApplicationSupervisor(
       ] }] }, attachments: [], context: [] });
     };
   }
+  let disposePersonalMachines = () => {};
+  const deploymentOwnerHostId = !fixedPresentation
+    ? configuredHostProfiles.getSnapshot().profiles.find(p => p.enabled && (p.hostKind === "local" || p.hostKind === "durable"))?.hostId
+    : undefined;
+  if (deploymentOwnerHostId) {
+    let cancelled = false;
+    disposePersonalMachines = () => { cancelled = true; };
+    startupRollback.push(() => disposePersonalMachines());
+    void import("./personal-machine-environment-source").then(m => {
+      if (!cancelled) disposePersonalMachines = m.attachPersonalMachines(environmentDirectory, agentRuntimes, deploymentOwnerHostId, presentationActive);
+    }, () => undefined);
+  }
   const supervisor: WebWorkbenchApplicationSupervisor = {
     setConversationPresentationActive,
     tasks,
@@ -1369,6 +1381,7 @@ export async function createWebWorkbenchApplicationSupervisor(
     addWebSocketHost: commands.addWebSocketHost,
     removeHost: commands.removeHost,
     dispose: createApplicationDisposer([
+      () => disposePersonalMachines(),
       () => taskConversationFlow?.dispose(),
       stopIdentityProbes,
       () => machineIdentityObserver.dispose(),

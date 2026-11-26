@@ -191,12 +191,29 @@ export function createWorkbenchWebConfig(
   const developmentAppServer = new URL(process.env.OPENCRAFT_APPSERVER_URL || "ws://127.0.0.1:9988/rpc");
   if (!["ws:", "wss:", "http:", "https:"].includes(developmentAppServer.protocol)
     || developmentAppServer.username || developmentAppServer.password || developmentAppServer.hash) throw new Error("Invalid development AppServer URL");
+  const ownerToken = developmentAppServer.searchParams.get("token");
   const appServerProxy = {
     "/appserver": {
       target: developmentAppServer.origin.replace(/^ws/u, "http"),
       ws: true,
       changeOrigin: true,
       rewrite: () => developmentAppServer.pathname + developmentAppServer.search,
+    },
+    "/__opencraft_machines": {
+      target: developmentAppServer.origin.replace(/^ws/u, "http"),
+      ws: true,
+      changeOrigin: true,
+      configure(proxy: { on(event: string, listener: (proxyReq: { setHeader(name: string, value: string): void; path?: string }) => void): void }) {
+        if (!ownerToken) return;
+        const inject = (proxyReq: { setHeader(name: string, value: string): void; path?: string }) => {
+          const pathPart = proxyReq.path ?? "";
+          if (pathPart.startsWith("/__opencraft_machines/status") || /^\/__opencraft_machines\/[0-9a-f-]{36}\/rpc(?:\?|$)/iu.test(pathPart)) {
+            proxyReq.setHeader("authorization", `Bearer ${ownerToken}`);
+          }
+        };
+        proxy.on("proxyReq", inject);
+        proxy.on("proxyReqWs", inject);
+      },
     },
   } as const;
 

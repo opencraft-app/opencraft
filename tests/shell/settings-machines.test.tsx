@@ -31,7 +31,7 @@ test("settings render machine ownership, cold/failed connections, first-level na
       builder.onResolve({ filter: /appearance-theme$/ }, () => ({ path: "appearance", namespace: "test-appearance" }));
       builder.onLoad({ filter: /.*/, namespace: "test-appearance" }, () => ({ contents: 'export const getAppearanceThemePreviewProperties = () => ({}); export const useAppearanceTheme = () => ({ preference: "system", requestedThemeId: null });', loader: "js" }));
       builder.onResolve({ filter: /appserver-runtime-context$/ }, () => ({ path: "runtime", namespace: "test" }));
-      builder.onLoad({ filter: /.*/, namespace: "test" }, () => ({ contents: 'export const useMachineConnectionPhase = () => "ready"; export const useHostConnectionPhase = id => id === "local-codex" ? "error" : "ready";', loader: "js" }));
+      builder.onLoad({ filter: /.*/, namespace: "test" }, () => ({ contents: 'export const useMachineConnectionPhase = () => "ready"; export const useHostConnectionPhase = id => id === "local-codex" ? "error" : "ready"; export const useHostExecutionState = () => undefined; export const useAppServerHosts = () => { throw new Error("unused"); }; export const useAppServerHostSnapshot = () => { throw new Error("unused"); }; export const useComposerCatalog = () => { throw new Error("unused"); };', loader: "js" }));
     }}], logLevel: "silent",
   });
   const { SettingsMachines, SettingsMachine, MachineConnectionsAvailable, SettingsNavigation, ConnectionLabel, SidebarBots, SidebarEntityDndCoordinator, NavigationContent } = createRequire(import.meta.url)(bundle);
@@ -126,4 +126,71 @@ test("settings render machine ownership, cold/failed connections, first-level na
   nav.openSettings(modelId); assertDestination(modelId, "模型服务");
   nav.back(); await new Promise(resolve => setImmediate(resolve)); assertDestination(machineSection, "机器");
   nav.forward(); await new Promise(resolve => setImmediate(resolve)); assertDestination(modelId, "模型服务");
+
+  const personalId = "11111111-1111-4111-8111-111111111111";
+  const personalIdentity = { machineId: "99999999-1234-4123-8123-123456789abc", name: "家里 Mac Studio", platform: "macos" as const };
+  const personalProfile: HostConnectionProfile = {
+    ...profile(`personal:${personalId}`, "OpenCraft"),
+    providerId: "opencraft.websocket",
+    hostKind: "remote-control",
+    machineIdentity: personalIdentity,
+    machinePresence: "online",
+  };
+  const personalDirectory = {
+    hubId: "hub-fixture",
+    ownerActorId: "human:owner",
+    enrollmentOrigin: "https://relay.example.test",
+    machines: [
+      {
+        id: personalId,
+        name: personalIdentity.name,
+        machine: personalIdentity,
+        connected: true,
+        phase: "enrolled" as const,
+        expiresAt: null,
+        updateAvailable: true,
+        updateCommand: "curl -fsS https://relay.example.test/__opencraft_machines/install.sh | bash -s -- --update " + personalId,
+      },
+      {
+        id: "22222222-2222-4222-8222-222222222222",
+        name: "",
+        machine: null,
+        connected: false,
+        phase: "pending" as const,
+        expiresAt: Date.now() + 600_000,
+      },
+    ],
+  };
+  const personalController = {
+    getDirectorySnapshot: () => personalDirectory,
+    subscribe: () => () => {},
+    refresh: async () => {},
+    command: async () => personalDirectory,
+  };
+  const allMachines = groupWorkInMachines([...hosts, personalProfile]);
+  const personalListMarkup = render(
+    <SettingsMachines machines={allMachines} platform="web" onSectionChange={onSectionChange} personalMachines={personalController} />,
+  );
+  assert.match(personalListMarkup, /家里 Mac Studio/);
+  assert.match(personalListMarkup, /个人远程机器/);
+  assert.match(personalListMarkup, /添加机器/);
+  assert.match(personalListMarkup, /等待机器接入/);
+  assert.match(personalListMarkup, /有可用更新/);
+
+  const personalGroup = allMachines.find(item => item.identity?.machineId === personalIdentity.machineId)!;
+  const personalDetailMarkup = render(
+    <SettingsMachine
+      machine={personalGroup}
+      pages={[]}
+      platform="web"
+      onSectionChange={onSectionChange}
+      personalMachines={personalController}
+      renderAgentManagement={id => <div data-testid="remote-agent-mgmt">{id}</div>}
+    />,
+  );
+  assert.match(personalDetailMarkup, /家里 Mac Studio/);
+  assert.match(personalDetailMarkup, /访问与吊销/);
+  assert.match(personalDetailMarkup, /撤销接入/);
+  assert.match(personalDetailMarkup, /复制更新命令/);
+  assert.match(personalDetailMarkup, /remote-agent-mgmt/);
 });
