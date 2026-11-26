@@ -216,8 +216,9 @@ test("Bridge selected history seeks native and public IDs after upgrading the pr
   for (const table of ["inbox", "outbox", "bridge_inbox"] as const) {
     const database = memory();
     const isWorkspace = table === "bridge_inbox";
-    const previous = isWorkspace ? workspace.migrations.slice(0, -1) : node.slice(0, -1);
-    assert.equal(previous.at(-1)?.version, isWorkspace ? 4 : 6);
+    const indexVersion = isWorkspace ? 5 : 7;
+    const previous = (isWorkspace ? workspace.migrations : node).filter(({ version }) => version < indexVersion);
+    assert.equal(previous.at(-1)?.version, indexVersion - 1);
     if (isWorkspace) applySqlMigrationFamilies(database, [{ ...workspace, migrations: previous }]);
     else applySqlMigrations(database, previous);
     const insert = database.prepare(table === "outbox"
@@ -235,12 +236,11 @@ test("Bridge selected history seeks native and public IDs after upgrading the pr
       { seq: 3, item: { nativeId: "native-item", id: "public-item" } },
     ];
     const retained = database.prepare(`SELECT * FROM ${table} ORDER BY seq`).all();
-    const version = isWorkspace ? 5 : 7;
     if (isWorkspace) assert.deepEqual(applySqlMigrationFamilies(database, [workspace]),
-      [{ id: workspace.id, status: "migrated", applied: 1, version }]);
+      [{ id: workspace.id, status: "migrated", applied: 1, version: indexVersion }]);
     else {
       applySqlMigrations(database, node);
-      assert.equal(database.prepare("SELECT max(version) AS version FROM schema_migrations").get()?.version, version);
+      assert.equal(database.prepare("SELECT max(version) AS version FROM schema_migrations").get()?.version, 8);
     }
 
     const indexed = prepareSelectedHistory({
@@ -264,10 +264,10 @@ test("Bridge selected history seeks native and public IDs after upgrading the pr
       Array.from({ length: 263 }, (_, index) => index + 2));
     if (isWorkspace) {
       database.prepare("UPDATE schema_family_migrations SET checksum=? WHERE family=? AND version=?")
-        .run("0".repeat(64), workspace.id, version);
+        .run("0".repeat(64), workspace.id, indexVersion);
       assert.throws(() => applySqlMigrationFamilies(database, [workspace]), refused("history-mismatch"));
     } else {
-      database.prepare("UPDATE schema_migrations SET checksum=? WHERE version=?").run("0".repeat(64), version);
+      database.prepare("UPDATE schema_migrations SET checksum=? WHERE version=?").run("0".repeat(64), indexVersion);
       assert.throws(() => applySqlMigrations(database, node), refused("history-mismatch"));
     }
   }
