@@ -483,8 +483,14 @@ export class CodexBridge {
         return;
       }
       const delta = { op: method === "item/started" ? "item.open" : "item.close", scope, nativeTurnId, nativeKey, shape } as const;
-      if (shape.kind === "appServerItem" && !parseDelta(delta).ok) {
-        this.emit(threadId, [{ op: "unhandled", scope, nativeTurnId, nativeKey, reason: "Invalid native AppServer item" }]);
+      // Native items can exceed Bridge's live representation limits. Report
+      // them before the Host's durable callback boundary so the turn and
+      // other sessions keep receiving events. Native history retains the item.
+      if (!parseDelta(delta).ok) {
+        const reason = shape.kind === "fileChange"
+          ? "File change details are unavailable in the live Bridge stream"
+          : "Invalid native AppServer item";
+        this.emit(threadId, [{ op: "unhandled", scope, nativeTurnId, nativeKey, reason }]);
         return;
       }
       this.emit(threadId, [delta]);
