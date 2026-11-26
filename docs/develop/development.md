@@ -6,8 +6,6 @@ This guide keeps detailed source-development, Host configuration and platform
 build commands together. For installation and delivery requirements, follow the
 linked deployment guides and build matrix.
 
-Core development belongs to this GitHub upstream; product providers and branding
-are composed downstream. See [transition status](../history/upstream-transition.md).
 Branding, installed application identity, storage and protocol namespaces are
 separate concerns; [product identity](../architecture/identity/product-identity.md) documents
 the naming policy and the identifiers intentionally kept stable.

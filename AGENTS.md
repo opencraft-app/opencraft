@@ -1,8 +1,6 @@
 # OpenCraft Agent 入口
 
-本文件是OpenCraft服务根入口，独立GitHub checkout也必须能直接使用。独立仓库不要求不存在的父级脚本或内部文档。正式事实以当前源码、测试、生成契约和下列专题文档为准。
-
-下游 fork 若存在 `.agents/fork/AGENTS.md`，先读它：该文件只承载该 fork 的私有运维约定（如 Git 网关、发布桥与集成锁），由 fork 自行维护，不改写本文件的产品、代码与验证规则；fork 不应直接修改本文件。独立 checkout 中它不存在。
+本文件是 OpenCraft 服务根入口，正式事实以当前源码、测试、生成契约和下列专题文档为准。
 
 ## 代码样例必读
 
@@ -16,10 +14,6 @@ OpenCraft 同时面向触控设备与 PC：通过 Web DOM 和 React Native 技�
 - **触控呈现消费共享能力与偏好。** 复用项目已有的触控能力识别、用户触控偏好和输入模态投影，不按窗口宽度、操作系统、Web／Electron 宿主名称另造判断。触控呈现模式与当前一次鼠标、触摸或键盘输入分别建模，悬停、焦点和按下反馈沿用各自 owner。
 - **布局按实际容器适配。** 手机横竖屏、折叠／展开、iPad 分屏与 PC 窗口缩放都可能改变可用空间；布局断点负责空间分配，不能代替触控与非触控交互的区分。
 - **跨端共享业务语义，按能力适配呈现。** 复用领域状态、协议和操作意图，由平台适配手势、命中区域、键盘导航及宿主能力；切换尺寸、输入方式或呈现模式时保留草稿、焦点、选区、滚动和会话连续性。相关改动分别验证触控与 PC 路径，不用单纯缩窄浏览器窗口代替触控验收。
-
-## 上下游迁移
-
-GitHub `opencraft-app/opencraft` 是目标核心上游，产品身份来源、执行引擎和渠道经插件接入；核心仍拥有主体、授权和Hub分发。下游产品的业务装配（身份、品牌与企业服务）不属于核心。当前切换状态见[实际状态与来源清单](docs/history/upstream-transition.md)；不要用旧源码覆盖当前产品，也不建立两套可写核心。原贡献采用MIT-0，未核实第三方材料不因LICENSE自动获得授权。 当前交付范围见[上游切换记录](docs/history/upstream-transition.md#current-delivery-decision-2026-10-19)。
 
 ## 完成标准
 
@@ -36,7 +30,7 @@ GitHub `opencraft-app/opencraft` 是目标核心上游，产品身份来源、�
 | `apps/desktop` | 桌面窗口、私有存储、Preload 与 IPC |
 | `apps/local-agent-host` | 本机执行、DSH 进程与 Host 能力适配 |
 | `packages/` | 跨端领域语义、协议和稳定共享 contract |
-| `plugins/` | 随核心提供的通用插件；私有产品插件由下游 workspace 持有 |
+| `plugins/` | 随核心提供的通用插件 |
 
 - DSH 是可替换的执行引擎，不是 Bot、模型、会话、凭据或产品配置的唯一真源。先确认对象身份、生命周期和唯一写入者，再修改页面或 adapter。
 - 宿主只声明并呈现已接通的能力；不得用开关、菜单项或前端状态冒充协议、运行时或后端能力。
@@ -56,11 +50,9 @@ GitHub `opencraft-app/opencraft` 是目标核心上游，产品身份来源、�
 | Android 备案资料或临时局域网下载 | [Android 正式 APK](apps/mobile/README.md#android-release-apk)；从最终 APK 核对包名、签名证书和文件摘要，只开放 APK 下载路径 |
 | 承载当前代理的 headless 预览服务切换或重启 | [opencraft-self-hosted-preview](.agents/skills/opencraft-self-hosted-preview/SKILL.md)；由独立服务完成切换与回退，重连后核对实际进程 |
 | 已部署 OpenCraft 的小范围快速变更、局部构建与单服务更新 | [opencraft-fast-change](.agents/skills/opencraft-fast-change/SKILL.md)；以运行产物为基线，构建候选并验证实际行为，依赖/迁移/跨服务变化转正式流程 |
-| 下游产品 Agent Console 共享实现 | [历史与消费契约](docs/history/upstream-history.md)；同步边界由下游产品工作区维护 |
 | Web、Expo、Electron 构建与交付 | [build-matrix](docs/develop/build-matrix.md) |
 | App 发版（桌面、Android、iOS）、Web 更新部署 | App 发版按 [opencraft-release](.agents/skills/opencraft-release/SKILL.md)：同一产品版本（`scripts/release/product-version.mjs`），beta `vX.Y.Z-beta.N` 与正式 `vX.Y.Z`；Web 更新见 [Web 发布与部署](docs/operations/web-deployment.md)，公共 npm 已停止发布 |
 | 从源码打包替换服务器本地 Web | [本地替换指引](docs/operations/web-local-deployment.md)；先核对 `.local/README.md` 中的实际部署信息 |
-| 基于核心的下游产品 fork、产品工作区与上下游边界审计 | [下游产品](docs/develop/downstream-products.md) |
 | 开源提交、公开发布 | [安全与发布说明](SECURITY.md)；按 [opencraft-release](.agents/skills/opencraft-release/SKILL.md) 核对实际来源、隐私、依赖、固定tag和归档；贡献PR遵循仓库当前检查 |
 | 手机容器的数据读取、会话连续性、导航容器与打包 | [Expo 局部 Agent 入口](apps/mobile/AGENTS.md#手机端细则) |
 | 引擎命令、子进程、PTY、后台 worker 与取消路径 | [Sandbox 局部入口](packages/sandbox/AGENTS.md) 与 [CreateSandbox 契约](docs/architecture/execution/execution-sandbox.md) |
@@ -97,7 +89,6 @@ UI 任务按需读取 [UI 专题索引](design/ui/README.md)，字体任务继�
 | 单 workspace | `npm run typecheck --workspace <package>` + 相关聚焦测试 |
 | 跨包 contract | 两端 typecheck/test + `npm run check:boundaries` |
 | Host | `npm run test:host-connection`，再按风险补 adapter/runtime 测试 |
-| Agent Console 同步（仅下游产品） | 在下游产品目录运行该产品的同步与只读漂移检查；公开核心不提供私有转调 |
 | 广泛共享或交付矩阵 | `npm run gate` |
 
 变更后至少运行受影响的聚焦测试。视觉、窗口、Main/Preload 或原生能力还需按 [维护验证清单](.agents/skills/opencraft-maintenance/references/verification.md) 选择真实组件与桌面验收。
@@ -116,7 +107,4 @@ UI 任务按需读取 [UI 专题索引](design/ui/README.md)，字体任务继�
 
 ## 硬边界
 
-- 本仓库是独立 npm workspace，保留自己的 `package-lock.json`；不得与下游产品的 workspace 或锁文件合并。
-- GitHub 是目标核心上游，下游产品持有私有装配并固定版本消费；当前切换状态见 `docs/history/upstream-transition.md`，不要恢复旧单向镜像或双写。旧私有仓库仅为有界历史和回退证据。
-- OpenCraft 校验或构建不得隐式触发下游产品构建、GitOps、发布、生产或云资源修改。
 - 构建产物、`node_modules`、本地日志、隔离 profile 和机器路径不得进入 Git。

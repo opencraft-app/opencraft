@@ -116,7 +116,6 @@ Contributions to adapters, collaboration, client experiences, documentation and 
 
 - [Report a problem or propose an idea](https://github.com/opencraft-app/opencraft/issues).
 - Follow the [contribution guide](CONTRIBUTING.md) for changes to the shared core.
-- Build product-specific identity, branding and services through [downstream composition](docs/history/upstream-transition.md).
 - Report security vulnerabilities through the private process in [SECURITY.md](SECURITY.md).
 
 ## License
