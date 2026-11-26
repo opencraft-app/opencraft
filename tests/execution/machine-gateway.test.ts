@@ -32,7 +32,10 @@ test("dedicated enrollment gateway forwards only machine paths and preserves the
   const app = createRelayServer([], { machineGateway: { credential: key, origin } });
   await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
   const endpoint = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
-  const ingress = createLocalIngress(() => ({ port: (local.address() as { port: number }).port, origin }), MACHINE_ENROLLMENT_PATHS);
+  const ingress = createLocalIngress(
+    () => ({ port: (local.address() as { port: number }).port, origin }),
+    MACHINE_ENROLLMENT_PATHS,
+  );
   const connection = connectRelay({
     relay: endpoint,
     credential: key,
@@ -65,10 +68,24 @@ test("dedicated enrollment gateway forwards only machine paths and preserves the
   const headers = { host: "machine.fixture.test", authorization: "Bearer pairing" };
   assert.equal((await get(`${endpoint}/__opencraft_machines/source.tgz?id=fixture`, { headers })).status, 200);
   assert.equal(observed, "Bearer pairing", "gateway does not replace a machine credential with its publication key");
-  for (const path of ["/", "/rpc", "/__opencraft_machines/status", "/__opencraft_machines/fixture/rpc", "/__opencraft_update", "/__opencraft_hub/operator"]) {
+  for (const path of [
+    "/",
+    "/rpc",
+    "/__opencraft_machines/status",
+    "/__opencraft_machines/fixture/rpc",
+    "/__opencraft_update",
+    "/__opencraft_hub/operator",
+  ]) {
     assert.equal((await get(`${endpoint}${path}`, { headers })).status, 403, path);
   }
-  assert.equal((await get(`${endpoint}/__opencraft_machines/source.tgz`, { headers: { ...headers, origin: "https://another.test" } })).status, 403);
+  assert.equal(
+    (
+      await get(`${endpoint}/__opencraft_machines/source.tgz`, {
+        headers: { ...headers, origin: "https://another.test" },
+      })
+    ).status,
+    403,
+  );
   const ws = new WebSocket(`${endpoint.replace("http", "ws")}/__opencraft_relay/control`, {
     headers: { host: "machine.fixture.test", authorization: "Bearer enrolled-machine" },
   });

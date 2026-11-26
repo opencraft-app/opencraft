@@ -27,11 +27,11 @@ const UPDATE_TIMEOUT_MS = 180_000;
 
 const hash = (value: string): string => createHash("sha256").update(value).digest("hex");
 const equalSecret = (left: string, right: string): boolean =>
-  Boolean(left && right)
-  && timingSafeEqual(createHash("sha256").update(left).digest(), createHash("sha256").update(right).digest());
+  Boolean(left && right) &&
+  timingSafeEqual(createHash("sha256").update(left).digest(), createHash("sha256").update(right).digest());
 const equalHash = (secret: string, expectedHex: string): boolean =>
-  Boolean(secret && /^[a-f0-9]{64}$/u.test(expectedHex))
-  && timingSafeEqual(createHash("sha256").update(secret).digest(), Buffer.from(expectedHex, "hex"));
+  Boolean(secret && /^[a-f0-9]{64}$/u.test(expectedHex)) &&
+  timingSafeEqual(createHash("sha256").update(secret).digest(), Buffer.from(expectedHex, "hex"));
 const bearer = (req: IncomingMessage): string =>
   /^Bearer ([A-Za-z0-9_-]{32,64})$/u.exec(req.headers.authorization ?? "")?.[1] ?? "";
 const quote = (value: string): string => `'${value.replace(/'/gu, "'\\''")}'`;
@@ -40,10 +40,10 @@ export function personalMachineOrigin(value: unknown): string {
   if (typeof value !== "string") throw new Error("Remote machine requires an origin");
   const url = new URL(value);
   if (
-    url.origin !== value
-    || url.username
-    || url.password
-    || (url.protocol !== "https:" && !(url.protocol === "http:" && ["127.0.0.1", "localhost"].includes(url.hostname)))
+    url.origin !== value ||
+    url.username ||
+    url.password ||
+    (url.protocol !== "https:" && !(url.protocol === "http:" && ["127.0.0.1", "localhost"].includes(url.hostname)))
   ) {
     throw new Error("Remote machine requires HTTPS");
   }
@@ -56,14 +56,14 @@ export function personalMachineEnrollmentOrigin(value: unknown): string {
   const url = new URL(origin);
   const host = url.hostname.toLowerCase().replace(/\.$/u, "");
   if (
-    url.protocol !== "https:"
-    || host === "localhost"
-    || host.endsWith(".localhost")
-    || host === "0.0.0.0"
-    || host === "[::]"
-    || host === "[::1]"
-    || /^127\./u.test(host)
-    || host.startsWith("[::ffff:")
+    url.protocol !== "https:" ||
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host === "0.0.0.0" ||
+    host === "[::]" ||
+    host === "[::1]" ||
+    /^127\./u.test(host) ||
+    host.startsWith("[::ffff:")
   ) {
     throw new Error("Remote enrollment requires an HTTPS Server origin");
   }
@@ -192,7 +192,12 @@ export class PersonalMachines {
 
   private openInternalRpc(id: string): Promise<WebSocket> {
     const connection = this.connections.get(id);
-    if (!connection || connection.detached || connection.streams.size >= MAX_STREAMS || this.pending.size >= MAX_STREAMS) {
+    if (
+      !connection ||
+      connection.detached ||
+      connection.streams.size >= MAX_STREAMS ||
+      this.pending.size >= MAX_STREAMS
+    ) {
       return Promise.reject(new Error("Remote machine is offline or busy"));
     }
     return new Promise<WebSocket>((resolve, reject) => {
@@ -321,7 +326,10 @@ export class PersonalMachines {
       await call("process/spawn", {
         processHandle: `pm-self-update-${randomUUID()}`,
         command: "/bin/bash",
-        args: ["-c", `nohup ${updateCmd} >"$HOME/.opencraft/machines/${id}/remote-update.log" 2>&1 </dev/null & sleep 0.3`],
+        args: [
+          "-c",
+          `nohup ${updateCmd} >"$HOME/.opencraft/machines/${id}/remote-update.log" 2>&1 </dev/null & sleep 0.3`,
+        ],
         cols: 80,
         rows: 24,
       });
@@ -407,7 +415,9 @@ export class PersonalMachines {
       if (typeof input.id !== "string" || !/^[-a-f0-9]{36}$/u.test(input.id)) {
         throw new Error("Invalid machine");
       }
-      const row = this.store.state.machines.find((candidate) => candidate.id === input.id && candidate.credentialHash !== null);
+      const row = this.store.state.machines.find(
+        (candidate) => candidate.id === input.id && candidate.credentialHash !== null,
+      );
       if (!row || !this.connections.get(input.id)) throw new Error("Remote machine is offline");
       const current = this.updating.get(input.id);
       if (current && !current.error && Date.now() - current.startedAt < UPDATE_TIMEOUT_MS) {
@@ -440,15 +450,16 @@ export class PersonalMachines {
           const token = bearer(req);
           const row = this.store.state.machines.find(
             (candidate) =>
-              candidate.id === url.searchParams.get("id")
-              && candidate.credentialHash !== null
-              && equalHash(token, candidate.credentialHash),
+              candidate.id === url.searchParams.get("id") &&
+              candidate.credentialHash !== null &&
+              equalHash(token, candidate.credentialHash),
           );
           if (!row) {
             json(res, 403, { error: "update_unavailable" });
             return true;
           }
-          const updaterPath = this.options.updater ?? new URL("../../../scripts/personal-machine/update.mjs", import.meta.url);
+          const updaterPath =
+            this.options.updater ?? new URL("../../../scripts/personal-machine/update.mjs", import.meta.url);
           const moduleBytes = await readFile(updaterPath);
           res.writeHead(200, { "content-type": "text/javascript", "cache-control": "no-store" });
           res.end(moduleBytes);
@@ -464,16 +475,16 @@ export class PersonalMachines {
         return true;
       }
       if (
-        url.searchParams.get("update") === "1"
-        && req.method === "GET"
-        && (url.pathname === `${PREFIX}/bootstrap` || url.pathname === `${PREFIX}/source.tgz`)
+        url.searchParams.get("update") === "1" &&
+        req.method === "GET" &&
+        (url.pathname === `${PREFIX}/bootstrap` || url.pathname === `${PREFIX}/source.tgz`)
       ) {
         const token = bearer(req);
         const row = this.store.state.machines.find(
           (candidate) =>
-            candidate.id === url.searchParams.get("id")
-            && candidate.credentialHash !== null
-            && equalHash(token, candidate.credentialHash),
+            candidate.id === url.searchParams.get("id") &&
+            candidate.credentialHash !== null &&
+            equalHash(token, candidate.credentialHash),
         );
         if (!row) {
           json(res, 403, { error: "update_unavailable" });
@@ -492,7 +503,11 @@ export class PersonalMachines {
         this.streamArchive(res);
         return true;
       }
-      if (url.pathname === `${PREFIX}/status` && req.method === "GET" && equalSecret(bearer(req), this.options.ownerToken)) {
+      if (
+        url.pathname === `${PREFIX}/status` &&
+        req.method === "GET" &&
+        equalSecret(bearer(req), this.options.ownerToken)
+      ) {
         json(res, 200, this.directory());
         return true;
       }
@@ -500,7 +515,9 @@ export class PersonalMachines {
       if (url.pathname === `${PREFIX}/bootstrap` && req.method === "GET") {
         const row = this.store.state.machines.find(
           (candidate) =>
-            equalHash(secret, candidate.pairHash) && candidate.credentialHash === null && candidate.expiresAt > Date.now(),
+            equalHash(secret, candidate.pairHash) &&
+            candidate.credentialHash === null &&
+            candidate.expiresAt > Date.now(),
         );
         if (!row) {
           json(res, 403, { error: "pairing_unavailable" });
@@ -517,12 +534,19 @@ export class PersonalMachines {
         return true;
       }
       const id = url.searchParams.get("id");
-      const row = this.store.state.machines.find((candidate) => candidate.id === id && equalHash(secret, candidate.pairHash));
+      const row = this.store.state.machines.find(
+        (candidate) => candidate.id === id && equalHash(secret, candidate.pairHash),
+      );
       if (!row) {
         json(res, 403, { error: "pairing_unavailable" });
         return true;
       }
-      if (url.pathname === `${PREFIX}/source.tgz` && req.method === "GET" && row.credentialHash === null && row.expiresAt > Date.now()) {
+      if (
+        url.pathname === `${PREFIX}/source.tgz` &&
+        req.method === "GET" &&
+        row.credentialHash === null &&
+        row.expiresAt > Date.now()
+      ) {
         this.streamArchive(res);
         return true;
       }
@@ -592,7 +616,13 @@ export class PersonalMachines {
       const row = this.store.state?.machines.find(
         (candidate) => candidate.credentialHash !== null && equalHash(token, candidate.credentialHash),
       );
-      if (!row || this.closed || !this.store.available || req.headers.origin || req.headers["sec-websocket-protocol"] !== RELAY_PROTOCOL) {
+      if (
+        !row ||
+        this.closed ||
+        !this.store.available ||
+        req.headers.origin ||
+        req.headers["sec-websocket-protocol"] !== RELAY_PROTOCOL
+      ) {
         reject();
         return true;
       }
@@ -600,7 +630,8 @@ export class PersonalMachines {
         const previous = this.connections.get(row.id);
         if (previous) this.retire(previous);
         const rawVersion = req.headers["x-opencraft-machine-version"];
-        const version = typeof rawVersion === "string" && /^(?:[a-f0-9]{64}|legacy)$/u.test(rawVersion) ? rawVersion : null;
+        const version =
+          typeof rawVersion === "string" && /^(?:[a-f0-9]{64}|legacy)$/u.test(rawVersion) ? rawVersion : null;
         if (version === this.options.digest) this.updating.delete(row.id);
         const connection: MachineConnection = {
           id: row.id,
@@ -656,7 +687,12 @@ export class PersonalMachines {
       return true;
     }
     const connection = this.connections.get(match[1]!);
-    if (!connection || connection.detached || connection.streams.size >= MAX_STREAMS || this.pending.size >= MAX_STREAMS) {
+    if (
+      !connection ||
+      connection.detached ||
+      connection.streams.size >= MAX_STREAMS ||
+      this.pending.size >= MAX_STREAMS
+    ) {
       reject();
       return true;
     }

@@ -51,13 +51,13 @@ export function parsePersonalMachinesDirectory(value: unknown): PersonalMachines
   }
   const input = value as Record<string, unknown>;
   if (
-    typeof input.hubId !== "string"
-    || !input.hubId.trim()
-    || typeof input.ownerActorId !== "string"
-    || !input.ownerActorId.trim()
-    || (input.enrollmentOrigin !== null && typeof input.enrollmentOrigin !== "string")
-    || (input.digest !== undefined && typeof input.digest !== "string")
-    || !Array.isArray(input.machines)
+    typeof input.hubId !== "string" ||
+    !input.hubId.trim() ||
+    typeof input.ownerActorId !== "string" ||
+    !input.ownerActorId.trim() ||
+    (input.enrollmentOrigin !== null && typeof input.enrollmentOrigin !== "string") ||
+    (input.digest !== undefined && typeof input.digest !== "string") ||
+    !Array.isArray(input.machines)
   ) {
     throw new TypeError("Invalid machine directory");
   }
@@ -67,17 +67,19 @@ export function parsePersonalMachinesDirectory(value: unknown): PersonalMachines
     }
     const entry = raw as Record<string, unknown>;
     if (
-      typeof entry.id !== "string"
-      || !/^[0-9a-f-]{36}$/iu.test(entry.id)
-      || typeof entry.name !== "string"
-      || typeof entry.connected !== "boolean"
-      || (entry.phase !== "pending" && entry.phase !== "enrolled")
-      || (entry.expiresAt !== null && (typeof entry.expiresAt !== "number" || !Number.isFinite(entry.expiresAt)))
-      || (entry.version !== undefined && entry.version !== null && typeof entry.version !== "string")
-      || (entry.updateAvailable !== undefined && entry.updateAvailable !== null && typeof entry.updateAvailable !== "boolean")
-      || (entry.updateCommand !== undefined && entry.updateCommand !== null && typeof entry.updateCommand !== "string")
-      || (entry.updating !== undefined && typeof entry.updating !== "boolean")
-      || (entry.updateError !== undefined && entry.updateError !== null && typeof entry.updateError !== "string")
+      typeof entry.id !== "string" ||
+      !/^[0-9a-f-]{36}$/iu.test(entry.id) ||
+      typeof entry.name !== "string" ||
+      typeof entry.connected !== "boolean" ||
+      (entry.phase !== "pending" && entry.phase !== "enrolled") ||
+      (entry.expiresAt !== null && (typeof entry.expiresAt !== "number" || !Number.isFinite(entry.expiresAt))) ||
+      (entry.version !== undefined && entry.version !== null && typeof entry.version !== "string") ||
+      (entry.updateAvailable !== undefined &&
+        entry.updateAvailable !== null &&
+        typeof entry.updateAvailable !== "boolean") ||
+      (entry.updateCommand !== undefined && entry.updateCommand !== null && typeof entry.updateCommand !== "string") ||
+      (entry.updating !== undefined && typeof entry.updating !== "boolean") ||
+      (entry.updateError !== undefined && entry.updateError !== null && typeof entry.updateError !== "string")
     ) {
       throw new TypeError("Invalid machine entry");
     }

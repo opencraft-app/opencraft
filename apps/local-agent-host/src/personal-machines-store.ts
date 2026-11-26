@@ -39,11 +39,11 @@ function validateState(raw: unknown, expectedOwnerActorId: string): PersonalMach
   }
   const input = raw as Record<string, unknown>;
   if (
-    input.schemaVersion !== 1
-    || input.ownerActorId !== expectedOwnerActorId
-    || typeof input.hubId !== "string"
-    || !input.hubId.trim()
-    || !Array.isArray(input.machines)
+    input.schemaVersion !== 1 ||
+    input.ownerActorId !== expectedOwnerActorId ||
+    typeof input.hubId !== "string" ||
+    !input.hubId.trim() ||
+    !Array.isArray(input.machines)
   ) {
     throw new Error("Invalid personal machine authority");
   }
@@ -53,13 +53,14 @@ function validateState(raw: unknown, expectedOwnerActorId: string): PersonalMach
     }
     const row = entry as Record<string, unknown>;
     if (
-      typeof row.id !== "string"
-      || !/^[a-f0-9-]{36}$/u.test(row.id)
-      || typeof row.pairHash !== "string"
-      || !/^[a-f0-9]{64}$/u.test(row.pairHash)
-      || typeof row.expiresAt !== "number"
-      || !Number.isFinite(row.expiresAt)
-      || (row.credentialHash !== null && (typeof row.credentialHash !== "string" || !/^[a-f0-9]{64}$/u.test(row.credentialHash)))
+      typeof row.id !== "string" ||
+      !/^[a-f0-9-]{36}$/u.test(row.id) ||
+      typeof row.pairHash !== "string" ||
+      !/^[a-f0-9]{64}$/u.test(row.pairHash) ||
+      typeof row.expiresAt !== "number" ||
+      !Number.isFinite(row.expiresAt) ||
+      (row.credentialHash !== null &&
+        (typeof row.credentialHash !== "string" || !/^[a-f0-9]{64}$/u.test(row.credentialHash)))
     ) {
       throw new Error("Invalid machine record");
     }
@@ -166,12 +167,14 @@ export class PersonalMachineStore {
         });
         next = Object.freeze({ ...current, machines: Object.freeze([...rows, record]) });
       } else if (method === "claim") {
-        const row = current.machines.find((candidate) => candidate.id === params.id && candidate.pairHash === params.pairHash);
+        const row = current.machines.find(
+          (candidate) => candidate.id === params.id && candidate.pairHash === params.pairHash,
+        );
         if (
-          !row
-          || (row.credentialHash === null && row.expiresAt <= Date.now())
-          || typeof params.credentialHash !== "string"
-          || !/^[a-f0-9]{64}$/u.test(params.credentialHash)
+          !row ||
+          (row.credentialHash === null && row.expiresAt <= Date.now()) ||
+          typeof params.credentialHash !== "string" ||
+          !/^[a-f0-9]{64}$/u.test(params.credentialHash)
         ) {
           throw new Error("Pairing unavailable");
         }

@@ -54,13 +54,14 @@ async function fixture(t: test.TestContext) {
     enrollmentOrigin,
   });
   await service.ready();
-  const server = createServer((req, res) =>
-    void service.http(req, res).then((ok) => {
-      if (!ok) {
-        res.writeHead(404);
-        res.end();
-      }
-    }),
+  const server = createServer(
+    (req, res) =>
+      void service.http(req, res).then((ok) => {
+        if (!ok) {
+          res.writeHead(404);
+          res.end();
+        }
+      }),
   );
   server.on("upgrade", (req, socket, head) => {
     if (!service.upgrade(req, socket, head)) socket.destroy();
@@ -76,7 +77,10 @@ async function fixture(t: test.TestContext) {
   const actualFetch = globalThis.fetch;
   t.mock.method(globalThis, "fetch", (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
     const url = String(input);
-    return actualFetch(url.startsWith(`${enrollmentOrigin}/`) ? `${origin}${url.slice(enrollmentOrigin.length)}` : input, init);
+    return actualFetch(
+      url.startsWith(`${enrollmentOrigin}/`) ? `${origin}${url.slice(enrollmentOrigin.length)}` : input,
+      init,
+    );
   });
   const result = await service.command({ action: "create" });
   assert(result.command);
@@ -101,7 +105,11 @@ test("pairing is private, durable, single-machine and scoped to its local owner"
   assert.equal((await fetch(`${f.origin}/__opencraft_machines/source.tgz?id=${f.bootstrap.id}`)).status, 403);
   assert.equal((await f.claim()).status, 200);
   assert.equal((await f.claim()).status, 200, "same durable identity reconciles a lost response");
-  assert.equal((await f.claim(randomBytes(32).toString("base64url"))).status, 403, "a used command cannot claim a second machine");
+  assert.equal(
+    (await f.claim(randomBytes(32).toString("base64url"))).status,
+    403,
+    "a used command cannot claim a second machine",
+  );
   const parsed = parsePersonalMachinesDirectory(f.service.directory());
   assert.equal(parsed.ownerActorId, "human:owner");
   assert.equal(parsed.machines[0]?.phase, "enrolled");
@@ -139,7 +147,10 @@ test("remote Relay attachment reuses native RPC, reconnects without replay and r
       ws.send(
         JSON.stringify({
           id: frame.id,
-          result: frame.method === "runtime/machine/read" ? { machine, agent: "OpenCraft" } : { data: [{ id: "native-existing" }], executions },
+          result:
+            frame.method === "runtime/machine/read"
+              ? { machine, agent: "OpenCraft" }
+              : { data: [{ id: "native-existing" }], executions },
         }),
       );
     }),
@@ -214,7 +225,12 @@ test("storage failure fences current relay credentials", async (t) => {
 
 test("enrollment address rejects insecure public origins and path confusion", () => {
   assert.equal(personalMachineOrigin("https://example.test"), "https://example.test");
-  for (const origin of ["http://example.test", "https://example.test/path", "https://user:secret@example.test", "file:///tmp"]) {
+  for (const origin of [
+    "http://example.test",
+    "https://example.test/path",
+    "https://user:secret@example.test",
+    "file:///tmp",
+  ]) {
     assert.throws(() => personalMachineOrigin(origin));
   }
 });
@@ -222,10 +238,7 @@ test("enrollment address rejects insecure public origins and path confusion", ()
 test("concurrent enrollment admits one durable claimant", async (t) => {
   const f = await fixture(t);
   const responses = await Promise.all([f.claim(), f.claim(randomBytes(32).toString("base64url"))]);
-  assert.deepEqual(
-    responses.map((response) => response.status).sort(),
-    [200, 403],
-  );
+  assert.deepEqual(responses.map((response) => response.status).sort(), [200, 403]);
   assert.equal(f.service.directory().machines.filter((item) => item.phase === "enrolled").length, 1);
 });
 
@@ -252,21 +265,25 @@ test("expired pairing cannot enroll after restart", async (t) => {
   }
 });
 
-test("generated Bash command preserves installer and download failures", { skip: process.platform === "win32" }, async (t) => {
-  const f = await fixture(t);
-  const run = () =>
-    new Promise<number | null>((resolve, reject) => {
-      const child = spawn("bash", [], { stdio: ["pipe", "ignore", "ignore"] });
-      child.once("error", reject);
-      child.once("exit", resolve);
-      child.stdin.end(`${f.command.replaceAll(f.enrollmentOrigin, f.origin)}\n`);
-    });
-  assert.equal(await run(), 0);
-  await writeFile(join(f.root, "install.sh"), "#!/bin/bash\nexit 9\n");
-  assert.equal(await run(), 9, "a failing installer cannot report successful enrollment");
-  await f.service.close();
-  assert.notEqual(await run(), 0, "a failed script download cannot become an empty successful Bash invocation");
-});
+test(
+  "generated Bash command preserves installer and download failures",
+  { skip: process.platform === "win32" },
+  async (t) => {
+    const f = await fixture(t);
+    const run = () =>
+      new Promise<number | null>((resolve, reject) => {
+        const child = spawn("bash", [], { stdio: ["pipe", "ignore", "ignore"] });
+        child.once("error", reject);
+        child.once("exit", resolve);
+        child.stdin.end(`${f.command.replaceAll(f.enrollmentOrigin, f.origin)}\n`);
+      });
+    assert.equal(await run(), 0);
+    await writeFile(join(f.root, "install.sh"), "#!/bin/bash\nexit 9\n");
+    assert.equal(await run(), 9, "a failing installer cannot report successful enrollment");
+    await f.service.close();
+    assert.notEqual(await run(), 0, "a failed script download cannot become an empty successful Bash invocation");
+  },
+);
 
 test("Server owns a deployment-owned HTTPS enrollment address and rejects loopback, intranet HTTP and browser-origin overrides", async (t) => {
   const f = await fixture(t);
@@ -315,12 +332,20 @@ test("short key configuration is private and disappears after use or revocation"
   assert.equal((await fetch(`${f.origin}/__opencraft_machines/bootstrap`)).status, 403);
   assert.equal((await f.claim()).status, 200);
   assert.equal(
-    (await fetch(`${f.origin}/__opencraft_machines/bootstrap`, { headers: { authorization: `Bearer ${f.bootstrap.secret}` } })).status,
+    (
+      await fetch(`${f.origin}/__opencraft_machines/bootstrap`, {
+        headers: { authorization: `Bearer ${f.bootstrap.secret}` },
+      })
+    ).status,
     403,
   );
   await f.service.command({ action: "revoke", id: f.bootstrap.id });
   assert.equal(
-    (await fetch(`${f.origin}/__opencraft_machines/bootstrap`, { headers: { authorization: `Bearer ${f.bootstrap.secret}` } })).status,
+    (
+      await fetch(`${f.origin}/__opencraft_machines/bootstrap`, {
+        headers: { authorization: `Bearer ${f.bootstrap.secret}` },
+      })
+    ).status,
     403,
   );
 });
@@ -329,7 +354,10 @@ test("enrolled update endpoints require the existing machine credential and hono
   const f = await fixture(t);
   assert.equal((await f.claim()).status, 200);
   const path = `/__opencraft_machines/bootstrap?update=1&id=${f.bootstrap.id}`;
-  assert.equal((await fetch(`${f.origin}${path}`, { headers: { authorization: `Bearer ${f.bootstrap.secret}` } })).status, 403);
+  assert.equal(
+    (await fetch(`${f.origin}${path}`, { headers: { authorization: `Bearer ${f.bootstrap.secret}` } })).status,
+    403,
+  );
   const headers = { authorization: `Bearer ${f.credential}` };
   const response = await fetch(`${f.origin}${path}`, { headers });
   assert.equal(response.status, 200);
@@ -337,8 +365,14 @@ test("enrolled update endpoints require the existing machine credential and hono
   assert.equal(metadata.hubId, f.bootstrap.hubId);
   assert.equal(metadata.id, f.bootstrap.id);
   assert.equal(metadata.secret, undefined);
-  assert.equal((await fetch(`${f.origin}/__opencraft_machines/source.tgz?update=1&id=${f.bootstrap.id}`, { headers })).status, 200);
-  assert.equal((await fetch(`${f.origin}/__opencraft_machines/install.sh?module=update&id=${f.bootstrap.id}`, { headers })).status, 200);
+  assert.equal(
+    (await fetch(`${f.origin}/__opencraft_machines/source.tgz?update=1&id=${f.bootstrap.id}`, { headers })).status,
+    200,
+  );
+  assert.equal(
+    (await fetch(`${f.origin}/__opencraft_machines/install.sh?module=update&id=${f.bootstrap.id}`, { headers })).status,
+    200,
+  );
   await f.service.command({ action: "revoke", id: f.bootstrap.id });
   assert.equal((await fetch(`${f.origin}${path}`, { headers })).status, 403);
 });
@@ -362,7 +396,9 @@ test("remote update command triggers self-update RPC and falls back to durable p
       const frame = JSON.parse(String(raw));
       received.push({ method: frame.method, params: frame.params });
       if (frame.method === "opencraft/machine-runtime/update" && !supportSelfUpdate) {
-        ws.send(JSON.stringify({ jsonrpc: "2.0", id: frame.id, error: { code: -32601, message: "Method not supported" } }));
+        ws.send(
+          JSON.stringify({ jsonrpc: "2.0", id: frame.id, error: { code: -32601, message: "Method not supported" } }),
+        );
         return;
       }
       ws.send(JSON.stringify({ jsonrpc: "2.0", id: frame.id, result: { started: true } }));
@@ -395,7 +431,11 @@ test("remote update command triggers self-update RPC and falls back to durable p
   const updated = await f.service.command({ action: "update", id: f.bootstrap.id });
   assert.equal(updated.machines[0]?.updating, true);
   assert.equal(
-    received.some((call) => call.method === "process/spawn" && String((call.params as { args?: unknown[] })?.args?.[1] ?? "").includes(`--update ${f.bootstrap.id}`)),
+    received.some(
+      (call) =>
+        call.method === "process/spawn" &&
+        String((call.params as { args?: unknown[] })?.args?.[1] ?? "").includes(`--update ${f.bootstrap.id}`),
+    ),
     true,
   );
 
@@ -422,6 +462,12 @@ test("remote update command triggers self-update RPC and falls back to durable p
   });
   await wait(() => f.service.directory().machines[0]?.version === "1".repeat(64));
   await f.service.command({ action: "update", id: f.bootstrap.id });
-  assert.equal(received.some((call) => call.method === "opencraft/machine-runtime/update"), true);
-  assert.equal(received.some((call) => call.method === "process/spawn"), false);
+  assert.equal(
+    received.some((call) => call.method === "opencraft/machine-runtime/update"),
+    true,
+  );
+  assert.equal(
+    received.some((call) => call.method === "process/spawn"),
+    false,
+  );
 });
