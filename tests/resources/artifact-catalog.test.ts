@@ -75,6 +75,48 @@ test('artifact checks can be cancelled before open and while acquiring the file'
   assert.deepEqual(await inspectArtifactFile(artifact.path), { size: artifact.size, sha256: artifact.sha256 });
 });
 
+test('cancelled duplicate ingestion preserves the original artifact and releases the staged copy', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'artifact-cancel-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const { hostFileBlobStore } = await import('../../apps/local-agent-host/src/storage/host-file-blobs.js');
+  const content = hostFileBlobStore(root);
+  const controller = new AbortController();
+  let cancelAfterUpload = false;
+  const catalog = new ArtifactCatalog(root, {
+    ...content,
+    blobs: {
+      ...content.blobs,
+      async upload(key, limits) {
+        const upload = await content.blobs.upload(key, limits);
+        return {
+          ...upload,
+          async complete(expected) {
+            const result = await upload.complete(expected);
+            if (cancelAfterUpload) controller.abort();
+            return result;
+          },
+        };
+      },
+    },
+  });
+  t.after(() => catalog.close());
+  const identity = { scope: 'a', key: 'image' };
+  const original = await catalog.ingest(identity, metadata, Readable.from(['abc']), options);
+
+  cancelAfterUpload = true;
+  await assert.rejects(
+    catalog.ingest(identity, metadata, Readable.from(['abc']), { ...options, signal: controller.signal }),
+    { name: 'AbortError' },
+  );
+  assert.deepEqual(catalog.get(original.id), original);
+  assert.equal(await readFile(original.path, 'utf8'), 'abc');
+  assert.equal((await readdir(join(root, 'content'))).length, 1);
+  assert.deepEqual(await readdir(join(root, '.staging')), []);
+  assert.deepEqual(catalog.incompleteIngestions(), []);
+  cancelAfterUpload = false;
+  assert.deepEqual(await catalog.ingest(identity, metadata, Readable.from(['abc']), options), original);
+});
+
 test('AIGC output ingestion shares the catalog, preserves slots and can become an input attachment',async t=>{
   const {catalog,root}=await setup(t);
   const {captureGeneratedImage}=await import('../../apps/local-agent-host/src/artifacts/generated-output.js');
