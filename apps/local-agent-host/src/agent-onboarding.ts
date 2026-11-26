@@ -205,6 +205,7 @@ export class AgentOnboardingService {
       ? await resolveExecutable([process.platform === "win32" ? "npm.cmd" : "npm"], this.deps)
       : await resolveExecutable(agent.commands, this.deps);
     if (!executable) throw new Error(kind === "install" ? "npm is not available" : "Agent is not installed");
+    if (kind === "sign-in" && agent.signInArgs.length === 0) throw new Error("Sign in from the native agent client before connecting");
     const args = kind === "install" ? ["install", "-g", agent.installPackage!] : agent.signInArgs;
     const env = { ...await localAgentEnvironment(this.deps, executable), ...agent.signInEnv };
     const child = this.deps.spawn(executable, args, env);
@@ -253,9 +254,19 @@ export class AgentOnboardingService {
     const env = await localAgentEnvironment(this.deps, executable);
     const [version, status] = await Promise.all([
       this.deps.exec(executable, agent.versionArgs, STATUS_TIMEOUT_MS, env).catch(() => ({ stdout: "", stderr: "", code: 1 })),
-      this.deps.exec(executable, agent.statusArgs, STATUS_TIMEOUT_MS, env).catch(() => ({ stdout: "", stderr: "", code: 1 })),
+      agent.statusArgs.length
+        ? this.deps.exec(executable, agent.statusArgs, STATUS_TIMEOUT_MS, env).catch(() => ({ stdout: "", stderr: "", code: 1 }))
+        : Promise.resolve({ stdout: "", stderr: "", code: 0 }),
     ]);
-    const auth = interpretAuth(agent.id, status.stdout, status.stderr, status.code);
+    const auth = agent.id === "gemini"
+      ? {
+          authenticated: version.code !== 0
+            ? null
+            : Boolean(this.deps.env.GEMINI_API_KEY?.trim() || this.deps.env.GOOGLE_API_KEY?.trim())
+              || await access(join(this.deps.homedir, ".gemini", "oauth_creds.json"), constants.R_OK).then(() => true, () => false),
+          account: null,
+        }
+      : interpretAuth(agent.id, status.stdout, status.stderr, status.code);
     return {
       ...base,
       installed: true,

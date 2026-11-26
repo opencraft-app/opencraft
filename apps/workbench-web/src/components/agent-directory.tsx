@@ -33,6 +33,6 @@ export function projectAgentDirectory(models: readonly AgentCatalogModel[], nati
 }
 
 export function AgentIdentityIcon({ id }: { readonly id: string }) {
-  const brand: AgentBrand | undefined = ({ codex: "codex", cursor: "cursor", "claude-code": "claude", claude: "claude", codebuddy: "codebuddy" } as Readonly<Record<string, AgentBrand>>)[id];
+  const brand: AgentBrand | undefined = ({ codex: "codex", cursor: "cursor", "claude-code": "claude", claude: "claude", gemini: "gemini", codebuddy: "codebuddy" } as Readonly<Record<string, AgentBrand>>)[id];
   return brand ? <AgentBrandIcon agent={brand} /> : id === "pi" || id === "pi-bridge" ? <ModelIcon size={18} /> : <AgentIcon size={18} />;
 }

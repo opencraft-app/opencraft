@@ -19,6 +19,7 @@ const AGENT_LABELS: Readonly<Record<string, string>> = {
   codex: "Codex",
   cursor: "Cursor",
   "claude-code": "Claude Code",
+  gemini: "Gemini",
   codebuddy: "CodeBuddy",
   pi: "Pi",
 };

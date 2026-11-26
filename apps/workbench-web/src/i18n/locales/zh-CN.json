@@ -1609,6 +1609,7 @@
   "onboard.agent.codex": "Codex",
   "onboard.agent.cursor": "Cursor",
   "onboard.agent.claude": "Claude Code",
+  "onboard.agent.gemini": "Gemini",
   "onboard.agent.codebuddy": "CodeBuddy",
   "onboard.agent.unknownName": "Agent",
   "onboard.agent.title": "选择 Agent",

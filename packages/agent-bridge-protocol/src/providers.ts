@@ -40,7 +40,7 @@ export type AgentSource = BuiltinAgentSource | ExternalAgentSource;
 
 export interface AgentProvider {
   /** Stable agent identity used by onboarding and thread routing. */
-  readonly id: "codex" | "cursor" | "claude" | "codebuddy";
+  readonly id: "codex" | "cursor" | "claude" | "gemini" | "codebuddy";
   /** Engine identity used by model/list and thread ids. */
   readonly engineId: string;
   readonly displayName: string;
@@ -103,6 +103,25 @@ export const AGENT_PROVIDERS = [
         signInEnv: {},
         installPackage: null,
         installUrl: "https://code.claude.com/docs/en/setup",
+      },
+    ],
+  },
+  {
+    id: "gemini",
+    engineId: "gemini",
+    displayName: "Gemini",
+    sources: [
+      {
+        kind: "external",
+        distribution: "user-installed",
+        protocol: "acp",
+        commands: ["gemini"],
+        versionArgs: ["--version"],
+        statusArgs: [],
+        signInArgs: [],
+        signInEnv: {},
+        installPackage: "@google/gemini-cli",
+        installUrl: "https://github.com/google-gemini/gemini-cli",
       },
     ],
   },
