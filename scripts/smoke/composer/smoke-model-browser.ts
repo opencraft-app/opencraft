@@ -3,6 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { createServer } from "vite";
 const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
 const retirementOnly = process.argv.includes("--navigation-retirement");
+const existingThreadsOnly = process.argv.includes("--existing-thread-models");
 const output = process.env.OPENCRAFT_MODEL_BROWSER_OUTPUT ?? "/tmp/opencraft-model-browser";
 const vite = await createServer({ configFile: false, root: process.cwd(), logLevel: "error",
   optimizeDeps: { entries: ["tests/fixtures/composer-model-browser.tsx"] },
@@ -18,7 +19,7 @@ try {
   await mkdir(output, { recursive: true }); await vite.listen();
   browser = await chromium.launch({ headless: true, ...(process.env.OPENCRAFT_CHROMIUM_EXECUTABLE ? { executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE } : {}) });
   const base = `http://127.0.0.1:${(vite.httpServer!.address() as { port: number }).port}`;
-  for (const touch of retirementOnly ? [] : [false, true]) {
+  for (const touch of retirementOnly || existingThreadsOnly ? [] : [false, true]) {
     const context = await browser.newContext({ viewport: { width: touch ? 390 : 1200, height: 900 }, hasTouch: touch, isMobile: touch, reducedMotion: "reduce" });
     const p = await context.newPage(); p.setDefaultTimeout(20_000); const errors: string[] = []; p.on("pageerror", (error: Error) => errors.push(error.message));
     await p.goto(base, { waitUntil: "domcontentloaded", timeout: 60_000 }); const editor = p.locator(".opencraft-composer-editor"); await editor.fill("Keep this model selection draft");
@@ -293,6 +294,39 @@ try {
     await p.screenshot({ path: `${output}/${touch ? "touch" : "desktop"}-single-agent.png` });
     await context.close();
   }
+  for (const touch of retirementOnly ? [] : [false, true]) {
+    const context = await browser.newContext({ viewport: { width: touch ? 390 : 1200, height: 900 }, hasTouch: touch, isMobile: touch, reducedMotion: "reduce" });
+    const p = await context.newPage(); p.setDefaultTimeout(20_000);
+    await p.goto(`${base}?thread=1&single=1&lateCatalog=1`);
+    const trigger = p.locator(".opencraft-composer-mode--intelligence");
+    const menu = p.locator(".opencraft-composer-model-browser-surface");
+    const current = menu.getByRole("tab", { name: "Agent: Codex, current conversation", exact: true });
+    const sameName = menu.getByRole("tab", { name: "Agent: Codex", exact: true });
+    const press = (locator: typeof trigger) => touch ? locator.tap() : locator.click();
+    await press(trigger);
+    assert.equal(await current.getAttribute("aria-selected"), "true");
+    assert.equal(await sameName.count(), 1, "another Host's Codex is not the current conversation");
+    assert.equal(await menu.getByRole("menuitem", { name: "Other Host model", exact: true }).count(), 0);
+    await p.evaluate(() => (window as any).modelBrowserFixture.setCatalogReady(true));
+    const replacement = menu.getByRole("menuitem", { name: "Model Two", exact: true });
+    await replacement.waitFor();
+    assert.equal(await p.evaluate(() => (window as any).modelBrowserFixture.selections().model), "codex:one[high]",
+      "catalog arrival preserves the existing selection");
+    assert.equal(await p.evaluate(() => (window as any).modelBrowserFixture.remembered.length), 0,
+      "opening and loading the catalog do not write defaults");
+    assert.equal(await sameName.count(), 2, "the same-named Host and unclassified models have separate tabs");
+    await press(replacement);
+    await p.waitForFunction(() => (window as any).modelBrowserFixture.selections().model?.startsWith("codex:two"));
+    await press(menu.getByRole("button", { name: /Change model/ }));
+    await press(sameName.first());
+    await menu.getByRole("menuitem", { name: "Other Host model", exact: true }).waitFor();
+    assert.equal(await current.getAttribute("data-current-agent"), "true");
+    await press(sameName.last());
+    await press(menu.getByRole("menuitem", { name: "Legacy Host model", exact: true }));
+    await p.waitForFunction(() => (window as any).modelBrowserFixture.selections().model === "legacy-model");
+    assert.equal(await p.evaluate(() => (window as any).modelBrowserFixture.handoffs.length), 0);
+    await context.close();
+  }
   if (!retirementOnly) {
     const context = await browser.newContext({ viewport: { width: 1200, height: 900 }, reducedMotion: "reduce" });
     const p = await context.newPage(); p.setDefaultTimeout(20_000);
@@ -303,7 +337,7 @@ try {
     assert.equal(await p.getByRole("tab", { name: "Agent：Codex，当前会话", exact: true }).count(), 1, "accessible Agent names come from the active Intl catalog");
     await context.close();
   }
-  for (const touch of [false, true]) {
+  for (const touch of existingThreadsOnly ? [] : [false, true]) {
     const context = await browser.newContext({ viewport: { width: touch ? 390 : 1067, height: 814 }, hasTouch: touch, isMobile: touch, reducedMotion: "no-preference" });
     const p = await context.newPage();
     await p.addInitScript(() => { (window as any).__name = (value: unknown) => value; });
@@ -364,5 +398,8 @@ try {
     assert.equal(await trigger.getAttribute("aria-expanded"), "false", "owner retirement clears a controlled open request without selecting a menu item");
     await context.close();
   }
-  console.log(`PASS model browser: ${retirementOnly ? "navigation retirement and retained drafts with keyboard and touch" : "desktop and touch, search and empty results, effort controls, themes, navigation retirement and retained drafts"}. Screenshots: ${output}. Inference boundary simulated.`);
+  const scenarios = existingThreadsOnly ? "existing conversations with keyboard and touch"
+    : retirementOnly ? "navigation retirement and retained drafts with keyboard and touch"
+    : "desktop and touch, search and empty results, effort controls, themes, navigation retirement and retained drafts";
+  console.log(`PASS model browser: ${scenarios}. Screenshots: ${output}. Inference boundary simulated.`);
 } finally { await browser?.close(); await vite.close(); }

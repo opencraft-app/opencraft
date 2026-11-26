@@ -108,6 +108,10 @@ Host 或其他会话的默认来填充。已有 runtime/View 保留的会话快�
 历史会话不读取个人默认和新会话 config/read。目录刷新和分页在后台完成，失败保留
 已知会话配置；切换 Host/runtime 后不复用前一个所有者的展示元数据。
 
+原生 Codex 与 Codex Bridge 在 Host 目录出口补齐缺失的 Codex Agent 身份。模型菜单按
+Host ID 与 Agent ID 组织目录，当前会话标记只关联同一 Host 下的 Agent。同名目录保留各自
+可选项。旧 Host 未声明 Agent 的条目保留在该 Host 下，选中时沿用当前会话。
+
 
 ## 会话选择与产品目录
 

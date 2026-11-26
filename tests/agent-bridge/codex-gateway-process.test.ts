@@ -4,8 +4,34 @@ import { fork, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import { resolve, dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { MessageChannel } from 'node:worker_threads';
 import { createCodexPreview } from './fixtures/codex-preview.js';
 import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
+import { MessagePortAppHostClient } from '@opencraft/app-host-client';
+import { AppHostServer } from '@opencraft/app-host-server';
+import { JsonRpcAppServerClient } from '@opencraft/appserver-client';
+
+test('Codex Bridge exposes the model catalog for a legacy conversation under its Agent identity', async t => {
+  const fixture = await createCodexPreview();
+  const server = new AppHostServer({ logicalClientRouting: true, createTransport: () => fixture.createHost() });
+  const { port1, port2 } = new MessageChannel();
+  server.accept({ postMessage: value => port1.postMessage(value), subscribe(listener) {
+    port1.on('message', listener); return () => port1.off('message', listener);
+  }, start: () => port1.start(), close: () => port1.close() }, 'catalog-test');
+  const host = new MessagePortAppHostClient(port2, 'catalog-test');
+  const client = new JsonRpcAppServerClient({ hostId: 'local-codex', transport: host.createTransport('local-codex') });
+  t.after(async () => {
+    await client.close(); host.close(); await server.close();
+    port1.close(); port2.close(); await fixture.close();
+  });
+  await client.connect({ clientInfo: { name: 'catalog-test', version: '1' } });
+  const threadId = 'legacy-preview';
+  const { thread } = await client.request('thread/read', { threadId, includeTurns: false });
+  assert.equal(thread.id, threadId);
+  const models = await client.request('model/list', { threadId });
+  assert.deepEqual(models.data.map(({ id, agentId, agentLabel }) => ({ id, agentId, agentLabel })),
+    [{ id: 'fixture-model', agentId: 'codex', agentLabel: 'Codex' }]);
+});
 
 test('Codex bridge continues one native tool/turn across gateway SIGKILL and durable input evidence replays once', async t => {
   const fixture = await createCodexPreview();
@@ -51,7 +77,6 @@ test('Codex bridge continues one native tool/turn across gateway SIGKILL and dur
 });
 
 test('fresh AppHost inspector reads an active Bridge turn without resuming native execution', async t => {
-  const { AppHostServer } = await import('../../packages/app-host-server/src/index.js');
   const { callConversationHost } = await import('../../apps/headless-server/src/conversation-execution.mjs');
   const fixture = await createCodexPreview(), transport = fixture.createTransport(), frames: any[] = [];
   await transport.connect(); transport.subscribeMessage(raw => frames.push(JSON.parse(raw)));

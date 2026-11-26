@@ -39,6 +39,20 @@ function record(value: unknown): Record<string, unknown> {
     ? value as Record<string, unknown> : {};
 }
 
+/** The native Codex catalog omits the engine identity on its own models. */
+export function projectNativeCodexModelCatalog(value: unknown): unknown {
+  const page = record(value);
+  if (!Array.isArray(page.data)) return value;
+  return {
+    ...page,
+    data: page.data.map(entry => {
+      const model = record(entry);
+      if (typeof model.id !== "string" || typeof model.model !== "string" || model.agentId != null) return entry;
+      return { ...model, agentId: "codex", agentLabel: "Codex" };
+    }),
+  };
+}
+
 /** Preserve upstream metadata, but never advertise stores owned by this machine. */
 export function projectSharedNativeCodexInitialize(value: unknown, goalCapability: OpenCraftThreadGoalCapability | null = null): Record<string, unknown> {
   const result = record(value);

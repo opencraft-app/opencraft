@@ -9,7 +9,7 @@ import { modelChoiceFamilies, chooseFamilyModel } from "./model-choice-families"
 import { modelEffortLabel } from "./model-choice-labels";
 import { ModelCatalogStatus } from "./model-catalog-status";
 import type { ComposerAgentCycleDirection, ComposerAgentModelGroup, ComposerModelOption, ComposerSelectionCatalog } from "./composer-editor";
-import { composerAgentBrands, omitDuplicateHostAgents } from "./agent-menu-sources";
+import { composerAgentBrands } from "./agent-menu-sources";
 
 const brands: Record<string, { brand: AgentBrand; name: string }> = composerAgentBrands;
 
@@ -56,36 +56,42 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
   const currentTagLabel = intl.formatMessage({ id: "composer.agent.currentTag", defaultMessage: "Current conversation" });
   const groups = catalog?.agentGroups?.length ? catalog.agentGroups : [{ id: "active", label: "", active: true,
     models: catalog?.models ?? [], loading: catalog?.isFetching, error: catalog?.modelError, errorKind: catalog?.modelErrorKind, retry: catalog?.retryModels }];
-  type Source = { id: string; agentId: string; label: string; brand?: AgentBrand; group: typeof groups[number]; models: ComposerModelOption[] };
-  let sources: Source[] = [];
+  type Source = { id: string; agentId: string | null; label: string; brand?: AgentBrand; group: typeof groups[number]; models: ComposerModelOption[] };
+  const sourceId = (groupId: string, agentId: string | null) => JSON.stringify([groupId, agentId]);
+  const currentGroup = groups.find(group => group.active);
+  const currentAgent = (item: Source) => currentAgentId !== null && item.group === currentGroup && item.agentId === currentAgentId;
+  const sources: Source[] = [];
   for (const group of groups) {
-    const scoped = new Map<string, Source>();
+    const scoped = new Map<string | null, Source>();
     for (const model of group.models) {
       const identity = model.agentId ? brands[model.agentId] : undefined;
-      const key = model.agentId ?? "host";
+      const key = model.agentId ?? null;
       let source = scoped.get(key);
       if (!source) {
         const name = key === "dsh" ? apiLabel : model.agentLabel || group.label || intl.formatMessage({ id: "composer.agent.label", defaultMessage: "Agent" });
-        source = { id: `${group.id}:${key}`, agentId: key, label: groups.length > 1 && group.label !== name ? `${name} · ${group.label}` : name,
+        source = { id: sourceId(group.id, key), agentId: key, label: groups.length > 1 && group.label !== name ? `${name} · ${group.label}` : name,
           brand: identity?.brand, group, models: [] };
         scoped.set(key, source); sources.push(source);
       }
       source.models.push(model);
     }
-    if (!scoped.size && (group.loading || group.error || !catalog?.onConfigureAgents)) sources.push({ id: `${group.id}:api`, agentId: "api", label: group.label || apiLabel, group, models: [] });
+    if (!scoped.size && (currentAgentId === null || group !== currentGroup)
+      && (group.loading || group.error || !catalog?.onConfigureAgents)) {
+      sources.push({ id: sourceId(group.id, null), agentId: null, label: group.label || apiLabel, group, models: [] });
+    }
   }
-  if (currentAgentId !== null && !sources.some(source => source.agentId === currentAgentId)) {
-    const group = groups.find(candidate => candidate.active) ?? groups[0];
-    if (group !== undefined) sources.push({
-      id: `${group.id}:${currentAgentId}`, agentId: currentAgentId,
+  if (currentAgentId !== null && currentGroup && !sources.some(currentAgent)) {
+    sources.push({
+      id: sourceId(currentGroup.id, currentAgentId), agentId: currentAgentId,
       label: currentAgentFallbackLabel,
-      brand: brands[currentAgentId]?.brand, group, models: [],
+      brand: brands[currentAgentId]?.brand, group: currentGroup, models: [],
     });
   }
-  sources = omitDuplicateHostAgents(sources);
   const brandOrder: Record<string, number> = { codex: 0, claude: 1, cursor: 2, codebuddy: 3, pi: 4 };
   sources.sort((left, right) => (brandOrder[left.brand ?? ""] ?? 5) - (brandOrder[right.brand ?? ""] ?? 5));
-  const selectedSource = sources.find(item => item.models.some(model => model.value === selected || model.id === selected));
+  const hasSelection = (item: Source) => item.models.some(model => model.value === selected || model.id === selected);
+  const selectedSource = sources.find(item => currentAgent(item) && hasSelection(item))
+    ?? sources.find(item => item.group.active && (currentAgentId === null || item.agentId === null) && hasSelection(item));
   const depth = depthFor(selectedSource?.models ?? [], selected, effort);
   const hasDepth = depth.options.length > 0;
   const [browsing, setBrowsing] = useState<{ id: string; groupId: string } | null>(null);
@@ -93,8 +99,10 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
   const browse = (item: Source) => setBrowsing({ id: item.id, groupId: item.group.id });
   const source = sources.find(item => item.id === browsing?.id)
     ?? sources.find(item => item.group.id === browsing?.groupId)
-    ?? sources.find(item => item.group.active && item.models.some(model => model.value === selected || model.id === selected))
-    ?? sources.find(item => item.agentId === currentAgentId)
+    ?? selectedSource
+    ?? sources.find(item => currentAgent(item) && item.models.length > 0)
+    ?? sources.find(item => item.group.active && item.agentId === null && item.models.length > 0)
+    ?? sources.find(currentAgent)
     ?? sources.find(item => item.group.active) ?? sources[0];
   const lastCycleNonce = useRef(0);
   useEffect(() => { if (view === "effort" && !hasDepth) setView("models"); }, [view, hasDepth]);
@@ -121,7 +129,7 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
     {onConfigure ? <Menu.Item className="opencraft-composer-selection-menu__item" onSelect={onConfigure}><FormattedMessage id="workIn.manageModels" defaultMessage="Manage models…" /></Menu.Item> : null}
   </div>;
   const families = modelChoiceFamilies(source.models);
-  const selectedFamily = source.group.active ? families.find(family => family.models.some(model => model.value === selected || model.id === selected)) : undefined;
+  const selectedFamily = source === selectedSource ? families.find(family => family.models.some(model => model.value === selected || model.id === selected)) : undefined;
   const reasoningLabel = intl.formatMessage({ id: "chat.reasoning", defaultMessage: "Reasoning" });
   const matches = families.filter(family => `${family.label} ${family.models.map(model => model.value).join(" ")}`.toLocaleLowerCase(intl.locale).includes(query.trim().toLocaleLowerCase(intl.locale)));
   const searchLabel = intl.formatMessage({ id: "composer.model.search", defaultMessage: "Search models" });
@@ -137,13 +145,12 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
     else onEffortChange(value);
   };
   const startsNewThread = catalog?.agentContinuation?.startsNewThread === true;
-  const currentAgent = (item: Source) => currentAgentId !== null && item.agentId === currentAgentId;
   const tabName = (item: Source) => currentAgent(item)
     ? intl.formatMessage({ id: "composer.agent.tabCurrent", defaultMessage: "Agent: {agent}, current conversation" }, { agent: item.label })
     : intl.formatMessage({ id: "composer.agent.tabName", defaultMessage: "Agent: {agent}" }, { agent: item.label });
   const sourceLabel = currentAgentId === null ? source.label
     : `${source.label} · ${currentAgent(source) ? currentTagLabel : intl.formatMessage({ id: "composer.agent.currentAgent", defaultMessage: "Current: {agent}" }, { agent: currentAgentFallbackLabel })}`;
-  const showHandoffNotice = startsNewThread && currentAgentId !== null && !currentAgent(source) && source.models.length > 0;
+  const showHandoffNotice = startsNewThread && currentAgentId !== null && source.agentId !== null && !currentAgent(source) && source.models.length > 0;
   const fast = depth.fast;
   const showEffort = view === "effort" && hasDepth;
   const modelButtonLabel = depth.label || intl.formatMessage({ id: "chat.model", defaultMessage: "Model" });

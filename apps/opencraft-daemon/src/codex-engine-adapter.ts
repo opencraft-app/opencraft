@@ -91,7 +91,7 @@ import { CodexCoreBridge } from "./codex-core-bridge.js";
 import { CODEX_MAINTENANCE_READ, CODEX_MAINTENANCE_EXTENSION, CODEX_MAINTENANCE_CAPABILITY, codexAdmissionKey, codexAdmissionPaused, codexMaintenanceError, isCodexAdmission, type CodexMaintenanceSnapshot } from "./codex-maintenance.js";
 import { CodexNativeCoreTransport, reportedCodexExecution, type CodexRuntimeEndpoints } from "./codex-native-core-transport.js";
 import { TasksService, TasksFault } from "@opencraft/plugin-tasks/server";
-import { CODEX_NATIVE_SHARED_METHODS, discoverNativeCodexGoalCapability, projectSharedNativeCodexInitialize } from "./codex-native-surface.js";
+import { CODEX_NATIVE_SHARED_METHODS, discoverNativeCodexGoalCapability, projectNativeCodexModelCatalog, projectSharedNativeCodexInitialize } from "./codex-native-surface.js";
 import { projectThreadAttachmentNotification, projectThreadAttachmentResult } from "./thread-message-attachment-projection.js";
 import { readHistoryResourceMetadata } from "./history-resource-metadata.js";
 
@@ -2487,6 +2487,9 @@ export class CodexEngineAdapter implements DuplexTransport {
           outcome: "error" in message ? "rpc-error" : "acknowledged",
           ...("error" in message ? { rpcCode: record(message.error).code } : { status: record(record(message.result).goal).status }),
         });
+        if (pending.method === "model/list" && "result" in message) {
+          message = { ...message, result: projectNativeCodexModelCatalog(message.result) };
+        }
         const gatewayPath=configuredModelGatewayPath();
         if(pending.method==="model/list" && gatewayPath && Array.isArray(record(message.result).data)) {
           const filter = this.options.filterGatewayModelCatalog;
