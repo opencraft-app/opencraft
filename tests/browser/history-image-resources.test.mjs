@@ -62,12 +62,12 @@ test('resource image geometry survives loading, failure, retry and responsive la
       await page.getByRole('textbox',{name:'Draft'}).fill('Keep this unsent draft');
       await page.evaluate(()=>document.fonts.ready);
       await page.waitForTimeout(500);
-      await page.mouse.move(width/2,250);
-      const start=await geometry();
-      const readingPosition=Math.max(start.client-start.height,start.top-350);
-      await page.mouse.wheel(0,-350);
-      // The browser may deliver the wheel input after the automation call returns.
-      await page.waitForFunction(target=>Math.abs(document.querySelector('.thread-scroll').scrollTop-target)<=1,readingPosition);
+      // Start at a reading position before triggering image loads. Let the scroll
+      // handlers run first so delayed input cannot change the measured anchor.
+      await page.locator('.thread-scroll').evaluate(async scroller=>{
+        scroller.scrollTo({top:-350,behavior:'instant'});
+        await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+      });
       const before=await geometry();
       assert.ok(before.top < -100, "exercise a real scrolled-up reading position: "+JSON.stringify(before));
       if(variant==='retry'){
