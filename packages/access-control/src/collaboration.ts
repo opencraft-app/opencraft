@@ -78,6 +78,8 @@ type Row = Record<string, unknown>;
 // Only pre-existing nullable request rows use this historical identity.
 const legacyRequestHostId = 'local-codex';
 const terminal = new Set(['submitted', 'injected', 'rejected', 'cancelled']);
+const submittedReceiptGraceMs = 5 * 60_000;
+const missingSubmittedReceipt = 'submitted_receipt_missing';
 function text(value: unknown, max = 256): string {
   if (typeof value !== 'string' || !value.trim() || value.length > max || /[\x00-\x08\x0b\x0c\x0e-\x1f]/u.test(value)) throw new CollaborationError(400, 'invalid_field');
   return value;
@@ -1567,7 +1569,10 @@ export class Collaboration {
   async #drain(paced = false) {
     if (this.#receiptPacing.size > 4096) this.#receiptPacing.clear();
     const storage = await this.#runtimeStorage();
-    const rows = this.database.prepare("SELECT rowid AS cursor,* FROM actor_execution_requests WHERE state IN ('accepted','transferring','queued','unknown','submitted') ORDER BY (rowid > ?) DESC,rowid LIMIT 32").all(this.#cursor);
+    const rows = this.database.prepare(`SELECT rowid AS cursor,* FROM actor_execution_requests
+      WHERE state IN ('accepted','transferring','queued','unknown','submitted')
+        AND (state != 'submitted' OR reason IS NOT ?)
+      ORDER BY (rowid > ?) DESC,rowid LIMIT 32`).all(missingSubmittedReceipt, this.#cursor);
     for (const snapshot of rows) {
       if (this.#closed) return;
       this.#cursor = Number(snapshot.cursor);
@@ -1599,8 +1604,14 @@ export class Collaboration {
         if (receipt?.state === 'delivered' || receipt?.state === 'steering') {
           await update(id, this.#deliveredState(snapshot, receipt), null, receipt); continue;
         }
-        // Submitted custody cannot be undone or replayed while waiting for exact Turn proof.
-        if (snapshot.state === 'submitted') continue;
+        // Keep the handoff and its deduplication record. A late exact start
+        // still confirms it through executionStarted after polling stops.
+        if (snapshot.state === 'submitted') {
+          if (receipt === null && this.now() - Number(snapshot.updated_at) >= submittedReceiptGraceMs) {
+            await update(id, 'submitted', missingSubmittedReceipt);
+          }
+          continue;
+        }
         const row = this.#request(id)!;
         phase = 'authorization';
         const assistantGrant=this.inputOrigin(String(row.thread_id),ACTOR_INPUT_PREFIX+id)?.assistantGrant;

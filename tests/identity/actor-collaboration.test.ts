@@ -424,6 +424,56 @@ test('submitted without Turn proof recovers the original exact receipt after res
   assert.equal(f.inputs.length,1);
 });
 
+test('an aged submitted input with no receipt leaves polling and keeps its original delivery', async t => {
+  let now = Date.now();
+  const f = await fixture(t, () => now);
+  const intent = { execution: { mode: 'queue' } };
+  const sent = f.send(intent);
+  const id = sent.requestId!;
+  await f.service.pump();
+  f.receipts.set(id, { id: 'queue:' + id, state: 'delivered', targetTurnId: null });
+  await f.service.pump();
+  const submitted = f.service.getRequest(f.aContext, id);
+  assert.equal(submitted.state, 'submitted');
+  f.receipts.delete(id);
+
+  let oldReads = 0;
+  const readReceipt = f.execution.receipt;
+  f.execution.receipt = async (binding, inputId) => {
+    if (inputId === id) oldReads++;
+    return readReceipt(binding, inputId);
+  };
+  await f.service.pump();
+  assert.equal(oldReads, 1);
+  assert.deepEqual(f.service.getRequest(f.aContext, id), submitted);
+
+  now += 10 * 60_000;
+  await f.service.pump();
+  const retired = f.service.getRequest(f.aContext, id);
+  assert.equal(retired.state, 'submitted');
+  assert.equal(retired.reason, 'submitted_receipt_missing');
+  assert.equal(retired.queue_id, submitted.queue_id);
+  assert.deepEqual(retired.messageIds, submitted.messageIds);
+  assert.deepEqual(f.send(intent), { ...sent, replayed: true });
+
+  await f.restart();
+  const newId = f.send({ ...intent, idempotencyKey: 'new-input' }).requestId!;
+  await f.service.pump();
+  f.receipts.set(newId, { id: 'queue:' + newId, state: 'delivered', targetTurnId: 'new-turn' });
+  await f.service.pump();
+  assert.equal(oldReads, 2, 'the durable marker keeps the old input out of later sweeps');
+  assert.equal(f.service.getRequest(f.aContext, newId).state, 'injected');
+
+  f.service.executionStarted('thread-B', 'actor-input:' + id, 'old-turn');
+  await f.service.pump();
+  const confirmed = f.service.getRequest(f.aContext, id);
+  assert.equal(confirmed.state, 'injected');
+  assert.equal(confirmed.turn_id, 'old-turn');
+  assert.equal(confirmed.reason, null);
+  assert.equal(oldReads, 2);
+  assert.equal(f.inputs.length, 2);
+});
+
 test('accepted steering receipt recovers injection only for its pinned Turn', async t => {
   const f = await fixture(t), sent = f.send({execution:{mode:'steer',expectedTurnId:'expected'}}), id = sent.requestId!;
   f.receipts.set(id,{id:'queue:'+id,state:'steering',targetTurnId:'old-turn'});
