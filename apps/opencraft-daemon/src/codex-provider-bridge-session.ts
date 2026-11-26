@@ -123,12 +123,13 @@ export class CodexProviderBridgeSession implements DuplexTransport {
     createGateway: (publish: (threadId: string, value: unknown) => void) => BridgeGatewaySession,
     private readonly policy: {
       admissionPaused?: () => boolean;
-      /** Stage attachments into model-readable input, recording them for display under this client message. */
+      /** Stage attachments and record a new submission unless editing an existing queue item. */
       prepareInput?: (
         threadId: string,
         clientId: string | undefined,
         input: readonly unknown[],
         context: TransportSubmissionContext,
+        purpose?: "queue-edit",
       ) => Promise<unknown[]>;
       /** Add recorded attachments to history results. */
       projectHistory?: (method: string, params: Record<string, unknown>, result: unknown) => unknown;
@@ -1006,9 +1007,9 @@ export class CodexProviderBridgeSession implements DuplexTransport {
     // one, attributed input is refused rather than run unattributed.
     if (context.sender !== null && !(this.policy.senderAttribution?.() && this.policy.prepareInput))
       throw Error("Codex core mode does not support verified sender attribution");
-    const prepare = async (input: unknown, clientId: string | undefined) =>
+    const prepare = async (input: unknown, clientId: string | undefined, purpose?: "queue-edit") =>
       this.policy.prepareInput && Array.isArray(input)
-        ? this.policy.prepareInput(threadId, clientId, input, context)
+        ? this.policy.prepareInput(threadId, clientId, input, context, purpose)
         : input;
     const historyRead = ["thread/read", "thread/turns/list", "thread/items/list", "thread/searchOccurrences"].includes(method);
     const execute = async () => {
@@ -1175,11 +1176,15 @@ export class CodexProviderBridgeSession implements DuplexTransport {
         if (typeof params.expectedTurnId === "string" && params.expectedTurnId !== "unknown")
           params.expectedTurnId = this.gateway.nativeTurn(threadId, params.expectedTurnId);
         // The Host sends queued input on its own later, so attachments are staged now.
-        if (params.input !== undefined)
+        if (params.input !== undefined) {
+          const editing = method === "thread/queue/update";
+          // An edit changes the existing item. The queue owns its message ID and author.
           params.input = await prepare(
             params.input,
-            typeof params.clientUserMessageId === "string" ? params.clientUserMessageId : undefined,
+            !editing && typeof params.clientUserMessageId === "string" ? params.clientUserMessageId : undefined,
+            editing ? "queue-edit" : undefined,
           );
+        }
         if (guarded) result = guarded.result;
         else {
           const queued = await this.gateway.queue(threadId, method, params);

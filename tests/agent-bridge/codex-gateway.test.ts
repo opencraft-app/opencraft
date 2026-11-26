@@ -666,7 +666,11 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
       async admit(threadId,inputId){return {serverId:'server',threadId,execution:{inputId,executionId:inputId}};},
       sign:scope=>'signed:'+scope.execution!.inputId,...(initial?{async prepareSessionMcp(){return {configuration:{url:'http://127.0.0.1:1/mcp',http_headers:{Authorization:'Bearer platform-mcp'}}};}}:{}),sessionMcp:async()=>({url:'http://127.0.0.1:1/mcp',http_headers:{Authorization:'Bearer platform-mcp'}}),started:()=>{serverStarted++;},rejectedBeforeStart:()=>{serverReset++;},
     },{admissionPaused:()=>paused,nativeTool,creationTools}):new CodexProviderBridge(legacy,options,{admissionPaused:()=>paused,nativeTool,creationTools,
-      prepareInput:async(threadId,clientId,input)=>{staged.push([threadId,clientId]);return input.map((item:any)=>item.type==='mention'?{type:'text',text:`file at ${item.path}`}:item);},
+      prepareInput: async (threadId, clientId, input, context, purpose) => {
+        if (context.sender && clientId === undefined && purpose !== 'queue-edit') throw new Error('Message identity is required');
+        staged.push([threadId, clientId]);
+        return input.map((item: any) => item.type === 'mention' ? { type: 'text', text: `file at ${item.path}` } : item);
+      },
       projectHistory:(method,_params,result)=>({...(result as object),projected:method}),
       observeTitle:(method,params,result)=>titleCalls.push([method,(params as any).threadId??null,(result as any).thread?.id??(result as any).turn?.id]),
       senderAttribution: () => true,
@@ -890,6 +894,23 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
   const receiptId = 'bridge-mutation:' + createHash('sha256').update(JSON.stringify([created.thread.id, 'turn/start', 'start'])).digest('hex');
   assert.deepEqual((await host.query(receiptId))?.identities?.turn, { nativeId: 'native-turn', id: turnId });
   if (!cli) {
+    const threadId = created.thread.id;
+    const queuedImage = { type: 'localImage', path: '/work/screenshot.png' };
+    const added = await request('thread/queue/add', {
+      threadId, clientUserMessageId: 'queue-original', input: [{ type: 'text', text: 'before edit' }, queuedImage],
+    }, verifiedSender);
+    const editedInput = [{ type: 'text', text: 'after edit' }, queuedImage];
+    const edited = await request('thread/queue/update', {
+      threadId, queuedSubmissionId: added.queuedSubmission.id, input: editedInput,
+    }, { kind: 'employee', loginName: 'bob' });
+    assert.equal(edited.queuedSubmission.id, added.queuedSubmission.id);
+    assert.equal(edited.queuedSubmission.clientUserMessageId, 'queue-original');
+    assert.deepEqual(edited.queuedSubmission.input, editedInput);
+    assert.deepEqual(staged.at(-1), [threadId, undefined]);
+    assert.equal((await request('thread/queue/delete', {
+      threadId, queuedSubmissionId: added.queuedSubmission.id,
+    }, verifiedSender)).deleted, true);
+
     const image = { id: 'native-image', type: 'imageGeneration', status: 'completed', revisedPrompt: null, result: 'fixture-image', failure: null };
     const mcp = { id: 'native-mcp', type: 'mcpToolCall', server: 'fixture', tool: 'generate', status: 'completed',
       result: { content: [{ type: 'image', mimeType: 'image/png', data: 'Zml4dHVyZQ==' }], structuredContent: null, _meta: null } };
