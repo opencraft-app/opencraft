@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from "react";
 
 /** The existing scroll owner, not a second scrollport inside an expanded group. */
 export function sidebarScrollViewport(content: HTMLElement | null, list: HTMLElement | null): HTMLElement | null {
@@ -26,6 +26,9 @@ export function useSidebarAccordion(scope: string, initialKey: string | null,
   const pending = useRef<{ scope: string; key: string | null; heading: HTMLElement; viewport: HTMLElement; top: number } | null>(null);
   const animation = useRef<Animation | null>(null);
   const disclosureChanged = pending.current?.scope === scope && pending.current?.key === openKey;
+  const reveal = useCallback((key: string) => {
+    setIntent(current => current?.scope === scope && current.key === key ? current : { scope, key });
+  }, [scope]);
   const toggle = (key: string, button: HTMLElement): string | null => {
     const heading = button.closest<HTMLElement>(".sidebar-thread-group-heading") ?? button;
     const top = heading.getBoundingClientRect().top;
@@ -75,5 +78,5 @@ export function useSidebarAccordion(scope: string, initialKey: string | null,
     }
   });
   useLayoutEffect(() => () => { pending.current = null; animation.current?.cancel(); }, []);
-  return { openKey, disclosureChanged, collapsed: (key: string) => key !== openKey, toggle };
+  return { openKey, disclosureChanged, collapsed: (key: string) => key !== openKey, toggle, reveal };
 }
