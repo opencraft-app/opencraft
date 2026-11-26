@@ -26,16 +26,17 @@ if(config.cli) {
   if(key.length!==32)throw Error('Invalid CLI signing key');
   executionCli=hostExecutionCli({directory:config.cli.directory,endpoint:config.cli.endpoint,key,launcherEndpoint:()=>launcherEndpoint});
 }
-const host = await BridgeHost.open({ automation:config.automation, executionCli, path: config.database, policy: config.policy, backend: config.backend === 'linux-systemd' ? systemdSandboxBackend(config.backendOptions) : await nodeSandboxBackends[config.backend]!(config.backendOptions) });
-if (config.generations !== undefined) {
-  if (!Array.isArray(config.generations) || config.generations.length > 16) throw Error('Invalid generation list');
-  for (const generation of config.generations) await host.add(generation);
-}
-if (config.activate !== undefined) {
-  if (typeof config.activate !== 'string' || !config.activate) throw Error('Invalid generation activation');
-  const snapshot = await host.snapshot();
-  await host.activate(config.activate, typeof snapshot.current === 'string' ? snapshot.current : '');
-}
+if (config.generations !== undefined && (!Array.isArray(config.generations) || config.generations.length > 16))
+  throw Error('Invalid generation list');
+if (config.activate !== undefined && (typeof config.activate !== 'string' || !config.activate))
+  throw Error('Invalid generation activation');
+if (config.cutoverCodex !== undefined && typeof config.cutoverCodex !== 'boolean')
+  throw Error('Invalid Codex startup cutover');
+const host = await BridgeHost.open({
+  automation: config.automation, executionCli, path: config.database, policy: config.policy,
+  backend: config.backend === 'linux-systemd' ? systemdSandboxBackend(config.backendOptions) : await nodeSandboxBackends[config.backend]!(config.backendOptions),
+  startup: { generations: config.generations, activate: config.activate, cutoverCodex: config.cutoverCodex },
+});
 const gateway = config.socketPath === undefined
   ? await attachGateway(host, config.token, config.port ?? 0)
   : await attachGatewaySocket(host, config.token, config.socketPath);

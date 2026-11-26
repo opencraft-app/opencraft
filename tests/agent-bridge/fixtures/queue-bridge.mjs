@@ -1,6 +1,6 @@
 // A provider whose turns end by themselves, with native history carrying client message IDs.
 import { createInterface } from "node:readline";
-import { appendFileSync, existsSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
 if (process.env.BRIDGE_LAUNCHES) appendFileSync(process.env.BRIDGE_LAUNCHES, "launch\n");
 if (process.env.NATIVE_UNAVAILABLE && existsSync(process.env.NATIVE_UNAVAILABLE)) process.exit(1);
 const output = (frame) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...frame }) + "\n");
@@ -98,7 +98,10 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   }
   if (request.method === "history/read") {
     if (process.env.HISTORY_READS) appendFileSync(process.env.HISTORY_READS, p.threadId + "\n");
-    reply({ thread: { id: `native-${p.threadId}`, turns: sessions.get(p.threadId) ?? [] } });
+    const nativeHistory = process.env.NATIVE_HISTORY
+      ? JSON.parse(readFileSync(process.env.NATIVE_HISTORY, "utf8"))[`native-${p.threadId}`]
+      : undefined;
+    reply({ thread: { id: `native-${p.threadId}`, turns: nativeHistory ?? sessions.get(p.threadId) ?? [] } });
     return;
   }
   output({ id: request.id, error: { code: -32601, kind: "unsupported", message: "Unsupported fixture method" } });

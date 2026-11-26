@@ -66,6 +66,47 @@ test('Codex forwards all native human interactions without changing ordinary too
   assert.deepEqual(denied, [5]);
 });
 
+test('Codex recovery subscribes to the active native turn without starting it again', async () => {
+  const frames: any[] = [];
+  const calls: string[] = [];
+  const thread = { id: 'native', status: { type: 'active' } };
+  const runtime = new CodexBridgeRuntime({
+    async request(method, params) {
+      calls.push(method);
+      if (method === 'thread/read') return { thread };
+      if (method === 'thread/resume') {
+        assert.deepEqual(params, { threadId: 'native', excludeTurns: true });
+        runtime.interaction(1, 'item/permissions/requestApproval', { threadId: 'native' });
+        return { thread };
+      }
+      throw Error(`Unexpected native method: ${method}`);
+    },
+    async readHistory(method) {
+      calls.push(method);
+      return { data: [{ id: 'running', status: 'inProgress' }], nextCursor: null };
+    },
+    resolve() {},
+  }, frame => frames.push(frame));
+  await runtime.handle({ jsonrpc: '2.0', id: 'init', method: 'initialize', params: { protocolVersion: 1, grammarRange: { min: 1, max: 1 } } });
+  const adopt = (id: string, recoverActive: boolean) => runtime.handle({
+    jsonrpc: '2.0', id, method: 'session/adopt',
+    params: { threadId: 'public', providerThreadId: 'native', recoverActive, openTurns: [] },
+  });
+  await adopt('ordinary', false);
+  assert.equal(frames.at(-1).error.kind, 'explicit-reject');
+  await adopt('recover', true);
+  assert.equal(frames.at(-1).result.thread.id, 'native');
+  assert.ok(frames.some(frame => frame.method === 'interaction/request' && frame.params.threadId === 'public'));
+  const deltas = () => frames.flatMap(frame => frame.method === 'thread/delta' ? frame.params.deltas : []);
+  assert.deepEqual(deltas().map(delta => [delta.op, delta.nativeTurnId]), [['turn.open', 'running']]);
+  await runtime.handle({ jsonrpc: '2.0', id: 'duplicate', method: 'turn/start',
+    params: { threadId: 'public', native: { input: [{ type: 'text', text: 'hello' }] } } });
+  assert.equal(frames.at(-1).error.message, 'Turn already active');
+  runtime.notification('turn/completed', { threadId: 'native', turn: { id: 'running', status: 'completed' } });
+  assert.deepEqual(deltas().map(delta => [delta.op, delta.nativeTurnId]), [['turn.open', 'running'], ['turn.close', 'running']]);
+  assert.deepEqual(calls, ['thread/read', 'thread/read', 'thread/resume', 'thread/turns/list']);
+});
+
 test('history preserves bounded latest-turn queries for browser admission in multi-turn sessions', async () => {
   const calls: any[] = [], frames: any[] = [];
   const runtime = new CodexBridgeRuntime({ async request(method, params) {

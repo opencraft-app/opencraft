@@ -222,10 +222,29 @@ const operations: Record<string, (args: any) => any> = {
     require(!previous || previous.config === JSON.stringify(config), 'Generation configuration is immutable');
     if (!previous) run('INSERT INTO generations(id,config) VALUES (?,?)', config.id, JSON.stringify(config));
   }),
-  activate: ({ id, expected }: any) => tx(() => {
+  activate: ({ id, expected, cutoverCodex }: { id: string; expected: string; cutoverCodex?: boolean }) => tx(() => {
     require(meta('current') === expected, 'Stale current generation');
-    require(get('SELECT 1 FROM generations WHERE id=? AND retired=0', id), 'Generation unavailable');
+    const target = get('SELECT config FROM generations WHERE id=? AND retired=0', id);
+    require(target, 'Generation unavailable');
+    if (cutoverCodex) {
+      const { provider } = JSON.parse(target.config) as Generation;
+      require(provider.providerId === 'codex' && provider.capabilities.adoption, 'Codex generation does not support adoption');
+      run(`UPDATE routes SET generation=? WHERE generation<>? AND generation IN (
+        SELECT id FROM generations WHERE json_extract(config,'$.provider.providerId')='codex'
+      )`, id, id);
+      // Receipts, events and checkpoints describe the original operation. Only
+      // the route and its native binding change owners.
+      run(`UPDATE native_sessions SET generation=? WHERE generation<>? AND route IN (
+        SELECT route FROM routes WHERE generation=?
+      )`, id, id, id);
+    }
     setMeta('current', id);
+    if (cutoverCodex) return {
+      routes: all('SELECT * FROM routes'),
+      activeRoutes: all(`SELECT r.route FROM routes r JOIN native_sessions n USING(route) JOIN checkpoints c USING(route)
+        WHERE r.generation=? AND r.archive_state='active' AND n.restorable=1
+          AND EXISTS (SELECT 1 FROM json_each(c.state,'$.openTurns'))`, id).map(row => row.route),
+    };
   }),
   admit: ({ command, digest, route, maxSpoolBytes }: any) => tx(() => {
     const old = receipt(command.commandId);

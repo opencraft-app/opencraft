@@ -103,8 +103,8 @@ export class CodexBridgeRuntime {
   private readHistory(method: string, params: Record<string, unknown>): Promise<unknown> {
     return this.owner.readHistory?.(method, params) ?? this.owner.request(method, params);
   }
-  private async readOpenTurnOutcomes(nativeId: string, open: readonly string[]) {
-    const statuses = new Map(open.map(id => [id, "interrupted"]));
+  private async readOpenTurnOutcomes(nativeId: string, open: readonly string[], discoverActive = false) {
+    const statuses = new Map<string, string>();
     const remaining = new Set(open);
     let cursor: string | null = null;
     for (let page = 0; page < 20; page++) {
@@ -114,11 +114,14 @@ export class CodexBridgeRuntime {
       if (!Array.isArray(response.data)) throw new CodexBridgeError("unknown-outcome", "Native Turn page unavailable");
       for (const value of response.data) {
         const turn = object(value);
-        if (typeof turn.id === "string" && remaining.delete(turn.id))
-          statuses.set(turn.id, String(turn.status ?? "interrupted"));
+        if (typeof turn.id !== "string" || typeof turn.status !== "string") continue;
+        if (remaining.delete(turn.id) || (discoverActive && page === 0 && turn.status === "inProgress"))
+          statuses.set(turn.id, turn.status);
       }
-      if (!remaining.size || response.nextCursor == null)
-        return open.map(nativeTurnId => ({ nativeTurnId, status: statuses.get(nativeTurnId)! }));
+      if (!remaining.size || response.nextCursor == null) {
+        if (!discoverActive) for (const id of remaining) statuses.set(id, "interrupted");
+        return [...statuses].map(([nativeTurnId, status]) => ({ nativeTurnId, status }));
+      }
       if (typeof response.nextCursor !== "string" || response.nextCursor === cursor)
         throw new CodexBridgeError("unknown-outcome", "Native Turn pagination did not advance");
       cursor = response.nextCursor;
@@ -217,7 +220,8 @@ export class CodexBridgeRuntime {
         }
       }
       case "session/adopt": {
-        // Only an idle session its previous owner released; the Host pins the public ID to it.
+        // Normal adoption requires an idle session. The Host can recover an
+        // active execution through its own persisted native binding.
         if (this.creating.has(threadId))
           throw new CodexBridgeError("explicit-reject", "Session creation already pending");
         try {
@@ -228,23 +232,34 @@ export class CodexBridgeRuntime {
         }
         const nativeId = identifier(p.providerThreadId);
         this.creating.add(threadId);
+        let recovering = false;
         try {
           const read = object(
             object(await this.owner.request("thread/read", { threadId: nativeId, includeTurns: false })).thread,
           );
           const status = object(read.status).type;
-          if (read.id !== nativeId || !["idle", "notLoaded"].includes(String(status)))
+          const recoverRunning = p.recoverActive === true && status === "active";
+          if (read.id !== nativeId || (!recoverRunning && !["idle", "notLoaded"].includes(String(status))))
             throw new CodexBridgeError("explicit-reject", "Only an idle existing session can be adopted");
           const open = Array.isArray(p.openTurns) ? p.openTurns.map(identifier) : [];
-          // Complete bounded reconciliation before this process claims the route.
-          const outcomes = open.length ? await this.readOpenTurnOutcomes(nativeId, open) : [];
+          let outcomes = !recoverRunning && open.length ? await this.readOpenTurnOutcomes(nativeId, open) : [];
+          if (recoverRunning) {
+            // Install the route before subscribing to the existing loop so
+            // completion and approval replay can reach it during resume.
+            this.adapter.bind(threadId, nativeId);
+            recovering = true;
+          }
           const result = object(await this.owner.request("thread/resume", { threadId: nativeId, excludeTurns: true }));
           if (object(result.thread).id !== nativeId)
             throw new CodexBridgeError("explicit-reject", "Native session identity changed during adoption");
-          this.adapter.bind(threadId, nativeId);
+          if (recoverRunning) outcomes = await this.readOpenTurnOutcomes(nativeId, open, true);
+          else this.adapter.bind(threadId, nativeId);
           this.callback("thread/identity", { threadId, providerThreadId: nativeId, sessionRestorable: true });
           if (outcomes.length) this.adapter.recovered(threadId, outcomes);
           return result;
+        } catch (error) {
+          if (recovering) this.adapter.forgetBinding(threadId);
+          throw error;
         } finally {
           this.creating.delete(threadId);
         }

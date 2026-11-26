@@ -3002,6 +3002,103 @@ test("after an update, a Thread whose old provider cannot hand it over moves on 
   assert.equal(snapshot.routes.find((row: any) => row.route === '["server-1","thread-1"]').generation, "new");
 });
 
+test("Codex startup switches all existing bindings before serving, preserving history identity and unknown receipts", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "codex-cutover-"));
+  const path = join(root, "host.db");
+  const executions = join(root, "executions");
+  const oldLaunches = join(root, "old-launches");
+  const nativeHistory = join(root, "native-history.json");
+  const nativeThreadId = 'native-["server-1","thread-1"]';
+  const historicalTurn = {
+    id: "older-turn", status: "completed", items: [{ id: "older-message", type: "agentMessage", text: "A reply before the upgrade" }],
+  };
+  await writeFile(nativeHistory, JSON.stringify({ [nativeThreadId]: [historicalTurn] }));
+  const artifact = resolve("tests/agent-bridge/fixtures/queue-bridge.mjs");
+  const digest = createHash("sha256").update(await readFile(artifact)).digest("hex");
+  const provider = { ...declaration, providerId: "codex", capabilities: { ...declaration.capabilities, history: true, adoption: true } };
+  const handshake = negotiateHandshake({ protocolVersion: 1, grammarRange: { min: 1, max: 1 } }, provider);
+  assert(handshake.ok);
+  const generation = (id: string, env: Record<string, string> = {}): Generation => ({
+    id, artifact, digest, provider,
+    launch: {
+      command: [process.execPath, artifact], cwd: root,
+      env: { HANDSHAKE: JSON.stringify(handshake.result), EXECUTIONS: executions, GENERATION: id, NATIVE_HISTORY: nativeHistory, ...env },
+    },
+  });
+  const open = (startup?: NonNullable<Parameters<typeof BridgeHost.open>[0]["startup"]>) =>
+    BridgeHost.open({ path, policy, backend: localTestBackend(), startup });
+  let host = await open();
+  t.after(async () => {
+    await host.close().catch(() => {});
+    await rm(root, { recursive: true, force: true });
+  });
+  await host.add(await config(root, "other"));
+  await host.activate("other", "");
+  await host.accept(command("other-create", "session/create", {}, "unrelated"));
+  await accepted(host, "other-create");
+  await host.add(generation("old", {
+    BRIDGE_LAUNCHES: oldLaunches, DROP_NATIVE_ON_INPUT: "unconfirmed-send", TURN_MS: "60000",
+  }));
+  await host.activate("old", "other");
+  await host.accept(command("running-create", "session/create", {}, "running"));
+  await accepted(host, "running-create");
+  await host.accept(command("running-start", "turn/start", {
+    native: { clientUserMessageId: "running-input", input: [{ type: "text", text: "keep running" }] },
+  }, "running"));
+  await accepted(host, "running-start");
+  await host.accept(command("create"));
+  await accepted(host, "create");
+  const historyRequest = { serverId: "server-1", threadId: "thread-1", method: "history/read", params: { view: "thread", includeTurns: true } };
+  const historyBefore = await host.observe(historyRequest);
+  assert.deepEqual(historyBefore, { thread: { id: nativeThreadId, turns: [historicalTurn] } });
+  const send = command("unknown-start", "turn/start", {
+    native: { clientUserMessageId: "unconfirmed-send", input: [{ type: "text", text: "hello" }] },
+  });
+  await host.accept(send);
+  const unknown = await until(() => host.query(send.commandId), receipt => receipt?.state === "unknown");
+  const before = await host.snapshot();
+  const events = await host.events(0);
+  await host.close();
+
+  const unavailable = join(root, "unavailable");
+  await writeFile(unavailable, "");
+  const next = generation("new", { NATIVE_UNAVAILABLE: unavailable });
+  const startup = { generations: [next], activate: next.id, cutoverCodex: true };
+  await assert.rejects(open(startup));
+  host = await open();
+  assert.equal((await host.snapshot()).current, before.current);
+  assert.deepEqual((await host.snapshot()).routes, before.routes);
+  await host.close();
+  await rm(unavailable);
+
+  host = await open(startup);
+  const after = await host.snapshot();
+  assert.equal(after.current, "new");
+  await assert.rejects(host.accept(command("forged-recovery", "session/adopt", {
+    providerThreadId: "thread-1", recoverActive: true,
+  })), /Only the Host can recover a retained execution/);
+  assert.deepEqual(after.routes.map((row: any) => [row.route, row.generation]), [
+    ['["server-1","unrelated"]', "other"],
+    ['["server-1","running"]', "new"],
+    ['["server-1","thread-1"]', "new"],
+  ]);
+  assert.deepEqual(after.nativeSessions, before.nativeSessions.map((row: any) => ({
+    ...row, generation: row.generation === "old" ? "new" : row.generation,
+  })));
+  assert.deepEqual((await host.events(0)).slice(0, events.length), events);
+  assert.deepEqual(await host.accept(send), unknown);
+  await until(async () => (await readFile(executions, "utf8")).split("\n"),
+    rows => rows.includes('adopt:native-["server-1","running"]@new'));
+  assert.deepEqual(await host.observe(historyRequest), historyBefore);
+  assert.equal(await readFile(oldLaunches, "utf8"), "launch\n");
+  assert.deepEqual((await readFile(executions, "utf8")).trim().split("\n"), [
+    "running-input",
+    "unconfirmed-send",
+    'adopt:native-["server-1","running"]@new',
+    'adopt:native-["server-1","thread-1"]@new',
+  ]);
+});
+
 test("with the execution CLI enabled, the Host still delivers its queue (without the CLI); a direct turn without proof is refused", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "bridge-queue-cli-"));
   const executions = join(root, "executions");
