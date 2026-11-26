@@ -40,7 +40,7 @@ export function userMessageCompareKey(value: unknown): UserMessageCompareKey {
     const data = record(part);
     if (typeof part === "string") text.push(part);
     else if (data.type === "text" && typeof data.text === "string") text.push(data.text);
-    if (data.type === "image" || data.type === "localImage") imageCount++;
+    if (data.type === "image" || data.type === "localImage" || data.type === "local_image") imageCount++;
   }
   return { rawText: text.join("\n"), imageCount };
 }
