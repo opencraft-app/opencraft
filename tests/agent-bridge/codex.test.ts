@@ -51,7 +51,11 @@ test('Codex Bridge keeps live commentary below the work clock and preserves fina
   assert.equal(slots[0].contentUnits[0]?.type, 'worked-for');
   assert.ok(slots[0].blocks.some(block => block.type === 'text' && block.text === 'Checking sources'));
 
-  notify('item/started', message('question', '', 'final_answer', [{ title: 'Which branch?', options: null }]));
+  const questions = [{ title: 'Which branch?', options: ['main', 'release'] }, { title: 'Extra details?', options: null }];
+  notify('item/started', message('question', '', 'final_answer', questions));
+  project();
+  const pendingQuestion = [...items.values()].at(-1);
+  assert.deepEqual(pendingQuestion?.payload.questions, questions);
   notify('item/completed', message('question', 'Which branch?', 'final_answer'));
   notify('item/started', message('answer', '', 'final_answer'));
   notify('item/agentMessage/delta', { itemId: 'answer', delta: 'Done' });
@@ -59,11 +63,43 @@ test('Codex Bridge keeps live commentary below the work clock and preserves fina
   notify('turn/completed', { turn: { id: 'turn', status: 'completed' } });
   project();
   const text = [...items.values()].filter(item => item.type === 'agentMessage').map(item => item.payload);
-  assert.deepEqual(text.map(item => [item.phase, item.delivery, item.text, item.completed]), [
-    ['commentary', null, 'Checking sources', true],
-    ['final_answer', 'async', 'Which branch?', true],
-    ['final_answer', null, 'Done', true],
+  assert.deepEqual(text.map(item => [item.phase, item.delivery, item.text, item.completed, item.questions]), [
+    ['commentary', null, 'Checking sources', true, null],
+    ['final_answer', 'async', 'Which branch?', true, questions],
+    ['final_answer', null, 'Done', true, null],
   ]);
+});
+
+test('Codex Bridge preserves reasoning sections through a checkpoint and an implicit close', () => {
+  const deltas: BridgeDelta[] = [];
+  const bridge = new CodexBridge({ async request() { throw Error('Unexpected native request'); } },
+    (_, batch) => deltas.push(...batch));
+  bridge.bind('route', 'native');
+  const notify = (method: string, params: Record<string, unknown>) =>
+    bridge.notification(method, { threadId: 'native', turnId: 'turn', ...params });
+  notify('turn/started', { turn: { id: 'turn' } });
+  notify('item/started', { item: { id: 'reasoning', type: 'reasoning', content: ['Initial'], summary: [] } });
+  notify('item/reasoning/textDelta', { itemId: 'reasoning', delta: ' tail', contentIndex: 0 });
+  notify('item/reasoning/textDelta', { itemId: 'reasoning', delta: 'Third', contentIndex: 2 });
+  notify('item/reasoning/textDelta', { itemId: 'reasoning', delta: 'Invalid', contentIndex: Number.MAX_SAFE_INTEGER });
+  const live = assemble(createAssemblerState(BRIDGE_SCHEMA_VERSION), deltas.splice(0), { threadId: 'route', clockSeed: 1000 });
+  const options = { schemaVersion: BRIDGE_SCHEMA_VERSION, steerEvidenceDeclared: false };
+  const frames = projectToAppServer(live.events, options);
+  const item = frames.find(frame => frame.method === 'item/started')?.params.item;
+  assert.ok(item);
+  assert.deepEqual(frames.filter(frame => frame.method === 'item/reasoning/textDelta')
+    .map(({ params }) => [params.itemId, params.contentIndex, params.delta]), [
+    [item.id, 0, ' tail'], [item.id, 2, 'Third'],
+  ]);
+
+  notify('item/reasoning/textDelta', { itemId: 'reasoning', delta: ' section', contentIndex: 2 });
+  notify('turn/completed', { turn: { id: 'turn', status: 'completed' } });
+  const checkpoint = JSON.parse(JSON.stringify(live.state));
+  const final = assemble(checkpoint, deltas, { threadId: 'route', clockSeed: 1000 });
+  assert.deepEqual(final.diagnostics, []);
+  assert.deepEqual(projectToAppServer(final.events, options).find(frame => frame.method === 'item/completed')?.params.item, {
+    id: item.id, type: 'reasoning', summary: [], content: ['Initial tail', '', 'Third section'],
+  });
 });
 
 test('Codex steer admission does not manufacture input evidence and stale never dispatches', async () => {

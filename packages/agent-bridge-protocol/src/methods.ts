@@ -119,5 +119,5 @@ export const BRIDGE_THREAD_NOTIFICATIONS: ReadonlySet<string> = new Set([
   "thread/status/changed",
   "thread/name/updated", "thread/goal/updated", "thread/goal/cleared", "thread/settings/updated", "thread/archived", "thread/unarchived",
   "turn/plan/updated", "item/reasoning/summaryTextDelta", "item/reasoning/summaryPartAdded",
-  "item/commandExecution/outputDelta", "item/fileChange/outputDelta", "item/fileChange/patchUpdated",
+  "item/commandExecution/outputDelta", "item/commandExecution/terminalInteraction", "item/fileChange/outputDelta", "item/fileChange/patchUpdated",
 ]);

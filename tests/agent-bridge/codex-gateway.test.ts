@@ -616,7 +616,11 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
         assert.equal(f.params.opencraftExecutionAdmission,undefined);assert.equal(f.params.executionSource,undefined);assert.equal(f.params.opencraftSessionMcp,undefined);
         nativeStartInputs.push(f.params.input);
         hasRollout=true;nativeActive=true;starts++; event('turn/started', { threadId: 'native-new', turn: { id: nativeTurn() } });
-        event('item/started', { threadId: 'native-new', turnId: nativeTurn(), item: { type: 'commandExecution', id: 'tool', command: 'cat input.txt', cwd: root, status: 'inProgress' } });
+        event('item/started', { threadId: 'native-new', turnId: nativeTurn(), item: {
+          type: 'commandExecution', id: 'tool', command: 'cat input.txt', cwd: root, status: 'inProgress',
+          source: 'unifiedExecStartup', processId: 'fixture-pty',
+          commandActions: [{ type: 'read', command: 'cat input.txt', name: 'input.txt', path: 'input.txt' }],
+        } });
         if(String(cli).includes('contradiction')){
           if(cli==='closed-contradiction'){nativeActive=false;event('turn/completed',{threadId:'native-new',turn:{id:'native-turn',status:'completed'}});}
           socket.send(JSON.stringify({id:f.id,error:{code:-32602,message:'refused after start'}}));return;
@@ -1031,13 +1035,48 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
       result: { content: [{ type: 'image', mimeType: 'image/png', data: 'Zml4dHVyZQ==' }], structuredContent: null, _meta: null } };
     const dynamic = { id: 'native-dynamic', type: 'dynamicToolCall', tool: 'fixture', status: 'completed', arguments: {},
       contentItems: [{ type: 'inputText', text: 'dynamic fixture' }], success: true };
-    for (const item of [image, mcp, dynamic]) {
+    const prompt = { id: 'native-hook', type: 'hookPrompt', fragments: [{ text: 'Fixture instruction', hookRunId: 'hook-run' }] };
+    const compaction = { id: 'native-compaction', type: 'contextCompaction' };
+    const search = { id: 'native-search', type: 'webSearch', query: 'fixture', action: { type: 'search', query: 'fixture', queries: null }, results: null };
+    const collab = { id: 'native-collab', type: 'collabAgentToolCall', tool: 'spawnAgent', status: 'completed',
+      senderThreadId: 'native-new', receiverThreadIds: ['native-child'], prompt: null, model: null, reasoningEffort: null,
+      agentsStates: { 'native-child': { status: 'running', message: null } } };
+    const child = { id: 'native-child-start', type: 'subAgentActivity', kind: 'started', agentThreadId: 'native-child', agentPath: 'root/helper' };
+    const command = await until(() => frames.find(f =>
+      f.method === 'item/started' && f.params.item?.type === 'commandExecution' && f.params.turnId === turnId), Boolean);
+    assert.deepEqual(command.params.item.commandActions, [
+      { type: 'read', command: 'cat input.txt', name: 'input.txt', path: 'input.txt' },
+    ]);
+    assert.equal(command.params.item.processId, 'fixture-pty');
+    assert.equal(command.params.item.source, 'unifiedExecStartup');
+    const emitNative = (method: string, fields: Record<string, unknown>) => nativePeer!.send(JSON.stringify({
+      method, params: { threadId: 'native-new', turnId: 'native-turn', ...fields },
+    }));
+    emitNative('item/commandExecution/terminalInteraction', { itemId: 'tool', processId: 'fixture-pty', stdin: 'hello\n' });
+    const terminal = await until(() => frames.find(f => f.method === 'item/commandExecution/terminalInteraction'), Boolean);
+    assert.equal(terminal.params.threadId, threadId);
+    assert.equal(terminal.params.turnId, turnId);
+    assert.equal(terminal.params.itemId, command.params.item.id);
+    assert.equal(terminal.params.stdin, 'hello\n');
+    assert.equal(terminal.params.processId, 'fixture-pty');
+
+    const asyncMessage = { id: 'native-async', type: 'agentMessage', text: 'What now?', delivery: 'async',
+      phase: 'commentary', questions: [{ title: 'What now?', options: ['Continue', 'Stop'] }] };
+    emitNative('item/started', { item: asyncMessage });
+    const question = await until(() => frames.find(f => f.method === 'item/started' && f.params.item.type === 'agentMessage'), Boolean);
+    assert.deepEqual(question.params.item.questions, asyncMessage.questions);
+    emitNative('item/completed', { item: { ...asyncMessage, questions: null } });
+    const answered = await until(() => frames.find(f => f.method === 'item/completed' && f.params.item.id === question.params.item.id), Boolean);
+    assert.deepEqual(answered.params.item.questions, asyncMessage.questions);
+    for (const item of [image, mcp, dynamic, prompt, compaction, search, collab, child]) {
       nativePeer!.send(JSON.stringify({ method: 'item/completed', params: { threadId: 'native-new', turnId: 'native-turn', item } }));
       const delivered = await until(() => frames.find(f => f.method === 'item/completed' && f.params.item.type === item.type), Boolean);
       assert.equal(delivered.params.threadId, created.thread.id);
       assert.equal(delivered.params.turnId, turnId);
       assert.notEqual(delivered.params.item.id, item.id);
       assert.deepEqual(delivered.params.item, { ...item, id: delivered.params.item.id });
+      const started = frames.find(f => f.method === 'item/started' && f.params.item.id === delivered.params.item.id);
+      assert.deepEqual(started?.params.item, delivered.params.item);
     }
     const status = { type: 'active', activeFlags: ['waitingOnApproval'] };
     nativePeer!.send(JSON.stringify({ method: 'thread/status/changed', params: { threadId: 'native-new', status } }));

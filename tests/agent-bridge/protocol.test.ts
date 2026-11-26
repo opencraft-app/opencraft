@@ -159,6 +159,20 @@ test("parseDelta is strict at the core (unknown op / missing scope / malformed s
   assert.equal(parseDelta({ op: "input.outcome", inputId: "i", state: "unknown", reason: "eof", version: 1, scope: { threadId: "t" } }).ok, true);
   assert.equal(parseDelta({ op: "item.open", nativeKey: "k", shape: { kind: "command", command: "ls", cwd: "[path:x]", status: "inProgress" }, scope: { threadId: "t" } }).ok, true);
   assert.equal(parseDelta({ op: "item.open", nativeKey: "k", shape: { kind: "command", command: "ls" }, scope: { threadId: "t" } }).ok, false);
+  const item = { op: "item.open", nativeKey: "k", scope: { threadId: "t" } };
+  for (const shape of [
+    { kind: "agentMessage", text: "Invalid", questions: [{ title: "Invalid", options: [123] }] },
+    { kind: "command", command: "ls", cwd: "/", status: "completed", commandActions: [{ type: "read" }] },
+    { kind: "appServerItem", item: { type: "contextCompaction", id: "foreign-item" } },
+    { kind: "appServerItem", item: { type: "webSearch", query: "fixture", action: { type: "search", query: "fixture", queries: [123] } } },
+    { kind: "appServerItem", item: { type: "hookPrompt", fragments: [{ text: "missing run id" }] } },
+  ]) assert.equal(parseDelta({ ...item, shape }).ok, false);
+  const text = { ...item, op: "item.textDelta", channel: "reasoning", text: "Detail" };
+  assert.equal(parseDelta({ ...text, contentIndex: 2 }).ok, true);
+  assert.equal(parseDelta({ ...text, contentIndex: 2, channel: "agentMessage" }).ok, false);
+  for (const contentIndex of [-1, 1.5, Number.MAX_SAFE_INTEGER]) {
+    assert.equal(parseDelta({ ...text, contentIndex }).ok, false);
+  }
 });
 
 test("instance probing can only narrow the declared capabilities", () => {

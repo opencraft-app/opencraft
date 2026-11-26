@@ -40,6 +40,25 @@ export interface TokenUsage {
   readonly reasoningOutputTokens: number;
 }
 
+export interface AgentMessageQuestion {
+  readonly title: string;
+  readonly options: readonly string[] | null;
+}
+
+export type CommandAction =
+  | { readonly type: "read"; readonly command: string; readonly name: string; readonly path: string }
+  | { readonly type: "listFiles"; readonly command: string; readonly path: string | null }
+  | { readonly type: "search"; readonly command: string; readonly path: string | null; readonly query: string | null }
+  | { readonly type: "unknown"; readonly command: string };
+
+export const COMMAND_SOURCES = ["agent", "userShell", "unifiedExecStartup", "unifiedExecInteraction"] as const;
+
+export const APP_SERVER_ACTIVITY_TYPES = [
+  "contextCompaction", "webSearch", "collabAgentToolCall", "subAgentActivity", "hookPrompt",
+] as const;
+
+export type AppServerActivityType = (typeof APP_SERVER_ACTIVITY_TYPES)[number];
+
 /** Terminal item shapes; the projection maps these onto existing ThreadItem kinds. */
 export type ItemShape =
   | {
@@ -58,16 +77,17 @@ export type ItemShape =
       readonly text: string;
       readonly phase?: "commentary" | "final_answer";
       readonly delivery?: "async";
+      readonly questions?: readonly AgentMessageQuestion[];
     }
   | { readonly kind: "reasoning"; readonly text: string; readonly summary?: readonly string[]; readonly content?: readonly string[] }
   | { readonly kind: "plan"; readonly text: string }
   | {
-      /** A provider's existing AppServer media or tool item. The assembler owns its public ID. */
+      /** An allow-listed AppServer item. The assembler owns its public ID. */
       readonly kind: "appServerItem";
-      readonly item: Readonly<Record<string, unknown>> & {
-        readonly type: "imageGeneration" | "mcpToolCall" | "dynamicToolCall";
-        readonly status: string;
-      };
+      readonly item: Readonly<Record<string, unknown>> & (
+        | { readonly type: "imageGeneration" | "mcpToolCall" | "dynamicToolCall"; readonly status: string }
+        | { readonly type: AppServerActivityType }
+      );
     }
   | {
       readonly kind: "fileChange";
@@ -90,7 +110,10 @@ export type ItemShape =
       readonly kind: "command";
       readonly command: string;
       readonly cwd: string;
-      readonly status: "inProgress" | "completed" | "failed";
+      readonly status: "inProgress" | "completed" | "failed" | "declined";
+      readonly processId?: string | null;
+      readonly source?: (typeof COMMAND_SOURCES)[number];
+      readonly commandActions?: readonly CommandAction[];
       readonly output?: string | null;
       readonly exitCode?: number | null;
       readonly durationMs?: number | null;
@@ -149,6 +172,8 @@ export interface ItemTextDeltaDelta extends DeltaBase {
   readonly nativeKey: string;
   readonly channel: TextChannel;
   readonly text: string;
+  /** Reasoning detail section; older providers emit a single section at index 0. */
+  readonly contentIndex?: number;
 }
 
 export interface ItemTextCloseDelta extends DeltaBase {

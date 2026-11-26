@@ -6,7 +6,7 @@ import { openManagedDatabase, acquireProcessWriter, sqliteTransaction, nodeSqlDa
 import { assemble, createAssemblerState, type AssemblerState, type CanonicalInputState } from '@opencraft/agent-bridge-assembler';
 import {
   BRIDGE_MAX_FRAGMENTED_EVENT_BYTES, BRIDGE_OUTBOX_FRAGMENT_BYTES, BRIDGE_OUTBOX_PAGE_BYTES,
-  BRIDGE_ERROR_CODES, BRIDGE_THREAD_NOTIFICATIONS, isSuccess, parseThreadDeltaParams,
+  BRIDGE_ERROR_CODES, BRIDGE_THREAD_NOTIFICATIONS, isSuccess, isTerminalInteraction, parseThreadDeltaParams,
 } from '@opencraft/agent-bridge-protocol';
 import { ThreadQueueStore } from '@opencraft/thread-queue';
 import { migrations } from './migrations.js';
@@ -339,8 +339,10 @@ const operations: Record<string, (args: any) => any> = {
       run('INSERT INTO checkpoints VALUES (?,?,?) ON CONFLICT(route) DO UPDATE SET state=excluded.state,at_ms=excluded.at_ms', route, JSON.stringify(result.state), result.events.at(-1)?.atMs ?? now);
       for (const event of result.events) run('INSERT INTO outbox(route,generation,payload) VALUES (?,?,?)', route, generation, JSON.stringify({ kind: 'canonical', event }));
     } else if (method === 'thread/notification') {
-      // Only allow-listed thread metadata; stored as the native method for the gateway to publish.
+      // Store allow-listed notifications under their native methods for the gateway to publish.
       require(typeof params.method === 'string' && BRIDGE_THREAD_NOTIFICATIONS.has(params.method) && params.params && typeof params.params === 'object' && !Array.isArray(params.params), 'Invalid thread notification');
+      if (params.method === 'item/commandExecution/terminalInteraction')
+        require(isTerminalInteraction(params.params), 'Invalid terminal interaction');
       if (params.method === 'thread/archived' || params.method === 'thread/unarchived')
         run('UPDATE routes SET archive_state=? WHERE route=?', params.method === 'thread/archived' ? 'archived' : 'active', route);
       run('INSERT INTO outbox(route,generation,payload) VALUES (?,?,?)', route, generation, JSON.stringify({ method: params.method, params: { ...params.params, threadId: route } }));
