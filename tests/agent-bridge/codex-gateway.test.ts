@@ -828,9 +828,10 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
   }
   if(cli==='timeout') {
     const failedId=++sequence;
-    await transport.send(JSON.stringify({id:failedId,method:'turn/start',params:{threadId:'bridge:codex:public-new',clientUserMessageId:'prepare-timeout',input:[{type:'text',text:'not sent'}]},[LOGICAL_CLIENT_FIELD]:'client'}));
+    await transport.send(JSON.stringify({id:failedId,method:'turn/start',params:{threadId:'bridge:codex:public-new',clientUserMessageId:'start',input:[{type:'text',text:'read'}]},[LOGICAL_CLIENT_FIELD]:'client'}));
     const failed=await until(()=>frames.find(frame=>frame.id===failedId),Boolean);
     assert.equal(failed.error.data.submissionOutcome,'rejected');
+    assert.equal(failed.error.data.cliStage,'native-configuration');
     assert.equal((await host.query(failed.error.data.bridgeCommandId))?.state,'rejected');
     assert.equal(starts,0);assert.equal(revoked,1);
     blockRetirement=false;loaded=false;
@@ -1012,7 +1013,12 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
   else if(cli){assert.equal(issued,cli==='timeout'?2:1);assert.equal(nativeConfigurations[0].sandbox,'read-only');assert.equal(nativeConfigurations[0].approvalPolicy,'never');assert.equal(nativeConfigurations[0].config['shell_environment_policy.set'].OPENCRAFT_THREAD_CLI,'fixture');assert.equal(nativeConfigurations[0].config['mcp_servers.opencraft_session'].http_headers.Authorization,'Bearer platform-mcp');}
   const turnId = started.turn.id; assert.notEqual(turnId, 'native-turn');
   const receiptId = 'bridge-mutation:' + createHash('sha256').update(JSON.stringify([created.thread.id, 'turn/start', 'start'])).digest('hex');
-  assert.deepEqual((await host.query(receiptId))?.identities?.turn, { nativeId: 'native-turn', id: turnId });
+  const acceptedReceiptId = cli === 'timeout' ? receiptId + ':retry:000000000001' : receiptId;
+  assert.deepEqual((await host.query(acceptedReceiptId))?.identities?.turn, { nativeId: 'native-turn', id: turnId });
+  if (cli === 'timeout') {
+    assert.equal((await host.query(receiptId))?.state, 'rejected');
+    assert.equal(starts, 1);
+  }
   if (!cli) {
     const threadId = created.thread.id;
     const queuedImage = { type: 'localImage', path: '/work/screenshot.png' };
