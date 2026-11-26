@@ -2,9 +2,9 @@ import { MediaPlayer } from "@opencraft/file-preview-web/media-player";
 import { AlarmClockIcon, CheckIcon as Check, ChevronDownIcon as ChevronDown, CopyIcon as Copy, LoadingRingIcon as LoaderCircle } from "@opencraft/design-system-web/action-icons";
 import { AvatarImage, IdentityAvatarContext, createDeferredView } from "@opencraft/extension-react";
 import { FormattedMessage, useIntl } from "@opencraft/i18n/react";
-import type { UserMessageTimelineBlock } from "@opencraft/chat-core";
+import { parseLeadingSlashCommand, type UserMessageTimelineBlock } from "@opencraft/chat-core";
 import { ImagePreview, WebUserMessageDocument, resolveStandardChatResource, writeTextToClipboard } from "@opencraft/chat-render-web";
-import { AlertIcon as AlertCircle, CircleIcon as Circle, TextFileIcon as FileText, ImageIcon, MessageIcon as MessageSquare, ToolIcon as Wrench, PersonIcon as UserRound } from "@opencraft/design-system-web/action-icons";
+import { AlertIcon as AlertCircle, CircleIcon as Circle, TextFileIcon as FileText, ImageIcon, LightningIcon, MessageIcon as MessageSquare, ToolIcon as Wrench, PersonIcon as UserRound } from "@opencraft/design-system-web/action-icons";
 import { isTouchInteraction } from "@opencraft/design-system-web/input-presentation";
 import {
   type ReactNode,
@@ -338,6 +338,7 @@ function UserMessageStatusRow({ block, hookStatsAccessory }: {
   const recovery = useContext(ConversationDocumentContext).submissionRecovery;
   const submission = block.clientId === null ? undefined : recovery?.byClientId.get(block.clientId);
   const input = block.steerEvidence;
+  const slashCommand = block.goal ? null : parseLeadingSlashCommand(block.message);
   if (submission && recovery) {
     chips.push(<SubmissionRecoveryNotice key={submission.commandId} submission={submission}
       onAbandon={recovery.onAbandon} onRetry={recovery.onRetry} />);
@@ -363,6 +364,7 @@ function UserMessageStatusRow({ block, hookStatsAccessory }: {
   else if (!submission && !input && !block.inputDelivery && block.deliveryStatus === "failed") chips.push(<span data-status-kind="failed" key="failed"><AlertCircle aria-hidden="true" size={11} /><FormattedMessage id="chat.message.notSent" defaultMessage="Not sent" /></span>);
   else if (!submission && !input && !block.inputDelivery && block.deliveryStatus === "unknown") chips.push(<span data-status-kind="unknown" key="unknown"><Circle aria-hidden="true" size={8} /><FormattedMessage id="chat.message.unconfirmed" defaultMessage="Delivery unconfirmed" /></span>);
   else if (block.goal) chips.push(<span data-status-kind="goal" key="goal"><Circle aria-hidden="true" size={8} /><FormattedMessage id="chat.message.goal" defaultMessage="Sent as goal" /></span>);
+  else if (slashCommand !== null && (block.deliveryStatus === null || block.deliveryStatus === "sent") && block.messageKind !== "steering") chips.push(<span data-status-kind="command" key="command"><LightningIcon aria-hidden="true" size={11} /><FormattedMessage id="chat.message.slashCommand" defaultMessage="Command /{name}" values={{ name: slashCommand.name }} /></span>);
   else if (block.hookFeedback) chips.push(<span data-status-kind="hook-feedback" key="hook-feedback"><Wrench aria-hidden="true" size={11} /><FormattedMessage id="chat.message.hookFeedback" defaultMessage="Hook feedback" /></span>);
   if (block.reviewMode) chips.push(<span key="review"><FormattedMessage id="chat.message.reviewMode" defaultMessage="Review mode" /></span>);
   if (block.pullRequestFixMode) chips.push(<span key="pr-fix"><FormattedMessage id="chat.message.prFix" defaultMessage="PR fix" /></span>);
@@ -380,6 +382,7 @@ export function UserMessageBlock({ block, hookStatsAccessory }: {
   const avatars = useContext(IdentityAvatarContext);
   const contact = block.sender ? avatars?.contactLink?.(block.sender.kind, block.sender.loginName) : null;
   const layout = deriveUserMessageWebLayout(block);
+  const slashCommand = block.goal ? null : parseLeadingSlashCommand(block.message);
   const allowEntryMotion = useContext(ConversationEntryMotionContext);
   const bubbleRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -428,7 +431,18 @@ export function UserMessageBlock({ block, hookStatsAccessory }: {
         <div className="thread-user-message__body" data-user-message-body="">
           {layout.showBubble ? (
             <div className={layout.hasText ? "thread-user-message__bubble" : "thread-user-message__bubble is-empty"} data-user-message-bubble="">
-              {layout.hasText ? <CollapsibleUserMessageText block={block} /> : <span className="thread-user-message__no-content"><FormattedMessage id="chat.message.noContent" defaultMessage="(No content)" /></span>}
+              {slashCommand !== null ? (
+                <div className="thread-user-message__command-content">
+                  <span className="thread-user-message__command-pill" data-command={slashCommand.name.toLowerCase()}>
+                    /{slashCommand.name}
+                  </span>
+                  {slashCommand.args ? <CollapsibleUserMessageText block={{ ...block, message: slashCommand.args }} /> : null}
+                </div>
+              ) : layout.hasText ? (
+                <CollapsibleUserMessageText block={block} />
+              ) : (
+                <span className="thread-user-message__no-content"><FormattedMessage id="chat.message.noContent" defaultMessage="(No content)" /></span>
+              )}
             </div>
           ) : null}
           <div className="thread-user-message__accessories">

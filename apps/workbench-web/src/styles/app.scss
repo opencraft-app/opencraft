@@ -4153,6 +4153,31 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
     }
   }
 
+  &__command-content {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px;
+
+    > .thread-user-message__collapsible {
+      flex: 1 1 auto;
+      width: auto;
+    }
+  }
+
+  &__command-pill {
+    @include typography.role(inline-code);
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 7px;
+    border: 1px solid color-mix(in srgb, var(--color-text-accent) 22%, var(--color-border-subtle));
+    border-radius: 6px;
+    background: var(--color-background-accent);
+    color: var(--color-text-accent);
+    white-space: nowrap;
+  }
+
   &__collapsible {
     display: flex;
     width: 100%;
@@ -4403,6 +4428,10 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
     [data-status-kind="failed"],
     [data-status-kind="hook-blocked"] {
       color: var(--color-text-warning, #a15c00);
+    }
+
+    [data-status-kind="command"] {
+      color: var(--color-text-secondary);
     }
 
     letter-spacing: var(--typography-metadata-tracking)
