@@ -1492,6 +1492,13 @@ export function App({
   useEffect(() => () => { onboardingFinishEpoch.current += 1; }, []);
   // Internal first-use entry remains explicit; shared Settings can replay guidance.
   const [onboardingOverlay,setOnboardingOverlay]=useState<"gate"|"sheet"|"history"|null>(null);
+  useEffect(() => {
+    if (onboardingOverlay !== "gate") return;
+    if (!composerCatalog.modelsReady || composerCatalog.models.length === 0 || noUsableModels) return;
+    try { localStorage.setItem("opencraft.onboarding.completedAt", new Date().toISOString()); }
+    catch { /* Ignore storage restrictions. */ }
+    setOnboardingOverlay(null);
+  }, [onboardingOverlay, composerCatalog.modelsReady, composerCatalog.models.length, noUsableModels]);
   const finishOnboarding = async (modelId?: string) => {
     const epoch = ++onboardingFinishEpoch.current;
     if (modelId) {

@@ -24,6 +24,8 @@ test("auth status recognizes each agent without treating an unknown failure as s
   assert.deepEqual(interpretAuth("cursor", "✓ Logged in as dev@example.com\n", "", 0), { authenticated: true, account: "dev@example.com" });
   assert.deepEqual(interpretAuth("claude", 'prefix {"loggedIn":false,"authMethod":"none"}\n', "", 0), { authenticated: false, account: null });
   assert.deepEqual(interpretAuth("codebuddy", "", "not signed in", 1), { authenticated: false, account: null });
+  assert.deepEqual(interpretAuth("cursor", "", "authentication required", 1), { authenticated: false, account: null });
+  assert.deepEqual(interpretAuth("cursor", "unknown output", "", 1), { authenticated: null, account: null });
   assert.deepEqual(interpretAuth("cursor", "", "", 1), { authenticated: null, account: null });
 });
 
@@ -129,4 +131,27 @@ test("a discovered Node-owned CLI also receives a working interpreter PATH",asyn
  const {localAgentEnvironment}=await import('../../apps/local-agent-host/src/agent-onboarding.js');
  const env=await localAgentEnvironment({env:{PATH:'/usr/bin'},homedir:'/home/person',nodeBinDirectories:async()=>['/home/person/.nvm/versions/node/v24/bin']},'/home/person/.local/bin/codebuddy');
  assert.ok(env.PATH?.split(':').includes('/home/person/.nvm/versions/node/v24/bin'));
+});
+
+test("readLocalCodexAuth and readLocalCursorAuth recognize local credential files", async () => {
+  const { mkdtemp, mkdir, rm, writeFile } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { readLocalCodexAuth, readLocalCursorAuth } = await import("../../apps/local-agent-host/src/agent-onboarding.js");
+  const root = await mkdtemp(join(tmpdir(), "oc-local-auth-"));
+  try {
+    assert.deepEqual(await readLocalCodexAuth({ OPENAI_API_KEY: "sk-test" }, root), { authenticated: true, account: null });
+    const codexDir = join(root, ".codex");
+    await mkdir(codexDir, { recursive: true });
+    const jwtPayload = Buffer.from(JSON.stringify({ email: "dev@example.com" })).toString("base64url");
+    await writeFile(join(codexDir, "auth.json"), JSON.stringify({ tokens: { access_token: "tok", id_token: `h.${jwtPayload}.s` } }));
+    assert.deepEqual(await readLocalCodexAuth({}, root), { authenticated: true, account: "dev@example.com" });
+
+    const cursorDir = join(root, ".cursor");
+    await mkdir(cursorDir, { recursive: true });
+    await writeFile(join(cursorDir, "cli-config.json"), JSON.stringify({ authInfo: { accessToken: "cur-tok", email: "cur@example.com" } }));
+    assert.deepEqual(await readLocalCursorAuth({}, root), { authenticated: true, account: "cur@example.com" });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

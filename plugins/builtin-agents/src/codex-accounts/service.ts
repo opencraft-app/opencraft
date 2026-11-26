@@ -43,6 +43,7 @@ export class CodexAccountsService {
   private readonly resetAttempts = new Map<string, string>();
   private resumeOperation: Promise<void> | null = null;
   private pollOperation: { sessionId: string; result: Promise<CodexDeviceLoginPollView> } | null = null;
+  private attemptedAutoImport = false;
 
   constructor(private readonly requestHost: HostProtocolRequest, readonly hostId: string) {}
 
@@ -54,8 +55,16 @@ export class CodexAccountsService {
     const generation = ++this.generation;
     this.publish({ ...this.snapshot, phase: "loading", error: null });
     try {
-      const result = await this.request("opencraft/codex/accounts/list", {});
+      let result = await this.request("opencraft/codex/accounts/list", {});
       if (this.disposed || generation !== this.generation) return;
+      if (result.accounts.length === 0 && !this.attemptedAutoImport) {
+        this.attemptedAutoImport = true;
+        const imported = await this.request("opencraft/codex/accounts/import", {}).catch(() => null);
+        if (this.disposed || generation !== this.generation) return;
+        if (imported?.account) {
+          result = { accounts: [imported.account] };
+        }
+      }
       this.publish({ ...this.snapshot, phase: "ready", accounts: result.accounts, error: null });
     } catch (error) {
       if (this.disposed || generation !== this.generation) return;
