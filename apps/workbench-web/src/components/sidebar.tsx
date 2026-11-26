@@ -70,6 +70,7 @@ import { createContext, useContext, memo, useCallback, useEffect, useId, useMemo
 
 interface SidebarProps {
   threads: readonly SidebarThread[];
+  pendingDraftRows?: readonly { key: string; title: string; serverId: string; active: boolean; onSelect: () => Promise<boolean> }[];
   activeHostId: string;
   activeThreadId: string;
   pendingHostId?: string | null;
@@ -291,7 +292,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
     pendingHostId = null, pendingThreadId = null, primaryActions = [], footerActions = [], footerAccessory,
     managementNavigation = null, catalogs = [], bots = [], botCreation = null,
     showFooter = true, showStart = true, showNewChat = false, searchInDialog = false,
-    threadActions, threadBadge = null, threadListGrouping = null, threadCapabilities, pendingTitle,
+    threadActions, threadBadge = null, threadListGrouping = null, threadCapabilities, pendingTitle, pendingDraftRows = [],
     threadCatalogs = [], threadCatalogDiscovery = null, onRetryThreadCatalog, onRetryThreadCatalogDiscovery,
   } = props;
   const intl = useIntl();
@@ -380,6 +381,8 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   const allowedReferences = threadListGrouping?.filterThreads?.(references) ?? references;
   const allowedKeys = JSON.stringify(allowedReferences.map(ref => [ref.hostId, ref.threadId]));
   const needle = query.trim().toLocaleLowerCase();
+  const matchingDraftRows = pendingDraftRows.filter(row => (!serverFilter.serverId || row.serverId === serverFilter.serverId)
+    && (!needle || row.title.toLocaleLowerCase().includes(needle)));
   const { matching, matchingById, tree, matchingReferences, taskFlow } = useMemo(() => {
     const allowed = new Set((JSON.parse(allowedKeys) as [string, string][]).map(key => JSON.stringify(key)));
     const matching = threads.filter(thread => thread.visibility !== "hidden"
@@ -454,7 +457,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   const busyCatalog = threadCatalogDiscovery === "loading" || applicableCatalogs.some(catalog => catalog.phase === "loading");
   const catalogErrors = applicableCatalogs.filter(catalog => catalog.phase === "error"
     || catalog.phase === "ready" && catalog.cachedAt !== undefined);
-  const empty = matching.length === 0 && !busyCatalog && catalogErrors.length === 0 && threadCatalogDiscovery !== "error";
+  const empty = matching.length === 0 && matchingDraftRows.length === 0 && !busyCatalog && catalogErrors.length === 0 && threadCatalogDiscovery !== "error";
   const filtersLabel = text("sidebar.filters", "Filters");
   const allServersLabel = text("sidebar.allServers", "All servers");
   const dismissAfter = (action: () => void) => { selectionIntent.current = null; menus.close(); action(); dismiss?.(); };
@@ -670,6 +673,9 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
             aria-label={text("sidebar.search", "Search conversations")} placeholder={text("sidebar.search", "Search conversations")}
             value={query} onChange={event => setQuery(event.currentTarget.value)} /></label> : null}
           <div className="sidebar-activity-list" ref={activityList}>
+            {matchingDraftRows.map(row =>
+              <SidebarNavigationItem key={row.key} active={row.active} icon={<SquarePen size={16} />}
+                title={row.title || text("sidebar.newChat", "New chat")} onInvoke={() => dismissAfter(row.onSelect)} />)}
             {grouping.notice ? <NavigationEmpty className="sidebar-activity-empty">{label(grouping.notice)}</NavigationEmpty> : null}
             {renderFlowSection("scheduled", text("schedules.catalog.title", "Scheduled tasks"), taskFlow.scheduled, scheduledLimit, setScheduledLimit)}
             {groupedSections ? groupedSections.map(group => {

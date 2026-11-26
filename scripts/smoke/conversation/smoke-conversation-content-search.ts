@@ -25,7 +25,7 @@ const sources=['a','b','broken','unsupported','offline'].map((id,index)=>{
  let fail=true;return createAppServerContentSearchSource({key:id,hostId:id,label:['Alpha','Beta','Broken','Unsupported','Offline'][index],available:id!=='offline',supported:id!=='unsupported',assertCurrent:()=>{},
  protocol:{request:async(method,params)=>{window.calls.push({id,method,params});
  if(id==='broken'&&fail&&params.searchTerm==='正文'){fail=false;throw new Error('synthetic network failure')}
- if(method==='thread/searchOccurrences')return {data:[{turnId:'old-turn',itemId:'old-answer'}],nextCursor:null};
+ if(method==='thread/searchOccurrences')return {data:[{turnId:'old-turn',itemId:'old-answer',turnCursor:'inclusive-old-turn'}],nextCursor:null};
  if(params.searchTerm==='stale')await new Promise(resolve=>setTimeout(resolve,700));
  if(params.searchTerm==='empty'||id==='broken')return {data:[],nextCursor:null};
  return {data:[{thread:{id:params.cursor?'older':'same',name:params.searchTerm==='stale'?'Stale result':'Unrelated title',updatedAt:index+1},snippet:'正文 body match '+(params.cursor?'older':params.searchTerm)+' <img src=x onerror=alert(1)>'}],nextCursor:id==='a'&&!params.cursor?'older':null};}},
@@ -61,7 +61,7 @@ try {
   await dialog.getByRole('button',{name:'Load more matches',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('[role="option"]').length===3);
   await page.screenshot({path:output+'/'+theme+'-'+(mobile?'touch':'desktop')+'.png'});
   await dialog.getByRole('option').filter({hasText:'older'}).click();await dialog.waitFor({state:'hidden'});
-  const selected=await page.evaluate(()=>window.selected[0]);assert.equal(selected.host,'a');assert.equal(selected.id,'older');assert.equal(selected.target.itemId,'old-answer');
+  const selected=await page.evaluate(()=>window.selected[0]);assert.equal(selected.host,'a');assert.equal(selected.id,'older');assert.equal(selected.target.itemId,'old-answer');assert.equal(selected.target.turnCursor,'inclusive-old-turn');
   const historical=page.locator('[data-content-search-unit-key="old-user"]');await historical.waitFor();
   await page.waitForFunction(()=>{const e=document.querySelector('[data-content-search-unit-key="old-user"]');const r=e?.getBoundingClientRect();return r&&r.top>=document.querySelector('.thread-scroll').getBoundingClientRect().top-1&&r.top<document.querySelector('.thread-scroll').getBoundingClientRect().bottom},null,{timeout:10000}).catch(async error=>{await page.screenshot({path:output+'/position-failed.png'});console.log(await page.evaluate(()=>({target:document.querySelector('[data-content-search-unit-key=old-user]')?.getBoundingClientRect().toJSON(),viewport:document.querySelector('.thread-scroll')?.getBoundingClientRect().toJSON(),notice:document.querySelector('.conversation-search-position')?.textContent,scrollTop:document.querySelector('.thread-scroll')?.scrollTop})));throw error});
   await page.waitForTimeout(200);
@@ -69,7 +69,7 @@ try {
   assert.ok(await historical.evaluate(e=>{const r=e.getBoundingClientRect(),v=e.closest('.thread-scroll').getBoundingClientRect();return r.top>=v.top-1&&r.top<v.bottom}));
   assert.equal(await page.getByLabel('Composer draft').inputValue(),'Keep draft');
   await page.getByRole('button',{name:'Search',exact:true}).click();await input.fill('empty');
-  await page.waitForFunction(()=>document.querySelector('[role="status"]')?.textContent?.includes('incomplete'));
+  await dialog.getByRole('status').filter({hasText:'incomplete'}).waitFor();
   assert.equal(await dialog.getByRole('option').count(),0);assert.equal(await dialog.getByText('No matching conversations',{exact:true}).count(),0);
   const calls=await page.evaluate(()=>window.calls);assert.ok(calls.every(x=>['thread/search','thread/searchOccurrences'].includes(x.method)));assert.ok(calls.every(x=>!['unsupported','offline'].includes(x.id)));
   await page.keyboard.press('Escape');await page.close();

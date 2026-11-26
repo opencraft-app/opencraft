@@ -12,7 +12,12 @@ const NO_SOURCES: readonly ConversationSearchSource[] = [];
 const ConversationSearchContent = createDeferredView(async () =>
   (await import("./conversation-search-dialog")).ConversationSearchDialogContent);
 
-export interface ConversationSearchTarget { readonly turnId: string | null; readonly itemId: string | null; readonly requestId: string }
+export interface ConversationSearchTarget {
+  readonly turnId: string | null;
+  readonly itemId: string | null;
+  readonly turnCursor?: string;
+  readonly requestId: string;
+}
 
 export function ConversationSearch({ enabled, open, onOpenChange, threads, loading, incomplete = false, sources = NO_SOURCES, onSelectView, onSelectThread }: {
   enabled: boolean;

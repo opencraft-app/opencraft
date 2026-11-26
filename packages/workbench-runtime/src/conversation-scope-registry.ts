@@ -1,4 +1,4 @@
-import { assertComposerPlacement } from "@opencraft/composer-core";
+import { assertComposerPlacement, composerDocumentToMessageText } from "@opencraft/composer-core";
 import { asHostId } from "@opencraft/chat-core";
 import type { MessageSender } from "@opencraft/appserver-protocol";
 import type {
@@ -41,10 +41,20 @@ export interface NewThreadDraftSnapshot {
   readonly createdAt: number;
 }
 
+/** Paint-only row for a submitted draft after its view promotes. */
+export interface PromotedDraftPreview {
+  readonly draftId: string;
+  readonly hostId: string;
+  readonly threadId: string;
+  readonly spaceId: string;
+  readonly preview: string;
+}
+
 export interface ConversationScopeRegistrySnapshot {
   readonly revision: number;
   readonly activeDraftId: string | null;
   readonly drafts: readonly NewThreadDraftSnapshot[];
+  readonly promotedPreviews: readonly PromotedDraftPreview[];
 }
 
 export interface OpenNewThreadDraftOptions {
@@ -82,6 +92,7 @@ export interface ConversationScopeRegistry {
   failPromotion(draftId: string, error: unknown): NewThreadDraftSnapshot | null;
   promoteDraft(draftId: string): boolean;
   dismissDraft(draftId: string): boolean;
+  forgetPromotedPreview(hostId: string, threadId: string): void;
   dispose(): void;
 }
 
@@ -123,6 +134,7 @@ export function createConversationScopeRegistry(
 ): ConversationScopeRegistry {
   const listeners = new Set<() => void>();
   const drafts = new Map<string, NewThreadDraftSnapshot>();
+  const promotedPreviews = new Map<string, PromotedDraftPreview>();
   const createDraftId = config.createDraftId ?? defaultDraftId;
   const now = config.now ?? Date.now;
   const maxRetainedDrafts = config.maxRetainedDrafts ?? 20;
@@ -138,6 +150,7 @@ export function createConversationScopeRegistry(
     revision,
     activeDraftId,
     drafts: [...drafts.values()],
+    promotedPreviews: [...promotedPreviews.values()],
   });
   const publish = () => {
     revision += 1;
@@ -347,6 +360,16 @@ export function createConversationScopeRegistry(
       if (current.phase !== "promoting" || current.receipt === null) {
         throw new Error(`Draft ${draftId} cannot be promoted from ${current.phase}`);
       }
+      const { receipt, submission } = current;
+      if (submission) {
+        const key = JSON.stringify([receipt.hostId, receipt.threadId]);
+        promotedPreviews.set(key, {
+          draftId, hostId: receipt.hostId, threadId: receipt.threadId,
+          spaceId: current.target.execution.collaborationSpaceId ?? "myself",
+          preview: composerDocumentToMessageText(submission.document).trim().slice(0, 120),
+        });
+        if (promotedPreviews.size > 20) promotedPreviews.delete(promotedPreviews.keys().next().value!);
+      }
       drafts.delete(draftId);
       if (activeDraftId === draftId) activeDraftId = null;
       publish();
@@ -359,11 +382,15 @@ export function createConversationScopeRegistry(
       publish();
       return true;
     },
+    forgetPromotedPreview(hostId, threadId) {
+      if (promotedPreviews.delete(JSON.stringify([hostId, threadId]))) publish();
+    },
     dispose() {
       if (disposed) return;
       disposed = true;
       listeners.clear();
       drafts.clear();
+      promotedPreviews.clear();
       activeDraftId = null;
     },
   };

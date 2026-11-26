@@ -621,6 +621,7 @@ export function createWebWorkbenchCommands(input: {
   });
   commands = {
     forgetThread(hostId, threadId) {
+      input.scopes.forgetPromotedPreview(hostId, threadId);
       // Compare before clearing: a late rejection must not erase a newer choice.
       for (const key of [activeThreadStorageKey(hostId, input.threadMemoryScope?.()), currentProductStorageKey("opencraft.active-thread-id")]) {
         try { if (readLocalPreference(key) === threadId) setLocalPreference(key, null); } catch { /* Preferences are optional. */ }

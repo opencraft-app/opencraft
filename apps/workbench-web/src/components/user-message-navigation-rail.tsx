@@ -1,6 +1,3 @@
-import { RefreshIcon } from "@opencraft/design-system-web/action-icons";
-import { AvatarImage, IdentityAvatarContext } from "@opencraft/extension-react";
-import { PersonIcon as UserRound } from "@opencraft/design-system-web/action-icons";
 import type {
   ConversationNavigationAnchor,
   ConversationNavigationPreview,
@@ -12,7 +9,6 @@ import type { VirtualizedTurnListApi } from "@opencraft/timeline-virtualizer";
 import { createPortal } from "react-dom";
 import {
   useCallback,
-  useContext,
   useEffect,
   useId,
   useLayoutEffect,
@@ -84,6 +80,7 @@ interface TooltipState {
   readonly anchorId: string;
   readonly button: HTMLButtonElement;
   readonly preview: ConversationNavigationPreview;
+  readonly Component: typeof import("./conversation-navigation-tooltip").ConversationNavigationTooltip;
 }
 
 export interface UserMessageNavigationRailProps {
@@ -99,7 +96,6 @@ export function UserMessageNavigationRail({
   virtualizedTurnListApi,
   onNavigationClick,
 }: UserMessageNavigationRailProps) {
-  const avatars = useContext(IdentityAvatarContext);
   const snapshot = useSyncExternalStore(source.subscribe, source.getSnapshot, source.getSnapshot);
   const [isPrepared, setIsPrepared] = useState(false);
   const [hasClearance, setHasClearance] = useState(false);
@@ -299,9 +295,9 @@ export function UserMessageNavigationRail({
     const requestId = ++previewRequestRef.current;
     previewTimerRef.current = window.setTimeout(() => {
       previewTimerRef.current = null;
-      void source.loadPreview(anchor.id).then((preview) => {
+      void Promise.all([source.loadPreview(anchor.id), import("./conversation-navigation-tooltip")]).then(([preview, module]) => {
         if (preview !== null && requestId === previewRequestRef.current) {
-          setTooltip({ anchorId: anchor.id, button, preview });
+          setTooltip({ anchorId: anchor.id, button, preview, Component: module.ConversationNavigationTooltip });
         }
       }).catch(() => undefined);
     }, PREVIEW_DELAY_MS);
@@ -447,7 +443,7 @@ export function UserMessageNavigationRail({
     }, 0);
   };
 
-  const tooltipRect = tooltip?.button.getBoundingClientRect();
+  const tooltipAnchor = tooltip?.button.isConnected ? items.find(item => item.id === tooltip.anchorId) : undefined;
   return (
     <>
       {createPortal(<nav className="conversation-navigation-rail" aria-label="User messages">
@@ -518,34 +514,8 @@ export function UserMessageNavigationRail({
           </div>
         </div>
       </nav>, railHost)}
-      {tooltip !== null && tooltipRect !== undefined ? createPortal(
-        <div
-          className="conversation-navigation-tooltip"
-          id={tooltipId}
-          role="tooltip"
-          style={{ left: tooltipRect.right, top: tooltipRect.top + tooltipRect.height / 2 }}
-        >
-          <div className="conversation-navigation-tooltip__label">
-            {tooltip.preview.sender ? <span className="conversation-navigation-tooltip__avatar" role="img" aria-label={tooltip.preview.sender.loginName} title={tooltip.preview.sender.loginName}>
-              <AvatarImage src={avatars?.resolve(tooltip.preview.sender.kind, tooltip.preview.sender.loginName) ?? null} fallback={<UserRound size={12} />} />
-            </span> : null}
-            {items.find((item) => item.id === tooltip.anchorId)?.isHeartbeat ? <RefreshIcon size={12} /> : null}
-            <span>{tooltip.preview.label || "(No content)"}</span>
-          </div>
-          {tooltip.preview.response.trim().length > 0 ? (
-            <div className="conversation-navigation-tooltip__response">{tooltip.preview.response}</div>
-          ) : null}
-          {tooltip.preview.outputs.length > 0 ? (
-            <div className="conversation-navigation-tooltip__outputs">
-              {tooltip.preview.outputs.slice(0, 2).map((output, index) => (
-                <span key={`${output.kind}:${output.label ?? index}`}>{output.label ?? output.kind}</span>
-              ))}
-              {tooltip.preview.outputs.length > 2 ? <span>+{tooltip.preview.outputs.length - 2}</span> : null}
-            </div>
-          ) : null}
-        </div>,
-        document.body,
-      ) : null}
+      {tooltip && tooltipAnchor ? <tooltip.Component id={tooltipId} button={tooltip.button} preview={tooltip.preview}
+        heartbeat={tooltipAnchor.isHeartbeat} /> : null}
     </>
   );
 }

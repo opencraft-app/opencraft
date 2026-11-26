@@ -78,9 +78,16 @@ export interface PrepareConversationNavigationTargetOptions {
   readonly signal?: AbortSignal;
 }
 
+/** A search result carries an optional opaque locator from its history provider. */
+export interface LocatedConversationNavigationTarget {
+  readonly turnId: string;
+  readonly itemId: string;
+  readonly turnCursor: string;
+}
+
 /**
- * The renderer never receives V3 cursors or V4 epoch/seq locators. A source
- * owns those details and returns a target only after authoritative projection.
+ * The renderer treats locators as opaque. A source interprets them and returns
+ * a target only after authoritative projection.
  */
 export interface ConversationNavigationSource {
   getSnapshot(): ConversationNavigationSnapshot;
@@ -90,6 +97,10 @@ export interface ConversationNavigationSource {
   prepareTarget(
     anchorId: string,
     options?: PrepareConversationNavigationTargetOptions,
+  ): Promise<PreparedConversationNavigationTarget | null>;
+  prepareLocatedTarget?(
+    target: LocatedConversationNavigationTarget,
+    signal: AbortSignal,
   ): Promise<PreparedConversationNavigationTarget | null>;
   dispose(): void;
 }

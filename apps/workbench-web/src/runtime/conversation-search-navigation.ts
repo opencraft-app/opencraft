@@ -1,13 +1,11 @@
 import type { ConversationNavigationAnchor, ConversationNavigationSource } from "@opencraft/chat-navigation";
 
-/** Activation can finish before resume; navigation owns history readiness. */
+/** Wait for history preparation and marker publication under one cancellation deadline. */
 export async function waitForSearchNavigationAnchor(
   source: ConversationNavigationSource,
   target: { readonly turnId: string; readonly itemId: string },
   signal: AbortSignal,
 ): Promise<ConversationNavigationAnchor> {
-  signal.throwIfAborted();
-  await source.prepare();
   signal.throwIfAborted();
   return new Promise((resolve, reject) => {
     let release = () => {};
@@ -32,9 +30,64 @@ export async function waitForSearchNavigationAnchor(
       if (anchor && (snapshot.phase === "ready" || snapshot.phase === "degraded")) finish(anchor);
       else finish(undefined, new Error("Matching turn unavailable"));
     };
-    release = source.subscribe(check);
-    if (settled) { release(); return; }
     signal.addEventListener("abort", aborted, { once: true });
+    void Promise.resolve().then(() => {
+      if (!settled) return source.prepare();
+    }).then(() => {
+      if (settled) return;
+      release = source.subscribe(check);
+      if (settled) release();
+      else check();
+    }).catch(error => finish(undefined, error));
+  });
+}
+
+async function waitForReadableView(source: ConversationNavigationSource, signal: AbortSignal): Promise<void> {
+  signal.throwIfAborted();
+  if (source.getSnapshot().generation !== null) return;
+  await new Promise<void>((resolve, reject) => {
+    let release = () => {};
+    const finish = () => {
+      release();
+      signal.removeEventListener("abort", finish);
+      if (signal.aborted) reject(signal.reason);
+      else resolve();
+    };
+    const check = () => {
+      if (source.getSnapshot().generation !== null) finish();
+    };
+    signal.addEventListener("abort", finish, { once: true });
+    release = source.subscribe(check);
     check();
   });
+}
+
+export async function prepareSearchNavigationTarget(
+  source: ConversationNavigationSource,
+  target: { readonly turnId: string; readonly itemId: string; readonly turnCursor?: string },
+  signal: AbortSignal,
+) {
+  signal.throwIfAborted();
+  const lifetime = new AbortController();
+  const abort = () => lifetime.abort(signal.reason);
+  signal.addEventListener("abort", abort, { once: true });
+  const timer = setTimeout(() => lifetime.abort(new Error("Navigation did not become ready")), 30_000);
+  const options = { signal: lifetime.signal, itemId: target.itemId };
+  try {
+    const cursor = target.turnCursor;
+    if (source.prepareLocatedTarget && typeof cursor === "string" && cursor.length > 0) {
+      await waitForReadableView(source, options.signal);
+      const generation = source.getSnapshot().generation;
+      const prepared = await source.prepareLocatedTarget({ ...target, turnCursor: cursor }, options.signal);
+      options.signal.throwIfAborted();
+      if (source.getSnapshot().generation !== generation) throw new Error("Matching turn changed");
+      if (prepared) return prepared;
+    }
+    const anchor = await waitForSearchNavigationAnchor(source, target, options.signal);
+    options.signal.throwIfAborted();
+    return await source.prepareTarget(anchor.id, options);
+  } finally {
+    clearTimeout(timer);
+    signal.removeEventListener("abort", abort);
+  }
 }

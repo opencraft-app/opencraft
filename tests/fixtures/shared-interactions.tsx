@@ -18,6 +18,11 @@ const client = new JsonRpcAppServerClient({ hostId: "host", transport: new WebSo
 const broker = new AppServerInteractionBroker({ hostId: "host", client, sharedClient: client, store: {
   upsertPendingInteraction: value => { values.set(value.requestId, value); render(); },
   removePendingInteraction: (_thread, id) => { values.delete(id); render(); },
+  applyPendingInteractionPatch: (_thread, { remove, upsert }) => {
+    for (const id of remove) values.delete(id);
+    for (const value of upsert) values.set(value.requestId, value);
+    render();
+  },
 } });
 probe.ready = false;
 probe.client = client;

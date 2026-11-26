@@ -97,7 +97,12 @@ export function ConversationSearchDialogContent({ threads, loading, incomplete, 
         // Native text search can match older raw-history content that is not
         // addressable as a visible message. Keep the conversation accessible,
         // with an explicit positioning notice rather than a fabricated target.
-        target = { turnId: occurrence?.turnId ?? null, itemId: occurrence?.itemId ?? null, requestId: crypto.randomUUID() };
+        target = {
+          turnId: occurrence?.turnId ?? null,
+          itemId: occurrence?.itemId ?? null,
+          turnCursor: occurrence?.turnCursor,
+          requestId: crypto.randomUUID(),
+        };
       }
       if (abort.signal.aborted) return;
       onSelectThread(thread.connectionHostId, thread.id, target);

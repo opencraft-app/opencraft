@@ -128,6 +128,7 @@ function projectMessages(snapshot: TimelineSnapshot): readonly DisplayMessage[] 
   // but discarded message bodies are never parsed or cloned for the cache.
   scan: for (let frameIndex = snapshot.frames.length - 1; frameIndex >= 0; frameIndex--) {
     const frame = snapshot.frames[frameIndex]!;
+    if (frame.turnId === snapshot.unplacedSearchTurnId) continue;
     if (frame.type !== "user" && frame.type !== "assistant") continue;
     const active = frame.status === "pending" || frame.status === "streaming";
     const workStatus = frame.type === "assistant" ? completedWork(frame.workStatus) : null;
@@ -476,14 +477,17 @@ export function createConversationDisplayContinuity(input: {
       const key = storageKey(input.namespace, snapshot.key.hostId, snapshot.key.threadId);
       const reading = reads.get(key);
       if (reading) reading.invalidated = true;
+      const unplaced = snapshot.unplacedSearchTurnId;
+      const outside = snapshot.outsideHistoryWindowTurnIds;
+      const history = outside ? { ...snapshot, frames: snapshot.frames.filter(frame => !outside.has(frame.turnId)) } : snapshot;
+      const cached = peek(snapshot.key.hostId, snapshot.key.threadId);
       // An empty baseline can arrive before the first Turn is submitted. Keep
       // its local presentation until the canonical user message can replace it.
-      if (snapshot.frames.some(frame => frame.blocks.some(block => block.type === "user-message"
+      if (history.frames.some(frame => frame.turnId !== unplaced && frame.blocks.some(block => block.type === "user-message"
         && block.messageKind === "user"))) submissions.delete(key);
-      const display = selectConversationDisplay({ key: snapshot.key, timeline: snapshot,
-        cached: peek(snapshot.key.hostId, snapshot.key.threadId), historyHasOlder });
-      const messages = projectMessages(display.timeline ?? snapshot);
-      const retainedHeader = displayHeader(header) ?? peek(snapshot.key.hostId, snapshot.key.threadId)?.displayHeader;
+      const display = selectConversationDisplay({ key: snapshot.key, timeline: history, cached, historyHasOlder });
+      const messages = projectMessages(display.timeline ?? history);
+      const retainedHeader = displayHeader(header) ?? cached?.displayHeader;
       const projection = JSON.stringify([messages, snapshot.historyTurnCount, retainedHeader]);
       // Residency/expiry is independent of whether this content needs saving.
       remember(key, messages, snapshot.key.hostId, snapshot.key.threadId, now(), snapshot.historyTurnCount, retainedHeader, projection);

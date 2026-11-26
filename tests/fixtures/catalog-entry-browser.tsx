@@ -1,18 +1,25 @@
-import React, { useState } from "react";
+import React, { useState, useSyncExternalStore } from "react";
 import { QueryClient, QueryClientProvider, useQueries } from "@tanstack/react-query";
 import { createIntlTestRoot } from "./intl-root";
+import { asHostId } from "@opencraft/chat-core";
+import { useSidebarDraftRows } from "../../apps/workbench-web/src/runtime/use-sidebar-draft-rows";
 import { Sidebar } from "../../apps/workbench-web/src/components/sidebar";
 import { useHostThreadCatalogQueries } from "../../apps/workbench-web/src/runtime/use-host-thread-catalog-queries";
 import { bindThreadCatalogNotifications } from "../../apps/workbench-web/src/runtime/thread-catalog-notifications";
 import { readHostThreadCatalog } from "../../apps/workbench-web/src/runtime/host-thread-catalog";
 import { sidebarThreadCatalogQueryKey, threadCatalogPhase } from "../../apps/workbench-web/src/runtime/thread-catalog-query";
-import { projectAppServerThread, legacyDirectServerProjectionFromHost } from "@opencraft/workbench-runtime";
+import { useUiPreferencesRuntime } from "../../apps/workbench-web/src/runtime/ui-preferences-runtime";
+import { createConversationScopeRegistry, projectAppServerThread, legacyDirectServerProjectionFromHost } from "@opencraft/workbench-runtime";
 import { SidebarLayoutStore } from "@opencraft/sidebar-layout";
 import { initializeAppearanceTheme, setThemePreference } from "../../apps/workbench-web/src/appearance-theme";
 import "../../apps/workbench-web/src/styles/app.scss";
 const params = new URL(location.href).searchParams;
 initializeAppearanceTheme(); setThemePreference(params.get("theme") === "dark" ? "dark" : "light");
 const layout = await SidebarLayoutStore.open({ load: async () => null, save: async () => {} });
+const scopes = createConversationScopeRegistry({ initialDraft: null });
+const draftTitle = "First message awaiting directory";
+const draftId = "pending-catalog-draft";
+const threadId = "pending-catalog-thread";
 const client = new QueryClient({ defaultOptions: { queries: { retryDelay: 5, refetchOnWindowFocus: false } } });
 let notify: (notification: any) => void = () => {};
 bindThreadCatalogNotifications({ subscribeNotification: listener => { notify = listener; return () => {}; } }, "fixture", client);
@@ -34,12 +41,15 @@ const observations: any[] = [];
 const actions: string[] = [];
 const metrics: { firstPaintMs?: number; completePaintMs?: number } = {};
 function App() {
+  const preferences = useUiPreferencesRuntime();
   const [revision, setRevision] = useState(1);
   const [enabled, setEnabled] = useState(true);
   const key = sidebarThreadCatalogQueryKey('fixture', { revision, authorizationEpoch: null });
   const [query] = useCatalog([{ profile: { ...profile, revision }, currentProfile: () => current, management: null, registry, enabled, queryKey: key }]);
   const rows = enabled ? query!.data?.data ?? [] : [];
   const threads = rows.map((thread: any) => ({ ...projectAppServerThread(thread), ...legacyDirectServerProjectionFromHost({ hostId: 'fixture', hostKind: 'local', label: 'Fixture' }), connectionHostId: 'fixture', connectionHostLabel: 'Fixture', interactionAvailable: enabled && phase === 'ready' }));
+  const draftSnapshot = useSyncExternalStore(scopes.subscribe, scopes.getSnapshot, scopes.getSnapshot);
+  const pendingDraftRows = useSidebarDraftRows(scopes, draftSnapshot, threads, { hostId: "fixture", selected: "myself" });
   const catalog = { hostId: 'fixture', label: 'Fixture', phase: threadCatalogPhase({ admitted: enabled, status: query!.status, isFetching: query!.isFetching, partial: "hasNextPage" in query! ? query!.hasNextPage : query!.isPlaceholderData }), partial: "hasNextPage" in query! ? query!.hasNextPage : query!.isPlaceholderData };
   observations.push({ ms: performance.now() - started, rows: rows.length, status: query!.status, fetching: query!.isFetching, partial: "hasNextPage" in query! ? query!.hasNextPage : query!.isPlaceholderData, cached: client.getQueryData(key) !== undefined, revision, enabled });
   React.useLayoutEffect(() => {
@@ -51,6 +61,23 @@ function App() {
     });
   }, [rows.length, query!.isFetching, query!.isPlaceholderData, query!.status]);
   (window as any).catalogEntry = { observations, calls, actions, started, metrics, snapshot: () => observations.at(-1),
+    filterServer: (serverId: string) => preferences.set("sidebar.serverFilter", { serverId, label: serverId }),
+    beginDraft() {
+      const draft = scopes.openDraft({ draftId, execution: { hostId: asHostId("fixture"), workspace: { cwd: null, runtimeWorkspaceRoots: [] } } });
+      scopes.beginSubmit(draftId, { target: draft.target, commandId: "fixture-command", clientMessageId: "fixture-message",
+        createdAt: Date.now(), document: { version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text: draftTitle }] }] },
+        selections: {}, options: {}, attachments: [], context: [],
+      } as any);
+    },
+    promoteDraft() {
+      scopes.acceptSubmission(draftId, { commandId: "fixture-command", clientMessageId: "fixture-message", hostId: "fixture",
+        threadId, turnId: "fixture-turn", acceptedAt: Date.now(), replayed: false });
+      scopes.beginPromotion(draftId);
+      scopes.promoteDraft(draftId);
+    },
+    commitDraft: () => notify({ method: "opencraft/thread-catalog/changed", params: { version: 1, source: "fixture-catalog", revision: 1,
+      change: { type: "upsert", thread: { id: threadId, name: draftTitle, preview: draftTitle, cwd: "/fixture", createdAt: 5000, updatedAt: 5000,
+        status: { type: "active", activeFlags: [] } } } } }),
     notify: () => notify({ method: "turn/started", params: { threadId: "t0" } }),
     refresh: () => client.invalidateQueries({ queryKey: key }),
     cached: () => { const value = client.getQueryData<any>(key); return value?.pages ? { ...value.pages[0], data: [...new Map(value.pages.flatMap((page: any) => page.data).map((row: any) => [row.id, row])).values()] } : value; },
@@ -59,6 +86,7 @@ function App() {
     disconnect: () => { phase = 'reconnecting'; setEnabled(false); },
   };
   return <div style={{ width: 320, height: '100vh', display: 'flex' }}><Sidebar threads={threads} activeHostId="fixture" activeThreadId=""
+    pendingDraftRows={pendingDraftRows.map(row => ({ key: row.draftId, title: row.preview, serverId: "fixture", active: true, onSelect: async () => true }))}
     sidebarLayout={layout} threadCatalogs={[catalog]} showFooter={false}
     onRetryThreadCatalog={() => { void client.refetchQueries({ queryKey: key }); }}
     onSelectThread={(_, id) => actions.push(id)} onNewTask={() => {}} onOpenSettings={() => {}} /></div>;
