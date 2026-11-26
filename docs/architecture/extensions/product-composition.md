@@ -10,10 +10,9 @@ Headless 的 IM 与企业微信为两层可选服务端插件：IM 持有交换�
 
 > 开发入口：[当前插件边界、API 与贡献路径](../../develop/extension-development.md)。本文同时保留目标拓扑和迁移历史；目标设计不是已实现 API。当前类型以 `packages/extension-contract/src/index.ts` 为准，示例以 `examples/extensions/hello.mjs` 为准。
 
-GitHub上游迁移要求公开Application/Headless/Relay通过产品装配端口接入下游产品/企业身份，
-不能无条件导入私有插件；移除配置中的必需身份提供者必须保持拒绝，核心Actor、
-成员与资源授权不下沉到产品。当前拆分尚在实施，已知直接依赖与验证不变量见
-[upstream transition](../../history/upstream-transition.md#boundary-migration-record-and-remaining-review)，不把菜单开关当依赖隔离。
+公开 Application/Headless/Relay 通过产品装配端口接入产品/企业身份，
+不能无条件导入私有插件；移除配置中的必需身份提供者必须保持拒绝，核心 Actor、
+成员与资源授权不下沉到插件，不把菜单开关当依赖隔离。
 
 Web supervisor 通过 `WebWorkbenchSupervisorOptions.serverExtensions` 接收可信工厂，
 仅在服务端工作台接入时加载；通用默认列表为空，不把 Headless 等同于企业身份。

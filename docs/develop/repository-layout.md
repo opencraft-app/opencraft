@@ -37,8 +37,7 @@ architecture entry points index the maintained topics under
 `docs/architecture/platform/` and `docs/architecture/chat-ui/`. Keep changes to
 behavior and ownership in the relevant topic; the entry points retain earlier
 section permalinks and provide navigation.
-[Upstream history](../history/upstream-history.md) records repository history and downstream
-consumption. Historical local-project-selection notes live together under
+Historical local-project-selection notes live together under
 [`design/local-project-selection/`](../../design/local-project-selection/task_plan.md);
 their progress and limitations describe that task's recorded state.
 
