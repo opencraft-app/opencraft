@@ -175,10 +175,13 @@ export class ConnectedAgentHost {
   }
   async models(threadId?: string) {
     // Saved Agent declarations are metadata, never authorization to execute.
-    // Do not launch peers or wait on login commands on this read path.
+    // Fast local credential checks let first-run sessions expose already-signed-in agents immediately.
     await this.readSavedModels();
-    if (!this.catalogRefresh && Date.now() - this.probedAt > 60_000) {
-      this.catalogRefresh = this.refresh().then(async () => {
+    if (!threadId && this.discovered.size === 0 && this.probedAt === 0) {
+      await this.refresh().catch(() => undefined);
+    }
+    if (!this.catalogRefresh && (Date.now() - this.probedAt > 60_000 || this.ready.some(id => !this.discovered.has(id)))) {
+      this.catalogRefresh = (this.probedAt === 0 ? this.refresh() : Promise.resolve()).then(async () => {
         await Promise.allSettled(this.ready.map(async id => {
           const before = JSON.stringify(this.discovered.get(id));
           await this.ensureAgentModels(id);
@@ -187,7 +190,8 @@ export class ConnectedAgentHost {
         }));
       }).catch(() => undefined).finally(() => { this.catalogRefresh = null; });
     }
-    return [...this.discovered.keys()].flatMap(engineId => {
+    const candidateIds = [...new Set<EngineId>([...this.discovered.keys(), ...this.ready])];
+    return candidateIds.flatMap(engineId => {
       if (threadId && connectedAgentEngineId(threadId) !== engineId) return [];
       const found = this.discovered.get(engineId) ?? [];
       return found.length > 0 ? found.map(model => ({

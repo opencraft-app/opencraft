@@ -1,4 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { homedir } from "node:os";
+import { delimiter, dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 
 export type AcpObject = Record<string, any>;
@@ -34,8 +36,14 @@ export class AcpStdioTransport {
   start(): Promise<AcpObject> {
     return this.initialized ??= (async () => {
       if (this.closing) throw new Error("ACP Host closed");
+      const rawEnv = { ...process.env, ...this.options.env };
+      const home = rawEnv.HOME || homedir();
+      const extraDirs = [dirname(process.execPath), join(home, ".local", "bin"), join(home, ".codebuddy", "bin"), "/opt/homebrew/bin", "/usr/local/bin"];
+      const pathParts = (rawEnv.PATH ?? "").split(delimiter).filter(Boolean);
+      for (const extra of extraDirs) if (extra && !pathParts.includes(extra)) pathParts.unshift(extra);
+      const env = { ...rawEnv, PATH: pathParts.join(delimiter) };
       const child = spawn(this.options.command, [...(this.options.args ?? [])], {
-        cwd: this.options.cwd, env: { ...process.env, ...this.options.env }, stdio: ["pipe", "pipe", "pipe"],
+        cwd: this.options.cwd, env, stdio: ["pipe", "pipe", "pipe"],
       });
       this.child = child;
       // Diagnostics are deliberately not forwarded: protocol peers may include
