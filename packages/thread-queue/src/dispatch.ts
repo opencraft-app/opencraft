@@ -1,5 +1,5 @@
 import { inputExecutionEnded, type InputDeliveryReceipt } from "@opencraft/appserver-protocol";
-import type { QueuedSubmission } from "./queue-store.js";
+import type { QueueDelivery, QueuedSubmission } from "./queue-store.js";
 
 type Awaitable<T> = T | Promise<T>;
 
@@ -9,7 +9,7 @@ type Awaitable<T> = T | Promise<T>;
  * provides them asynchronously over the same database.
  */
 export interface QueueStoreAccess<S> {
-  list(threadId: string, receiptTurnIds?: readonly string[]): Awaitable<QueuedSubmission<S>[]>;
+  listReconciliation(threadId: string, receiptTurnIds?: readonly string[]): Awaitable<QueueDelivery[]>;
   find(threadId: string, id: string): Awaitable<QueuedSubmission<S> | null>;
   firstAwaitingAdmission(threadId: string): Awaitable<QueuedSubmission<S> | null>;
   claim(threadId: string, id: string, targetTurnId: string | null): Awaitable<QueuedSubmission<S> | null>;
@@ -55,9 +55,7 @@ export async function reconcileThreadQueue<S>(
   port: QueueReconcilePort,
   receiptTurnIds?: readonly string[],
 ): Promise<void> {
-  const unsettled = (await queue.list(threadId, receiptTurnIds)).filter(
-    (row) => row.state === "unknown" || row.state === "steering" || row.state === "closed",
-  );
+  const unsettled = await queue.listReconciliation(threadId, receiptTurnIds);
   const terminal = new Map<string, Promise<{ readonly status?: unknown } | undefined>>();
   let idle: boolean | undefined;
   for (const row of unsettled) {

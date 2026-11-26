@@ -140,3 +140,25 @@ test('a conflicting replay cannot replace the suspended native route', () => {
   waits.resolveNative(2, 'thread');
   assert.equal(waits.snapshot('thread', true).requests[0]?.id, 'a');
 });
+
+test("a terminal Turn retires all of its waits before publishing any individual settlement", async () => {
+  const waits = new HostInteractions();
+  const a = waits.capture(source(1)), b = waits.capture(source(2));
+  const other = waits.capture({ ...source(3), params: { ...source(3).params, turnId: "other-turn" } });
+  const publications: string[][] = [];
+  let writes = 0;
+  const attempts: Array<Promise<string>> = [];
+  waits.subscribe(() => {
+    const ids = waits.snapshot("thread", true).requests.map(request => request.id);
+    publications.push(ids);
+    if (!ids.includes(a) && ids.includes(b) && attempts.length === 0) {
+      const attempt = waits.respond("thread", b, "late", {}, async () => { writes++; });
+      attempts.push(attempt);
+    }
+  });
+  waits.resolveTurn("thread", "turn");
+  await Promise.all(attempts);
+  assert.equal(writes, 0);
+  assert.deepEqual(publications, [[other]]);
+  assert.equal(await waits.respond("thread", b, "retired", {}, async () => assert.fail("Retired native write")), "resolved");
+});

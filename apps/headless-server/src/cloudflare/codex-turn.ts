@@ -25,7 +25,7 @@ import type {
   TokenUsageBreakdown,
   TurnPlanStep,
 } from "@opencraft/appserver-protocol/generated/v2";
-import type { HostInteractions } from "@opencraft/app-host-server/interactions";
+import { InteractionResponseNotDispatched, type HostInteractions } from "@opencraft/app-host-server/interactions";
 import type { InstallationCoreNamespace } from "./bindings.js";
 import { parseClientAttachment, type ClientAttachment } from "./client-attachment.js";
 import { isCodexModelId } from "./codex-thread-start.js";
@@ -793,7 +793,7 @@ export async function openNativeMutationLane(
       closed: socket.closed,
       request,
       async respond(source, result) {
-        if (ended) throw new Error("Native mutation lane unavailable");
+        if (ended) throw new InteractionResponseNotDispatched(new Error("Native mutation lane unavailable"));
         await socket.send(
           JSON.stringify({ id: source.id, result, __opencraftInteractionKey: source.__opencraftInteractionKey }),
         );

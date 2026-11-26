@@ -15,8 +15,19 @@ export interface DshHistoryEntry {
 
 export interface DshStreamEnvelope {
   readonly rpcId?: string;
+  /** The routed client retains the native source beside the logical renderer identity. */
+  readonly nativeSessionId?: string;
   readonly payload: Record<string, unknown>;
 }
+
+export interface DshInteractionSource {
+  readonly logicalSessionId: string;
+  readonly nativeSessionId: string;
+}
+
+type DshInteractionReceipt =
+  | { readonly accepted: true }
+  | { readonly accepted: false; readonly reason: "not-pending" | "bad-response" };
 
 interface DshResponseEnvelope {
   readonly result?: {
@@ -41,14 +52,21 @@ export class DshClient {
   constructor(public baseUrl: string, private readonly requestTimeoutMs = 30_000, private bootstrapToken?: string) {}
   sealBootstrap() { this.bootstrapToken = undefined; }
 
-  async respond(rpcId: string, result: unknown): Promise<{ accepted: boolean; reason?: string }> {
+  async respond(rpcId: string, result: unknown, _source?: DshInteractionSource): Promise<DshInteractionReceipt> {
     const response = await fetch(new URL("/api/respond", this.baseUrl), {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ type: "client-response", rpcId, result }),
       signal: AbortSignal.timeout(10_000),
     });
     if (!response.ok) throw new DshClientError("DSH_HTTP_ERROR", `respond failed with HTTP ${response.status}`);
-    return await response.json() as { accepted: boolean; reason?: string };
+    const receipt: unknown = await response.json();
+    if (typeof receipt === "object" && receipt !== null && "accepted" in receipt) {
+      if (receipt.accepted === true) return { accepted: true };
+      if (receipt.accepted === false && "reason" in receipt &&
+          (receipt.reason === "not-pending" || receipt.reason === "bad-response"))
+        return { accepted: false, reason: receipt.reason };
+    }
+    throw new DshClientError("DSH_RESPONSE_UNKNOWN", "Invalid DSH interaction receipt");
   }
 
   async call<TResult>(

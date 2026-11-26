@@ -95,7 +95,12 @@ export class SqlInterruptedTurnRecovery {
   }
   lost(threadId?: string): void {
     if (this.closed) return;
-    for (const row of this.pending()) if ((!threadId || row.threadId === threadId) && row.state === "running") this.put({ ...row, state: "interrupted" });
+    if (threadId) {
+      const row = this.get(threadId);
+      if (row?.state === "running") this.put({ ...row, state: "interrupted" });
+      return;
+    }
+    for (const row of this.pending()) if (row.state === "running") this.put({ ...row, state: "interrupted" });
   }
   /** Read-only lifecycle proof; no change to execution or recovery policy. */
   pendingThreadIds(): string[] { return [...new Set(this.pending().map(row => row.threadId))]; }

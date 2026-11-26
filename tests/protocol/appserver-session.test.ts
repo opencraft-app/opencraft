@@ -20,6 +20,7 @@ import {
   isJsonRpcRequest,
   isJsonRpcSuccess,
   parseJsonRpcMessage,
+  type JsonRpcErrorObject,
 } from "@opencraft/appserver-protocol";
 
 interface WireRequest {
@@ -41,18 +42,21 @@ interface HarnessOptions {
   readHistory?: boolean;
   itemDetails?: boolean;
   frameScheduler?: ThreadViewFrameScheduler;
-  historyMode?: "legacy" | "paginated";
+  historyMode?: "legacy" | "paginated" | "message-window";
   historyRecovery?: import("@opencraft/appserver-protocol").ThreadHistoryRecovery;
   responseTurns?: readonly Record<string, unknown>[];
   initialTurnsPage?: { data: readonly Record<string, unknown>[]; nextCursor: string | null } | null;
   initialReadPage?: boolean;
   turnsPages?: Readonly<Record<string, { data: readonly Record<string, unknown>[]; nextCursor: string | null }>>;
+  turnsErrors?: Readonly<Record<string, JsonRpcErrorObject>>;
   itemsByTurnId?: Readonly<Record<string, readonly Record<string, unknown>[]>>;
   itemClocksById?: Readonly<Record<string, { startedAtMs?: unknown; completedAtMs?: unknown }>>;
+  itemsBackwardsCursor?: string | null;
   fallbackTurns?: readonly Record<string, unknown>[];
   resumeDelayMs?: number;
   turnsDelayMs?: number;
   holdTurnsResponse?: (respond: () => void) => void;
+  holdItemsResponse?: (respond: () => void) => void;
   failResume?: boolean;
   resumeErrorData?: unknown;
   oversizedFullPage?: boolean;
@@ -65,6 +69,7 @@ interface HarnessOptions {
   emitItemDuringResume?: boolean;
   requestDuringResume?: boolean;
   repeatItemCursor?: boolean;
+  itemNextCursor?: string;
   repeatTurnsCursor?: boolean;
   hostId?: string;
   hostKind?: "local" | "durable";
@@ -108,7 +113,8 @@ function resumeResult(options: HarnessOptions) {
     runtimeWorkspaceRoots: ["/workspace"],
     instructionSources: ["/workspace/AGENTS.md"],
     turnsBackwardsCursor: options.historyMode === "paginated" ? "turns:head" : null,
-    itemsBackwardsCursor: options.historyMode === "paginated" ? "items:head" : null,
+    itemsBackwardsCursor: options.itemsBackwardsCursor !== undefined
+      ? options.itemsBackwardsCursor : options.historyMode === "paginated" ? "items:head" : null,
     ...(options.historyRecovery === undefined ? {} : { historyRecovery: options.historyRecovery }),
     ...(options.initialTurnsPage === undefined ? {} : { initialTurnsPage: options.initialTurnsPage }),
   };
@@ -214,6 +220,11 @@ async function createHarness(options: HarnessOptions = {}): Promise<{
           ? { ...selected, nextCursor: params.cursor }
           : selected;
         const respond = () => peer.send(encodeJsonRpcMessage({ id: message.id, result: page }));
+        const error = options.turnsErrors?.[key];
+        if (error) {
+          peer.send(encodeJsonRpcMessage({ id: message.id, error }));
+          return;
+        }
         if (options.holdTurnsResponse) options.holdTurnsResponse(respond);
         else if ((options.turnsDelayMs ?? 0) > 0) setTimeout(respond, options.turnsDelayMs);
         else respond();
@@ -228,14 +239,16 @@ async function createHarness(options: HarnessOptions = {}): Promise<{
         const ordered = options.maxItemsLimit !== undefined && params.sortDirection === "desc" ? [...items].reverse() : items;
         const offset = options.maxItemsLimit !== undefined && typeof params.cursor === "string" && /^items:\d+$/.test(params.cursor) ? Number(params.cursor.slice(6)) : 0;
         const selected = options.maxItemsLimit === undefined ? items : ordered.slice(offset, offset + Number(params.limit));
-        peer.send(encodeJsonRpcMessage({
+        const respond = () => peer.send(encodeJsonRpcMessage({
           id: message.id,
           result: {
             data: selected.map((item) => ({ turnId, item, ...options.itemClocksById?.[String(item.id)] })),
-            nextCursor: options.repeatItemCursor && typeof params.cursor === "string" ? params.cursor
-              : options.maxItemsLimit !== undefined && offset + selected.length < ordered.length ? `items:${offset + selected.length}` : null,
+            nextCursor: options.itemNextCursor ?? (options.repeatItemCursor && typeof params.cursor === "string" ? params.cursor
+              : options.maxItemsLimit !== undefined && offset + selected.length < ordered.length ? `items:${offset + selected.length}` : null),
           },
         }));
+        if (options.holdItemsResponse) options.holdItemsResponse(respond);
+        else respond();
         return;
       }
       peer.send(encodeJsonRpcMessage({
@@ -1524,6 +1537,119 @@ test("paginated Item cursor corruption fails Resume and rolls ownership back", a
   }
 });
 
+test("legacy Resume keeps every incomplete Turn readable after its shared Item budget is spent", async () => {
+  const items = Array.from({ length: 501 }, (_, index) => ({ id: `item-${index}`, type: "agentMessage" }));
+  const options: HarnessOptions = {
+    historyMode: "paginated",
+    maxItemsLimit: 100,
+    itemsBackwardsCursor: null,
+    turnsPages: { "turns:head": {
+      data: ["latest", "earlier"].map(id => ({ id, itemsView: "notLoaded", status: "completed", items: [] })),
+      nextCursor: null,
+    } },
+    itemsByTurnId: { latest: items, earlier: [{ id: "earlier-answer", type: "agentMessage" }] },
+  };
+  const h = await createHarness(options);
+  try {
+    const initial = await h.runtime.resume.resume({ threadId: "thread-one" });
+    assert.equal(initial.turnsPagination.hasLoadedOldest, true);
+    assert.deepEqual(initial.turns.map(turn => [turn.id, turn.itemsView, turn.items?.length]), [
+      ["earlier", "notLoaded", 0], ["latest", "summary", 500],
+    ]);
+    assert.equal(h.requests.filter(r => r.method === "thread/items/list").length, 5);
+
+    let release: (() => void) | undefined;
+    options.holdItemsResponse = respond => { release = respond; };
+    const controller = new AbortController();
+    const cancelled = assert.rejects(h.runtime.resume.loadOlder("thread-one", controller.signal),
+      (error: unknown) => error instanceof AppServerClientError && error.code === "ABORTED");
+    for (let attempt = 0; attempt < 50 && !release; attempt++) await new Promise(resolve => setImmediate(resolve));
+    assert.ok(release);
+    controller.abort();
+    await cancelled;
+    release();
+    options.holdItemsResponse = undefined;
+    assert.equal(h.runtime.views.get("thread-one")?.turns, initial.turns);
+    assert.equal(h.runtime.views.get("thread-one")?.turnsPagination.isLoadingOlder, false);
+
+    const earlier = await h.runtime.resume.loadOlder("thread-one");
+    assert.deepEqual(earlier.turns[0]?.items?.map(item => item.id), ["earlier-answer"]);
+    assert.equal(earlier.itemsPaginationByTurnId.earlier?.hasLoadedOldest, true);
+    assert.equal(earlier.itemsPaginationByTurnId.latest?.hasLoadedOldest, false);
+
+    options.itemNextCursor = "items:400";
+    await assert.rejects(h.runtime.resume.loadOlder("thread-one"), /repeated cursor/u);
+    const failed = h.runtime.views.get("thread-one");
+    assert.equal(failed?.turns, earlier.turns);
+    assert.equal(failed?.itemsPaginationByTurnId.latest?.olderCursor, "items:500");
+    options.itemNextCursor = undefined;
+
+    const complete = await h.runtime.resume.loadOlder("thread-one");
+    assert.deepEqual(complete.turns[1]?.items?.map(item => item.id), items.map(item => item.id));
+    assert.equal(complete.turns[1]?.itemsView, "full");
+    assert.equal(complete.itemsPaginationByTurnId.latest?.hasLoadedOldest, true);
+    assert.deepEqual(h.requests.filter(r => r.method === "thread/items/list").slice(-3)
+      .map(({ params }) => [params.turnId, params.cursor]), [
+      ["earlier", null], ["latest", "items:500"], ["latest", "items:500"],
+    ]);
+    assert.equal(h.requests.filter(r => r.method === "thread/resume").length, 1);
+    assert.equal(h.requests.filter(r => r.method === "thread/turns/list").length, 1);
+  } finally { await h.close(); }
+});
+
+for (const late of ["page", "error"] as const) {
+  test(`a late Item ${late} cannot reopen a Turn fully hydrated by navigation`, async () => {
+    const items = Array.from({ length: 501 }, (_, index) => ({ id: `item-${index}`, type: "agentMessage" }));
+    const options: HarnessOptions = {
+      historyMode: "paginated", maxItemsLimit: 100,
+      turnsPages: { "turns:head": { data: [{ id: "latest", status: "completed", itemsView: "notLoaded" }], nextCursor: null } },
+      itemsByTurnId: { latest: items },
+    };
+    const h = await createHarness(options);
+    try {
+      const initial = await h.runtime.resume.resume({ threadId: "thread-one" });
+      assert.equal(initial.itemsPaginationByTurnId.latest?.olderCursor, "items:500");
+      let release: (() => void) | undefined;
+      options.holdItemsResponse = send => { release = send; };
+      if (late === "error") options.repeatItemCursor = true;
+      const loading = h.runtime.resume.loadOlder("thread-one");
+      for (let attempt = 0; attempt < 50 && !release; attempt++) await new Promise(resolve => setImmediate(resolve));
+      assert.ok(release);
+      const hydratedItems = [{ ...items[0]!, text: "canonical navigation response" }, ...items.slice(1)];
+      const committed = h.runtime.views.hydrateNavigationTurn("thread-one", {
+        id: "latest", status: "completed", items: hydratedItems, itemsView: "full",
+      }, ["latest"], initial.turns[0]);
+      assert.deepEqual(committed.itemsPaginationByTurnId.latest, { olderCursor: null, hasLoadedOldest: true });
+      release();
+      const settled = await loading;
+      assert.equal(settled.turns, committed.turns);
+      assert.equal(settled.turns[0]?.items?.[0]?.text, "canonical navigation response");
+      assert.equal(settled.historyError, null);
+      assert.equal(settled.turnsPagination.isLoadingOlder, false);
+      assert.equal(await h.runtime.resume.loadOlder("thread-one"), settled);
+      assert.equal(h.requests.filter(r => r.method === "thread/items/list").length, 6);
+    } finally { await h.close(); }
+  });
+}
+
+test("overlapping Item pages still spend the legacy Resume read budget", async () => {
+  const repeat = { id: "shared-item", type: "agentMessage" };
+  const h = await createHarness({
+    historyMode: "paginated", maxItemsLimit: 100,
+    turnsPages: { "turns:head": { data: [{ id: "latest", itemsView: "notLoaded" }], nextCursor: null } },
+    itemsByTurnId: { latest: [{ id: "earliest", type: "agentMessage" }, ...Array(599).fill(repeat)] },
+  });
+  try {
+    const initial = await h.runtime.resume.resume({ threadId: "thread-one" });
+    assert.equal(h.requests.filter(request => request.method === "thread/items/list").length, 5);
+    assert.deepEqual(initial.turns[0]?.items?.map(item => item.id), ["shared-item"]);
+    assert.equal(initial.itemsPaginationByTurnId.latest?.olderCursor, "items:500");
+    const complete = await h.runtime.resume.loadOlder("thread-one");
+    assert.deepEqual(complete.turns[0]?.items?.map(item => item.id), ["earliest", "shared-item"]);
+    assert.equal(complete.itemsPaginationByTurnId.latest?.hasLoadedOldest, true);
+  } finally { await h.close(); }
+});
+
 test("tail background cursor corruption is isolated as historyError after a valid View commit", async () => {
   const harness = await createHarness({
     drainTailHistory: true,
@@ -1543,6 +1669,58 @@ test("tail background cursor corruption is isolated as historyError after a vali
   } finally {
     await harness.close();
   }
+});
+
+for (const stalePage of ["valid", "malformed"] as const) {
+  test(`a late ${stalePage} older page cannot reopen history after background drain completes`, async () => {
+    const pending = Array.from({ length: 3 }, () => Promise.withResolvers<() => void>());
+    let requested = 0;
+    const pages = {
+      a: { data: [{ id: "middle", items: [] }], nextCursor: "b" },
+      b: { data: [{ id: "oldest", items: [] }], nextCursor: null },
+    };
+    const h = await createHarness({
+      drainTailHistory: true, initialTurnsPage: { data: [{ id: "newest", items: [] }], nextCursor: "a" },
+      turnsPages: pages, holdTurnsResponse: respond => pending[requested++]!.resolve(respond),
+    });
+    try {
+      await h.runtime.resume.resume({ threadId: "thread-one" });
+      const firstDrainPage = await pending[0]!.promise;
+      if (stalePage === "malformed") pages.a = { ...pages.a, nextCursor: "a" };
+      const older = h.runtime.resume.loadOlder("thread-one");
+      const manualPage = await pending[1]!.promise;
+      firstDrainPage();
+      (await pending[2]!.promise)();
+      await h.runtime.resume.waitForBackgroundHistory("thread-one");
+      const completed = h.runtime.views.get("thread-one")!;
+      assert.deepEqual(completed.turns.map(turn => turn.id), ["oldest", "middle", "newest"]);
+      assert.equal(completed.turnsPagination.hasLoadedOldest, true);
+      manualPage();
+      assert.equal(await older, completed);
+      assert.equal(h.runtime.views.get("thread-one"), completed);
+      assert.equal(completed.historyError, null);
+    } finally { await h.close(); }
+  });
+}
+
+test("background history drains overlapping pages once per Turn in chronological order", async () => {
+  const turn = (id: string, text = id) => ({ id, itemsView: "full", items: [{ id: id + "-item", type: "agentMessage", text }] });
+  const h = await createHarness({
+    drainTailHistory: true,
+    initialTurnsPage: { data: [turn("newest")], nextCursor: "a" },
+    turnsPages: {
+      a: { data: [turn("recent"), turn("shared", "Current answer")], nextCursor: "b" },
+      b: { data: [turn("shared", "Older copy"), turn("oldest")], nextCursor: null },
+    },
+  });
+  try {
+    await h.runtime.resume.resume({ threadId: "thread-one" });
+    await h.runtime.resume.waitForBackgroundHistory("thread-one");
+    const view = h.runtime.views.get("thread-one")!;
+    assert.deepEqual(view.turns.map(turn => turn.id), ["oldest", "shared", "recent", "newest"]);
+    assert.equal(view.turns[1]?.items?.[0]?.text, "Current answer");
+    assert.equal(view.turnsPagination.hasLoadedOldest, true);
+  } finally { await h.close(); }
 });
 
 test("late tail hydration completion is inert after the Cordis Session is disposed", async () => {
@@ -1710,6 +1888,40 @@ test("message-window refresh advances history without Resume and skips an unchan
     assert.equal(h.requests.filter(request => request.method === "thread/turns/list").length, reads);
     assert.equal(h.runtime.views.get("thread-one")!.resumeState, "resumed");
   } finally { await h.close(); }
+});
+
+test("a message-window refresh updates navigation completeness in both directions", async () => {
+  const { createV3ConversationNavigationSource } = await import("@opencraft/appserver-session");
+  const options: HarnessOptions = {
+    historyMode: "message-window",
+    initialTurnsPage: { data: [], nextCursor: "partial" },
+  };
+  const h = await createHarness(options);
+  const navigation = createV3ConversationNavigationSource({
+    threadId: "thread-one",
+    port: {
+      getView: () => h.runtime.resume.navigationView("thread-one"),
+      subscribeView: listener => h.runtime.views.subscribeThread("thread-one", listener),
+      listTurns: async () => { throw new Error("a message-window rail does not enumerate metadata"); },
+      commitHydratedTurn: () => { throw new Error("the loaded message-window needs no extra projection"); },
+      projectionBarrier: { waitUntilProjected: async commit => commit.viewRevision },
+    },
+  });
+  try {
+    await h.runtime.resume.resume({ threadId: "thread-one" });
+    await navigation.prepare();
+    assert.equal(navigation.getSnapshot().completeness, "partial");
+
+    for (const nextCursor of [null, "another-page"]) {
+      h.runtime.views.update("thread-one", view => ({ ...view, thread: { ...view.thread!, updatedAt: -1 } }));
+      options.turnsPages = { null: { data: [], nextCursor } };
+      assert.equal(await h.runtime.resume.refreshHistory("thread-one"), true);
+      const complete = nextCursor === null;
+      assert.equal(h.runtime.views.get("thread-one")?.turnsPagination.hasLoadedOldest, complete);
+      assert.equal(navigation.getSnapshot().completeness, complete ? "complete" : "partial");
+      assert.equal(navigation.getSnapshot().phase, complete ? "ready" : "degraded");
+    }
+  } finally { navigation.dispose(); await h.close(); }
 });
 
 test("a cancelled history refresh cannot publish its delayed tail", async () => {
@@ -1948,6 +2160,136 @@ test("Read opens historical Turns and older pages without Resume; explicit conti
   } finally { await harness.close(); }
 });
 
+test("first Resume keeps an indexed Turn outside the ordinary history boundary", async () => {
+  const full = (id: string) => ({ id, status: "completed", itemsView: "full" as const, items: [] });
+  const head = full("head");
+  const indexed = full("indexed");
+  const page = { data: [head], nextCursor: "older" };
+  const harness = await createHarness({ historyMode: "paginated", readHistory: true, initialReadPage: true,
+    initialTurnsPage: page, turnsPages: {
+      null: page, "turns:head": page,
+      older: { data: [full("middle")], nextCursor: "before-middle" },
+      "before-middle": { data: [indexed], nextCursor: null },
+    } });
+  try {
+    const read = await harness.runtime.resume.read("thread-one");
+    assert.equal(read.turnsPagination.oldestLoadedTurnId, head.id);
+    harness.runtime.views.hydrateNavigationTurn("thread-one", indexed, [indexed.id, head.id], undefined, "search");
+    const resumed = await harness.runtime.resume.resume({ threadId: "thread-one" });
+    assert.equal(resumed.resumeState, "resumed");
+    assert.deepEqual(resumed.turns.map(turn => turn.id), [indexed.id, head.id]);
+    assert.equal(resumed.turnsPagination.oldestLoadedTurnId, head.id);
+    assert.equal(resumed.turnsPagination.olderCursor, "older");
+    const intermediate = await harness.runtime.resume.loadOlder("thread-one");
+    assert.deepEqual(intermediate.turns.map(turn => turn.id), [indexed.id, "middle", head.id]);
+    assert.equal(intermediate.turnsPagination.oldestLoadedTurnId, "middle");
+    const complete = await harness.runtime.resume.loadOlder("thread-one");
+    assert.deepEqual(complete.turns.map(turn => turn.id), [indexed.id, "middle", head.id]);
+    assert.equal(complete.turnsPagination.oldestLoadedTurnId, indexed.id);
+    assert.equal(complete.turnsPagination.olderCursor, null);
+  } finally { await harness.close(); }
+});
+
+test("a complete first Resume retires old navigation observations and keeps concurrent ones", async () => {
+  const turn = (id: string) => ({ id, status: "completed", itemsView: "full" as const, items: [] });
+  const head = turn("head");
+  const partial = { data: [head], nextCursor: "older" };
+  const complete = { data: [head], nextCursor: null };
+  let respond!: () => void;
+  const options: HarnessOptions = { historyMode: "paginated", readHistory: true, initialReadPage: true,
+    initialTurnsPage: partial, turnsPages: { null: partial, "turns:head": complete },
+    holdTurnsResponse: release => { respond = release; } };
+  const h = await createHarness(options);
+  try {
+    await h.runtime.resume.read("thread-one");
+    const store = h.runtime.views;
+    store.hydrateNavigationTurn("thread-one", turn("removed"), ["removed", head.id], undefined);
+    options.initialTurnsPage = complete;
+    const pending = h.runtime.resume.resume({ threadId: "thread-one" });
+    for (let n = 0; n < 50 && !respond; n++) await new Promise(resolve => setImmediate(resolve));
+    assert.ok(respond);
+    store.hydrateNavigationTurn("thread-one", turn("new-read"), ["new-read", head.id], undefined);
+    await h.emit("turn/started", { threadId: "thread-one", turn: { ...turn("live"), status: "inProgress" } });
+    respond();
+    const resumed = await pending;
+    assert.equal(resumed.turnsPagination.hasLoadedOldest, true);
+    assert.equal(resumed.turnsPagination.olderCursor, null);
+    const view = store.get("thread-one")!;
+    assert.deepEqual(view.turns.map(candidate => candidate.id), ["new-read", head.id, "live"]);
+    assert.deepEqual(view.navigationOnlyTurnIds, ["new-read"]);
+  } finally { await h.close(); }
+});
+
+test("an overlapping older page cannot move the resumed history boundary forward", async () => {
+  const full = (id: string) => ({ id, status: "completed", itemsView: "full" as const, items: [] });
+  const latest = full("latest"), boundary = full("boundary"), oldest = full("oldest");
+  const head = { data: [latest, boundary], nextCursor: "overlap" };
+  const harness = await createHarness({ historyMode: "paginated", initialTurnsPage: head, turnsPages: {
+    "turns:head": head,
+    overlap: { data: [latest], nextCursor: "oldest" },
+    oldest: { data: [oldest], nextCursor: null },
+  } });
+  try {
+    const resumed = await harness.runtime.resume.resume({ threadId: "thread-one" });
+    assert.equal(resumed.turnsPagination.oldestLoadedTurnId, boundary.id);
+    const overlapping = await harness.runtime.resume.loadOlder("thread-one");
+    assert.deepEqual(overlapping.turns.map(turn => turn.id), [boundary.id, latest.id]);
+    assert.equal(overlapping.turnsPagination.oldestLoadedTurnId, boundary.id);
+    assert.equal(overlapping.turnsPagination.olderCursor, "oldest");
+    const complete = await harness.runtime.resume.loadOlder("thread-one");
+    assert.deepEqual(complete.turns.map(turn => turn.id), [oldest.id, boundary.id, latest.id]);
+    assert.equal(complete.turnsPagination.oldestLoadedTurnId, oldest.id);
+  } finally { await harness.close(); }
+});
+
+for (const indexed of [false, true]) test(`a live start admits an independently opened Turn, indexed=${indexed}`, async () => {
+  const head = { id: "head", status: "completed", itemsView: "full" as const, items: [] };
+  const live = { id: "new-live", status: "inProgress", itemsView: "full" as const,
+    items: [{ id: "observed-item", type: "agentMessage", text: "Previously seen output" }] };
+  const page = { data: [head], nextCursor: "older" };
+  const h = await createHarness({ historyMode: "paginated", readHistory: true, initialReadPage: true,
+    initialTurnsPage: page, turnsPages: { null: page } });
+  try {
+    await h.runtime.resume.read("thread-one");
+    const located = h.runtime.views.hydrateNavigationTurn("thread-one", live, indexed ? [head.id, live.id] : [], undefined, "search");
+    assert.deepEqual(located.navigationOnlyTurnIds, [live.id]);
+    await h.emit("turn/started", { threadId: "thread-one", turn: { ...live, items: [] } });
+    const view = h.runtime.views.get("thread-one")!;
+    assert.equal(view.navigationOnlyTurnIds, undefined);
+    assert.equal(view.unplacedSearchTurnId, undefined);
+    assert.deepEqual(view.turns.map(turn => turn.id), [head.id, live.id]);
+    assert.equal(view.turns.at(-1)?.items[0]?.id, "observed-item");
+    assert.equal(view.turnsPagination.oldestLoadedTurnId, head.id);
+    assert.equal(view.turnsPagination.olderCursor, "older");
+  } finally { await h.close(); }
+});
+
+test("terminal history retires an old navigation-only Turn and preserves concurrent observations", async () => {
+  const turn = (id: string) => ({ id, status: "completed", itemsView: "full" as const, items: [] });
+  const head = turn("head");
+  const first = { data: [head], nextCursor: "older" };
+  let respond!: () => void;
+  const h = await createHarness({ historyMode: "paginated", readHistory: true, initialReadPage: true, initialTurnsPage: first,
+    turnsPages: { older: { data: [turn("older")], nextCursor: null } },
+    holdTurnsResponse: release => { respond = release; } });
+  try {
+    await h.runtime.resume.read("thread-one");
+    const store = h.runtime.views;
+    store.hydrateNavigationTurn("thread-one", turn("retired"), ["retired", head.id], undefined);
+    store.hydrateNavigationTurn("thread-one", turn("new-live"), [], undefined, "search");
+    const pending = h.runtime.resume.loadOlder("thread-one");
+    for (let n = 0; n < 50 && !respond; n++) await new Promise(resolve => setImmediate(resolve));
+    assert.ok(respond);
+    await h.emit("turn/started", { threadId: "thread-one", turn: { ...turn("new-live"), status: "inProgress" } });
+    store.hydrateNavigationTurn("thread-one", turn("new-read"), ["new-read", head.id], undefined, "search");
+    respond();
+    const completed = await pending;
+    assert.equal(completed.turnsPagination.olderCursor, null);
+    assert.deepEqual(completed.turns.map(candidate => candidate.id), ["new-read", "older", head.id, "new-live"]);
+    assert.deepEqual(completed.navigationOnlyTurnIds, ["new-read"]);
+  } finally { await h.close(); }
+});
+
 test("live completions arriving during a read baseline obtain a quiet canonical cut without Resume", async () => {
   let release: (() => void) | undefined, pages = 0;
   const turnsPages = { null: { data: [{ id: "live-read", status: "inProgress", itemsView: "full", items: [{ id: "answer", type: "agentMessage", text: "old" }] }], nextCursor: null } };
@@ -2004,6 +2346,284 @@ test("a passive initial page needs one request and preserves its older cursor", 
     const older = await h.runtime.resume.loadOlder("thread-one");
     assert.deepEqual(older.turns.map(turn => turn.id), ["previous", "latest"]);
     assert.equal(h.requests.find(row => row.method === "thread/turns/list")?.params.cursor, "older");
+  } finally { await h.close(); }
+});
+
+for (const path of ["read", "tail", "message-window", "durable", "paginated"] as const) {
+  test(`${path} history admits one Turn per ID in both embedded and ordinary pages`, async () => {
+    const turn = (id: string, text = id) => ({
+      id, itemsView: "full", items: [{ id: `${id}-answer`, type: "agentMessage", text }],
+    });
+    const options: HarnessOptions = {
+      historyMode: path === "tail" ? "legacy" : path === "message-window" ? path : "paginated",
+      initialReadPage: path === "read",
+      ...(path === "durable" ? { hostKind: "durable" as const } : {}),
+      ...(path === "durable" || path === "paginated"
+        ? { historyRecovery: { mode: "replace" as const, checkpoint: { epoch: "engine", nextSeq: 3 } } } : {}),
+      initialTurnsPage: { data: [turn("latest"), turn("middle"), turn("latest", "duplicate")], nextCursor: "older" },
+      turnsPages: { older: { data: [turn("previous"), turn("earliest"), turn("previous", "duplicate")], nextCursor: null } },
+      itemsByTurnId: { previous: turn("previous").items, earliest: turn("earliest").items },
+    };
+    const h = await createHarness(options);
+    try {
+      const view = path === "read" ? await h.runtime.resume.read("thread-one")
+        : await h.runtime.resume.resume({ threadId: "thread-one", force: true });
+      assert.equal(view.historySource, path === "read" ? "paginated" : path);
+      assert.deepEqual(view.turns.map(turn => turn.id), ["middle", "latest"]);
+      assert.equal(view.turns[1]?.items[0]?.text, "latest");
+      assert.equal(view.turnsPagination.olderCursor, "older");
+      assert.equal(h.requests.some(row => row.method === "thread/turns/list"), false);
+      const older = await h.runtime.resume.loadOlder("thread-one");
+      assert.deepEqual(older.turns.map(turn => turn.id), ["earliest", "previous", "middle", "latest"]);
+      assert.equal(older.turns[1]?.items[0]?.text, "previous");
+      assert.equal(older.turnsPagination.hasLoadedOldest, true);
+    } finally { await h.close(); }
+  });
+}
+
+test("an invalid embedded passive cursor is rejected before publishing a transcript", async () => {
+  const turn = { id: "latest", itemsView: "full", items: [] };
+  const options: HarnessOptions = {
+    historyMode: "paginated", initialReadPage: true,
+    initialTurnsPage: { data: [turn], nextCursor: 0 as unknown as string },
+  };
+  const h = await createHarness(options);
+  try {
+    await assert.rejects(h.runtime.resume.read("thread-one"), /thread\/read.initialTurnsPage returned an invalid nextCursor/u);
+    assert.deepEqual(h.runtime.views.get("thread-one")?.turns, []);
+    options.initialTurnsPage = { data: [turn], nextCursor: null };
+    const recovered = await h.runtime.resume.read("thread-one");
+    assert.deepEqual(recovered.turns.map(turn => turn.id), ["latest"]);
+    assert.equal(recovered.turnsPagination.hasLoadedOldest, true);
+  } finally { await h.close(); }
+});
+
+test("an overlapping page keeps the oldest loaded anchor for cursor recovery", async () => {
+  const turn = (id: string) => ({ id, itemsView: "full", items: [] });
+  const head = [turn("latest"), turn("middle"), turn("oldest-loaded")];
+  const h = await createHarness({
+    historyMode: "paginated", initialReadPage: true,
+    initialTurnsPage: { data: head, nextCursor: "overlap" },
+    turnsErrors: { expired: expiredPreviewCursor },
+    turnsPages: {
+      overlap: { data: [turn("middle")], nextCursor: "expired" },
+      null: { data: head, nextCursor: "fresh" },
+      fresh: { data: [turn("older")], nextCursor: null },
+    },
+  });
+  try {
+    await h.runtime.resume.read("thread-one");
+    const overlap = await h.runtime.resume.loadOlder("thread-one");
+    assert.deepEqual(overlap.turns.map(turn => turn.id), ["oldest-loaded", "middle", "latest"]);
+    const recovered = await h.runtime.resume.loadOlder("thread-one");
+    assert.deepEqual(recovered.turns.map(turn => turn.id), ["older", "oldest-loaded", "middle", "latest"]);
+    assert.equal(recovered.turnsPagination.hasLoadedOldest, true);
+    assert.deepEqual(h.requests.filter(row => row.method === "thread/turns/list").map(row => row.params.cursor),
+      ["overlap", "expired", null, "fresh"]);
+  } finally { await h.close(); }
+});
+
+for (const itemsView of ["full", "notLoaded"] as const) {
+  test(`passive ${itemsView} pages reject a repeated cursor before committing history`, async () => {
+    const turn = (id: string) => ({ id, items: [], itemsView: "full" });
+    const older = { data: [turn("previous")], nextCursor: "older" as string | null };
+    const h = await createHarness({
+      historyMode: "paginated", initialReadPage: true,
+      initialTurnsPage: { data: [turn("latest")], nextCursor: "older" },
+      oversizedFullPage: itemsView === "notLoaded",
+      turnsPages: { older },
+    });
+    try {
+      const view = await h.runtime.resume.read("thread-one");
+      await assert.rejects(h.runtime.resume.loadOlder("thread-one"), /repeated cursor/u);
+      assert.equal(h.runtime.views.get("thread-one"), view);
+      const pages = h.requests.filter(row => row.method === "thread/turns/list");
+      assert.equal(pages.at(-1)?.params.itemsView, itemsView);
+      assert.ok(pages.every(row => row.params.cursor === "older"));
+      older.nextCursor = null;
+      const recovered = await h.runtime.resume.loadOlder("thread-one");
+      assert.deepEqual(recovered.turns.map(turn => turn.id), ["previous", "latest"]);
+      assert.equal(recovered.turnsPagination.hasLoadedOldest, true);
+    } finally { await h.close(); }
+  });
+}
+
+for (const path of ["read", "resume"] as const) {
+  test(`${path} pagination rejects a cross-page cursor cycle and retries from the last valid page`, async () => {
+    const turn = (id: string) => ({ id, items: [], itemsView: "full" });
+    const earlier = { data: [turn("first")], nextCursor: "a" as string | null };
+    const h = await createHarness({
+      historyMode: path === "read" ? "paginated" : "legacy", initialReadPage: true,
+      initialTurnsPage: { data: [turn("latest")], nextCursor: "a" },
+      turnsPages: { a: { data: [turn("second")], nextCursor: "b" }, b: earlier },
+    });
+    const open = () => path === "read" ? h.runtime.resume.read("thread-one")
+      : h.runtime.resume.resume({ threadId: "thread-one", force: true });
+    try {
+      await open();
+      const baseline = await h.runtime.resume.loadOlder("thread-one");
+      assert.deepEqual(baseline.turns.map(t => t.id), ["second", "latest"]);
+      await assert.rejects(h.runtime.resume.loadOlder("thread-one"), /repeated cursor/u);
+      const afterCycle = h.runtime.views.get("thread-one");
+      assert.equal(afterCycle?.turns, baseline.turns);
+      assert.equal(afterCycle?.turnsPagination.olderCursor, "b");
+      assert.equal(afterCycle?.turnsPagination.isLoadingOlder, false);
+      earlier.nextCursor = null;
+      const complete = await h.runtime.resume.loadOlder("thread-one");
+      assert.deepEqual(complete.turns.map(t => t.id), ["first", "second", "latest"]);
+      assert.equal(complete.turnsPagination.hasLoadedOldest, true);
+      assert.deepEqual(h.requests.filter(r => r.method === "thread/turns/list").map(r => r.params.cursor), ["a", "b", "b"]);
+    } finally { await h.close(); }
+  });
+}
+
+const expiredPreviewCursor = {
+  code: -32602, message: "History preview cursor expired", data: { code: "HISTORY_PREVIEW_CURSOR_EXPIRED" },
+};
+
+test("expired preview history resumes beyond the oldest loaded Turn using fresh cursors", async () => {
+  const turn = (id: string, text = id) => ({
+    id, itemsView: "full", items: [{ id: id + "-answer", type: "agentMessage", text }],
+  });
+  const h = await createHarness({
+    historyMode: "paginated", initialReadPage: true,
+    initialTurnsPage: { data: [turn("fifth")], nextCursor: "initial-older" },
+    turnsPages: {
+      "initial-older": { data: [turn("fourth"), turn("third", "Already loaded answer")], nextCursor: "expired" },
+      null: { data: [turn("fifth"), turn("fourth")], nextCursor: "locate-third" },
+      "locate-third": { data: [turn("third", "Refetched answer"), turn("second")], nextCursor: "fresh-tail" },
+      "fresh-tail": { data: [turn("first")], nextCursor: null },
+    },
+    turnsErrors: { expired: expiredPreviewCursor },
+  });
+  try {
+    await h.runtime.resume.read("thread-one");
+    await h.runtime.resume.loadOlder("thread-one");
+    const rebased = await h.runtime.resume.loadOlder("thread-one");
+    assert.deepEqual(rebased.turns.map(t => t.id), ["second", "third", "fourth", "fifth"]);
+    assert.equal(rebased.turns[1]?.items?.[0]?.text, "Already loaded answer");
+    assert.equal(rebased.turnsPagination.olderCursor, "fresh-tail");
+    const complete = await h.runtime.resume.loadOlder("thread-one");
+    assert.deepEqual(complete.turns.map(t => t.id), ["first", "second", "third", "fourth", "fifth"]);
+    assert.equal(complete.turnsPagination.hasLoadedOldest, true);
+    assert.deepEqual(h.requests.filter(r => r.method === "thread/turns/list").map(r => r.params.cursor),
+      ["initial-older", "expired", null, "locate-third", "fresh-tail"]);
+    assert.equal(h.requests.some(r => r.method === "thread/resume" || r.method === "thread/items/list"), false);
+  } finally { await h.close(); }
+});
+
+test("a sleeping archive keeps its fresh continuation after the loaded boundary is recovered", async () => {
+  const turnsErrors: Record<string, JsonRpcErrorObject> = { expired: expiredPreviewCursor, fresh: {
+    code: -32073, message: "History is unavailable while the workspace sleeps", data: { code: "WORKSPACE_HISTORY_ASLEEP" },
+  } };
+  const h = await createHarness({
+    historyMode: "paginated", initialReadPage: true,
+    initialTurnsPage: { data: [{ id: "anchor", items: [], itemsView: "full" }], nextCursor: "expired" },
+    turnsPages: {
+      null: { data: [{ id: "anchor", items: [], itemsView: "full" }], nextCursor: "fresh" },
+      fresh: { data: [{ id: "older", items: [], itemsView: "full" }], nextCursor: null },
+    },
+    turnsErrors,
+  });
+  try {
+    await h.runtime.resume.read("thread-one");
+    await assert.rejects(h.runtime.resume.loadOlder("thread-one"), (e: unknown) =>
+      e instanceof AppServerRpcError && e.code === -32073);
+    assert.deepEqual(h.runtime.views.get("thread-one")?.turns.map(t => t.id), ["anchor"]);
+    delete turnsErrors.fresh;
+    const restored = await h.runtime.resume.loadOlder("thread-one", undefined, { openArchivedHistory: true });
+    assert.deepEqual(restored.turns.map(t => t.id), ["older", "anchor"]);
+    const reads = h.requests.filter(r => r.method === "thread/turns/list");
+    assert.deepEqual(reads.map(r => r.params.cursor), ["expired", null, "fresh", "fresh"]);
+    assert.equal(reads.at(-1)?.params.openArchivedHistory, true);
+  } finally { await h.close(); }
+});
+
+test("rebased history can reuse a cursor issued by the previous preview", async () => {
+  const turn = (id: string) => ({ id, items: [], itemsView: "full" });
+  const first = { data: [turn("middle")], nextCursor: "expired" as string | null };
+  const h = await createHarness({
+    historyMode: "paginated", initialReadPage: true,
+    initialTurnsPage: { data: [turn("latest")], nextCursor: "a" },
+    turnsPages: {
+      a: first,
+      null: { data: [turn("latest"), turn("middle"), turn("older")], nextCursor: "a" },
+    },
+    turnsErrors: { expired: expiredPreviewCursor },
+  });
+  try {
+    await h.runtime.resume.read("thread-one");
+    await h.runtime.resume.loadOlder("thread-one");
+    const restored = await h.runtime.resume.loadOlder("thread-one");
+    assert.equal(restored.turnsPagination.olderCursor, "a");
+    assert.deepEqual(restored.turns.map(t => t.id), ["older", "middle", "latest"]);
+    first.data = [turn("first")];
+    first.nextCursor = null;
+    const complete = await h.runtime.resume.loadOlder("thread-one");
+    assert.deepEqual(complete.turns.map(t => t.id), ["first", "older", "middle", "latest"]);
+  } finally { await h.close(); }
+});
+
+test("an expired cursor without a matching Turn never replaces the loaded transcript", async () => {
+  const h = await createHarness({
+    historyMode: "paginated", initialReadPage: true,
+    initialTurnsPage: { data: [{ id: "loaded", items: [], itemsView: "full" }], nextCursor: "expired" },
+    turnsPages: { null: { data: [{ id: "different", items: [], itemsView: "full" }], nextCursor: null } },
+    turnsErrors: { expired: expiredPreviewCursor },
+  });
+  try {
+    await h.runtime.resume.read("thread-one");
+    await assert.rejects(h.runtime.resume.loadOlder("thread-one"), /oldest loaded Turn/u);
+    await assert.rejects(h.runtime.resume.loadOlder("thread-one"), /oldest loaded Turn/u);
+    const view = h.runtime.views.get("thread-one")!;
+    assert.deepEqual(view.turns.map(t => t.id), ["loaded"]);
+    assert.equal(view.turnsPagination.hasLoadedOldest, false);
+    assert.deepEqual(h.requests.filter(r => r.method === "thread/turns/list").map(r => r.params.cursor), ["expired", null]);
+  } finally { await h.close(); }
+});
+
+test("expired cursor recovery bounds each demand and continues the search on the next demand", async () => {
+  const turn = (id: string) => ({ id, items: [], itemsView: "full" });
+  const pages = Object.fromEntries(Array.from({ length: 10 }, (_, index) => [
+    index === 0 ? "null" : String(index), { data: [turn("newer-" + index)], nextCursor: String(index + 1) },
+  ]));
+  const h = await createHarness({
+    historyMode: "paginated", initialReadPage: true,
+    initialTurnsPage: { data: [turn("anchor")], nextCursor: "expired" },
+    turnsPages: { ...pages, "10": { data: [turn("anchor"), turn("older")], nextCursor: null } },
+    turnsErrors: { expired: expiredPreviewCursor },
+  });
+  try {
+    const initial = await h.runtime.resume.read("thread-one");
+    assert.equal(await h.runtime.resume.loadOlder("thread-one"), initial);
+    const complete = await h.runtime.resume.loadOlder("thread-one");
+    assert.deepEqual(complete.turns.map(t => t.id), ["older", "anchor"]);
+    assert.equal(complete.turnsPagination.hasLoadedOldest, true);
+    assert.deepEqual(h.requests.filter(r => r.method === "thread/turns/list").map(r => r.params.cursor),
+      ["expired", null, ...Array.from({ length: 10 }, (_, index) => String(index + 1))]);
+  } finally { await h.close(); }
+});
+
+test("a fresh history source fences an in-flight search for an expired cursor", async () => {
+  const requested = Promise.withResolvers<() => void>();
+  const turn = (id: string) => ({ id, items: [], itemsView: "full" });
+  const h = await createHarness({
+    historyMode: "paginated", initialReadPage: true,
+    initialTurnsPage: { data: [turn("anchor")], nextCursor: "expired" },
+    turnsPages: { null: { data: [turn("anchor"), turn("late")], nextCursor: null } },
+    turnsErrors: { expired: expiredPreviewCursor },
+    holdTurnsResponse: requested.resolve,
+  });
+  try {
+    await h.runtime.resume.read("thread-one");
+    const pending = assert.rejects(h.runtime.resume.loadOlder("thread-one"),
+      error => error instanceof AppServerClientError && error.code === "ABORTED");
+    const release = await requested.promise;
+    const replacement = await h.runtime.resume.read("thread-one");
+    release();
+    await pending;
+    assert.equal(h.runtime.views.get("thread-one"), replacement);
+    assert.deepEqual(replacement.turns.map(t => t.id), ["anchor"]);
   } finally { await h.close(); }
 });
 

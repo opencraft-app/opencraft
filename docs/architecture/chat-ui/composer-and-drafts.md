@@ -1078,10 +1078,11 @@ A mixed Host advertises default-engine extensions and a complete extension set
 for each alternate engine. Approval baseline reads and native wait reattachment
 must resolve the original Thread's engine before using shared interactions.
 An engine without shared interactions skips that read; it must not inherit the
-default engine's capability and repeatedly fail history recovery. Engines that
-advertise shared interactions still restore their pending approvals before the
-Replica grants sending authority. Transport recovery, watched history, and exact
-outbox acknowledgement remain owned by their existing services. For already
+default engine's capability and repeatedly fail history recovery. Watched history
+can become visible while shared approvals recover independently. The interaction
+owner verifies the pending request and active subscription before offering an
+answer. Transport recovery, watched history, and exact outbox acknowledgement
+remain owned by their existing services. For already
 loaded older mixed-Host clients, Pi accepts a read-only empty shared-approval
 baseline with no response authority; this does not advertise shared approvals
 or add an approval response method.

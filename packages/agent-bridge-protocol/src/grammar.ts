@@ -48,7 +48,7 @@ export type ItemShape =
       readonly clientId?: string | null;
       /**
        * The input parts as the provider recorded them (AppServer `UserInput`:
-       * text with its elements, images, mentions), bounded to 64 KiB. Without
+       * text with its elements, images, mentions), bounded by the provider and Bridge framing limits. Without
        * it the projection shows `text` alone.
        */
       readonly content?: readonly Readonly<Record<string, unknown>>[];
@@ -56,6 +56,14 @@ export type ItemShape =
   | { readonly kind: "agentMessage"; readonly text: string }
   | { readonly kind: "reasoning"; readonly text: string; readonly summary?: readonly string[]; readonly content?: readonly string[] }
   | { readonly kind: "plan"; readonly text: string }
+  | {
+      /** A provider's existing AppServer media or tool item. The assembler owns its public ID. */
+      readonly kind: "appServerItem";
+      readonly item: Readonly<Record<string, unknown>> & {
+        readonly type: "imageGeneration" | "mcpToolCall" | "dynamicToolCall";
+        readonly status: string;
+      };
+    }
   | {
       readonly kind: "fileChange";
       readonly status: "inProgress" | "completed" | "failed" | "declined";

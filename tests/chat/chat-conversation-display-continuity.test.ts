@@ -105,6 +105,8 @@ test("first submission survives promotion and empty baselines without a storage 
   assert.equal(await cache.load("host", "thread"), null, "unconfirmed content is not persisted");
   await cache.observe({ ...timeline(true), frames: [] });
   assert.equal(cache.peekSubmission("host", "thread"), first, "empty baseline cannot erase local input");
+  await cache.observe({ ...timeline(true), unplacedSearchTurnId: asTurnId("turn") });
+  assert.equal(cache.peekSubmission("host", "thread"), first, "a search-only Turn cannot acknowledge new input");
   cache.retainSubmission(intent, accepted);
   assert.equal(cache.peekSubmission("host", "thread"), first, "promotion retries retain identity");
   await cache.observe(timeline(false));
@@ -795,6 +797,42 @@ test("observing a short canonical window does not persist a shrunken display cac
   assert.deepEqual(turnIds(cache.peek("host", "thread")!), ["tail"], "a complete baseline can delete old history");
   await cache.observe({ ...historyWindow([]), frames: [] }, false);
   assert.equal(cache.peek("host", "thread"), null);
+});
+
+test("temporary search placement preserves the known display prefix and stays out of refresh storage", async () => {
+  const local = storage();
+  const cache = createConversationDisplayContinuity({ namespace: "coverage", storage: local });
+  const baseline = historyWindow(["known-old", "tail"]);
+  await cache.observe(baseline, false);
+  const original = [...local.data.values()][0];
+  const focused = { ...historyWindow(["hit", "tail"]), unplacedSearchTurnId: asTurnId("hit") };
+  const display = selectConversationDisplay({
+    key: focused.key, timeline: focused, cached: cache.peek("host", "thread"), historyHasOlder: true,
+  });
+  assert.deepEqual(turnIds(display.timeline!), ["hit", "known-old", "tail"]);
+  assert.equal(display.source, "mixed");
+  if (display.source !== "mixed") throw new Error("missing previously covered history");
+  assert.deepEqual([...display.cachedTurnIds], ["known-old"]);
+  await cache.observe(focused, true);
+  assert.equal([...local.data.values()][0], original, "opening the search hit does not rewrite the preview");
+  assert.deepEqual(turnIds(cache.peek("host", "thread")!), ["known-old", "tail"]);
+  const reloaded = createConversationDisplayContinuity({ namespace: "coverage", storage: local });
+  assert.deepEqual(turnIds((await reloaded.load("host", "thread"))!), ["known-old", "tail"]);
+  await cache.observe(historyWindow(["hit", "known-old", "tail"]), false);
+  const afterPage = createConversationDisplayContinuity({ namespace: "coverage", storage: local });
+  assert.deepEqual(turnIds((await afterPage.load("host", "thread"))!), ["hit", "known-old", "tail"]);
+});
+
+test("current search placement removes the same unplaced Turn from a preexisting display record", async () => {
+  const local = storage();
+  const cache = createConversationDisplayContinuity({ namespace: "coverage", storage: local });
+  await cache.observe(historyWindow(["hit", "known-old", "tail"]), false);
+  const reloaded = createConversationDisplayContinuity({ namespace: "coverage", storage: local });
+  await reloaded.load("host", "thread");
+  await reloaded.observe({ ...historyWindow(["hit", "tail"]), unplacedSearchTurnId: asTurnId("hit") }, true);
+  assert.deepEqual(turnIds(reloaded.peek("host", "thread")!), ["known-old", "tail"]);
+  const afterSearch = createConversationDisplayContinuity({ namespace: "coverage", storage: local });
+  assert.deepEqual(turnIds((await afterSearch.load("host", "thread"))!), ["known-old", "tail"]);
 });
 
 test("omitted activity bodies retain ordered region identities and header shape after a cold reload", async () => {

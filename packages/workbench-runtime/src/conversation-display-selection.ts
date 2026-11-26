@@ -15,17 +15,21 @@ export type ConversationDisplaySelection =
  * Disjoint windows and complete baselines cannot inherit an unproven prefix. */
 function selectHistoryTimeline(timeline: TimelineSnapshot, cached: TimelineSnapshot | null,
   hasOlder: boolean | undefined): ConversationDisplaySelection {
-  const boundary = timeline.frames[0]?.turnId;
+  const unplaced = timeline.unplacedSearchTurnId;
+  const boundaryIndex = unplaced ? timeline.frames.findIndex(frame => frame.turnId !== unplaced) : 0;
+  const boundary = timeline.frames[boundaryIndex]?.turnId;
   const index = hasOlder === true && boundary !== undefined
     ? cached?.frames.findIndex(frame => frame.turnId === boundary) ?? -1 : -1;
   if (index <= 0 || cached === null) return { source: "history", timeline };
   const liveTurns = new Set(timeline.frames.map(frame => frame.turnId));
   const prefix = cached.frames.slice(0, index).filter(frame => !liveTurns.has(frame.turnId));
   if (prefix.length === 0) return { source: "history", timeline };
+  const frames = timeline.frames.slice();
+  frames.splice(boundaryIndex, 0, ...prefix);
   return {
     source: "mixed",
     cachedTurnIds: new Set(prefix.map(frame => frame.turnId)),
-    timeline: { ...timeline, authoritative: false, frames: [...prefix, ...timeline.frames] },
+    timeline: { ...timeline, authoritative: false, frames },
   };
 }
 

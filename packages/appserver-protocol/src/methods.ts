@@ -193,6 +193,8 @@ export type ThreadResumeResponse = ThreadResumeHistoryResponse<AppServerTurn> & 
 export interface ThreadReadParams {
   threadId: string;
   includeTurns: boolean;
+  /** From a retained history view, with thread-lifecycle.openArchivedHistory. */
+  openArchivedHistory?: true;
   /** Passive Host notifications; does not retain a native execution engine. */
   watch?: boolean;
   /** Optional page negotiated by opencraft/read-history or resume-history.initialReadPage. */
@@ -324,8 +326,10 @@ export interface SteeringSubmission extends QueuedSubmission {
 export interface ThreadQueueAddResponse {
   readonly queuedSubmission: QueuedSubmission;
 }
+/** Maximum closed receipt Turn scope in one queue list request. */
+export const THREAD_QUEUE_RECEIPT_TURN_LIMIT = 1000;
 export type ThreadQueueListParams = GeneratedThreadQueueListParams & {
-  /** Closed Host receipts for loaded timeline Turns only; active queue is unfiltered. */
+  /** Closed Host receipts for up to THREAD_QUEUE_RECEIPT_TURN_LIMIT loaded Turns. Active queue is unfiltered. */
   readonly receiptTurnIds?: readonly string[];
 };
 export interface ThreadQueueListResponse {

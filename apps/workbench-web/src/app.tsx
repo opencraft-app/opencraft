@@ -106,6 +106,7 @@ import { readCachedThreadName, writeCachedThreadName } from "./runtime/thread-ti
 import { AgentUsage } from "./components/agent-usage";
 import { archiveThread } from "./runtime/thread-archive";
 import { forkAndOpenThread } from "./runtime/thread-fork-navigation";
+import { useSidebarDraftRows } from "./runtime/use-sidebar-draft-rows";
 import { useOrdinaryConversationCatalog } from "./runtime/use-ordinary-conversation-catalog";
 import { formatDocumentTitle } from "./runtime/document-title";
 import {
@@ -119,6 +120,7 @@ import {
 import { createPortal } from "react-dom";
 import {
   createInteractionResponse,
+  createWorkbenchDraftLocation,
   createWorkbenchThreadLocation,
   draftSubmissionOwnsNavigation,
   equalWorkbenchLocation,
@@ -760,6 +762,19 @@ export function App({
   const panelPresentationId = conversationViewIdentity.viewId;
   const panelRuntime = useWorkbenchPanelRuntime();
   const ordinaryThreads = useOrdinaryConversationCatalog(multiHostCatalog.threads, panelRuntime.context.sideChats);
+  const sidebarDrafts = useSidebarDraftRows(conversationScopes, draftSnapshot, multiHostCatalog.threads, serverSpaces);
+  const sidebarDraftServerId = legacyDirectServerProjectionFromHost({
+    hostId: serverSpaces.hostId, hostKind: activeHost.kind, label: activeHost.label,
+  }).serverOrigin.serverId;
+  const pendingDraftRows = useMemo(() => sidebarDrafts.map(row => ({
+    key: row.draftId,
+    title: row.preview,
+    serverId: sidebarDraftServerId,
+    active: row.threadId ? row.threadId === activeThreadId : draft?.id === row.draftId,
+    onSelect: () => hostCatalog.selectConversation(row.threadId
+      ? createWorkbenchThreadLocation(row.hostId, row.threadId)
+      : createWorkbenchDraftLocation(row.hostId, row.draftId)),
+  })), [sidebarDrafts, sidebarDraftServerId, activeThreadId, draft?.id, hostCatalog.selectConversation]);
   const browserWorkbench = useBrowserWorkbench();
   const panelState = useConversationPanelState(panelOwnerId);
   const panelRenderers = usePanelRendererSnapshot();
@@ -2421,6 +2436,7 @@ export function App({
             {miniAppSettingsOpen ? null : routeSettingsOpen ? settingsNavigation : (conversationSurfaceVisible || standaloneManagementOpen || extensionProjection.activeView?.keepConversationSidebar) ? <Sidebar
               searchInDialog={presentation.shellNavigation}
               threads={serverSpaces.filter(ordinaryThreads)}
+              pendingDraftRows={pendingDraftRows}
               threadCatalogs={multiHostCatalog.catalogs}
               threadCatalogDiscovery={multiHostCatalog.discovery}
               {...sidebarCommands}

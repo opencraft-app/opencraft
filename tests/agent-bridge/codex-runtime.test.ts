@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { CodexBridge } from '../../apps/agent-bridge-host/src/codex.js';
 import { CodexBridgeRuntime } from '../../apps/agent-bridge-host/src/codex-runtime.js';
 import { CodexOwnerConnection } from '../../apps/agent-bridge-host/src/codex-owner.js';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
@@ -9,6 +10,61 @@ import { createServer } from 'node:http';
 import { WebSocketServer } from 'ws';
 import type { BridgeWireMessage } from '@opencraft/agent-bridge-protocol';
 import { createBrowserGrantResolver } from '../../apps/headless-server/src/remote-browser/execution-grant.js';
+
+test('failed bounded reconciliation leaves an old Codex session free to reattach on retry', async () => {
+  const frames: any[] = [], reads: any[] = [];
+  const mutations: string[] = [];
+  let failPage = true;
+  const runtime = new CodexBridgeRuntime({
+    async request(method, params) {
+      assert.notEqual(params.includeTurns, true);
+      if (method === 'thread/resume') mutations.push(method);
+      return { thread: { id: 'native', status: { type: 'idle' }, turns: [] } };
+    },
+    async readHistory(method, params) {
+      assert.equal(method, 'thread/turns/list');
+      assert.equal(params.itemsView, 'notLoaded');
+      reads.push(params);
+      if (failPage) throw Error('Synthetic read interruption');
+      return params.cursor === null
+        ? { data: [{ id: 'newer', status: 'completed' }], nextCursor: 'older' }
+        : { data: [{ id: 'target', status: 'completed' }], nextCursor: null };
+    },
+    resolve() {},
+  }, frame => frames.push(frame));
+  await runtime.handle({ jsonrpc: '2.0', id: 'init', method: 'initialize', params: { protocolVersion: 1, grammarRange: { min: 1, max: 1 } } });
+  const adopt = (id: string) => runtime.handle({ jsonrpc: '2.0', id, method: 'session/adopt',
+    params: { threadId: 'public', providerThreadId: 'native', openTurns: ['target'] } });
+  await adopt('first');
+  assert.equal(frames.at(-1).error.kind, 'unknown-outcome');
+  assert.throws(() => runtime.adapter.nativeSession('public'), /not bound/);
+  assert.deepEqual(mutations, []);
+  failPage = false;
+  await adopt('second');
+  assert.equal(frames.at(-1).result.thread.id, 'native');
+  assert.deepEqual(reads.map(read => read.cursor), [null, null, 'older']);
+  assert.deepEqual(mutations, ['thread/resume']);
+  assert.ok(frames.some(frame => frame.method === 'thread/delta' &&
+    frame.params.deltas.some((delta: any) => delta.op === 'turn.close' && delta.nativeTurnId === 'target' && delta.status === 'completed')));
+});
+
+test('Codex forwards all native human interactions without changing ordinary tool dispatch', () => {
+  const frames: any[] = [];
+  const denied: unknown[] = [];
+  const runtime = new CodexBridgeRuntime({
+    async request() { throw Error('Unexpected native request'); },
+    resolve() {},
+    reject(id) { denied.push(id); },
+  }, frame => frames.push(frame));
+  runtime.adapter.bind('public', 'native');
+  const methods = ['item/permissions/requestApproval', 'item/tool/requestOptionPicker', 'item/tool/requestSetupCodexContextPicker'];
+  for (const method of methods) runtime.interaction(method, method, { threadId: 'native' });
+  assert.deepEqual(frames.map(frame => frame.params.payload.method), methods);
+  runtime.interaction(4, 'item/tool/call', { threadId: 'native', tool: 'fixture-tool' });
+  assert.equal(frames.at(-1).params.kind, 'codex/dynamic-tool');
+  runtime.interaction(5, 'item/unknown', { threadId: 'native' });
+  assert.deepEqual(denied, [5]);
+});
 
 test('history preserves bounded latest-turn queries for browser admission in multi-turn sessions', async () => {
   const calls: any[] = [], frames: any[] = [];
@@ -186,4 +242,19 @@ test('an idle existing native session is adopted under its own ID; an active or 
   assert.equal((await adopt('moved')).error.kind, 'explicit-reject');
   assert.throws(() => runtime.adapter.nativeSession('moved'), /not bound/u);
   assert.equal((await adopt('idle')).error.kind, 'explicit-reject', 'adopting twice is refused');
+});
+
+test('Codex Bridge accepts compiled Skill input and text over 64 KiB within the frame budget', async () => {
+  const calls: unknown[] = [];
+  const bridge = new CodexBridge({ async request(method, params) {
+    calls.push({ method, params });
+    return { turn: { id: 'native-turn' } };
+  } }, () => {});
+  bridge.bind('public', 'native');
+  const input = [
+    { type: 'text', text: 'x'.repeat(65_536), text_elements: [] },
+    { type: 'skill', name: 'fixture', path: '/workspace/fixture/SKILL.md' },
+  ];
+  await bridge.start('public', { input });
+  assert.deepEqual(calls, [{ method: 'turn/start', params: { threadId: 'native', input } }]);
 });

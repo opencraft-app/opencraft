@@ -50,8 +50,11 @@ test("HTTP over an endpoint: content-length and chunked bodies, status and heade
     request.on("data", (chunk) => (body += chunk));
     request.on("end", () => {
       if (request.url === "/length") {
-        response.writeHead(201, { "content-type": "application/json", "x-host": String(request.headers.host) });
-        response.end(JSON.stringify({ method: request.method, body, auth: request.headers.authorization }));
+        const reply = JSON.stringify({ method: request.method, body, auth: request.headers.authorization });
+        response.writeHead(201, {
+          "content-type": "application/json", "x-host": String(request.headers.host), "content-length": Buffer.byteLength(reply),
+        });
+        response.end(reply);
       } else if (request.url === "/chunked") {
         response.writeHead(200, { "content-type": "text/plain" });
         response.write("one,");
@@ -81,6 +84,36 @@ test("HTTP over an endpoint: content-length and chunked bodies, status and heade
   assert.equal(missing.ok, false);
   await assert.rejects(endpointHttpRequest(dial, "relative"), /Invalid endpoint request/u);
   await assert.rejects(endpointHttpRequest(dial, "/x", { headers: { "bad header": "x" } }), /header/u);
+});
+
+test("HTTP response framing survives bytewise delivery across headers, UTF-8, and chunk boundaries", async () => {
+  const dial = (wire: string, outcome: "ended" | "failed" = "ended"): EndpointDial => async (onData) => {
+    const closed = Promise.withResolvers<"ended" | "failed">();
+    const used = new Uint8Array(1);
+    return {
+      closed: closed.promise,
+      async write() {
+        for (const byte of new TextEncoder().encode(wire)) {
+          used[0] = byte;
+          onData(used);
+        }
+        closed.resolve(outcome);
+      },
+      async end() {},
+      async close() {},
+    };
+  };
+  const chunked = "HTTP/1.1 200 OK\r\ntransfer-encoding: chunked\r\n\r\n";
+  const fixed = "HTTP/1.1 200 OK\r\ncontent-length: 4\r\n\r\n";
+  for (const wire of [chunked + "3;marker=yes\r\n界\r\n1\r\nx\r\n0\r\n\r\n", fixed + "界x",
+    "HTTP/1.0 200 OK\r\n\r\n界x"]) {
+    const response = await endpointHttpRequest(dial(wire), "/", { maxBytes: 4 });
+    assert.equal(response.text(), "界x");
+  }
+  await assert.rejects(endpointHttpRequest(dial(chunked + "3\r\n界\r\n"), "/"), /ended early/u);
+  await assert.rejects(endpointHttpRequest(dial(fixed + "界"), "/"), /ended early/u);
+  await assert.rejects(endpointHttpRequest(dial(chunked + "5\r\n"), "/", { maxBytes: 4 }), /exceeds its budget/u);
+  await assert.rejects(endpointHttpRequest(dial("HTTP/1.0 200 OK\r\n\r\npartial", "failed"), "/"), /connection failed/u);
 });
 
 test("WebSocket over an endpoint: handshake, a message beyond 64 KiB, ping, JSON-RPC read", async (t) => {

@@ -15,6 +15,34 @@
       "when": 1795309645427,
       "tag": "0001_thread_queue",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1795620047175,
+      "tag": "0002_inbox_route_projection",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1795623636583,
+      "tag": "0003_outbox_history_identities",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1795641084522,
+      "tag": "0004_history_selection_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1795648907392,
+      "tag": "0005_route_archive_state",
+      "breakpoints": true
     }
   ]
 }

@@ -6,7 +6,7 @@ import { OPENCRAFT_RESUME_HISTORY_EXTENSION, buildResumeHistoryRequest, type App
 
 import type { DerivedHistoryPorts, DerivedReadContext } from "./derived-history";
 import type { HydratedThreadHistory, ResumeHistoryContext } from "./history-strategies";
-import { hydrateReadTurnItems, readTurnsPage } from "./history-strategies";
+import { readTurnsPage, requireTurnsPage } from "./history-strategies";
 import { mergeTurns, reconcileHistoryTurns, reconcileHistoryWindow, reconcileRecoveryWindow } from "./merge-turns";
 import type { ThreadExecutionProjection, ThreadStreamRole, ThreadView } from "./models";
 import { resolveThreadId } from "./notification-buffer";
@@ -26,6 +26,7 @@ declare module "@deepseek-ai/cordis" {
 }
 
 export type AppServerHostKind = "local" | "remote-ssh" | "durable" | "remote-control" | "wsl";
+type HistoryReadOptions = Pick<ResumeThreadOptions, "historyCheckpoint" | "unresolvedTurnIds" | "signal"> & { openArchivedHistory?: true };
 
 const TEXT_DELTA_METHODS = new Set([
   "item/agentMessage/delta",
@@ -259,8 +260,8 @@ export class ThreadResumeCoordinatorService extends Service {
     for (const operation of retired) operation?.cancel();
   }
 
-  private retireHistoryContext(threadId: string): void {
-    this.snapshotFollowers.get(threadId)?.cancel();
+  private retireHistoryContext(threadId: string, keepSnapshotFollower = false): void {
+    if (!keepSnapshotFollower) this.snapshotFollowers.get(threadId)?.cancel();
     this.readContexts.delete(threadId);
     this.historyContexts.delete(threadId);
     const retired = [this.backgroundHistory.get(threadId), this.olderPageRequests.get(threadId), this.historyRefreshes.get(threadId), ...(this.itemDetailRequests.get(threadId) ?? [])];
@@ -446,7 +447,7 @@ export class ThreadResumeCoordinatorService extends Service {
   }
 
   /** Open presentation history without acquiring an execution stream or model. */
-  read(threadId: string, options: Pick<ResumeThreadOptions, "historyCheckpoint" | "unresolvedTurnIds" | "signal"> = {}): Promise<ThreadView> {
+  read(threadId: string, options: HistoryReadOptions = {}): Promise<ThreadView> {
     if (this.disposed || options.signal?.aborted) return Promise.reject(historyAborted());
     const existing = this.baselineOperation(threadId);
     if (existing) return waitForHistory(existing.operation.promise, options.signal);
@@ -522,7 +523,7 @@ export class ThreadResumeCoordinatorService extends Service {
     }).catch(() => { /* Cancellation belongs to the history owner. */ });
   }
 
-  private async readOnce(threadId: string, options: Pick<ResumeThreadOptions, "historyCheckpoint" | "unresolvedTurnIds">, operation: Pick<HistoryOperation, "signal" | "assertCurrent">, reread = false, following = false): Promise<ThreadView> {
+  private async readOnce(threadId: string, options: HistoryReadOptions, operation: Pick<HistoryOperation, "signal" | "assertCurrent">, reread = false, following = false): Promise<ThreadView> {
     operation.assertCurrent();
     const initial = this.ctx.threadViews.getOrCreate(threadId);
     operation.assertCurrent();
@@ -533,7 +534,8 @@ export class ThreadResumeCoordinatorService extends Service {
       threadId, OPENCRAFT_RESUME_HISTORY_EXTENSION);
     const supportsWindow = (readCapability?.version === 1 && readCapability.initialTurnsPage !== false) ||
       (resumeCapability?.version === 1 && resumeCapability.initialReadPage === true);
-    const requestRead = (window: boolean) => this.client.request("thread/read", { threadId, includeTurns: false,
+    const { openArchivedHistory } = options;
+    const requestRead = (window: boolean) => this.client.request("thread/read", { threadId, includeTurns: false, openArchivedHistory,
       ...(readCapability?.version === 1 ? { watch: true } : {}),
       ...(window ? { initialTurnsPage: { ...(readCapability?.imageResources === true ? { imageResources: true } : {}), limit: readCapability?.itemDetails === true ? 1 : 10, itemsView: readCapability?.itemDetails === true ? "presentation" as const : "full" as const, sortDirection: "desc" as const } } : {}),
       ...(readCapability?.boundedRecovery === true && options.historyCheckpoint ? { historyCheckpoint: options.historyCheckpoint } : {}),
@@ -550,15 +552,24 @@ export class ThreadResumeCoordinatorService extends Service {
     const mode = metadata.historyMode ?? this.historyModeHint;
     const paginated = mode === "paginated" || mode === "message-window";
     const recovery = result.historyRecovery;
-    if (recovery && (typeof recovery.checkpoint?.epoch !== "string" || !Number.isSafeInteger(recovery.checkpoint.nextSeq)
-      || recovery.checkpoint.nextSeq < 0 || !["unchanged", "append", "replace"].includes(recovery.mode))) throw new Error("Invalid read history checkpoint");
-    const context = { signal: operation.signal, client: this.client, threadId, requestTimeoutMs: this.requestTimeoutMs };
-    const page = result.initialTurnsPage ?? (paginated ? await readTurnsPage(context, null) : null);
+    if (recovery) {
+      const { validateHistoryRecovery } = await import("./derived-history");
+      operation.assertCurrent();
+      validateHistoryRecovery(recovery);
+    }
+    const context = { signal: operation.signal, client: this.client, threadId, requestTimeoutMs: this.requestTimeoutMs, openArchivedHistory };
+    const page = result.initialTurnsPage == null
+      ? (paginated ? await readTurnsPage(context, null) : null)
+      : requireTurnsPage(result.initialTurnsPage, "thread/read.initialTurnsPage");
     let turns: readonly import("@opencraft/appserver-protocol").AppServerTurn[] = page ? [...page.data].reverse() : requireThread((await this.client.request("thread/read", {
-      threadId, includeTurns: true,
+      threadId, includeTurns: true, openArchivedHistory,
     }, { timeoutMs: this.requestTimeoutMs, priority: "user-visible", signal: operation.signal })).thread, "thread/read").turns;
     operation.assertCurrent();
-    if (page) turns = await hydrateReadTurnItems(context, turns.map(turn => turn.itemsView === undefined && supportsWindow ? { ...turn, itemsView: "full" as const } : turn));
+    if (page) {
+      turns = turns.map(turn => turn.itemsView === undefined && supportsWindow ? { ...turn, itemsView: "full" as const } : turn);
+      if (turns.some(turn => turn.itemsView !== "full"))
+        turns = await (await import("./derived-history")).hydrateReadTurnItems(context, turns);
+    }
     operation.assertCurrent();
     if (this.disposed) throw new Error("Thread reader was disposed");
     const detailGeneration = ++historyDetailReadGeneration;
@@ -566,15 +577,20 @@ export class ThreadResumeCoordinatorService extends Service {
       // A follower refreshes the tail, not the user's loaded historical range.
       // Preserve a prefix only with a shared boundary and a partial page. A
       // disjoint/full snapshot or changed epoch still replaces the baseline.
-      const anchor = turns.length ? current.turns.findIndex(turn => turn.id === turns[0]!.id) : -1;
+      const firstId = turns[0]?.id;
+      const anchor = following && firstId !== undefined && !current.navigationOnlyTurnIds?.includes(firstId)
+        ? current.turns.findIndex(turn => turn.id === firstId) : -1;
       const sameEpoch = !recovery || !current.historyCheckpoint || recovery.checkpoint.epoch === current.historyCheckpoint.epoch;
-      const preservePrefix = following && page?.nextCursor != null && anchor >= 0 && sameEpoch;
+      const preservePrefix = page?.nextCursor != null && anchor >= 0 && sameEpoch;
+      const coverage = preservePrefix ? current : recovery && recovery.mode !== "replace" ? initial : undefined;
       const prefix = preservePrefix ? current.turns.slice(0, anchor) : [];
       const tail = preservePrefix ? current.turns.slice(anchor) : current.turns;
       // In-flight older/detail reads belong to this same source, not a new
       // source per polling tick. Fresh baselines still retire their ownership.
-      if (!preservePrefix || !this.readContexts.has(threadId))
+      if (!preservePrefix || !this.readContexts.has(threadId)) {
+        this.retireHistoryContext(threadId, true);
         this.readContexts.set(threadId, { generation, hydrateItems: !supportsWindow });
+      }
       return {
         ...current, thread: { ...metadata, historyTurnCount: page?.totalTurnCount ?? metadata.historyTurnCount }, connectionGeneration: generation,
         resumeState: current.connectionGeneration === generation ? current.resumeState : "needs_resume",
@@ -584,13 +600,15 @@ export class ThreadResumeCoordinatorService extends Service {
         historyMode: mode ?? "legacy",
         ...(recovery ? { historyCheckpoint: recovery.checkpoint } : { historyCheckpoint: undefined }),
         historySource: paginated ? "paginated" : "thread-read-fallback",
-        tailHydrationComplete: preservePrefix ? current.tailHydrationComplete : recovery && recovery.mode !== "replace" ? initial.tailHydrationComplete : page?.nextCursor == null,
-        turnsPagination: preservePrefix ? current.turnsPagination : recovery && recovery.mode !== "replace" ? initial.turnsPagination : { olderCursor: page?.nextCursor ?? null, oldestLoadedTurnId: turns[0]?.id ?? null,
+        historyBaselineRevision: coverage ? coverage.historyBaselineRevision : current.revision + 1,
+        tailHydrationComplete: coverage?.tailHydrationComplete ?? (page?.nextCursor == null),
+        turnsPagination: coverage?.turnsPagination ?? { olderCursor: page?.nextCursor ?? null, oldestLoadedTurnId: firstId ?? null,
           hasLoadedOldest: page?.nextCursor == null, isLoadingOlder: false },
+        itemsPaginationByTurnId: {},
         execution: this.executionFromRead(threadId, generation, metadata, current.execution),
         resumeError: null, historyError: null,
       };
-    });
+    }, { turns, completeAgainst: page?.nextCursor == null && (!recovery || recovery.mode === "replace") ? initial.turns : undefined });
   }
 
   /** A successful fork already owns a live stream; an ephemeral fork has no rollout to Resume. */
@@ -611,7 +629,7 @@ export class ThreadResumeCoordinatorService extends Service {
       turnsPagination: { olderCursor: null, oldestLoadedTurnId: thread.turns[0]?.id ?? null, isLoadingOlder: false, hasLoadedOldest: true },
       resumeError: null,
       historyError: null,
-    }));
+    }), { turns: thread.turns });
     this.ctx.resumeNotificationBuffer.release(thread.id);
     this.activatedGenerations.set(thread.id, generation);
     return view;
@@ -660,6 +678,12 @@ export class ThreadResumeCoordinatorService extends Service {
 
   waitForBackgroundHistory(threadId: string): Promise<void> {
     return this.backgroundHistory.get(threadId)?.promise.catch(() => undefined) ?? Promise.resolve();
+  }
+
+  navigationView(threadId: string): ThreadView | null {
+    const view = this.ctx.threadViews.get(threadId);
+    return view && this.client.status.state === "open" && view.connectionGeneration === this.client.connectionGeneration
+      && (view.resumeState === "resumed" || this.readContexts.has(threadId)) ? view : null;
   }
 
   private derivedPorts(threadId: string): DerivedHistoryPorts {
@@ -734,7 +758,7 @@ export class ThreadResumeCoordinatorService extends Service {
     return pending;
   }
 
-  loadOlder(threadId: string, signal?: AbortSignal): Promise<ThreadView> {
+  loadOlder(threadId: string, signal?: AbortSignal, options: Pick<HistoryReadOptions, "openArchivedHistory"> = {}): Promise<ThreadView> {
     if (this.disposed || signal?.aborted) return Promise.reject(historyAborted());
     let refreshing: Promise<boolean> | undefined;
     for (;;) {
@@ -752,7 +776,7 @@ export class ThreadResumeCoordinatorService extends Service {
       operation.assertCurrent();
       const module = await import("./derived-history");
       operation.assertCurrent();
-      return module.loadOlderHistory(this.derivedPorts(threadId), threadId, operation);
+      return module.loadOlderHistory(this.derivedPorts(threadId), threadId, operation, options.openArchivedHistory);
     });
   }
 
@@ -928,11 +952,10 @@ export class ThreadResumeCoordinatorService extends Service {
         this.rejectedResumes.delete(threadId);
         return this.ctx.threadViews.get(threadId) ?? initial;
       }
+      const { projectResumedHistory, resumeHistoryAdmission, validateHistoryRecovery } = await import("./derived-history");
+      operation.assertCurrent();
       const recovery = supportsBoundedRecovery ? response.historyRecovery : undefined;
-      if (recovery && (typeof recovery.checkpoint?.epoch !== "string" || !Number.isSafeInteger(recovery.checkpoint.nextSeq)
-        || recovery.checkpoint.nextSeq < 0 || !["unchanged", "append", "replace"].includes(recovery.mode))) {
-        throw new Error("Invalid provider history recovery checkpoint");
-      }
+      validateHistoryRecovery(recovery);
 
       const historyContext: ResumeHistoryContext = {
         signal: operation.signal,
@@ -961,45 +984,24 @@ export class ThreadResumeCoordinatorService extends Service {
       const { signal: _operationSignal, ...committedContext } = historyContext;
       this.historyContexts.set(threadId, committedContext);
       this.readContexts.delete(threadId);
+      const preserveRange = recovery?.mode === "unchanged" || recovery?.mode === "append";
 
       const committed = this.ctx.threadViews.update(threadId, (current) => {
         const projected = this.ctx.threadResumeProjectors.project(current, { metadata, response });
         operation.assertCurrent();
-        if (recovery && recovery.mode !== "replace" && (!requestedCheckpoint
-          || requestedCheckpoint.epoch !== recovery.checkpoint.epoch
-          || recovery.checkpoint.nextSeq < requestedCheckpoint.nextSeq
-          || (recovery.mode === "unchanged" && (recovery.checkpoint.nextSeq !== requestedCheckpoint.nextSeq || history.turns.length !== 0)))) {
-          throw new Error("History recovery does not cover the requested checkpoint");
-        }
-        const preserveRange = recovery?.mode === "unchanged" || recovery?.mode === "append";
-        const turns = recovery?.mode === "unchanged" ? current.turns
-          : recovery?.mode === "replace" ? reconcileRecoveryWindow(projected.turns, history.turns, initial.turns, options.unresolvedTurnIds)
-          : history.source === "message-window"
-          ? reconcileHistoryWindow(projected.turns, history.turns, initial.turns)
-          : reconcileHistoryTurns(projected.turns, history.turns, "latest");
-        const oldestLoadedTurnId = turns[0]?.id ?? null;
+        const resumedHistory = projectResumedHistory(projected, current, initial, history, recovery, preserveRange,
+          options.unresolvedTurnIds, requestedCheckpoint);
         return {
           ...projected,
           execution: this.preserveLiveExecution(threadId, executionRevision, current.execution, projected.execution),
           connectionGeneration: generation,
           resumeState: "resumed",
           streamRole: { role: "owner" },
-          turns,
-          historySource: history.source,
-          historyCheckpoint: recovery?.checkpoint,
-          tailHydrationComplete: preserveRange ? initial.tailHydrationComplete : history.complete,
-          turnsPagination: preserveRange ? { ...initial.turnsPagination, isLoadingOlder: false } : {
-            olderCursor: history.olderCursor,
-            oldestLoadedTurnId,
-            isLoadingOlder: false,
-            hasLoadedOldest: history.complete,
-          },
-          itemsPaginationByTurnId: recovery?.mode === "unchanged" ? initial.itemsPaginationByTurnId
-            : preserveRange ? { ...initial.itemsPaginationByTurnId, ...history.itemsPaginationByTurnId } : history.itemsPaginationByTurnId,
+          ...resumedHistory,
           resumeError: null,
           historyError: null,
         };
-      });
+      }, resumeHistoryAdmission(history, initial, preserveRange, options.unresolvedTurnIds));
       operation.assertCurrent();
       provisionalRole = null;
       this.ctx.threadStreamOwnership.set(threadId, { role: "owner" });

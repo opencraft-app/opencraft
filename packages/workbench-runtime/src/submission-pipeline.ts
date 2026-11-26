@@ -1,4 +1,5 @@
 import { createConversationKey } from "@opencraft/chat-core";
+import { SubmissionOutcomeUnknownError } from "@opencraft/chat-runtime";
 import type { SubmissionReceipt, SubmitIntent } from "@opencraft/composer-core";
 
 import type { ConversationScopeRegistry } from "./conversation-scope-registry";
@@ -64,7 +65,11 @@ export function createWorkbenchSubmissionPipeline(
       // Conversation Runtime. From here failures belong to that Runtime and
       // must not resurrect or mutate the retired Draft.
       const turnReceipt = receipt.turnId === null
-        ? await config.submitFirstTurn(submission, receipt)
+        ? await config.submitFirstTurn(submission, receipt).catch(error => {
+            if (!(error instanceof SubmissionOutcomeUnknownError))
+              config.scopes.forgetPromotedPreview(receipt.hostId, receipt.threadId);
+            throw error;
+          })
         : receipt;
       notifyAccepted(turnReceipt);
       return turnReceipt;

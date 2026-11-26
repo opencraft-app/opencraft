@@ -10,7 +10,9 @@ import {
   SandboxCreationFault,
 } from "@opencraft/sandbox";
 import {
+  BRIDGE_ERROR_CODES,
   BRIDGE_GRAMMAR_RANGE,
+  BRIDGE_MAX_COMMAND_BYTES,
   BRIDGE_PROTOCOL_VERSION,
   isBridgeCommand,
   assertMethodAllowed,
@@ -18,9 +20,9 @@ import {
   type BridgeInitializeResult,
   type BridgeWireMessage,
 } from "@opencraft/agent-bridge-protocol";
-import { Storage } from "./storage.js";
+import { Storage, StorageRefusal } from "./storage.js";
 import { Peer, successful } from "./peer.js";
-import { object, identifier, routeKey, type Command, type Generation, type Receipt } from "./types.js";
+import { object, identifier, isArchiveCommand, oversizedBridgeRequest, routeKey, type BridgeHistorySelection, type Command, type Generation, type Receipt } from "./types.js";
 import { HostQueue } from "./queue.js";
 const CODEX_RECONNECT_DELAY_MS = 1_000;
 class CodexAttachmentUnavailable extends Error {
@@ -88,13 +90,19 @@ export interface HostOptions {
   maxSpoolBytes?: number;
   requestTimeoutMs?: number;
 }
+interface PendingCliIssue {
+  readonly commandId: string;
+  cancelled?: "stop" | "session-ended";
+  failedCleanup?: ExecutionCliLease;
+}
 export class BridgeHost {
   private readonly cliGenerations = new Map<string, string>();
-  private readonly cliPending = new Map<string, string>();
+  private readonly cliPending = new Map<string, PendingCliIssue>();
   private readonly cliClosedTurns = new Map<string, string>();
   private readonly cliReservations = new Map<string, { generation: string; lease: ExecutionCliLease }>();
   private readonly cliStarts = new Map<string, { observed: boolean; commandId: string }>();
   private readonly cliLeases = new Map<string, ExecutionCliLease>();
+  private readonly cliRevocations = new WeakMap<ExecutionCliLease, { pending?: Promise<void> }>();
   private storage: Storage;
   private pool!: SandboxPool;
   private diagnosticPeers = new Map<string, Peer>();
@@ -133,7 +141,14 @@ export class BridgeHost {
     });
     this.queue = new HostQueue(this.storage, {
       command: async (serverId, threadId, commandId, method, params) => {
-        await this.accept({ commandId, serverId, threadId, method, params });
+        try {
+          await this.accept({ commandId, serverId, threadId, method, params });
+        } catch (error) {
+          // Only a refusal from admission proves this attempt never reached dispatch.
+          if (error instanceof Error && REFUSED_BRIDGE_ERRORS.has((error as Error & { kind?: string }).kind ?? ""))
+            throw Object.assign(error, { settlement: "rejected" });
+          throw error;
+        }
         for (
           const deadline = Date.now() + 35_000;
           Date.now() < deadline;
@@ -144,12 +159,15 @@ export class BridgeHost {
         }
         throw Error("Queued delivery outcome unknown");
       },
-      history: (serverId, threadId, params) => this.observe({ serverId, threadId, method: "history/read", params }),
+      history: (serverId, threadId, params) => this.observe({ serverId, threadId, method: "history/read", params }, true),
+      canReconcile: async (route) => (await this.queueRoute(route)).queueActive,
       recover: (route) => this.recoverRoute(route),
+      isIdle: async (route) => await this.storage.call<boolean>("routeIdle", { route, forQueue: true }) && !this.cliPending.has(route),
       dispatchable: async (route) => {
-        const { generation } = await this.storage.call<{ generation: string | null }>("observationRoute", { route });
+        const { generation, queueActive } = await this.queueRoute(route);
         return (
           !this.closing &&
+          queueActive &&
           !!generation &&
           this.generations.has(generation) &&
           (!this.retainedAfterCrash.has(generation) || this.recoverable(generation))
@@ -241,61 +259,44 @@ export class BridgeHost {
         !config.launch.command.includes(config.artifact)
       )
         throw Error("Pinned bridge artifact digest mismatch");
-      const peer = new Peer(
+      const peer: Peer = new Peer(
         config,
         async (callbackId, method, params) => {
           await this.storage.call("callback", { generation: id, id: callbackId, method, params: object(params) });
           const p = object(params);
-          if (
-            method === "thread/delta" &&
-            Array.isArray(p.deltas) &&
-            p.deltas.some((delta: any) => delta.op === "turn.open")
-          ) {
-            const start = this.cliStarts.get(String(p.threadId));
+          const route = String(p.threadId);
+          if (method === "thread/notification" && p.method === "thread/unarchived") this.queue.schedule(route);
+          const deltas = method === "thread/delta" && Array.isArray(p.deltas) ? p.deltas : [];
+          const sessionEnded = deltas.some(delta => delta.op === "session.ended");
+          if (sessionEnded) await this.cancelPendingCliIssue(route, "session-ended");
+          if (deltas.some(delta => delta.op === "turn.open")) {
+            const start = this.cliStarts.get(route);
             if (start) start.observed = true;
           }
-          const closed =
-            method === "thread/delta" && Array.isArray(p.deltas)
-              ? (p.deltas.find((delta: any) => delta.op === "turn.close" || delta.op === "session.ended") as
-                  { nativeTurnId?: string; op: string } | undefined)
-              : undefined;
-          if (closed?.op === "turn.close" && closed.nativeTurnId) {
-            const status = String((closed as { status?: unknown }).status ?? "completed");
-            void this.queue.turnClosed(String(p.threadId), closed.nativeTurnId, status).catch(() => {});
+          const closed = deltas.find(delta => delta.op === "turn.close") as
+            { nativeTurnId?: string; status?: string } | undefined;
+          if (closed?.nativeTurnId) {
+            void this.queue.turnClosed(route, closed.nativeTurnId, String(closed.status ?? "completed")).catch(() => {});
           }
-          if (closed && this.cliClosedTurns.get(String(p.threadId)) !== (closed.nativeTurnId ?? closed.op)) {
-            this.cliClosedTurns.set(String(p.threadId), closed.nativeTurnId ?? closed.op);
-            if (closed.op === "session.ended") {
-              const reserved = this.cliReservations.get(String(p.threadId));
-              if (reserved) {
-                this.cliReservations.delete(String(p.threadId));
-                await reserved.lease.revoke();
-              }
-            }
-            const lease = this.cliLeases.get(String(p.threadId));
-            if (lease) {
-              await lease.revoke();
-              this.cliLeases.delete(String(p.threadId));
+          const terminal = sessionEnded ? "session.ended"
+            : closed?.nativeTurnId && "turn.close:" + closed.nativeTurnId;
+          if (terminal && this.cliClosedTurns.get(route) !== terminal) {
+            this.cliClosedTurns.set(route, terminal);
+            const active = this.cliLeases.get(route);
+            const reserved = sessionEnded ? this.cliReservations.get(route)?.lease : undefined;
+            // A durable callback does not wait for lease filesystem cleanup.
+            // Keep each lease registered until its own revocation confirms.
+            for (const lease of [active, reserved]) {
+              if (lease) this.trackCliCleanup(this.revokeRouteLease(route, lease).catch(error => peer.abort(error)));
             }
           }
         },
         this.options.requestTimeoutMs,
         () => {
           for (const [route, reserved] of this.cliReservations)
-            if (reserved.generation === id) {
-              this.cliReservations.delete(route);
-              const task = reserved.lease.revoke();
-              this.tasks.add(task);
-              void task.finally(() => this.tasks.delete(task)).catch(() => {});
-            }
+            if (reserved.generation === id) this.trackCliCleanup(this.revokeRouteLease(route, reserved.lease));
           for (const [route, lease] of this.cliLeases)
-            if (this.cliGenerations.get(route) === id) {
-              this.cliLeases.delete(route);
-              this.cliGenerations.delete(route);
-              const task = lease.revoke();
-              this.tasks.add(task);
-              void task.finally(() => this.tasks.delete(task)).catch(() => {});
-            }
+            if (this.cliGenerations.get(route) === id) this.trackCliCleanup(this.revokeRouteLease(route, lease));
         },
       );
       this.diagnosticPeers.set(id, peer);
@@ -416,7 +417,7 @@ export class BridgeHost {
     if (command.method === "session/adopt" && command.params.providerThreadId !== command.threadId)
       throw hostRefusal(command, "An adopted session keeps its own Thread ID");
     const serialized = stable(command);
-    if (Buffer.byteLength(serialized) > 512 * 1024) throw Error("Command too large");
+    if (Buffer.byteLength(serialized) > BRIDGE_MAX_COMMAND_BYTES) throw oversizedBridgeRequest(BRIDGE_MAX_COMMAND_BYTES);
     const digest = createHash("sha256").update(serialized).digest("hex");
     const route = routeKey(command.serverId, command.threadId);
     if (command.method === "session/resume") {
@@ -440,9 +441,14 @@ export class BridgeHost {
       digest,
       route,
       maxSpoolBytes: this.options.maxSpoolBytes ?? 64 * 1024 ** 2,
+    }).catch((error: unknown) => {
+      if (error instanceof StorageRefusal) throw hostRefusal(command, error.message);
+      throw error;
     });
     if (result.fresh) {
-      const task = this.dispatch(command, result.receipt);
+      const task = this.dispatch(command, result.receipt).finally(() => {
+        if (!this.closing && isArchiveCommand(command.method)) this.queue.schedule(route);
+      });
       this.tasks.add(task);
       void task.finally(() => this.tasks.delete(task)).catch(() => {});
     }
@@ -513,6 +519,7 @@ export class BridgeHost {
         !to ||
         from === to ||
         state.busy ||
+        this.cliPending.has(route) ||
         !state.nativeId ||
         !this.recoverable(from) ||
         !this.recoverable(to)
@@ -579,6 +586,9 @@ export class BridgeHost {
     this.migrations.set(route, operation);
     return operation;
   }
+  private queueRoute(route: string): Promise<{ generation: string | null; epoch: number; queueActive: boolean }> {
+    return this.storage.call("observationRoute", { route, forQueue: true });
+  }
   /** Restore a native attachment before the queue judges whether the route is idle. */
   private async recoverRoute(route: string): Promise<void> {
     if (this.rebinding.has(route)) await this.migrate(route);
@@ -588,9 +598,78 @@ export class BridgeHost {
     if (!binding.generation || (!this.rebinding.has(route) && !this.lostCodexAttachment(binding.generation))) return;
     await this.bound(await this.peer(binding.generation), route, binding.epoch);
   }
+  private async cancelPendingCliIssue(route: string, reason: NonNullable<PendingCliIssue["cancelled"]>): Promise<void> {
+    const pending = this.cliPending.get(route);
+    if (!pending) return;
+    if (!pending.cancelled || reason === "session-ended") pending.cancelled = reason;
+    // The command has not been dispatched. Its receipt can settle before
+    // the separate responsibility to reclaim the in-flight lease.
+    await this.rejectCliCommand(pending.commandId);
+  }
+  private rejectCliCommand(commandId: string): Promise<void> {
+    return this.storage.call("settle", {
+      id: commandId,
+      state: "rejected",
+      response: {
+        jsonrpc: "2.0",
+        id: "host-command:" + commandId,
+        error: { code: -32001, kind: "unsupported", message: "cliUnavailable" },
+      },
+    });
+  }
+  private trackCliCleanup(task: Promise<void>): void {
+    this.tasks.add(task);
+    void task.finally(() => this.tasks.delete(task)).catch(() => {});
+  }
+  private revokeCliLease(lease: ExecutionCliLease): Promise<void> {
+    const revocation = this.cliRevocations.get(lease) ?? {};
+    this.cliRevocations.set(lease, revocation);
+    return revocation.pending ??= Promise.resolve().then(() => lease.revoke()).catch(error => {
+      revocation.pending = undefined;
+      throw error;
+    });
+  }
+  private async revokeRouteLease(route: string, lease: ExecutionCliLease): Promise<void> {
+    await this.revokeCliLease(lease);
+    if (this.cliLeases.get(route) === lease) {
+      this.cliLeases.delete(route);
+      this.cliGenerations.delete(route);
+    }
+    if (this.cliReservations.get(route)?.lease === lease) this.cliReservations.delete(route);
+  }
+  private finishPendingCliIssue(route: string, pending: PendingCliIssue, peer?: Peer): void {
+    if (pending.failedCleanup || this.cliPending.get(route) !== pending) return;
+    this.cliPending.delete(route);
+    // A stopped pre-dispatch start has no native terminal event to wake the queue.
+    if (pending.cancelled === "stop" && !this.closing && !peer?.diagnostic().failed)
+      this.queue.schedule(route);
+  }
+  private async revokeUnsentCliLease(pending: PendingCliIssue, lease: ExecutionCliLease): Promise<void> {
+    try { await this.revokeCliLease(lease); }
+    catch (error) { pending.failedCleanup = lease; throw error; }
+  }
+  private async retryUnsentCliCleanup(route: string, pending: PendingCliIssue, peer?: Peer): Promise<void> {
+    const lease = pending.failedCleanup;
+    if (!lease) return;
+    await this.revokeCliLease(lease);
+    pending.failedCleanup = undefined;
+    this.finishPendingCliIssue(route, pending, peer);
+  }
+  private async discardUnsentCliLease(receipt: Receipt, pending: PendingCliIssue, peer: Peer, lease: ExecutionCliLease): Promise<void> {
+    const canRestore = () => pending.cancelled === "stop" && !this.closing && !peer.diagnostic().failed;
+    if (!lease.rejectBeforeStart || !canRestore()) return this.revokeUnsentCliLease(pending, lease);
+    let reserved: ExecutionCliLease;
+    try { reserved = await lease.rejectBeforeStart(); }
+    catch { return this.revokeUnsentCliLease(pending, lease); }
+    if (canRestore()) this.cliReservations.set(receipt.route, { generation: receipt.generation, lease: reserved });
+    else await this.revokeUnsentCliLease(pending, reserved);
+  }
   private async dispatch(command: Command, receipt: Receipt): Promise<void> {
-    // Fence is committed BEFORE preparing or writing a native request.
-    await this.storage.call("dispatch", { id: command.commandId });
+    let dispatched = false;
+    const recordDispatch = async () => {
+      await this.storage.call("dispatch", { id: command.commandId });
+      dispatched = true;
+    };
     try {
       let peer: Peer;
       try {
@@ -635,6 +714,23 @@ export class BridgeHost {
           return;
         }
       }
+      if (command.method === "turn/stop" && command.params.expectedTurnId === undefined && command.params.turnId === undefined) {
+        const pending = this.cliPending.get(receipt.route);
+        if (pending &&
+            await this.storage.call<boolean>("routeIdle", { route: receipt.route, excludingCommandId: pending.commandId }) &&
+            this.cliPending.get(receipt.route) === pending) {
+          await this.cancelPendingCliIssue(receipt.route, "stop");
+          try { await this.retryUnsentCliCleanup(receipt.route, pending, peer); }
+          catch { await this.rejectCliCommand(command.commandId); return; }
+          await this.storage.call("settle", {
+            id: command.commandId,
+            state: "accepted",
+            localStop: true,
+            response: { jsonrpc: "2.0", id: "host-command:" + command.commandId, result: { stopped: true } },
+          });
+          return;
+        }
+      }
       let cliEnvironment: Readonly<Record<string, string>> | undefined;
       if (
         ["session/create", "session/fork", "session/adopt"].includes(command.method) &&
@@ -647,21 +743,13 @@ export class BridgeHost {
             threadId: command.threadId,
           });
           if (this.closing || peer.diagnostic().failed) {
-            await lease.revoke();
+            await this.revokeCliLease(lease);
             throw Error("CLI owner unavailable");
           }
           this.cliReservations.set(receipt.route, { generation: receipt.generation, lease });
           cliEnvironment = lease.environment;
         } catch {
-          await this.storage.call("settle", {
-            id: command.commandId,
-            state: "rejected",
-            response: {
-              jsonrpc: "2.0",
-              id: `host-command:${command.commandId}`,
-              error: { code: -32001, kind: "unsupported", message: "cliUnavailable" },
-            },
-          });
+          await this.rejectCliCommand(command.commandId);
           return;
         }
       }
@@ -676,45 +764,49 @@ export class BridgeHost {
         this.capabilities.get(receipt.generation)?.cliExecutable &&
         !queuedWithoutSource
       ) {
+        const pending: PendingCliIssue = { commandId: command.commandId };
         try {
           const credential = command.params.executionSource;
           if (typeof credential !== "string" || credential.length > 4096) throw Error("cliUnavailable");
-          if (this.cliLeases.has(receipt.route) || this.cliPending.has(receipt.route)) throw Error("cliUnavailable");
-          this.cliPending.set(receipt.route, command.commandId);
+          const reserved = this.cliReservations.get(receipt.route)?.lease;
+          if (this.cliLeases.has(receipt.route) || this.cliPending.has(receipt.route) ||
+              (reserved && this.cliRevocations.has(reserved))) throw Error("cliUnavailable");
+          this.cliPending.set(receipt.route, pending);
           const lease = await this.options.executionCli.issue({
             serverId: command.serverId,
             threadId: command.threadId,
             credential,
           });
-          if (this.closing || peer.diagnostic().failed) {
-            await lease.revoke();
-            throw Error("cliUnavailable");
+          if (this.cliReservations.get(receipt.route)?.lease === reserved) this.cliReservations.delete(receipt.route);
+          const mayDispatch = () => !pending.cancelled && !this.closing && !peer.diagnostic().failed;
+          let ready = false;
+          try {
+            if (mayDispatch()) {
+              await recordDispatch();
+              ready = mayDispatch();
+            }
+          } finally {
+            if (!ready) await this.discardUnsentCliLease(receipt, pending, peer, lease);
           }
-          this.cliReservations.delete(receipt.route);
+          if (!ready) throw Error("cliUnavailable");
           this.cliLeases.set(receipt.route, lease);
           this.cliGenerations.set(receipt.route, receipt.generation);
           cliEnvironment = lease.environment;
         } catch {
-          await this.storage.call("settle", {
-            id: command.commandId,
-            state: "rejected",
-            response: {
-              jsonrpc: "2.0",
-              id: `host-command:${command.commandId}`,
-              error: { code: -32001, kind: "unsupported", message: "cliUnavailable" },
-            },
-          });
+          await this.rejectCliCommand(command.commandId);
           return;
         } finally {
-          if (this.cliPending.get(receipt.route) === command.commandId) this.cliPending.delete(receipt.route);
+          this.finishPendingCliIssue(receipt.route, pending, peer);
         }
       }
-      const start = command.method === "turn/start" ? { observed: false, commandId: command.commandId } : undefined;
-      if (start) this.cliStarts.set(receipt.route, start);
       const { executionSource: _executionSource, ...providerParams } = command.params;
       // A fork names its source by public Thread; the provider knows sessions by route.
       if (command.method === "session/fork")
         providerParams.sourceThreadId = routeKey(command.serverId, identifier(command.params.sourceThreadId));
+      // Recovery treats only committed dispatches as potentially sent.
+      if (!dispatched) await recordDispatch();
+      const start = command.method === "turn/start" ? { observed: false, commandId: command.commandId } : undefined;
+      if (start) this.cliStarts.set(receipt.route, start);
       const response = await peer.request(`host-command:${command.commandId}`, command.method, {
         ...providerParams,
         ...(cliEnvironment ? { cliEnvironment } : {}),
@@ -730,6 +822,8 @@ export class BridgeHost {
       let state = dispatchSettlement(response);
       if (start && this.cliStarts.get(receipt.route) === start) this.cliStarts.delete(receipt.route);
       if (state === "rejected" && start?.observed) state = "unknown";
+      const sessionClosed = state === "accepted" && (command.method === "session/close" || command.method === "session/delete");
+      if (sessionClosed) await this.cancelPendingCliIssue(receipt.route, "session-ended");
       await this.storage.call("settle", {
         id: command.commandId,
         response,
@@ -738,13 +832,10 @@ export class BridgeHost {
       });
       if (
         (["session/create", "session/fork", "session/adopt"].includes(command.method) && state === "rejected") ||
-        ((command.method === "session/close" || command.method === "session/delete") && state === "accepted")
+        sessionClosed
       ) {
         const reserved = this.cliReservations.get(receipt.route);
-        if (reserved) {
-          this.cliReservations.delete(receipt.route);
-          await reserved.lease.revoke();
-        }
+        if (reserved) await this.revokeRouteLease(receipt.route, reserved.lease);
       }
       if (state === "rejected" && ["session/create", "session/fork", "session/adopt"].includes(command.method)) {
         const failure =
@@ -759,24 +850,35 @@ export class BridgeHost {
       if (
         (state === "rejected" && command.method === "turn/start" && cliEnvironment !== undefined) ||
         (command.method === "turn/stop" && state === "accepted") ||
-        ((command.method === "session/close" || command.method === "session/delete") && state === "accepted")
+        sessionClosed
       ) {
         const lease = this.cliLeases.get(receipt.route);
         if (lease) {
-          if (state === "rejected" && command.method === "turn/start" && lease.rejectBeforeStart) {
+          if (state === "rejected" && command.method === "turn/start" && lease.rejectBeforeStart && !this.cliRevocations.has(lease)) {
             const reserved = await lease.rejectBeforeStart();
             if (this.closing || peer.diagnostic().failed) {
-              await reserved.revoke();
+              await this.revokeCliLease(reserved);
               throw Error("CLI owner unavailable");
             }
             this.cliReservations.set(receipt.route, { generation: receipt.generation, lease: reserved });
-          } else await lease.revoke();
-          this.cliLeases.delete(receipt.route);
+            if (this.cliLeases.get(receipt.route) === lease) {
+              this.cliLeases.delete(receipt.route);
+              this.cliGenerations.delete(receipt.route);
+            }
+          } else await this.revokeRouteLease(receipt.route, lease);
         }
       }
     } catch {
       if (this.cliStarts.get(receipt.route)?.commandId === command.commandId) this.cliStarts.delete(receipt.route);
-      await this.storage.call("settle", { id: command.commandId, state: "unknown" });
+      await this.storage.call("settle", dispatched ? { id: command.commandId, state: "unknown" } : {
+        id: command.commandId,
+        state: "rejected",
+        response: {
+          jsonrpc: "2.0",
+          id: "host-command:" + command.commandId,
+          error: { kind: "explicit-reject", code: BRIDGE_ERROR_CODES.explicitReject, message: "Bridge Host could not dispatch the command" },
+        },
+      });
     }
   }
   scriptCapabilities() {
@@ -874,36 +976,68 @@ export class BridgeHost {
     return this.options.executionCli.forward(token, body);
   }
   /** Read-only observations have no mutation receipt or replay custody. */
-  async observe(raw: unknown): Promise<unknown> {
+  async observe(raw: unknown, forQueue = false): Promise<unknown> {
     if (this.closing) throw Error("Host closing");
     const body = object(raw);
     if (body.method !== "history/read") throw Error("Unsupported observation");
-    const params = structuredClone(object(body.params));
+    const { openArchivedHistory, ...params } = structuredClone(object(body.params));
+    if (openArchivedHistory !== undefined && openArchivedHistory !== true)
+      throw Object.assign(Error("Invalid archive history intent"), { code: -32602, kind: "invalid" });
     if (Buffer.byteLength(stable(params)) > 512 * 1024) throw Error("Observation too large");
     const route = routeKey(identifier(body.serverId), identifier(body.threadId));
-    if (this.rebinding.has(route)) await this.migrate(route);
-    const binding = await this.storage.call<{ generation: string | null; epoch: number }>("observationRoute", {
-      route,
-    });
+    const forHistory = openArchivedHistory !== true && !(params.view === "thread" && params.includeTurns !== true);
+    const readBinding = () => this.storage.call<{
+      generation: string | null;
+      epoch: number;
+      archiveState: "active" | "archived" | "unconfirmed" | null;
+      queueActive?: boolean;
+    }>("observationRoute", { route, forQueue, forHistory });
+    const assertReadable = ({ archiveState, queueActive }: Awaited<ReturnType<typeof readBinding>>) => {
+      if (forQueue && !queueActive) throw Error("Thread archive state prevents queue observation");
+      if (!forHistory) return;
+      if (archiveState === "archived")
+        throw Object.assign(Error("Thread is archived"), {
+          code: -32071, kind: "explicit-reject", data: { code: "THREAD_ARCHIVED" },
+        });
+      if (archiveState === "unconfirmed")
+        throw Object.assign(Error("Thread archive state is unconfirmed"), { code: -32000, kind: "explicit-reject" });
+    };
+    if (this.rebinding.has(route)) {
+      if (forQueue || forHistory) assertReadable(await readBinding());
+      await this.migrate(route);
+    }
+    const binding = await readBinding();
+    assertReadable(binding);
     if (!binding.generation) throw Error("Thread has no retained owner");
     const peer = await this.peer(binding.generation);
     const admission = assertMethodAllowed(this.capabilities.get(binding.generation)!, "history/read");
     if (!admission.ok || this.closing) throw Error("History unavailable");
-    const current = await this.storage.call<typeof binding>("observationRoute", { route });
+    const current = await readBinding();
+    assertReadable(current);
     if (this.closing || current.generation !== binding.generation || current.epoch !== binding.epoch)
       throw Error("Observation owner changed");
-    await this.bound(peer, route, binding.epoch);
+    if (this.rebinding.has(route)) {
+      await this.bound(peer, route, binding.epoch);
+      if (forQueue || forHistory) assertReadable(await readBinding());
+    }
     const response = await peer.request(`host-observation:${randomUUID()}`, "history/read", {
       ...params,
       threadId: route,
       executionEpoch: binding.epoch,
     });
-    const after = await this.storage.call<typeof binding>("observationRoute", { route });
+    const after = await readBinding();
+    assertReadable(after);
     if (this.closing || after.generation !== binding.generation || after.epoch !== binding.epoch)
       throw Error("Observation owner changed");
     if ("error" in response) throw Object.assign(Error(response.error.message), response.error);
     if (!("result" in response)) throw Error("Invalid observation response");
-    return response.result;
+    const result = response.result;
+    if (params.view === "thread" && after.archiveState === "archived") {
+      const thread = (result as { thread?: unknown } | null)?.thread;
+      if (thread && typeof thread === "object" && !Array.isArray(thread))
+        return { ...result as object, thread: { ...thread, archived: true } };
+    }
+    return result;
   }
   /** thread/queue/* for a bridge Thread; the queue is Host state, never a provider command. */
   queueRequest(raw: unknown): Promise<unknown> {
@@ -935,8 +1069,11 @@ export class BridgeHost {
   async snapshot(): Promise<any> {
     return { ...(await this.storage.call("snapshot")), databaseOutcome: await this.storage.ready };
   }
-  events(cursor: number, limit = 256, fenced = false): Promise<any> {
-    return this.storage.call("events", { cursor, limit, fenced });
+  events(cursor: number, limit = 256, fenced = false, fragmentOffset?: number): Promise<any> {
+    return this.storage.call("events", { cursor, limit, fenced, fragmentOffset });
+  }
+  historyIdentities(serverId: string, threadId: string, after: number, through?: number, selection?: BridgeHistorySelection): Promise<unknown> {
+    return this.storage.call("historyIdentities", { route: routeKey(serverId, threadId), after, through, selection });
   }
   async ack(cursor: number, outboxId?: string): Promise<void> {
     await this.storage.call("ack", { cursor, outboxId });
@@ -959,7 +1096,9 @@ export class BridgeHost {
     return true;
   }
   releaseThread(serverId: string, threadId: string): Promise<void> {
-    return this.storage.call("releaseRoute", { route: routeKey(serverId, threadId) });
+    const route = routeKey(serverId, threadId);
+    if (this.cliPending.has(route)) return Promise.reject(Error("Thread still has work or unknown custody"));
+    return this.storage.call("releaseRoute", { route });
   }
   async retire(id: string): Promise<void> {
     await this.storage.call("retire", { id }); // refuse before touching a busy peer
@@ -976,16 +1115,19 @@ export class BridgeHost {
     await Promise.allSettled([...this.admissions]);
     const cleanup = await Promise.allSettled([
       this.pool.close(),
-      ...[...this.cliLeases.values()].map((lease) => lease.revoke()),
-      ...[...this.cliReservations.values()].map((value) => value.lease.revoke()),
+      ...[...this.cliLeases.values()].map((lease) => this.revokeCliLease(lease)),
+      ...[...this.cliReservations.values()].map((value) => this.revokeCliLease(value.lease)),
       ...[...this.peers.values()].map(async (pending) => {
         const peer = await pending.catch(() => undefined);
         if (peer) await peer.close();
       }),
     ]);
     await Promise.allSettled([...this.tasks]);
+    const lateCliCleanup = await Promise.allSettled(
+      [...this.cliPending].map(([route, pending]) => this.retryUnsentCliCleanup(route, pending)),
+    );
     const storage = await Promise.allSettled([this.storage.close()]);
-    const failures = [...cleanup, ...storage].filter((result) => result.status === "rejected");
+    const failures = [...cleanup, ...lateCliCleanup, ...storage].filter((result) => result.status === "rejected");
     if (failures.length)
       throw new AggregateError(
         failures.map((result) => (result as PromiseRejectedResult).reason),

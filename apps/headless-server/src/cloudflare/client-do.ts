@@ -22,6 +22,7 @@ import {
   type JsonRpcId,
   type OpenCraftResumeHistoryCapability,
 } from "@opencraft/appserver-protocol";
+import { HISTORY_PREVIEW_CURSOR_EXPIRED } from "@opencraft/appserver-protocol/history-preview";
 import {
   TransportStatusObservers,
   type DuplexTransport,
@@ -50,9 +51,11 @@ import {
 } from "./client-attachment.js";
 import {
   CODEX_HISTORY_RESPONSE_TOO_LARGE,
+  CODEX_THREAD_ARCHIVED,
   isCodexHistoryResult,
   lookupCodexThread,
   parseCodexHistoryRead,
+  readsOrdinaryCodexHistoryBody,
   type CodexHistoryRead,
 } from "./codex-thread-read.js";
 import { CODEX_THREAD_START_PATH, createdCodexThreadId, parseCodexStartRequest } from "./codex-thread-start.js";
@@ -546,6 +549,7 @@ export class ClientDO {
       };
     };
     const canTerminal = canTurn && this.env.OPENCRAFT_WORKSPACE_CODEX_ISOLATE_ACTORS === "true";
+    const canOpenArchivedHistory = canTurn && this.env.OPENCRAFT_WORKSPACE_CODEX_SNAPSHOTS === "true";
     const canFiles = canTerminal && this.env.OPENCRAFT_WORKSPACE_CODEX_FILES === "true";
     const canProjects = canFiles && this.env.OPENCRAFT_WORKSPACE_CODEX_PROJECTS === "true";
     let initialized = initiallyReady;
@@ -629,6 +633,7 @@ export class ClientDO {
                             rename: true,
                             archive: true,
                             ...(canTerminal ? { archiveStateInRead: true } : {}),
+                            ...(canOpenArchivedHistory ? { openArchivedHistory: true } : {}),
                             sideChatSettings: true,
                             unsubscribe: true,
                           },
@@ -776,7 +781,8 @@ export class ClientDO {
           return true;
         }
         const read = parseCodexHistoryRead(method, params);
-        if (!read || (!canTurn && read.method === "thread/read" && read.params.initialTurnsPage !== undefined)) {
+        if (!read || (!canTurn && read.method === "thread/read" && read.params.initialTurnsPage !== undefined) ||
+          (read.params.openArchivedHistory && !canOpenArchivedHistory)) {
           emit(rpcError(id, -32602, "Invalid Thread read"));
           return true;
         }
@@ -1295,6 +1301,9 @@ export class ClientDO {
 
   async #read(attachment: ClientAttachment, read: CodexHistoryRead, live: () => boolean): Promise<unknown | null> {
     const { threadId } = read.params;
+    const archivedError = () => new CodexHistoryReadError(CODEX_THREAD_ARCHIVED, "Thread is archived", {
+      code: "THREAD_ARCHIVED",
+    });
     const placement = await lookupCodexThread(this.#installation(), attachment, threadId);
     if (!placement || !live()) return null;
     const workspaces = this.env.WORKSPACE_HOST;
@@ -1318,8 +1327,19 @@ export class ClientDO {
       }
       await response.body?.cancel();
       if (!live() || response.status === 404) return null;
+      if (response.status === 423) {
+        const current = await lookupCodexThread(this.#installation(), attachment, threadId);
+        if (!live() || !current || !sameThreadPlacement(current, placement)) return null;
+        throw archivedError();
+      }
+      if (response.status === 410)
+        throw new CodexHistoryReadError(-32602, "History preview cursor expired", {
+          code: HISTORY_PREVIEW_CURSOR_EXPIRED,
+        });
       if (response.status === 413)
-        throw new CodexHistoryReadError(CODEX_HISTORY_RESPONSE_TOO_LARGE, "History response too large");
+        throw new CodexHistoryReadError(CODEX_HISTORY_RESPONSE_TOO_LARGE, "History response too large", {
+          code: "HISTORY_RESPONSE_TOO_LARGE", retryable: false,
+        });
       if (response.status === 501)
         throw new CodexHistoryReadError(-32601, "History method unavailable for this Thread");
       throw new Error("Workspace Thread read failed");
@@ -1327,10 +1347,12 @@ export class ClientDO {
     const result: unknown = await response.json();
     if (!isCodexHistoryResult(read, result)) throw new Error("Invalid workspace Thread read");
     if (!live()) return null;
+    const ordinaryBody = readsOrdinaryCodexHistoryBody(read);
     const current = await lookupCodexThread(this.#installation(), attachment, threadId, {
-      archiveState: read.method === "thread/read",
+      archiveState: ordinaryBody || read.method === "thread/read",
     });
     if (!current || !sameThreadPlacement(current, placement) || !live()) return null;
+    if (ordinaryBody && current.archived === true) throw archivedError();
     if (read.method !== "thread/read" || current.archived === undefined) return result;
     const responseBody = result as { thread: Record<string, unknown> };
     if (typeof responseBody.thread.archived === "boolean") return result;

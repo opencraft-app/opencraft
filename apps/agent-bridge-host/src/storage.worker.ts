@@ -4,11 +4,15 @@ import { dirname } from 'node:path';
 import { createHash } from 'node:crypto';
 import { openManagedDatabase, acquireProcessWriter, sqliteTransaction, nodeSqlDatabase } from '@opencraft/sqlite-node';
 import { assemble, createAssemblerState, type AssemblerState, type CanonicalInputState } from '@opencraft/agent-bridge-assembler';
-import { BRIDGE_THREAD_NOTIFICATIONS, parseThreadDeltaParams } from '@opencraft/agent-bridge-protocol';
+import {
+  BRIDGE_MAX_FRAGMENTED_EVENT_BYTES, BRIDGE_OUTBOX_FRAGMENT_BYTES, BRIDGE_OUTBOX_PAGE_BYTES,
+  BRIDGE_ERROR_CODES, BRIDGE_THREAD_NOTIFICATIONS, isSuccess, parseThreadDeltaParams,
+} from '@opencraft/agent-bridge-protocol';
 import { ThreadQueueStore } from '@opencraft/thread-queue';
 import { migrations } from './migrations.js';
-import { BridgeInboxRefusal, createBridgeInboxStore } from './inbox-store.js';
-import type { Receipt, Generation, OutboxEvent, OutboxFence } from './types.js';
+import { queuedCommandId, queuedTurnAcknowledgement } from './queue.js';
+import { BridgeInboxRefusal, createBridgeInboxStore, HISTORY_IDENTITIES, HISTORY_IDENTITY_COLUMNS, historyIdentity, prepareSelectedHistory } from './inbox-store.js';
+import { isArchiveCommand, type BridgeHistorySelection, type Receipt, type Generation, type OutboxEvent, type OutboxFence } from './types.js';
 /** Commands that bring a Thread route into existence, and that end its native session. */
 const CREATES: readonly string[] = ['session/create', 'session/fork', 'session/adopt'];
 const ENDS: readonly string[] = ['session/close', 'session/delete'];
@@ -29,35 +33,122 @@ const setMeta = (key: string, value: string | number) => run('UPDATE meta SET va
 class Refusal extends Error {}
 const require = (condition: unknown, message: string): void => { if (!condition) throw new Refusal(message); };
 let failed = false;
-if (workerData.role === 'host') tx(() => {
+const sql = nodeSqlDatabase(db);
+function publishQueueChanged(route: string): boolean {
+  return run(
+    'INSERT INTO outbox(route,generation,payload) SELECT route,generation,? FROM routes WHERE route=?',
+    JSON.stringify({ method: 'thread/queue/changed', params: { threadId: route } }), route,
+  ).changes === 1;
+}
+
+const archivePending = (route: string): boolean =>
+  !!get("SELECT 1 FROM commands WHERE route=? AND method IN ('session/archive','session/unarchive') AND state IN ('registered','dispatching')", route);
+const queueActive = (route: string, archiveState?: string): boolean =>
+  (archiveState ?? get('SELECT archive_state FROM routes WHERE route=?', route)?.archive_state) === 'active' && !archivePending(route);
+
+const queue = workerData.role === 'host' ? tx(() => {
   run("INSERT OR IGNORE INTO meta VALUES ('outbox-id',lower(hex(randomblob(16))))");
   setMeta('epoch', Number(meta('epoch')) + 1);
+  run(`UPDATE routes SET archive_state='unconfirmed' WHERE route IN (
+    SELECT route FROM commands WHERE method IN ('session/archive','session/unarchive') AND state='dispatching'
+  )`);
+  // Only a recorded dispatch can have reached the provider.
   run("UPDATE commands SET state='unknown' WHERE state='dispatching'");
+  run("UPDATE commands SET state='rejected', response=json_object('jsonrpc','2.0','id','host-command:'||id,'error',json_object('kind','explicit-reject','code',?,'message',?)) WHERE state='registered'",
+    BRIDGE_ERROR_CODES.explicitReject, 'Bridge Host restarted before dispatch');
   run("UPDATE automation_scripts SET state='unknown' WHERE state IN ('admitted','running')");
-});
-const sql = nodeSqlDatabase(db);
+
+  const queue = new ThreadQueueStore(sql, { recoverPending: false });
+  const changedRoutes = new Set<string>();
+  const commandOutcome = db.prepare(
+    "SELECT state,response FROM commands WHERE id=? AND route=? AND method=? AND state IN ('accepted','rejected')",
+  );
+  const pending = all(`
+    SELECT q.thread_id,q.id,d.revision
+    FROM opencraft_host_queue q
+    LEFT JOIN opencraft_input_delivery d ON d.thread_id=q.thread_id AND d.client_id=q.client_id
+    WHERE q.state='dispatching' OR (q.state='closed' AND d.native_admission='pending')
+  `);
+  for (const { thread_id: route, id, revision } of pending) {
+    const row = queue.find(route, id)!;
+    const kind = row.targetTurnId === 'unknown' ? 'start' : 'steer';
+    // The projected delivery revision can include a terminal Turn observed after the claim.
+    const outcome = row.targetTurnId
+      ? commandOutcome.get(queuedCommandId(kind, route, row, revision ?? 0), route, 'turn/' + kind)
+      : undefined;
+    const acknowledgement = outcome?.state === 'accepted' && typeof outcome.response === 'string'
+      ? queuedTurnAcknowledgement(JSON.parse(outcome.response), kind === 'steer' ? row.targetTurnId! : undefined)
+      : null;
+    if (acknowledgement)
+      queue.settle(route, id, kind === 'start' ? 'delivered' : 'steering', null, acknowledgement.turnId);
+    else if (outcome?.state === 'rejected' &&
+      row.delivery?.nativeAdmission !== 'accepted' && row.delivery?.context !== 'recorded')
+      queue.settle(route, id, 'queued', kind === 'start' ? 'delivery-rejected' : null);
+    else
+      queue.settle(route, id, 'unknown', 'steer-delivery-unconfirmed');
+    changedRoutes.add(route);
+  }
+  for (const route of changedRoutes) publishQueueChanged(route);
+  return queue;
+}) : null;
 const inbox = createBridgeInboxStore(sql);
-// Queued follow-up input of bridge Threads, keyed by Host route. Inputs left
-// mid-dispatch by the previous process become unknown, as commands do.
-const queue = workerData.role === 'host' ? new ThreadQueueStore(sql) : null;
-const QUEUE_METHODS = new Set(['add', 'list', 'find', 'findByClientId', 'firstAwaitingAdmission', 'update', 'delete', 'reorder', 'claim', 'settle',
+const selectedOutboxHistory = prepareSelectedHistory(sql, 'outbox');
+const QUEUE_METHODS = new Set(['add', 'list', 'listPage', 'listReconciliation', 'find', 'findByClientId', 'firstAwaitingAdmission', 'update', 'delete', 'reorder', 'claim', 'settle',
   'requestRetry', 'resumeRequestedRetry', 'discardUnknown', 'discardThread', 'recordInput', 'finishTurn', 'receipt', 'pendingThreads', 'maintenanceCounts', 'interruptExecution']);
 const receipt = (id: string): Receipt | null => {
   const row = get('SELECT * FROM commands WHERE id=?', id);
   return row ? { commandId: row.id, digest: row.digest, epoch: row.epoch, route: row.route, generation: row.generation, method: row.method, state: row.state,
     ...(row.response ? { response: JSON.parse(row.response) } : {}) } : null;
 };
-const events = (cursor: number, limit: number): OutboxEvent[] => all('SELECT * FROM outbox WHERE seq>? ORDER BY seq LIMIT ?', cursor, limit)
-  .map(row => ({ ...row, payload: JSON.parse(row.payload) }));
+const events = (cursor: number, limit: number): OutboxEvent[] => {
+  const page: OutboxEvent[] = [];
+  let bytes = 1024; // Fence, brackets and separators.
+  for (const row of db.prepare('SELECT * FROM outbox WHERE seq>? ORDER BY seq LIMIT ?').iterate(cursor, limit)) {
+    const { payload, ...envelope } = row as unknown as OutboxEvent & { payload: string };
+    const rowBytes = Buffer.byteLength(JSON.stringify(envelope)) + Buffer.byteLength(payload) + 16;
+    if (page.length && bytes + rowBytes > BRIDGE_OUTBOX_PAGE_BYTES) break;
+    page.push({ ...envelope, payload: JSON.parse(payload) });
+    bytes += rowBytes;
+    if (bytes >= BRIDGE_OUTBOX_PAGE_BYTES) break;
+  }
+  return page;
+};
 const outboxFence = (): OutboxFence => ({
   outboxId: meta('outbox-id'),
   acknowledged: Number(meta('ack')),
   high: Number(get("SELECT coalesce((SELECT seq FROM sqlite_sequence WHERE name='outbox'),0) AS high").high),
 });
+interface EncodedOutboxEvent {
+  cursor: number;
+  seq: number;
+  body: Buffer;
+  digest: string;
+}
+
+// Retained outbox rows are immutable. Keep one bounded encoding beside the
+// storage owner so fragment retries reuse its bytes without reviving acked rows.
+let encodedOutboxEvent: EncodedOutboxEvent | undefined;
 const checkpoint = (route: string): AssemblerState => {
   const row = get('SELECT state FROM checkpoints WHERE route=?', route);
   return row ? JSON.parse(row.state) : createAssemblerState(1);
 };
+function receiptWithIdentities(id: string): Receipt | null {
+  const row = receipt(id);
+  if (!row || row.state !== 'accepted' || !row.response || !isSuccess(row.response)) return row;
+  const result = row.response.result as { turn?: { id?: unknown }; nativeTurnId?: unknown; turnId?: unknown } | null;
+  const nativeId = result?.turn?.id ?? result?.nativeTurnId ?? result?.turnId;
+  const identities: NonNullable<Receipt['identities']> = {};
+  if (CREATES.includes(row.method)) {
+    const native = get('SELECT native_id FROM native_sessions WHERE route=?', row.route)?.native_id;
+    if (typeof native === 'string') identities.nativeThreadId = native;
+  }
+  if (typeof nativeId === 'string' && ['turn/start', 'turn/steer'].includes(row.method)) {
+    const state = checkpoint(row.route);
+    const id = state.openTurns[nativeId]?.turnId ?? state.settledNativeTurns[nativeId];
+    if (typeof id === 'string') identities.turn = { nativeId, id };
+  }
+  return identities.nativeThreadId !== undefined || identities.turn !== undefined ? { ...row, identities } : row;
+}
 const unsettledInput = (input: CanonicalInputState): boolean => {
   if (input.admission.value === 'unknown' || ['withdraw-requested', 'unknown'].includes(input.withdrawal.value)) return true;
   if (input.withdrawal.value === 'withdrawn' || ['rejected', 'failed'].includes(input.admission.value)) return false;
@@ -73,6 +164,9 @@ const busy = (route: string): boolean => {
     || Object.keys(state.openTurns).length > 0 || Object.keys(state.openItems).length > 0
     || state.pendingAccepted.some(id => !state.inputs[id] || unsettledInput(state.inputs[id]!));
 };
+const turnIdle = (route: string, excludingCommandId = ''): boolean =>
+  !get("SELECT 1 FROM commands WHERE route=? AND id<>? AND method IN ('turn/start','turn/steer') AND state IN ('registered','dispatching','unknown')", route, excludingCommandId)
+  && Object.keys(checkpoint(route).openTurns).length === 0;
 const operations: Record<string, (args: any) => any> = {
   scriptAdmit: ({key,digest}:any) => tx(()=>{
     const previous=get('SELECT * FROM automation_scripts WHERE key=?',key);
@@ -87,6 +181,7 @@ const operations: Record<string, (args: any) => any> = {
   ready: () => outcome,
   queue: ({ method, args }: any) => {
     require(queue !== null && typeof method === 'string' && QUEUE_METHODS.has(method) && Array.isArray(args), 'Unsupported queue operation');
+    if (method === 'claim' && !queueActive(args[0])) return null;
     return (queue as any)[method](...args);
   },
   // A route on an older generation that could move to the current one: nothing open, in custody or waiting.
@@ -108,14 +203,11 @@ const operations: Record<string, (args: any) => any> = {
     return true;
   }),
   // Idle for queue dispatch: no turn open in the assembled state and no turn command in custody.
-  routeIdle: ({ route }: any) => !get("SELECT 1 FROM commands WHERE route=? AND method IN ('turn/start','turn/steer') AND state IN ('registered','dispatching','unknown')", route)
-    && Object.keys(checkpoint(route).openTurns).length === 0,
-  queueChanged: ({ route }: any) => tx(() => {
-    const binding = get('SELECT generation FROM routes WHERE route=?', route);
-    require(binding, 'Queue Thread has no route');
-    run('INSERT INTO outbox(route,generation,payload) VALUES (?,?,?)', route, binding.generation, JSON.stringify({ method: 'thread/queue/changed', params: { threadId: route } }));
-  }),
-  snapshot: () => ({ epoch: Number(meta('epoch')), current: meta('current'), ack: Number(meta('ack')),
+  routeIdle: ({ route, excludingCommandId, forQueue = false }: { route: string; excludingCommandId?: string; forQueue?: boolean }) =>
+    (!forQueue || queueActive(route)) && turnIdle(route, excludingCommandId),
+  queueChanged: ({ route }: { route: string }) => tx(() =>
+    require(publishQueueChanged(route), 'Queue Thread has no route')),
+  snapshot: () => ({ epoch: Number(meta('epoch')), current: meta('current'), ack: Number(meta('ack')), historyIdentityPages: true, historyIdentitySelection: true, historyPublicTurnBatch: true,
     generations: all('SELECT * FROM generations').map(row => ({ ...row, config: JSON.parse(row.config) })), routes: all('SELECT * FROM routes'), nativeSessions: all('SELECT * FROM native_sessions'), interactions: all('SELECT * FROM interactions') }),
   add: (config: Generation) => tx(() => {
     const previous = get('SELECT * FROM generations WHERE id=?', config.id);
@@ -131,7 +223,7 @@ const operations: Record<string, (args: any) => any> = {
     const old = receipt(command.commandId);
     if (old) { require(old.digest === digest, 'commandId reused with different input'); return { receipt: old, fresh: false }; }
     require(![...CREATES,'turn/start','turn/steer'].includes(command.method) || Number(get('SELECT coalesce(sum(length(CAST(payload AS BLOB))),0) AS bytes FROM outbox').bytes) < maxSpoolBytes, 'Spool full; new admissions stopped');
-    let binding = get('SELECT generation FROM routes WHERE route=?', route);
+    let binding = get('SELECT generation,archive_state FROM routes WHERE route=?', route);
     if (binding && CREATES.includes(command.method)) {
       // A rejected first create left only a route binding, no native session,
       // outbox or accepted command. Allow that Thread identity to retry rather
@@ -147,7 +239,15 @@ const operations: Record<string, (args: any) => any> = {
       require(CREATES.includes(command.method), 'Thread must be explicitly created');
       const generation = meta('current');
       require(get('SELECT 1 FROM generations WHERE id=? AND retired=0', generation), 'No active generation');
-      run('INSERT INTO routes VALUES (?,?)', route, generation); binding = { generation };
+      run('INSERT INTO routes(route,generation) VALUES (?,?)', route, generation); binding = { generation, archive_state: 'active' };
+    }
+    if (command.method === 'turn/start' || command.method === 'turn/steer')
+      require(queueActive(route, binding.archive_state), 'Thread is archived or an archive operation is unresolved');
+    if (isArchiveCommand(command.method)) {
+      require(!archivePending(route), 'Thread archive operation is already in progress');
+      if (command.method === 'session/archive')
+        require(turnIdle(route) && !get("SELECT 1 FROM opencraft_host_queue WHERE thread_id=? AND state='dispatching'", route),
+          'Cannot archive a Thread while input delivery is in progress');
     }
     if (command.method === 'session/resume') {
       const native = get('SELECT native_id,restorable FROM native_sessions WHERE route=?', route);
@@ -160,23 +260,39 @@ const operations: Record<string, (args: any) => any> = {
     run('INSERT INTO commands(id,digest,epoch,route,generation,method,state) VALUES (?,?,?,?,?,?,?)', command.commandId, digest, Number(meta('epoch')), route, binding.generation, command.method, 'registered');
     return { receipt: receipt(command.commandId), fresh: true };
   }),
-  observationRoute: ({ route }: any) => ({ generation: get('SELECT generation FROM routes WHERE route=?', route)?.generation ?? null, epoch: Number(meta('epoch')) }),
+  observationRoute: ({ route, forQueue = false, forHistory = false }: { route: string; forQueue?: boolean; forHistory?: boolean }) => {
+    const binding = get('SELECT generation,archive_state FROM routes WHERE route=?', route);
+    const state = binding?.archive_state ?? null;
+    const pending = (forQueue || forHistory) && state === 'active' && archivePending(route);
+    return { generation: binding?.generation ?? null, epoch: Number(meta('epoch')),
+      archiveState: pending ? 'unconfirmed' : state,
+      ...(forQueue ? { queueActive: state === 'active' && !pending } : {}) };
+  },
   restorableRoutes: ({ generation }: any) => all(
     'SELECT routes.route FROM routes JOIN native_sessions USING(route) WHERE routes.generation=? AND native_sessions.restorable=1',
     generation,
   ).map(row => row.route),
   threadState: ({ route }: any) => ({ state: checkpoint(route), nativeSession: get('SELECT * FROM native_sessions WHERE route=?', route) ?? null }),
-  query: ({ id }: any) => receipt(id),
+  query: ({ id }: any) => receiptWithIdentities(id),
   dispatch: ({ id }: any) => tx(() => {
-    require(receipt(id)?.state === 'registered', 'Command is not dispatchable');
+    const command = receipt(id);
+    require(command?.state === 'registered', 'Command is not dispatchable');
+    if (command?.method === 'turn/start' || command?.method === 'turn/steer')
+      require(queueActive(command.route), 'Thread is archived or an archive operation is unresolved');
     run("UPDATE commands SET state='dispatching' WHERE id=?", id); return receipt(id);
   }),
-  settle: ({ id, response, state, interactionId }: any) => tx(() => {
+  settle: ({ id, response, state, interactionId, localStop }: any) => tx(() => {
     require(['accepted', 'rejected', 'unknown'].includes(state), 'Invalid settlement');
+    const prior = receipt(id);
+    const localSettlement = prior?.state === 'registered' &&
+      (state === 'rejected' || (state === 'accepted' && localStop === true && prior.method === 'turn/stop'));
     // A late transport reply cannot erase an unknown outcome.
-    if (receipt(id)?.state !== 'dispatching') return receipt(id);
+    if (prior?.state !== 'dispatching' && !localSettlement) return prior;
     run('UPDATE commands SET state=?,response=? WHERE id=?', state, response ? JSON.stringify(response) : null, id);
     const row = receipt(id)!;
+    if (isArchiveCommand(row.method) && state !== 'rejected')
+      run('UPDATE routes SET archive_state=? WHERE route=?',
+        state === 'unknown' ? 'unconfirmed' : row.method === 'session/archive' ? 'archived' : 'active', row.route);
     if (state === 'accepted' && ['interaction/resolve', ...ENDS, 'turn/stop'].includes(row.method)) {
       const retiring = row.method === 'interaction/resolve' ? all('SELECT * FROM interactions WHERE route=? AND id=?', row.route, interactionId) : all('SELECT * FROM interactions WHERE route=?', row.route);
       for (const interaction of retiring) {
@@ -212,6 +328,8 @@ const operations: Record<string, (args: any) => any> = {
     } else if (method === 'thread/notification') {
       // Only allow-listed thread metadata; stored as the native method for the gateway to publish.
       require(typeof params.method === 'string' && BRIDGE_THREAD_NOTIFICATIONS.has(params.method) && params.params && typeof params.params === 'object' && !Array.isArray(params.params), 'Invalid thread notification');
+      if (params.method === 'thread/archived' || params.method === 'thread/unarchived')
+        run('UPDATE routes SET archive_state=? WHERE route=?', params.method === 'thread/archived' ? 'archived' : 'active', route);
       run('INSERT INTO outbox(route,generation,payload) VALUES (?,?,?)', route, generation, JSON.stringify({ method: params.method, params: { ...params.params, threadId: route } }));
     } else {
       require(['thread/identity', 'interaction/request', 'interaction/resolved', 'provider/recovery'].includes(method), 'Unsupported callback');
@@ -227,18 +345,59 @@ const operations: Record<string, (args: any) => any> = {
     }
     run('INSERT INTO callbacks VALUES (?,?,?)', generation, id, digest);
   }),
-  events: ({ cursor, limit, fenced = false }: { cursor: number; limit: number; fenced?: boolean }) => {
+  events: ({ cursor, limit, fenced = false, fragmentOffset }: {
+    cursor: number; limit: number; fenced?: boolean; fragmentOffset?: number;
+  }) => {
     const fence = outboxFence();
     require(Number.isSafeInteger(cursor) && cursor >= fence.acknowledged && cursor <= fence.high, 'Cursor is outside retained outbox');
     require(Number.isSafeInteger(limit) && limit > 0 && limit <= 256, 'Invalid page limit');
-    const batch = events(cursor, limit);
-    return fenced ? { ...fence, events: batch } : batch;
+    if (fragmentOffset === undefined) {
+      const batch = events(cursor, limit);
+      return fenced ? { ...fence, events: batch } : batch;
+    }
+    require(Number.isSafeInteger(fragmentOffset) && fragmentOffset >= 0 && fragmentOffset % BRIDGE_OUTBOX_FRAGMENT_BYTES === 0,
+      'Invalid outbox fragment offset');
+    let encoded = encodedOutboxEvent?.cursor === cursor ? encodedOutboxEvent : undefined;
+    if (!encoded) {
+      const batch = events(cursor, limit);
+      const single = batch.length === 1 ? JSON.stringify(batch[0]) : undefined;
+      const bytes = single === undefined ? 0 : Buffer.byteLength(single);
+      // Ordinary pages and legacy Node whole-event reads keep their wire format.
+      if (single === undefined || bytes + 1024 <= BRIDGE_OUTBOX_PAGE_BYTES ||
+          (!fenced && bytes > BRIDGE_MAX_FRAGMENTED_EVENT_BYTES)) {
+        require(fragmentOffset === 0, 'Outbox fragment is no longer available');
+        return fenced ? { ...fence, events: batch } : batch;
+      }
+      const body = Buffer.from(single);
+      encoded = { cursor, seq: batch[0]!.seq, body, digest: createHash('sha256').update(body).digest('hex') };
+      if (bytes <= BRIDGE_MAX_FRAGMENTED_EVENT_BYTES) encodedOutboxEvent = encoded;
+    }
+    const { seq, body, digest } = encoded;
+    require(fragmentOffset < body.length, 'Invalid outbox fragment offset');
+    return {
+      ...(fenced ? fence : {}),
+      fragment: { seq, offset: fragmentOffset, total: body.length, digest,
+        data: body.subarray(fragmentOffset, fragmentOffset + BRIDGE_OUTBOX_FRAGMENT_BYTES).toString('base64') },
+    };
+  },
+  historyIdentities: ({ route, after, through, selection }: {
+    route: string; after: number; through?: number; selection?: BridgeHistorySelection;
+  }) => {
+    const fence = outboxFence();
+    const end = through ?? fence.high;
+    require(Number.isSafeInteger(after) && after >= 0 && Number.isSafeInteger(end) &&
+      after <= end && end <= fence.high, 'Invalid history identity cursor');
+    const identities = selection ? selectedOutboxHistory(route, after, end, selection)
+      : all(`SELECT ${HISTORY_IDENTITY_COLUMNS} FROM outbox WHERE route=? AND seq>? AND seq<=?
+        AND ${HISTORY_IDENTITIES} ORDER BY seq LIMIT 256`, route, after, end).map(historyIdentity);
+    return { ...fence, identities };
   },
   ack: ({ cursor, outboxId }: { cursor: number; outboxId?: string }) => tx(() => {
     const fence = outboxFence();
     require(outboxId === undefined || outboxId === fence.outboxId, 'Outbox identity changed');
     require(Number.isSafeInteger(cursor) && cursor >= fence.acknowledged && cursor <= fence.high, 'Invalid acknowledgement');
     setMeta('ack', cursor); run('DELETE FROM outbox WHERE seq<=?', cursor);
+    if (encodedOutboxEvent && encodedOutboxEvent.seq <= cursor) encodedOutboxEvent = undefined;
   }),
   abandon: ({ route, id }: any) => tx(() => {
     const row = get('SELECT method,state,route FROM commands WHERE id=?', id);
@@ -265,6 +424,11 @@ const operations: Record<string, (args: any) => any> = {
   }),
   inbox: ({ batch }: { batch: OutboxEvent[] }) => inbox.apply(batch),
   inboxRead: ({ cursor = 0 }: { cursor?: number }) => inbox.read(cursor),
+  inboxReadIdentities: ({ route, after, through, selection }: {
+    route: string; after: number; through: number; selection?: BridgeHistorySelection;
+  }) => inbox.readIdentities(route, after, through, selection),
+  inboxReadPendingInteractions: ({ route, after, through, ids }: { route: string; after: number; through: number; ids: readonly string[] }) =>
+    inbox.readPendingInteractions(route, after, through, ids),
   cursor: () => inbox.cursor(),
   close: () => { db.close(); release(); },
 };
@@ -277,6 +441,9 @@ parentPort!.on('message', ({ id, op, args }) => {
   } catch (error) {
     // Report the original failure: closing an already closed database must not replace it.
     if (!(error instanceof Refusal || error instanceof BridgeInboxRefusal)) { failed = true; try { if (db.isOpen) db.close(); } catch { /* keep the original */ } try { release(); } catch { /* keep the original */ } }
-    parentPort!.postMessage({ id, error: error instanceof Error ? error.message : 'Storage failure', fatal: failed });
+    parentPort!.postMessage({
+      id, error: error instanceof Error ? error.message : 'Storage failure',
+      fatal: failed, refused: !failed && error instanceof Refusal,
+    });
   }
 });

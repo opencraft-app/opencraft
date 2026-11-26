@@ -206,7 +206,11 @@ Codex 与 DSH 的人类交互通过 `opencraft/shared-interactions` v1 协商。
 工具保持唯一执行路由。Host 用 `opencraft/interactions/changed` 广播 Thread 快照，
 客户端可通过 `opencraft/interactions/read` 补基线。快照带 producer epoch、单调 revision、
 稳定请求身份与 `pending/responding/unconfirmed`；客户端拒绝迟到版本和已退役 producer。
-收到新快照无需刷新页面或重新取得工具执行租约。
+收到新快照无需刷新页面或重新取得工具执行租约。客户端按 Host 和 Thread 保存审批，
+并核对读请求和答复回执中的 Thread。当新的通知已确立当前 producer 时，较早发出的
+请求不能用其他 epoch 的回包替换它。同一 producer 的 revision 可继续前进，订阅权限
+沿用较新的观测。每份审批快照在 Thread View 内一次提交，保留既有的旧版原生请求。
+断线或销毁时先撤销所有会话的答复路由，再通知 View 观察者。
 
 全部已初始化、成功订阅 Thread 的客户端可观察；提交 `opencraft/interactions/respond`
 是当前实例访问权下的显式命令，服务端在写出前重验客户端代次、订阅及可信资源租约。
@@ -214,10 +218,23 @@ Codex 与 DSH 的人类交互通过 `opencraft/shared-interactions` v1 协商。
 连接不能读取或回答。UI 没有 response port 时仍为只读，不推导新的角色或跨实例权限。
 
 Host 在广播 responding 前同步裁决唯一回答。重复或相反回答不再次写原生通道；
-submission ID 复用不同回答会拒绝。写入成功只代表已提交，卡片保留到原生
-`serverRequest/resolved` 或对应 Turn 明确终态。写出失败保留 unconfirmed，不能当作
-未提交重新批准；源重放才可证明 pending。原生 request ID 类型、来源 lifetime 与
-Turn 保持隔离，终结后复用 wire ID 创建新请求，不复活旧回答。
+submission ID 复用不同回答会拒绝。卡片随原生 `serverRequest/resolved`、Turn 明确终态
+或 Host 的持久化结案证据关闭。原生适配器和拆分的 Codex Core 在交付前核验当前订阅、
+资源权限和答复占用。Bridge 在异步准备完成后核验同一组权限。Cloudflare Workspace
+在权限查询完成后核验当前 Turn 通道和答复占用。答复尚未发出，或引擎明确拒绝答复
+且请求仍在等待时，释放占用，其他有权限的订阅者可以接着答复。写出结果不明确时保留
+unconfirmed，由源重放重新确认状态。原生 request ID 类型、来源 lifetime 与 Turn 保持
+隔离，终结后复用 wire ID 创建新请求，不复活旧回答。原生 Codex 对旧版客户端发放独立
+的 JSON-RPC 请求 ID，并用该 ID 通知结案。引擎侧请求 ID 只用于原生通道。确认 Turn
+终结时，Host 先撤销该 Turn 的全部答复路由，再发布会话快照。
+
+DSH 退订会撤销该会话的旧版审批邀请和共享答复权限。工作台继续使用逻辑 Thread ID，
+原生答复使用发起请求的 DSH 会话 ID，交付前再次核验该会话仍是当前路由。
+DSH 返回 `bad-response` 时释放占用，返回 `not-pending` 时将请求标记为已结束。
+DSH 事件流断开时暂停答复。引擎重放同一请求后沿用原 Thread、Turn 和共享请求 ID，
+恢复待答请求的权限，同时保留已提交但结果未知的占用。共享与旧版客户端消费同一份
+可答复状态。实时事件或恢复历史中的原生 Turn 终态可结束该 Turn 的所有待答请求，
+并拦住迟到的答复与重放。
 
 Codex APP callback lane 保留人类请求，网关离线期间的新请求也留存；网关重连初始化
 后重放原身份与提交阶段，不自动回答、超时取消或重新执行已提交响应。该保障跨 Gateway
@@ -1041,6 +1058,16 @@ Its sandbox generations, command custody, Worker-owned SQLite checkpoints and
 ordered outbox survive gateway attachment loss. The separate gateway inbox
 commits the existing P1a AppServer projection and cursor before acknowledging
 Host events. Native mutations with unknown outcomes are never replayed.
+Node and WorkspaceHost can fetch a retained large event in transport fragments.
+The inbox commits only after the full event passes validation. Reads of committed
+events are limited by both row count and a conservative byte budget. A large
+event may occupy a page by itself so the reader can always advance. Reading
+committed events leaves their storage format and the durable cursor intact.
+Thread hydration reads Turn and item mappings independently of approval
+recovery. Approval requests read bodies only for pending IDs on that route in
+the Host ledger. A targeted response can restore only the requested body.
+Restored bodies use bounded pages, with chunked bodies read one at a time.
+The Gateway caches pending approvals and deduplicates settlements within each Thread.
 The desktop runs builtin Codex through this Host by default (the daemon's Codex
 bridge stack); other engine compositions do not select it. See the
 [Host contract and local acceptance](../../../apps/agent-bridge-host/README.md) for the

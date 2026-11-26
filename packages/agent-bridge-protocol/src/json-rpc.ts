@@ -12,6 +12,13 @@
 
 /** Default cap on a single JSONL line, in bytes (UTF-8). */
 export const BRIDGE_MAX_FRAME_BYTES = 10 * 1024 * 1024;
+/** Leave room for Host-added route and execution data in the provider frame. */
+export const BRIDGE_MAX_COMMAND_BYTES = BRIDGE_MAX_FRAME_BYTES - 64 * 1024;
+export const BRIDGE_MAX_INPUT_BYTES = BRIDGE_MAX_COMMAND_BYTES - 64 * 1024;
+/** One normal outbox page, including enough room for its fence and row metadata. */
+export const BRIDGE_OUTBOX_PAGE_BYTES = 12 * 1024 * 1024;
+export const BRIDGE_OUTBOX_FRAGMENT_BYTES = 4 * 1024 * 1024;
+export const BRIDGE_MAX_FRAGMENTED_EVENT_BYTES = 64 * 1024 * 1024;
 
 export interface BridgeFrameLimits {
   readonly maxFrameBytes: number;

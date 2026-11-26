@@ -274,7 +274,17 @@ Docker 从只读目录取文件，DO 可以按相同相对路径从 R2 读取对
 
 启用 `OPENCRAFT_WORKSPACE_CODEX_BRIDGE_ENDPOINT=true` 的安装使用包含 Bridge 运行包的固定镜像。Brain 等待原生 AppServer 就绪后，通过工作区 supervisor 启动和维护同一个 Bridge Host，发布私有 `codex-bridge` Unix 端点。WorkspaceHost 使用已认证的沙盒中继和化身围栏访问 Bridge 的既有 HTTP 协议，管理员唤醒工作区时检查 Bridge 健康。真实 Cloudflare 临时部署从固定镜像冷启，经同一个 transport 创建了原生 Codex Thread，读回 Bridge 投影的会话并确认事件游标。Workbench 目前仍使用 `codex-native`，Bridge 的产品会话路由与 Turn 准入仍待装配。
 
-**Codex 首屏历史。** Client DO 通过 `opencraft/resume-history.initialReadPage` 声明被动分页读取。Workbench 可在 `thread/read` 中请求最近至多十轮，响应携带会话元数据、`initialTurnsPage` 和原分页游标。休眠时从同一份 WorkspaceHost DO 快照读取，快照缺失沿用历史暂不可读的响应。容器运行时在同一放置回执和授权检查下并行使用现有只读通道。旧客户端继续逐项读取，更早内容仍走 `thread/turns/list`，活跃 Turn 的观察仍走原有恢复流程。
+**Codex 首屏历史。** Client DO 通过 `opencraft/resume-history.initialReadPage` 声明被动分页读取。Workbench 可在 `thread/read` 中请求最近至多十轮，响应携带会话元数据、`initialTurnsPage` 和分页游标。休眠时从同一份 WorkspaceHost DO 快照读取。小页通过绑定 Thread 放置和快照的游标继续读，确认从同一快照恢复后也可读完该段，读到缓存末尾时交回原生游标。快照替换后旧游标返回 `HISTORY_PREVIEW_CURSOR_EXPIRED`，快照缺失沿用历史暂不可读的响应。容器运行时，新的首屏请求在同一放置回执和授权检查下并行使用现有只读通道。旧客户端继续逐项读取，更早内容仍走 `thread/turns/list`，活跃 Turn 的观察仍走原有恢复流程。
+
+Bridge 生产者提供身份分页时，容器恢复后的历史读取在当前放置回执下运行。WorkspaceHost 校验 outbox ID 和生产者已确认的游标，从本地收件箱读取共同前缀的 Turn 和条目 ID，再从生产者获取尚未确认的身份页。历史读取不变更收件箱的放置、游标或归档，事件拉取和确认由实时路径负责。旧生产者沿用兼容回放。
+
+生产者只提供身份分页时，指定 Turn 的历史请求在单次读取内复用解析目标时得到的身份映射。原生结果返回后，只读取该游标之后的新映射。生产者 ID 需要一致，最新游标需要覆盖已读位置，才能返回映射后的结果。这条规则由共享 Bridge Gateway 执行。
+
+生产者声明身份筛选能力时，Gateway 用公开 Turn ID 解析指定的目标，再按本页出现的原生 ID 查询映射。已确认的前缀由本地收件箱筛选，尚未确认的部分由生产者筛选。两段查询沿用同一会话范围、生产者 ID 和游标校验。页内 ID 超过筛选预算时沿用身份分页，保留完整映射。
+
+Bridge Host 的 SQLite v7 和 WorkspaceHost 的 Bridge inbox 迁移族 v5 按会话、历史 ID 和事件序号建索引。筛选查询通过这两类索引分别定位原生 ID 和公开 Turn ID，再按事件序号合并、去重和分页。索引在现有事件上建立，升级沿用原收件箱和 outbox 记录。
+
+**归档历史。** 休眠前只采集最近未归档会话的正文，归档目录仍同步元数据。声明 `opencraft/thread-lifecycle.openArchivedHistory` 时，已打开的 Workbench 历史视图在首屏和分页读取中携带显式意图。WorkspaceHost 复核 Thread 放置、当前读取授权和归档状态。共享工作区在原有 Thread 放置记录中保存原生归档回执，Actor 工作区沿用资源生命周期记录。已确认归档时，普通正文请求在进入原生读取或快照之前返回 `THREAD_ARCHIVED`。元数据仍可读取。需要恢复时，仅恢复已记录的快照并走只读通道。快照不可用时返回历史暂不可读，目录浏览保持休眠。
 
 **Hands 终端私有连接。** WorkspaceHost 经 agent 的 `terminal` 端点描述取得容器内 owner 的私有握手凭证，并通过 `WorkspaceRuntime.connect` 接入既有终端 owner。Node Gateway 和 DO 复用同一套帧解码、握手、请求回执和输出订阅，断开连接只释放中继，PTY 继续由 Hands 持有。云端验收先经 Workbench 启动工作区，再在真实 Linux 上开启 PTY。重新连接后读回同一个 Shell PID 和环境变量，输入与尺寸调整生效，另一 owner 被拒绝且收不到输出，终止由 Hands 确认。实测 UID 1000，`nofile` 1048576。独立冷启动验收同样跑通。先拒绝非 UUID 机器 ID 并保持未绑定；有效身份绑定后由首次终端连接启动容器，PTY 完成输入、续接、调整尺寸和终止。Brain 与 Hands 在每个工作区共用 Linux 用户。
 
@@ -344,7 +354,7 @@ Workbench 打开会话或重连时先读取历史。对于本窗口已收到回�
 
 真实 Cloudflare Browser Run 验证了同一浏览器运行时断线重连。随后在 Linux Hands 执行期间刷新页面，新 Workbench 运行时用一次原生 `thread/resume` 订阅同一 Turn，收到回复增量与完成事件，整个过程只有一次 `turn/start`。云端推理由受控 Responses SSE 提供。
 
-**Codex 计划休眠。** 使用支持快照启动的镜像时，安装可显式设置 `OPENCRAFT_WORKSPACE_CODEX_SNAPSHOTS=true`。运维 `sleep` 确认没有活跃执行、审批恢复或仍在使用的端点后，释放空闲的原生通道。WorkspaceRuntime 在停止容器前提交 placement 中的快照引用；快照失败时保留原容器。镜像入口在新启动时清理从快照带来的旧 Brain 与终端 owner 进程锁目录，再由真实 Codex 读取原生历史。快照绑定同一个镜像摘要，有 30 天时限，仅包含磁盘。崩溃发生在快照之前、未写入原生历史的数据、跨镜像迁移和周期捕获属于其他路径。
+**Codex 计划休眠。** 使用支持快照启动的镜像时，安装可显式设置 `OPENCRAFT_WORKSPACE_CODEX_SNAPSHOTS=true`。运维 `sleep` 确认没有活跃执行、审批恢复或仍在使用的端点后，释放空闲的原生通道。配置了 Bridge 时，WorkspaceHost 在休眠前使用当前放置回执读取 Bridge 维护状态，确认没有正在派发的输入。WorkspaceRuntime 在停止容器前提交 placement 中的快照引用；快照失败时保留原容器。镜像入口在新启动时清理从快照带来的旧 Brain 与终端 owner 进程锁目录，再由真实 Codex 读取原生历史。快照绑定同一个镜像摘要，有 30 天时限，仅包含磁盘。崩溃发生在快照之前、未写入原生历史的数据、跨镜像迁移和周期捕获属于其他路径。
 
 真实 Cloudflare 预演使用支持快照启动的固定镜像。运维 `sleep` 确认停止原容器，AppHost 的下一次历史读取恢复相同 Thread 和已完成 Turn，工作区 epoch 从 1 增至 2。第二个 Turn 在原 Thread 上完成，并经新容器内的真实 Linux Hands 执行命令。模型出口使用受控 Responses SSE。
 
@@ -358,7 +368,7 @@ WorkspaceHost 在快照休眠前通过已绑定的容器收集目录，并将投
 
 会话目录还可携带最近一次已观察的终态 Turn 摘要。WorkspaceHost 从原生 `turn/completed` 记录 Turn ID、状态和完成时间，显式读取旧会话的最新历史时也可补齐缺失摘要。安装层按会话的现有放置与访问权限交付该字段。侧栏用同一份账号已读回执判断未读。支持摘要的会话目录行即使暂缺摘要，侧栏也不逐会话补读历史；其他 Host 沿用原有补查。打开会话查看原生历史仍可按需启动 Linux。
 
-支持 `archiveStateInRead` 的 AppHost 在现有 `thread/read` 中返回归档状态。InstallationCore 在复核权限与放置后读取已提交的生命周期观察。WorkspaceHost 已收到原生确认、仍在重试发表该观察时，优先采用该工作区的确认结果。直达会话先读指定 Thread，已有归档状态时跳过归档目录分页。归档会话的历史仍可读取，执行仍受原规则约束。旧 Host 或未返回状态的路径继续用原有归档目录发现逻辑。 归档 Bridge 会话的历史读取经当前工作区的 Bridge 记录解析原生身份，再使用原生只读 AppServer 通道和公开身份投影。容器重启后也可读取，无需恢复执行会话。
+支持 `archiveStateInRead` 的 AppHost 在现有 `thread/read` 中返回归档状态。InstallationCore 在复核权限与放置后读取已提交的生命周期观察。WorkspaceHost 已收到原生确认、仍在重试发表该观察时，优先采用该工作区的确认结果。直达会话只读取指定 Thread。响应缺少归档状态时，Workbench 仍消费该会话的生命周期回执、通知和明确的读取拒绝。归档目录分页由用户主动浏览触发。归档会话的历史仍可读取，执行沿用现有准入规则。 归档 Bridge 会话的历史读取经当前工作区的 Bridge 记录解析原生身份，再使用原生只读 AppServer 通道和公开身份投影。容器重启后也可读取，无需恢复执行会话。
 
 部署配置中带有明确 AppHost 的会话直达链接在 Workbench 初始化期间开始准入和连接。页面装配接管同一逻辑通道。带容器快照的工作区在已运行的容器上有界采集最近会话的首屏历史，服务端将记录与放置和本次休眠快照绑定。休眠时通过 WorkspaceHost DO 读取已采集的历史，返回前复核当前权限。缺失或超出缓存范围的读返回暂不可用。已运行的容器可以按原放置回执接回，读取路径没有恢复或创建容器的权限。发起 Turn 仍走原生执行准入。活动会话缺少首屏历史时，当前 Host 可返回明确的休眠状态。Workbench 使用已提交文本的原消息 ID 调用原生 `turn/start`，原生授权和回执继续拥有执行准入。历史随后追平，归档会话继续只读。
 

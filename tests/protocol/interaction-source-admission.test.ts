@@ -70,3 +70,26 @@ test('producer replay during validation can restore the source before admission'
   }), 'submitted');
   assert.equal(route, 'new-native'); assert.equal(h.snapshot('thread', true).requests[0]!.state, 'responding');
 });
+
+test('revocation while publishing an answer that never reached the writer releases the claim', async () => {
+  const h = new HostInteractions(), original = source(), id = h.capture(original);
+  let revoked = false;
+  h.subscribe(() => {
+    if (!revoked && h.snapshot('thread', true).requests[0]?.state === 'responding') {
+      revoked = true;
+      h.markSourceUnavailable('thread');
+    }
+  });
+  await assert.rejects(h.respond('thread', id, 'first', {}, async () => assert.fail('writer ran')),
+    { domainData: { code: 'SOURCE_CHANGED' } });
+  const blocked = h.snapshot('thread', true).requests[0]!;
+  assert.equal(blocked.state, 'pending');
+  assert.equal(blocked.canRespond, false);
+  h.capture({ ...original, id: 'replayed' });
+  let writes = 0;
+  assert.equal(await h.respond('thread', id, 'second', {}, async request => {
+    assert.equal(request.id, 'replayed');
+    writes++;
+  }), 'submitted');
+  assert.equal(writes, 1);
+});

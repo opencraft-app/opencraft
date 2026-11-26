@@ -1,4 +1,5 @@
 import { homedir } from "node:os";
+import { InteractionFault, InteractionResponseNotDispatched } from "@opencraft/app-host-server/interactions";
 import { DshClientError, type DshStreamEnvelope } from "./dsh-client.js";
 import { DshRoutedClient } from "./dsh-routed-client.js";
 import type { DshRoutingReader } from "./dsh-routing-projection.js";
@@ -37,8 +38,8 @@ export class AbsentDshClient extends DshRoutedClient {
     }
   }
 
-  override async respond(): Promise<{ accepted: boolean; reason?: string }> {
-    return { accepted: false, reason: this.reason };
+  override async respond(): Promise<never> {
+    throw new InteractionResponseNotDispatched(new InteractionFault({ code: DSH_UNAVAILABLE }, this.reason));
   }
 
   /** No native events exist; the stream stays open, quietly, until its generation ends. */

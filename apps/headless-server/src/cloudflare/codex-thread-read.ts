@@ -1,18 +1,28 @@
 // Private Client -> WorkspaceHost read contract. Renderer frames never select a
 // workspace, native RPC method, native lane or installation server identity.
 import type { InstallationCoreNamespace } from "./bindings.js";
+import { EndpointMessageTooLargeError, EndpointRpcError } from "./workspace-link.js";
 import { parseClientAttachment, type ClientAttachment } from "./client-attachment.js";
 import { parseThreadPlacementReceipt, type ThreadPlacementReceipt } from "./thread-placement.js";
 
 export const CODEX_THREAD_LOOKUP_PATH = "/__opencraft_internal/thread-placement/codex";
+export const CODEX_THREAD_ARCHIVED = -32071;
 export const CODEX_HISTORY_RESPONSE_TOO_LARGE = -32072;
 export const CODEX_HISTORY_PREVIEW_PAGE_LIMIT = 10;
+
+/** The native endpoint and both Bridge history lanes report the same read budget failure. */
+export function isCodexHistorySizeError(error: unknown): boolean {
+  return error instanceof EndpointMessageTooLargeError ||
+    (error instanceof EndpointRpcError && error.code === CODEX_HISTORY_RESPONSE_TOO_LARGE) ||
+    (error instanceof Error && "kind" in error && error.kind === "frame-too-large");
+}
 
 const nonempty = (value: unknown, limit: number): value is string =>
   typeof value === "string" && value.length > 0 && value.length <= limit && !/[\x00-\x1f\x7f]/u.test(value);
 
 export interface CodexThreadRead {
   readonly threadId: string;
+  readonly openArchivedHistory?: true;
   readonly includeTurns?: boolean;
   readonly initialTurnsPage?: {
     readonly limit: number;
@@ -23,14 +33,16 @@ export interface CodexThreadRead {
 
 export function parseCodexThreadRead(value: unknown): CodexThreadRead | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const { threadId, includeTurns, initialTurnsPage } = value as Partial<CodexThreadRead>;
+  const { threadId, includeTurns, initialTurnsPage, openArchivedHistory } = value as Partial<CodexThreadRead>;
   if (
     !nonempty(threadId, 512) ||
     (includeTurns !== undefined && typeof includeTurns !== "boolean") ||
-    Object.keys(value).some((key) => !["threadId", "includeTurns", "initialTurnsPage"].includes(key))
+    (openArchivedHistory !== undefined && openArchivedHistory !== true) ||
+    Object.keys(value).some((key) => !["threadId", "includeTurns", "initialTurnsPage", "openArchivedHistory"].includes(key))
   )
     return null;
-  if (initialTurnsPage === undefined) return { threadId, ...(includeTurns === undefined ? {} : { includeTurns }) };
+  const demand = openArchivedHistory === true ? { openArchivedHistory } : {};
+  if (initialTurnsPage === undefined) return { threadId, ...demand, ...(includeTurns === undefined ? {} : { includeTurns }) };
   if (
     includeTurns === true ||
     !initialTurnsPage ||
@@ -43,11 +55,12 @@ export function parseCodexThreadRead(value: unknown): CodexThreadRead | null {
     Object.keys(initialTurnsPage).some((key) => !["limit", "itemsView", "sortDirection"].includes(key))
   )
     return null;
-  return { threadId, includeTurns: false, initialTurnsPage };
+  return { threadId, includeTurns: false, initialTurnsPage, ...demand };
 }
 
 type HistoryPageParams = {
   readonly threadId: string;
+  readonly openArchivedHistory?: true;
   readonly cursor: string | null;
   readonly limit: number;
   readonly sortDirection: "asc" | "desc";
@@ -58,13 +71,21 @@ export type CodexHistoryRead =
   | { method: "thread/turns/list"; params: HistoryPageParams & { itemsView: "summary" | "full" | "notLoaded" } }
   | { method: "thread/items/list"; params: HistoryPageParams & { turnId?: string } };
 
+export function readsOrdinaryCodexHistoryBody(read: CodexHistoryRead): boolean {
+  return !read.params.openArchivedHistory && (read.method !== "thread/read" ||
+    read.params.includeTurns === true || read.params.initialTurnsPage !== undefined);
+}
+
 export function initialCodexTurnsRead(
   params: CodexThreadRead,
 ): Extract<CodexHistoryRead, { method: "thread/turns/list" }> | undefined {
   return (
     params.initialTurnsPage && {
       method: "thread/turns/list",
-      params: { threadId: params.threadId, cursor: null, ...params.initialTurnsPage },
+      params: {
+        threadId: params.threadId, cursor: null, ...params.initialTurnsPage,
+        ...(params.openArchivedHistory ? { openArchivedHistory: true } : {}),
+      },
     }
   );
 }
@@ -82,15 +103,16 @@ export function parseCodexHistoryRead(method: unknown, value: unknown): CodexHis
   )
     return null;
   const params = value as Record<string, unknown>;
-  const { threadId, turnId, cursor, limit, itemsView, sortDirection } = params;
+  const { threadId, turnId, cursor, limit, itemsView, sortDirection, openArchivedHistory } = params;
   const turns = method === "thread/turns/list";
   if (
     !nonempty(threadId, 512) ||
     (cursor != null && !nonempty(cursor, 4096)) ||
     (limit != null && (typeof limit !== "number" || !Number.isInteger(limit) || limit < 1 || limit > 100)) ||
     (sortDirection != null && sortDirection !== "asc" && sortDirection !== "desc") ||
+    (openArchivedHistory !== undefined && openArchivedHistory !== true) ||
     Object.keys(params).some(
-      (key) => !["threadId", "cursor", "limit", "sortDirection", turns ? "itemsView" : "turnId"].includes(key),
+      (key) => !["threadId", "cursor", "limit", "sortDirection", "openArchivedHistory", turns ? "itemsView" : "turnId"].includes(key),
     )
   )
     return null;
@@ -99,6 +121,7 @@ export function parseCodexHistoryRead(method: unknown, value: unknown): CodexHis
     cursor: cursor ?? null,
     limit: limit ?? 10,
     sortDirection: sortDirection ?? (turns ? "desc" : "asc"),
+    ...(openArchivedHistory === true ? { openArchivedHistory } : {}),
   };
   if (turns) {
     if (itemsView != null && itemsView !== "full" && itemsView !== "summary" && itemsView !== "notLoaded") return null;

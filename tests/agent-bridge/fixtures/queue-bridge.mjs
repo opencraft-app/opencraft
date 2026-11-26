@@ -92,7 +92,12 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     );
     return;
   }
+  if (request.method === "session/archive" || request.method === "session/unarchive") {
+    reply({});
+    return;
+  }
   if (request.method === "history/read") {
+    if (process.env.HISTORY_READS) appendFileSync(process.env.HISTORY_READS, p.threadId + "\n");
     reply({ thread: { id: `native-${p.threadId}`, turns: sessions.get(p.threadId) ?? [] } });
     return;
   }

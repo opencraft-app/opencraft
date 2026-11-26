@@ -1513,25 +1513,37 @@ export function createReplicaConversationRuntime(
       },
       projectors,
     );
-    const waitingTurn = [...turns].reverse().find(t => t.status === "streaming" || t.status === "pending");
     const waitReason = humanInteractionWaitReason(thread.status);
     const pagination = isRecord(view.turnsPagination) ? view.turnsPagination : {};
     const indexedCount = thread.historyTurnCount;
-    const historyTurnCount = Number.isSafeInteger(indexedCount) && Number(indexedCount) >= source.length
-      ? Number(indexedCount) : boolean(pagination.hasLoadedOldest) === true ? source.length : undefined;
-    const countedTimeline = { ...projectedTimeline, historyTurnCount, frames: attachEvidence(projectedTimeline.frames) };
-    const timeline = waitingTurn && waitReason && pendingInteractions.length === 0
-      ? { ...countedTimeline, interactionWait: { turnId: asTurnId(waitingTurn.id), reason: waitReason as "approval" | "input",
+    const searchTurnId = string(view.unplacedSearchTurnId);
+    const unplacedSearchTurnId = searchTurnId && source.some(turn => turn.id === searchTurnId) ? asTurnId(searchTurnId) : undefined;
+    const boundary = source.findIndex(turn => turn.id === pagination.oldestLoadedTurnId);
+    const independent = Array.isArray(view.navigationOnlyTurnIds) ? new Set(view.navigationOnlyTurnIds) : undefined;
+    const outsideHistoryWindowTurnIds = boundary > 0 || independent
+      ? new Set(source.filter((turn, index) => index < boundary || independent?.has(turn.id)).map(turn => asTurnId(turn.id)))
+      : undefined;
+    const loadedTurnCount = source.length - (outsideHistoryWindowTurnIds?.size ?? (unplacedSearchTurnId ? 1 : 0));
+    const historyTurnCount = Number.isSafeInteger(indexedCount) && Number(indexedCount) >= loadedTurnCount
+      ? Number(indexedCount) : boolean(pagination.hasLoadedOldest) === true ? loadedTurnCount : undefined;
+    // Independently opened history is visible without acquiring a live task.
+    const isCoveredTurn = (turn: TimelineSourceTurn) => !outsideHistoryWindowTurnIds?.has(asTurnId(turn.id));
+    const active = [...turns].reverse().find(turn =>
+      (turn.status === "streaming" || turn.status === "pending") && isCoveredTurn(turn));
+    const countedTimeline = { ...projectedTimeline, historyTurnCount, unplacedSearchTurnId, outsideHistoryWindowTurnIds,
+      frames: attachEvidence(projectedTimeline.frames) };
+    const timeline = active && waitReason && pendingInteractions.length === 0
+      ? { ...countedTimeline, interactionWait: { turnId: asTurnId(active.id), reason: waitReason as "approval" | "input",
         recovery: view.interactionRecovery === "recovering" ? "recovering" as const : "unavailable" as const } }
       : countedTimeline;
     const turnsPagination = isRecord(view.turnsPagination)
       ? view.turnsPagination
       : {};
-    const active = [...turns]
-      .reverse()
-      .find((turn) => turn.status === "streaming" || turn.status === "pending");
+    const partialItems = isRecord(view.itemsPaginationByTurnId)
+      ? Object.entries(view.itemsPaginationByTurnId).filter(([, page]) => isRecord(page) && page.hasLoadedOldest === false)
+      : [];
     const error = replica.lastError;
-    const latest = source.at(-1);
+    const latest = (outsideHistoryWindowTurnIds ? source.filter(isCoveredTurn) : source).at(-1);
     if (replica.authoritative && latest && continuedFromTurnId !== null &&
       latest.id !== continuedFromTurnId) {
       continuedFromTurnId = null;
@@ -1626,10 +1638,10 @@ export function createReplicaConversationRuntime(
       history: {
         hasOlder:
           replica.authoritative &&
-          boolean(turnsPagination.hasLoadedOldest) !== true,
+          (boolean(turnsPagination.hasLoadedOldest) !== true || partialItems.length > 0),
         loading:
           loadingOlder || boolean(turnsPagination.isLoadingOlder) === true,
-        cursor: string(turnsPagination.olderCursor),
+        cursor: partialItems.length ? JSON.stringify(partialItems) : string(turnsPagination.olderCursor),
         error: historyError,
       },
       error,

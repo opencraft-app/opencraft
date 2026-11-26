@@ -26,6 +26,8 @@ test('publication is main-only, dependent on every built architecture, with isol
   }
   assert.match(distribute, /needs: docker-compose/);
   assert.match(promote, /needs: distribute/);
+  assert.match(distribute, /if: >-\s+!cancelled\(\) && needs\.docker-compose\.result == 'success'/);
+  assert.match(promote, /if: >-\s+!cancelled\(\) && needs\.distribute\.result == 'success'/);
   assert.match(promote, /group: container-ghcr-promotion/);
 });
 async function simulate(t, env = {}, script = 'promote') {

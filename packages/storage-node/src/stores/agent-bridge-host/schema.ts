@@ -19,6 +19,7 @@ export const table_generations = sqliteTable("generations", {
 export const table_routes = sqliteTable("routes", {
   "route": text("route"),
   "generation": text("generation").notNull(),
+  "archive_state": text("archive_state").notNull().default(sql`'active'`),
 }, table => [
   primaryKey({ columns: [table["route"]] }),
   foreignKey({ columns: [table["generation"]], foreignColumns: [table_generations["id"]] }).onUpdate("no action").onDelete("no action"),
@@ -35,6 +36,8 @@ export const table_commands = sqliteTable("commands", {
   "response": text("response"),
 }, table => [
   primaryKey({ columns: [table["id"]] }),
+  index("commands_pending_archive").on(table.route)
+    .where(sql`method IN ('session/archive','session/unarchive') AND state IN ('registered','dispatching')`),
 ]);
 
 export const table_native_sessions = sqliteTable("native_sessions", {
@@ -53,12 +56,23 @@ export const table_released_routes = sqliteTable("released_routes", {
   primaryKey({ columns: [table["route"]] }),
 ]);
 
+const historyIdentities = sql`json_extract(payload,'$.event.kind') IN ('turn.started','item.started','item.completed')`;
+const historyTurn = sql`json_extract(payload,'$.event.kind') = 'turn.started'`;
+const historyNativeId = sql`(CASE WHEN ${historyTurn}
+  THEN json_extract(payload,'$.event.nativeTurnId') ELSE json_extract(payload,'$.event.item.nativeKey') END)`;
+const historyPublicTurnId = sql`json_extract(payload,'$.event.turnId')`;
+
 export const table_outbox = sqliteTable("outbox", {
   "seq": integer("seq").primaryKey({ autoIncrement: true }),
   "route": text("route").notNull(),
   "generation": text("generation").notNull(),
   "payload": text("payload").notNull(),
-});
+}, table => [
+  index("outbox_route_history_identities").on(table.route, table.seq)
+    .where(sql`json_extract(payload,'$.event.kind') IN ('turn.started','item.started','item.completed')`),
+  index("outbox_history_native_id").on(table.route, historyNativeId, table.seq).where(historyIdentities),
+  index("outbox_history_public_turn").on(table.route, historyPublicTurnId, table.seq).where(historyTurn),
+]);
 
 export const table_checkpoints = sqliteTable("checkpoints", {
   "route": text("route"),
@@ -92,6 +106,10 @@ export const table_inbox = sqliteTable("inbox", {
   "projection": text("projection").notNull(),
 }, table => [
   primaryKey({ columns: [table["seq"]] }),
+  index("inbox_route_projection").on(table.route, table.seq).where(sql`(json_extract(payload,'$.event.kind') IN ('turn.started','item.started','item.completed')
+    OR json_extract(payload,'$.method') = 'interaction/request')`),
+  index("inbox_history_native_id").on(table.route, historyNativeId, table.seq).where(historyIdentities),
+  index("inbox_history_public_turn").on(table.route, historyPublicTurnId, table.seq).where(historyTurn),
 ]);
 
 export const table_automation_scripts = sqliteTable("automation_scripts", {

@@ -54,7 +54,7 @@ test("unrelated missing resources and transient failures cannot retire a Thread"
   assert.equal(isRetryableAppServerRpcError(new AppServerRpcError({ code: -32602, message: "bad params", data: { retryable: true } })), false);
 });
 
-function fixture(failure?: { code: number; message: string }, options: { archived?: boolean; archiveStateInRead?: boolean } = {}) {
+function fixture(failure?: { code: number; message: string }, options: { archived?: boolean; archiveStateInRead?: "present" | "missing" } = {}) {
   let peer!: InMemoryAppServerPeer;
   let hold = false, release: (() => void) | undefined;
   let rejected = failure, archived = options.archived === true;
@@ -70,7 +70,7 @@ function fixture(failure?: { code: number; message: string }, options: { archive
     else if (request.method === "thread/unarchive") { rejected = undefined; archived = false; send({ thread: thread(id) }); }
     else if (request.method === "thread/read") {
       if (rejected && id === "old") { reply.send(JSON.stringify({ id: request.id, error: { ...rejected, data: { retryable: true } } })); return; }
-      const complete = () => send({ thread: thread(id, options.archiveStateInRead || (archived && id === "old") ? { archived: archived && id === "old" } : {}), model: "test", modelProvider: "test", cwd: "/workspace",
+      const complete = () => send({ thread: thread(id, options.archiveStateInRead === "present" || (archived && id === "old") ? { archived: archived && id === "old" } : {}), model: "test", modelProvider: "test", cwd: "/workspace",
         approvalPolicy: "on-request", approvalsReviewer: "user", runtimeWorkspaceRoots: ["/workspace"],
         sandbox: { type: "workspaceWrite", writableRoots: ["/workspace"] }, initialTurnsPage: { data: archived && id === "old"
           ? [{ id: "turn-1", status: "completed", itemsView: "full", items: [{ id: "item-1", type: "agentMessage", text: "archived history" }] }]
@@ -128,7 +128,7 @@ test("a fresh read of an archived Thread keeps its transcript and reports the re
 
 test("direct Thread reads use the Host archive state without loading the archive directory", async () => {
   for (const archived of [false, true]) {
-    const f = fixture(undefined, { archived, archiveStateInRead: true });
+    const f = fixture(undefined, { archived, archiveStateInRead: "present" });
     try {
       const lease = await f.runtime.acquireThread("old");
       await settle();
@@ -141,6 +141,20 @@ test("direct Thread reads use the Host archive state without loading the archive
       lease.release();
     } finally { await f.runtime.dispose(); }
   }
+});
+
+test("a missing archive state on a direct Thread read does not scan the archive catalog", async () => {
+  const f = fixture(undefined, { archiveStateInRead: "missing" });
+  try {
+    const lease = await f.runtime.acquireThread("old");
+    await settle();
+    assert.equal(lease.getSnapshot().authoritative, true);
+    assert.equal(f.runtime.resources.threads.getUnavailableReason!("old"), null);
+    assert.deepEqual(f.requests.filter(r => ["thread/read", "thread/list", "thread/resume"].includes(r.method)), [
+      { method: "thread/read", id: "old" },
+    ]);
+    lease.release();
+  } finally { await f.runtime.dispose(); }
 });
 
 test("archive acknowledgement allows passive history reconnect; execution remains archived until restore", async () => {
@@ -188,18 +202,30 @@ test("confirmed unarchive clears a cached rejection before ordinary acquire in t
 
 test("only explicit archive browsing queries archive metadata; opening an archived Thread reads its history", async () => {
   const methods: string[] = [];
+  let archiveOpened = false;
   let archived = true;
   const transport = new MemoryTransport({ receive(frame, peer) {
     const request = JSON.parse(frame); if (request.id === undefined) return;
     methods.push(request.method);
     const send = (result: unknown) => peer.send(JSON.stringify({ id: request.id, result }));
     if (request.method === "initialize") send({ codexHome: "/tmp", platformFamily: "unix", platformOs: "linux", userAgent: "archive-read-test",
-      capabilities: { extensions: { "opencraft/thread-lifecycle": { version: 1, archive: true }, "opencraft/read-history": { version: 1 } } } });
+      capabilities: { extensions: { "opencraft/thread-lifecycle": { version: 1, archive: true, openArchivedHistory: true }, "opencraft/read-history": { version: 1 } } } });
     else if (request.method === "thread/list") send({ data: request.params.archived && archived ? [thread("saved")] : [], nextCursor: null });
-    else if (request.method === "thread/read") send({ thread: thread(request.params.threadId), initialTurnsPage: {
-      data: request.params.threadId === "saved" ? [{ id: "answer-turn", status: "completed", error: null,
-        items: [{ id: "answer", type: "agentMessage", text: "Archived history from server", phase: "final_answer" }] }] : [],
-      nextCursor: null } });
+    else if (request.method === "thread/read") {
+      if (request.params.threadId === "saved" && archived) {
+        assert.equal(request.params.openArchivedHistory, true);
+        archiveOpened = true;
+      }
+      send({ thread: thread(request.params.threadId), initialTurnsPage: {
+        data: request.params.threadId === "saved" ? [{ id: "answer-turn", status: "completed", error: null,
+          items: [{ id: "answer", type: "agentMessage", text: "Archived history from server", phase: "final_answer" }] }] : [],
+        nextCursor: archiveOpened && archived ? "older" : null } });
+    }
+    else if (request.method === "thread/turns/list" && request.params.cursor === "older") {
+      assert.equal(request.params.openArchivedHistory, true);
+      send({ data: [{ id: "older-turn", itemsView: "full", status: "completed",
+        items: [{ id: "older-answer", type: "agentMessage", text: "Earlier archive page" }] }], nextCursor: null });
+    }
     else if (request.method === "thread/unarchive") { archived = false; send({ thread: thread("saved") }); }
     else if (request.method.endsWith("/list")) send({ data: [], nextCursor: null });
     else send({});
@@ -215,6 +241,7 @@ test("only explicit archive browsing queries archive metadata; opening an archiv
     const archive = await runtime.resources.threads.list({ archived: true });
     assert.deepEqual(archive.data.map(entry => entry.id), ["saved"]);
     assert.equal(methods.filter(method => method === "thread/read").length, 1, "listing archives does not hydrate history");
+    assert.equal(archiveOpened, false);
 
     const lease = await runtime.acquireThread("saved"); lease.setRecoveryVisibility(true); await settle();
     assert.equal(methods.filter(method => method === "thread/list").length, 1, "opening the entry does not re-list archives");
@@ -222,6 +249,9 @@ test("only explicit archive browsing queries archive metadata; opening an archiv
     assert.equal(runtime.resources.threads.getUnavailableReason!("saved"), "archived");
     assert.equal(lease.getSnapshot().authoritative, true, "the read-only transcript is canonical");
     assert.ok(JSON.stringify(lease.getSnapshot()).includes("Archived history from server"));
+    await lease.loadOlder();
+    await settle();
+    assert.ok(JSON.stringify(lease.getSnapshot()).includes("Earlier archive page"));
     await assert.rejects(lease.startQueuedSubmission(), /archived/);
     const borrowed = runtime.tryAcquireThread("saved"); assert.ok(borrowed); borrowed.release();
     assert.ok(!methods.some(method => ["thread/resume", "turn/start", "thread/queue/start", "turn/steer"].includes(method)));

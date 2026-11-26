@@ -263,6 +263,34 @@ test("Conversation Runtime derives its complete UI snapshot from Replica authori
   }
 });
 
+test("conversation history stays pageable until incomplete Item ranges settle", async () => {
+  const historyView = (olderCursor: string | null, hasLoadedOldest: boolean) => threadView({
+    turnsPagination: { olderCursor: null, hasLoadedOldest: true, isLoadingOlder: false },
+    itemsPaginationByTurnId: { "turn-one": { olderCursor, hasLoadedOldest } },
+  });
+  const replica = new FakeReplica(historyView(null, false));
+  let calls = 0;
+  const runtime = createReplicaConversationRuntime({
+    key: createConversationKey("local", "thread-one"), replica, commands: commands(),
+    history: { async loadOlder() {
+      calls++;
+      replica.setEntity(calls === 1 ? historyView("older-items", false) : historyView(null, true));
+    } },
+  });
+  try {
+    const unread = runtime.getSnapshot().history;
+    assert.equal(unread.hasOlder, true);
+    await runtime.loadOlder();
+    const partial = runtime.getSnapshot().history;
+    assert.equal(partial.hasOlder, true);
+    assert.notEqual(partial.cursor, unread.cursor);
+    await runtime.loadOlder();
+    assert.equal(runtime.getSnapshot().history.hasOlder, false);
+    await runtime.loadOlder();
+    assert.equal(calls, 2);
+  } finally { runtime.dispose(); }
+});
+
 test("replica approval prompts retain the reason and network destination without assuming a provider", () => {
   for (const [extra, title] of [
     [{}, "Allow this command to run?"],

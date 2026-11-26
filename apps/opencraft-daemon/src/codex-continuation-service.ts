@@ -236,11 +236,16 @@ export function codexContinuationService(options: CodexContinuationOptions): Cod
       if (method === "turn/started" && turnId) {
         recovery.started(threadId, turnId);
         retry.started(threadId, turnId);
+      } else if (method === "provider/recovery" && params.kind === "restartRecommended") {
+        recovery.lost(threadId);
+        recovery.wake();
       } else if (method === "turn/completed" && turnId) {
         if (turn.status === "interrupted") {
           // A stop someone asked for was marked handled first; otherwise the execution was lost.
-          recovery.lost(threadId);
-          recovery.wake();
+          if (recovery.snapshot(threadId)?.turnId === turnId) {
+            recovery.lost(threadId);
+            recovery.wake();
+          }
           return;
         }
         recovery.finished(threadId, turnId);

@@ -6,6 +6,8 @@ import { CURSOR_DECLARATION } from "./declaration.js";
 import { InputFiles, parseInput } from "./input.js";
 import type { CursorAgent, CursorFactory, CursorRun } from "./types.js";
 
+const MODEL_LOOKUP_TIMEOUT_MS = 10_000;
+
 export class CursorError extends Error {
   constructor(readonly kind: BridgeErrorKind, message: string) { super(message); }
   get code(): number {
@@ -31,12 +33,20 @@ interface Input {
   target: string; operation?: Promise<unknown>;
 }
 interface Active {
-  turnId: string; run?: CursorRun; startup: Promise<void>; done: Promise<void>;
+  turnId: string; run?: CursorRun; dispatch: Promise<void>; startup: Promise<void>; done: Promise<void>;
+  dispatchAttempted: boolean;
+  output: AbortController;
+  terminal?: ReturnType<CursorRun["wait"]>; nativeEnded: boolean;
   cancelled: boolean; opened: boolean; accepting: boolean; tools: Map<string, string>; textKey?: string; text: string; steers: Set<Promise<unknown>>; files: Set<InputFiles>;
 }
 interface Session {
   threadId: string; agent: CursorAgent; active?: Active; inputs: Map<string, Input>;
   stopped: boolean; fenced: boolean; files: Set<InputFiles>;
+  callbackTail: Promise<unknown>;
+  stopping?: Promise<void>;
+  closeRequested?: true;
+  closing?: Promise<{ closed: true }>;
+  locallyClosed?: true;
 }
 export interface CursorOptions {
   factory: CursorFactory;
@@ -50,12 +60,14 @@ export class CursorBridge {
   private initialized = false;
   private closed = false;
   private sessions = new Map<string, Session>();
-  private creating = new Set<string>();
-  private tail: Promise<unknown> = Promise.resolve();
+  private readonly provisionalLifetime = new AbortController();
+  private modelListing?: Promise<unknown>;
+  private readonly creating = new Map<string, Promise<{ providerThreadId: string }>>();
+  private shuttingDown?: Promise<void>;
   constructor(private readonly options: CursorOptions) {}
   private emit(s: Session, delta: BridgeDelta): Promise<unknown> {
-    const operation = this.tail.then(() => this.options.notify("thread/delta", { threadId: s.threadId, deltas: [delta] }));
-    this.tail = operation.catch(() => {});
+    const operation = s.callbackTail.then(() => this.options.notify("thread/delta", { threadId: s.threadId, deltas: [delta] }));
+    s.callbackTail = operation.catch(() => {});
     return operation.catch((error) => { s.fenced = true; throw error; });
   }
   private async outcome(s: Session, i: Input, state: "unknown" | "rejected" | "failed", reason: string): Promise<void> {
@@ -86,8 +98,8 @@ export class CursorBridge {
     }
     if (!this.initialized) return fail("invalid", "initialize first");
     if (method === "model/list") {
-      if (!await this.options.factory.hasCredentials()) return fail("auth", CURSOR_KEY_GUIDANCE);
-      return { models: await this.options.factory.models() };
+      return this.modelListing ??= Promise.resolve().then(() => this.listModels())
+        .finally(() => { this.modelListing = undefined; });
     }
     if (method === "maintenance/probe") return { providerId: CURSOR_DECLARATION.providerId, sdk: "1.0.32" };
     const threadId = id(p.threadId);
@@ -98,24 +110,20 @@ export class CursorBridge {
       if (p.permissionMode !== "full") return fail("unsupported", "Cursor P5 requires explicit full permissionMode");
       const model = id(p.model);
       if (typeof p.stateDirectory !== "string" || !isAbsolute(p.stateDirectory)) return fail("invalid", "absolute private stateDirectory required");
-      this.creating.add(threadId);
-      try {
-        if (!await this.options.factory.hasCredentials()) return fail("auth", CURSOR_KEY_GUIDANCE);
-        if (this.closed) return fail("stale-target", "bridge closed during credential check");
-        const agent = await this.options.factory.create(p.cwd, model, p.stateDirectory);
-        if (this.closed) { await agent.close(); return fail("stale-target", "bridge closed during create"); }
-        const s: Session = { threadId, agent, inputs: new Map(), stopped: false, fenced: false, files: new Set() };
-        this.sessions.set(threadId, s);
-        try { await this.options.notify("thread/identity", { threadId, providerThreadId: agent.agentId, sessionRestorable: false }); }
-        catch (error) { s.fenced = true; await agent.close(); this.sessions.delete(threadId); throw error; }
-        return { providerThreadId: agent.agentId };
-      } finally { this.creating.delete(threadId); }
+      const { cwd, stateDirectory } = p;
+      const opening = Promise.resolve().then(() => this.createSession(threadId, cwd, model, stateDirectory))
+        .finally(() => this.creating.delete(threadId));
+      this.creating.set(threadId, opening);
+      return opening;
     }
+    if (this.creating.has(threadId)) return fail("stale-target", "Cursor session identity is pending");
     const s = this.sessions.get(threadId);
     if (!s) return fail("stale-target", "session unavailable");
     if (method === "input/query") return { inputs: [...s.inputs.values()].filter((i) => !Array.isArray(p.inputIds) || p.inputIds.includes(i.inputId))
       .map((i) => ({ inputId: i.inputId, clientRequestId: i.clientRequestId, expectedTurnId: i.target,
         targetNativeSession: s.agent.agentId, state: i.state, deliveryMethod: i.delivery })) };
+    if (method === "session/close") return this.closeSession(s);
+    if (s.closeRequested) return fail("stale-target", "Cursor session is closing");
     if (method === "input/withdraw") {
       const i = s.inputs.get(id(p.inputId));
       if (!i) return fail("stale-target", "input unavailable");
@@ -129,18 +137,9 @@ export class CursorBridge {
     if (method === "turn/stop") {
       const target = p.expectedTurnId ?? p.turnId;
       if (target !== undefined && (!s.active || id(target) !== s.active.turnId)) return fail("stale-target", "Stop target does not match the active turn");
-      if (!s.active && !s.files.size) return { stopped: false };
+      if (!s.stopping && !s.active && !s.files.size) return { stopped: false };
       await this.stop(s);
       return { stopped: true };
-    }
-    if (method === "session/close") {
-      try { await this.stop(s); }
-      catch { return fail("explicit-reject", "The session is still open because stopping did not finish. Check the current run before closing again."); }
-      try { await s.agent.close(); }
-      catch { return fail("explicit-reject", "The session is still open because local cleanup did not finish. Close it again to retry cleanup."); }
-      await this.emit(s, { op: "session.ended", scope: { threadId } });
-      this.sessions.delete(threadId);
-      return { closed: true };
     }
     if (s.fenced) return fail("unknown-outcome", "Cursor mutation outcome unknown; reconcile, do not replay");
     if (s.stopped) return fail("stale-target", "session stopped; close before reuse");
@@ -148,34 +147,132 @@ export class CursorBridge {
       if (s.active) return fail("stale-target", "turn active");
       const files = new InputFiles(validInput(p.input), this.options.attachmentRoot);
       const active = this.launch(s, files);
-      await active.startup;
+      try { await active.startup; }
+      catch (error) {
+        if (active.dispatchAttempted) throw error;
+        await active.done;
+        if (s.files.has(files))
+          return fail("explicit-reject", "Nothing was sent to Cursor, but attachment cleanup did not finish. Close the session to retry cleanup.");
+        if (error instanceof CursorError) throw error;
+        return fail("explicit-reject", "Input attachment preparation failed. Nothing was sent to Cursor.");
+      }
       return { nativeTurnId: active.turnId };
     }
     if (method === "turn/steer") return this.steer(s, p);
     return fail("unsupported", `unsupported Cursor method ${method}`);
   }
+  private async listModels() {
+    const shutdown = this.provisionalLifetime.signal;
+    const signal = AbortSignal.any([shutdown, AbortSignal.timeout(MODEL_LOOKUP_TIMEOUT_MS)]);
+    try {
+      signal.throwIfAborted();
+      const credentials = await this.options.factory.hasCredentials(signal);
+      signal.throwIfAborted();
+      if (!credentials) return fail("auth", CURSOR_KEY_GUIDANCE);
+      const models = await this.options.factory.models(signal);
+      signal.throwIfAborted();
+      return { models };
+    } catch (error) {
+      if (!signal.aborted || error !== signal.reason) throw error;
+      if (shutdown.aborted && error === shutdown.reason)
+        return fail("stale-target", "Cursor model lookup stopped because the bridge is closed");
+      return fail("explicit-reject", "Cursor model lookup timed out. Try again.");
+    }
+  }
+  private async createSession(threadId: string, cwd: string, model: string, stateDirectory: string) {
+    const { signal } = this.provisionalLifetime;
+    signal.throwIfAborted();
+    const credentials = await this.options.factory.hasCredentials(signal);
+    signal.throwIfAborted();
+    if (!credentials) return fail("auth", CURSOR_KEY_GUIDANCE);
+    const agent = await this.options.factory.create(cwd, model, stateDirectory, signal);
+    const s: Session = { threadId, agent, inputs: new Map(), stopped: false, fenced: false,
+      files: new Set(), callbackTail: Promise.resolve() };
+    this.sessions.set(threadId, s);
+    let onAbort!: () => void;
+    const aborted = new Promise<never>((_, reject) => {
+      onAbort = () => reject(signal.reason);
+      signal.addEventListener("abort", onAbort, { once: true });
+    });
+    try {
+      signal.throwIfAborted();
+      const confirmation = Promise.resolve().then(() => {
+        signal.throwIfAborted();
+        return this.options.notify("thread/identity", { threadId, providerThreadId: agent.agentId, sessionRestorable: false });
+      });
+      await Promise.race([confirmation, aborted]);
+      signal.throwIfAborted();
+      return { providerThreadId: agent.agentId };
+    } catch (error) {
+      s.fenced = true;
+      s.closeRequested = true;
+      await this.disposeAgent(s);
+      this.sessions.delete(threadId);
+      throw error;
+    } finally {
+      signal.removeEventListener("abort", onAbort);
+    }
+  }
+  private async disposeAgent(s: Session): Promise<void> {
+    await s.agent.close();
+    s.locallyClosed = true;
+  }
+  private closeSession(s: Session): Promise<{ closed: true }> {
+    if (s.closing) return s.closing;
+    s.closeRequested = true;
+    s.closing = (async () => {
+      if (!s.locallyClosed) {
+        try { await this.stop(s); }
+        catch { return fail("explicit-reject", "The session is still open because stopping did not finish. Check the current run before closing again."); }
+        try { await this.disposeAgent(s); }
+        catch { return fail("explicit-reject", "The session is still open because local cleanup did not finish. Close it again to retry cleanup."); }
+      }
+      await this.emit(s, { op: "session.ended", scope: { threadId: s.threadId } });
+      this.sessions.delete(s.threadId);
+      return { closed: true } as const;
+    })().finally(() => { s.closing = undefined; });
+    return s.closing;
+  }
   private launch(s: Session, files: InputFiles): Active {
-    const a: Active = { turnId: `cursor:${randomUUID()}`, startup: Promise.resolve(), done: Promise.resolve(),
-      cancelled: false, opened: false, accepting: true, tools: new Map(), text: "", steers: new Set(), files: new Set([files]) };
+    const a: Active = { turnId: `cursor:${randomUUID()}`, dispatch: Promise.resolve(), startup: Promise.resolve(), done: Promise.resolve(),
+      dispatchAttempted: false, output: new AbortController(), nativeEnded: false, cancelled: false, opened: false, accepting: true, tools: new Map(), text: "", steers: new Set(), files: new Set([files]) };
     s.active = a; s.files.add(files);
-    a.startup = (async () => {
+    a.dispatch = (async () => {
       const text = await files.prepare();
       if (a.cancelled) return;
+      a.dispatchAttempted = true;
       a.run = await s.agent.send(text);
-      if (a.cancelled) return;
+      a.terminal = this.observeTerminal(s, a, a.run);
+      void a.terminal.catch(() => {});
+    })();
+    a.startup = a.dispatch.then(async () => {
+      if (!a.run) return fail("explicit-reject", "Cursor start was stopped before dispatch. Nothing was sent to Cursor.");
       a.opened = true;
       await this.emit(s, { op: "turn.open", scope: { threadId: s.threadId }, nativeTurnId: a.turnId });
-    })();
+    });
     a.done = this.consume(s, a);
     void a.done.catch(() => { s.fenced = true; });
     return a;
+  }
+  private async observeTerminal(s: Session, a: Active, run: CursorRun) {
+    try {
+      const result = await run.wait();
+      a.accepting = false;
+      a.nativeEnded = true;
+      if (!await this.clean(s, [...a.files])) s.stopped = true;
+      return result;
+    } catch (error) {
+      a.accepting = false;
+      s.fenced = true;
+      throw error;
+    }
   }
   private async consume(s: Session, a: Active): Promise<void> {
     let status: "completed" | "failed" | "interrupted" = "failed";
     try {
       await a.startup;
-      if (!a.run) return;
-      for await (const m of a.run.stream()) {
+      if (!a.run || !a.terminal) return;
+      for await (const m of a.run.stream(a.output.signal)) {
         if (a.cancelled) continue;
         if (m.run_id !== a.run.id || m.agent_id !== s.agent.agentId) throw Error("SDK stream identity mismatch");
         if (m.type === "tool_call") {
@@ -196,24 +293,24 @@ export class CursorBridge {
           }
         }
       }
-      const result = await a.run.wait();
+      const result = await a.terminal;
       status = a.cancelled || result.status === "cancelled" ? "interrupted" : result.status === "finished" ? "completed" : "failed";
     } catch {
-      s.fenced = true;
+      if (a.dispatchAttempted) s.fenced = true;
     } finally {
       a.accepting = false;
       // Terminal steer acks may arrive after wait(): preserve the original run owner.
       await Promise.allSettled([...a.steers]);
+      const terminal = await a.terminal?.catch(() => undefined);
       try {
         await this.finishText(s, a);
         for (const [nativeKey, name] of a.tools) await this.emit(s, { op: "item.close", scope: { threadId: s.threadId }, nativeTurnId: a.turnId,
           nativeKey, shape: { kind: "tool", name, status: "failed" } });
         a.tools.clear();
-        if (a.opened) await this.emit(s, { op: "turn.close", scope: { threadId: s.threadId }, nativeTurnId: a.turnId, status });
+        if (a.opened && terminal) await this.emit(s, { op: "turn.close", scope: { threadId: s.threadId }, nativeTurnId: a.turnId, status });
       } finally {
         try {
-          const cleaned = await this.clean(s, [...a.files]);
-          if (!cleaned) s.stopped = true;
+          if (!a.terminal && !await this.clean(s, [...a.files])) s.stopped = true;
         } finally { if (s.active === a) s.active = undefined; }
       }
     }
@@ -247,9 +344,11 @@ export class CursorBridge {
       try {
         // input.accepted registers custody/identity; admission remains none until delivery.
         await this.accepted(s, i);
-        if (a.cancelled || s.stopped || i.state === "withdrawn") return { state: i.state };
+        if (a.cancelled || i.state === "withdrawn") return { state: i.state };
+        if (!a.accepting || s.stopped) throw Error("Run stopped accepting inputs");
         i.text = await i.files.prepare();
-        if (a.cancelled || s.stopped || (i as Input).state === "withdrawn") return { state: i.state };
+        if (a.cancelled || (i as Input).state === "withdrawn") return { state: i.state };
+        if (!a.accepting || s.stopped) throw Error("Run stopped accepting inputs");
         i.state = "dispatching";
         dispatched = true;
         const result = await Promise.race([a.run!.steer!(i.text), new Promise<never>((_, reject) => {
@@ -271,7 +370,9 @@ export class CursorBridge {
         if (!dispatched) {
           let cleaned = true;
           try { await i.files.dispose(); } catch { cleaned = false; }
-          const reason = cleaned ? "Input preparation failed; nothing was sent to Cursor." : "Input preparation failed; nothing was sent, but attachment cleanup is still required.";
+          const reason = !cleaned ? "Input was not sent to Cursor, but attachment cleanup is still required."
+            : !a.accepting ? "Input did not reach Cursor before the run stopped accepting inputs."
+            : "Input preparation failed; nothing was sent to Cursor.";
           if (i.state !== "withdrawn") await this.outcome(s, i, "failed", reason);
           throw new CursorError("explicit-reject", reason);
         }
@@ -286,7 +387,10 @@ export class CursorBridge {
     const results = await Promise.allSettled(files.map(async (f) => { await f.dispose(); s.files.delete(f); }));
     return results.every((result) => result.status === "fulfilled");
   }
-  private async stop(s: Session): Promise<void> {
+  private stop(s: Session): Promise<void> {
+    return s.stopping ??= this.stopSession(s).finally(() => { s.stopping = undefined; });
+  }
+  private async stopSession(s: Session): Promise<void> {
     s.stopped = true;
     const a = s.active;
     if (a) a.cancelled = true;
@@ -302,8 +406,12 @@ export class CursorBridge {
     let nativeFailure: unknown;
     try {
       if (a) {
-        await a.startup;
-        if (a.run) { await a.run.cancel(); await a.run.wait(); }
+        await a.dispatch.catch(error => { if (a.dispatchAttempted) throw error; });
+        if (a.run) {
+          if (!a.nativeEnded) await a.run.cancel();
+          await a.terminal;
+          a.output.abort();
+        }
         await a.done;
       }
     } catch (error) { nativeFailure = error; s.fenced = true; }
@@ -313,10 +421,36 @@ export class CursorBridge {
     if (!cleaned) return fail("explicit-reject", "Cursor stopped, but attachment cleanup did not finish. Close the session again to retry cleanup.");
     if (!s.fenced) s.stopped = false;
   }
-  async close(): Promise<void> {
-    this.closed = true;
-    const results = await Promise.allSettled([...this.sessions.values()].map(async (s) => { try { await this.stop(s); } finally { await s.agent.close(); } }));
-    this.sessions.clear(); await this.tail;
+  close(): Promise<void> {
+    if (!this.shuttingDown) {
+      this.closed = true;
+      this.shuttingDown = Promise.resolve().then(() => this.drainOwners());
+      this.provisionalLifetime.abort(new CursorError("unknown-outcome", "Cursor session creation could not be confirmed before shutdown"));
+    }
+    return this.shuttingDown;
+  }
+  private async closeOwnedSession(s: Session): Promise<void> {
+    await s.closing?.catch(() => {});
+    try {
+      if (s.locallyClosed) return;
+      try { await this.stop(s); } finally { await this.disposeAgent(s); }
+    } finally {
+      await s.callbackTail;
+    }
+  }
+  private async drainOwners(): Promise<void> {
+    const opening = [...this.creating];
+    const ready = [...this.sessions.values()].filter(s => !this.creating.has(s.threadId));
+    const results = await Promise.allSettled([
+      this.modelListing?.catch(() => {}),
+      ...ready.map(s => this.closeOwnedSession(s)),
+      ...opening.map(async ([threadId, creation]) => {
+        await creation.catch(() => {});
+        const retained = this.sessions.get(threadId);
+        if (retained) await this.closeOwnedSession(retained);
+      }),
+    ]);
+    this.sessions.clear();
     if (results.some((result) => result.status === "rejected")) throw Error("Cursor shutdown cleanup could not be confirmed");
   }
 }

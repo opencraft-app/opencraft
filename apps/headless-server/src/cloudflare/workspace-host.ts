@@ -90,11 +90,14 @@ import {
 import { attachWorkspaceEngine, workspaceExecutionRecovery, type WorkspaceEngine } from "./workspace-engine.js";
 import type { WorkspaceHostEnv, WorkspaceHostState } from "./bindings.js";
 import {
+  CODEX_THREAD_ARCHIVED,
   initialCodexTurnsRead,
   isCodexThreadResult,
   isCodexHistoryResult,
+  isCodexHistorySizeError,
   lookupCodexThread,
   parseWorkspaceCodexRead,
+  readsOrdinaryCodexHistoryBody,
 } from "./codex-thread-read.js";
 import { CODEX_THREAD_START_BODY_BYTES, createdCodexThreadId, currentCodexStart, parseCodexStartAuthority } from "./codex-thread-start.js";
 import { parseCodexModelList } from "./codex-model-list.js";
@@ -102,7 +105,7 @@ import { parseCodexThreadList, parseCodexThreadPage } from "./codex-thread-list.
 import { ACCOUNT_CORE_OBJECT } from "./account-core.js";
 import { WORKSPACE_CODEX_CATALOG_PATH, WORKSPACE_CODEX_MODEL_DIRECTORY_PATH } from "../account-routes.js";
 import { CODEX_TURN_STREAM_TYPE, CODEX_WORKBENCH_THREAD_CONFIG, codexTurnAuthority, isDefinitiveCodexSteerRefusal, matchesCodexResume, parseCodexThreadMutationReceipt, parseCodexTurnCall, parseCodexTurnOperationCall, runCodexTurn, type CodexResume, type CodexThreadMutation, type CodexTurnControls, type TurnAuthority, type TurnStreamFrame } from "./codex-turn.js";
-import { HostInteractions, InteractionFault } from "@opencraft/app-host-server/interactions";
+import { HostInteractions, InteractionFault, InteractionResponseNotDispatched } from "@opencraft/app-host-server/interactions";
 import {
   isRuntimeMachineId, isTerminalResourceScopeId, threadCatalogEntry, SHARED_INTERACTIONS_CHANGED,
   parseThreadCatalogTurnCompletion, WORKSPACE_FILE_SCOPE_METHOD, type JsonRpcNotification,
@@ -120,10 +123,13 @@ import {
 } from "./thread-placement.js";
 import { attachWorkspaceCodex, bridgeWorkspaceCodex, isWorkspaceCodexLane, type WorkspaceCodex } from "./workspace-codex.js";
 import { checkWorkspaceBridge, createWorkspaceBridge } from "./workspace-bridge.js";
-import { EndpointMessageTooLargeError, EndpointRpcError } from "./workspace-link.js";
+import { EndpointRpcError } from "./workspace-link.js";
 import { openWorkspaceTerminal } from "./workspace-terminal.js";
 import { acceptWorkspaceTerminal, readWorkspaceTerminalInventory, type WorkspaceTerminalOptions } from "./workspace-terminal-session.js";
-import { captureWorkspaceHistory, readWorkspaceHistory, recordWorkspaceHistory, WORKSPACE_HISTORY_PREVIEW_THREADS } from "./workspace-history-preview.js";
+import {
+  captureWorkspaceHistory, isWorkspaceHistoryPreviewCursor, readWorkspaceHistory,
+  recordWorkspaceHistory, WORKSPACE_HISTORY_PREVIEW_THREADS,
+} from "./workspace-history-preview.js";
 import { captureWorkspaceProjects, PROJECT_DIRECTORY_CURSOR_PREFIX, readWorkspaceProjects, recordWorkspaceProjects } from "./workspace-project-directory.js";
 import { directoryCheckpoint, matchesDirectoryCheckpoint } from "./workspace-directory-checkpoint.js";
 import {
@@ -278,6 +284,7 @@ interface Services {
   neverStarted(): Promise<boolean>;
   recordedPlacement(): Promise<WorkspacePlacementRecord | undefined>;
   passiveReceipt(): Promise<SandboxReceipt | undefined>;
+  restoreHistoryReceipt(snapshot: string): Promise<SandboxReceipt | undefined>;
   readonly threadDirectory?: {
     readonly catalog: SqlThreadDirectory;
     refresh(receipt: SandboxReceipt): Promise<void>;
@@ -752,6 +759,7 @@ export class WorkspaceHost {
     const directory = codex && settings.codexSnapshots ? new SqlThreadDirectory({ database, cursorScope: identity.workspace }, {
       refreshOnDemandOnly: true,
       streamingSync: true,
+      sourceOwnsExistence: true,
       async list(params) {
         if (!captureReceipt) throw new Error("Thread directory capture requires an attached placement");
         return codex.readDirectoryAtPlacement("thread/list", params, captureReceipt);
@@ -766,6 +774,7 @@ export class WorkspaceHost {
       // environment. A stopped container with a placement can still have data.
       neverStarted: async () => !container.running && !(await placements.read(address)) && !container.running,
       recordedPlacement: () => placements.read(address),
+      restoreHistoryReceipt: async snapshot => (await counted.restoreExisting(address, snapshot)).receipt,
       passiveReceipt: async () => {
         if (!container.running) return undefined;
         if (!this.#bound) await counted.attachExisting().catch(() => undefined);
@@ -1029,14 +1038,12 @@ export class WorkspaceHost {
 
   async #captureHistory(services: Services, codex: WorkspaceCodex, receipt: SandboxReceipt) {
     if (!services.codexTurns || !services.threadDirectory) return [];
-    const { catalog } = services.threadDirectory;
-    const pages = await Promise.all([true, false].map(archived => catalog.list({
-      archived, sortKey: "updated_at", sortDirection: "desc", limit: WORKSPACE_HISTORY_PREVIEW_THREADS, useStateDbOnly: true,
-    })));
-    const recent = pages.flatMap(page => page.data);
+    const { data: recent } = await services.threadDirectory.catalog.list({
+      archived: false, sortKey: "updated_at", sortDirection: "desc", limit: WORKSPACE_HISTORY_PREVIEW_THREADS, useStateDbOnly: true,
+    });
     const serverId = `server:${services.identity.machine}:codex`;
     const previews = [];
-    // At most two read windows in flight, each with two native requests.
+    // At most two Threads in flight. Each reads metadata before probing its history window.
     for (let offset = 0; offset < recent.length; offset += 2) {
       const entries = await Promise.all(recent.slice(offset, offset + 2).map(async thread => {
         const placement = await services.threadPlacements.readCommitted({ serverId, threadId: thread.id });
@@ -1067,6 +1074,10 @@ export class WorkspaceHost {
         .catch(() => { this.#startup("history-preview-capture-failed"); return []; });
       const projects = this.#projectsEnabled && receipt && await captureWorkspaceProjects(params => codex.readDirectoryAtPlacement("project/list", params, receipt))
         .catch(() => { this.#startup("project-directory-capture-failed"); return undefined; });
+      // A Bridge-owned delivery can still be in flight without a Workspace execution lease.
+      if (services.bridge && this.container()?.running && (!receipt || !(await services.bridge.canSleep(receipt))))
+        return false;
+      if (busy()) return false;
       const result = await services.runtime.sleep();
       if (!result.some(({ slept }) => slept) && this.container()?.running)
         throw new Error("Workspace container did not stop");
@@ -1636,10 +1647,17 @@ export class WorkspaceHost {
           return json(this.#codexInteractionSnapshot(threadId));
         case "respond-interaction": {
           const disposition = await this.#codexInteractions.respond(threadId, operation.interactionId,
-            operation.submissionId, operation.result, async (source, result) => {
-              if (!(await current()) || !live() || !active?.respond || source.params.turnId !== active.turnId)
-                throw new Error("Native interaction route unavailable");
-              await active.respond(source, result);
+            operation.submissionId, operation.result, async (source, result, assertCurrent) => {
+              let respond: CodexTurnControls["respond"];
+              try {
+                if (!(await current()) || !live() || !active?.respond || source.params.turnId !== active.turnId)
+                  throw new Error("Native interaction route unavailable");
+                respond = active.respond;
+                assertCurrent();
+              } catch (cause) {
+                throw new InteractionResponseNotDispatched(cause);
+              }
+              await respond(source, result);
             });
           return json({ disposition, snapshot: this.#codexInteractionSnapshot(threadId) });
         }
@@ -1658,7 +1676,8 @@ export class WorkspaceHost {
     const executing = () => this.#activeCodexTurn?.threadId === threadId || leases.unsettledTargets(threadId).length > 0;
     if (!codex) return missing();
     if (executing()) return notSubmitted();
-    const observesResources = !!services.identity.ownerActorId && (method === "thread/archive" || method === "thread/unarchive");
+    const updatesArchive = method === "thread/archive" || method === "thread/unarchive";
+    const observesResources = !!services.identity.ownerActorId && updatesArchive;
     let dispatched = false;
     this.#touch();
     try {
@@ -1689,6 +1708,8 @@ export class WorkspaceHost {
           if (observesResources) {
             this.#pendingResourceObservation = { placement: authority.placement, state: method === "thread/archive" ? "archived" : "active" };
             await this.#flushThreadResources();
+          } else if (updatesArchive) {
+            await services.threadPlacements.recordArchive(authority.placement, method === "thread/archive");
           }
           return json(receipt);
         } finally {
@@ -2133,32 +2154,66 @@ export class WorkspaceHost {
         if (placement.workspaceId !== identity.workspace) return json({ error: "missing" }, 404);
         const installation = installations.get(installations.idFromName(INSTALLATION_CORE_OBJECT));
         const current = async (archiveState = false) => {
-          const committed = await threadPlacements.readCommitted(placement);
-          if (!committed || !sameThreadPlacement(committed, placement)) return null;
           const authorized = await lookupCodexThread(installation, attachment, threadId, { archiveState });
-          return authorized && sameThreadPlacement(authorized, committed) ? authorized : null;
+          if (!authorized || !sameThreadPlacement(authorized, placement)) return null;
+          const committed = await threadPlacements.readCommitted(placement, {
+            archiveState: archiveState && !identity.ownerActorId,
+          });
+          if (!committed || !sameThreadPlacement(authorized, committed)) return null;
+          return committed.archived === undefined ? authorized : { ...authorized, archived: committed.archived };
         };
-        const authorized = await current(!!services.bridge);
+        const openArchive = read.params.openArchivedHistory === true;
+        const ordinaryBody = readsOrdinaryCodexHistoryBody(read);
+        const archivedResponse = () => json({ error: "thread_archived" }, 423);
+        const authorized = await current(true);
         if (!authorized) return json({ error: "missing" }, 404);
-        const pending = this.#pendingResourceObservation;
-        const archived = pending && sameThreadPlacement(pending.placement, placement)
-          ? pending.state === "archived" : authorized.archived === true;
-        const receipt = this.#settings?.codexSnapshots ? await services.passiveReceipt() : undefined;
-        if (this.#settings?.codexSnapshots && !receipt) {
-          const snapshot = await readWorkspaceHistory(this.#documents, await services.recordedPlacement(), placement, read);
-          const latest = await current(!!services.bridge);
+        const archiveState = (observed: { readonly archived?: boolean }) => {
+          const pending = this.#pendingResourceObservation;
+          return pending && sameThreadPlacement(pending.placement, placement) ? pending.state === "archived" : observed.archived;
+        };
+        let archived = archiveState(authorized) === true;
+        if (ordinaryBody && archived) return archivedResponse();
+        let receipt = this.#settings?.codexSnapshots ? await services.passiveReceipt() : undefined;
+        let restoreFrom: string | undefined;
+        const previewCursor = isWorkspaceHistoryPreviewCursor(read);
+        if (!this.#settings?.codexSnapshots && previewCursor) return json({ error: "history_preview_cursor_expired" }, 410);
+        if (this.#settings?.codexSnapshots && (!receipt || previewCursor)) {
+          const recorded = await services.recordedPlacement();
+          const directory = services.threadDirectory?.catalog;
+          const recordedArchive = authorized.archived === undefined && directory &&
+            matchesDirectoryCheckpoint(await this.#documents.read("thread-directory"), recorded)
+            ? directory.recordedArchiveState(threadId) : undefined;
+          if (ordinaryBody && (archiveState(authorized) ?? recordedArchive) === true) return archivedResponse();
+          const snapshot = await readWorkspaceHistory(this.#documents, recorded, placement, read);
+          const latest = await current(true);
           if (!latest) return json({ error: "missing" }, 404);
-          const observation = this.#pendingResourceObservation;
-          const archiveState = observation && sameThreadPlacement(observation.placement, placement)
-            ? observation.state === "archived" : latest.archived;
-          return snapshot === null
-            ? json({ error: "history_preview_unavailable", archived: archiveState }, 425) : json(snapshot);
+          const state = archiveState(latest) ?? recordedArchive;
+          if (ordinaryBody && state === true) return archivedResponse();
+          if (snapshot !== null) return json(snapshot);
+          if (previewCursor) return json({ error: "history_preview_cursor_expired" }, 410);
+          if (openArchive && state === true) restoreFrom = directoryCheckpoint(recorded)?.snapshot;
+          if (!restoreFrom) return json({ error: "history_preview_unavailable", archived: state }, 425);
+          archived = true;
         }
         const nativeReads = initialPageRead ? 2 : 1;
         if (this.#codexReads + nativeReads > 4) return json({ error: "thread_reader_busy" }, 429);
         this.#codexReads += nativeReads;
         if (!receipt) this.#touch();
         try {
+          if (restoreFrom) {
+            if (this.#sleepingCodex) return json({ error: "workspace_sleep_in_progress" }, 409);
+            receipt = await services.restoreHistoryReceipt(restoreFrom).catch(() => undefined);
+            const latest = await current(true);
+            if (!latest) return json({ error: "missing" }, 404);
+            if (!receipt || archiveState(latest) === false)
+              return json({ error: "history_preview_unavailable", archived: archiveState(latest) ?? true }, 425);
+          }
+          if (ordinaryBody && !identity.ownerActorId) {
+            const local = await threadPlacements.readCommitted(placement, { archiveState: true });
+            if (!local || !sameThreadPlacement(local, placement)) return json({ error: "missing" }, 404);
+            if (local.archived === true) return archivedResponse();
+          }
+          if (ordinaryBody && archiveState({ archived }) === true) return archivedResponse();
           const metadata = codex.readHistory(read, archived, receipt);
           let result: unknown;
           let initialPage: { data: unknown[] } | undefined;
@@ -2172,21 +2227,27 @@ export class WorkspaceHost {
             result = { ...(thread.value as object), initialTurnsPage: initialPage };
           } else result = await metadata;
           if (!isCodexHistoryResult(read, result)) return json({ error: "missing" }, 404);
-          if (!(await current())) return json({ error: "missing" }, 404);
+          let latest = await current(ordinaryBody || read.method === "thread/read");
+          if (!latest) return json({ error: "missing" }, 404);
+          if (ordinaryBody && archiveState(latest) === true) return archivedResponse();
           const newest = initialPage ?? (read.method === "thread/turns/list" && read.params.cursor === null && read.params.sortDirection === "desc"
             ? result as { data: unknown[] } : undefined);
-          if (newest) {
+          if (newest && !archived) {
             await this.#rememberTurnCompletion(threadId, newest.data[0], true);
-            if (!(await current())) return json({ error: "missing" }, 404);
+            latest = await current(ordinaryBody || read.method === "thread/read");
+            if (!latest) return json({ error: "missing" }, 404);
+            if (ordinaryBody && archiveState(latest) === true) return archivedResponse();
           }
-          const pending = this.#pendingResourceObservation;
-          if (read.method === "thread/read" && pending && sameThreadPlacement(pending.placement, placement)) {
+          const observedArchive = archiveState(latest) ?? (restoreFrom ? true : undefined);
+          if (read.method === "thread/read" && observedArchive !== undefined) {
             const body = result as { thread: Record<string, unknown> };
-            return json({ ...body, thread: { ...body.thread, archived: pending.state === "archived" } });
+            return json({ ...body, thread: { ...body.thread, archived: observedArchive } });
           }
           return json(result);
         } catch (error) {
-          if (error instanceof EndpointMessageTooLargeError)
+          if (error instanceof Error && "code" in error && error.code === CODEX_THREAD_ARCHIVED)
+            return await current() ? archivedResponse() : json({ error: "missing" }, 404);
+          if (isCodexHistorySizeError(error))
             return await current() ? json({ error: "history_response_too_large" }, 413) : json({ error: "missing" }, 404);
           if (read.method !== "thread/read" && error instanceof EndpointRpcError && error.code === -32601)
             return await current() ? json({ error: "history_method_unavailable" }, 501) : json({ error: "missing" }, 404);

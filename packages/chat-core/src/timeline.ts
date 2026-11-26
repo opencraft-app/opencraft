@@ -679,6 +679,10 @@ export interface TimelineSnapshot {
   readonly displayHeader?: ConversationDisplayHeader;
   /** Complete source count, not the number of Turns retained in this page. */
   readonly historyTurnCount?: number;
+  /** A visible search Turn awaiting placement in the ordered history. */
+  readonly unplacedSearchTurnId?: TurnId;
+  /** Visible Turns read independently before the contiguous history range. */
+  readonly outsideHistoryWindowTurnIds?: ReadonlySet<TurnId>;
   readonly interactionWait?: InteractionWaitPresentation;
   readonly key: ConversationKey;
   readonly revision: number;

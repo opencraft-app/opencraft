@@ -129,6 +129,31 @@ try {
       assert.equal(await page.locator('.sidebar-activity-item').count(), 0);
       assert.deepEqual(errors, []); evidence.push({ width, theme, firstPage: before, pageCalls, errors }); await page.close();
     }
+    for (const width of [390, 1100]) {
+      hold = false; fail = false; release = undefined;
+      const page = await browser.newPage({ viewport: { width, height: 850 }, hasTouch: width === 390 });
+      await page.addInitScript("window.__name=value=>value");
+      await page.goto(origin);
+      await page.waitForFunction(() => (window as any).catalogEntry?.snapshot().status === "success");
+      const title = page.getByText("First message awaiting directory", { exact: true });
+      await page.evaluate(() => (window as any).catalogEntry.beginDraft());
+      await title.waitFor();
+      assert.equal(await title.count(), 1);
+      await page.evaluate(() => (window as any).catalogEntry.filterServer("another-server"));
+      await title.waitFor({ state: "hidden" });
+      await page.evaluate(() => (window as any).catalogEntry.filterServer(""));
+      await title.waitFor();
+      await page.evaluate(() => (window as any).catalogEntry.promoteDraft());
+      await title.waitFor();
+      assert.equal(await title.count(), 1, "promotion keeps the local row while the directory index lags");
+      await page.evaluate(() => (window as any).catalogEntry.commitDraft());
+      await page.locator('[data-thread-id="pending-catalog-thread"] .sidebar-activity-item').waitFor();
+      assert.equal(await title.count(), 1, "a committed catalog event replaces the pending row");
+      await page.evaluate(() => (window as any).catalogEntry.refresh());
+      assert.equal(await title.count(), 1, "stale catalog pages cannot erase the committed row");
+      evidence.push({ width, pendingSidebarReconciled: true });
+      await page.close();
+    }
     // An early rename/archive/pin invalidates an in-flight cold read before a
     // complete cache exists. That invalidation must survive initial success.
     hold = true; fail = false; release = undefined;

@@ -36,6 +36,7 @@ type Document = {
   readonly schemaVersion: 1;
   readonly receipt: ThreadPlacementReceipt;
   readonly sideChatParent?: string;
+  readonly archived?: boolean;
 };
 type Publication = "applied" | "unchanged" | "conflict" | "unconfirmed";
 
@@ -82,15 +83,16 @@ function parsePlacementDocument(value: unknown, key: ThreadPlacementKey): Docume
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid thread placement document");
   const document = value as Partial<Document>;
   const receipt = parseThreadPlacementReceipt(document.receipt);
-  const { sideChatParent } = document;
+  const { sideChatParent, archived } = document;
   if (
     document.schemaVersion !== 1 ||
     !receipt ||
     !sameThread(receipt, key) ||
+    (archived !== undefined && typeof archived !== "boolean") ||
     (sideChatParent !== undefined && (!validSubject(sideChatParent) || sideChatParent === key.threadId))
   )
     throw new Error("Invalid thread placement document");
-  return { schemaVersion: 1, receipt, sideChatParent };
+  return { schemaVersion: 1, receipt, sideChatParent, archived };
 }
 
 function documentReceipt(value: unknown, key: ThreadPlacementKey): ThreadPlacementReceipt | null {
@@ -107,14 +109,27 @@ export class WorkspaceThreadPlacements implements WorkspaceThreadPlacementSource
 
   async readCommitted(
     thread: ThreadPlacementKey,
-    options?: { includeSideChats: boolean },
-  ): Promise<ThreadPlacementReceipt | null> {
+    options?: { includeSideChats?: boolean; archiveState?: boolean },
+  ): Promise<(ThreadPlacementReceipt & { readonly archived?: boolean }) | null> {
     if (thread.serverId !== this.serverId) return null;
     const document = parsePlacementDocument(await this.documents.read(await placementKey(thread)), thread);
     if (options?.includeSideChats === false && document?.sideChatParent !== undefined) return null;
     const receipt = document?.receipt ?? null;
     if (receipt && receipt.workspaceId !== this.workspaceId) throw new Error("Foreign Thread placement");
-    return receipt;
+    return receipt && options?.archiveState && document?.archived !== undefined
+      ? { ...receipt, archived: document.archived }
+      : receipt;
+  }
+
+  /** Shared workspaces retain successful native lifecycle acknowledgements locally. */
+  async recordArchive(receipt: ThreadPlacementReceipt, archived: boolean): Promise<void> {
+    if (receipt.serverId !== this.serverId || receipt.workspaceId !== this.workspaceId || receipt.state !== "placed")
+      throw new Error("Foreign Thread placement");
+    await this.documents.update(await placementKey(receipt), value => {
+      const previous = parsePlacementDocument(value, receipt);
+      if (!previous || !sameThreadPlacement(previous.receipt, receipt)) throw new Error("Thread placement changed");
+      return { result: undefined, ...(previous.archived !== archived ? { next: { ...previous, archived } } : {}) };
+    });
   }
 
   async isSideChat(threadId: string): Promise<boolean> {

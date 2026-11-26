@@ -3,9 +3,7 @@ import { isHistoryResponseTooLargeError, type AppServerClient } from "@opencraft
 import { executionEngineExtension } from "@opencraft/appserver-client";
 import type {
   AppServerThread,
-  AppServerThreadItem,
   AppServerTurn,
-  ThreadItemsListResponse,
   ThreadResumeResponse,
   ThreadTurnsListResponse,
 } from "@opencraft/appserver-protocol";
@@ -34,6 +32,10 @@ export interface ResumeHistoryContext {
   pageSize: number;
   requestTimeoutMs: number;
 }
+
+export type PassiveHistoryRequest = Pick<ResumeHistoryContext, "client" | "threadId" | "requestTimeoutMs" | "signal"> & {
+  openArchivedHistory?: true;
+};
 
 export interface HydratedThreadHistory {
   source: ThreadHistorySource;
@@ -101,132 +103,45 @@ function requireTurn(value: unknown, operation: string): AppServerTurn {
   return value as AppServerTurn;
 }
 
-function requireTurnsPage(value: ThreadTurnsListResponse, operation: string): ThreadTurnsListResponse {
-  if (!Array.isArray(value.data)) throw new Error(`${operation} returned a non-array data field`);
+export function requireTurnsPage(value: ThreadTurnsListResponse, operation: string, cursor: string | null = null): ThreadTurnsListResponse {
+  if (!isRecord(value) || !Array.isArray(value.data)) throw new Error(`${operation} returned a non-array data field`);
   if (!(value.nextCursor === null || typeof value.nextCursor === "string")) {
     throw new Error(`${operation} returned an invalid nextCursor`);
   }
-  return { ...value, data: value.data.map((turn) => requireTurn(turn, operation)) };
-}
-
-function extractItem(entry: ThreadItemsListResponse["data"][number], turnId: string): AppServerThreadItem {
-  if (!isRecord(entry)) throw new Error("thread/items/list returned a non-object entry");
-  if (typeof entry.turnId === "string" && entry.turnId !== turnId) {
-    throw new Error(`thread/items/list returned an Item for unexpected Turn ${entry.turnId}`);
-  }
-  const item = isRecord(entry.item) ? entry.item : entry;
-  if (typeof item.id !== "string") throw new Error("thread/items/list returned an Item without a string id");
-  // Page envelopes carry lifecycle clocks separately from the protocol Item.
-  const clocks = Object.fromEntries(["startedAtMs", "completedAtMs"].flatMap((key) =>
-    typeof entry[key] === "number" && Number.isFinite(entry[key]) ? [[key, entry[key]]] : []));
-  return { ...item, ...clocks } as AppServerThreadItem;
-}
-
-async function fetchItemsPage(
-  context: Pick<ResumeHistoryContext, "client" | "threadId" | "requestTimeoutMs" | "signal">,
-  turnId: string,
-  cursor: string | null,
-  limit: number,
-  sortDirection: "asc" | "desc",
-): Promise<{ items: AppServerThreadItem[]; nextCursor: string | null; limit: number }> {
-  let page: ThreadItemsListResponse;
-  while (true) {
-    try {
-      page = await context.client.request("thread/items/list", {
-        threadId: context.threadId, turnId, cursor, limit, sortDirection,
-      }, { timeoutMs: context.requestTimeoutMs, priority: "background", signal: context.signal });
-      break;
-    } catch (error) {
-      if (limit <= 1 || !isHistoryResponseTooLargeError(error)) throw error;
-      limit = Math.max(1, Math.floor(limit / 2));
-    }
-  }
-  if (!Array.isArray(page.data)) throw new Error("thread/items/list returned a non-array data field");
-  if (!(page.nextCursor === null || typeof page.nextCursor === "string")) {
-    throw new Error("thread/items/list returned an invalid nextCursor");
-  }
-  if (page.nextCursor !== null && page.nextCursor === cursor) {
-    throw new Error(`thread/items/list returned an unchanged cursor for Turn ${turnId}`);
-  }
-  const items = page.data.map((entry) => extractItem(entry, turnId));
-  return { items: sortDirection === "desc" ? items.reverse() : items, nextCursor: page.nextCursor, limit };
-}
-
-async function fetchAllTurnItems(
-  context: Pick<ResumeHistoryContext, "client" | "threadId" | "requestTimeoutMs" | "signal">,
-  turnId: string,
-): Promise<readonly AppServerThreadItem[]> {
-  const items: AppServerThreadItem[] = [];
-  const cursors = new Set<string>();
-  let cursor: string | null = null;
-  let limit = 100;
-  while (true) {
-    const page = await fetchItemsPage(context, turnId, cursor, limit, "asc");
-    limit = page.limit;
-    const seenIds = new Set(items.map((item) => item.id));
-    for (const item of page.items) if (!seenIds.has(item.id)) {
-      seenIds.add(item.id);
-      items.push(item);
-    }
-    if (page.nextCursor === null) return items;
-    if (cursors.has(page.nextCursor)) {
-      throw new Error(`thread/items/list repeated cursor ${page.nextCursor} for Turn ${turnId}`);
-    }
-    cursors.add(page.nextCursor);
-    cursor = page.nextCursor;
-  }
+  if (cursor !== null && value.nextCursor === cursor) throw new Error(`${operation} returned a repeated cursor`);
+  const seen = new Set<string>();
+  const data = value.data.filter(entry => {
+    const { id } = requireTurn(entry, operation);
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+  return { ...value, data };
 }
 
 /** Shrink oversized full pages before resorting to per-Turn Item hydration.
  * Each successful page keeps its native cursor; even a large single Turn can
  * still use the existing adaptive Item reader without Resume. */
 export async function readTurnsPage(
-  context: Pick<ResumeHistoryContext, "client" | "threadId" | "requestTimeoutMs" | "signal">,
+  context: PassiveHistoryRequest,
   cursor: string | null,
   limit = 10,
 ): Promise<ThreadTurnsListResponse> {
   let pageLimit = limit;
-  const compact = executionEngineExtension(context.client.initializeResult?.capabilities?.extensions, context.threadId, "opencraft/read-history")?.itemDetails === true;
-  const request = (itemsView: "full" | "notLoaded" | "presentation") => context.client.request("thread/turns/list", {
+  const capability = executionEngineExtension(context.client.initializeResult?.capabilities?.extensions, context.threadId, "opencraft/read-history");
+  const request = async (itemsView: "full" | "notLoaded" | "presentation") => requireTurnsPage(await context.client.request("thread/turns/list", {
     threadId: context.threadId, cursor, limit: pageLimit, itemsView, sortDirection: "desc",
-    ...(executionEngineExtension(context.client.initializeResult?.capabilities?.extensions, context.threadId, "opencraft/read-history")?.imageResources === true ? { imageResources: true } : {}),
-  }, { timeoutMs: context.requestTimeoutMs, priority: "user-visible", signal: context.signal });
+    openArchivedHistory: context.openArchivedHistory,
+    imageResources: capability?.imageResources === true ? true : undefined,
+  }, { timeoutMs: context.requestTimeoutMs, priority: "user-visible", signal: context.signal }), "thread/turns/list", cursor);
   while (true) {
-    try { return requireTurnsPage(await request(compact ? "presentation" : "full"), "thread/turns/list"); }
+    try { return await request(capability?.itemDetails === true ? "presentation" : "full"); }
     catch (error) {
       if (!isHistoryResponseTooLargeError(error)) throw error;
-      if (pageLimit <= 1) return requireTurnsPage(await request("notLoaded"), "thread/turns/list");
+      if (pageLimit <= 1) return request("notLoaded");
       pageLimit = Math.max(1, Math.floor(pageLimit / 2));
     }
   }
-}
-
-/** Legacy native paginators can ignore itemsView=full. Read their existing
- * item pages without acquiring an execution stream. */
-export function hydrateReadTurnItems(
-  context: Pick<ResumeHistoryContext, "client" | "threadId" | "requestTimeoutMs" | "signal">,
-  turns: readonly AppServerTurn[],
-): Promise<readonly AppServerTurn[]> {
-  return mapConcurrent(turns, 4, async turn => turn.itemsView === "full"
-    ? turn : { ...turn, items: await fetchAllTurnItems(context, turn.id), itemsView: "full" });
-}
-
-async function mapConcurrent<T, TResult>(
-  values: readonly T[],
-  concurrency: number,
-  mapper: (value: T, index: number) => Promise<TResult>,
-): Promise<readonly TResult[]> {
-  const result = Array<TResult>(values.length);
-  let nextIndex = 0;
-  const worker = async () => {
-    while (nextIndex < values.length) {
-      const index = nextIndex++;
-      const value = values[index];
-      if (value !== undefined) result[index] = await mapper(value, index);
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(concurrency, values.length) }, () => worker()));
-  return result;
 }
 
 async function fetchTurns(
@@ -245,55 +160,16 @@ async function fetchTurns(
     timeoutMs: context.response.thread.historyMode === "message-window" ? 0 : context.requestTimeoutMs,
     priority: "background",
     signal: context.signal,
-  }), "thread/turns/list");
+  }), "thread/turns/list", cursor);
 }
 
-async function loadPaginatedTurnItems(
+async function loadLegacyPaginatedPage(
   context: ResumeHistoryContext,
-  turns: readonly AppServerTurn[],
-): Promise<{
-  turns: readonly AppServerTurn[];
-  itemsPaginationByTurnId: Readonly<Record<string, ThreadItemsPagination>>;
-}> {
-  let remainingBudget = Math.min(context.pageSize, 5) * 100;
-  const pagination: Record<string, ThreadItemsPagination> = {};
-  const hydrated: AppServerTurn[] = [];
-  for (const turn of turns) {
-    const items: AppServerThreadItem[] = [];
-    const itemIds = new Set<string>();
-    const cursors = new Set<string | null>();
-    let cursor: string | null = context.response.itemsBackwardsCursor ?? null;
-    let requestedOnce = false, itemLimit = 100;
-    while ((!requestedOnce || cursor !== null) && remainingBudget > 0) {
-      if (cursors.has(cursor)) throw new Error(`thread/items/list repeated cursor ${String(cursor)} for Turn ${turn.id}`);
-      cursors.add(cursor);
-      requestedOnce = true;
-      const page = await fetchItemsPage(
-        context,
-        turn.id,
-        cursor,
-        Math.min(itemLimit, remainingBudget),
-        "desc",
-      );
-      itemLimit = page.limit;
-      const unique = page.items.filter((item) => {
-        if (itemIds.has(item.id)) return false;
-        itemIds.add(item.id);
-        return true;
-      });
-      items.push(...unique.reverse());
-      remainingBudget -= unique.length;
-      cursor = page.nextCursor;
-    }
-    items.reverse();
-    pagination[turn.id] = { olderCursor: cursor, hasLoadedOldest: requestedOnce && cursor === null };
-    hydrated.push({
-      ...turn,
-      items,
-      itemsView: cursor === null ? "full" : "summary",
-    });
-  }
-  return { turns: hydrated, itemsPaginationByTurnId: pagination };
+  cursor: string,
+): Promise<HydratedThreadHistory> {
+  const page = await fetchTurns(context, cursor, context.pageSize, "notLoaded");
+  const { hydrateLegacyItemPage } = await import("./derived-history");
+  return hydrateLegacyItemPage(context, page);
 }
 
 async function drainTailHistory(
@@ -301,16 +177,18 @@ async function drainTailHistory(
   initialCursor: string,
 ): Promise<readonly AppServerTurn[]> {
   const cursors = new Set<string>();
-  const turns: AppServerTurn[] = [];
+  const turns = new Map<string, AppServerTurn>();
   let cursor: string | null = initialCursor;
   while (cursor !== null) {
     if (cursors.has(cursor)) throw new Error(`thread/turns/list repeated cursor ${cursor}`);
     cursors.add(cursor);
     const page = await fetchTurns(context, cursor, 100, "full");
-    turns.unshift(...page.data.slice().reverse());
+    for (const turn of page.data) {
+      if (!turns.has(turn.id)) turns.set(turn.id, turn);
+    }
     cursor = page.nextCursor;
   }
-  return turns;
+  return [...turns.values()].reverse();
 }
 
 async function readFullHistory(context: ResumeHistoryContext): Promise<HydratedThreadHistory> {
@@ -345,12 +223,8 @@ async function loadDurablePage(context: ResumeHistoryContext, cursor: string | n
     if (!isHistoryResponseTooLargeError(error)) throw error;
     page = await fetchTurns(context, cursor, context.pageSize, "notLoaded");
   }
-  const turns = await mapConcurrent(page.data, 5, async turn => ({
-    ...turn,
-    items: turn.itemsView === "full" && Array.isArray(turn.items)
-      ? turn.items : await fetchAllTurnItems(context, turn.id),
-    itemsView: "full" as const,
-  }));
+  const turns = page.data.some(turn => turn.itemsView !== "full" || !Array.isArray(turn.items))
+    ? await (await import("./derived-history")).hydrateReadTurnItems(context, page.data, true) : page.data;
   return {
     source: "durable", turns: turns.slice().reverse(), complete: page.nextCursor === null,
     olderCursor: page.nextCursor,
@@ -368,7 +242,9 @@ export function registerBuiltinThreadHistoryStrategies(ctx: Context): () => void
       matches: context => context.response.thread.historyMode === "message-window",
       async load(context) {
         const initial = context.response.initialTurnsPage;
-        const page = initial ?? await fetchTurns(context, context.response.turnsBackwardsCursor ?? null, null, "full");
+        const page = initial == null
+          ? await fetchTurns(context, context.response.turnsBackwardsCursor ?? null, null, "full")
+          : requireTurnsPage(initial, "thread/resume.initialTurnsPage");
         return {
           source: "message-window", turns: page.data.slice().reverse(),
           complete: page.nextCursor === null, olderCursor: page.nextCursor,
@@ -428,42 +304,24 @@ export function registerBuiltinThreadHistoryStrategies(ctx: Context): () => void
             itemsPaginationByTurnId: {},
           };
         }
-        const page = await fetchTurns(context, context.response.turnsBackwardsCursor, context.pageSize, "notLoaded");
-        const hydrated = await loadPaginatedTurnItems(context, page.data);
-        return {
-          source: "paginated",
-          turns: hydrated.turns.slice().reverse(),
-          complete: page.nextCursor === null,
-          olderCursor: page.nextCursor,
-          itemsPaginationByTurnId: hydrated.itemsPaginationByTurnId,
-        };
+        return loadLegacyPaginatedPage(context, context.response.turnsBackwardsCursor);
       },
-      async loadOlder(context, cursor) {
-        const page = await fetchTurns(context, cursor, context.pageSize, "notLoaded");
-        const hydrated = await loadPaginatedTurnItems(context, page.data);
-        return {
-          source: "paginated",
-          turns: hydrated.turns.slice().reverse(),
-          complete: page.nextCursor === null,
-          olderCursor: page.nextCursor,
-          itemsPaginationByTurnId: hydrated.itemsPaginationByTurnId,
-        };
-      },
+      loadOlder: loadLegacyPaginatedPage,
     }),
     ctx.threadHistoryStrategies.register({
       name: "tail",
       priority: 20,
       matches: (context) => context.useTailHydration && !context.isDurableHost && !context.supportsPaginatedHistory,
       async load(context) {
-        const page = context.response.initialTurnsPage;
-        if (page == null) {
+        const initial = context.response.initialTurnsPage;
+        if (initial == null) {
           return readFullHistory(context);
         }
-        const turns = page.data.map((turn) => requireTurn(turn, "thread/resume.initialTurnsPage"));
+        const page = requireTurnsPage(initial, "thread/resume.initialTurnsPage");
         const olderCursor = page.nextCursor;
         return {
           source: "tail",
-          turns: turns.slice().reverse(),
+          turns: page.data.slice().reverse(),
           complete: olderCursor === null,
           olderCursor,
           itemsPaginationByTurnId: {},

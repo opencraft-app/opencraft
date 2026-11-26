@@ -95,6 +95,8 @@ function toThreadItem(item: CanonicalItem): ThreadItem {
       return { type: "reasoning", id: item.itemId, summary: [...(shape.summary ?? [])], content: [...(shape.content ?? [shape.text])] };
     case "plan":
       return { type: "plan", id: item.itemId, text: shape.text };
+    case "appServerItem":
+      return { ...shape.item, id: item.itemId } as Extract<ThreadItem, { type: typeof shape.item.type }>;
     case "fileChange":
       return { type: "fileChange", id: item.itemId, status: shape.status, changes: shape.changes.map(change => ({
         path: change.path,

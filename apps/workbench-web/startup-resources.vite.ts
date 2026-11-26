@@ -11,7 +11,7 @@ import type { Plugin } from "vite";
  */
 export function gzipAsset(raw: Uint8Array): Buffer {
   let best = gzipSync(raw, { level: 9 });
-  for (const memLevel of [4, 5, 6, 7, 9]) {
+  for (const memLevel of [3, 4, 5, 6, 7, 9]) {
     const candidate = gzipSync(raw, { level: 9, memLevel });
     if (candidate.length < best.length) best = candidate;
   }

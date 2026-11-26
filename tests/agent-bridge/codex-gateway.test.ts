@@ -12,6 +12,8 @@ import { attachGateway } from '../../apps/agent-bridge-host/src/server.js';
 import { codexDeclaration } from '../../apps/agent-bridge-host/src/codex-declaration.js';
 import { createServerCodexBridge } from '../../apps/opencraft-daemon/src/bridge-execution-admission';
 import { CodexProviderBridge } from '../../apps/opencraft-daemon/src/codex-provider-bridge.js';
+import { CodexProviderBridgeSession } from '../../apps/opencraft-daemon/src/codex-provider-bridge-session.js';
+import { BridgeGatewaySession, BridgeOutboxReadError } from '../../apps/agent-bridge-host/src/gateway-session.js';
 import { localTestBackend } from './fixtures/local-backend.js';
 import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
 import { AppServerRpcError, type AppServerClient } from '@opencraft/appserver-client';
@@ -24,6 +26,495 @@ async function until<T>(read: () => T | Promise<T>, predicate: (v: T) => boolean
   throw Error('Expected condition not observed');
 }
 
+for (const { status, manualPull, connects } of [
+  { status: 503, manualPull: false, connects: true },
+  { status: 409, manualPull: false, connects: false },
+  { status: 503, manualPull: true, connects: false },
+]) test(`initial Bridge read ${status}, manualPull=${manualPull} respects the scheduled retry owner`, async () => {
+  let pulls = 0, nativeConnections = 0;
+  const session = new CodexProviderBridgeSession({
+    status: { state: 'open' },
+    async connect() { nativeConnections++; },
+    async close() {},
+    subscribeStatus: () => () => {},
+    subscribeMessage: () => () => {},
+    async send() {},
+  }, publish => new BridgeGatewaySession({
+    serverId: 'fixture',
+    async request(path) {
+      assert.equal(path, '/snapshot');
+      return Response.json({ routes: [], nativeSessions: [], interactions: [] });
+    },
+    inbox: {
+      async cursor() { return 0; },
+      async read() { return []; },
+      async readIdentities() { return []; }, async readPendingInteractions() { return []; },
+      async pull() { if (++pulls === 1) throw new BridgeOutboxReadError(status); },
+      async close() {},
+    },
+  }, publish), { manualPull });
+  try {
+    if (connects) {
+      await session.connect();
+      assert.equal(nativeConnections, 1);
+      await until(() => pulls, count => count >= 2);
+    } else {
+      await assert.rejects(session.connect(), { status });
+      assert.equal(nativeConnections, 0);
+    }
+  } finally { await session.close(); }
+});
+
+test('exclusive Codex bridge keeps passive legacy history reads on the native reader', async () => {
+  const methods: string[] = [], releases: string[] = [];
+  const session = new CodexProviderBridgeSession({
+    status: { state: 'open' },
+    async connect() {}, async close() {},
+    subscribeStatus: () => () => {}, subscribeMessage: () => () => {},
+    async send(raw) { methods.push(JSON.parse(raw).method); },
+  }, publish => new BridgeGatewaySession({
+    serverId: 'fixture',
+    async request() { assert.fail('Passive native read must not send a bridge request'); },
+    inbox: { async cursor() { return 0; }, async read() { return []; }, async readIdentities() { return []; }, async readPendingInteractions() { return []; },
+      async pull() {}, async close() {} },
+  }, publish), { exclusive: true, async releaseForAdoption(id) { releases.push(id); return false; } });
+  const send = (method: string, params: Record<string, unknown> = {}) =>
+    session.sendWithContext(JSON.stringify({ id: method, method, params, [LOGICAL_CLIENT_FIELD]: 'fixture' }), { sender: null });
+  await send('initialize');
+  const passive = ['thread/read', 'thread/turns/list', 'thread/items/list', 'thread/searchOccurrences',
+    'thread/queue/list', 'thread/queue/find', 'thread/queue/collaborationReceipt', 'thread/goal/get', 'opencraft/steer/status'];
+  for (const method of passive)
+    await send(method, { threadId: 'old-native-thread', ...(method === 'thread/read' ? { watch: false } : {}) });
+  assert.deepEqual(releases, []);
+  assert.deepEqual(methods, ['initialize', ...passive]);
+  await send('thread/read', { threadId: 'old-native-thread', watch: true });
+  assert.deepEqual(releases, ['old-native-thread']);
+});
+
+for (const transition of ['none', 'unsubscribe', 'archive-and-reopen']) test(`a watched history read sends its result before restoring approvals, transition=${transition}`, async () => {
+  const threadId = 'bridge:codex:history-with-approval';
+  let publish!: (threadId: string, frame: unknown) => void;
+  let restores = 0;
+  const pending = Promise.withResolvers<unknown[]>();
+  const entered = Promise.withResolvers<void>();
+  const frames: { id?: string; method?: string; result?: unknown }[] = [];
+  const session = new CodexProviderBridgeSession({
+    status: { state: 'open' },
+    async connect() {}, async close() {}, async send() {},
+    subscribeStatus: () => () => {}, subscribeMessage: () => () => {},
+  }, deliver => {
+    publish = deliver;
+    const gateway = new BridgeGatewaySession({
+      serverId: 'fixture',
+      async request(path) {
+        assert.equal(path, '/observe');
+        return Response.json({ thread: { id: threadId, turns: [] } });
+      },
+      inbox: { async cursor() { return 0; }, async read() { return []; }, async readIdentities() { return []; }, async readPendingInteractions() { return []; },
+        async pull() {}, async close() {} },
+    }, deliver);
+    gateway.reserve(threadId);
+    gateway.pendingInteractions = async () => {
+      if (++restores > 1) return [];
+      entered.resolve();
+      return pending.promise;
+    };
+    return gateway;
+  });
+  const send = (method: string, params = {}) => session.send(JSON.stringify({
+    id: method, method, params, [LOGICAL_CLIENT_FIELD]: 'fixture',
+  }));
+  session.subscribeMessage(raw => frames.push(JSON.parse(raw)));
+  const requests = [{
+    method: 'interaction/request',
+    params: { interactionId: 'approval', payload: {
+      method: 'item/commandExecution/requestApproval', params: { threadId, turnId: 'turn', itemId: 'command' },
+    } },
+  }];
+  await send('initialize');
+  const watching = send('thread/read', { threadId, watch: true });
+  try {
+    await entered.promise;
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(frames.find(frame => frame.id === 'thread/read')?.result, { thread: { id: threadId, turns: [] } });
+    await watching;
+    if (transition === 'unsubscribe') await send('thread/unsubscribe', { threadId });
+    if (transition === 'archive-and-reopen') {
+      publish(threadId, { method: 'thread/archived', params: { threadId } });
+      publish(threadId, { method: 'thread/unarchived', params: { threadId } });
+      await send('thread/read', { threadId, watch: true });
+      assert.equal(restores, 2, 'reopening should admit a fresh approval read');
+    }
+    pending.resolve(requests);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(frames.some(frame => frame.method === 'item/commandExecution/requestApproval'), transition === 'none');
+  } finally {
+    pending.resolve(requests);
+    await watching;
+    await session.close();
+  }
+});
+
+for (const archiveDuringRead of [false, true]) test(`archived watched history does not attach a live subscription, race=${archiveDuringRead}`, async () => {
+  const threadId = 'bridge:codex:archived-history';
+  const entered = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const frames: any[] = [];
+  const pending = [{ method: 'interaction/request', params: {
+    interactionId: 'approval', payload: { method: 'item/commandExecution/requestApproval',
+      params: { threadId, turnId: 'turn', itemId: 'command' } },
+  } }];
+  let reads = 0, recoveries = 0, archived = !archiveDuringRead, omitArchiveState = false;
+  let publish!: (threadId: string, frame: unknown) => void;
+  const session = new CodexProviderBridgeSession({
+    status: { state: 'open' }, async connect() {}, async close() {}, async send() {},
+    subscribeStatus: () => () => {}, subscribeMessage: () => () => {},
+  }, deliver => {
+    publish = deliver;
+    const gateway = new BridgeGatewaySession({
+      serverId: 'fixture',
+      async request(path) {
+        if (path === '/queue') return Response.json({ data: [], steering: [], nextCursor: null });
+        assert.equal(path, '/observe');
+        const metadata = { id: threadId, turns: [], ...(omitArchiveState ? {} : { archived }) };
+        if (++reads === 1) { entered.resolve(); await release.promise; }
+        return Response.json({ thread: metadata });
+      },
+      inbox: { async cursor() { return 0; }, async read() { return []; }, async readIdentities() { return []; },
+        async readPendingInteractions() { return []; }, async pull() {}, async close() {} },
+    }, deliver);
+    gateway.reserve(threadId);
+    gateway.pendingInteractions = async () => { recoveries++; return pending; };
+    gateway.command = async () => ({ goal: null });
+    return gateway;
+  });
+  session.subscribeMessage(raw => frames.push(JSON.parse(raw)));
+  const send = (id: string, method: string, params = {}) => session.send(JSON.stringify({
+    id, method, params, [LOGICAL_CLIENT_FIELD]: 'fixture',
+  }));
+  const related = { method: 'item/agentMessage/delta', params: { threadId, turnId: 'turn', itemId: 'reply', delta: 'late' } };
+  await send('init', 'initialize');
+  await send('queue', 'thread/queue/list', { threadId });
+  assert.deepEqual(frames.find(frame => frame.id === 'queue')?.result?.data, []);
+  await send('goal', 'thread/goal/get', { threadId });
+  assert.equal(frames.find(frame => frame.id === 'goal')?.result?.goal, null);
+  publish(threadId, related);
+  const history = send('archive-read', 'thread/read', { threadId, watch: true, openArchivedHistory: true });
+  try {
+    await entered.promise;
+    if (archiveDuringRead) {
+      archived = true;
+      publish(threadId, { method: 'thread/archived', params: { threadId } });
+    }
+    publish(threadId, related);
+    release.resolve();
+    await history;
+    assert.ok(frames.find(frame => frame.id === 'archive-read')?.result?.thread);
+    publish(threadId, related);
+    assert.equal(recoveries, 0);
+    assert.ok(!frames.some(frame => frame.method === related.method || frame.method === 'item/commandExecution/requestApproval'));
+    if (archiveDuringRead) assert.ok(frames.some(frame => frame.method === 'thread/archived'));
+    omitArchiveState = true;
+    await send('legacy-read', 'thread/read', { threadId, watch: true, openArchivedHistory: true });
+    assert.equal(recoveries, 0, 'missing metadata cannot reopen an already archived subscription');
+    archived = false;
+    publish(threadId, { method: 'thread/unarchived', params: { threadId } });
+    assert.ok(frames.some(frame => frame.method === 'thread/unarchived'));
+    await send('active-read', 'thread/read', { threadId, watch: true });
+    await until(() => frames.find(frame => frame.method === 'item/commandExecution/requestApproval'), Boolean);
+    assert.equal(recoveries, 1);
+  } finally {
+    release.resolve();
+    await history;
+    await session.close();
+  }
+});
+
+test('a watched full history read attaches after metadata and before requesting the body', async () => {
+  const threadId = 'bridge:codex:live-history';
+  const entered = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const frames: any[] = [];
+  const requested: boolean[] = [];
+  let publish!: (threadId: string, frame: unknown) => void;
+  const session = new CodexProviderBridgeSession({
+    status: { state: 'open' }, async connect() {}, async close() {}, async send() {},
+    subscribeStatus: () => () => {}, subscribeMessage: () => () => {},
+  }, deliver => {
+    publish = deliver;
+    const gateway = new BridgeGatewaySession({
+      serverId: 'fixture',
+      async request(path, body) {
+        assert.equal(path, '/observe');
+        const includeTurns = (body as { params: { includeTurns: boolean } }).params.includeTurns;
+        requested.push(includeTurns);
+        if (includeTurns) { entered.resolve(); await release.promise; }
+        return Response.json({ thread: { id: threadId, turns: [] } });
+      },
+      inbox: { async cursor() { return 0; }, async read() { return []; }, async readIdentities() { return []; },
+        async readPendingInteractions() { return []; }, async pull() {}, async close() {} },
+    }, deliver);
+    gateway.reserve(threadId);
+    gateway.pendingInteractions = async () => [];
+    return gateway;
+  });
+  session.subscribeMessage(raw => frames.push(JSON.parse(raw)));
+  const send = (id: string, method: string, params = {}) => session.send(JSON.stringify({
+    id, method, params, [LOGICAL_CLIENT_FIELD]: 'fixture',
+  }));
+  await send('init', 'initialize');
+  const history = send('read', 'thread/read', { threadId, includeTurns: true, watch: true });
+  try {
+    await entered.promise;
+    assert.deepEqual(requested, [false, true]);
+    publish(threadId, { method: 'item/agentMessage/delta', params: { threadId, turnId: 'turn', itemId: 'reply', delta: 'live' } });
+    assert.ok(frames.some(frame => frame.method === 'item/agentMessage/delta'));
+    assert.ok(!frames.some(frame => frame.id === 'read'));
+  } finally {
+    release.resolve();
+    await history;
+    await session.close();
+  }
+});
+
+test('a ledger-confirmed settlement clears the shared approval before its outbox event arrives', async () => {
+  const threadId = 'bridge:codex:approval-ledger', route = JSON.stringify(['fixture', threadId]);
+  const interactionId = 'approval';
+  const requested = { seq: 1, route, generation: 'g', payload: {
+    method: 'interaction/request',
+    params: { interactionId, payload: {
+      method: 'item/commandExecution/requestApproval', params: { threadId, turnId: 'turn', itemId: 'command' },
+    } },
+  } };
+  const events = [requested];
+  let pending = true, unavailable = false, delayedBody = false;
+  const frames: any[] = [];
+  const session = new CodexProviderBridgeSession({
+    status: { state: 'open' },
+    async connect() {}, async close() {}, async send() {},
+    subscribeStatus: () => () => {}, subscribeMessage: () => () => {},
+  }, publish => new BridgeGatewaySession({
+    serverId: 'fixture',
+    async request(path) {
+      if (path === '/observe') return Response.json({ thread: { id: threadId, turns: [] } });
+      assert.equal(path, '/snapshot');
+      return Response.json({ routes: [{ route, generation: 'g' }], nativeSessions: [],
+        interactions: pending ? [
+          { route, id: interactionId }, ...(delayedBody ? [{ route, id: 'later' }] : []),
+        ] : [] });
+    },
+    inbox: {
+      async cursor() { return 0; }, async read(after) { return events.filter(row => row.seq > after); },
+      async readIdentities() { return []; }, async readPendingInteractions() { return []; }, async close() {},
+      async pull() { if (unavailable) throw new BridgeOutboxReadError(503); },
+    },
+  }, publish), { manualPull: true, initialEventPull: false });
+  const send = (id: string, method: string, params = {}) => session.send(JSON.stringify({
+    id, method, params, [LOGICAL_CLIENT_FIELD]: 'fixture',
+  }));
+  session.subscribeMessage(raw => frames.push(JSON.parse(raw)));
+  try {
+    await session.connect();
+    await send('init', 'initialize', { capabilities: { extensions: { 'opencraft/shared-interactions': { version: 1 } } } });
+    await send('watch', 'thread/read', { threadId, watch: true });
+    await send('pending', 'opencraft/interactions/read', { threadId });
+    assert.deepEqual(frames.find(frame => frame.id === 'pending').result.requests.map(request => request.id), [interactionId]);
+    delayedBody = true;
+    await send('incomplete', 'opencraft/interactions/read', { threadId });
+    const incomplete = frames.find(frame => frame.id === 'incomplete');
+    assert.equal(incomplete.error.code, -32083);
+    assert.equal(incomplete.error.data.code, 'SOURCE_UNAVAILABLE');
+    pending = false;
+    unavailable = true;
+    await send('settled', 'opencraft/interactions/read', { threadId });
+    assert.deepEqual(frames.find(frame => frame.id === 'settled').result.requests, []);
+    const changes = () => frames.filter(frame => frame.method === 'opencraft/interactions/changed').map(frame => frame.params.requests.length);
+    assert.deepEqual(changes(), [1, 0]);
+    unavailable = false;
+    events.push({ ...requested, seq: 2, payload: { ...requested.payload, method: 'interaction/resolved' } });
+    await session.pull();
+    assert.deepEqual(changes(), [1, 0]);
+  } finally { await session.close(); }
+});
+
+test('a displayed approval can be answered while another request body is in flight', async () => {
+  const threadId = 'bridge:codex:scoped-approval', route = JSON.stringify(['fixture', threadId]);
+  const shown = { seq: 1, route, generation: 'g', payload: {
+    method: 'interaction/request',
+    params: { interactionId: 'visible', payload: {
+      method: 'item/commandExecution/requestApproval', params: { threadId, turnId: 'turn', itemId: 'command' },
+    } },
+  } };
+  let late = false;
+  const commands: unknown[] = [], frames: any[] = [];
+  const session = new CodexProviderBridgeSession({
+    status: { state: 'open' },
+    async connect() {}, async close() {}, async send() {},
+    subscribeStatus: () => () => {}, subscribeMessage: () => () => {},
+  }, publish => new BridgeGatewaySession({
+    serverId: 'fixture',
+    async request(path, body) {
+      if (path === '/observe') return Response.json({ thread: { id: threadId, turns: [] } });
+      if (path === '/command') { commands.push(body); return Response.json(null); }
+      if (path.startsWith('/command?id=')) return Response.json({ state: 'accepted', response: { result: {} } });
+      assert.equal(path, '/snapshot');
+      return Response.json({ routes: [{ route, generation: 'g' }], nativeSessions: [], interactions: [
+        { route, id: 'visible' }, ...(late ? [{ route, id: 'still-in-transit' }] : []),
+      ] });
+    },
+    inbox: {
+      async cursor() { return 0; }, async read(after) { return after === 0 ? [shown] : []; },
+      async readIdentities() { return []; }, async readPendingInteractions() { return []; }, async close() {}, async pull() {},
+    },
+  }, publish), { manualPull: true, initialEventPull: false });
+  const send = (id: string, method: string, params = {}) => session.send(JSON.stringify({
+    id, method, params, [LOGICAL_CLIENT_FIELD]: 'fixture',
+  }));
+  session.subscribeMessage(raw => frames.push(JSON.parse(raw)));
+  try {
+    await session.connect();
+    await send('init', 'initialize', { capabilities: { extensions: { 'opencraft/shared-interactions': { version: 1 } } } });
+    await send('watch', 'thread/read', { threadId, watch: true });
+    await send('first', 'opencraft/interactions/read', { threadId });
+    assert.deepEqual(frames.find(frame => frame.id === 'first').result.requests.map(request => request.id), ['visible']);
+    late = true;
+    await send('partial', 'opencraft/interactions/read', { threadId });
+    assert.equal(frames.find(frame => frame.id === 'partial').error.data.code, 'SOURCE_UNAVAILABLE');
+    const answer = { threadId, interactionId: 'visible', submissionId: 'answer', result: { decision: 'decline' } };
+    await send('answer', 'opencraft/interactions/respond', answer);
+    const response = frames.find(frame => frame.id === 'answer');
+    assert.equal(response.error, undefined);
+    assert.equal(response.result.disposition, 'submitted');
+    assert.deepEqual(commands, [{
+      serverId: 'fixture', threadId, commandId: 'interaction:visible', method: 'interaction/resolve',
+      params: { interactionId: 'visible', result: answer.result },
+    }]);
+  } finally { await session.close(); }
+});
+
+for (const at of ['publication', 'hydration', 'resolution']) test(`an expired approval source or subscriber fences an undispatched claim at ${at}`, async () => {
+  const threadId = 'bridge:codex:approval-owner', route = JSON.stringify(['fixture', threadId]);
+  const shown = { seq: 1, route, generation: 'g', payload: {
+    method: 'interaction/request',
+    params: { interactionId: 'approval', payload: {
+      method: 'item/commandExecution/requestApproval', params: { threadId, turnId: 'turn', itemId: 'command' },
+    } },
+  } };
+  const frames: any[] = [], commands: unknown[] = [];
+  let current = true, waitingToWrite = false;
+  const events = [shown];
+  const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+  const session = new CodexProviderBridgeSession({
+    status: { state: 'open' },
+    async connect() {}, async close() {}, async send() {},
+    subscribeStatus: () => () => {}, subscribeMessage: () => () => {},
+  }, publish => {
+    const gateway = new BridgeGatewaySession({
+      serverId: 'fixture',
+      async request(path, body) {
+        if (path === '/observe') return Response.json({ thread: { id: threadId, turns: [] } });
+        if (path === '/command') { commands.push(body); return Response.json(null); }
+        if (path.startsWith('/command?id=')) return Response.json({ state: 'accepted', response: { result: {} } });
+        assert.equal(path, '/snapshot');
+        return Response.json({ routes: [{ route, generation: 'g' }], nativeSessions: [], interactions: [{ route, id: 'approval' }] });
+      },
+      inbox: {
+        async cursor() { return 0; }, async read(after) { return events.filter(event => event.seq > after); },
+        async readIdentities() { return []; }, async readPendingInteractions() { return []; }, async close() {}, async pull() {},
+      },
+    }, publish);
+    const hydrate = gateway.hydrateThread.bind(gateway);
+    gateway.hydrateThread = async id => {
+      if (waitingToWrite && at !== 'publication') {
+        waitingToWrite = false;
+        entered.resolve();
+        await release.promise;
+      }
+      return hydrate(id);
+    };
+    return gateway;
+  }, { manualPull: true, initialEventPull: false });
+  const send = (client: string, id: string, method: string, params = {}, guarded = false) => session.sendWithContext(
+    JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: client }),
+    { sender: null, ...(guarded ? { resourceOwner: { id: 'fixture-owner', assertCurrent() {
+      if (!current) throw Error('Subscription expired');
+    } } } : {}) },
+  );
+  session.subscribeMessage(raw => {
+    const frame = JSON.parse(raw);
+    frames.push(frame);
+    if (frame.method !== 'opencraft/interactions/changed' || !current ||
+        frame.params.requests[0]?.state !== 'responding') return;
+    waitingToWrite = true;
+    if (at === 'publication') current = false;
+  });
+  const latest = () => frames.filter(frame => frame.method === 'opencraft/interactions/changed').at(-1)?.params.requests[0]?.state;
+  try {
+    await session.connect();
+    for (const client of ['original', 'peer']) {
+      await send(client, client + '-init', 'initialize', { capabilities: { extensions: { 'opencraft/shared-interactions': { version: 1 } } } });
+      await send(client, client + '-watch', 'thread/read', { threadId, watch: true });
+    }
+    await send('peer', 'pending', 'opencraft/interactions/read', { threadId });
+    const request = { threadId, interactionId: 'approval', submissionId: 'original-answer', result: { decision: 'accept' } };
+    const first = send('original', 'answer', 'opencraft/interactions/respond', request, true);
+    if (at !== 'publication') {
+      await entered.promise;
+      if (at === 'resolution') {
+        events.push({ ...shown, seq: 2, payload: { ...shown.payload, method: 'interaction/resolved' } });
+        await session.pull();
+      } else current = false;
+      release.resolve();
+    }
+    await first;
+    const fault = frames.find(frame => frame.id === 'answer').error;
+    assert.equal(fault?.data.code, at === 'resolution' ? 'SOURCE_CHANGED' : 'SOURCE_UNAVAILABLE');
+    assert.equal(fault.data.submissionOutcome, 'rejected');
+    assert.equal(commands.length, 0);
+    if (at === 'resolution') {
+      assert.equal(latest(), undefined);
+      return;
+    }
+    assert.equal(latest(), 'pending');
+    await send('peer', 'peer-answer', 'opencraft/interactions/respond', {
+      ...request, submissionId: 'peer-answer', result: { decision: 'decline' },
+    });
+    assert.equal(frames.find(frame => frame.id === 'peer-answer').result?.disposition, 'submitted');
+    assert.equal(commands.length, 1);
+    assert.deepEqual((commands[0] as { params: unknown }).params, {
+      interactionId: 'approval', result: { decision: 'decline' },
+    });
+  } finally { release.resolve(); await session.close(); }
+});
+
+test('a revoked Host continuation never reaches Bridge command custody', async () => {
+  const frames: any[] = [];
+  let commits = 0;
+  const threadId = 'bridge:codex:recovery';
+  const session = new CodexProviderBridgeSession({
+    status: { state: 'open' },
+    async connect() {}, async close() {},
+    subscribeStatus: () => () => {}, subscribeMessage: () => () => {},
+    async send() {},
+  }, publish => {
+    const gateway = new BridgeGatewaySession({
+      serverId: 'fixture',
+      async request() { assert.fail('Revoked continuation reached the Engine Host'); },
+      inbox: { async cursor() { return 0; }, async read() { return []; }, async readIdentities() { return []; }, async readPendingInteractions() { return []; },
+        async pull() {}, async close() {} },
+    }, publish);
+    gateway.reserve(threadId);
+    return gateway;
+  });
+  session.subscribeMessage(raw => frames.push(JSON.parse(raw)));
+  await session.send(JSON.stringify({ id: 'init', method: 'initialize', [LOGICAL_CLIENT_FIELD]: 'host' }));
+  await session.sendWithContext(JSON.stringify({ id: 'continue', method: 'turn/start',
+    params: { threadId, clientUserMessageId: 'restart-recovery:fixture', input: [] }, [LOGICAL_CLIENT_FIELD]: 'host' }),
+  { sender: null, commitExecution() { commits++; return false; } });
+  assert.equal(commits, 1);
+  assert.equal(frames.find(frame => frame.id === 'continue').error.data.submissionOutcome, 'rejected');
+});
+
 for(const cli of [false,true,'timeout','initial','contradiction','closed-contradiction'])test(`bundled Codex bridge through durable Host: CLI ${cli}, opt-in, steer, reattach and ID continuity`, async t => {
   const initial=cli==='initial'||String(cli).includes('contradiction');
   let serverStarted=0,serverReset=0;
@@ -33,8 +524,10 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
     res.end(JSON.stringify(req.url === '/launch' ? { dataDirectory: root, launch: { args: [], env: { OPENCRAFT_CODEX_POOL_AUTH_TOKEN: 'synthetic-test' }, auth: { type: 'chatgptAuthTokens', accessToken: 'synthetic-test', chatgptAccountId: 'opencraft-account-pool' } } } : { protocolVersion: 1, pid: process.pid, codexPid: process.pid, nativeSocket: join(root, 'native.sock') }));
   });
   const ws = new WebSocketServer({ server: native });
+  const resumeRequests: unknown[] = [];
   let nativePeer: WebSocket | undefined, starts = 0, steers = 0;
   let approvalAnswer: unknown, approvalAnswers = 0;
+  const permissionAnswers: unknown[] = [];
   const toolReplies: any[] = [], hostToolCalls: any[] = [];
   let startDynamicTools: any;
   const creationTools = () => [{ type: 'function', name: 'host_declared', description: 'Host tool', inputSchema: { type: 'object' } }];
@@ -43,10 +536,12 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
   let hasRollout=!initial,initialConfig:any;
   let loaded=true,nativeActive=false,issued=0,revoked=0,blockRetirement=cli==='timeout';const nativeConfigurations:any[]=[];
   const lifecycleCalls:any[]=[];const nativeStartInputs:unknown[]=[];const settingsCalls:any[]=[];const titleCalls:any[]=[];const oldStarts:any[]=[];const releaseCalls:string[]=[];let releaseAnswer=false;
+  let holdFullHistory: ((reply: () => void) => void) | undefined;
   ws.on('connection', socket => {
     socket.on('message', raw => {
       const f = JSON.parse(String(raw));
       if (f.id === 'native-approval' && f.result) { approvalAnswer = f.result; approvalAnswers++; }
+      if (f.id === 'native-permissions' && f.result) permissionAnswers.push(f.result);
       if (typeof f.id === 'string' && f.id.startsWith('native-tool') && f.method === undefined) { toolReplies.push(f); return; }
       const reply = (result: unknown) => socket.send(JSON.stringify({ id: f.id, result }));
       const event = (method: string, params: unknown) => socket.send(JSON.stringify({ method, params }));
@@ -61,13 +556,13 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
       }
       if (['thread/fork','thread/name/set','thread/archive','thread/unarchive','thread/delete','thread/goal/get','thread/goal/set','thread/goal/clear'].includes(f.method)) {
         lifecycleCalls.push({method:f.method,params:f.params});
-        if (f.method === 'thread/fork') reply({ thread: { id: 'native-fork', cwd: root, turns: [] } });
-        else if (f.method === 'thread/unarchive') reply({ thread: { id: f.params.threadId, turns: [] } });
+        if (f.method === 'thread/fork') reply({ thread: { id: 'native-fork', parentThreadId: f.params.threadId, cwd: root, createdAt: 10, updatedAt: 10, turns: [] } });
+        else if (f.method === 'thread/unarchive') reply({ thread: { id: f.params.threadId, cwd: root, createdAt: 10, updatedAt: 10, turns: [] } });
         else if (f.method === 'thread/goal/set' || f.method === 'thread/goal/get') reply({ goal: { objective: 'ship it', status: 'active' } });
         else if (f.method === 'thread/goal/clear') reply({ cleared: true });
         else reply({});
       }
-      if (f.method === 'thread/start') {initialConfig=f.params.config;startDynamicTools=f.params.dynamicTools;reply({sandbox:{type:'readOnly'},approvalPolicy:'never',approvalsReviewer:'user',thread: { id: 'native-new', cwd: root, turns: [] }});}
+      if (f.method === 'thread/start') {initialConfig=f.params.config;startDynamicTools=f.params.dynamicTools;reply({sandbox:{type:'readOnly'},approvalPolicy:'never',approvalsReviewer:'user',thread: { id: 'native-new', cwd: root, createdAt: 10, updatedAt: 10, turns: [] }});}
       if(f.method==='turn/start'&&f.params.clientUserMessageId==='initial-invalid'){socket.send(JSON.stringify({id:f.id,error:{code:-32602,message:'invalid input'}}));return;}
       if (f.method === 'turn/start' && f.params.clientUserMessageId === 'unknown-start') { socket.send(JSON.stringify({ id: f.id, error: { code: -32000, message: 'Opaque native failure' } })); return; }
       if (f.method === 'turn/start') {
@@ -87,8 +582,37 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
         reply({ turnId: 'native-turn' });
       }
       if (f.method === 'thread/read'&&f.params.includeTurns&&!hasRollout){socket.send(JSON.stringify({id:f.id,error:{code:-32600,message:'thread native-new is not materialized yet; includeTurns is unavailable before first user message'}}));return;}
-      if (f.method === 'thread/read') reply({ thread: { id: 'native-new',status:{type:!loaded?'notLoaded':nativeActive?'active':'idle'}, turns: [{ id: 'native-turn', items: [{ type: 'commandExecution', id: 'tool', command: 'cat input.txt', commandActions: [{ type: 'business-data', threadId: 'business-thread', id: 'native-turn' }] }] }] } });
+      if (f.method === 'thread/read') {
+        const sendHistory = () => reply({ thread: { id: 'native-new',status:{type:!loaded?'notLoaded':nativeActive?'active':'idle'}, turns: [{ id: 'native-turn', items: [{ type: 'commandExecution', id: 'tool', command: 'cat input.txt', commandActions: [{ type: 'business-data', threadId: 'business-thread', id: 'native-turn' }] }] }] } });
+        if (holdFullHistory && f.params.includeTurns) {
+          const hold = holdFullHistory;
+          holdFullHistory = undefined;
+          hold(sendHistory);
+        } else sendHistory();
+      }
+      if (f.method === 'thread/searchOccurrences') {
+        assert.equal(f.params.threadId, 'native-new');
+        reply({ data: [{ turnId: 'native-turn', itemId: 'legacy-item', snippet: 'fixture' }], nextCursor: null });
+      }
+      if (f.method === 'thread/items/list') {
+        assert.equal(f.params.threadId, 'native-new');
+        if (f.params.turnId === undefined) {
+          assert.equal(f.params.sortDirection, 'desc');
+          reply({ data: [{ turnId: 'native-turn', item: { type: 'commandExecution', id: 'tool', command: 'cat input.txt' } }], nextCursor: null });
+          return;
+        }
+        assert.equal(f.params.turnId, 'historical-turn');
+        reply({ data: [{ turnId: 'historical-turn', item: { type: 'agentMessage', id: 'old-answer', text: 'old excerpt' } }], nextCursor: null });
+      }
       if (f.method === 'thread/turns/list') {
+        if (f.params.itemsView === 'presentation') {
+          socket.send(JSON.stringify({ id: f.id, error: { code: -32602, message: 'Unsupported native itemsView' } }));
+          return;
+        }
+        if (f.params.limit === 2 && f.params.itemsView === 'notLoaded') {
+          reply({ data: [{ id: 'historical-turn', status: 'completed', items: [] }], nextCursor: null });
+          return;
+        }
         if (f.params.itemsView === 'full') {
           const bytes = f.params.limit === 10 ? BRIDGE_MAX_FRAME_BYTES + 1 : 2 * 1024 * 1024;
           const text = '界'.repeat(Math.ceil(bytes / 3));
@@ -101,7 +625,7 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
       if(f.method==='thread/unsubscribe'){if(!blockRetirement)loaded=false;reply({});}
       if(f.method==='thread/settings/update'){settingsCalls.push(f.params);reply({});}
       if(f.method==='thread/resume'&&!hasRollout){socket.send(JSON.stringify({id:f.id,error:{code:-32600,message:'no rollout found'}}));return;}
-      if (f.method === 'thread/resume') {loaded=true;if(f.params.config)nativeConfigurations.push(f.params);reply({sandbox:{type:'readOnly'},approvalPolicy:'never',thread: { id: 'native-new', turns: [] }});}
+      if (f.method === 'thread/resume') {resumeRequests.push(f.params);loaded=true;if(f.params.config)nativeConfigurations.push(f.params);reply({sandbox:{type:'readOnly'},approvalPolicy:'never',thread: { id: 'native-new', turns: [] }});}
     });
   });
   await new Promise<void>(r => native.listen(join(root, 'native.sock'), r));
@@ -129,8 +653,12 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
       subscribeMessage(listener: (frame: string) => void) { legacyListener = listener; return () => {}; },
       async send(raw: string) {
         const f = JSON.parse(raw); forwarded.push(f);
-        if (f.id !== undefined) legacyListener(JSON.stringify({ id: f.id, [LOGICAL_CLIENT_FIELD]: 'client', result: f.method === 'initialize' ? { capabilities: {} }
-          : f.method === 'opencraft/codex/maintenance/read' ? { paused, pendingAdmissions: 0, rejectedAdmissions: 2 } : { data: [{ id: 'native-old' }, { id: 'native-new' }] } }));
+        if (f.id !== undefined) legacyListener(JSON.stringify({ id: f.id, [LOGICAL_CLIENT_FIELD]: f[LOGICAL_CLIENT_FIELD], result: f.method === 'initialize' ? { capabilities: {} }
+          : f.method === 'thread/search' ? { data: [{ thread: { id: 'native-new' }, snippet: 'fixture' }] }
+          : f.method === 'thread/list' && f.params?.limit === 3 ? { data: [{ id: 'native-new' }, { id: 'native-child', parentThreadId: 'native-new' }] }
+          : ['opencraft/schedules/read', 'opencraft/schedules/save', 'opencraft/turn-recovery/read'].includes(f.method)
+            ? { owner: 'legacy-host', threadId: f.params.threadId }
+          : f.method === 'opencraft/codex/maintenance/read'  ? { paused, pendingAdmissions: 0, rejectedAdmissions: 2 } : { data: [{ id: 'native-old' }, { id: 'native-new' }] } }));
       },
     };
     const options={url:attachment.url,token,serverId:'server',inboxPath:join(root,'gateway.db')};
@@ -165,10 +693,27 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
     if (frame.error) throw new AppServerRpcError(frame.error);
     return frame.result;
   };
-  await request('initialize', { capabilities: { extensions: { 'opencraft/steer-evidence': { version: 1 } } } });
+  const initialized = await request('initialize', { capabilities: { extensions: { 'opencraft/steer-evidence': { version: 1 } } } });
+  const bridgeHistory = initialized.capabilities.extensions['opencraft/execution-engines'].providers
+    .find((provider: { id: string }) => provider.id === 'codex-bridge').extensions['opencraft/read-history'];
+  assert.equal(bridgeHistory.initialTurnsPage, true);
+  assert.notEqual(bridgeHistory.itemDetails, true);
+  if (!cli || cli === true) {
+    await transport.send(JSON.stringify({ id: 'directory-init', method: 'initialize', params: {}, [LOGICAL_CLIENT_FIELD]: 'directory-reader' }));
+    await until(() => frames.find(f => f.id === 'directory-init' && f[LOGICAL_CLIENT_FIELD] === 'directory-reader'), Boolean);
+  }
   const created = await request('thread/start', { cwd: root, approvalPolicy: 'never', sandbox: 'read-only', agentBridge: { threadId: 'bridge:codex:public-new', clientRequestId: 'create' },
     dynamicTools: [{ type: 'function', name: 'client_declared', description: 'Client tool', inputSchema: { type: 'object' } }, { type: 'function', name: 'host_declared', description: 'Shadowed', inputSchema: { type: 'object' } }] }, cli ? undefined : verifiedSender);
   assert.equal(created.thread.id, 'bridge:codex:public-new');
+  if (!cli) {
+    const threadId = created.thread.id;
+    // A renderer that negotiated with the previous Gateway can still read
+    // through this one. The provider fixture rejects the renderer-only mode.
+    const initial = { limit: 1, sortDirection: 'desc', itemsView: 'presentation' };
+    assert.equal((await request('thread/read', { threadId, initialTurnsPage: initial })).initialTurnsPage.data[0].itemsView, 'full');
+    assert.equal((await request('thread/turns/list', { threadId, ...initial })).data[0].itemsView, 'full');
+    await assert.rejects(request('thread/turns/list', { threadId, ...initial, detailItemId: 'tool' }), { code: -32601 });
+  }
   if (!cli) assert.deepEqual(identityCalls[0], {
     method: 'thread/start', threadId: created.thread.id, createdId: created.thread.id, inputId: undefined, sender: verifiedSender,
   });
@@ -270,15 +815,47 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
     // Existing thread operations reach native Codex under the bound native ID and
     // come back under public identities, with the same change notifications.
     const lifecycleFrom=frames.length, pub='bridge:codex:public-new', seen=()=>frames.slice(lifecycleFrom).filter(f=>f.method&&f.method.startsWith('thread/')&&f.id===undefined);
+    assert.ok(!frames.some(f => f.method === 'opencraft/thread-catalog/changed' && f.params.change.type === 'upsert'),
+      'an unsubmitted draft has no committed directory row');
     await request('thread/name/set',{threadId:pub,name:'Renamed'});
     await request('thread/goal/set',{threadId:pub,objective:'ship it'});
     assert.deepEqual((await request('thread/goal/get',{threadId:pub})).goal,{objective:'ship it',status:'active'});
     await request('thread/goal/clear',{threadId:pub});
-    await request('thread/archive',{threadId:pub});
+    const historyInFlight = Promise.withResolvers<() => void>();
+    holdFullHistory = historyInFlight.resolve;
+    const lateHistory = assert.rejects(request('thread/read', { threadId: pub, includeTurns: true }), { code: -32071 });
+    const releaseHistory = await historyInFlight.promise;
+    try {
+      await request('thread/archive',{threadId:pub});
+    } finally {
+      releaseHistory();
+    }
+    await lateHistory;
+    const initialPage = { threadId: pub, initialTurnsPage: { limit: 2, itemsView: 'full', sortDirection: 'desc' } };
+    await assert.rejects(request('thread/read', initialPage), {
+      code: -32071, data: { code: 'THREAD_ARCHIVED', bridgeErrorKind: 'explicit-reject', submissionOutcome: 'rejected', retryable: false },
+    });
+    const archivedPage = await request('thread/read', { ...initialPage, openArchivedHistory: true });
+    assert.equal(archivedPage.thread.archived, true);
+    assert.ok(Array.isArray(archivedPage.initialTurnsPage.data));
+    assert.ok(Array.isArray((await request('thread/turns/list', {
+      threadId: pub, limit: 1, openArchivedHistory: true,
+    })).data));
+    assert.ok(Array.isArray((await request('thread/items/list', {
+      threadId: pub, sortDirection: 'desc', openArchivedHistory: true,
+    })).data));
     assert.equal((await request('thread/unarchive',{threadId:pub})).thread.id,pub);
     const forked=(await request('thread/fork',{threadId:pub})).thread.id;
     assert.match(forked,/^bridge:codex:/u); assert.notEqual(forked,pub); assert.equal(currentGateway().owns(forked),true);
     await request('thread/delete',{threadId:forked});
+    const directoryChanges = await until(() => {
+      const changes = frames.slice(lifecycleFrom).filter(f => f[LOGICAL_CLIENT_FIELD] === 'directory-reader'
+        && f.method === 'opencraft/thread-catalog/changed').map(f => f.params.change);
+      return changes.some(change => change.type === 'remove' && change.threadId === forked) ? changes : undefined;
+    }, Boolean);
+    assert.deepEqual(directoryChanges.filter(change => change.type === 'remove').map(change => change.threadId), [pub, forked]);
+    assert.deepEqual(directoryChanges.filter(change => change.type === 'upsert').map(change => change.thread.id), [pub, forked]);
+    assert.equal(directoryChanges.find(change => change.type === 'upsert' && change.thread.id === forked)?.thread.parentThreadId, pub);
     assert.deepEqual(lifecycleCalls.map(c=>[c.method,c.params.threadId]),[['thread/name/set','native-new'],['thread/goal/set','native-new'],['thread/goal/get','native-new'],
       ['thread/goal/clear','native-new'],['thread/archive','native-new'],['thread/unarchive','native-new'],['thread/fork','native-new'],['thread/delete','native-fork']]);
     assert.equal(lifecycleCalls[0].params.name,'Renamed'); assert.equal(lifecycleCalls[1].params.objective,'ship it');
@@ -310,6 +887,39 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
   if(cli==='initial'){assert.equal(issued,2);assert.equal(nativeConfigurations.length,0);assert.equal(initialConfig['shell_environment_policy.set'].OPENCRAFT_THREAD_CLI,'fixture');assert.equal(initialConfig['mcp_servers.opencraft_session'].http_headers.Authorization,'Bearer platform-mcp');}
   else if(cli){assert.equal(issued,cli==='timeout'?2:1);assert.equal(nativeConfigurations[0].sandbox,'read-only');assert.equal(nativeConfigurations[0].approvalPolicy,'never');assert.equal(nativeConfigurations[0].config['shell_environment_policy.set'].OPENCRAFT_THREAD_CLI,'fixture');assert.equal(nativeConfigurations[0].config['mcp_servers.opencraft_session'].http_headers.Authorization,'Bearer platform-mcp');}
   const turnId = started.turn.id; assert.notEqual(turnId, 'native-turn');
+  const receiptId = 'bridge-mutation:' + createHash('sha256').update(JSON.stringify([created.thread.id, 'turn/start', 'start'])).digest('hex');
+  assert.deepEqual((await host.query(receiptId))?.identities?.turn, { nativeId: 'native-turn', id: turnId });
+  if (!cli) {
+    const image = { id: 'native-image', type: 'imageGeneration', status: 'completed', revisedPrompt: null, result: 'fixture-image', failure: null };
+    const mcp = { id: 'native-mcp', type: 'mcpToolCall', server: 'fixture', tool: 'generate', status: 'completed',
+      result: { content: [{ type: 'image', mimeType: 'image/png', data: 'Zml4dHVyZQ==' }], structuredContent: null, _meta: null } };
+    const dynamic = { id: 'native-dynamic', type: 'dynamicToolCall', tool: 'fixture', status: 'completed', arguments: {},
+      contentItems: [{ type: 'inputText', text: 'dynamic fixture' }], success: true };
+    for (const item of [image, mcp, dynamic]) {
+      nativePeer!.send(JSON.stringify({ method: 'item/completed', params: { threadId: 'native-new', turnId: 'native-turn', item } }));
+      const delivered = await until(() => frames.find(f => f.method === 'item/completed' && f.params.item.type === item.type), Boolean);
+      assert.equal(delivered.params.threadId, created.thread.id);
+      assert.equal(delivered.params.turnId, turnId);
+      assert.notEqual(delivered.params.item.id, item.id);
+      assert.deepEqual(delivered.params.item, { ...item, id: delivered.params.item.id });
+    }
+    const status = { type: 'active', activeFlags: ['waitingOnApproval'] };
+    nativePeer!.send(JSON.stringify({ method: 'thread/status/changed', params: { threadId: 'native-new', status } }));
+    const delivered = await until(() => frames.find(f => f.method === 'thread/status/changed' &&
+      f.params.status?.activeFlags?.includes('waitingOnApproval')), Boolean);
+    assert.equal(delivered.params.threadId, created.thread.id);
+    assert.deepEqual(delivered.params.status, status);
+  }
+  if (cli === true) {
+    const firstCatalog = await until(() => frames.find(f => f[LOGICAL_CLIENT_FIELD] === 'directory-reader'
+      && f.method === 'opencraft/thread-catalog/changed' && f.params.change.type === 'upsert'
+      && f.params.change.thread.id === created.thread.id), Boolean);
+    assert.deepEqual(firstCatalog.params.change.thread.turns, []);
+    await request('thread/name/set', { threadId: created.thread.id, name: 'Catalog rename' });
+    await until(() => frames.find(f => f[LOGICAL_CLIENT_FIELD] === 'directory-reader'
+      && f.params?.change?.name === 'Catalog rename'), Boolean);
+    await transport.send(JSON.stringify({ method: 'runtime/client/disconnect', [LOGICAL_CLIENT_FIELD]: 'directory-reader' }));
+  }
   if (!cli) {
     const attemptedLimits: number[] = [];
     const client = {
@@ -332,6 +942,61 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
     assert.equal(nativePeer, executionPeer);
     assert.equal(executionPeer!.readyState, 1, 'oversize history leaves the native execution connection open');
   }
+  if (!cli) {
+    const threadId = created.thread.id;
+    const historical = await request('thread/turns/list', { threadId, limit: 2, itemsView: 'notLoaded' });
+    const items = await request('thread/items/list', { threadId, turnId: historical.data[0].id, limit: 1 });
+    assert.equal(items.data[0].item.text, 'old excerpt');
+    const allItems = await request('thread/items/list', { threadId, limit: 1, sortDirection: 'desc' });
+    assert.equal(allItems.data[0].turnId, turnId);
+    assert.equal(allItems.data[0].item.command, 'cat input.txt');
+    assert.notEqual(allItems.data[0].item.id, 'tool');
+    const listing = await request('thread/list', { limit: 3 });
+    assert.equal(listing.data[1].parentThreadId, listing.data[0].id);
+    const search = await request('thread/search', { searchTerm: 'fixture' });
+    assert.equal(search.data[0].thread.id, threadId);
+    const occurrences = await request('thread/searchOccurrences', { threadId, searchTerm: 'fixture' });
+    assert.equal(occurrences.data[0].turnId, turnId);
+    for (const method of ['opencraft/schedules/read', 'opencraft/schedules/save', 'opencraft/turn-recovery/read']) {
+      assert.deepEqual(await request(method, { threadId }), { owner: 'legacy-host', threadId });
+      await assert.rejects(() => request(method, { threadId: 'native-new' }), /native owner bypass refused/);
+    }
+    await request('thread/resume', { threadId, excludeTurns: true, model: 'resume-model',
+      sandbox: 'read-only', approvalPolicy: 'on-request' });
+    assert.deepEqual(resumeRequests.at(-1), { threadId: 'native-new', excludeTurns: true, model: 'resume-model',
+      sandbox: 'read-only', approvalPolicy: 'on-request' });
+    const gateway = currentGateway();
+    const pull = gateway.pull;
+    gateway.pull = async () => { throw Error('fixture outbox unavailable'); };
+    try {
+      const metadata = await request('thread/read', { threadId, includeTurns: false, watch: false });
+      assert.equal(metadata.thread.id, threadId);
+      assert.deepEqual(metadata.thread.turns, []);
+    } finally {
+      gateway.pull = pull;
+    }
+
+    const reader = 'directory-reader';
+    const initial = { threadId, includeTurns: false, watch: false, initialTurnsPage: { limit: 2, itemsView: 'notLoaded' } };
+    await transport.send(JSON.stringify({ id: 'metadata-only', method: 'thread/read', params: initial, [LOGICAL_CLIENT_FIELD]: reader }));
+    const response = await until(() => frames.find(f => f.id === 'metadata-only'), Boolean);
+    assert.equal(response.result.initialTurnsPage.data[0].id, 'historical-turn');
+    nativePeer!.send(JSON.stringify({ method: 'thread/settings/updated', params: {
+      threadId: 'native-new', threadSettings: { model: 'metadata-probe' }
+    } }));
+    await until(() => frames.some(f => f.method === 'thread/settings/updated' && f[LOGICAL_CLIENT_FIELD] === 'client'
+      && f.params?.threadSettings?.model === 'metadata-probe'), Boolean);
+    assert.ok(!frames.some(f => f.method === 'thread/settings/updated' && f[LOGICAL_CLIENT_FIELD] === reader));
+    await transport.send(JSON.stringify({ id: 'start-watching', method: 'thread/read',
+      params: { threadId, watch: true }, [LOGICAL_CLIENT_FIELD]: reader }));
+    await until(() => frames.find(f => f.id === 'start-watching'), Boolean);
+    nativePeer!.send(JSON.stringify({ method: 'thread/settings/updated', params: {
+      threadId: 'native-new', threadSettings: { model: 'watching-probe' }
+    } }));
+    await until(() => frames.some(f => f.method === 'thread/settings/updated' && f[LOGICAL_CLIENT_FIELD] === reader
+      && f.params?.threadSettings?.model === 'watching-probe'), Boolean);
+    await transport.send(JSON.stringify({ method: 'runtime/client/disconnect', [LOGICAL_CLIENT_FIELD]: reader }));
+  }
   // The local Host's desktop serves a bridge Thread: the request reaches it with the public identity.
   await request('opencraft/desktop/attachment/create', { threadId: 'bridge:codex:public-new' });
   assert.equal(forwarded.find(f => f.method === 'opencraft/desktop/attachment/create').params.threadId, 'bridge:codex:public-new');
@@ -350,6 +1015,35 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
   assert.equal(frames.some(f => f.method === 'item/tool/call' && f.params?.callId === 'call-host'), false);
   await transport!.send(JSON.stringify({ id: offeredTool.id, result: { success: true, contentItems: [{ type: 'inputText', text: 'client answered' }] }, [LOGICAL_CLIENT_FIELD]: 'client' }));
   assert.equal((await until(() => toolReplies.find(f => f.id === 'native-tool-client'), Boolean)).result.contentItems[0].text, 'client answered');
+  if (!cli) {
+    const threadId = created.thread.id;
+    const sharedRequest = async (client: string, method: string, params: Record<string, unknown>) => {
+      const id = ++sequence;
+      await transport!.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: client }));
+      return until(() => frames.find(f => f.id === id), Boolean);
+    };
+    for (const client of ['shared-a', 'shared-b']) {
+      const init = await sharedRequest(client, 'initialize', { capabilities: { extensions: { 'opencraft/shared-interactions': { version: 1 } } } });
+      assert.equal(init.result.capabilities.extensions['opencraft/execution-engines'].providers
+        .find((p: any) => p.id === 'codex-bridge').extensions['opencraft/shared-interactions'].version, 1);
+      assert.ok((await sharedRequest(client, 'thread/read', { threadId, watch: true })).result);
+    }
+    const method = 'item/permissions/requestApproval';
+    nativePeer!.send(JSON.stringify({ id: 'native-permissions', method, params: { threadId: 'native-new', turnId: 'native-turn', itemId: 'tool', permissions: {} } }));
+    await until(() => frames.some(f => f[LOGICAL_CLIENT_FIELD] === 'shared-a' && f.method === 'opencraft/interactions/changed'
+      && f.params.requests.some((r: any) => r.method === method)), Boolean);
+    assert.ok(!frames.some(f => f.method === method && ['shared-a', 'shared-b'].includes(f[LOGICAL_CLIENT_FIELD])));
+    const snapshot = await sharedRequest('shared-b', 'opencraft/interactions/read', { threadId });
+    const approval = snapshot.result.requests.find((item: any) => item.method === method);
+    assert.equal(approval.params.threadId, threadId);
+    assert.equal(approval.params.turnId, turnId);
+    const params = { threadId, interactionId: approval.id, result: { permissions: {}, scope: 'turn' } };
+    const replies = await Promise.all(['shared-a', 'shared-b'].map(client =>
+      sharedRequest(client, 'opencraft/interactions/respond', { ...params, submissionId: client })));
+    assert.ok(replies.every(r => r.result && !r.error));
+    await until(() => permissionAnswers.length, n => n === 1);
+    assert.deepEqual(permissionAnswers, [params.result]);
+  }
   nativePeer!.send(JSON.stringify({ id: 'native-approval', method: 'item/commandExecution/requestApproval', params: { threadId: 'native-new', turnId: 'native-turn', itemId: 'tool', command: 'cat input.txt' } }));
   const approval = await until(() => frames.find(f => f.method === 'item/commandExecution/requestApproval'), Boolean);
   assert.equal(approval.params.threadId, 'bridge:codex:public-new');

@@ -219,6 +219,8 @@ export interface WorkspaceRuntime {
   fenced<T>(endpoint: WorkspaceEndpointAddress, operation: (binding: WorkspaceEndpointBinding) => Promise<T>, receipt?: SandboxReceipt): Promise<T>;
   /** Attach only recorded, still-running environments. Never creates or restores one. */
   attachExisting(): Promise<void>;
+  /** Restore one recorded checkpoint. Failure never starts an empty environment. */
+  restoreExisting(address: SandboxEnvironmentAddress, snapshotId: string): Promise<WorkspacePlacementRecord>;
   /** Probes every environment's agent now; a changed incarnation is re-bound, a changed
    * endpoint generation drops the cached descriptors. */
   observe(): Promise<
@@ -264,7 +266,7 @@ export function createWorkspaceRuntime(options: {
     binding,
     name: formatSandboxEnvironmentUri(binding.address),
     current: undefined as Bound | undefined,
-    opening: undefined as { promise: Promise<Bound>; allowCreate: boolean } | undefined,
+    opening: undefined as { promise: Promise<Bound>; allowCreate: boolean; restoreFrom?: string } | undefined,
     sleeping: undefined as Promise<boolean> | undefined,
   }));
   let closed = false;
@@ -303,10 +305,11 @@ export function createWorkspaceRuntime(options: {
     }
     throw fault("SANDBOX_UNAVAILABLE", "Workspace agent did not become ready");
   };
-  const open = (slot: (typeof slots)[number], allowCreate = true): Promise<Bound> => {
+  const open = (slot: (typeof slots)[number], allowCreate = true, restoreFrom?: string): Promise<Bound> => {
     const opening = slot.opening;
     if (opening) {
-      return allowCreate && !opening.allowCreate ? opening.promise.catch(() => open(slot)) : opening.promise;
+      const canFollowAttach = !opening.allowCreate && (allowCreate || (restoreFrom && !opening.restoreFrom));
+      return canFollowAttach ? opening.promise.catch(() => open(slot, allowCreate, restoreFrom)) : opening.promise;
     }
     const promise = (async () => {
       if (closed) throw fault("SANDBOX_CLOSED", "Workspace runtime is closed");
@@ -315,6 +318,7 @@ export function createWorkspaceRuntime(options: {
         attached = false;
       let snapshot = record?.snapshot;
       let restoredFrom: string | undefined;
+      if (restoreFrom && snapshot?.id !== restoreFrom) throw fault("SANDBOX_UNAVAILABLE", "Workspace checkpoint changed");
       if (record?.receipt) {
         try {
           sandbox = await slot.binding.pool.attachSandbox({ owner: options.owner, receipt: record.receipt });
@@ -328,7 +332,7 @@ export function createWorkspaceRuntime(options: {
           });
         }
       }
-      if (!sandbox && !allowCreate) throw fault("SANDBOX_UNAVAILABLE", "Workspace environment is not running");
+      if (!sandbox && !allowCreate && !restoreFrom) throw fault("SANDBOX_UNAVAILABLE", "Workspace environment is not running");
       if (!sandbox && snapshot && slot.binding.pool.restoreSandbox) {
         if (snapshot.expiresAt !== undefined && snapshot.expiresAt <= Date.now()) snapshot = undefined;
         else try {
@@ -339,6 +343,7 @@ export function createWorkspaceRuntime(options: {
           snapshot = undefined;
         }
       }
+      if (!sandbox && !allowCreate) throw fault("SANDBOX_UNAVAILABLE", "Workspace checkpoint could not be restored");
       sandbox ??= await slot.binding.pool.createSandbox({ owner: options.owner });
       let agent: WorkspaceAgentDescription;
       let placement: WorkspacePlacementRecord;
@@ -386,7 +391,7 @@ export function createWorkspaceRuntime(options: {
     })().finally(() => {
       slot.opening = undefined;
     });
-    slot.opening = { promise, allowCreate };
+    slot.opening = { promise, allowCreate, restoreFrom };
     return promise;
   };
   const bound = async (slot: (typeof slots)[number]) => {
@@ -508,6 +513,16 @@ export function createWorkspaceRuntime(options: {
       for (const slot of slots) {
         if (!slot.sleeping && !slot.current) await open(slot, false);
       }
+    },
+    async restoreExisting(address, snapshotId) {
+      if (closed) throw fault("SANDBOX_CLOSED", "Workspace runtime is closed");
+      const name = formatSandboxEnvironmentUri(address);
+      const slot = slots.find(value => value.name === name);
+      if (!slot || slot.sleeping || !snapshotId) throw fault("SANDBOX_UNAVAILABLE", "Workspace checkpoint is unavailable");
+      const { placement } = slot.current ?? await open(slot, false, snapshotId);
+      if (placement.snapshot?.id !== snapshotId || placement.restoredFrom !== snapshotId)
+        throw fault("SANDBOX_UNAVAILABLE", "Workspace checkpoint was not restored");
+      return placement;
     },
     async observe() {
       if (closed) throw fault("SANDBOX_CLOSED", "Workspace runtime is closed");

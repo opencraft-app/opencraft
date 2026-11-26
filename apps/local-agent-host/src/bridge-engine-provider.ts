@@ -71,6 +71,7 @@ export class BridgeEngineProvider implements ExecutionEngineProvider {
   private declaration: any = null;
   private started?: Promise<void>;
   private closing = false;
+  private poll?: ReturnType<typeof setInterval>;
 
   constructor(private readonly options: BridgeEngineProviderOptions) {
     if (!options.threadPrefix || !options.modelPrefix) throw new Error("Bridge provider prefixes are required");
@@ -114,6 +115,9 @@ export class BridgeEngineProvider implements ExecutionEngineProvider {
         query: true,
       },
     };
+    if (this.closing) return;
+    this.poll = setInterval(() => { void this.gateway.pull().catch(() => {}); }, 125);
+    this.poll.unref();
   }
 
   ownsThread(id: string): boolean { return typeof id === "string" && id.startsWith(this.threadPrefix); }
@@ -244,6 +248,7 @@ export class BridgeEngineProvider implements ExecutionEngineProvider {
     if (!expected) throw Object.assign(new Error("expectedTurnId is required"), { code: -32602 });
     const text = textOf(params.input);
     if (!text.trim()) throw Object.assign(new Error("Input text is required"), { code: -32602 });
+    await this.gateway.hydrateThread(threadId);
     const native = this.gateway.nativeTurn(threadId, expected);
     const clientRequestId = typeof params.clientUserMessageId === "string" && params.clientUserMessageId
       ? params.clientUserMessageId : randomUUID();
@@ -260,6 +265,7 @@ export class BridgeEngineProvider implements ExecutionEngineProvider {
   private async interrupt(params: Value): Promise<Value> {
     const threadId = String(params.threadId ?? "");
     if (!this.ownsThread(threadId)) throw new Error("Bridge provider does not own this Thread");
+    await this.gateway.hydrateThread(threadId);
     let native: string | undefined;
     try { native = this.gateway.nativeTurn(threadId, String(params.turnId ?? "")); } catch { native = undefined; }
     await this.gateway.command(threadId, this.commandId(threadId, "turn/stop", String(params.turnId ?? "")), "turn/stop",
@@ -345,6 +351,7 @@ export class BridgeEngineProvider implements ExecutionEngineProvider {
   async close(): Promise<void> {
     if (this.closing) return;
     this.closing = true;
+    clearInterval(this.poll);
     await this.gateway.close();
     this.listeners.clear();
   }

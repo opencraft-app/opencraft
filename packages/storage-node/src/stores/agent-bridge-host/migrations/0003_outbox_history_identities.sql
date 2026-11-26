@@ -1,0 +1,1 @@
+CREATE INDEX `outbox_route_history_identities` ON `outbox` (`route`,`seq`) WHERE json_extract(payload,'$.event.kind') IN ('turn.started','item.started','item.completed');
