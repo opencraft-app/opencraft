@@ -2,6 +2,7 @@ import { CodexCoreReadIsolation, isIsolatedCoreRead } from "@opencraft/account-p
 import { CodexCoreSocket } from "./codex-core-socket";
 import { CodexCoreControlClient } from "@opencraft/account-pool-host";
 import type { DuplexTransport, TransportStatus } from "@opencraft/appserver-client/transport";
+import type { CodexRollbackHistory } from "./codex-rollback-history";
 
 /** Where the runtime owner (Codex AppServer) is reached when it is not behind the
  * account Core: its control endpoint and token, and the native socket to dial. A
@@ -58,7 +59,8 @@ export class CodexNativeCoreTransport implements DuplexTransport {
   get callbackIncarnation(): string|null {return this.ownerIncarnation;}
   get supportsOrchestration(): boolean { return this.callbackReady; }
   get supportsThreadTitle(): boolean { return this.callbackReady && this.titleToolReady; }
-  constructor(endpoint: string, token: string, callbackLaneId?: string, runtime?: CodexRuntimeEndpoints) {
+  constructor(endpoint: string, token: string, callbackLaneId?: string, runtime?: CodexRuntimeEndpoints,
+    private readonly rollback?: { identities: CodexRollbackHistory; methodFor(id: string | number): string | undefined }) {
     this.control = new CodexCoreControlClient(endpoint, token);
     this.health = createCodexRuntimeHealthReader(this.control, runtime);
     this.reads = new CodexCoreReadIsolation(signal => this.health(signal, "native"));
@@ -72,7 +74,7 @@ export class CodexNativeCoreTransport implements DuplexTransport {
         this.ownerIncarnation = health.callbackIncarnation ?? null;
         return health;
       },
-      message: frame => { for (const listener of this.messages) listener(frame); },
+      message: frame => this.publishMessage(frame),
       status: value => { for (const listener of this.statuses) listener(value); },
     });
   }
@@ -81,18 +83,33 @@ export class CodexNativeCoreTransport implements DuplexTransport {
   subscribeStatus(listener: (status: TransportStatus) => void): () => void { this.statuses.add(listener); return () => this.statuses.delete(listener); }
   connect(signal?: AbortSignal): Promise<void> { return this.connection.connect(signal); }
   resetConnection(): void { ++this.readEpoch; this.reads.reset(); this.connection.reset(); }
+  private publishMessage(frame: string): void {
+    if (this.rollback) {
+      try {
+        const message = JSON.parse(frame);
+        const id = message.id;
+        const projected = this.rollback.identities.publicResponse(message,
+          typeof id === "string" || typeof id === "number" ? this.rollback.methodFor(id) : undefined);
+        if (projected !== message) frame = JSON.stringify(projected);
+      } catch {
+        return;
+      }
+    }
+    for (const listener of this.messages) listener(frame);
+  }
   async send(frame: string): Promise<void> {
     if (this.lifetime.signal.aborted) throw new Error("Codex core connection is closed");
     const message = JSON.parse(frame);
-    if (isIsolatedCoreRead(message)) {
+    const outgoing = this.rollback?.identities.nativeRequest(message) ?? message;
+    if (isIsolatedCoreRead(outgoing)) {
       const epoch = this.readEpoch;
       // A send acknowledges admission to the bounded reader, not its RPC result.
       // Waiting here would hold AppHost's ordered frame lane behind history.
-      void this.reads.read(message).then(reply => {
+      void this.reads.read(outgoing).then(reply => {
         if (this.lifetime.signal.aborted || epoch !== this.readEpoch) return;
-        for (const listener of this.messages) listener(reply);
+        this.publishMessage(reply);
       });
-    } else this.connection.send(frame);
+    } else this.connection.send(outgoing === message ? frame : JSON.stringify(outgoing));
   }
   async close(): Promise<void> { ++this.readEpoch; this.lifetime.abort(); this.reads.close(); this.connection.close(); }
 }

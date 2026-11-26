@@ -31,6 +31,7 @@ export interface BridgeExecutionAdmissionPort {
 }
 /** Keep signing and the bridge consumer adjacent; legacy traffic stays untouched. */
 export { codexAdmissionPaused } from './codex-maintenance.js';
+export { openCodexRollbackHistory } from './codex-rollback-history.js';
 export function createServerCodexBridge(legacy:DuplexTransport,options:BridgeGatewayOptions|undefined,admission:BridgeExecutionAdmissionPort,policy:ConstructorParameters<typeof CodexProviderBridge>[2]={}):DuplexTransport {
   // The local Codex Host beside the bridge holds the records bridge Threads share with its own.
   const owners=bridgeOwnersOf(legacy);

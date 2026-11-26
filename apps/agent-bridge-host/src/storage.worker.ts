@@ -17,13 +17,19 @@ import { isArchiveCommand, type BridgeHistorySelection, type Receipt, type Gener
 const CREATES: readonly string[] = ['session/create', 'session/fork', 'session/adopt'];
 const ENDS: readonly string[] = ['session/close', 'session/delete'];
 if (isMainThread) throw Error('Bridge SQL must run in a Worker');
-mkdirSync(dirname(workerData.path), { recursive: true, mode: 0o700 });
-const release = acquireProcessWriter(`${workerData.path}.writer`);
+const readOnly = workerData.role === 'rollback-identities';
+if (!readOnly) mkdirSync(dirname(workerData.path), { recursive: true, mode: 0o700 });
+const release = readOnly ? () => {} : acquireProcessWriter(`${workerData.path}.writer`);
 const { database: db, outcome } = (() => {
-  try { return openManagedDatabase({ schemaId: "agent-bridge-host", path: workerData.path, migrations, legacyPolicy: 'reject' }); }
+  const options = { schemaId: "agent-bridge-host", path: workerData.path, migrations, legacyPolicy: 'reject' } as const;
+  try {
+    // Native session bindings first shipped in v2. Reading a legacy prefix
+    // does not require taking the Bridge writer lock or migrating the store.
+    return readOnly ? openManagedDatabase({ ...options, readOnly: { minimumVersion: 2 } }) : openManagedDatabase(options);
+  }
   catch (error) { release(); throw error; }
 })();
-db.exec('PRAGMA synchronous=FULL');
+if (!readOnly) db.exec('PRAGMA synchronous=FULL');
 const tx = <T>(action: () => T) => sqliteTransaction(db, action);
 const get = (sql: string, ...args: any[]) => db.prepare(sql).get(...args) as any;
 const all = (sql: string, ...args: any[]) => db.prepare(sql).all(...args) as any[];
@@ -91,8 +97,8 @@ const queue = workerData.role === 'host' ? tx(() => {
   for (const route of changedRoutes) publishQueueChanged(route);
   return queue;
 }) : null;
-const inbox = createBridgeInboxStore(sql);
-const selectedOutboxHistory = prepareSelectedHistory(sql, 'outbox');
+const inbox = readOnly ? undefined : createBridgeInboxStore(sql);
+const selectedOutboxHistory = readOnly ? undefined : prepareSelectedHistory(sql, 'outbox');
 const QUEUE_METHODS = new Set(['add', 'list', 'listPage', 'listReconciliation', 'find', 'findByClientId', 'firstAwaitingAdmission', 'update', 'delete', 'reorder', 'claim', 'settle',
   'requestRetry', 'resumeRequestedRetry', 'discardUnknown', 'discardThread', 'recordInput', 'finishTurn', 'receipt', 'pendingThreads', 'maintenanceCounts', 'interruptExecution']);
 const receipt = (id: string): Receipt | null => {
@@ -272,6 +278,11 @@ const operations: Record<string, (args: any) => any> = {
     'SELECT routes.route FROM routes JOIN native_sessions USING(route) WHERE routes.generation=? AND native_sessions.restorable=1',
     generation,
   ).map(row => row.route),
+  rollbackIdentities: () => all(
+    `SELECT routes.route, native_sessions.native_id, native_sessions.restorable
+     FROM routes JOIN native_sessions
+       ON routes.route=native_sessions.route AND routes.generation=native_sessions.generation`,
+  ),
   threadState: ({ route }: any) => ({ state: checkpoint(route), nativeSession: get('SELECT * FROM native_sessions WHERE route=?', route) ?? null }),
   query: ({ id }: any) => receiptWithIdentities(id),
   dispatch: ({ id }: any) => tx(() => {
@@ -387,7 +398,7 @@ const operations: Record<string, (args: any) => any> = {
     const end = through ?? fence.high;
     require(Number.isSafeInteger(after) && after >= 0 && Number.isSafeInteger(end) &&
       after <= end && end <= fence.high, 'Invalid history identity cursor');
-    const identities = selection ? selectedOutboxHistory(route, after, end, selection)
+    const identities = selection ? selectedOutboxHistory!(route, after, end, selection)
       : all(`SELECT ${HISTORY_IDENTITY_COLUMNS} FROM outbox WHERE route=? AND seq>? AND seq<=?
         AND ${HISTORY_IDENTITIES} ORDER BY seq LIMIT 256`, route, after, end).map(historyIdentity);
     return { ...fence, identities };
@@ -422,19 +433,20 @@ const operations: Record<string, (args: any) => any> = {
     require(!get('SELECT 1 FROM outbox WHERE generation=?', id), 'Generation events remain unacknowledged');
     run('UPDATE generations SET retired=1 WHERE id=?', id);
   }),
-  inbox: ({ batch }: { batch: OutboxEvent[] }) => inbox.apply(batch),
-  inboxRead: ({ cursor = 0 }: { cursor?: number }) => inbox.read(cursor),
+  inbox: ({ batch }: { batch: OutboxEvent[] }) => inbox!.apply(batch),
+  inboxRead: ({ cursor = 0 }: { cursor?: number }) => inbox!.read(cursor),
   inboxReadIdentities: ({ route, after, through, selection }: {
     route: string; after: number; through: number; selection?: BridgeHistorySelection;
-  }) => inbox.readIdentities(route, after, through, selection),
+  }) => inbox!.readIdentities(route, after, through, selection),
   inboxReadPendingInteractions: ({ route, after, through, ids }: { route: string; after: number; through: number; ids: readonly string[] }) =>
-    inbox.readPendingInteractions(route, after, through, ids),
-  cursor: () => inbox.cursor(),
+    inbox!.readPendingInteractions(route, after, through, ids),
+  cursor: () => inbox!.cursor(),
   close: () => { db.close(); release(); },
 };
 parentPort!.on('message', ({ id, op, args }) => {
   try {
     if (failed) throw new Refusal('Storage owner failed');
+    if (readOnly && !['ready', 'rollbackIdentities', 'close'].includes(op)) throw new Refusal('Read-only storage operation');
     if (!operations[op]) throw new Refusal('Unknown storage operation');
     const value = operations[op]!(args);
     parentPort!.postMessage({ id, value });

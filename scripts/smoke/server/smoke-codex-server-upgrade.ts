@@ -15,6 +15,8 @@
 // an identity adapter does: every message carries a verified sender, which must
 // be shown on the history before and after the upgrade. anonymous runs as an
 // installation without sign-in.
+// DRILL_WEB_ROOT can point to a built Headless renderer to open the old link
+// in Chrome during rollback.
 //
 // Output: .local/codex-server-upgrade/<time>/result.json
 import { spawn, type ChildProcess } from "node:child_process";
@@ -80,18 +82,20 @@ store.addAccount(
 );
 store.close();
 
-const webRoot = join(out, "web");
-await mkdir(webRoot);
-await writeFile(join(webRoot, "index.html"), "<!doctype html><title>Codex server upgrade drill</title>");
-await writeFile(
-  join(webRoot, "version.json"),
-  JSON.stringify({
-    schemaVersion: 1,
-    buildId: "codex-server-upgrade",
-    headlessServer: true,
-    headlessHostId: "opencraft-server",
-  }),
-);
+const webRoot = process.env.DRILL_WEB_ROOT ?? join(out, "web");
+if (!process.env.DRILL_WEB_ROOT) {
+  await mkdir(webRoot);
+  await writeFile(join(webRoot, "index.html"), "<!doctype html><title>Codex server upgrade drill</title>");
+  await writeFile(
+    join(webRoot, "version.json"),
+    JSON.stringify({
+      schemaVersion: 1,
+      buildId: "codex-server-upgrade",
+      headlessServer: true,
+      headlessHostId: "opencraft-server",
+    }),
+  );
+}
 const token = randomBytes(32).toString("hex");
 const tokenFile = join(run, "core.token");
 await writeFile(tokenFile, `${token}\n`, { mode: 0o600 });
@@ -194,10 +198,10 @@ async function startServer(bridge: boolean): Promise<Server> {
   );
 }
 
-const verified = () => ({
+const verified = (login = "alice") => ({
   provider: "drill-directory",
-  subject: "alice",
-  displayName: "Alice",
+  subject: login,
+  displayName: login,
   expiresAt: Date.now() + 3_600_000,
 });
 /** The onboarding a signed-in deployment does once: the person owns the server's spaces. */
@@ -214,16 +218,17 @@ async function onboardEmployee() {
   }
 }
 
-/** A deployment identity adapter that signs every connection in as one employee. */
+/** A deployment identity adapter with two test employees. */
 async function signedInIdentity({ actors }: { actors: any }) {
+  const loginFor = (request: import("node:http").IncomingMessage) => request.headers["x-drill-login"] === "bob" ? "bob" : "alice";
   return {
-    providers: [{ authenticate: () => verified() }],
+    providers: [{ authenticate: (request: import("node:http").IncomingMessage) => verified(loginFor(request)) }],
     service: {
       admissionStatus: () => 204,
-      connectionContext: () => ({
-        sender: { kind: "employee", loginName: "alice" },
+      connectionContext: (request: import("node:http").IncomingMessage) => ({
+        sender: { kind: "employee", loginName: loginFor(request) },
         validUntil: Date.now() + 3_600_000,
-        actorContext: actors.resolveHuman(verified()),
+        actorContext: actors.resolveHuman(verified(loginFor(request))),
       }),
       handle: async () => false,
     },
@@ -232,11 +237,11 @@ async function signedInIdentity({ actors }: { actors: any }) {
 }
 
 /** A Workbench client of the server's local Codex Host, through the Web's own App Host connection. */
-async function connectClient(server: Server) {
+async function connectClient(server: Server, login = "alice") {
   (globalThis as any).window = { location: { href: server.url + "/" } };
   const { connectWebSocketAppHost } = await import("../../../apps/workbench-web/src/runtime/websocket-app-host.ts");
   const host = connectWebSocketAppHost(
-    (url) => new WebSocket(url, { origin: server.url }) as unknown as globalThis.WebSocket,
+    (url) => new WebSocket(url, { origin: server.url, headers: { "x-drill-login": login } }) as unknown as globalThis.WebSocket,
     {
       retryDelaysMs: [200, 500, 1000],
       reportFailure: () => undefined,
@@ -455,6 +460,10 @@ try {
       `a new bridge conversation lacks tools: ${JSON.stringify(freshMissing)}`,
     );
     history.fresh = await transcript(c, fresh);
+    if (identityMode === "employee") {
+      const policy = await c.request("opencraft/thread-access/read", { threadId: fresh });
+      await c.request("opencraft/thread-access/set", { threadId: fresh, accessMode: "private", expectedRevision: policy.revision });
+    }
     if (identityMode === "employee")
       check(
         [...continued, ...history.fresh]
@@ -501,8 +510,47 @@ try {
         `${name} history changed after rollback`,
       );
     }
+    const fresh = threads.fresh!;
+    check(ids.includes(fresh), "the old Bridge identity is missing after rollback");
+    const read = await c.request("thread/read", { threadId: fresh, includeTurns: false, watch: true,
+      initialTurnsPage: { limit: 10, itemsView: "full" } });
+    check(read.thread.id === fresh && read.initialTurnsPage.data.length > 0, "the old link did not open with its original identity");
+    check(JSON.stringify(await transcript(c, fresh)) === JSON.stringify(history.fresh), "Bridge history changed after rollback");
+    if (process.env.DRILL_WEB_ROOT) {
+      const { chromium } = await import("playwright");
+      const browser = await chromium.launch({ channel: "chrome" });
+      try {
+        const page = await browser.newPage({ locale: "en-US" });
+        const link = `${server!.url}/local/${encodeURIComponent(fresh)}?hostId=local-codex`;
+        await page.goto(link);
+        await page.getByText("echo: NEW-ON-BRIDGE", { exact: true }).waitFor();
+        check(page.url() === link, "opening the old link replaced its public identity");
+      } finally {
+        await browser.close();
+      }
+    }
+    if (identityMode === "employee") {
+      const policy = await c.request("opencraft/thread-access/read", { threadId: fresh });
+      check(policy.accessMode === "private" && policy.threadId === fresh, "the original access policy was lost");
+      const { openCodexRollbackHistory } = await import("../../../apps/opencraft-daemon/src/codex-rollback-history.ts");
+      const identities = await openCodexRollbackHistory(join(data, "codex-bridge", "engine-host.sqlite"), policy.serverId);
+      const nativeId = identities.toNative(fresh);
+      check(!!nativeId && !ids.includes(nativeId), "the Native ID appeared as another conversation");
+      const outsider = await connectClient(server!, "bob");
+      try {
+        check(!(await listed(outsider)).includes(fresh), "another employee can list the private conversation");
+        for (const threadId of [fresh, nativeId!]) {
+          await outsider.request("thread/read", { threadId, includeTurns: true }).then(
+            () => { throw new Error("another employee can open the private conversation"); },
+            error => check(/not found|unavailable/i.test(error.message), "expected the normal access denial"),
+          );
+        }
+      } finally {
+        outsider.close();
+      }
+    }
     history.twoTurns = await say(c, threads.twoTurns!, "DURING-ROLLBACK");
-    return { listed: ids.length, bridgeConversationListed: ids.includes(threads.fresh!) };
+    return { listed: ids.length, bridgeConversation: fresh };
   });
 
   await phase("upgraded again", true, async (c) => {
