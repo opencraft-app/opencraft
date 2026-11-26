@@ -1,6 +1,7 @@
 import type { ConversationNavigationPreview } from "@opencraft/chat-navigation";
 import { PersonIcon, RefreshIcon } from "@opencraft/design-system-web/action-icons";
 import { AvatarImage, IdentityAvatarContext } from "@opencraft/extension-react";
+import { useIntl } from "@opencraft/i18n/react";
 import { useContext } from "react";
 import { createPortal } from "react-dom";
 
@@ -15,6 +16,7 @@ export function ConversationNavigationTooltip({
   readonly preview: ConversationNavigationPreview;
   readonly heartbeat: boolean;
 }) {
+  const intl = useIntl();
   const avatars = useContext(IdentityAvatarContext);
   const rect = button.getBoundingClientRect();
   return createPortal(
@@ -39,7 +41,9 @@ export function ConversationNavigationTooltip({
           </span>
         ) : null}
         {heartbeat ? <RefreshIcon size={12} /> : null}
-        <span>{preview.label || "(No content)"}</span>
+        <span>
+          {preview.label || intl.formatMessage({ id: "chat.message.noContent", defaultMessage: "(No content)" })}
+        </span>
       </div>
       {preview.response.trim().length > 0 ? (
         <div className="conversation-navigation-tooltip__response">{preview.response}</div>
