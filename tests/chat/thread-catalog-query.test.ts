@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { changesThreadCatalog, mergeThreadCatalogPages, threadCatalogPhase, sidebarThreadCatalogQueryKey, managedCatalogDiscoveryPhase, catalogCachedAt } from "../../apps/workbench-web/src/runtime/thread-catalog-query.js";
 import { MemoryTransport } from "@opencraft/appserver-transport-memory";
+import { OPENCRAFT_THREAD_PINS_CAPABILITY, OPENCRAFT_THREAD_PINS_EXTENSION } from "@opencraft/appserver-protocol";
 import { createAppServerWorkbenchRuntime } from "@opencraft/workbench-runtime";
 import { QueryClient } from "@tanstack/react-query";
 test("thread metadata changes and completed work invalidate catalog queries, not token deltas", () => {
@@ -56,29 +57,43 @@ test("cached history belongs to one recipe and authorization incarnation, not ju
   client.clear();
 });
 
-test("SSH runtime uses indexed catalog reads for initial and paged callers; repair remains explicit", async () => {
+test("Workbench uses indexed catalog reads across Hosts; repair remains explicit", async () => {
+  const pinned = {
+    id: "old-pin", cwd: "/workspace", createdAt: 1, updatedAt: 1, preview: "", turns: [],
+    status: { type: "idle" }, source: "cli",
+  };
   for (const hostKind of ["remote-ssh", "local", "durable"] as const) {
     const requests: Array<{ method: string; params: Record<string, unknown> }> = [];
     const transport = new MemoryTransport({ receive(frame, peer) {
       const request = JSON.parse(frame);
       if (request.id === undefined) return;
       requests.push(request);
-      const result = request.method === "initialize"
-        ? { userAgent: "catalog-test", platform: "linux", codexHome: "/synthetic" }
-        : { data: [], nextCursor: null };
+      let result: unknown = { data: [], nextCursor: null };
+      if (request.method === "initialize") {
+        result = {
+          userAgent: "catalog-test", platform: "linux", codexHome: "/synthetic",
+          capabilities: { extensions: { [OPENCRAFT_THREAD_PINS_EXTENSION]: OPENCRAFT_THREAD_PINS_CAPABILITY } },
+        };
+      } else if (request.method === "opencraft/thread-pins/list") {
+        result = { supported: true, data: [pinned] };
+      } else if (request.method === "thread/list" && request.params.limit === 50) {
+        result = { data: [{ ...pinned, id: "recent", updatedAt: 2 }], nextCursor: "page-two" };
+      }
       peer.send(JSON.stringify({ id: request.id, result }));
     } });
     const runtime = createAppServerWorkbenchRuntime({ hostId: hostKind, hostKind, transport, autoReconnect: false });
     try {
       await runtime.connect();
-      await runtime.resources.threads.list({ cursor: null, limit: 50 });
-      await runtime.resources.threads.list({ cursor: "page-two", limit: 30 });
+      const first = await runtime.resources.threads.list({ cursor: null, limit: 50 });
+      assert.deepEqual(first.data.map(row => [row.id, row.pinned]), [["old-pin", true], ["recent", false]]);
+      assert.equal(first.nextCursor, "page-two");
+      await runtime.resources.threads.list({ cursor: first.nextCursor, limit: 30 });
       await runtime.resources.threads.list({ archived: true, limit: 1 });
       await runtime.resources.threads.list({ useStateDbOnly: false });
       const lists = requests.filter(request => request.method === "thread/list");
       assert.equal(lists.length, 4);
       for (const request of lists.slice(0, 3)) {
-        assert.equal(request.params.useStateDbOnly, hostKind === "remote-ssh" ? true : undefined);
+        assert.equal(request.params.useStateDbOnly, true, hostKind);
         assert.equal(request.params.modelProviders, undefined, "Do not widen provider filtering");
         assert.equal(request.params.sourceKinds, undefined, "Do not widen source filtering");
       }
