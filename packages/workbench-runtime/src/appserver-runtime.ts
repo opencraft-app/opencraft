@@ -2563,10 +2563,9 @@ export function createAppServerWorkbenchRuntime(
             limit: 30,
             sortDirection: "desc",
             sortKey: "updated_at",
-            // SSH discovery is a hot catalog read, not a filesystem
-            // reconciliation. Keep the policy here so all catalog consumers
-            // share it; an explicit repair caller can still override it.
-            ...(config.hostKind === "remote-ssh" ? { useStateDbOnly: true } : {}),
+            // Catalog reads use indexed metadata. An explicit repair caller
+            // can still request rollout reconciliation.
+            useStateDbOnly: true,
             ...params,
           });
           const defaultCatalog = Object.keys(params).every(key => key === "cursor" || key === "limit")
