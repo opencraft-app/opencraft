@@ -88,6 +88,8 @@ export function createCodexBridgeHost(options: CodexBridgeHostOptions): CodexHos
         clients,
         admissionOpen: () => !paused(),
         accounts: async () => object(await control.accountRequest("opencraft/codex/accounts/list", {})).accounts,
+        native: reader,
+        identities,
       });
       const services: CodexHostService[] = [
         codexTasksService(join(directory, "tasks.sqlite"), clients, () => options.storageOpened?.()),

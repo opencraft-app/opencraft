@@ -242,3 +242,86 @@ test('a response native abandoned (for a steer) closes with its turn; a complete
   assert.deepEqual(closes.map(e => (e as any).nativeKey), ['abandoned']);
   assert.ok(events.indexOf(closes[0]!) < events.findIndex(e => e.op === 'turn.close'));
 });
+
+test('turn/start defaults summary to auto unless explicitly set or disabled with null', async () => {
+  const sent: any[] = [];
+  const bridge = new CodexBridge({ async request(method, params) {
+    sent.push({ method, params });
+    return { turn: { id: `t-${sent.length}` } };
+  } }, () => {});
+  bridge.bind('route', 'native');
+
+  await bridge.start('route', { input: [{ type: 'text', text: 'default summary' }] });
+  assert.equal(sent[0].params.summary, 'auto');
+  bridge.notification('turn/completed', { threadId: 'native', turn: { id: 't-1', status: 'completed' } });
+
+  await bridge.start('route', { input: [{ type: 'text', text: 'explicit null' }], summary: null });
+  assert.equal(sent[1].params.summary, null);
+  bridge.notification('turn/completed', { threadId: 'native', turn: { id: 't-2', status: 'completed' } });
+
+  await bridge.start('route', { input: [{ type: 'text', text: 'explicit detailed' }], summary: 'detailed' });
+  assert.equal(sent[2].params.summary, 'detailed');
+});
+
+test('Codex Bridge preserves v0.167.2 activity items, citations, command metadata, and open-work state on session end', () => {
+  const deltas: BridgeDelta[] = [];
+  const bridge = new CodexBridge({ async request() { return {}; } }, (_, batch) => deltas.push(...batch));
+  bridge.bind('route', 'native');
+  const notify = (method: string, params: Record<string, unknown>) =>
+    bridge.notification(method, { threadId: 'native', turnId: 'turn', ...params });
+
+  notify('turn/started', { turn: { id: 'turn' } });
+  const activityItems = [
+    { id: 'fco', type: 'functionCallOutput', name: 'generate_chart', namespace: null, output: 'generated /tmp/out.png' },
+    { id: 'iv', type: 'imageView', path: '/tmp/out.png' },
+    { id: 'sl', type: 'sleep', durationMs: 500 },
+    { id: 'er', type: 'enteredReviewMode', review: 'PR #1' },
+    { id: 'xr', type: 'exitedReviewMode', review: 'LGTM' },
+    { id: 'img', type: 'imageGeneration', status: 'inProgress', revisedPrompt: null, result: null, savedPath: null },
+    {
+      id: 'cmd', type: 'commandExecution', command: 'python3 run.py', cwd: '/work',
+      status: 'completed', commandActions: [], aggregatedOutput: 'ok', exitCode: 0, durationMs: 12,
+      processId: null, pluginId: 'skill-runner', scriptPath: '/work/run.py',
+    },
+  ];
+  for (const item of activityItems) {
+    notify('item/started', { item });
+    notify('item/completed', { item });
+  }
+
+  const citation = { entries: [{ path: '/mem/notes.md', lineStart: 1, lineEnd: 4, note: 'fact' }], threadIds: ['t-prev'] };
+  const questions = [{ title: 'Continue?', options: ['yes', 'no'] }];
+  notify('item/started', { item: { id: 'msg', type: 'agentMessage', text: '', phase: 'commentary', questions, memoryCitation: citation } });
+  notify('item/agentMessage/delta', { itemId: 'msg', delta: 'Streaming insight' });
+  notify('item/started', { item: { id: 'rsn', type: 'reasoning', summary: ['Plan'], content: ['First'] } });
+  notify('item/reasoning/textDelta', { itemId: 'rsn', delta: ' step', contentIndex: 0 });
+  notify('item/reasoning/textDelta', { itemId: 'rsn', delta: 'Second section', contentIndex: 1 });
+  deltas.push({ op: 'session.ended', scope: { threadId: 'route' } });
+
+  for (const delta of deltas) assert.equal(parseDelta(delta).ok, true, JSON.stringify(delta));
+  const assembled = assemble(createAssemblerState(BRIDGE_SCHEMA_VERSION), deltas, { threadId: 'route', clockSeed: 2000 });
+  assert.deepEqual(assembled.diagnostics.map(d => d.code), ['session-ended-settled']);
+  const projected = projectToAppServer(assembled.events, { schemaVersion: BRIDGE_SCHEMA_VERSION, steerEvidenceDeclared: false });
+  const completed = projected.filter(f => f.method === 'item/completed').map(f => f.params.item);
+
+  assert.equal(completed.some(item => item.type === 'functionCallOutput' && item.output === 'generated /tmp/out.png'), true);
+  assert.equal(completed.some(item => item.type === 'imageView' && item.path === '/tmp/out.png'), true);
+  assert.equal(completed.some(item => item.type === 'sleep'), true);
+  assert.equal(completed.some(item => item.type === 'enteredReviewMode'), true);
+  assert.equal(completed.some(item => item.type === 'exitedReviewMode'), true);
+  assert.equal(completed.some(item => item.type === 'imageGeneration' && item.savedPath === null && item.result === null), true);
+
+  const cmd = completed.find(item => item.type === 'commandExecution');
+  assert.equal(cmd?.pluginId, 'skill-runner');
+  assert.equal(cmd?.scriptPath, '/work/run.py');
+
+  const msg = completed.find(item => item.type === 'agentMessage');
+  assert.equal(msg?.text, 'Streaming insight');
+  assert.equal(msg?.phase, 'commentary');
+  assert.deepEqual(msg?.questions, questions);
+  assert.deepEqual(msg?.memoryCitation, citation);
+
+  const rsn = completed.find(item => item.type === 'reasoning');
+  assert.deepEqual(rsn?.summary, ['Plan']);
+  assert.deepEqual(rsn?.content, ['First step', 'Second section']);
+});

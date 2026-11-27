@@ -97,8 +97,8 @@ export function routedCodexScheduleExecution(
       const turn = await runTurn(run.threadId, run.id, run.turnId ?? null);
       if (!turn) return { state: "unknown" };
       const turnId = text(turn.id);
-      if (turn.status === "completed") return { state: "completed", turnId };
-      if (turn.status === "failed" || turn.status === "interrupted") return { state: "failed", turnId };
+      if (turn.status === "completed" && !turn.error) return { state: "completed", turnId };
+      if (turn.status === "failed" || turn.status === "interrupted" || turn.error) return { state: "failed", turnId };
       return { state: "running", turnId };
     },
   };
@@ -149,7 +149,7 @@ export function codexSchedulesService(options: CodexSchedulesOptions): CodexHost
       const turn = object(params.turn);
       if (method === "turn/completed" && text(turn.id))
         for (const listener of listeners)
-          listener({ threadId, turnId: text(turn.id), state: turn.status === "completed" ? "completed" : "failed" });
+          listener({ threadId, turnId: text(turn.id), state: turn.status === "completed" && !turn.error ? "completed" : "failed" });
     },
     close: () => schedules.close(),
   };

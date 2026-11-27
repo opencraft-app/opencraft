@@ -7,6 +7,7 @@ import {
   isAgentMessageQuestions,
   isAppServerActivityType,
   isCommandActions,
+  isMemoryCitation,
   isReasoningContentIndex,
   isTerminalInteraction,
   parseDelta,
@@ -217,7 +218,13 @@ export class CodexBridge {
         );
       }
       nativeStartAttempted = true;
-      const result = await this.owner.request("turn/start", { ...params, threadId: session.nativeId });
+      // Match mature native Codex Host: request reasoning summaries by default on
+      // every turn/start (including Host queue and continuations) unless caller
+      // explicitly supplied `summary` (including explicit `null`).
+      const startParams = Object.hasOwn(params, "summary")
+        ? { ...params, threadId: session.nativeId }
+        : { ...params, summary: "auto", threadId: session.nativeId };
+      const result = await this.owner.request("turn/start", startParams);
       const nativeTurnId = id(record(record(result).turn).id);
       if (!session.endedTurns.has(nativeTurnId)) {
         session.activeTurn = nativeTurnId;
@@ -395,12 +402,14 @@ export class CodexBridge {
       let shape: ItemShape;
       if (item.type === "agentMessage" && typeof item.text === "string") {
         const questions = isAgentMessageQuestions(item.questions) ? item.questions : undefined;
+        const memoryCitation = isMemoryCitation(item.memoryCitation) ? item.memoryCitation : undefined;
         shape = {
           kind: "agentMessage",
           text: item.text,
           ...(item.phase === "commentary" || item.phase === "final_answer" ? { phase: item.phase } : {}),
           ...(item.delivery === "async" || questions?.length ? { delivery: "async" } : {}),
           ...(questions ? { questions } : {}),
+          ...(memoryCitation ? { memoryCitation } : {}),
         };
       } else if (item.type === "plan" && typeof item.text === "string") shape = { kind: "plan", text: item.text };
       else if (item.type === "reasoning" && Array.isArray(item.content)) {
@@ -468,6 +477,8 @@ export class CodexBridge {
           cwd: item.cwd,
           status: item.status === "completed" || item.status === "failed" || item.status === "declined"
             ? item.status : "inProgress",
+          ...(typeof item.pluginId === "string" || item.pluginId === null ? { pluginId: item.pluginId } : {}),
+          ...(typeof item.scriptPath === "string" || item.scriptPath === null ? { scriptPath: item.scriptPath } : {}),
           ...(typeof item.processId === "string" || item.processId === null ? { processId: item.processId } : {}),
           ...(source ? { source } : {}),
           ...(isCommandActions(item.commandActions) ? { commandActions: item.commandActions } : {}),

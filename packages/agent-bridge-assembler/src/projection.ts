@@ -87,7 +87,7 @@ function toThreadItem(item: CanonicalItem): ThreadItem {
         id: item.itemId,
         text: shape.text,
         phase: shape.phase ?? null,
-        memoryCitation: null,
+        memoryCitation: (shape.memoryCitation as Extract<ThreadItem, { type: "agentMessage" }>["memoryCitation"]) ?? null,
         delivery: shape.delivery ?? null,
         questions: shape.questions?.map(question => ({
           title: question.title, options: question.options === null ? null : [...question.options],
@@ -123,8 +123,8 @@ function toThreadItem(item: CanonicalItem): ThreadItem {
       return {
         type: "commandExecution",
         id: item.itemId,
-        pluginId: null,
-        scriptPath: null,
+        pluginId: shape.pluginId ?? null,
+        scriptPath: shape.scriptPath ?? null,
         command: shape.command,
         cwd: shape.cwd,
         processId: shape.processId ?? null,

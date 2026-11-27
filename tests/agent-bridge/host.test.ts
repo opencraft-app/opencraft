@@ -3227,3 +3227,158 @@ test("with the execution CLI enabled, the Host still delivers its queue (without
   await until(async () => (await readFile(executions, "utf8")).split("\n").filter(Boolean), (rows) => rows.includes("queued"));
   assert.equal(issued, 0, "no credential was issued for the queued turn");
 });
+
+test("streaming deltas flow over SSE in causal order without writing outbox, inbox, or callback rows", async (t) => {
+  const { host, root } = await setup(t);
+  const endpoint = await attachGateway(host, token);
+  const inboxPath = join(root, "stream-inbox.db");
+  const received: { method: string; delta?: string; text?: string }[] = [];
+  const gateway = new BridgeGateway({ url: endpoint.url, token, serverId: "server-1", inboxPath }, (_threadId, raw) => {
+    const frame = raw as { method: string; params?: any };
+    received.push({
+      method: frame.method,
+      ...(typeof frame.params?.delta === "string" ? { delta: frame.params.delta } : {}),
+      ...(typeof frame.params?.item?.text === "string" ? { text: frame.params.item.text } : {}),
+    });
+  });
+  t.after(async () => {
+    await gateway.close();
+    await endpoint.close();
+  });
+  await gateway.open();
+  await gateway.command("thread-1", "create-sse", "session/create", {});
+  await gateway.command("thread-1", "start-sse", "turn/start", {});
+  await until(async () => received, (frames) => frames.some((f) => f.method === "turn/completed"));
+
+  const methods = received.map((f) => f.method);
+  const startedIdx = methods.indexOf("item/started");
+  const completedIdx = methods.indexOf("item/completed");
+  assert(startedIdx >= 0 && completedIdx > startedIdx, "item/started precedes item/completed");
+  const deltas = received.slice(startedIdx + 1, completedIdx).filter((f) => f.method === "item/agentMessage/delta");
+  assert.deepEqual(
+    deltas.map((f) => f.delta),
+    Array.from({ length: 15 }, (_, index) => `${index + 1},`),
+    "all 15 textDelta chunks arrive over SSE in exact order before item/completed",
+  );
+  assert.equal(
+    received.slice(completedIdx + 1).filter((f) => f.method === "item/agentMessage/delta").length,
+    0,
+    "no textDelta arrives after item/completed",
+  );
+
+  await gateway.close();
+  await host.close();
+  const inboxDb = new DatabaseSync(inboxPath, { readOnly: true });
+  const hostDb = new DatabaseSync(join(root, "host.db"), { readOnly: true });
+  try {
+    const inboxPayloads = inboxDb.prepare("SELECT payload FROM inbox ORDER BY seq").all() as { payload: string }[];
+    assert(
+      inboxPayloads.every((row) => !row.payload.includes("agentMessage.delta")),
+      "ephemeral deltas never enter the durable gateway inbox SQLite table",
+    );
+    assert(
+      inboxPayloads.length >= 5 && inboxPayloads.length <= 6,
+      `expected only structural events in inbox, got ${inboxPayloads.length}`,
+    );
+    const callbackCount = (hostDb.prepare("SELECT count(*) AS count FROM callbacks").get() as { count: number }).count;
+    assert.equal(callbackCount, 3, "15 ephemeral delta callbacks bypass the durable callbacks SQLite table");
+    const checkpointState = JSON.parse(
+      (hostDb.prepare("SELECT state FROM checkpoints WHERE route=?").get('["server-1","thread-1"]') as { state: string }).state,
+    );
+    assert.deepEqual(checkpointState.openTurns, {});
+  } finally {
+    inboxDb.close();
+    hostDb.close();
+  }
+});
+
+test("polling-only BridgeGatewaySession drains ephemeral text and notification deltas in causal order and drops stale deltas", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "bridge-ephemeral-poll-"));
+  const hostPath = join(root, "host.db");
+  const inboxPath = join(root, "inbox.db");
+  const storage = new Storage(hostPath, "host");
+  t.after(async () => {
+    await storage.close().catch(() => {});
+    await rm(root, { recursive: true, force: true });
+  });
+  await storage.ready;
+  await storage.call("add", await config(root));
+  await storage.call("activate", { id: "g1", expected: "" });
+  const route = JSON.stringify(["server-1", "thread-1"]);
+  await storage.call("admit", { command: command("create"), route, digest: "create", maxSpoolBytes: 1 << 20 });
+  await storage.call("dispatch", { id: "create" });
+  await storage.call("settle", { id: "create", state: "accepted" });
+  await storage.call("callback", {
+    generation: "g1", id: "cb-id", method: "thread/identity",
+    params: { threadId: route, providerThreadId: "native-t1", sessionRestorable: true },
+  });
+  await storage.close();
+
+  const host = await BridgeHost.open({ path: hostPath, policy, backend: localTestBackend() });
+  const endpoint = await attachGateway(host, token);
+  const inbox = new GatewayInbox(inboxPath);
+  const frames: any[] = [];
+  const request = (path: string, body?: unknown) => fetch(endpoint.url + path, {
+    method: body === undefined ? "GET" : "POST",
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  const session = new BridgeGatewaySession({
+    serverId: "server-1",
+    request,
+    inbox: {
+      cursor: () => inbox.cursor(),
+      read: (cursor) => inbox.read(cursor),
+      readIdentities: (r, after, through, sel) => inbox.readIdentities(r, after, through, sel),
+      readPendingInteractions: (r, after, through, ids) => inbox.readPendingInteractions(r, after, through, ids),
+      pull: () => inbox.pull(endpoint.url, token),
+      close: () => inbox.close(),
+    },
+  }, (_threadId, frame) => frames.push(frame));
+  t.after(async () => {
+    await session.close();
+    await endpoint.close();
+    await host.close();
+  });
+
+  await session.open({ live: false });
+  const hostInternal = host as any;
+  const emitCallback = async (id: string, method: string, params: Record<string, unknown>) => {
+    const committed = await hostInternal.storage.call("callback", { generation: "g1", id, method, params });
+    for (const item of committed.ephemeral ?? []) hostInternal.publishEphemeral(item);
+  };
+  await emitCallback("cb-open", "thread/delta", {
+    threadId: route,
+    deltas: [
+      { op: "turn.open", nativeTurnId: "nt-1", scope: { threadId: route } },
+      { op: "item.open", nativeKey: "cmd-1", shape: { kind: "command", command: "ls", cwd: "/", status: "inProgress" }, scope: { threadId: route } },
+    ],
+  });
+  await emitCallback("cb-out-delta", "thread/notification", {
+    threadId: route,
+    method: "item/commandExecution/outputDelta",
+    params: { turnId: "nt-1", itemId: "cmd-1", delta: "file.txt\n" },
+  });
+  await emitCallback("cb-close-cmd", "thread/delta", {
+    threadId: route,
+    deltas: [
+      { op: "item.close", nativeKey: "cmd-1", shape: { kind: "command", command: "ls", cwd: "/", status: "completed", output: "file.txt\n", exitCode: 0 }, scope: { threadId: route } },
+    ],
+  });
+  // Late outputDelta arriving after item.close must be dropped rather than emitted after item/completed.
+  await emitCallback("cb-stale-delta", "thread/notification", {
+    threadId: route,
+    method: "item/commandExecution/outputDelta",
+    params: { turnId: "nt-1", itemId: "cmd-1", delta: "stale\n" },
+  });
+
+  await session.pull();
+  assert.deepEqual(
+    frames.map((f) => f.method),
+    ["turn/started", "item/started", "item/commandExecution/outputDelta", "item/completed"],
+  );
+  const startedItem = frames.find((f) => f.method === "item/started")!.params.item;
+  const outputDelta = frames.find((f) => f.method === "item/commandExecution/outputDelta")!.params;
+  assert.equal(outputDelta.itemId, startedItem.id, "ephemeral notification rewrites native item ID to canonical ID");
+  assert.equal(outputDelta.delta, "file.txt\n");
+});

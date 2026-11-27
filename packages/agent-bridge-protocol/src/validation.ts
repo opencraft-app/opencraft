@@ -36,6 +36,13 @@ export function isAgentMessageQuestions(value: unknown): value is readonly Agent
     (question.options === null || isStringArray(question.options)));
 }
 
+export function isMemoryCitation(value: unknown): value is {
+  readonly entries: readonly Readonly<Record<string, unknown>>[];
+  readonly threadIds: readonly string[];
+} {
+  return isRecord(value) && Array.isArray(value.entries) && value.entries.every(isRecord) && isStringArray(value.threadIds);
+}
+
 export function isCommandActions(value: unknown): value is readonly CommandAction[] {
   return Array.isArray(value) && value.every(action => {
     if (!isRecord(action) || !isString(action.command)) return false;
@@ -92,8 +99,19 @@ function isAppServerItem(item: unknown): boolean {
     case "hookPrompt":
       return Array.isArray(item.fragments) && item.fragments.every(fragment =>
         isRecord(fragment) && isString(fragment.text) && isString(fragment.hookRunId));
+    case "functionCallOutput":
+      return isString(item.name) && isNullableString(item.namespace) &&
+        (isString(item.output) || (Array.isArray(item.output) && item.output.every(isRecord)));
+    case "imageView":
+      return isString(item.path);
+    case "sleep":
+      return isNumber(item.durationMs) && item.durationMs >= 0;
+    case "enteredReviewMode":
+    case "exitedReviewMode":
+      return isString(item.review);
     case "imageGeneration":
-      return isString(item.status) && isString(item.result) && (item.savedPath === undefined || isString(item.savedPath));
+      return isString(item.status) && isNullableString(item.result) &&
+        (item.savedPath === undefined || isNullableString(item.savedPath));
     case "mcpToolCall":
       return isString(item.status) && isString(item.server) && isString(item.tool) && (item.result == null ||
         isRecord(item.result) && Array.isArray(item.result.content));
@@ -142,7 +160,8 @@ function isItemShape(value: unknown): boolean {
       return isString(value.text) &&
         (value.phase === undefined || isOneOf(value.phase, ["commentary", "final_answer"])) &&
         (value.delivery === undefined || value.delivery === "async") &&
-        (value.questions === undefined || isAgentMessageQuestions(value.questions));
+        (value.questions === undefined || isAgentMessageQuestions(value.questions)) &&
+        (value.memoryCitation === undefined || value.memoryCitation === null || isMemoryCitation(value.memoryCitation));
     case "plan":
       return isString(value.text);
     case "reasoning":
@@ -161,6 +180,8 @@ function isItemShape(value: unknown): boolean {
             (change.kind.type === "update" && (change.kind.move_path === null || isString(change.kind.move_path)))));
     case "command":
       return isString(value.command) && isString(value.cwd) && isOneOf(value.status, [...ITEM_TOOL_STATUSES, "declined"])
+        && (value.pluginId === undefined || isNullableString(value.pluginId))
+        && (value.scriptPath === undefined || isNullableString(value.scriptPath))
         && (value.processId === undefined || isNullableString(value.processId))
         && (value.source === undefined || isOneOf(value.source, COMMAND_SOURCES))
         && (value.commandActions === undefined || isCommandActions(value.commandActions))

@@ -194,3 +194,22 @@ test('an existing local Thread the bridge adopts for a turn is admitted like a b
   assert.equal(sent[0].params.opencraftExecutionAdmission,'signed');assert.deepEqual(sent[0].params.opencraftSessionMcp,{url:'http://127.0.0.1:1/mcp'});
   assert.equal(sent[1].params.opencraftExecutionAdmission,undefined);assert.equal(sent[1].params.opencraftSessionMcp,undefined);
 });
+
+test('thread/fork on a bridge Thread prepares a deterministic session MCP reservation for the forked Thread',async()=>{
+  const preparedIds:string[]=[],sent:any[]=[];
+  const configuration={url:'http://127.0.0.1:1/mcp',http_headers:{Authorization:'fork-reserved'}};
+  const inner:any={status:{state:'open'},async connect(){},async close(){},subscribeStatus:()=>()=>{},subscribeMessage:()=>()=>{},
+    async send(raw:string){sent.push(JSON.parse(raw));}};
+  const transport=new BridgeExecutionAdmissionTransport(inner,{
+    async prepareSessionMcp(threadId){preparedIds.push(threadId);return {configuration};},
+    async admit():Promise<any>{throw Error('unused');},sign:()=>'',started(){},
+  });
+  await transport.send(JSON.stringify({id:'fork-1',method:'thread/fork',params:{threadId:'bridge:codex:parent',clientUserMessageId:'fork-req-1',config:{keep:true}}}));
+  await transport.send(JSON.stringify({id:'fork-2',method:'thread/fork',params:{threadId:'bridge:codex:parent',clientUserMessageId:'fork-req-1'}}));
+  assert.equal(preparedIds.length,2);
+  assert.equal(preparedIds[0],preparedIds[1],'retry with identical clientUserMessageId derives the same forked bridge threadId');
+  assert.match(preparedIds[0]!,/^bridge:codex:fork-[0-9a-f]{32}$/u);
+  assert.equal(sent[0].params.agentBridge.threadId,preparedIds[0]);
+  assert.deepEqual(sent[0].params.config['mcp_servers.opencraft_session'],configuration);
+  assert.equal(sent[0].params.config.keep,true);
+});

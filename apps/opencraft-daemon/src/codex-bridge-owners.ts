@@ -24,6 +24,7 @@ export interface CodexBridgeOwners {
   readonly executionGit?: BridgePolicy["executionGit"];
   readonly usage: NonNullable<BridgePolicy["usage"]>;
   readonly queueGuard: NonNullable<BridgePolicy["queueGuard"]>;
+  readonly topology?: BridgePolicy["topology"];
   readonly releaseForAdoption: NonNullable<BridgePolicy["releaseForAdoption"]>;
   /** The bridge's public↔native Thread identities, for duties the owner performs by native session. */
   bindThreadIdentities(identities: ReturnType<CodexProviderBridge["threadIdentities"]>): void;

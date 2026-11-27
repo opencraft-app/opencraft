@@ -3760,6 +3760,7 @@ export class CodexEngineAdapter implements DuplexTransport {
         settle: (attemptId, outcome, nativeThreadId, inputId, nativeTurnId) => this.settleExternalUsage(attemptId, outcome, nativeThreadId, inputId, nativeTurnId),
       },
       queueGuard: collaborationQueueGuard(this.options),
+      ...(this.options.collaboration?.topology ? { topology: (id: string) => this.options.collaboration!.topology!(id) } : {}),
       releaseForAdoption: (threadId) => this.releaseForAdoption(threadId),
       bindThreadIdentities: (identities) => this.bindExternalThreadIdentities(identities),
     };

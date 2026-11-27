@@ -39,7 +39,9 @@ export class CodexNativeReader {
     if (this.closed) return Promise.reject(new Error("Codex native reader is closed"));
     if (this.socket?.readyState === WebSocket.OPEN) return Promise.resolve(this.socket);
     return (this.opening ??= (async () => {
-      const [health, auth] = await Promise.all([this.readHealth(undefined, "native"), this.control.brokerAuth()]);
+      const [health, initialAuth] = await Promise.all([this.readHealth(undefined, "native"), this.control.brokerAuth()]);
+      let cachedAuth = initialAuth;
+      let initialAuthFresh = true;
       const socket = openCodexNativeSocket(health.nativeSocket, {
         maxPayload: 16 * 1024 ** 2,
         handshakeTimeout: 5000,
@@ -56,7 +58,18 @@ export class CodexNativeReader {
           frame.method === "account/chatgptAuthTokens/refresh" &&
           (typeof frame.id === "string" || typeof frame.id === "number")
         ) {
-          socket.send(JSON.stringify({ id: frame.id, result: auth }));
+          const requestId = frame.id;
+          const resolveAuth = initialAuthFresh
+            ? ((initialAuthFresh = false), Promise.resolve(cachedAuth))
+            : this.control.brokerAuth().then(
+                (fresh) => (cachedAuth = fresh),
+                () => cachedAuth,
+              );
+          void resolveAuth.then((result) => {
+              if (socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({ id: requestId, result }));
+              }
+            });
           return;
         }
         if (typeof frame.method === "string" && frame.id === undefined) {
