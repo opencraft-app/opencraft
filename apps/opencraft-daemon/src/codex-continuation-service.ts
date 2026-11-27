@@ -38,6 +38,9 @@ export interface CodexContinuationOptions {
   readonly admissionOpen: () => boolean;
   /** Routing facts of the account pool, for when a rate-limited Thread may run again. */
   readonly accounts?: () => Promise<unknown>;
+  /** Optional native reader + identity map to rediscover active goals across Host restarts. */
+  readonly native?: { request(method: string, params: Value): Promise<unknown> };
+  readonly identities?: { toPublic(nativeId: string): string | undefined };
 }
 
 export interface CodexContinuationService extends CodexHostService {
@@ -101,6 +104,13 @@ export function codexContinuationService(options: CodexContinuationOptions): Cod
 
   const activeGoals = new Set<string>();
   const goalTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  let closed = false;
+  const cancelGoalTimer = (threadId: string) => {
+    const timer = goalTimers.get(threadId);
+    if (!timer) return;
+    clearTimeout(timer);
+    goalTimers.delete(threadId);
+  };
   const notifyRecovery = (threadId: string) =>
     clients.broadcast("opencraft/turn-recovery/updated", {
       threadId,
@@ -172,11 +182,12 @@ export function codexContinuationService(options: CodexContinuationOptions): Cod
 
   /** Goal continuation belongs to the Host, not to a window: after a clean turn an active goal runs on. */
   function resumeGoal(threadId: string): void {
-    if (!activeGoals.has(threadId) || goalTimers.has(threadId)) return;
+    if (closed || !activeGoals.has(threadId) || goalTimers.has(threadId)) return;
     const timer = setTimeout(() => {
       goalTimers.delete(threadId);
+      if (closed) return;
       void serialize(threadId, async () => {
-        if (!options.admissionOpen() || recovery.snapshot(threadId)?.handledReason === "execution_fault") return;
+        if (closed || !options.admissionOpen() || recovery.snapshot(threadId)?.handledReason === "execution_fault") return;
         if (!activeGoals.has(threadId) || (await queued(threadId)) || !idle(await thread(threadId))) return;
         const goal = object(object(await request("thread/goal/get", { threadId })).goal);
         if (goal.status !== "active") {
@@ -200,12 +211,43 @@ export function codexContinuationService(options: CodexContinuationOptions): Cod
   const noteGoal = (threadId: string, goal: unknown) => {
     if (!threadId) return;
     if (object(goal).status === "active") activeGoals.add(threadId);
-    else activeGoals.delete(threadId);
+    else {
+      activeGoals.delete(threadId);
+      cancelGoalTimer(threadId);
+    }
   };
+
+  async function discoverActiveGoals(): Promise<void> {
+    if (!options.native) return;
+    let cursor: string | null = null;
+    for (let page = 0; page < 100 && !closed; page++) {
+      const response = object(
+        await options.native.request("thread/list", {
+          limit: 100,
+          useStateDbOnly: true,
+          ...(cursor ? { cursor } : {}),
+        }),
+      );
+      if (!Array.isArray(response.data)) return;
+      for (const entry of response.data) {
+        if (closed) return;
+        const nativeId = text(object(entry).id);
+        const threadId = options.identities?.toPublic(nativeId) ?? nativeId;
+        if (!threadId) continue;
+        const result = object(await request("thread/goal/get", { threadId }).catch(() => null));
+        noteGoal(threadId, result.goal);
+        if (activeGoals.has(threadId)) resumeGoal(threadId);
+      }
+      if (response.nextCursor == null) return;
+      if (typeof response.nextCursor !== "string" || response.nextCursor === cursor) return;
+      cursor = response.nextCursor;
+    }
+  }
 
   // Durable rows from before a restart (or left by the local Host) continue once routing answers.
   recovery.wake();
   retry.wake(1000);
+  if (options.native) void discoverActiveGoals().catch(() => {});
 
   return {
     handles: (method) => method === "opencraft/turn-recovery/read",
@@ -221,6 +263,15 @@ export function codexContinuationService(options: CodexContinuationOptions): Cod
     beforeRoute: (method, params) => {
       const threadId = text(params.threadId);
       if (!threadId || !USER_MUTATIONS.has(method)) return;
+      cancelGoalTimer(threadId);
+      if (
+        method === "thread/goal/clear" ||
+        method === "thread/archive" ||
+        method === "thread/delete" ||
+        (method === "thread/goal/set" && params.status !== "active")
+      ) {
+        activeGoals.delete(threadId);
+      }
       recovery.handled(threadId, method === "turn/interrupt" ? "user_stop" : "user_input");
       retry.handled(threadId);
     },
@@ -234,6 +285,7 @@ export function codexContinuationService(options: CodexContinuationOptions): Cod
         turnId = text(turn.id);
       if (!threadId) return;
       if (method === "turn/started" && turnId) {
+        cancelGoalTimer(threadId);
         recovery.started(threadId, turnId);
         retry.started(threadId, turnId);
       } else if (method === "provider/recovery" && params.kind === "restartRecommended") {
@@ -250,21 +302,22 @@ export function codexContinuationService(options: CodexContinuationOptions): Cod
         }
         recovery.finished(threadId, turnId);
         retry.finished(threadId, turnId);
-        if (turn.status === "failed")
+        if (turn.status === "failed" || turn.error)
           void retryAt(codexProviderFailure(object(turn.error))).then((failure) =>
             retry.failed(threadId, turnId, failure),
           );
         else resumeGoal(threadId);
       } else if (method === "thread/goal/updated") noteGoal(threadId, params.goal);
-      else if (method === "thread/goal/cleared") activeGoals.delete(threadId);
+      else if (method === "thread/goal/cleared") noteGoal(threadId, null);
       else if (method === "thread/archived" || method === "thread/deleted") {
-        activeGoals.delete(threadId);
+        noteGoal(threadId, null);
         recovery.handled(threadId);
         retry.handled(threadId);
       }
     },
     counts: () => ({ capacityRetries: retry.pendingThreadIds().length, activeGoals: activeGoals.size }),
     close: async () => {
+      closed = true;
       for (const timer of goalTimers.values()) clearTimeout(timer);
       goalTimers.clear();
       await Promise.all([recovery.close(), retry.close()]);

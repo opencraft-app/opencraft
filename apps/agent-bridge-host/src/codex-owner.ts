@@ -16,6 +16,7 @@ type InitialConfiguration = {
 /** An attachment, never a launcher. Account refresh, proxy and execution remain
  * in the existing Core/AppServer process. Mutations are never retried. */
 export class CodexOwnerConnection implements CodexOwnerPort {
+  private control?: CodexCoreControlClient;
   private brokerAuth?: { accessToken: string; chatgptAccountId: string };
   private socket?: WebSocket;
   private historyReads?: CodexCoreReadIsolation;
@@ -32,6 +33,7 @@ export class CodexOwnerConnection implements CodexOwnerPort {
   async connect(): Promise<void> {
     if (this.socket || this.failed) throw new Error('Connection already used');
     const control = new CodexCoreControlClient(this.endpoint, this.token);
+    this.control = control;
     // An accounts-only Core serves broker auth but no runtime health.
     const [nativeSocket, auth] = await Promise.all([
       this.nativeSocket ?? control.health().then(health => health.nativeSocket), control.brokerAuth()]);
@@ -143,8 +145,17 @@ export class CodexOwnerConnection implements CodexOwnerPort {
     if (!frame || typeof frame !== 'object' || Array.isArray(frame)) throw Error('Invalid native frame');
     const p = frame as Record<string, unknown>;
     if (p.method === 'account/chatgptAuthTokens/refresh' && (typeof p.id === 'string' || typeof p.id === 'number')) {
-      if (!this.brokerAuth) throw Error('Broker authentication unavailable');
-      this.resolve(p.id, this.brokerAuth); return;
+      const requestId = p.id;
+      void (this.control ? this.control.brokerAuth().then(fresh => (this.brokerAuth = fresh), () => this.brokerAuth) : Promise.resolve(this.brokerAuth))
+        .then(auth => {
+          if (this.failed) return;
+          if (!auth) {
+            this.fail({ method: 'unknown', reason: 'connection' });
+            return;
+          }
+          try { this.resolve(requestId, auth); } catch { this.fail(); }
+        });
+      return;
     }
     if (typeof p.method === 'string') {
       if (p.method === 'thread/settings/updated') {

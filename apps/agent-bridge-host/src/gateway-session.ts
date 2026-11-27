@@ -1,4 +1,8 @@
-import { BRIDGE_HISTORY_SELECTION_LIMIT, isOutboxId, type BridgeHistorySelection, type Receipt, type OutboxEvent, type OutboxFence, type Generation } from "./types.js";
+import {
+  BRIDGE_HISTORY_SELECTION_LIMIT, isOutboxId,
+  type BridgeHistorySelection, type BridgeStreamMessage, type EphemeralEvent, type EphemeralEventPage,
+  type Receipt, type OutboxEvent, type OutboxFence, type Generation,
+} from "./types.js";
 import { querySteerStatus, projectToAppServer, type CanonicalEvent } from "@opencraft/agent-bridge-assembler";
 import { BRIDGE_MAX_FRAGMENTED_EVENT_BYTES, BRIDGE_OUTBOX_FRAGMENT_BYTES } from "@opencraft/agent-bridge-protocol";
 import { THREAD_QUEUE_RECEIPT_TURN_LIMIT } from "@opencraft/appserver-protocol";
@@ -11,6 +15,7 @@ type BridgeSnapshot = {
   historyIdentityPages?: true;
   historyIdentitySelection?: true;
   historyPublicTurnBatch?: true;
+  ephemeralStream?: true;
   retryableAdoptionRoutes?: string[];
   current: string | null;
   generations: { id: string; retired: number; config?: Generation }[];
@@ -203,6 +208,11 @@ export async function pullBridgeInbox(
 export interface BridgeGatewayPorts {
   readonly serverId: string;
   request: BridgeHostRequest;
+  subscribeStream?: (handlers: {
+    cursor(): number;
+    onMessage(message: BridgeStreamMessage): void;
+    onDisconnect?(): void;
+  }) => () => void;
   inbox: {
     cursor(): Promise<number>;
     readIdentities(route: string, after: number, through: number, selection?: BridgeHistorySelection): Promise<BridgeInboxIdentity[]>;
@@ -229,6 +239,15 @@ export class BridgeGatewaySession {
   private historyIdentityPages = false;
   private historyIdentitySelection = false;
   private historyPublicTurnBatch = false;
+  private ephemeralStreamSupported = false;
+  private streamConnected = false;
+  private stopStream?: () => void;
+  private streamId: string | null = null;
+  private streamCursor = 0;
+  private readonly pendingEphemeral: EphemeralEvent[] = [];
+  private readonly completedItems = new Map<string, Set<string>>();
+  private deliveryChain: Promise<void> = Promise.resolve();
+  private closed = false;
   private readonly interactions = new Map<string, Map<string, { seq: number; frame: unknown }>>();
   /** Settlements already projected from durable Host facts, awaiting their outbox event. */
   private readonly reconciledSettlements = new Set<string>();
@@ -268,7 +287,16 @@ export class BridgeGatewaySession {
   async open({ live = true } = {}): Promise<void> {
     this.initialCursor = this.cursor = await this.ports.inbox.cursor();
     await this.loadRouteSnapshot();
-    if (live) await this.pull();
+    if (live) {
+      if (!this.closed && !this.stopStream && this.ports.subscribeStream) {
+        this.stopStream = this.ports.subscribeStream({
+          cursor: () => this.streamCursor,
+          onMessage: (message) => this.handleStreamMessage(message),
+          onDisconnect: () => { this.streamConnected = false; },
+        });
+      }
+      await this.pull();
+    }
   }
   /** Resolve public Thread identities for a passive metadata-only reader. */
   async loadRouteSnapshot(): Promise<boolean> {
@@ -276,6 +304,7 @@ export class BridgeGatewaySession {
     this.historyIdentityPages = snapshot.historyIdentityPages === true;
     this.historyIdentitySelection = this.historyIdentityPages && snapshot.historyIdentitySelection === true;
     this.historyPublicTurnBatch = this.historyIdentitySelection && snapshot.historyPublicTurnBatch === true;
+    this.ephemeralStreamSupported = snapshot.ephemeralStream === true;
     const retryableAdoptions = new Set(snapshot.retryableAdoptionRoutes);
     for (const row of snapshot.routes) {
       const [serverId, threadId] = JSON.parse(row.route);
@@ -397,6 +426,7 @@ export class BridgeGatewaySession {
         const items = this.items.get(threadId) ?? new Map();
         this.items.set(threadId, items);
         items.set(event.item.nativeKey, event.item.itemId);
+        if (event.kind === "item.completed") this.rememberCompletedItem(threadId, event.item.itemId);
       }
       for (const frame of projectToAppServer([{ ...event, threadId }], {
         steerEvidenceDeclared: true,
@@ -408,8 +438,117 @@ export class BridgeGatewaySession {
       this.event(threadId, { ...payload, params: { ...params, threadId } });
     }
   }
+  private rememberCompletedItem(threadId: string, itemId: string): void {
+    const completed = this.completedItems.get(threadId) ?? new Set<string>();
+    if (completed.size >= 1024 && !completed.has(itemId)) {
+      const oldest = completed.values().next().value;
+      if (oldest !== undefined) completed.delete(oldest);
+    }
+    completed.add(itemId);
+    this.completedItems.set(threadId, completed);
+  }
+  private async consumeEphemeral(row: EphemeralEvent): Promise<void> {
+    if (this.closed) return;
+    const [serverId, threadId] = JSON.parse(row.route);
+    if (serverId !== this.ports.serverId) return;
+    const payload = record(row.payload) as {
+      kind?: string;
+      event?: CanonicalEvent;
+      method?: string;
+      params?: unknown;
+    } | null;
+    if (!payload) return;
+    await this.hydrateThread(threadId);
+    if (this.closed) return;
+    if (payload.kind === "canonical" && payload.event) {
+      const event = payload.event;
+      if (event.kind === "agentMessage.delta" && this.completedItems.get(threadId)?.has(event.itemId)) return;
+      for (const frame of projectToAppServer([{ ...event, threadId }], {
+        steerEvidenceDeclared: true,
+        schemaVersion: 1,
+      }))
+        this.event(threadId, frame);
+    } else if (typeof payload.method === "string") {
+      const params = this.history(threadId, payload.params) as Record<string, unknown> | undefined;
+      if (typeof params?.itemId === "string" && this.completedItems.get(threadId)?.has(params.itemId)) return;
+      this.event(threadId, { ...payload, params: { ...params, threadId } });
+    }
+  }
+  private async flushPendingEphemeralThrough(maxAfterSeq: number): Promise<void> {
+    if (!this.pendingEphemeral.length) return;
+    const ready: EphemeralEvent[] = [];
+    let write = 0;
+    for (let index = 0; index < this.pendingEphemeral.length; index++) {
+      const entry = this.pendingEphemeral[index]!;
+      if (entry.afterSeq <= maxAfterSeq) ready.push(entry);
+      else this.pendingEphemeral[write++] = entry;
+    }
+    this.pendingEphemeral.length = write;
+    for (const entry of ready) await this.consumeEphemeral(entry);
+  }
+  private handleStreamMessage(message: BridgeStreamMessage): void {
+    if (this.closed) return;
+    if (message.kind === "hello") {
+      this.streamConnected = true;
+      if (this.streamId !== null && this.streamId !== message.streamId) {
+        this.streamCursor = 0;
+        this.pendingEphemeral.length = 0;
+      }
+      this.streamId = message.streamId;
+      void this.pull().catch(() => {});
+      return;
+    }
+    if (message.kind === "outbox") {
+      if (!this.pulling) void this.pull().catch(() => {});
+      return;
+    }
+    const event = message.event;
+    if (event.streamSeq <= this.streamCursor) return;
+    this.streamCursor = event.streamSeq;
+    const [serverId] = JSON.parse(event.route);
+    if (serverId !== this.ports.serverId) return;
+    if (this.cursor >= event.afterSeq && !this.pulling) {
+      if (this.pendingEphemeral.length === 0) {
+        this.deliveryChain = this.deliveryChain.then(() => this.consumeEphemeral(event)).catch(() => {});
+        return;
+      }
+      if (this.pendingEphemeral.length >= 4096) this.pendingEphemeral.shift();
+      this.pendingEphemeral.push(event);
+      this.deliveryChain = this.deliveryChain.then(() => this.flushPendingEphemeralThrough(this.cursor)).catch(() => {});
+      return;
+    }
+    if (this.pendingEphemeral.length >= 4096) this.pendingEphemeral.shift();
+    this.pendingEphemeral.push(event);
+    if (this.cursor < event.afterSeq && !this.pulling) void this.pull().catch(() => {});
+  }
+  private async pollEphemeral(): Promise<void> {
+    if (!this.ephemeralStreamSupported || this.streamConnected) return;
+    try {
+      for (let pageIndex = 0; pageIndex < 8; pageIndex++) {
+        const page = await this.rpc<EphemeralEventPage>(`/events/ephemeral?after=${this.streamCursor}`);
+        if (this.streamId !== null && this.streamId !== page.streamId) {
+          this.streamCursor = 0;
+          this.pendingEphemeral.length = 0;
+        }
+        this.streamId = page.streamId;
+        for (const event of page.events) {
+          if (event.streamSeq <= this.streamCursor) continue;
+          this.streamCursor = event.streamSeq;
+          const [serverId] = JSON.parse(event.route);
+          if (serverId !== this.ports.serverId) continue;
+          if (this.pendingEphemeral.length >= 4096) this.pendingEphemeral.shift();
+          this.pendingEphemeral.push(event);
+        }
+        if (!page.events.length || this.streamCursor >= page.highStreamSeq) break;
+      }
+    } catch {
+      /* Durable outbox pull remains the authoritative health signal. */
+    }
+  }
   pull(): Promise<void> {
     return (this.pulling ??= (async () => {
+      await this.deliveryChain;
+      await this.pollEphemeral();
       let producerError: BridgeOutboxAckError | BridgeOutboxReadError | undefined;
       try {
         await this.ports.inbox.pull();
@@ -420,14 +559,19 @@ export class BridgeGatewaySession {
         // transient read failure must not hold those events behind the producer.
         producerError = error;
       }
+      await this.flushPendingEphemeralThrough(this.cursor);
       for (;;) {
         const rows = await this.ports.inbox.read(this.cursor);
         if (!rows.length) break;
         for (const row of rows) {
+          await this.flushPendingEphemeralThrough(this.cursor);
           await this.consume(row);
           this.cursor = row.seq;
+          await this.flushPendingEphemeralThrough(this.cursor);
         }
       }
+      while (this.pendingEphemeral.some(entry => entry.afterSeq <= this.cursor))
+        await this.flushPendingEphemeralThrough(this.cursor);
       // Preserve read backoff and terminal acknowledgement handling. A retry
       // starts from the committed inbox cursor.
       if (producerError instanceof BridgeOutboxReadError || (producerError && !producerError.retryable))
@@ -865,6 +1009,11 @@ export class BridgeGatewaySession {
     throw Object.assign(Error("Native outcome unknown; query original command"), { code: -32005, commandId });
   }
   async close(): Promise<void> {
+    this.closed = true;
+    this.stopStream?.();
+    this.stopStream = undefined;
+    this.streamConnected = false;
+    await this.deliveryChain;
     await this.pulling?.catch(() => {});
     await this.ports.inbox.close();
   }

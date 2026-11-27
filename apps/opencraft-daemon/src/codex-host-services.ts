@@ -509,7 +509,11 @@ export function codexTitlesService(
     changed: (threadId, name) => clients.broadcast("thread/name/updated", { threadId, threadName: name }),
     failed: () => console.warn("[codex-host-services]", JSON.stringify({ event: "thread-title-failed" })),
   });
-  const stop = native.subscribeNotification((method, params) => void titles.notification(method, params));
+  const stop = native.subscribeNotification((method, params) => {
+    const id = typeof params.threadId === "string" ? params.threadId : "";
+    const translated = id && !titles.owns(id) ? (identities?.toPublic(id) ?? id) : id;
+    void titles.notification(method, translated && translated !== id ? { ...params, threadId: translated } : params);
+  });
   return {
     handles: () => false,
     request: () => null,

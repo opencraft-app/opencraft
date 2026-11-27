@@ -297,5 +297,5 @@ test('Codex Bridge accepts compiled Skill input and text over 64 KiB within the 
     { type: 'skill', name: 'fixture', path: '/workspace/fixture/SKILL.md' },
   ];
   await bridge.start('public', { input });
-  assert.deepEqual(calls, [{ method: 'turn/start', params: { threadId: 'native', input } }]);
+  assert.deepEqual(calls, [{ method: 'turn/start', params: { threadId: 'native', summary: 'auto', input } }]);
 });

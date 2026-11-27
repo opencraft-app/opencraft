@@ -55,6 +55,7 @@ export const COMMAND_SOURCES = ["agent", "userShell", "unifiedExecStartup", "uni
 
 export const APP_SERVER_ACTIVITY_TYPES = [
   "contextCompaction", "webSearch", "collabAgentToolCall", "subAgentActivity", "hookPrompt",
+  "functionCallOutput", "imageView", "sleep", "enteredReviewMode", "exitedReviewMode",
 ] as const;
 
 export type AppServerActivityType = (typeof APP_SERVER_ACTIVITY_TYPES)[number];
@@ -78,6 +79,10 @@ export type ItemShape =
       readonly phase?: "commentary" | "final_answer";
       readonly delivery?: "async";
       readonly questions?: readonly AgentMessageQuestion[];
+      readonly memoryCitation?: {
+        readonly entries: readonly Readonly<Record<string, unknown>>[];
+        readonly threadIds: readonly string[];
+      } | null;
     }
   | { readonly kind: "reasoning"; readonly text: string; readonly summary?: readonly string[]; readonly content?: readonly string[] }
   | { readonly kind: "plan"; readonly text: string }
@@ -111,6 +116,8 @@ export type ItemShape =
       readonly command: string;
       readonly cwd: string;
       readonly status: "inProgress" | "completed" | "failed" | "declined";
+      readonly pluginId?: string | null;
+      readonly scriptPath?: string | null;
       readonly processId?: string | null;
       readonly source?: (typeof COMMAND_SOURCES)[number];
       readonly commandActions?: readonly CommandAction[];

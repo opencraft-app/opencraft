@@ -13,6 +13,7 @@ import {
   BRIDGE_ERROR_CODES,
   BRIDGE_GRAMMAR_RANGE,
   BRIDGE_MAX_COMMAND_BYTES,
+  BRIDGE_OUTBOX_PAGE_BYTES,
   BRIDGE_PROTOCOL_VERSION,
   isBridgeCommand,
   assertMethodAllowed,
@@ -22,7 +23,10 @@ import {
 } from "@opencraft/agent-bridge-protocol";
 import { Storage, StorageRefusal } from "./storage.js";
 import { Peer, successful } from "./peer.js";
-import { object, identifier, isArchiveCommand, oversizedBridgeRequest, routeKey, type BridgeHistorySelection, type Command, type Generation, type Receipt } from "./types.js";
+import {
+  object, identifier, isArchiveCommand, oversizedBridgeRequest, routeKey,
+  type BridgeHistorySelection, type BridgeStreamMessage, type Command, type EphemeralEvent, type EphemeralEventPage, type Generation, type Receipt,
+} from "./types.js";
 import { HostQueue } from "./queue.js";
 const CODEX_RECONNECT_DELAY_MS = 1_000;
 type CliFailureStage = "source" | "previous-lease" | "issue" | "reservation" | "cancelled" | "provider" | "native-configuration";
@@ -138,14 +142,53 @@ export class BridgeHost {
    * provider is never started again, so only the storage row stays.
    */
   private readonly draining = new Set<string>();
+  private streamSeq = 0;
+  private ephemeralBytes = 0;
+  private readonly ephemeralBuffer: { event: EphemeralEvent; bytes: number }[] = [];
+  private readonly streamListeners = new Set<{
+    onMessage(message: BridgeStreamMessage): void;
+    onClose(): void;
+  }>();
   readonly incarnation = randomUUID();
   readonly queue: HostQueue;
+  private publishEphemeral(raw: { route: string; generation: string; afterSeq: number; payload: unknown }): void {
+    const event: EphemeralEvent = {
+      streamSeq: ++this.streamSeq,
+      afterSeq: raw.afterSeq,
+      route: raw.route,
+      generation: raw.generation,
+      payload: raw.payload,
+    };
+    const bytes = Buffer.byteLength(JSON.stringify(raw.payload)) + raw.route.length + raw.generation.length + 64;
+    this.ephemeralBuffer.push({ event, bytes });
+    this.ephemeralBytes += bytes;
+    while (
+      this.ephemeralBuffer.length > 2048 ||
+      (this.ephemeralBuffer.length > 1 && this.ephemeralBytes > 4 * 1024 * 1024)
+    ) {
+      const evicted = this.ephemeralBuffer.shift();
+      if (evicted) this.ephemeralBytes -= evicted.bytes;
+    }
+    const message: BridgeStreamMessage = { kind: "ephemeral", event };
+    for (const listener of this.streamListeners) {
+      try { listener.onMessage(message); } catch { /* isolated subscriber */ }
+    }
+  }
+  private notifyOutbox(high?: number): void {
+    const message: BridgeStreamMessage = high === undefined ? { kind: "outbox", high: 0 } : { kind: "outbox", high };
+    for (const listener of this.streamListeners) {
+      try { listener.onMessage(message); } catch { /* isolated subscriber */ }
+    }
+  }
   private constructor(private options: HostOptions) {
     this.storage = new Storage(options.path, "host", () => {
       this.closing = true;
+      for (const listener of [...this.streamListeners]) listener.onClose();
+      this.streamListeners.clear();
       if (this.pool) void this.pool.close().catch(() => {}); // retained cleanup promise is rechecked by close()
     });
     this.queue = new HostQueue(this.storage, {
+      outboxWritten: () => this.notifyOutbox(),
       command: async (serverId, threadId, commandId, method, params) => {
         try {
           await this.accept({ commandId, serverId, threadId, method, params });
@@ -308,7 +351,13 @@ export class BridgeHost {
       const peer: Peer = new Peer(
         config,
         async (callbackId, method, params) => {
-          await this.storage.call("callback", { generation: id, id: callbackId, method, params: object(params) });
+          const committed = await this.storage.call<{
+            high: number;
+            structuralWritten: boolean;
+            ephemeral: readonly { route: string; generation: string; afterSeq: number; payload: unknown }[];
+          }>("callback", { generation: id, id: callbackId, method, params: object(params) });
+          if (committed?.structuralWritten) this.notifyOutbox(committed.high);
+          for (const item of committed?.ephemeral ?? []) this.publishEphemeral(item);
           const p = object(params);
           const route = String(p.threadId);
           // A retried legacy adoption can attach a route retained at startup.
@@ -936,6 +985,8 @@ export class BridgeHost {
         state,
         interactionId: command.params.interactionId,
       });
+      if (state === "accepted" && ["interaction/resolve", "session/close", "session/delete", "turn/stop"].includes(command.method))
+        this.notifyOutbox();
       if (
         (["session/create", "session/fork", "session/adopt"].includes(command.method) && state === "rejected") ||
         sessionClosed
@@ -1178,6 +1229,37 @@ export class BridgeHost {
   events(cursor: number, limit = 256, fenced = false, fragmentOffset?: number): Promise<any> {
     return this.storage.call("events", { cursor, limit, fenced, fragmentOffset });
   }
+  ephemeralEvents(afterStreamSeq = 0, limit = 512): EphemeralEventPage {
+    if (!Number.isSafeInteger(afterStreamSeq) || afterStreamSeq < 0) throw Error("Invalid ephemeral cursor");
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 2048) throw Error("Invalid ephemeral page limit");
+    if (afterStreamSeq > this.streamSeq) {
+      return { streamId: this.incarnation, highStreamSeq: this.streamSeq, reset: true, events: [] };
+    }
+    const firstRetained = this.ephemeralBuffer[0]?.event.streamSeq;
+    const reset = afterStreamSeq > 0 && (
+      firstRetained === undefined ? this.streamSeq > afterStreamSeq : firstRetained > afterStreamSeq + 1
+    );
+    const events: EphemeralEvent[] = [];
+    let bytes = 512;
+    for (const entry of this.ephemeralBuffer) {
+      if (entry.event.streamSeq <= afterStreamSeq) continue;
+      if (events.length && bytes + entry.bytes > BRIDGE_OUTBOX_PAGE_BYTES) break;
+      events.push(entry.event);
+      bytes += entry.bytes;
+      if (events.length >= limit || bytes >= BRIDGE_OUTBOX_PAGE_BYTES) break;
+    }
+    return { streamId: this.incarnation, highStreamSeq: this.streamSeq, reset, events };
+  }
+  subscribeStream(listener: { onMessage(message: BridgeStreamMessage): void; onClose(): void }): () => void {
+    if (this.closing) {
+      listener.onClose();
+      return () => {};
+    }
+    this.streamListeners.add(listener);
+    return () => {
+      this.streamListeners.delete(listener);
+    };
+  }
   historyIdentities(serverId: string, threadId: string, after: number, through?: number, selection?: BridgeHistorySelection): Promise<unknown> {
     return this.storage.call("historyIdentities", { route: routeKey(serverId, threadId), after, through, selection });
   }
@@ -1217,6 +1299,8 @@ export class BridgeHost {
   }
   async close(): Promise<void> {
     this.closing = true;
+    for (const listener of [...this.streamListeners]) listener.onClose();
+    this.streamListeners.clear();
     this.queue.close();
     await Promise.allSettled([...this.admissions]);
     const cleanup = await Promise.allSettled([

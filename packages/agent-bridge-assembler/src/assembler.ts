@@ -205,12 +205,15 @@ export function assemble(
   /** Close open work with the right statuses (session ended / reset). */
   const settleOpenWork = (status: TurnStatus): void => {
     for (const [key, stream] of Object.entries(state.streams)) {
+      const accumulated = stream.reasoning ? stream.reasoning.content.join("\n") : stream.text;
       const item: CanonicalItem = {
         itemId: stream.itemId,
         nativeKey: key,
         threadId,
         turnId: stream.turnId,
-        shape: textShape(stream.channel, stream.text),
+        shape: stream.reasoning
+          ? { kind: "reasoning", text: accumulated, ...stream.reasoning }
+          : textShape(stream.channel, accumulated, stream.agentMessage),
       };
       emit({ kind: "item.completed", threadId, turnId: stream.turnId, item });
       state.settledKeys[key] = true;
@@ -287,8 +290,13 @@ export function assemble(
             channel,
             text: textOfShape(shape),
             turnId: item.turnId,
-            ...(shape.kind === "agentMessage" && (shape.phase || shape.delivery || shape.questions) ? {
-              agentMessage: { phase: shape.phase, delivery: shape.delivery, questions: shape.questions },
+            ...(shape.kind === "agentMessage" && (shape.phase || shape.delivery || shape.questions || shape.memoryCitation) ? {
+              agentMessage: {
+                phase: shape.phase,
+                delivery: shape.delivery,
+                questions: shape.questions,
+                ...(shape.memoryCitation ? { memoryCitation: shape.memoryCitation } : {}),
+              },
             } : {}),
             ...(shape.kind === "reasoning" && shape.content ? {
               reasoning: { summary: shape.summary, content: shape.content },

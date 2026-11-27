@@ -111,3 +111,59 @@ test("a provider-capacity failure is scheduled for retry and an active goal resu
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("startup discovers persisted active goals, pausing cancels pending goal timers, and completed turns with error do not resume goals", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oc-continuation-"));
+  const route = routing(() => ({ id: "err-turn", status: "failed", error: { message: "busy", codexErrorInfo: "serverOverloaded" } }));
+  route.setGoal({ status: "active" });
+  const service = codexContinuationService({
+    directory,
+    clients: route.clients,
+    admissionOpen: () => true,
+    native: {
+      request: async (method) =>
+        method === "thread/list" ? { data: [{ id: "native-goal" }], nextCursor: null } : {},
+    },
+    identities: {
+      toPublic: (nativeId) => (nativeId === "native-goal" ? "bridge:codex:goal-1" : null),
+    },
+  });
+  try {
+    await until(
+      () => route.sent.some(([method, params]) => method === "thread/goal/set" && params.threadId === "bridge:codex:goal-1"),
+      "startup goal discovery",
+    );
+    assert.equal(service.counts().activeGoals, 1);
+
+    // Pausing a goal immediately after turn completion must cancel the 150ms resume timer.
+    route.sent.length = 0;
+    service.notification!("turn/completed", { threadId: "bridge:codex:goal-1", turn: { id: "clean-1", status: "completed" } });
+    service.beforeRoute!("thread/goal/set", { threadId: "bridge:codex:goal-1", status: "paused" });
+    route.setGoal({ status: "paused" });
+    await delay(250);
+    assert.equal(
+      route.sent.filter(([method, params]) => method === "thread/goal/set" && params.status === "active").length,
+      0,
+      "paused goal must not be re-activated by an in-flight resume timer",
+    );
+
+    // A turn carrying turn.error despite status === 'completed' is treated as a failure, not clean goal progress.
+    route.setGoal({ status: "active" });
+    service.notification!("thread/goal/updated", { threadId: "bridge:codex:goal-1", goal: { status: "active" } });
+    route.sent.length = 0;
+    service.notification!("turn/started", { threadId: "bridge:codex:goal-1", turn: { id: "err-turn" } });
+    service.notification!("turn/completed", {
+      threadId: "bridge:codex:goal-1",
+      turn: { id: "err-turn", status: "completed", error: { message: "busy", codexErrorInfo: "serverOverloaded" } },
+    });
+    await until(() => service.counts().capacityRetries === 1, "capacity retry scheduled for completed-with-error turn");
+    await delay(220);
+    assert.equal(
+      route.sent.filter(([method, params]) => method === "thread/goal/set" && params.status === "active").length,
+      0,
+    );
+  } finally {
+    await service.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
