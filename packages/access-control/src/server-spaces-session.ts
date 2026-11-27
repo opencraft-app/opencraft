@@ -47,7 +47,7 @@ export class ServerSpacesSession {
         ?this.runtime.spaceFor(this.server(handoffSource),handoffSource):packet.method==='thread/fork'&&typeof params.threadId==='string'
         ?this.runtime.spaceFor(this.server(params.threadId),params.threadId):params.collaborationSpaceId??this.selected.get(this.lane(packet))??'myself';
       if(!this.runtime.hasMember(context.actorId,spaceId)) {
-        this.emit(JSON.stringify({id:packet.id,...(packet.__opencraftClient===undefined?{}:{__opencraftClient:packet.__opencraftClient}),error:{code:-32004,message:'Server unavailable'}}));return true;
+        this.emit(JSON.stringify({id:packet.id,...(packet.__opencraftClient===undefined?{}:{__opencraftClient:packet.__opencraftClient}),error:{code:403,message:'Server unavailable'}}));return true;
       }
       this.pending.set(this.key(packet),{spaceId,method:packet.method});
     }
