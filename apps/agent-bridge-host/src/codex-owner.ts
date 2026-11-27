@@ -38,6 +38,7 @@ export class CodexOwnerConnection implements CodexOwnerPort {
     const [nativeSocket, auth] = await Promise.all([
       this.nativeSocket ?? control.health().then(health => health.nativeSocket), control.brokerAuth()]);
     this.brokerAuth = auth;
+    this.initialAuthFresh = true;
     this.socket = openCodexNativeSocket(nativeSocket, { maxPayload: BRIDGE_MAX_FRAME_BYTES, handshakeTimeout: 5000 });
     this.historyReads = new CodexCoreReadIsolation(async () => ({ nativeSocket }), {
       maxPayload: BRIDGE_MAX_FRAME_BYTES, concurrency: 4, queue: 64, timeoutMs: 30_000,
@@ -73,6 +74,7 @@ export class CodexOwnerConnection implements CodexOwnerPort {
   private readonly uncertainConfigurations = new Set<string>();
   private readonly retirements = new Map<string, Record<string, any>>();
   private readonly pendingSettings = new Map<string, Record<string, any>>();
+  private initialAuthFresh = false;
   async configureExecution(threadId:string,environment:Readonly<Record<string,string>>,preparationDeadlineMs=Date.now()+25000,sessionMcp?:Record<string,unknown>|null):Promise<void> {
     if(!Number.isSafeInteger(preparationDeadlineMs)||preparationDeadlineMs<=Date.now())throw new CodexBridgeError('unsupported','cliUnavailable');
     const deadline=performance.now()+Math.min(25000,preparationDeadlineMs-Date.now());
@@ -146,7 +148,12 @@ export class CodexOwnerConnection implements CodexOwnerPort {
     const p = frame as Record<string, unknown>;
     if (p.method === 'account/chatgptAuthTokens/refresh' && (typeof p.id === 'string' || typeof p.id === 'number')) {
       const requestId = p.id;
-      void (this.control ? this.control.brokerAuth().then(fresh => (this.brokerAuth = fresh), () => this.brokerAuth) : Promise.resolve(this.brokerAuth))
+      const resolveAuth = this.initialAuthFresh
+        ? ((this.initialAuthFresh = false), Promise.resolve(this.brokerAuth))
+        : this.control
+          ? this.control.brokerAuth().then(fresh => (this.brokerAuth = fresh), () => this.brokerAuth)
+          : Promise.resolve(this.brokerAuth);
+      void resolveAuth
         .then(auth => {
           if (this.failed) return;
           if (!auth) {

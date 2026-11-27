@@ -41,6 +41,7 @@ export class CodexNativeReader {
     return (this.opening ??= (async () => {
       const [health, initialAuth] = await Promise.all([this.readHealth(undefined, "native"), this.control.brokerAuth()]);
       let cachedAuth = initialAuth;
+      let initialAuthFresh = true;
       const socket = openCodexNativeSocket(health.nativeSocket, {
         maxPayload: 16 * 1024 ** 2,
         handshakeTimeout: 5000,
@@ -58,13 +59,13 @@ export class CodexNativeReader {
           (typeof frame.id === "string" || typeof frame.id === "number")
         ) {
           const requestId = frame.id;
-          void this.control
-            .brokerAuth()
-            .then(
-              (fresh) => (cachedAuth = fresh),
-              () => cachedAuth,
-            )
-            .then((result) => {
+          const resolveAuth = initialAuthFresh
+            ? ((initialAuthFresh = false), Promise.resolve(cachedAuth))
+            : this.control.brokerAuth().then(
+                (fresh) => (cachedAuth = fresh),
+                () => cachedAuth,
+              );
+          void resolveAuth.then((result) => {
               if (socket.readyState === WebSocket.OPEN) {
                 socket.send(JSON.stringify({ id: requestId, result }));
               }
