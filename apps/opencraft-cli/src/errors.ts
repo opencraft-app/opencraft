@@ -9,6 +9,7 @@ export function classify(error: unknown): CliError {
   const fault = error as { code?: string; data?: { code?: string; status?: number }; message?: string; cause?: { message?: string } };
   const code = fault.data?.code, status = fault.data?.status;
   if (code === 'unsupported_capability') return new CliError(6, 'UNSUPPORTED_CAPABILITY', 'Host lacks this capability.');
+  if (status === 400 && code === 'model_catalog_unavailable') return new CliError(8, 'MODEL_CATALOG_UNAVAILABLE', 'Models are temporarily unavailable. Try again later with a new operation key.', true);
   if (status === 400) return new CliError(2, (code ?? 'invalid_input').toUpperCase(), 'Invalid input.');
   if (status === 401 || status === 403) return new CliError(4, status === 401 ? 'AUTH_REQUIRED' : 'FORBIDDEN', 'Check your account access.');
   if (status === 404) return new CliError(3, 'UNAVAILABLE', 'Resource unavailable.');

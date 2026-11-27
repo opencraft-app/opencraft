@@ -13,6 +13,12 @@ export function nativeCreateDiagnostic(code: unknown, message: string): NativeCr
   if (rpcCode === -32602) return diagnostic("invalid-parameters", true);
   if (rpcCode === -32601 && /^method not found$/iu.test(message)) return diagnostic("method-not-found", true);
   if (rpcCode === -32600) {
+    // This exact native startup error occurs before Session::new/persistence
+    // and submission-loop startup. thread/start removes its reserved thread
+    // state before replying. A bare 429 or generic InvalidRequest proves none
+    // of that, and must remain uncertain.
+    if (message === "No models are available. Set `model` explicitly or check your model catalog configuration.")
+      return diagnostic("model-catalog-unavailable", true);
     // Known checks before start_thread. Generic invalid-request codes are also
     // used after dispatch, so the code alone does not prove no allocation.
     if (message === "`permissions` cannot be combined with `sandbox`")

@@ -63,7 +63,8 @@ export function callConversationHost(appHost, binding, requestId, method, params
                 ...(frame.id === "operation" && method === "thread/start" && frame.error.code === -32006
                   && frame.error.data?.resultUnknown !== true && frame.error.data?.submissionOutcome === "rejected"
                   && frame.error.data?.bridgeErrorKind === "explicit-reject" && frame.error.data?.creationOutcome === "not-allocated"
-                  ? { status: 400 } : {}),
+                  ? { status: 400, ...(frame.error.data?.creationRejectionCode === "model_catalog_unavailable"
+                    ? { code: "model_catalog_unavailable" } : {}) } : {}),
                 // Creation may already have happened (for example a lost stable ID
                 // or a replaced Host). Only the Broker's committed rejection
                 // receipt can declare that mutation rejected.
@@ -111,7 +112,8 @@ export async function readConversationCurrentTurn(appHost, binding, submissionCo
     || typeof turn.status !== 'string' || !turn.status || turn.status.length > 128) throw Error('Invalid current execution identity');
   return { id: turn.id, status: turn.status };
 }
-const fault = (status, code) => Object.assign(new Error(code), { status, code });
+const fault = (status, code) => Object.assign(new Error(code === 'model_catalog_unavailable'
+  ? 'Models are temporarily unavailable. Try again later.' : code), { status, code });
 
 async function prepareCreation(invokeProject, { projectId, cwd }) {
   let roots;
@@ -225,7 +227,7 @@ export function createConversationExecution(getAppHost, {serverId, hostId, engin
         if (typeof thread?.id === 'string' && thread.id && thread.ephemeral !== true)
           ref = { serverId, threadId: thread.id };
       } catch (error) {
-        if (error.status === 400) throw fault(400, 'creation_rejected');
+        if (error.status === 400) throw fault(400, error.code === 'model_catalog_unavailable' ? error.code : 'creation_rejected');
         if (error.status === 403) throw fault(403, 'creation_forbidden');
       }
       if (!ref) return { operationKey, ref: null, creationState: 'unknown', firstMessageState: 'unknown' };

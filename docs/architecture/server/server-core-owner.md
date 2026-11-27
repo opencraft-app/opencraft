@@ -140,6 +140,19 @@ Retrying a key or reading its receipt never resumes an interrupted operation.
 The ledger stores the requested coordinates as a fingerprint, without message
 text. Claim and transition failures never fall back to main-thread SQLite.
 
+A Codex `thread/start` reply with `-32600` and the exact no-models startup
+error proves failure before persistent session initialization and first input;
+the native handler removes its temporary thread state before returning. The
+bridge classifies this as `model-catalog-unavailable` and carries
+`creationOutcome: not-allocated` plus `creationRejectionCode:
+model_catalog_unavailable` through the Host. The Server commits a terminal
+`rejected` receipt with that stable rejection code. CLI reports
+`MODEL_CATALOG_UNAVAILABLE` with a later-retry message; a later attempt needs a
+new operation key. The original key never dispatches again. A bare HTTP 429,
+generic InvalidRequest, altered message, lost reply, or category without
+non-allocation proof remains `unknown`. Raw native error text and provider
+quota details do not cross this diagnostic boundary.
+
 Personal model defaults (`account_model_defaults`, migration v23) also use the
 Server Worker connection. The network thread verifies the signed-in human Actor
 and instance admission, validates the Host and selection, then calls

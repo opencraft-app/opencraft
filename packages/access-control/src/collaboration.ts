@@ -65,7 +65,7 @@ export interface ConversationExecutionPort {
   cancel(binding: RunBinding, requestId: string, queueId: string): Promise<boolean>;
 }
 export class CollaborationError extends Error {
-  constructor(readonly status: number, readonly code: string) { super(code); }
+  constructor(readonly status: number, readonly code: string) { super(code === 'model_catalog_unavailable' ? 'Models are temporarily unavailable. Try again later.' : code); }
 }
 
 
@@ -545,7 +545,7 @@ export class Collaboration {
       // terminal. A local admission fence also throws 401/403; it must leave
       // the already committed claim unconfirmed.
       if (!allocated && (
-        fault.status === 400 && (fault.code === 'invalid_cwd' || fault.code === 'creation_rejected')
+        fault.status === 400 && (fault.code === 'invalid_cwd' || fault.code === 'creation_rejected' || fault.code === 'model_catalog_unavailable')
         || fault.status === 403 && fault.code === 'creation_forbidden'
         || fault.status === 404 && fault.code === 'conversation_unavailable'
       )) await store.rejectConversationAllocation(key, fault.status, String(fault.code));

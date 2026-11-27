@@ -1345,7 +1345,8 @@ export class CodexProviderBridgeSession implements DuplexTransport {
                   ? { cliStage: size.cliStage } : {}),
                 ...(cause instanceof InteractionFault ? cause.domainData : {}),
                 ...(optIn && method === "thread/start" && error.code === -32006 && error.kind === "explicit-reject"
-                  && size.creationOutcome === "not-allocated" ? { creationOutcome: "not-allocated" } : {}),
+                  && size.creationOutcome === "not-allocated" ? { creationOutcome: "not-allocated",
+                    ...(size.creationRejectionCode === "model_catalog_unavailable" ? { creationRejectionCode: size.creationRejectionCode } : {}) } : {}),
                 submissionOutcome: oversizedHistory || rejected ? "rejected" : "unknown",
                 retryable: false,
                 bridgeErrorKind: error.kind ?? (rejected ? "explicit-reject" : "unknown-outcome"),

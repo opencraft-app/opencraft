@@ -1368,3 +1368,36 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
   assert.deepEqual((await host.snapshot()).interactions, []);
   assert.equal(currentGateway().interactions.size, 0);
 });
+
+for (const proven of [true, false]) test(`model catalog category crosses the Host only with non-allocation proof=${proven}`, async () => {
+  const frames: any[] = [];
+  const session = new CodexProviderBridgeSession({
+    status: { state: 'open' }, async connect() {}, async close() {}, async send() {},
+    subscribeStatus: () => () => {}, subscribeMessage: () => () => {},
+  }, publish => {
+    const gateway = new BridgeGatewaySession({
+      serverId: 'fixture', async request() { assert.fail('No native operation is needed'); },
+      inbox: { async cursor() { return 0; }, async read() { return []; }, async readIdentities() { return []; },
+        async readPendingInteractions() { return []; }, async pull() {}, async close() {} },
+    }, publish);
+    gateway.command = async (_thread, _id, method) => {
+      assert.equal(method, 'session/create');
+      throw Object.assign(Error('Models are temporarily unavailable. Try again later.'), {
+        code: -32006, kind: 'explicit-reject', data: { creationRejectionCode: 'model_catalog_unavailable',
+          ...(proven ? { creationOutcome: 'not-allocated' } : {}) },
+      });
+    };
+    return gateway;
+  });
+  session.subscribeMessage(raw => frames.push(JSON.parse(raw)));
+  try {
+    await session.send(JSON.stringify({ [LOGICAL_CLIENT_FIELD]: 'fixture', id: 'init', method: 'initialize', params: {} }));
+    await session.sendWithContext(JSON.stringify({ [LOGICAL_CLIENT_FIELD]: 'fixture', id: 'create', method: 'thread/start', params: {
+      agentBridge: { threadId: 'bridge:codex:no-models', clientRequestId: 'no-models' },
+    } }), { sender: null });
+    const error = frames.find(frame => frame.id === 'create').error;
+    assert.equal(error.code, -32006);
+    assert.equal(error.data.creationOutcome, proven ? 'not-allocated' : undefined);
+    assert.equal(error.data.creationRejectionCode, proven ? 'model_catalog_unavailable' : undefined);
+  } finally { await session.close(); }
+});
