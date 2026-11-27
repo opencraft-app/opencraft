@@ -34,6 +34,7 @@ export class CodexBridgeError extends Error {
     readonly kind: BridgeErrorKind,
     message: string,
     readonly nativeReason?: "unmaterialized" | "turns-unavailable",
+    readonly nativeCreateFailure?: import("./codex-create-diagnostic.js").NativeCreateDiagnostic,
   ) {
     super(message);
   }

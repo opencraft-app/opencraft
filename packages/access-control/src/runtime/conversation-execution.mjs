@@ -60,6 +60,10 @@ export function callConversationHost(appHost, binding, requestId, method, params
                 code: frame.error.code,
                 ...(['thread/read','thread/items/list','thread/turns/list'].includes(method) && frame.error.code === -32072 && frame.error.data?.code === 'HISTORY_RESPONSE_TOO_LARGE'
                   ? {code: 'HISTORY_RESPONSE_TOO_LARGE', status: 413, retryable: false} : {}),
+                ...(frame.id === "operation" && method === "thread/start" && frame.error.code === -32006
+                  && frame.error.data?.resultUnknown !== true && frame.error.data?.submissionOutcome === "rejected"
+                  && frame.error.data?.bridgeErrorKind === "explicit-reject" && frame.error.data?.creationOutcome === "not-allocated"
+                  ? { status: 400 } : {}),
                 // Creation may already have happened (for example a lost stable ID
                 // or a replaced Host). Only the Broker's committed rejection
                 // receipt can declare that mutation rejected.
