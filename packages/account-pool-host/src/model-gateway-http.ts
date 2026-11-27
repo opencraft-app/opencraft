@@ -27,6 +27,8 @@ export function modelGatewayHttp<R = HttpRequestView>(options: {
   withdraw?(actor: string, provider: string): Promise<unknown>;
   directory?(actor: string): Promise<unknown>;
   subscription?(actor:string, input:Record<string,unknown>, assertCurrent:GatewayAuthorityCheck):Promise<unknown>;
+  discover?(input: Record<string, unknown>): Promise<unknown>;
+  register?(actor: string, input: Record<string, unknown>, assertCurrent: GatewayAuthorityCheck): Promise<unknown>;
 }) {
   return async (exchange: HttpExchangeRequest<R>): Promise<HttpExchangeResponse | null> => {
     const url = requestUrl(exchange);
@@ -78,6 +80,13 @@ export function modelGatewayHttp<R = HttpRequestView>(options: {
         fields(['action','operation','sessionId']);
         if(!['start','poll','cancel'].includes(body.operation)||body.operation!=='start'&&(typeof body.sessionId!=='string'||body.sessionId.length>128))throw new ModelGatewayError('invalid_subscription_request',400);
         const result=await options.subscription(latest.actor,body,assertCurrent);await assertCurrent();send(200,result);
+      } else if (body.action === "discover" && latest.administrator && options.discover) {
+        fields(["action", "baseUrl", "protocol", "apiKey"]);
+        send(200, await options.discover(body));
+      } else if (body.action === "register" && latest.administrator && options.register) {
+        fields(["action", "name", "vendorId", "baseUrl", "protocol", "apiKey", "models", "scope", "shareWithTeam"]);
+        if (body.scope === "team" && body.shareWithTeam !== true) throw new ModelGatewayError("gateway_sharing_consent_required", 400);
+        send(200, await options.register(latest.actor, body, assertCurrent));
       } else if (body.action === "contribute" && options.contribute) {
         fields(["action", "name", "baseUrl", "protocol", "model", "apiKey", "shareWithTeam", "scope"]);
         if (body.scope === "team" && body.shareWithTeam !== true) throw new ModelGatewayError("gateway_sharing_consent_required", 400);

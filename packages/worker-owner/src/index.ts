@@ -66,12 +66,20 @@ export class WorkerOwner<T> {
     private readonly options: WorkerOwnerOptions,
   ) {
     const source = entry.pathname.endsWith(".ts");
-    this.worker = new Worker(entry, {
-      workerData: options.workerData,
-      // A TypeScript entry needs tsx; any other entry inherits the parent's loader flags.
-      ...(source ? { execArgv: ["--import", "tsx"] } : {}),
-      ...(options.resourceLimits ? { resourceLimits: options.resourceLimits } : {}),
-    });
+    const tsxWorkerBootstrap = source
+      ? `import { register } from ${JSON.stringify(import.meta.resolve("tsx/esm/api"))}; register(); await import(${JSON.stringify(entry.href)});`
+      : null;
+    this.worker = tsxWorkerBootstrap
+      ? new Worker(tsxWorkerBootstrap, {
+          eval: true,
+          execArgv: [],
+          workerData: options.workerData,
+          ...(options.resourceLimits ? { resourceLimits: options.resourceLimits } : {}),
+        })
+      : new Worker(entry, {
+          workerData: options.workerData,
+          ...(options.resourceLimits ? { resourceLimits: options.resourceLimits } : {}),
+        });
     this.worker.on("message", (reply: OwnerReply) => this.receive(reply));
     this.worker.on("error", (error) =>
       this.fail(new WorkerOwnerUnavailable(`${options.name} failed`, { cause: error })),

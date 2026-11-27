@@ -24,6 +24,7 @@ import { InstanceAccess, MembershipStore } from '@opencraft/access-control';
 import { HumanAccountManagement } from '@opencraft/access-control/account-management';
 import { LocalAccountServerPlugin } from './server.js';
 import { createNodePasswordHasher } from './password-hash-node.js';
+import type { PasswordHasher } from './password-hash.js';
 import { LocalAccountApplication } from './application.js';
 
 /** Methods `desktop-account-owner.worker.ts` serves on the owner connection. */
@@ -31,7 +32,7 @@ type DesktopAccountOwner = { upgradeLocalPassword: ReturnType<typeof localAccoun
 
 /** The desktop daemon owns these stores and serves the account routes (`storageRole: 'owner'`);
  * Electron Main forwards those routes and installs the browser proof as a cookie. No renderer supplies identity. */
-export async function createDesktopAccountHost(directory: string, renderLogin: (nonce: string) => string, options: { openRemote?: (origin: string) => Promise<void>; storageRole?: 'owner' | 'borrower'; assetsStorage?: Parameters<typeof openHumanAssets>[0]['openStorage'] } = {}) {
+export async function createDesktopAccountHost(directory: string, renderLogin: (nonce: string) => string, options: { openRemote?: (origin: string) => Promise<void>; storageRole?: 'owner' | 'borrower'; assetsStorage?: Parameters<typeof openHumanAssets>[0]['openStorage']; passwordHasher?: PasswordHasher } = {}) {
   await mkdir(directory, { recursive: true, mode: 0o700 });
   // The owner Worker holds the writer lock and commits login-time password upgrades
   // (compare-and-set SQL off the owning thread); a borrower never upgrades.
@@ -50,7 +51,7 @@ export async function createDesktopAccountHost(directory: string, renderLogin: (
     disposers.push(() => actors.close());
     const accounts = new HumanAccounts(storage, actors);
     disposers.push(() => accounts.close());
-    const localAccounts = new LocalAccountServerPlugin(accounts.localAccountRepository, createNodePasswordHasher());
+    const localAccounts = new LocalAccountServerPlugin(accounts.localAccountRepository, options.passwordHasher ?? createNodePasswordHasher());
     if (owned) localAccounts.useOwnerWrites({ upgradeLocalPassword: (...args) => owned.call.upgradeLocalPassword(...args) });
     accounts.registerLocalAccounts(localAccounts);
     const members = new MembershipStore(storage,{permissionProjection:false});

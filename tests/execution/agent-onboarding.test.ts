@@ -155,3 +155,113 @@ test("readLocalCodexAuth and readLocalCursorAuth recognize local credential file
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("macOS ChatGPT.app codex-package layout is discovered and injects sibling codex-path into PATH", async () => {
+  const { delimiter } = await import("node:path");
+  const { localAgentEnvironment } = await import("../../apps/local-agent-host/src/agent-onboarding.js");
+  const appCodex = "/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex";
+  const appRg = "/Applications/ChatGPT.app/Contents/Resources/codex-cli/codex-path/rg";
+  const files = new Set([appCodex, appRg, "/usr/local/bin/npx"]);
+  const deps = {
+    env: { PATH: "/usr/bin" },
+    homedir: "/Users/me",
+    exists: async (file: string) => files.has(file),
+    cursorVersions: async () => [],
+  };
+  assert.equal(await resolveExecutable(["codex"], deps), appCodex);
+  const env = await localAgentEnvironment(deps, "/usr/local/bin/npx", [appCodex]);
+  const parts = (env.PATH ?? "").split(delimiter);
+  assert.ok(parts.includes("/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin"));
+  assert.ok(parts.includes("/Applications/ChatGPT.app/Contents/Resources/codex-cli/codex-path"));
+});
+
+test("persisted fingerprint probe cache skips redundant CLI spawns across service instances", async () => {
+  const codex = "/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex";
+  let execCount = 0;
+  let savedCache: string | null = null;
+  const makeService = () => new AgentOnboardingService({
+    env: { PATH: "/usr/bin" },
+    homedir: "/Users/test-nonexistent",
+    dataDirectory: "/virtual/data",
+    exists: async file => file === codex,
+    cursorVersions: async () => [],
+    statFile: async file => file === codex ? { realpath: codex, size: 1024, mtimeMs: 1700000000000, ino: 42 } : null,
+    readTextFile: async () => savedCache,
+    writeTextFile: async (_file, content) => { savedCache = content; },
+    exec: async (_cmd, args) => {
+      execCount++;
+      return args[0] === "--version"
+        ? { stdout: "codex-cli 0.171.0\n", stderr: "", code: 0 }
+        : { stdout: "Logged in using ChatGPT\n", stderr: "", code: 0 };
+    },
+    spawn: () => { throw new Error("unexpected spawn"); },
+  });
+  const first = makeService();
+  const s1 = (await first.status()).agents.find(a => a.id === "codex");
+  assert.equal(s1?.version, "codex-cli 0.171.0");
+  assert.equal(s1?.authenticated, true);
+  assert.equal(execCount, 2);
+  first.close();
+
+  const second = makeService();
+  const s2 = (await second.status()).agents.find(a => a.id === "codex");
+  assert.equal(s2?.version, "codex-cli 0.171.0");
+  assert.equal(s2?.authenticated, true);
+  assert.equal(execCount, 2, "second instance reused fingerprint cache with zero child spawns");
+  second.close();
+});
+
+test("readNativeCodexModelsCache projects visible priority-ordered models without cold spawning ACP", async () => {
+  const { mkdtemp, mkdir, rm, writeFile } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { readNativeCodexModelsCache } = await import("../../apps/local-agent-host/src/connected-agents.js");
+  const root = await mkdtemp(join(tmpdir(), "oc-codex-models-"));
+  try {
+    const codexDir = join(root, ".codex");
+    await mkdir(codexDir, { recursive: true });
+    await writeFile(join(codexDir, "config.toml"), 'model = "gpt-6.2-astra"\n');
+    await writeFile(join(codexDir, "models_cache.json"), JSON.stringify({
+      models: [
+        { slug: "gpt-hidden", display_name: "Hidden", visibility: "hide", priority: 1 },
+        { slug: "gpt-6.2-astra", display_name: "GPT-6.2-Astra", visibility: "list", priority: 3, default_reasoning_level: "medium", additional_speed_tiers: ["fast"], input_modalities: ["text", "image"], supported_reasoning_levels: [{ effort: "low", description: "Fast" }, { effort: "medium", description: "Balanced" }] },
+        { slug: "gpt-6.2-sol", display_name: "GPT-6.2-Sol", visibility: "list", priority: 2, default_reasoning_level: "low", supported_reasoning_levels: [{ effort: "low", description: "Fast" }] },
+      ],
+    }));
+    const models = await readNativeCodexModelsCache({}, root);
+    assert.deepEqual(models.map(m => m.id), ["codex:gpt-6.2-sol", "codex:gpt-6.2-astra"]);
+    assert.equal(models[0]?.isDefault, false);
+    assert.equal(models[1]?.isDefault, true);
+    assert.deepEqual(models[1]?.inputModalities, ["text", "image"]);
+    assert.equal(models[1]?.serviceTiers[0]?.id, "fast");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("runtime auth expiration overrides stale status until sign-in completes", async () => {
+  const codex = "/bin/codex";
+  let resolveExit: (value: { code: number | null }) => void = () => undefined;
+  const signedIn: string[] = [];
+  const deps = fakeDeps(new Set([codex]), new Map([
+    [`${codex} --version`, { stdout: "codex-cli 1.2.3\n" }],
+    [`${codex} login status`, { stdout: "Logged in using ChatGPT\n" }],
+  ]));
+  deps.spawn = () => ({
+    kill() {},
+    exited: new Promise(resolve => { resolveExit = resolve; }),
+    onOutput(next) { next("https://auth.example/reauth\n"); },
+  });
+  const service = new AgentOnboardingService(deps, id => signedIn.push(id));
+  assert.equal((await service.status()).agents.find(a => a.id === "codex")?.authenticated, true);
+
+  service.markAuthenticationExpired("codex");
+  assert.equal((await service.status()).agents.find(a => a.id === "codex")?.authenticated, false);
+
+  await service.act({ id: "codex", action: "sign-in" });
+  resolveExit({ code: 0 });
+  await new Promise(resolve => setTimeout(resolve, 10));
+  assert.deepEqual(signedIn, ["codex"]);
+  assert.equal((await service.status()).agents.find(a => a.id === "codex")?.authenticated, true);
+  service.close();
+});

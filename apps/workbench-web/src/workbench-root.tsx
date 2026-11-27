@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { lazy, Suspense, useSyncExternalStore } from 'react';
 import { IdentityAvatarContext } from '@opencraft/extension-react';
 import { TimelineBlockRendererProvider } from "@opencraft/timeline-render-react";
 import { WebChatRenderRuntimeProvider } from "@opencraft/chat-render-web";
@@ -6,6 +6,9 @@ import { WebChatRenderRuntimeProvider } from "@opencraft/chat-render-web";
 import { BrowserInputNotices } from './browser/browser-input-notices';
 import { AsyncNoticesProvider } from "./components/async-notices";
 import { ApplicationDesktopProvider } from "./components/application-desktop-motion";
+const LazyCloudRelayPairingOverlay = lazy(() =>
+  import("./components/cloud-relay-pairing-overlay").then((m) => ({ default: m.CloudRelayPairingOverlay })),
+);
 import { App } from "./app";
 import { HostlessWorkbench } from "./components/hostless-workbench";
 import {
@@ -60,5 +63,6 @@ export function WorkbenchRoot({ application }: { readonly application: WebWorkbe
   const identityAvatar = useSyncExternalStore(avatars.subscribe, avatars.getSnapshot).contribution;
   return <IdentityAvatarContext.Provider value={identityAvatar}><AsyncNoticesProvider><BrowserInputNotices pages={application.browserPages} /><ApplicationDesktopProvider navigation={application.supervisor.navigation}>
     <WorkbenchContent application={application} />
+    <Suspense fallback={null}><LazyCloudRelayPairingOverlay /></Suspense>
   </ApplicationDesktopProvider></AsyncNoticesProvider></IdentityAvatarContext.Provider>;
 }

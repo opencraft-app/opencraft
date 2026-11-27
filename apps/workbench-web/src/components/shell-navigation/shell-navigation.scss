@@ -121,7 +121,7 @@
   background: var(--opencraft-sidebar-context-background, var(--color-surface));
   .shell-sidebar__context.sidecar-content-slot { background: transparent; grid-row: 1; }
   .shell-sidebar__navigation, .shell-sidebar__rail-footer {
-    --size-application-navigation-hit-min: max(var(--height-application-navigation-row), var(--size-control-hit-min));
+    --size-application-navigation-hit-min: max(38px, var(--size-control-hit-min));
     --height-navigation-row: var(--size-application-navigation-hit-min);
     align-self: end;
     padding-block: var(--padding-shell-footer-block);
@@ -130,9 +130,7 @@
     grid-column: 1; grid-row: 2;
     align-self: end;
     padding-inline: calc(var(--padding-shell-sidebar-inline) + var(--padding-sidebar-activity-row-inline)) 0;
-    // Keep one footer row. Extra contributed destinations scroll natively
-    // rather than making the entire sidebar footer taller.
-    overflow: auto hidden;
+    overflow: visible;
     scrollbar-width: none;
     .sidecar-shared-content { height: auto; }
   }

@@ -108,3 +108,6 @@ export function connectRelay(options: RelayConnectOptions) {
     stopped = true; clearTimeout(timer); clearInterval(heartbeat); control?.terminate(); for (const stream of streams) stream.terminate(); streams.clear();
   } };
 }
+
+export * from "./mux-client.js";
+export * from "./route-discovery.js";

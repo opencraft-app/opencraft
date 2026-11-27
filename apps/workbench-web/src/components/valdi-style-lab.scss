@@ -1,0 +1,77 @@
+@use "@opencraft/design-system/typography-mixins.web" as typography;
+
+.valdi-style-lab-page {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--spacing) * 4);
+  min-width: 0;
+}
+
+.valdi-style-lab-page__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--spacing) * 3);
+}
+
+.valdi-style-lab-page__badge {
+  @include typography.role(metadata);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--color-surface-secondary);
+  border: 1px solid var(--color-border-subtle);
+  color: var(--color-text-secondary);
+}
+
+.valdi-style-lab-stage {
+  position: relative;
+  width: 100%;
+  height: min(78vh, 820px);
+  min-height: 620px;
+  border-radius: 22px;
+  overflow: hidden;
+  border: 1px solid var(--color-border-subtle);
+  background: var(--color-surface-secondary);
+  box-shadow: 0 12px 36px rgb(0 0 0 / 0.08);
+}
+
+.valdi-style-lab-stage--compact {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(var(--spacing) * 4);
+  height: auto;
+  min-height: 820px;
+  background: radial-gradient(circle at 50% 0%, rgb(64 112 255 / 0.10), transparent 65%),
+    var(--color-surface-secondary);
+}
+
+.valdi-style-lab-stage__phone-bezel {
+  width: 393px;
+  max-width: 100%;
+  height: 780px;
+  border-radius: 44px;
+  overflow: hidden;
+  border: 6px solid rgb(32 34 40 / 0.85);
+  box-shadow: 0 24px 60px rgb(0 0 0 / 0.22);
+  background: #000000;
+}
+
+.valdi-style-lab-surface {
+  width: 100%;
+  height: 100%;
+}
+
+.valdi-style-lab-loading {
+  @include typography.role(body, secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  min-height: 420px;
+}

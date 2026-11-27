@@ -1,8 +1,11 @@
+import { isTouchPresentation, subscribeTouchPresentation } from '@opencraft/design-system-web/input-presentation';
+import { AssistantsSurface, InboxSurface, ValdiSurface } from '@opencraft/design-system-web/valdi';
 import { PeopleDefaultFaceArtwork as DefaultFace, PeopleEntryGlyph as EntryGlyph } from "@opencraft/design-system-web/action-icons";
-import {ManagedBots} from './managed-bots';
+import {ManagedBots, type ManagedBotsActions} from './managed-bots';
 import { CrewTeams } from './crew-teams';
-// Crew work and the desk load when the Work tab is first opened, not with the Inbox.
-const CrewWorkList=lazy(()=>import('./crew-work-view').then(m=>({default:m.CrewWorkList})));
+// Crew work and the desk load when the Work tab is first opened, or during idle warm-up.
+const loadCrewWorkView=()=>import('./crew-work-view');
+const CrewWorkList=lazy(()=>loadCrewWorkView().then(m=>({default:m.CrewWorkList})));
 import { getChannelRuntime, type ChannelRuntime, type ChannelRead, type ChannelReadState } from './channel-runtime';
 import { combineAbortSignals } from '@opencraft/appserver-client/transport';
 import { AssistantMemory } from './assistant-memory';
@@ -123,7 +126,8 @@ export function createPeopleViews(transport:ChannelRpc, activation:AbortSignal, 
     })().finally(()=>{refreshing=undefined;});
   }
   const timer=setInterval(()=>{if(listeners.size)void refresh();},30000);
-  const retirePeople=()=>{clearInterval(timer);snapshot={people:[],loaded:false,failed:true};emit();listeners.clear();};signal.addEventListener('abort',retirePeople,{once:true});if(signal.aborted)retirePeople();
+  const warmWorkTimer=setTimeout(()=>{if(!signal.aborted)void loadCrewWorkView();},350);
+  const retirePeople=()=>{clearInterval(timer);clearTimeout(warmWorkTimer);snapshot={people:[],loaded:false,failed:true};emit();listeners.clear();};signal.addEventListener('abort',retirePeople,{once:true});if(signal.aborted)retirePeople();
   const subscribe=(fn:()=>void)=>{listeners.add(fn);void refresh();return()=>{listeners.delete(fn);};};
   const groupsResource=runtime.directory,statusResource=runtime.assistant;
   function Entry({host}:ExtensionSettingsViewProps) {
@@ -223,80 +227,242 @@ export function createPeopleViews(transport:ChannelRpc, activation:AbortSignal, 
     };
     const visibleGroups=groups.filter(group=>group.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
     const selectedChannel = host.activeView?.viewId === chatViewId ? parseChannelResource(host.activeView.resourceUri)?.id : undefined;
+    const touch = useSyncExternalStore(onChange => subscribeTouchPresentation(document, onChange), () => isTouchPresentation(document), () => false);
+    const createGroupTriggerRef = useRef<HTMLDivElement | null>(null);
+    const managedBotsActionsRef = useRef<ManagedBotsActions | null>(null);
+    const botsState = useResource(runtime.bots, 0);
+    const fb = (key: string, defaultMessage: string) => intl.formatMessage({ id: 'bots.manage.' + key, defaultMessage });
+    const managedBotRows = botsState.value;
+    const managedBotsFailed = !managedBotRows && botsState.failed;
+    const managedBotsItems = (managedBotRows ?? []).map(row => {
+      const a = row.assistant!;
+      const envText = a.paused
+        ? fb('paused', 'Paused')
+        : a.environment?.kind === 'sandbox'
+          ? (a.environment.backendId.startsWith('e2b-') ? 'E2B' : a.environment.backendId.toLocaleUpperCase()) + ' · ' + a.environment.templateId
+          : fb('local', 'Local machine');
+      return {
+        id: a.binding.botId,
+        title: a.name ?? a.actorId,
+        statusText: `${envText} · ${a.model?.modelId ?? fb('noModel', 'No model selected')}`,
+        openLabel: fb('chat', 'Chat'),
+        settingsLabel: fb('settings', 'Settings'),
+        pauseLabel: a.paused ? fb('resume', 'Resume') : fb('pause', 'Pause'),
+        busy: false,
+      };
+    });
     const phaseText=status?.assistant?.state==='claimed'?f(status.runtime.phase):f('stopped');
+    const formatAt = (at: number) =>
+      new Date(at).toDateString() === new Date().toDateString()
+        ? intl.formatTime(at, { hour: '2-digit', minute: '2-digit' })
+        : intl.formatDate(at, { month: 'numeric', day: 'numeric' });
+    const inboxGroupsList: import("@opencraft/design-system-web/valdi").InboxGroupItem[] = [
+      ...(claimed && (!query.trim() || f('assistant').toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
+        ? [{
+            id: status?.channelId ?? 'personal-assistant',
+            title: f('assistant'),
+            preview: assistantGroup?.latestMessage?.text || f('ready'),
+            metaText: assistantGroup?.latestMessage ? formatAt(assistantGroup.latestMessage.at) : undefined,
+            unreadText: assistantGroup?.unreadCount ? (assistantGroup.unreadCount > 99 ? '99+' : String(assistantGroup.unreadCount)) : undefined,
+            selected: host.activeView?.viewId === chatViewId && parseChannelResource(host.activeView.resourceUri)?.id === status?.channelId,
+            isAssistant: true,
+            disabled: pending || !statusState.authoritative || !groupsState.authoritative,
+          }]
+        : []),
+      ...visibleGroups.map(group => ({
+        id: group.id,
+        title: group.title,
+        preview: `${group.mentionUnreadCount ? `[${intl.formatMessage({ id: 'im.channels.mentionedMe', defaultMessage: 'Mentioned you' })}] ` : ''}${group.latestMessage?.text || f('image')}`,
+        metaText: group.latestMessage ? formatAt(group.latestMessage.at) : undefined,
+        unreadText: group.unreadCount ? (group.unreadCount > 99 ? '99+' : String(group.unreadCount)) : undefined,
+        selected: selectedChannel === group.id,
+        disabled: !groupsState.authoritative,
+      })),
+    ];
     return <StandardPage regions={regions} header={<StandardPageTitle>{intl.formatMessage(mode==='agents'?agentsTitle:title)}</StandardPageTitle>} className={"people-page"+(mode==='inbox'?' people-page--inbox':'')+(memoryOpen&&claimed?' people-page--memory':'')}>
-      {mode==='agents'?<p className="people-page__description">{f('agentsAbout')}</p>:null}
-      {mode==='inbox'?<div className="people-toolbar">
-        <div className="people-toolbar-search"><SettingsTextInput aria-label={f('searchAll')} placeholder={f('searchAll')} value={query} onChange={e=>setQuery(e.target.value)} maxLength={128}/>
-        <CreateGroupButton client={runtime.client} options={groupCreateOptions} reportError={reportError} onCreated={group=>{void groupsResource.refresh();host.openView(chatViewId,'opencraft-channel:'+group.id);}}/></div>
-        <SegmentedControl appearance="toolbar" width="content" label={intl.formatMessage(title)} value={tab} onValueChange={setTab} options={[{value:'groups',label:f('groups')},{value:'work',label:intl.formatMessage({id:'crew.work.label',defaultMessage:'Work'})},{value:'members',label:f('members')}]}/>
-      </div>:null}
-      {mode==='agents'?<ManagedBots rpc={rpc} signal={signal} onOpen={id=>host.openView(chatViewId,'opencraft-channel:'+id)}/>:null}
-      {mode==='agents'?<div inert={!statusState.authoritative&&!!status} data-history-presentation={!statusState.authoritative&&!!status?'warm-loading':'none'}>
-      {!status?(failed?<p className="people-status" role="status">{f('failed')}</p>:<SkeletonRows count={1} variant="card"/>):null}
-      {assistant?<SettingsSection title={f('myAgents')} className={memoryOpen?"people-memory-section":undefined}><section className={"people-assistant"+(memoryOpen?" people-assistant--memory":"")} aria-label={f('personal')}>
-        <div className="people-assistant-summary">
-          <CompanionAvatar id={assistant.actorId}/>
-          <div className="people-member-copy"><strong>{f('personal')}</strong><small>{phaseText}</small></div>
-          {!claimed?<SettingsButton variant="primary" disabled={pending} loading={activeAction==='claim'} onClick={()=>{setDetails(true);void action('claim');}}>{f('reclaim')}</SettingsButton>:
-            status!.runtime.phase==='config_required'&&!details&&!memoryOpen?<SettingsButton variant="primary" onClick={()=>setDetails(true)}>{f('chooseModel')}</SettingsButton>:
-            <SettingsButton variant="quiet" disabled={pending||modelSaving} loading={activeAction==='open'} onClick={()=>void action('open')}>{f('open')}</SettingsButton>}
-          {claimed?<SettingsButton variant="quiet" aria-expanded={memoryOpen} onClick={()=>{if(memoryOpen&&memoryCloseGuard.current&&!memoryCloseGuard.current())return;if(!memoryOpen)setDetails(false);setMemoryOpen(v=>!v);}}>{f('memory')}</SettingsButton>:null}
-          {claimed?<SettingsIconButton label={details?f('closeDetails'):f('manage')} aria-expanded={details} aria-controls="people-assistant-details" onClick={()=>{if(memoryOpen){if(memoryCloseGuard.current&&!memoryCloseGuard.current())return;setMemoryOpen(false);setDetails(true);}else setDetails(v=>!v);}}><SettingsGearIcon/></SettingsIconButton>:null}
+      {mode === 'agents' ? <>
+        <ManagedBots rpc={rpc} signal={signal} onOpen={id => host.openView(chatViewId, 'opencraft-channel:' + id)} botsResource={runtime.bots} actionsRef={managedBotsActionsRef} />
+        <ValdiSurface
+          component={AssistantsSurface}
+          style={{ width: "100%" }}
+          viewModel={{
+            touch,
+            title: intl.formatMessage(agentsTitle),
+            subtitle: f('agentsAbout'),
+            managedTitle: fb('title', 'Additional assistants'),
+            managedDescription: fb('privacy', 'Each assistant has its own private conversation and memory. Group membership does not grant access to private memory.'),
+            managedCreateLabel: fb('create', 'New assistant'),
+            managedCreateDisabled: !managedBotRows || managedBotsFailed,
+            managedLoading: !managedBotRows && !managedBotsFailed,
+            managedError: managedBotsFailed ? fb('failed', 'Could not complete the request. Refresh or retry; do not create a new request for an unconfirmed result.') : undefined,
+            managedEmptyText: fb('empty', 'Create another assistant with its own identity, model, memory and conversation.'),
+            managedBots: managedBotsItems,
+            onCreateManagedBot: () => managedBotsActionsRef.current?.create(),
+            onRetryManagedBots: () => void runtime.bots.refresh(),
+            onOpenManagedBot: id => managedBotsActionsRef.current?.openChat(id),
+            onSettingsManagedBot: id => managedBotsActionsRef.current?.openSettings(id),
+            onTogglePauseManagedBot: id => managedBotsActionsRef.current?.togglePause(id),
+            loading: !status && !failed,
+            loadingText: f('loading'),
+            failedText: failed ? f('failed') : undefined,
+            myAgentsTitle: f('myAgents'),
+            availableTitle: f('available'),
+            personalTitle: f('personal'),
+            personalAbout: f('personalAbout'),
+            assistantPresent: Boolean(assistant),
+            claimed,
+            phaseText,
+            configRequired: status?.runtime.phase === 'config_required',
+            unavailable: status?.runtime.phase === 'unavailable',
+            detailsOpen: details,
+            memoryOpen,
+            confirmStop,
+            pending,
+            modelSaving,
+            activeAction,
+            reclaimLabel: f('reclaim'),
+            chooseModelLabel: f('chooseModel'),
+            openLabel: f('open'),
+            memoryLabel: f('memory'),
+            manageLabel: f('manage'),
+            closeDetailsLabel: f('closeDetails'),
+            hireLabel: f('hire'),
+            modelLabel: f('model'),
+            modelDescription: catalog?.models.length
+              ? f('modelAbout')
+              : modelsLoading
+                ? f('loading')
+                : catalog?.available === false
+                  ? f('modelServiceUnavailable')
+                  : catalog
+                    ? f('noModels')
+                    : undefined,
+            selectedModel: selection,
+            modelOptions: modelOptions.map(opt => ({ id: opt.value, title: opt.label, disabled: opt.disabled })),
+            modelDisabled: modelSaving || pending || !catalog?.models.length,
+            retryLabel: f('retry'),
+            stopLabel: f('stop'),
+            stopConfirmText: f('stopConfirm'),
+            cancelLabel: f('cancel'),
+            stopConfirmActionLabel: f('stopConfirmAction'),
+            onClaim: () => { setDetails(true); void action('claim'); },
+            onOpenChat: () => void action('open'),
+            onToggleMemory: () => {
+              if (memoryOpen && memoryCloseGuard.current && !memoryCloseGuard.current()) return;
+              if (!memoryOpen) setDetails(false);
+              setMemoryOpen(v => !v);
+            },
+            onToggleDetails: () => {
+              if (memoryOpen) {
+                if (memoryCloseGuard.current && !memoryCloseGuard.current()) return;
+                setMemoryOpen(false);
+                setDetails(true);
+              } else {
+                setDetails(v => !v);
+              }
+            },
+            onSelectModel: value => void selectModel(value),
+            onRetry: () => void action('retry'),
+            onRequestStop: () => setConfirmStop(true),
+            onCancelStop: () => setConfirmStop(false),
+            onConfirmStop: () => void action('revoke'),
+          }}
+        />
+        {memoryOpen && claimed && assistant ? (
+          <AssistantMemory
+            key={assistant.binding.botId + ':' + assistant.binding.assignmentId}
+            rpc={rpc}
+            binding={assistant.binding}
+            registerCloseGuard={guard => {
+              memoryCloseGuard.current = guard;
+              return () => { if (memoryCloseGuard.current === guard) memoryCloseGuard.current = null; };
+            }}
+          />
+        ) : null}
+        {details && claimed && assistant ? <AssistantThreadSettings key={assistant.binding.botId} rpc={rpc} reportError={reportError} /> : null}
+      </> : <>
+        <div ref={createGroupTriggerRef} style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden', pointerEvents: 'none', opacity: 0 }} aria-hidden="true">
+          <CreateGroupButton
+            client={runtime.client}
+            options={groupCreateOptions}
+            reportError={reportError}
+            onCreated={group => { void groupsResource.refresh(); host.openView(chatViewId, 'opencraft-channel:' + group.id); }}
+          />
         </div>
-        {memoryOpen&&claimed?<AssistantMemory key={assistant.binding.botId+':'+assistant.binding.assignmentId} rpc={rpc} binding={assistant.binding} registerCloseGuard={guard=>{memoryCloseGuard.current=guard;return()=>{if(memoryCloseGuard.current===guard)memoryCloseGuard.current=null;};}}/>:null}
-        {details&&claimed?<div id="people-assistant-details" className="people-assistant-details"><SettingsGroup>
-          <SettingsRow label={f('model')} description={catalog?.models.length?f('modelAbout'):modelsLoading?f('loading'):catalog?.available===false?f('modelServiceUnavailable'):catalog?f('noModels'):null}>
-            <SettingsChoiceSelect label={f('model')} value={selection} options={modelOptions} placeholder={f('chooseModel')}
-              disabled={modelSaving||pending||!catalog?.models.length} onValueChange={value=>void selectModel(value)}/>
-          </SettingsRow></SettingsGroup>
-          <AssistantThreadSettings key={assistant.binding.botId} rpc={rpc} reportError={reportError}/>
-          {confirmStop?<div className="people-confirm" role="group" aria-label={f('stop')}>
-            <p>{f('stopConfirm')}</p>
-            <div className="people-actions">
-              <SettingsButton variant="quiet" disabled={pending} onClick={()=>setConfirmStop(false)}>{f('cancel')}</SettingsButton>
-              <SettingsButton variant="danger" disabled={pending||modelSaving} loading={activeAction==='revoke'} onClick={()=>void action('revoke')}>{f('stopConfirmAction')}</SettingsButton>
-            </div>
-          </div>:<div className="people-actions">
-            {status!.runtime.phase==='unavailable'?<SettingsButton disabled={pending||modelSaving} onClick={()=>void action('retry')}>{f('retry')}</SettingsButton>:null}
-            <SettingsButton variant="quiet" disabled={pending||modelSaving} onClick={()=>setConfirmStop(true)}>{f('stop')}</SettingsButton>
-          </div>}
-        </div>:null}
-      </section></SettingsSection>:null}
-      {status&&!assistant?<SettingsSection title={f('available')}>
-        <section className="people-assistant" aria-label={f('personal')}>
-          <div className="people-assistant-summary">
-            <span className="agents-template-glyph" aria-hidden="true"><AgentIcon/></span>
-            <div className="people-member-copy"><strong>{f('personal')}</strong><small>{f('personalAbout')}</small></div>
-            <SettingsButton variant="primary" disabled={pending} loading={activeAction==='claim'} onClick={()=>{setDetails(true);void action('claim');}}>{f('hire')}</SettingsButton>
-          </div>
-        </section>
-      </SettingsSection>:null}</div>:tab==='groups'?<section className="people-stream" aria-label={f('groups')} aria-busy={groupsPending}>
-        {groupsPending?<SkeletonRows count={4} variant="group"/>:null}
-        {assistantRow}
-        {visibleGroups.map(group=><div className="people-group-entry" key={group.id}><ObjectRowButton className="people-group" aria-current={selectedChannel===group.id?'page':undefined} aria-label={group.title} disabled={!groupsState.authoritative} onClick={()=>host.openView(chatViewId,'opencraft-channel:'+group.id)}><span className="people-group-content">
-          <span className="people-group-badge-anchor"><span className="people-group-avatar" aria-hidden="true" data-count={Math.min(groupMembers[group.id]?.length??0,9)||1}>{groupMembers[group.id]?.length?groupMembers[group.id]!.map(member=><Avatar key={member.actorId} person={{...member,kind:member.actorKind==='session'?'bot':'human'}}/>):<DefaultFace seed={group.title} tint="#b4bac2"/>}</span><Unread count={group.unreadCount}/></span>
-          <span className="people-member-copy"><strong>{group.title}</strong><small>{!!group.mentionUnreadCount&&<><span className="people-mention">[{intl.formatMessage({id:'im.channels.mentionedMe',defaultMessage:'Mentioned you'})}]</span>{' '}</>}{group.latestMessage?.text||f('image')}</small></span>
-          <GroupMeta at={group.latestMessage!.at}/>
-        </span></ObjectRowButton></div>)}
-        <div role="status" className="people-status">{groupsState.failed?<>{f('failed')} <SettingsButton variant="quiet" onClick={()=>void groupsResource.refresh()}>{f('retry')}</SettingsButton></>:!groupsPending&&!visibleGroups.length&&!assistantRow?f('noGroups'):null}</div>
-      </section>:tab==='work'?<Suspense fallback={<SkeletonRows count={3} variant="group"/>}><CrewWorkList rpc={rpc} signal={signal} reportError={reportError} placeholder={<SkeletonRows count={3} variant="group"/>} onOpenChat={id=>host.openView(chatViewId,'opencraft-channel:'+id)}/></Suspense>:<section className="people-stream" aria-label={f('members')}>
-        {search?null:<CrewTeams rpc={rpc} signal={signal} reportError={reportError} onTeamed={setTeamed}
-          renderMember={(member,reachable,trailing)=>{const known=people.find(p=>p.actorId===member.actorId);
-            return memberRow({actorId:member.actorId,displayName:member.displayName,kind:member.kind==='session'?'bot':'human',...(known?.avatar?{avatar:known.avatar}:{})},reachable,trailing);}}/>}
-        {!search&&teamed.size&&visiblePeople.length?<h3 className="crew-team__others">{intl.formatMessage({id:'crew.teams.others',defaultMessage:'Other people'})}</h3>:null}
-        <div className="people-members" aria-busy={listing}>
-          {listing&&!people.length?<SkeletonRows count={4} variant="member"/>:null}
-          {visiblePeople.map(person=>memberRow(person,person.canMessage))}
-        </div>
-        <div role="status" className="people-status">{listFailed?<>{f('listFailed')} <SettingsButton variant="quiet" onClick={()=>setListRetry(n=>n+1)}>{f('retry')}</SettingsButton></>:!listing&&!visiblePeople.length&&(search||!teamed.size)?f('empty'):null}</div>
-        {next?<SettingsButton disabled={listing} onClick={()=>{
-          const epoch=listEpoch.current,controller=lifetime.current;if(!controller)return;setListing(true);
-          void rpc.request('opencraft/channels/people/list',{after:next,...(search?{query:search}:{})},controller.signal).then(result=>{
-            if(!controller.signal.aborted&&epoch===listEpoch.current){setPeople(rows=>[...rows,...result.people.filter(p=>!rows.some(r=>r.actorId===p.actorId))]);setNext(result.next);}
-          }).catch(()=>{if(!controller.signal.aborted)warn();}).finally(()=>{if(!controller.signal.aborted&&epoch===listEpoch.current)setListing(false);});
-        }}>{f('more')}</SettingsButton>:null}
-      </section>}
+        <ValdiSurface
+          component={InboxSurface}
+          style={{ width: "100%", minWidth: 0, maxWidth: "100%" }}
+          viewModel={{
+            touch,
+            title: intl.formatMessage(title),
+            activeTab: tab as 'groups' | 'work' | 'members',
+            searchQuery: query,
+            searchPlaceholder: f('searchAll'),
+            clearSearchLabel: intl.formatMessage({ id: 'settings.remoteAccess.clearInput', defaultMessage: 'Clear' }),
+            createGroupLabel: '+',
+            showCreateGroup: true,
+            groupsLabel: f('groups'),
+            workLabel: intl.formatMessage({ id: 'crew.work.label', defaultMessage: 'Work' }),
+            membersLabel: f('members'),
+            loadingText: f('loading'),
+            retryLabel: f('retry'),
+            groupsLoading: groupsPending,
+            groupsError: groupsState.failed ? f('failed') : undefined,
+            emptyGroupsText: f('noGroups'),
+            groups: inboxGroupsList,
+            membersLoading: listing,
+            membersError: listFailed ? f('listFailed') : undefined,
+            emptyMembersText: f('empty'),
+            members: visiblePeople.map(person => ({
+              id: person.actorId,
+              displayName: person.displayName,
+              kindLabel: f(person.kind),
+              isBot: person.kind === 'bot',
+              reachable: person.canMessage,
+              busy: openingPerson === person.actorId,
+            })),
+            loadMoreLabel: f('more'),
+            hasMoreMembers: Boolean(next),
+            onSearchChange: setQuery,
+            onCreateGroup: () => createGroupTriggerRef.current?.querySelector('button')?.click(),
+            onTabChange: nextTab => setTab(nextTab),
+            onOpenGroup: (id, isAssistant) => {
+              if (isAssistant) {
+                void action('open');
+              } else {
+                host.openView(chatViewId, 'opencraft-channel:' + id);
+              }
+            },
+            onRetryGroups: () => void groupsResource.refresh(),
+            onOpenMember: id => void openDirect(id),
+            onRetryMembers: () => setListRetry(n => n + 1),
+            onLoadMoreMembers: next ? () => {
+              const epoch = listEpoch.current, controller = lifetime.current;
+              if (!controller) return;
+              setListing(true);
+              void rpc.request('opencraft/channels/people/list', { after: next, ...(search ? { query: search } : {}) }, controller.signal).then(result => {
+                if (!controller.signal.aborted && epoch === listEpoch.current) {
+                  setPeople(rows => [...rows, ...result.people.filter(p => !rows.some(r => r.actorId === p.actorId))]);
+                  setNext(result.next);
+                }
+              }).catch(() => { if (!controller.signal.aborted) warn(); }).finally(() => {
+                if (!controller.signal.aborted && epoch === listEpoch.current) setListing(false);
+              });
+            } : undefined,
+          }}
+        />
+        {tab === 'work' ? (
+          <Suspense fallback={<SkeletonRows count={3} variant="group" />}>
+            <CrewWorkList
+              rpc={rpc}
+              signal={signal}
+              reportError={reportError}
+              placeholder={<SkeletonRows count={3} variant="group" />}
+              onOpenChat={id => host.openView(chatViewId, 'opencraft-channel:' + id)}
+            />
+          </Suspense>
+        ) : null}
+      </>}
     </StandardPage>;
   }
   function Scoped({children}:{children:import('react').ReactNode}) { const active=useSyncExternalStore(runtime.subscribeScope,runtime.getScope,runtime.getScope);return active?children:null; }

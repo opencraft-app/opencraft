@@ -149,7 +149,7 @@ import {
   createWorkbenchNavigationTransaction
 } from "./workbench-navigation-transaction";
 
-import { appServerUrl, BoundedCheckpointMap, BrowserDisplayContinuity, createWebWorkbenchCommands, createWorkbenchQueryClient, currentProductDatabaseName, currentProductStorageKey, readLocalPreference, currentWorkbenchPlatform, hostDefinitionProfile, HostlessWebWorkbenchApplicationSupervisor, parseWebHostDefinitions, persistProvisionedHost, profileDescriptor, provisionWebSocketHost, refreshBundledHostProfiles, rememberedThreadId, WebWorkbenchApplicationSupervisor, WebWorkbenchSupervisorOptions } from './workbench-application-services';
+import { appServerUrl, BoundedCheckpointMap, BrowserDisplayContinuity, createWebWorkbenchCommands, createWorkbenchQueryClient, currentProductDatabaseName, currentProductStorageKey, readLocalPreference, setLocalPreference, currentWorkbenchPlatform, hostDefinitionProfile, HostlessWebWorkbenchApplicationSupervisor, parseWebHostDefinitions, persistProvisionedHost, profileDescriptor, provisionWebSocketHost, refreshBundledHostProfiles, rememberedThreadId, WebWorkbenchApplicationSupervisor, WebWorkbenchSupervisorOptions } from './workbench-application-services';
 import { ClientResources } from "@opencraft/document-storage/client-resources";
 import { ClientLocalDocuments, type ClientLocalDocumentName } from "@opencraft/document-storage/client-local-documents";
 import { openClientResourcePersistence } from "./client-resource-persistence";
@@ -232,6 +232,13 @@ export async function createWebWorkbenchApplicationSupervisor(
     const composerActionRenderers = new ComposerActionRendererRegistry();
     const imageEditors = new ImageEditorContributionRegistry();
     const platform = currentWorkbenchPlatform();
+    const initialBrowserEntryHref = window.location.href;
+    if (window.location.pathname.replace(/\/+$/u, "") === "/claim") {
+      try {
+        window.sessionStorage.setItem("opencraft.pending-claim-href", initialBrowserEntryHref);
+        window.history.replaceState(null, "", "/");
+      } catch { /* Restricted storage */ }
+    }
     const rawBootstrapLocation = readWorkbenchBootstrapLocation(
       new URL(window.location.href), window.history.state, options.navigationMode,
     );
@@ -360,6 +367,22 @@ export async function createWebWorkbenchApplicationSupervisor(
     await extensions.activate(hasDeploymentAppHost && webAppHost
       ? createDeploymentWebSocketHostConnectionExtension(webAppHost.createTransport)
       : BuiltinWebSocketHostConnectionExtension);
+    let hasStoredRelaySessions = false;
+    try {
+      hasStoredRelaySessions =
+        window.localStorage.getItem("opencraft.cloud-relay.sessions.v1") !== null ||
+        window.localStorage.getItem("opencraft.cloud-relay.hub-session.v1") !== null;
+    } catch { /* Restricted storage */ }
+    const hasRelayEntryOrStoredSessions =
+      window.location.pathname.startsWith("/pair") ||
+      window.location.pathname.startsWith("/s/") ||
+      hasStoredRelaySessions ||
+      readLocalPreference("opencraft.cloud-relay.sessions.v1") !== null ||
+      (platform === "electron" && Boolean((globalThis as { opencraftDesktop?: { relay?: unknown } }).opencraftDesktop?.relay));
+    if (hasRelayEntryOrStoredSessions) {
+      const { CloudRelayHostConnectionExtension } = await import("./cloud-relay-client");
+      await extensions.activate(CloudRelayHostConnectionExtension);
+    }
     if (platform === "electron" && desktopServerPort()) await extensions.activate(DesktopServerConnectionExtension);
     await extensions.activateOptional(BuiltinThemePackExtension);
     const loadPresentationExtension = async (
@@ -398,10 +421,12 @@ export async function createWebWorkbenchApplicationSupervisor(
       const { createOverhomeExtension } = await import("./overhome-extension");
       return createOverhomeExtension(extensions.contributions, platformViewRenderers);
     }, ["opencraft.overhome.view"]);
-    await loadPresentationExtension("opencraft.schedules", async () => {
-      const { conversationSchedulesExtension } = await import("./conversation-schedules-extension");
-      return conversationSchedulesExtension;
-    }, ["opencraft.schedules.view"], ["opencraft.schedules"]);
+    if (import.meta.env.VITE_INCLUDE_SCHEDULES_PRESENTATION !== "false") {
+      await loadPresentationExtension("opencraft.schedules", async () => {
+        const { conversationSchedulesExtension } = await import("./conversation-schedules-extension");
+        return conversationSchedulesExtension;
+      }, ["opencraft.schedules.view"], ["opencraft.schedules"]);
+    }
     // The application owns connections and task/conversation workflow. The
     // optional View can consume these same ports from an administrator pack.
     const createTasksPorts = (): import("@opencraft/plugin-tasks").TasksExtensionPorts => ({
@@ -501,7 +526,12 @@ export async function createWebWorkbenchApplicationSupervisor(
       await extensions.loadOptional("opencraft.builtin-agents", async () => {
         const { createBuiltinAgentsExtension } = await import("@opencraft/plugin-builtin-agents");
         return platform === "web"
-          ? createBuiltinAgentsExtension({ platform: "web", requestHost: requestSettingsHost, includeCodexAccounts: headlessAppHost === null })
+          ? createBuiltinAgentsExtension({
+              platform: "web",
+              requestHost: requestSettingsHost,
+              includeCodexAccounts: headlessAppHost === null,
+              includeModelServices: import.meta.env.VITE_INCLUDE_LOCAL_ASSETS !== "true" && import.meta.env.VITE_INCLUDE_HEADLESS_MODEL_SERVICES !== "true",
+            })
           : createBuiltinAgentsExtension({
             requestHost: requestSettingsHost,
             createTransport: (hostId) => {
@@ -511,12 +541,12 @@ export async function createWebWorkbenchApplicationSupervisor(
           });
       });
     }
-    if (import.meta.env.VITE_INCLUDE_HEADLESS_MODEL_SERVICES === "true") {
+    if (import.meta.env.VITE_INCLUDE_HEADLESS_MODEL_SERVICES === "true" && import.meta.env.VITE_INCLUDE_LOCAL_ASSETS !== "true") {
       await extensions.loadOptional("opencraft.headless-model-services", async () => {
         const { createHeadlessModelServicesExtension } = await import("@opencraft/plugin-builtin-agents");
         return createHeadlessModelServicesExtension({
           fetcher: serverFetch,
-          hostId: "opencraft-server",
+          hostId: headlessAppHost !== null ? "opencraft-server" : "local",
           requestHost: requestSettingsHost,
         });
       });
@@ -525,7 +555,7 @@ export async function createWebWorkbenchApplicationSupervisor(
       await extensions.loadOptional('opencraft.account', async () =>
         (await import('@opencraft/plugin-local-account/client')).createLocalAccountExtension(globalThis.fetch.bind(globalThis)));
     }
-    if (headlessAppHost !== null || electronAppHost !== null) {
+    if (headlessAppHost !== null || electronAppHost !== null || import.meta.env.VITE_INCLUDE_LOCAL_ASSETS === "true") {
       const assets = serverExtensions.find(extension => extension.assets)?.assets
         ?? (headlessAppHost !== null ? options.serverAssetsContribution : undefined);
       await extensions.loadOptional("opencraft.assets", async () =>
@@ -533,10 +563,18 @@ export async function createWebWorkbenchApplicationSupervisor(
           contribution: assets,
           subscribeIdentity: cordis.authentication.subscribe,
         }));
+    }
+    if (headlessAppHost !== null || electronAppHost !== null || import.meta.env.VITE_INCLUDE_LOCAL_ASSETS === "true") {
       await extensions.loadOptional("opencraft.im", async () => {
         const { createImExtension } = await import("@opencraft/plugin-im");
         const { createChannelsRpc } = await import("./channels-rpc");
-        return createImExtension(serverFetch, signal => createChannelsRpc((headlessAppHost ?? electronAppHost)!.createTransport(CHANNELS_HOST_ID), signal),headlessAppHost===null);
+        const hostTransportOwner = headlessAppHost ?? electronAppHost;
+        if (hostTransportOwner !== null) {
+          return createImExtension(serverFetch, signal => createChannelsRpc(hostTransportOwner.createTransport(CHANNELS_HOST_ID), signal), headlessAppHost === null);
+        }
+        const { WebSocketHostConnectionProvider } = await import("./websocket-host-connection-provider");
+        const wsUrl = new URL("/__opencraft_channels", window.location.href).href.replace(/^http/u, "ws");
+        return createImExtension(serverFetch, signal => createChannelsRpc(WebSocketHostConnectionProvider.createTransport({ url: wsUrl }, { hostId: CHANNELS_HOST_ID, platform: "web", profileRevision: 0 }), signal), true);
       });
     }
     if (headlessAppHost !== null) {
@@ -671,6 +709,46 @@ export async function createWebWorkbenchApplicationSupervisor(
     ? configuredHostProfiles
     : new EnvironmentProfileStore(configuredHostProfiles, environmentDirectory);
   startupRollback.push(() => hostProfiles.close());
+  if (!fixedPresentation) {
+    const isRelayEntryUrl = window.location.pathname.startsWith("/pair") || window.location.pathname.startsWith("/s/");
+    const desktopRelayBridge = (globalThis as typeof globalThis & {
+      opencraftDesktop?: {
+        relay?: {
+          consumePairUrls?: () => Promise<readonly string[]>;
+          onPairUrl?: (listener: (url: string) => void) => () => void;
+        };
+      };
+    }).opencraftDesktop?.relay;
+    if (isRelayEntryUrl || (platform === "electron" && desktopRelayBridge)) {
+      const loadRelayClient = () => import("./cloud-relay-client");
+      const activatePairedSession = async (session: import("./cloud-relay-client").StoredCloudRelaySession, reloadIfHostless: boolean) => {
+        const mod = await loadRelayClient();
+        const hadEnabledHost = hostProfiles.getSnapshot().profiles.some((p) => p.enabled);
+        const nextHostId = await mod.provisionCloudRelaySessionProfiles(hostProfiles, session);
+        setLocalPreference("opencraft.active-host-id", nextHostId);
+        if (reloadIfHostless && !hadEnabledHost) {
+          window.location.reload();
+        }
+      };
+      if (isRelayEntryUrl) {
+        const mod = await loadRelayClient();
+        await mod.redeemCloudRelayUrl(initialBrowserEntryHref, (session) => activatePairedSession(session, true));
+      }
+      if (platform === "electron" && desktopRelayBridge) {
+        const queuedPairUrls = await desktopRelayBridge.consumePairUrls?.().catch(() => [] as const) ?? [];
+        if (queuedPairUrls.length > 0) {
+          const mod = await loadRelayClient();
+          for (const pairUrl of queuedPairUrls) {
+            await mod.redeemCloudRelayUrl(pairUrl, (session) => activatePairedSession(session, false));
+          }
+        }
+        const stopPairUrl = desktopRelayBridge.onPairUrl?.((pairUrl) => {
+          void loadRelayClient().then((mod) => mod.redeemCloudRelayUrl(pairUrl, (session) => activatePairedSession(session, false)));
+        });
+        if (stopPairUrl) startupRollback.push(stopPairUrl);
+      }
+    }
+  }
   const earlyServerRevocations: DesktopServerConnection[] = [];
   let retireDesktopServer: ((connection: DesktopServerConnection) => void) | null = null;
   const stopDesktopServers = desktopServerPort()?.onRevoked(connection => {

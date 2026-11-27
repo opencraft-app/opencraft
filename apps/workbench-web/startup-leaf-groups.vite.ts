@@ -5,7 +5,7 @@ export const startupLeafGroups = [
   {
     name: "startup-presentation-leaves",
     includeDependenciesRecursively: false,
-    test: /\/apps\/workbench-web\/src\/(?:runtime\/(?:mini-apps|mobile-container|edge-gesture-bridge|workbench-preview)|components\/(?:use-presentation-completion|modal\/confirmation-top-layer)|browser\/browser-presentation-geometry|mcp-apps\/contract)\.tsx?$/,
+    test: /\/apps\/workbench-web\/src\/(?:runtime\/(?:mini-apps|mobile-container|mobile-valdi-bridge|valdi-touch-density|window-presentation|edge-gesture-bridge|workbench-preview)|components\/(?:use-presentation-completion|modal\/confirmation-top-layer)|browser\/browser-presentation-geometry|mcp-apps\/contract)\.tsx?$/,
   },
   {
     name: "motion-context-leaves",

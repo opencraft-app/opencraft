@@ -1,3 +1,4 @@
+import type { PersonalMachinesController } from "./personal-machine-environment-source";
 import { bindConversationReturnLifecycle, type ConversationLifecycleSource } from "./conversation-return-lifecycle";
 import type { ChannelSearchRegistry } from './channel-search-contribution';
 import { beginObservedOperation } from "./observability";
@@ -409,6 +410,26 @@ export function useAppServerHosts(): AppServerHostCatalog {
   const value = useContext(ApplicationRuntimeContext);
   if (value === null) throw new Error("AppServerRuntimeProvider is missing");
   return value;
+}
+
+export function useOptionalPersonalMachines() {
+  const [controller, setController] = useState<PersonalMachinesController | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    let unsubscribe: (() => void) | undefined;
+    void import("./personal-machine-environment-source").then((mod) => {
+      if (cancelled) return;
+      setController(mod.getActivePersonalMachines());
+      unsubscribe = mod.subscribeActivePersonalMachines(() => {
+        setController(mod.getActivePersonalMachines());
+      });
+    }, () => undefined);
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, []);
+  return controller;
 }
 
 /** The private application context captures connection authority for UI intents. */

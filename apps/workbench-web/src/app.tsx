@@ -1586,6 +1586,72 @@ export function App({
     ?? hostCatalog.hosts.find(host => host.hostId === hostId)?.label
     ?? hostId, [hostCatalog]);
   const hostGroupAgentId = useCallback((hostId: string) => agentIdForHostLabel(hostGroupLabel(hostId)), [hostGroupLabel]);
+  const readOnboardingAccount = useCallback(() => hostCatalog.threadAttention.getScope() ?? "anonymous", [hostCatalog]);
+  const onboardingAccount = useSyncExternalStore(hostCatalog.threadAttention.subscribe, readOnboardingAccount, readOnboardingAccount);
+  const onboardingDisplay = useSyncExternalStore(hostCatalog.displayContinuity.subscribe, hostCatalog.displayContinuity.getScope, hostCatalog.displayContinuity.getScope);
+  const onboardingQueryKey = useMemo(() => ["agent-onboarding", snapshot.hostId, JSON.stringify([onboardingAccount, onboardingDisplay])] as const, [snapshot.hostId, onboardingAccount, onboardingDisplay]);
+  const composerOnboarding = useQuery({
+    queryKey: onboardingQueryKey,
+    enabled: filterNewAgents,
+    staleTime: 30_000,
+    retry: false,
+    queryFn: async () => {
+      const result = await hostCatalog.agentRuntimes.request(snapshot.hostId, "opencraft/agents/onboarding/status", {});
+      if (!result || typeof result !== "object" || !Array.isArray((result as { agents?: unknown }).agents)) throw new Error("Invalid onboarding status");
+      return result;
+    },
+    refetchInterval: query => query.state.data?.agents.some(agent => agent.activity?.phase === "running") ? 2000 : false,
+  });
+  const runComposerOnboardingAction = useCallback(async (agentId: string, action: "sign-in" | "install" | "upgrade" | "submit-code" | "cancel", code?: string) => {
+    const result = await hostCatalog.agentRuntimes.request(snapshot.hostId, "opencraft/agents/onboarding/act", {
+      id: agentId,
+      action,
+      ...(code ? { code } : {}),
+    });
+    if (result && typeof result === "object" && Array.isArray(result.agents)) {
+      queryClient.setQueryData(onboardingQueryKey, result);
+    }
+    composerCatalog.retryModels();
+  }, [hostCatalog.agentRuntimes, snapshot.hostId, queryClient, onboardingQueryKey, composerCatalog]);
+  const residentHarnessEntries = useMemo(() => {
+    if (!filterNewAgents) return undefined;
+    const defaults: readonly { id: "codex" | "claude" | "cursor" | "codebuddy"; engineId: string; label: string; canInstallPackage: boolean; installUrl: string }[] = [
+      { id: "codex", engineId: "codex", label: intl.formatMessage({ id: "onboard.agent.codex", defaultMessage: "Codex" }), canInstallPackage: true, installUrl: "https://developers.openai.com/codex/cli" },
+      { id: "claude", engineId: "claude-code", label: intl.formatMessage({ id: "onboard.agent.claude", defaultMessage: "Claude Code" }), canInstallPackage: false, installUrl: "https://code.claude.com/docs/en/setup" },
+      { id: "cursor", engineId: "cursor", label: intl.formatMessage({ id: "onboard.agent.cursor", defaultMessage: "Cursor" }), canInstallPackage: false, installUrl: "https://cursor.com/docs/cli/installation" },
+      { id: "codebuddy", engineId: "codebuddy", label: intl.formatMessage({ id: "onboard.agent.codebuddy", defaultMessage: "CodeBuddy" }), canInstallPackage: true, installUrl: "https://www.codebuddy.cn/cli/" },
+    ];
+    const observedById = new Map((composerOnboarding.data?.agents ?? []).map(agent => [agent.id, agent]));
+    return defaults.map(spec => {
+      const observed = observedById.get(spec.id);
+      const engineId = observed?.engineId ?? spec.engineId;
+      const enabled = agentAvailability.enabled(snapshot.hostId, engineId);
+      const canInstallPackage = observed?.canInstallPackage ?? spec.canInstallPackage;
+      const installUrl = observed?.installUrl ?? spec.installUrl;
+      return {
+        id: spec.id,
+        engineId,
+        label: observed?.displayName || spec.label,
+        installed: observed?.installed ?? false,
+        version: observed?.version ?? null,
+        authenticated: observed?.authenticated ?? null,
+        account: observed?.account ?? null,
+        enabled,
+        canInstallPackage,
+        installUrl,
+        activity: observed?.activity ?? null,
+        onInstall: () => {
+          if (canInstallPackage) void runComposerOnboardingAction(spec.id, "install");
+          else window.open(installUrl, "_blank", "noopener,noreferrer");
+        },
+        onSignIn: () => { void runComposerOnboardingAction(spec.id, "sign-in"); },
+        onCancel: () => { void runComposerOnboardingAction(spec.id, "cancel"); },
+        onSubmitCode: (code: string) => { void runComposerOnboardingAction(spec.id, "submit-code", code); },
+        onRecheck: () => { void composerOnboarding.refetch(); composerCatalog.retryModels(); },
+        onEnable: () => { void agentAvailability.setEnabled(snapshot.hostId, engineId, true); },
+      };
+    });
+  }, [filterNewAgents, intl, composerOnboarding.data, composerOnboarding.refetch, agentAvailability, snapshot.hostId, runComposerOnboardingAction, composerCatalog]);
   const composerSelectionCatalog = useMemo<ComposerSelectionCatalog>(
     () => ({
       currentAgentId: currentThreadAgent?.id ?? null,
@@ -1619,11 +1685,25 @@ export function App({
       onRememberModelDefaults: modelSelectionPolicy === "user" ? composerCatalog.rememberModelDefaults : undefined,
       onConfigureModels: embedded?.onConfigureModels,
       onConfigureAgents: filterNewAgents ? () => openSettingsFromConversation("chat") : undefined,
-      onModelMenuOpen: modelSelectionPolicy === "session" ? composerCatalog.retryModels : () => { composerCatalog.onModelMenuOpen(); engineCatalog.open(); },
-      agentGroups: !filterNewAgents && !canContinueWithAgent ? undefined : engineCatalog.groups.filter(group => !canContinueWithAgent || group.hostId === snapshot.hostId).map(group => ({
+      onModelMenuOpen: modelSelectionPolicy === "session" ? composerCatalog.retryModels : () => {
+        composerCatalog.onModelMenuOpen();
+        engineCatalog.open();
+        if (filterNewAgents) void composerOnboarding.refetch();
+      },
+      residentAgents: residentHarnessEntries,
+      agentGroups: !filterNewAgents && !canContinueWithAgent ? undefined : engineCatalog.groups.filter(group => !canContinueWithAgent || group.hostId === snapshot.hostId).map(group => {
+        const ownerMachine = machines.find(machine => machine.hosts.some(host => host.hostId === group.hostId));
+        const role = ownerMachine ? machineRole(ownerMachine, extensionPlatform) : undefined;
+        return {
         id: group.hostId,
         label: hostGroupLabel(group.hostId),
         active: group.hostId === snapshot.hostId,
+        machineId: ownerMachine?.id,
+        machineLabel: ownerMachine ? machineName(ownerMachine, extensionPlatform, intl) : undefined,
+        machineRole: role,
+        isLocalMachine: role === "local",
+        isConversationMachine: ownerMachine?.id === activeMachine?.id,
+        residentAgents: group.hostId === snapshot.hostId ? residentHarnessEntries : undefined,
         models: projectComposerModelChoices((canContinueWithAgent ? group.models.length ? group.models : composerCatalog.models : group.hostId === snapshot.hostId ? composerCatalog.models : group.models).filter(model => canContinueWithAgent
           ? model.agentId === conversationAgent || agentAvailability.enabled(group.hostId, model.agentId ?? hostGroupAgentId(group.hostId) ?? "host")
           : filterModelsForNewDraft([model], group.hostId, snapshot.hostId, agentAvailability.enabled, hostGroupAgentId(group.hostId)).length > 0)),
@@ -1651,13 +1731,14 @@ export function App({
           const page = resolveHostModelSettingsPage(settingsContributionSnapshot.settingsPages.map(({ contribution }) => contribution), group.hostId, extensionPlatform, internalDeveloperMode);
           return page ? () => hostCatalog.navigation.openSettings(page.id) : undefined;
         })(),
-      })),
+        };
+      }),
       retryModels: composerCatalog.retryModels,
       permissionProfileError:
         composerCatalog.permissionProfileError?.message ?? null,
     }),
     [
-      filterNewAgents, canContinueWithAgent, conversationAgent, currentThreadAgent, activeThreadId, agentAvailability, openSettingsFromConversation, modelSelectionPolicy, embedded?.onConfigureModels, presentation.executionSelection, engineCatalog, draft, hostCatalog, snapshot.hostId, hostGroupLabel, hostGroupAgentId,
+      filterNewAgents, canContinueWithAgent, conversationAgent, currentThreadAgent, activeThreadId, agentAvailability, openSettingsFromConversation, modelSelectionPolicy, embedded?.onConfigureModels, presentation.executionSelection, engineCatalog, draft, hostCatalog, snapshot.hostId, hostGroupLabel, hostGroupAgentId, machines, activeMachine, intl, residentHarnessEntries, composerOnboarding.refetch,
       settingsContributionSnapshot, extensionPlatform, internalDeveloperMode,
       composerCatalog.isFetching,
       composerCatalog.modelError,
@@ -1915,6 +1996,9 @@ export function App({
         extensionRuntime={hostCatalog.extensionRuntime}
         extensionManager={hostCatalog.extensionManager}
         platformViewRenderers={hostCatalog.platformViewRenderers}
+        onRetryMachineConnection={async (targetHostId) => {
+          await hostCatalog.agentRuntimes.ensureReady(targetHostId);
+        }}
         regions={appShellPlatformViewRegions}
         archivedConversations={archivedConversationsAvailable ? {
           load: loadArchivedThreads,
@@ -2084,6 +2168,17 @@ export function App({
     if (embedded !== undefined) return;
     return () => { document.title = applicationName; };
   }, [embedded, applicationName]);
+  const tasksPresentationEnabled = import.meta.env.VITE_INCLUDE_TASKS_PLUGIN === "true"
+    && import.meta.env.VITE_INCLUDE_TASKS_PRESENTATION !== "false";
+  const schedulesPresentationEnabled = import.meta.env.VITE_INCLUDE_SCHEDULES_PRESENTATION !== "false";
+  useEffect(() => {
+    if (workbenchNavigationSnapshot.applicationRoute.kind !== "extension-view") return;
+    const { viewId } = workbenchNavigationSnapshot.applicationRoute;
+    if ((viewId === "opencraft.tasks.board" && !tasksPresentationEnabled)
+      || (viewId === "opencraft.schedules.view" && !schedulesPresentationEnabled)) {
+      void workbenchNavigation.openChat({ sidebar: "preserve" });
+    }
+  }, [workbenchNavigationSnapshot.applicationRoute, tasksPresentationEnabled, schedulesPresentationEnabled, workbenchNavigation]);
   const scheduleCapability = executionEngineExtension(runtime.resources.host.getInitializeResult()?.capabilities?.extensions, activeThreadId, "opencraft/conversation-schedules") as { version?: number } | undefined;
   const nativeSessionCapability = runtime.resources.host.getInitializeResult()?.capabilities?.extensions?.["opencraft/agent-session"] as { version?: number } | undefined;
   const nativeSession = useQuery({
@@ -2121,8 +2216,8 @@ export function App({
       read:() => hostCatalog.agentRuntimes.request(snapshot.hostId,"opencraft/thread-access/read",{threadId:headerThreadId}),
       set:(accessMode,expectedRevision) => hostCatalog.agentRuntimes.request(snapshot.hostId,"opencraft/thread-access/set",{threadId:headerThreadId,accessMode,expectedRevision}),
     } : undefined,
-    port: hostCatalog.tasks ?? undefined,
-    schedules: schedulesAvailable ? { request: (method, params) => hostCatalog.agentRuntimes.request(snapshot.hostId, method, params) } : undefined,
+    port: tasksPresentationEnabled ? (hostCatalog.tasks ?? undefined) : undefined,
+    schedules: schedulesPresentationEnabled && schedulesAvailable ? { request: (method, params) => hostCatalog.agentRuntimes.request(snapshot.hostId, method, params) } : undefined,
     scope: displayScope,
     serverId: legacyDirectServerProjectionFromHost({ hostId: activeHost.hostId, hostKind: activeHost.kind, label: activeHost.label }).serverOrigin.serverId,
     threadId: headerThreadId,
@@ -2456,6 +2551,7 @@ export function App({
               showFooter={false}
               footerAccessory={<AgentUsage hostId={snapshot.hostId} threadId={draft === null ? activeThreadId ?? null : null} busy={isStreaming} />}
               showNewChat={presentation.shellNavigation}
+              showScheduled={schedulesPresentationEnabled}
               showStart={!presentation.shellNavigation}
               threadCapabilities={sidebarThreadCapabilities}
               threadBadge={threadBadge}

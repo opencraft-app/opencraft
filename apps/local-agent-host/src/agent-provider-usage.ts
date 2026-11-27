@@ -37,6 +37,30 @@ async function jsonFile(path: string): Promise<Value> {
   const value = await readFile(path, "utf8"); if (value.length > 1024 * 1024) throw new Error("Invalid native credentials");
   return object(JSON.parse(value));
 }
+export function isNativeOpenAiCodexRoute(configToml: string): boolean {
+  for (const rawLine of configToml.split(/\r?\n/u)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    if (line.startsWith("[")) break;
+    const providerMatch = /^model_provider\s*=\s*["']([^"']+)["']/u.exec(line);
+    if (providerMatch?.[1] && providerMatch[1].trim().toLowerCase() !== "openai") {
+      return false;
+    }
+    const baseUrlMatch = /^openai_base_url\s*=\s*["']([^"']+)["']/u.exec(line);
+    if (baseUrlMatch?.[1]?.trim()) {
+      try {
+        const host = new URL(baseUrlMatch[1].trim()).hostname.toLowerCase();
+        if (host !== "api.openai.com" && !host.endsWith(".openai.com") && host !== "chatgpt.com" && !host.endsWith(".chatgpt.com")) {
+          return false;
+        }
+      } catch {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 export function codexQuota(value: unknown, now: number): Omit<AgentProviderUsage, "id"> {
   const data = object(value), rate = object(data.rate_limit), windows: AgentUsageWindow[] = [];
   for (const raw of [rate.primary_window, rate.secondary_window]) {
@@ -88,7 +112,10 @@ export class AgentProviderUsageService {
   }
   private async credential(id: "codex" | "cursor"): Promise<{ token: string; account: string | null; email: string | null } | null> {
     if (id === "codex") {
-      const auth = await jsonFile(join(this.deps.env.CODEX_HOME || join(this.deps.homedir, ".codex"), "auth.json"));
+      const codexHome = this.deps.env.CODEX_HOME || join(this.deps.homedir, ".codex");
+      const configToml = await readFile(join(codexHome, "config.toml"), "utf8").catch(() => "");
+      if (configToml && !isNativeOpenAiCodexRoute(configToml)) return null;
+      const auth = await jsonFile(join(codexHome, "auth.json"));
       const tokens = object(auth.tokens);
       const email = decodeJwtEmail(tokens.id_token) ?? decodeJwtEmail(tokens.access_token);
       return typeof tokens.access_token === "string" && typeof tokens.account_id === "string" && (!auth.auth_mode || auth.auth_mode === "chatgpt")

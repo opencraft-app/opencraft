@@ -1,11 +1,14 @@
 import { useIntl } from "@opencraft/i18n/react";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
-import { SegmentedControl, SettingsButton, SettingsNotice, SettingsPageHeader, SettingsSection, SettingsSelect, SettingsTextInput } from "@opencraft/extension-react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import type { AgentProviderUsage, AgentUsageSnapshot, AgentUsageWindow } from "@opencraft/appserver-protocol";
 import { TOKEN_USAGE_CONFIGURE, TOKEN_USAGE_QUERY, type TokenUsageSnapshot, type TokenUsageTurnDetail } from "@opencraft/appserver-protocol/token-usage";
+import { SettingsPageHeader } from "@opencraft/extension-react";
+import { useAppearanceTheme } from "../appearance-theme";
 import { useAppServerHosts } from "../runtime/appserver-runtime-context";
+import { requestMobileHaptic } from "../runtime/mobile-valdi-bridge";
+import { useValdiTouchDensity } from "./shell-navigation/valdi-sidebar-dock";
 import { useWorkbenchPresentationActive } from "./workbench-presentation-activity";
 import {
-  type ActivityCell,
   compactTokens,
   dashboardMetrics,
   buildActivityGrid,
@@ -14,7 +17,26 @@ import {
   formatModelLabel,
   formatStateLabel,
 } from "./token-usage-dashboard-data";
-import "./token-usage-dashboard.scss";
+import "./valdi-surfaces.scss";
+
+const LazyValdiTokenUsageDashboard = lazy(async () => {
+  const mod = await import("@opencraft/design-system-web/valdi");
+  function TokenUsageDashboardMount({
+    viewModel,
+  }: {
+    readonly viewModel: import("@opencraft/design-system-web/valdi").TokenUsageDashboardProps;
+  }) {
+    return (
+      <mod.ValdiSurface
+        component={mod.TokenUsageDashboardSurface}
+        viewModel={viewModel}
+        className="valdi-token-usage-dashboard-surface"
+        data-testid="valdi-token-usage-dashboard-surface"
+      />
+    );
+  }
+  return { default: TokenUsageDashboardMount };
+});
 
 function today() {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(Date.now());
@@ -34,6 +56,11 @@ function formatCount(value: string, locale: string) {
 function errorCode(error: unknown) {
   return error && typeof error === "object" && "code" in error ? error.code : null;
 }
+function isUnsupportedMethodError(error: unknown): boolean {
+  if (errorCode(error) === -32601) return true;
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /unsupported method|method not found/iu.test(message);
+}
 
 export default function TokenUsageDashboard({ hostId }: { hostId: string }) {
   const intl = useIntl();
@@ -52,11 +79,14 @@ export function TokenUsageDashboardView({
   agentRuntimes: ReturnType<typeof useAppServerHosts>["agentRuntimes"];
   locale?: string;
 }) {
+  const intl = useIntl();
+  const appearance = useAppearanceTheme();
+  const touch = useValdiTouchDensity();
   const zh = locale.toLowerCase().startsWith("zh");
-  const copy = (cn: string, en: string) => (zh ? cn : en);
-  const count = (value: string) => formatCount(value, locale);
-  const modelLabel = (key: string) => formatModelLabel(key, copy);
-  const stateLabel = (state: string) => formatStateLabel(state, copy);
+  const copy = useCallback((cn: string, en: string) => (zh ? cn : en), [zh]);
+  const count = useCallback((value: string) => formatCount(value, locale), [locale]);
+  const modelLabel = useCallback((key: string) => formatModelLabel(key, copy), [copy]);
+  const stateLabel = useCallback((state: string) => formatStateLabel(state, copy), [copy]);
   const active = useWorkbenchPresentationActive();
   const subscribe = useCallback((listener: () => void) => agentRuntimes.subscribe(hostId, listener), [agentRuntimes, hostId]);
   const read = useCallback(() => agentRuntimes.getSnapshot(hostId).phase, [agentRuntimes, hostId]);
@@ -72,24 +102,36 @@ export function TokenUsageDashboardView({
   const [view, setView] = useState("threads");
   const [threadId, setThread] = useState("");
   const [snapshot, setSnapshot] = useState<TokenUsageSnapshot | null>(null);
+  const [localSnapshot, setLocalSnapshot] = useState<AgentUsageSnapshot | null>(null);
+  const [localProvider, setLocalProvider] = useState("codex");
+  const [ledgerUnsupported, setLedgerUnsupported] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [cursor, setCursor] = useState<string | null>(null);
   const [refresh, setRefresh] = useState(0);
+  const [narrow, setNarrow] = useState(() => (typeof window !== "undefined" ? window.innerWidth < 720 : false));
 
   const [activityMode, setActivityMode] = useState<"daily" | "weekly" | "cumulative">("daily");
-  const [previewCell, setPreviewCell] = useState<ActivityCell | null>(null);
-  const [selectedCell, setSelectedCell] = useState<ActivityCell | null>(null);
-  const activeCell = previewCell ?? selectedCell;
 
   const generation = useRef(0);
   const revision = useRef(-1);
   const inFlight = useRef(false);
   const page = useRef<HTMLDivElement>(null);
   const [reservedHeight, setReservedHeight] = useState<number>();
-  const pendingScroll = useRef<{ top: number; focusThread?: string } | null>(null);
+  const pendingScroll = useRef<{ top: number } | null>(null);
   const summaryReturn = useRef<{ top: number; cursor: string | null; thread: string } | null>(null);
   const viewport = () => page.current?.closest<HTMLElement>(".settings-page__viewport") ?? null;
+
+  useEffect(() => {
+    const node = page.current;
+    if (!node || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width;
+      if (typeof width === "number" && width > 0) setNarrow(width < 640);
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
 
   const requestKey = JSON.stringify([hostId, from, through, scope, actorId, modelKey, view, threadId, connection]);
   const latestKey = useRef(requestKey);
@@ -100,8 +142,6 @@ export function TokenUsageDashboardView({
   useEffect(() => {
     const epoch = ++generation.current;
     revision.current = -1;
-    setPreviewCell(null);
-    setSelectedCell(null);
     setSnapshot(null);
     setError(null);
     setDisplayKey(requestKey);
@@ -116,11 +156,31 @@ export function TokenUsageDashboardView({
     const epoch = generation.current;
     const key = requestKey;
     let live = true;
+    const loadLocalUsage = async (forceRefresh: boolean) => {
+      try {
+        const usage = await agentRuntimes.request(hostId, "opencraft/agents/usage", { force: forceRefresh });
+        if (!live || epoch !== generation.current) return;
+        setLocalSnapshot(usage);
+        setError(null);
+      } catch (localCause) {
+        if (!live || epoch !== generation.current) return;
+        setLocalSnapshot(null);
+        if (isUnsupportedMethodError(localCause)) {
+          setError(copy("此执行服务暂不支持 Token 统计。", "This Host does not support token statistics."));
+        } else {
+          setError(copy("刷新失败。显示的数据可能已过期，请重试。", "Refresh failed. Displayed usage may be stale. Try again."));
+        }
+      }
+    };
     const load = async () => {
       if (!live || inFlight.current) return;
       inFlight.current = true;
       setLoading(true);
       try {
+        if (ledgerUnsupported) {
+          await loadLocalUsage(refresh > 0);
+          return;
+        }
         const result = await agentRuntimes.request(hostId, TOKEN_USAGE_QUERY, {
           from,
           through,
@@ -136,6 +196,7 @@ export function TokenUsageDashboardView({
         if (result.snapshotRevision < revision.current) return;
         revision.current = result.snapshotRevision;
         setSnapshot(result);
+        setLocalSnapshot(null);
         setDisplayKey(key);
         setError(null);
       } catch (cause) {
@@ -148,11 +209,23 @@ export function TokenUsageDashboardView({
           setCursor(null);
           setRefresh((n) => n + 1);
           setError(copy("数据已更新，正在重取第一页。", "Usage changed. Reloading the first page."));
-        } else if (code === -32601) {
-          setSnapshot(null);
-          setError(copy("此执行服务暂不支持 Token 统计。", "This Host does not support token statistics."));
         } else {
-          setError(copy("刷新失败。显示的数据可能已过期，请重试。", "Refresh failed. Displayed usage may be stale. Try again."));
+          try {
+            const usage = await agentRuntimes.request(hostId, "opencraft/agents/usage", { force: refresh > 0 });
+            if (!live || epoch !== generation.current) return;
+            setSnapshot(null);
+            setLedgerUnsupported(true);
+            setLocalSnapshot(usage);
+            setError(null);
+          } catch {
+            if (!live || epoch !== generation.current || latestKey.current !== key) return;
+            if (isUnsupportedMethodError(cause)) {
+              setSnapshot(null);
+              setError(copy("此执行服务暂不支持 Token 统计。", "This Host does not support token statistics."));
+            } else {
+              setError(copy("刷新失败。显示的数据可能已过期，请重试。", "Refresh failed. Displayed usage may be stale. Try again."));
+            }
+          }
         }
       } finally {
         if (live && epoch === generation.current) {
@@ -162,15 +235,15 @@ export function TokenUsageDashboardView({
       }
     };
     void load();
-    const timer = cursor ? null : setInterval(() => void load(), 5000);
+    const timer = cursor ? null : setInterval(() => void load(), ledgerUnsupported ? 30_000 : 5_000);
     return () => {
       live = false;
       if (timer) clearInterval(timer);
       inFlight.current = false;
     };
-  }, [agentRuntimes, requestKey, hostId, from, through, scope, actorId, modelKey, view, threadId, cursor, refresh, active]);
+  }, [agentRuntimes, requestKey, hostId, from, through, scope, actorId, modelKey, view, threadId, cursor, refresh, active, ledgerUnsupported, copy]);
 
-  const configure = async (enabled: boolean) => {
+  const configure = useCallback(async (enabled: boolean) => {
     if (loading) return;
     const epoch = generation.current;
     const key = latestKey.current;
@@ -186,7 +259,7 @@ export function TokenUsageDashboardView({
     } finally {
       if (current()) setLoading(false);
     }
-  };
+  }, [agentRuntimes, copy, hostId, loading]);
 
   useLayoutEffect(() => {
     if (reservedHeight !== undefined && pendingScroll.current) {
@@ -205,15 +278,9 @@ export function TokenUsageDashboardView({
     pendingScroll.current = null;
     const owner = viewport();
     if (owner) owner.scrollTop = position.top;
-    if (position.focusThread) {
-      const trigger = Array.from(page.current?.querySelectorAll<HTMLButtonElement>("button[data-usage-thread]") ?? []).find(
-        (button) => button.dataset.usageThread === position.focusThread,
-      );
-      trigger?.focus({ preventScroll: true });
-    }
   }, [visible, loading, reservedHeight]);
 
-  const change = (action: () => void, nextCursor: string | null = null) => {
+  const change = useCallback((action: () => void, nextCursor: string | null = null) => {
     generation.current++;
     inFlight.current = false;
     setReservedHeight(page.current?.getBoundingClientRect().height);
@@ -221,9 +288,9 @@ export function TokenUsageDashboardView({
     setLoading(true);
     action();
     setCursor(nextCursor);
-  };
+  }, []);
 
-  const selectRange = (value: string) => {
+  const selectRange = useCallback((value: string) => {
     setRange(value);
     if (value === "7" || value === "30") {
       change(() => {
@@ -231,523 +298,309 @@ export function TokenUsageDashboardView({
         setThrough(today());
       });
     }
-  };
+  }, [change]);
 
-  const openThread = (id: string) => {
+  const openThread = useCallback((id: string) => {
     summaryReturn.current = { top: viewport()?.scrollTop ?? 0, cursor, thread: id };
     change(() => setThread(id));
-  };
-  const returnToSummary = () => {
+  }, [change, cursor]);
+
+  const returnToSummary = useCallback(() => {
     const saved = summaryReturn.current;
     change(() => setThread(""), saved?.cursor ?? null);
-    if (saved) pendingScroll.current = { top: saved.top, focusThread: saved.thread };
-  };
-  const choosePerson = (id: string, name: string) =>
+    if (saved) pendingScroll.current = { top: saved.top };
+  }, [change]);
+
+  const choosePerson = useCallback((id: string, name: string) =>
     change(() => {
       setActor(id);
       setActorName(name);
       setView("threads");
       setThread("");
-    });
-  const browsePeople = () =>
-    change(() => {
-      setActor("");
-      setActorName("");
-      setView("actors");
-      setThread("");
-    });
+    }), [change]);
 
-  const modelOptions = visible?.models ?? [];
-  const details = visible?.view === "turns" ? (visible.rows as TokenUsageTurnDetail[]) : null;
+  const handleHaptic = useCallback((style: string) => {
+    requestMobileHaptic(style === "warning" ? "warning" : style === "light" ? "light" : "selection");
+  }, []);
 
-  const metrics = visible ? dashboardMetrics(visible) : null;
-  const grid = visible ? buildActivityGrid(visible.daily, from, through, locale) : null;
-  const bars = visible ? buildActivityBars(visible.daily, from, through, activityMode === "cumulative" ? "cumulative" : "weekly", locale) : [];
+  const handleRefresh = useCallback(() => {
+    setCursor(null);
+    setRefresh((n) => n + 1);
+  }, []);
 
-  const summaryTitle =
-    scope === "self"
+  const providerName = useCallback((id: string) =>
+    id === "codex" ? intl.formatMessage({ id: "onboard.agent.codex", defaultMessage: "Codex" })
+      : id === "cursor" ? intl.formatMessage({ id: "onboard.agent.cursor", defaultMessage: "Cursor" }) : id, [intl]);
+
+  const windowLabel = useCallback((window: AgentUsageWindow) => window.kind === "plan"
+    ? intl.formatMessage({ id: "agentUsage.plan", defaultMessage: "Plan" })
+    : window.kind === "spend"
+      ? (window.scope === "team"
+          ? intl.formatMessage({ id: "agentUsage.teamSpend", defaultMessage: "Team on-demand" })
+          : intl.formatMessage({ id: "agentUsage.spend", defaultMessage: "On-demand" }))
+      : window.durationMinutes === null
+        ? intl.formatMessage({ id: "agentUsage.limit", defaultMessage: "Limit" })
+        : window.durationMinutes >= 1440
+          ? intl.formatMessage({ id: "agentUsage.days", defaultMessage: "{count} days" }, { count: window.durationMinutes / 1440 })
+          : intl.formatMessage({ id: "agentUsage.hours", defaultMessage: "{count} hours" }, { count: window.durationMinutes / 60 }), [intl]);
+
+  const providerNotice = useCallback((value: AgentProviderUsage) => intl.formatMessage(value.status === "signedOut"
+    ? { id: "agentUsage.signIn", defaultMessage: "Sign in to this Agent to view its limits." }
+    : value.status === "expired" ? { id: "agentUsage.expired", defaultMessage: "The Agent sign-in has expired. Sign in again." }
+      : { id: "agentUsage.unavailable", defaultMessage: "Could not refresh. Previously reported usage is shown when available." }), [intl]);
+
+  const localUsageSection = useMemo((): import("@opencraft/design-system-web/valdi").TokenUsageLocalSection | undefined => {
+    if (!localSnapshot) return undefined;
+    const activeProvider = localSnapshot.providers.find(item => item.id === localProvider) ?? localSnapshot.providers[0];
+    const providerList = (localSnapshot.providers.length ? localSnapshot.providers : [{ id: "codex" }, { id: "cursor" }]).map(item => ({
+      id: item.id,
+      title: providerName(item.id),
+    }));
+    const unknownText = intl.formatMessage({ id: "agentUsage.unknown", defaultMessage: "Not reported" });
+    const statusMessage = activeProvider && activeProvider.status !== "ok"
+      ? providerNotice(activeProvider)
+      : activeProvider?.status === "ok" && activeProvider.windows.length === 0
+        ? intl.formatMessage({ id: "agentUsage.noLimits", defaultMessage: "This plan does not report usage limits." })
+        : undefined;
+    const windows = (activeProvider?.windows ?? []).map((win, index) => ({
+      id: String(index),
+      label: windowLabel(win),
+      progress: Math.min(1, Math.max(0, win.usedPercent / 100)),
+      percentText: intl.formatNumber(win.usedPercent / 100, { style: "percent", maximumFractionDigits: 0 }),
+      resetText: win.resetsAt
+        ? intl.formatMessage(
+            { id: "agentUsage.resets", defaultMessage: "Resets {time}" },
+            { time: intl.formatDate(win.resetsAt, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) },
+          )
+        : unknownText,
+      costText: win.cost
+        ? `${intl.formatNumber(win.cost.usedCents / 100, { style: "currency", currency: win.cost.currency })} / ${intl.formatNumber(win.cost.limitCents / 100, { style: "currency", currency: win.cost.currency })}`
+        : undefined,
+      warning: win.usedPercent >= 80,
+    }));
+    const observedAt = activeProvider?.observedAt ?? localSnapshot.readAt;
+    return {
+      providerLabel: intl.formatMessage({ id: "agentUsage.providers", defaultMessage: "Usage provider" }),
+      providers: providerList,
+      selectedProviderId: activeProvider?.id ?? localProvider,
+      planText: activeProvider?.plan ?? undefined,
+      accountText: activeProvider?.account ?? undefined,
+      quotaGroupTitle: copy("本机 Agent 额度", "Local Agent quota"),
+      quotaGroupDescription: copy("实时读取本机已登录 Agent 的套餐与用量窗口。", "Live plan and usage windows from signed-in local Agents."),
+      statusMessage,
+      windows,
+      conversationGroupTitle: intl.formatMessage({ id: "agentUsage.current", defaultMessage: "This conversation" }),
+      conversationFallback: intl.formatMessage({ id: "agentUsage.openConversation", defaultMessage: "Open a conversation to view its usage." }),
+      metrics: [],
+      observedAtText: observedAt
+        ? intl.formatMessage({ id: "agentUsage.readAt", defaultMessage: "Read at {time}" }, { time: intl.formatTime(observedAt, { hour: "numeric", minute: "2-digit" }) })
+        : undefined,
+      onSelectProvider: setLocalProvider,
+    };
+  }, [copy, intl, localProvider, localSnapshot, providerName, providerNotice, windowLabel]);
+
+  const ledgerSection = useMemo((): import("@opencraft/design-system-web/valdi").TokenUsageLedgerSection | undefined => {
+    if (ledgerUnsupported && !visible) return undefined;
+    const modelOptions = [
+      { id: "", title: copy("全部模型", "All models") },
+      ...(visible?.models ?? []).map((m) => ({ id: m.key, title: modelLabel(m.key) })),
+      ...(modelKey && !(visible?.models ?? []).some((m) => m.key === modelKey) ? [{ id: modelKey, title: modelLabel(modelKey) }] : []),
+    ];
+    const scopeOptions = [
+      { id: "self", title: copy("我的用量", "My usage") },
+      ...(visible?.canQueryTeam || scope === "team" ? [{ id: "team", title: copy("团队用量", "Team usage") }] : []),
+    ];
+    const rangeOptions = [
+      { id: "7", title: copy("近 7 日", "Last 7 days") },
+      { id: "30", title: copy("近 30 日", "Last 30 days") },
+      { id: "custom", title: copy("自定义", "Custom") },
+    ];
+    const metrics = visible ? dashboardMetrics(visible) : null;
+    const grid = visible ? buildActivityGrid(visible.daily, from, through, locale) : null;
+    const bars = visible ? buildActivityBars(visible.daily, from, through, activityMode === "cumulative" ? "cumulative" : "weekly", locale) : [];
+    const maxBar = bars.reduce((n, b) => (BigInt(b.tokens) > n ? BigInt(b.tokens) : n), 0n);
+    const details = visible?.view === "turns" ? (visible.rows as TokenUsageTurnDetail[]) : null;
+    const lastSource = visible?.coverage?.lastSourceSuccessAt ?? visible?.diagnostics?.lastSourceSuccessAt ?? null;
+    const summaryTitle = scope === "self"
       ? copy("我的分摊用量", "My allocated usage")
       : actorId
-      ? copy(`${actorName} 的分摊用量`, `${actorName}’s allocated usage`)
-      : copy("团队用量", "Team usage");
+        ? copy(`${actorName} 的分摊用量`, `${actorName}’s allocated usage`)
+        : copy("团队用量", "Team usage");
+    const detailTitle = threadId
+      ? copy("会话的轮次明细", "Conversation turn details")
+      : view === "threads"
+        ? copy("会话汇总", "Conversations")
+        : view === "actors"
+          ? copy("人员汇总", "People")
+          : copy("轮次明细", "Turn details");
 
-  const detailTitle = threadId
-    ? copy("会话的轮次明细", "Conversation turn details")
-    : view === "threads"
-    ? copy("会话汇总", "Conversations")
-    : view === "actors"
-    ? copy("人员汇总", "People")
-    : copy("轮次明细", "Turn details");
+    return {
+      scopeLabel: copy("用量范围", "Scope"),
+      scopeValue: scope,
+      scopeOptions,
+      rangeLabel: copy("时间范围", "Range"),
+      rangeValue: range,
+      rangeOptions,
+      customRange: range === "custom" ? {
+        fromLabel: copy("开始日", "From"),
+        fromValue: from,
+        throughLabel: copy("结束日", "Through"),
+        throughValue: through,
+        onChangeFrom: (val) => { setRange("custom"); change(() => setFrom(val)); },
+        onChangeThrough: (val) => { setRange("custom"); change(() => setThrough(val)); },
+      } : undefined,
+      modelLabel: copy("模型", "Model"),
+      modelValue: modelKey,
+      modelOptions,
+      summaryTitle: visible ? summaryTitle : undefined,
+      summarySubtitle: visible ? copy("按轮次参与人均分 · 按轮次开始日统计 · Asia/Shanghai", "Shared equally by turn participants · Grouped by turn start date · Asia/Shanghai") : undefined,
+      partialBadge: visible?.coverage.partial ? copy("部分数据", "Partial data") : undefined,
+      summaryMeta: visible ? copy(`${visible.summary.threads ?? "—"} 个会话 · ${visible.summary.turns} 个轮次`, `${visible.summary.threads ?? "—"} conversations · ${visible.summary.turns} turns`) : undefined,
+      metrics: metrics ? [
+        { id: "settled", value: compactTokens(metrics.settled, locale), label: copy("已结算 Token", "Settled tokens"), detail: copy(`所选范围总量 ${count(metrics.total)}`, `Total in range ${count(metrics.total)}`) },
+        { id: "peak", value: compactTokens(metrics.peak, locale), label: copy("单日峰值", "Peak tokens"), detail: metrics.peakDay ?? "—" },
+        { id: "turns", value: metrics.settledTurns === null ? "—" : count(String(metrics.settledTurns)), label: copy("已结算轮次", "Settled turns"), detail: copy(`共 ${visible!.summary.turns} 轮`, `${visible!.summary.turns} turns total`) },
+        { id: "longest", value: String(metrics.longestStreak), label: copy("最长连续活跃天数", "Longest streak"), detail: copy("天", "days") },
+        { id: "current", value: String(metrics.currentStreak), label: copy("当前连续活跃天数", "Current streak"), detail: copy("天", "days") },
+      ] : undefined,
+      activityTitle: visible ? copy("Token 活跃度", "Token activity") : undefined,
+      activitySubtitle: visible ? copy("按轮次开始日统计", "Grouped by turn start date") : undefined,
+      activityMode,
+      activityModeOptions: [
+        { id: "daily", title: copy("按日", "Daily") },
+        { id: "weekly", title: copy("按周", "Weekly") },
+        { id: "cumulative", title: copy("累计", "Cumulative") },
+      ],
+      weekdayLabels: zh ? ["一", "", "三", "", "五", "", "日"] : ["Mon", "", "Wed", "", "Fri", "", "Sun"],
+      heatmapWeeks: grid ? grid.columns.map((week, i) => ({
+        key: `w-${i}`,
+        monthLabel: grid.monthLabels.find((x) => x.index === i)?.label,
+        cells: week.map((cell) => ({
+          date: cell.date,
+          level: cell.level,
+          outside: cell.state === "outside",
+          summaryText: `${cell.date} · ${count(cell.tokens)} ${copy("Token", "tokens")} · ${cell.turns} ${copy("轮", "turns")}`,
+        })),
+      })) : undefined,
+      defaultCellHint: copy("选择方格查看当日用量", "Choose a cell for daily usage"),
+      bars: bars.map((b) => ({
+        key: b.key,
+        label: b.label,
+        progress: maxBar === 0n ? 0 : Number((BigInt(b.tokens) * 1000n) / maxBar) / 1000,
+        valueText: compactTokens(b.tokens, locale),
+      })),
+      modelSectionTitle: visible ? copy("模型用量", "Usage by model") : undefined,
+      modelEmptyText: copy("该范围暂无模型用量记录。", "No model usage in this range."),
+      modelCards: visible?.models.map((m) => ({
+        key: m.key,
+        label: modelLabel(m.key),
+        tokensText: compactTokens(m.tokens, locale),
+        turnsText: `${m.turns} ${copy("轮", "turns")}`,
+        progress: modelShare(m.tokens, visible.summary.tokens) / 100,
+      })),
+      detailTitle: visible ? detailTitle : undefined,
+      detailEmptyText: copy("该筛选范围暂无记录。", "No records match these filters."),
+      backToSummaryLabel: threadId ? copy("返回汇总", "Back to summary") : undefined,
+      viewLabel: copy("列表", "View"),
+      viewValue: view,
+      viewOptions: [
+        { id: "threads", title: copy("会话汇总", "Conversations") },
+        { id: "turns", title: copy("轮次明细", "Turn details") },
+        ...(visible?.canQueryTeam ? [{ id: "actors", title: copy("人员汇总", "People") }] : []),
+      ],
+      clearActorLabel: actorId ? copy("清除人员筛选", "Clear person filter") : undefined,
+      rows: visible && !details ? visible.rows.flatMap((row) => ("key" in row ? [{
+        key: row.key,
+        title: view === "actors" ? (row.label ?? copy("未知人员", "Unknown person")) : row.key,
+        tokensText: compactTokens(row.tokens, locale),
+        turnsText: `${row.turns} ${copy("轮", "turns")}`,
+        interactive: view === "threads" || view === "actors",
+      }] : [])) : undefined,
+      turnRows: details?.map((t) => ({
+        key: t.turnId,
+        title: t.turnId,
+        subtitle: `${new Date(t.startedAt).toLocaleString(locale)} · ${stateLabel(t.allocationState)}`,
+        detail: copy(
+          `分摊 ${count(t.allocatedTokens)} · 原始 ${t.rawTokens === null ? "未知" : count(t.rawTokens)} · ${t.participantCount} 人`,
+          `Allocated ${count(t.allocatedTokens)} · Raw ${t.rawTokens === null ? "Unknown" : count(t.rawTokens)} · ${t.participantCount} participants`,
+        ),
+      })),
+      nextPageLabel: visible?.nextCursor ? copy("下一页", "Next page") : undefined,
+      firstPageLabel: cursor ? copy("回到第一页", "First page") : undefined,
+      diagnosticsTitle: visible ? copy("高级账本与采集诊断", "Advanced ledger & collection diagnostics") : undefined,
+      diagnosticsToggleLabel: copy("查看运行诊断", "View runtime diagnostics"),
+      collectionStatusText: visible ? (visible.coverage.enabled ? copy("计量运行中", "Collection active") : copy("计量已暂停", "Collection paused")) : undefined,
+      collectionActionLabel: visible?.canConfigure ? (visible.coverage.enabled ? copy("暂停计量", "Pause collection") : copy("启用计量", "Enable collection")) : undefined,
+      diagnosticsLines: visible ? [
+        `${copy("采集始于", "Collection began")} ${new Date(visible.coverage.enabledAt).toLocaleString(locale)}`,
+        `${copy("最近成功采集", "Last successful collection")}: ${lastSource === null ? copy("暂无成功记录", "No successful collection yet") : new Date(lastSource).toLocaleString(locale)}`,
+        copy(`修订 ${visible.snapshotRevision} · 截至 ${new Date(visible.asOf).toLocaleString(locale)} · ${visible.timezone} · ${visible.policyVersion}`, `Revision ${visible.snapshotRevision} · As of ${new Date(visible.asOf).toLocaleString(locale)} · ${visible.timezone} · ${visible.policyVersion}`),
+        copy(`未知模型轮次 ${visible.coverage.unknownModelTurns}`, `${visible.coverage.unknownModelTurns} turns with unknown model`),
+      ] : undefined,
+      diagnosticsPartialNotice: visible?.coverage.partial ? copy(
+        `部分数据尚未齐全：${visible.coverage.missingUsage} 个轮次用量不完整，${visible.coverage.openGapIncidents ?? visible.coverage.openGaps} 个未恢复缺口（${visible.coverage.openGaps} 条失败记录）。`,
+        `Partial coverage: ${visible.coverage.missingUsage} turns have incomplete usage; ${visible.coverage.openGapIncidents ?? visible.coverage.openGaps} open gaps (${visible.coverage.openGaps} gap records).`,
+      ) : undefined,
+      categoryStats: visible ? [
+        { label: copy("已结算", "Settled"), value: count(visible.summary.categories.settled ?? "0") },
+        { label: copy("暂定", "Provisional"), value: count(visible.summary.categories.provisional ?? "0") },
+        { label: copy("待归属", "Pending attribution"), value: count(visible.summary.categories.pending ?? "0") },
+        { label: copy("系统", "System"), value: count(visible.summary.categories.system ?? "0") },
+        { label: copy("未知", "Unknown"), value: count(visible.summary.categories.unknown ?? "0") },
+      ] : undefined,
+      onChangeScope: (nextScope) => change(() => { setScope(nextScope); setActor(""); setActorName(""); }),
+      onChangeRange: selectRange,
+      onChangeModel: (val) => change(() => setModel(val)),
+      onChangeActivityMode: (mode) => setActivityMode(mode as typeof activityMode),
+      onChangeView: (val) => change(() => setView(val)),
+      onSelectRow: (key) => {
+        if (view === "threads") openThread(key);
+        else if (view === "actors") {
+          const row = visible?.rows.find((r) => "key" in r && r.key === key);
+          choosePerson(key, (row && "label" in row ? row.label : undefined) ?? copy("未知人员", "Unknown person"));
+        }
+      },
+      onBackToSummary: returnToSummary,
+      onClearActor: () => choosePerson("", ""),
+      onNextPage: () => { if (visible?.nextCursor) change(() => {}, visible.nextCursor); },
+      onFirstPage: () => change(() => {}),
+      onToggleCollection: () => { if (visible) void configure(!visible.coverage.enabled); },
+    };
+  }, [
+    activityMode, actorId, actorName, change, choosePerson, configure, copy, count, cursor, from, ledgerUnsupported,
+    locale, modelKey, modelLabel, openThread, range, returnToSummary, scope, selectRange, stateLabel, threadId, through,
+    view, visible, zh,
+  ]);
 
-  const lastSource = visible?.coverage?.lastSourceSuccessAt ?? visible?.diagnostics?.lastSourceSuccessAt ?? null;
+  const title = copy("Token 用量", "Token usage");
+  const subtitle = ledgerUnsupported
+    ? copy("查看当前执行主机上的 Agent 套餐额度与会话用量。", "Inspect Agent quota windows and session usage on the active host.")
+    : copy("按轮次参与人均分 · 按轮次开始日统计 · Asia/Shanghai", "Shared equally by turn participants · Grouped by turn start date · Asia/Shanghai");
+
+  const viewModel = useMemo(
+    (): import("@opencraft/design-system-web/valdi").TokenUsageDashboardProps => ({
+      dark: appearance.resolvedTheme === "dark",
+      touch,
+      narrow,
+      title,
+      subtitle,
+      refreshLabel: copy("刷新", "Refresh"),
+      loading,
+      loadingText: copy("正在读取用量…", "Loading usage…"),
+      errorMessage: error ?? undefined,
+      localUsage: localUsageSection,
+      ledger: ledgerSection,
+      onRefresh: handleRefresh,
+      onHaptic: handleHaptic,
+    }),
+    [appearance.resolvedTheme, copy, error, handleHaptic, handleRefresh, ledgerSection, loading, localUsageSection, narrow, subtitle, title, touch],
+  );
 
   return (
-    <div ref={page} className="token-usage__page" aria-busy={loading} style={{ minHeight: reservedHeight }}>
-      <SettingsPageHeader
-        title={copy("Token 用量", "Token usage")}
-        description={copy("按轮次参与人均分 · 按轮次开始日统计 · Asia/Shanghai", "Shared equally by turn participants \u00b7 Grouped by turn start date \u00b7 Asia/Shanghai")}
-      />
-
-      {/* Single-line Toolbar */}
-      <div className="token-usage__toolbar" role="group" aria-label={copy("用量筛选", "Usage filters")}>
-        <label className="token-usage__field">
-          <span>{copy("用量范围", "Scope")}</span>
-          <SettingsSelect
-            value={scope}
-            onChange={(e) =>
-              change(() => {
-                setScope(e.target.value);
-                setActor("");
-                setActorName("");
-              })
-            }
-          >
-            <option value="self">{copy("我的用量", "My usage")}</option>
-            {visible?.canQueryTeam || scope === "team" ? <option value="team">{copy("团队用量", "Team usage")}</option> : null}
-          </SettingsSelect>
-        </label>
-
-        <label className="token-usage__field">
-          <span>{copy("时间范围", "Range")}</span>
-          <SettingsSelect value={range} onChange={(e) => selectRange(e.target.value)}>
-            <option value="7">{copy("近 7 日", "Last 7 days")}</option>
-            <option value="30">{copy("近 30 日", "Last 30 days")}</option>
-            <option value="custom">{copy("自定义", "Custom")}</option>
-          </SettingsSelect>
-        </label>
-
-        {range === "custom" ? (
-          <>
-            <label className="token-usage__field">
-              <span>{copy("开始日", "From")}</span>
-              <SettingsTextInput
-                type="date"
-                value={from}
-                max={through}
-                onChange={(e) => {
-                  setRange("custom");
-                  change(() => setFrom(e.target.value));
-                }}
-              />
-            </label>
-            <label className="token-usage__field">
-              <span>{copy("结束日", "Through")}</span>
-              <SettingsTextInput
-                type="date"
-                value={through}
-                min={from}
-                onChange={(e) => {
-                  setRange("custom");
-                  change(() => setThrough(e.target.value));
-                }}
-              />
-            </label>
-          </>
-        ) : null}
-
-        <label className="token-usage__field">
-          <span>{copy("模型", "Model")}</span>
-          <SettingsSelect value={modelKey} onChange={(e) => change(() => setModel(e.target.value))}>
-            <option value="">{copy("全部模型", "All models")}</option>
-            {modelOptions.map((m) => (
-              <option key={m.key} value={m.key}>
-                {modelLabel(m.key)}
-              </option>
-            ))}
-            {modelKey && !modelOptions.some((m) => m.key === modelKey) ? <option value={modelKey}>{modelLabel(modelKey)}</option> : null}
-          </SettingsSelect>
-        </label>
-
-        <SettingsButton
-          disabled={loading}
-          onClick={() => {
-            setCursor(null);
-            setRefresh((n) => n + 1);
-          }}
-        >
-          {copy("刷新", "Refresh")}
-        </SettingsButton>
-      </div>
-
-      {error ? <SettingsNotice role="alert">{error}</SettingsNotice> : null}
-      {loading && !visible ? <p role="status">{copy("正在读取用量…", "Loading usage\u2026")}</p> : null}
-
-      {visible && metrics ? (
-        <>
-          {/* Key Metrics Strip (5 cells) */}
-          <section className="token-usage__summary" aria-labelledby="token-usage-summary-title">
-            <div className="token-usage__summary-head">
-              <div>
-                <h2 id="token-usage-summary-title">{summaryTitle}</h2>
-                <p>{copy("按轮次参与人均分 · 按轮次开始日统计 · Asia/Shanghai", "Shared equally by turn participants \u00b7 Grouped by turn start date \u00b7 Asia/Shanghai")}</p>
-              </div>
-              {visible.coverage.partial ? <span className="token-usage__badge">{copy("部分数据", "Partial data")}</span> : null}
-            </div>
-
-            <div className="token-usage__strip" role="group" aria-label={copy("核心指标", "Key metrics")}>
-              <div className="token-usage__strip-cell">
-                <strong title={count(metrics.settled)}>{compactTokens(metrics.settled, locale)}</strong>
-                <span>{copy("已结算 Token", "Settled tokens")}</span>
-                <small title={count(metrics.total)}>{copy(`所选范围总量 ${count(metrics.total)}`, `Total in range ${count(metrics.total)}`)}</small>
-              </div>
-              <div className="token-usage__strip-cell">
-                <strong title={count(metrics.peak)}>{compactTokens(metrics.peak, locale)}</strong>
-                <span>{copy("单日峰值", "Peak tokens")}</span>
-                <small>{metrics.peakDay ?? "—"}</small>
-              </div>
-              <div className="token-usage__strip-cell">
-                <strong>{metrics.settledTurns === null ? "—" : count(String(metrics.settledTurns))}</strong>
-                <span>{copy("已结算轮次", "Settled turns")}</span>
-                <small>{copy(`共 ${visible.summary.turns} 轮`, `${visible.summary.turns} turns total`)}</small>
-              </div>
-              <div className="token-usage__strip-cell">
-                <strong>{metrics.longestStreak}</strong>
-                <span>{copy("最长连续活跃天数", "Longest streak")}</span>
-                <small>{copy("天", "days")}</small>
-              </div>
-              <div className="token-usage__strip-cell">
-                <strong>{metrics.currentStreak}</strong>
-                <span>{copy("当前连续活跃天数", "Current streak")}</span>
-                <small>{copy("天", "days")}</small>
-              </div>
-            </div>
-
-            <p className="token-usage__summary-meta">
-              {copy(`${visible.summary.threads ?? "—"} 个会话 · ${visible.summary.turns} 个轮次`, `${visible.summary.threads ?? "—"} conversations · ${visible.summary.turns} turns`)}
-            </p>
-          </section>
-
-          {/* Token Activity Heatmap / Trend */}
-          <section className="token-usage__activity" aria-labelledby="token-usage-activity-title">
-            <div className="token-usage__activity-head">
-              <div>
-                <h3 id="token-usage-activity-title">{copy("Token 活跃度", "Token activity")}</h3>
-                <p>{copy("按轮次开始日统计", "Grouped by turn start date")}</p>
-              </div>
-              <SegmentedControl
-                label={copy("活跃度视图", "Activity view")}
-                value={activityMode}
-                onValueChange={(val) => setActivityMode(val as typeof activityMode)}
-                options={[
-                  { value: "daily", label: copy("按日", "Daily") },
-                  { value: "weekly", label: copy("按周", "Weekly") },
-                  { value: "cumulative", label: copy("累计", "Cumulative") },
-                ]}
-              />
-            </div>
-
-            {activityMode === "daily" && grid ? (
-              <>
-                <div className="token-usage__heatmap-wrap">
-                  <div className="token-usage__heatmap-days" aria-hidden="true">
-                    {["一", "二", "三", "四", "五", "六", "日"].map((d, i) => (
-                      <span key={d} data-row={i}>
-                        {i % 2 === 0 ? (zh ? d : ["Mon", "", "Wed", "", "Fri", "", "Sun"][i]) : ""}
-                      </span>
-                    ))}
-                  </div>
-                  <div
-                    className="token-usage__heatmap"
-                    role="group"
-                    aria-label={copy("每日 Token 活跃度热力图", "Daily token activity heatmap")}
-                    style={{ gridTemplateColumns: `repeat(${grid.weeks},minmax(4px,16px))` }}
-                  >
-                    {grid.columns.map((week) =>
-                      week.map((cell) => (
-                        <button
-                          type="button"
-                          key={cell.date}
-                          className="token-usage__heatmap-cell"
-                          data-date={cell.date}
-                          data-level={cell.level}
-                          data-state={cell.state}
-                          aria-label={copy(`${cell.date} · ${count(cell.tokens)} Token · ${cell.turns} 轮`, `${cell.date} · ${count(cell.tokens)} tokens · ${cell.turns} turns`)}
-                          aria-pressed={selectedCell?.date === cell.date}
-                          disabled={cell.state === "outside"}
-                          onPointerEnter={event => { if (cell.state === "outside" || event.pointerType !== "mouse") return; setPreviewCell(cell); }}
-                          onPointerLeave={event => { if (event.pointerType === "mouse") setPreviewCell(null); }}
-                          onFocus={event => { if (!event.currentTarget.matches(":focus-visible") || document.documentElement.dataset.pointerFocus) return; setPreviewCell(cell); }}
-                          onBlur={() => setPreviewCell(null)}
-                          onClick={() => { setPreviewCell(null); setSelectedCell(current => current?.date === cell.date ? null : cell); }}
-                        />
-                      )),
-                    )}
-                  </div>
-                </div>
-                <div className="token-usage__heatmap-months" style={{ gridTemplateColumns: `repeat(${grid.weeks},minmax(4px,16px))` }}>
-                  {Array.from({ length: grid.weeks }, (_, i) => grid.monthLabels.find((x) => x.index === i)).map((x, i) => (
-                    <span key={i}>{x?.label ?? ""}</span>
-                  ))}
-                </div>
-                <p className="token-usage__activity-caption" role="status">
-                  {activeCell
-                    ? `${activeCell.date} · ${count(activeCell.tokens)} tokens · ${activeCell.turns} ${copy("轮", "turns")}`
-                    : copy("选择方格查看当日用量", "Choose a cell for daily usage")}
-                </p>
-              </>
-            ) : (
-              <ol className="token-usage__bars" aria-label={activityMode === "weekly" ? copy("按周用量", "Weekly usage") : copy("累计用量", "Cumulative usage")}>
-                {bars.map((bar) => {
-                  const max = bars.reduce((n, b) => (BigInt(b.tokens) > n ? BigInt(b.tokens) : n), 0n);
-                  const pct = max === 0n ? 0 : Number((BigInt(bar.tokens) * 10000n) / max) / 100;
-                  return (
-                    <li key={bar.key} className="token-usage__bar-row">
-                      <span className="token-usage__bar-label">{bar.label}</span>
-                      <span className="token-usage__bar-track" aria-hidden="true">
-                        <span className="token-usage__bar-fill" style={{ width: `${pct}%` }} />
-                      </span>
-                      <span className="token-usage__bar-value" title={count(bar.tokens)}>
-                        {compactTokens(bar.tokens, locale)}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ol>
-            )}
-
-            <details className="token-usage__activity-table">
-              <summary className="ui-native-disclosure">{copy("以表格查看", "View as table")}</summary>
-              <table className="token-usage__table">
-                <thead>
-                  <tr>
-                    <th>{copy("日期", "Date")}</th>
-                    <th>{copy("用量", "Tokens")}</th>
-                    <th>{copy("轮次", "Turns")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visible.daily.map((d) => (
-                    <tr key={d.key}>
-                      <td>{d.key}</td>
-                      <td>{count(d.tokens)}</td>
-                      <td>{d.turns}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </details>
-          </section>
-
-          {/* Model Usage Section */}
-          <SettingsSection title={copy("模型用量", "Usage by model")}>
-            {visible.models.length ? (
-              <ul className="token-usage__model-grid">
-                {visible.models.map((model) => {
-                  const pct = modelShare(model.tokens, visible.summary.tokens);
-                  const unknown = /\[null,null\]/.test(model.key);
-                  return (
-                    <li key={model.key} className="token-usage__model-card" data-unknown={unknown || undefined}>
-                      <div className="token-usage__model-card-head">
-                        <strong>{modelLabel(model.key)}</strong>
-                        <span title={count(model.tokens)}>{compactTokens(model.tokens, locale)}</span>
-                      </div>
-                      <span className="token-usage__model-card-track" aria-hidden="true">
-                        <span style={{ width: `${pct}%` }} />
-                      </span>
-                      <small>
-                        {model.turns} {copy("轮", "turns")}
-                      </small>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : (
-              <p>{copy("该范围暂无模型用量记录。", "No model usage in this range.")}</p>
-            )}
-          </SettingsSection>
-
-          {/* Detailed Conversation / People / Turn table */}
-          <SettingsSection
-            title={detailTitle}
-            action={
-              threadId ? (
-                <SettingsButton onClick={returnToSummary}>{copy("返回汇总", "Back to summary")}</SettingsButton>
-              ) : (
-                <div className="token-usage__detail-actions">
-                  <SettingsSelect aria-label={copy("列表", "View")} value={view} onChange={(e) => change(() => setView(e.target.value))}>
-                    <option value="threads">{copy("会话汇总", "Conversations")}</option>
-                    <option value="turns">{copy("轮次明细", "Turn details")}</option>
-                    {visible?.canQueryTeam ? <option value="actors">{copy("人员汇总", "People")}</option> : null}
-                  </SettingsSelect>
-                  {scope === "team" ? (
-                    <SettingsButton onClick={browsePeople}>{actorId ? actorName : copy("全部人员", "All people")}</SettingsButton>
-                  ) : null}
-                  {actorId ? (
-                    <SettingsButton onClick={() => choosePerson("", "")}>{copy("清除人员筛选", "Clear person filter")}</SettingsButton>
-                  ) : null}
-                </div>
-              )
-            }
-          >
-            {visible.rows.length === 0 ? (
-              <p>{copy("该筛选范围暂无记录。", "No records match these filters.")}</p>
-            ) : details ? (
-              <div className="token-usage__table-wrap">
-                <table className="token-usage__table">
-                  <thead>
-                    <tr>
-                      <th>{copy("轮次", "Turn")}</th>
-                      <th>{copy("时间/状态", "Time / State")}</th>
-                      <th>{copy("分摊 / 原始 / 参与人", "Allocated / Raw / Participants")}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {details.map((t) => (
-                      <tr key={t.turnId}>
-                        <td>
-                          <span>{t.turnId}</span>
-                        </td>
-                        <td>
-                          {new Date(t.startedAt).toLocaleString(locale)} · {stateLabel(t.allocationState)}
-                        </td>
-                        <td>
-                          {copy(
-                            `分摊 ${count(t.allocatedTokens)} · 原始 ${t.rawTokens === null ? "未知" : count(t.rawTokens)} · ${t.participantCount} 人`,
-                            `Allocated ${count(t.allocatedTokens)} · Raw ${t.rawTokens === null ? "Unknown" : count(t.rawTokens)} · ${t.participantCount} participants`,
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="token-usage__table-wrap">
-                <table className="token-usage__table">
-                  <thead>
-                    <tr>
-                      <th>{copy("名称", "Name")}</th>
-                      <th>{copy("Tokens", "Tokens")}</th>
-                      <th>{copy("轮次", "Turns")}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {visible.rows.map((row) =>
-                      "key" in row ? (
-                        <tr key={row.key}>
-                          <td>
-                            {view === "threads" ? (
-                              <SettingsButton data-usage-thread={row.key} onClick={() => openThread(row.key)}>
-                                {row.key}
-                              </SettingsButton>
-                            ) : view === "actors" ? (
-                              <SettingsButton onClick={() => choosePerson(row.key, row.label ?? copy("未知人员", "Unknown person"))}>
-                                {row.label ?? copy("未知人员", "Unknown person")}
-                              </SettingsButton>
-                            ) : (
-                              <strong>{row.key}</strong>
-                            )}
-                          </td>
-                          <td title={count(row.tokens)}>{compactTokens(row.tokens, locale)}</td>
-                          <td>{row.turns}</td>
-                        </tr>
-                      ) : null,
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            {visible.nextCursor ? (
-              <SettingsButton onClick={() => change(() => {}, visible.nextCursor)}>{copy("下一页", "Next page")}</SettingsButton>
-            ) : null}
-            {cursor ? <SettingsButton onClick={() => change(() => {})}>{copy("回到第一页", "First page")}</SettingsButton> : null}
-          </SettingsSection>
-
-          {/* Bottom Diagnostics (Collapsible <details>) */}
-          <section className="token-usage__advanced" aria-labelledby="token-usage-advanced-title">
-            <h3 id="token-usage-advanced-title">{copy("高级账本与采集诊断", "Advanced ledger & collection diagnostics")}</h3>
-            <details className="token-usage__diagnostics">
-              <summary className="ui-native-disclosure">{copy("查看运行诊断", "View runtime diagnostics")}</summary>
-              <div className="token-usage__diagnostics-actions">
-                <span>{visible.coverage.enabled ? copy("计量运行中", "Collection active") : copy("计量已暂停", "Collection paused")}</span>
-                {visible.canConfigure ? (
-                  <SettingsButton disabled={loading} onClick={() => void configure(!visible.coverage.enabled)}>
-                    {visible.coverage.enabled ? copy("暂停计量", "Pause collection") : copy("启用计量", "Enable collection")}
-                  </SettingsButton>
-                ) : null}
-              </div>
-              <p>
-                {copy("采集始于", "Collection began")} {new Date(visible.coverage.enabledAt).toLocaleString(locale)}
-              </p>
-              <p>
-                {copy("最近成功采集", "Last successful collection")}:{" "}
-                {lastSource === null ? copy("暂无成功记录", "No successful collection yet") : new Date(lastSource).toLocaleString(locale)}
-              </p>
-              <p>
-                {copy(
-                  `修订 ${visible.snapshotRevision} · 截至 ${new Date(visible.asOf).toLocaleString(locale)} · ${visible.timezone} · ${visible.policyVersion}`,
-                  `Revision ${visible.snapshotRevision} · As of ${new Date(visible.asOf).toLocaleString(locale)} · ${visible.timezone} · ${visible.policyVersion}`,
-                )}
-              </p>
-              {visible.coverage.partial ? (
-                <SettingsNotice>
-                  {copy(
-                    `部分数据尚未齐全：${visible.coverage.missingUsage} 个轮次用量不完整，${visible.coverage.openGapIncidents ?? visible.coverage.openGaps} 个未恢复缺口（${visible.coverage.openGaps} 条失败记录）。`,
-                    `Partial coverage: ${visible.coverage.missingUsage} turns have incomplete usage; ${visible.coverage.openGapIncidents ?? visible.coverage.openGaps} open gaps (${visible.coverage.openGaps} gap records).`,
-                  )}
-                </SettingsNotice>
-              ) : null}
-              <dl className="token-usage__summary">
-                <div>
-                  <dt>{copy("已结算", "Settled")}</dt>
-                  <dd>{count(visible.summary.categories.settled ?? "0")}</dd>
-                </div>
-                <div>
-                  <dt>{copy("暂定", "Provisional")}</dt>
-                  <dd>{count(visible.summary.categories.provisional ?? "0")}</dd>
-                </div>
-                <div>
-                  <dt>{copy("待归属", "Pending attribution")}</dt>
-                  <dd>{count(visible.summary.categories.pending ?? "0")}</dd>
-                </div>
-                <div>
-                  <dt>{copy("系统", "System")}</dt>
-                  <dd>{count(visible.summary.categories.system ?? "0")}</dd>
-                </div>
-                <div>
-                  <dt>{copy("未知", "Unknown")}</dt>
-                  <dd>{count(visible.summary.categories.unknown ?? "0")}</dd>
-                </div>
-              </dl>
-              <p>{copy(`未知模型轮次 ${visible.coverage.unknownModelTurns}`, `${visible.coverage.unknownModelTurns} turns with unknown model`)}</p>
-
-              {visible.canQueryTeam && visible.diagnostics ? (
-                <>
-                  <h4>{copy("本次启动计数", "This process")}</h4>
-                  <p>{copy("以下计数仅覆盖本次服务启动以来，不参与用量汇总；延迟为最近256次操作。", "These process-local counters do not contribute to usage totals. Latencies cover the latest 256 operations.")}</p>
-                  <dl className="token-usage__summary">
-                    {Object.entries(visible.diagnostics.counts).map(([key, value]) => (
-                      <div key={key}>
-                        <dt>
-                          {
-                            (
-                              {
-                                collected: copy("采集", "Collected"),
-                                corrected: copy("校正", "Corrected"),
-                                deduplicated: copy("去重", "Deduplicated"),
-                                excluded: copy("范围外", "Excluded"),
-                                missing: copy("缺口", "Gaps"),
-                                reconciled: copy("对账", "Reconciled"),
-                                writeFailures: copy("落库失败", "Write failures"),
-                                queryFailures: copy("查询失败", "Query failures"),
-                              } as Record<string, string>
-                            )[key]
-                          }
-                        </dt>
-                        <dd>{count(String(value))}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                  <p>
-                    {copy("落库延迟 p95", "Write latency p95")}: {visible.diagnostics.writeLatency.p95Ms?.toFixed(1) ?? "—"} ms ·{" "}
-                    {copy("查询延迟 p95", "Query latency p95")}: {visible.diagnostics.queryLatency.p95Ms?.toFixed(1) ?? "—"} ms
-                  </p>
-                </>
-              ) : null}
-            </details>
-          </section>
-        </>
-      ) : null}
+    <div ref={page} className="valdi-token-usage-dashboard-host" aria-busy={loading} style={{ minHeight: reservedHeight }}>
+      <Suspense fallback={<SettingsPageHeader title={title} description={subtitle} />}>
+        <LazyValdiTokenUsageDashboard viewModel={viewModel} />
+      </Suspense>
     </div>
   );
 }

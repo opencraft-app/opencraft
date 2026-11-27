@@ -1,6 +1,6 @@
 import type { ThemeWindowAppearance } from "@opencraft/design-system/theme-options";
 import type { WindowPresentation } from "./window-presentation";
-import { isMobileContainerIdentity } from "@opencraft/client-product/mobile-container";
+import { isMobileContainerIdentity, resolveMobileContainerTransport } from "@opencraft/client-product/mobile-container";
 
 /** Shell's exposed edge surface is separate from an Electron window's material. */
 export interface WindowAppearanceIntent extends ThemeWindowAppearance {
@@ -51,10 +51,11 @@ export function projectWindowAppearance(
   root.dataset.windowAppearanceStrategy = presentation.appearanceControl;
   root.dataset.windowAppearancePhase = phase;
   root.dataset.windowEdgeStrategy = edgeStrategy;
-  const view = document.defaultView as (Window & { opencraftMobile?: unknown; ReactNativeWebView?: { postMessage(raw: string): void } }) | null;
+  const view = document.defaultView as (Window & { opencraftMobile?: unknown }) | null;
+  const mobileTransport = resolveMobileContainerTransport(view);
   const appearance = { resolvedTheme: requested.resolvedTheme, edgeBackgroundColor: requested.edgeBackgroundColor };
-  if (view && isMobileContainerIdentity(view.opencraftMobile) && typeof view.ReactNativeWebView?.postMessage === "function") {
-    view.ReactNativeWebView.postMessage(JSON.stringify({ ...view.opencraftMobile, type: "appearance", ...appearance }));
+  if (view && isMobileContainerIdentity(view.opencraftMobile) && mobileTransport) {
+    mobileTransport.postMessage(JSON.stringify({ ...view.opencraftMobile, type: "appearance", ...appearance }));
   } else if (view?.name === "opencraft-mobile-preview" && view.parent !== view) {
     view.parent.postMessage({ type: "opencraft-mobile-appearance", ...appearance }, view.location.origin);
   }

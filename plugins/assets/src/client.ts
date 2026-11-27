@@ -165,6 +165,15 @@ export function createServerAssetsExtension(
       const gitProviders = account.getGitProviders().filter((p) => p.auth === "ssh" || p.host === "github.com");
       const personalEnvironment = account.getEnvironment();
       const contributionGit = options?.contribution?.git;
+      const warmTimer = setTimeout(() => {
+        if (disposed) return;
+        const currentScope = account.getScope();
+        void Promise.all([
+          currentScope ? import("./view.js").then((m) => m.warmAssetsCatalog(fetcher, currentScope)).catch(() => {}) : Promise.resolve(),
+          import("./use-assets-models.js").then((m) => m.warmAssetsModelGateway(fetcher)).catch(() => {}),
+        ]);
+      }, 300);
+      api.subscriptions.add(() => clearTimeout(warmTimer));
       return createAssetsExtension(async () => {
         if (disposed) throw Error("Assets extension retired");
         const [git, environment, augmentation] = await Promise.all([

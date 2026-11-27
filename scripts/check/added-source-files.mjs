@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 export const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const source = /\.(?:[cm]?[jt]sx?)$/u;
 const excluded =
-  /^(?:vendor|dist|release|runtime\/dsh\/node_modules)\/|\/(?:dist|node_modules|generated)\/|_generated\./u;
+  /^(?:vendor|dist|release|runtime\/dsh\/node_modules)\/|\/(?:vendor|dist|node_modules|generated)\/|_generated\./u;
 
 export function addedSourceFiles(args = process.argv.slice(2)) {
   const git = (...gitArgs) => execFileSync("git", gitArgs, { cwd: repositoryRoot, encoding: "utf8" }).trim();

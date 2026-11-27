@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useSyncExternalStore, type ReactNode } from "react";
+import { createContext, lazy, Suspense, useContext, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { ArrowLeftIcon as ArrowLeft, CloudIcon as Cloud, LaptopIcon as Laptop, ServerIcon as Server } from "@opencraft/design-system-web/action-icons";
 import { useIntl } from "@opencraft/i18n/react";
 import {
@@ -20,7 +20,12 @@ import type { PersonalMachinesController } from "../runtime/personal-machine-env
 import type { OperationNotice } from "./notice-history";
 import { ConnectionLabel, ConnectionStatus, TargetConnectionStatus } from "./target-connection-status";
 import { executionEndpoint } from "./execution-endpoint";
+import { mobileConnectionMessages } from "./mobile-connection-messages";
 import { machineSettingsSection } from "../runtime/settings-machine-route";
+
+const LazyAddMachineModal = lazy(() =>
+  import("./add-machine-modal").then((module) => ({ default: module.AddMachineModal })),
+);
 
 export const MachineConnectionsAvailable = createContext(true);
 
@@ -255,9 +260,9 @@ export function SettingsMachines({
 }) {
   const intl = useIntl();
   const directory = usePersonalMachinesDirectory(personalMachines);
-  const [command, setCommand] = useState("");
-  const [copied, setCopied] = useState(false);
+  const [addModalOpen, setAddModalOpen] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const addButtonRef = useRef<HTMLButtonElement>(null);
 
   const runAction = async (key: string, operation: () => Promise<void>) => {
     if (busyKey !== null) return;
@@ -279,6 +284,11 @@ export function SettingsMachines({
   return (
     <>
       <SettingsPageHeader title={intl.formatMessage({ id: "settings.machines.title", defaultMessage: "Machines" })} />
+      <SettingsActions>
+        <SettingsButton variant="secondary" onClick={() => onSectionChange("mobile-connection")}>
+          {intl.formatMessage(mobileConnectionMessages.title)}
+        </SettingsButton>
+      </SettingsActions>
       {[false, true].map((cloud) => {
         const group = machines.filter((machine) => machine.cloud === cloud);
         const rows = (
@@ -339,22 +349,16 @@ export function SettingsMachines({
             defaultMessage: "Connect your own Mac or Linux machines over a reverse relay without opening inbound ports.",
           })}
           action={
-            directory.enrollmentOrigin ? (
-              <SettingsButton
-                variant="secondary"
-                loading={busyKey === "create"}
-                disabled={busyKey !== null}
-                onClick={() =>
-                  void runAction("create", async () => {
-                    const result = await personalMachines.command({ action: "create" });
-                    setCommand(result.command ?? "");
-                    setCopied(false);
-                  })
-                }
-              >
-                {intl.formatMessage({ id: "settings.machines.personal.add", defaultMessage: "Add machine" })}
-              </SettingsButton>
-            ) : undefined
+            <SettingsButton
+              variant="secondary"
+              disabled={busyKey !== null}
+              onClick={(event) => {
+                addButtonRef.current = event.currentTarget;
+                setAddModalOpen(true);
+              }}
+            >
+              {intl.formatMessage({ id: "settings.machines.personal.add", defaultMessage: "Add machine" })}
+            </SettingsButton>
           }
         >
           {!directory.enrollmentOrigin ? (
@@ -364,41 +368,6 @@ export function SettingsMachines({
                 defaultMessage: "Remote enrollment entrance is not configured on this server yet.",
               })}
             </SettingsNotice>
-          ) : null}
-          {command ? (
-            <SettingsGroup>
-              <SettingsRow
-                layout="stacked"
-                controlWidth="wide"
-                label={intl.formatMessage({ id: "settings.machines.personal.add", defaultMessage: "Add machine" })}
-                description={intl.formatMessage({
-                  id: "settings.machines.personal.commandHint",
-                  defaultMessage: "Run this private command on the remote machine within 15 minutes. Do not share it.",
-                })}
-              >
-                <pre className="settings-laboratory-code">
-                  <code>{command}</code>
-                </pre>
-                <SettingsActions align="start">
-                  <SettingsButton
-                    variant="secondary"
-                    disabled={busyKey !== null}
-                    onClick={() =>
-                      void runAction("copy", async () => {
-                        await navigator.clipboard.writeText(command);
-                        setCopied(true);
-                      })
-                    }
-                  >
-                    {intl.formatMessage(
-                      copied
-                        ? { id: "settings.machines.personal.copied", defaultMessage: "Copied" }
-                        : { id: "settings.machines.personal.copy", defaultMessage: "Copy command" },
-                    )}
-                  </SettingsButton>
-                </SettingsActions>
-              </SettingsRow>
-            </SettingsGroup>
           ) : null}
           {pendingMachines.length > 0 ? (
             <SettingsGroup>
@@ -423,7 +392,6 @@ export function SettingsMachines({
                       onClick={() =>
                         void runAction(`revoke:${pending.id}`, async () => {
                           await personalMachines.command({ action: "revoke", id: pending.id });
-                          setCommand("");
                         })
                       }
                     >
@@ -435,6 +403,16 @@ export function SettingsMachines({
             </SettingsGroup>
           ) : null}
         </SettingsSection>
+      ) : null}
+      {addModalOpen && personalMachines ? (
+        <Suspense fallback={null}>
+          <LazyAddMachineModal
+            personalMachines={personalMachines}
+            returnFocus={() => addButtonRef.current}
+            reportError={reportError}
+            onClose={() => setAddModalOpen(false)}
+          />
+        </Suspense>
       ) : null}
     </>
   );

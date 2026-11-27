@@ -232,6 +232,37 @@ export class OpenCraftDaemonClientManager {
     });
   }
 
+  async requestRelay<T = unknown>(action: string, payload?: unknown): Promise<T> {
+    if (this.shuttingDown) throw new Error("OpenCraft Daemon is shutting down");
+    await this.ensureRunning();
+    const requestId = randomBytes(8).toString("hex");
+    const connected = await this.open("control", `relay:${process.pid}:${requestId}`);
+    return await new Promise<T>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        connected.close();
+        reject(new Error("Timed out waiting for OpenCraft Daemon relay control"));
+      }, 20_000);
+      connected.channel.subscribeMessage((value) => {
+        const message = value as DaemonServerMessage;
+        if (message?.type === "relay/response" && message.id === requestId) {
+          clearTimeout(timeout);
+          connected.close();
+          if (message.ok) resolve(message.result as T);
+          else reject(new Error(message.error ?? "Cloud Relay action failed"));
+        } else if (message?.type === "daemon/fatal") {
+          clearTimeout(timeout);
+          connected.close();
+          reject(new Error(`${message.code}: ${message.message}`));
+        }
+      });
+      connected.channel.subscribeClose(() => {
+        clearTimeout(timeout);
+        reject(new Error("OpenCraft Daemon closed during relay control request"));
+      });
+      connected.channel.send({ type: "relay/request", id: requestId, action, ...(payload !== undefined ? { payload } : {}) });
+    });
+  }
+
   async connectAppHost(connectionId: string): Promise<OpenCraftDaemonAppHostConnection> {
     if (this.shuttingDown) throw new Error("OpenCraft Daemon is shutting down");
     await this.ensureRunning();

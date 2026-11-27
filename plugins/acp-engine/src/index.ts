@@ -42,6 +42,7 @@ export interface AcpEngineOptions {
   permission?: "allow-once" | "reject";
   reconnectWindowMs?: number;
   resolveStagedAttachment?: (name: string, path: string) => Promise<StagedAttachmentLocation | null>;
+  onAuthFailure?: () => void;
 }
 interface Session {
   schemaVersion: 1; id: string; nativeId: string; cwd: string; model: string | null; name: string | null;
@@ -78,6 +79,19 @@ interface Creation {
 const value = (input: unknown): Value => input && typeof input === "object" && !Array.isArray(input) ? input as Value : {};
 const fault = (message: string, code = -32602): never => { throw new AppServerRpcError({ code, message }); };
 const safeId = (id: unknown): id is string => typeof id === "string" && /^[a-zA-Z0-9_-]{1,128}$/u.test(id);
+function isAcpAuthError(error: unknown): boolean {
+  if (error instanceof AcpProtocolError) {
+    const category = value(error.data).category;
+    if (category === "auth") return true;
+  }
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  return /\b401\b|\bunauthorized\b|\bauthentication required\b|\bsign[- ]in required\b/iu.test(message);
+}
+function isAcpAuthMessageText(text: string): boolean {
+  const trimmed = text.trim();
+  return trimmed.length > 0 && trimmed.length <= 160
+    && /^(?:error:\s*)?(?:401\s+unauthorized|http\s+401\b|unauthorized\s*\(401\))/iu.test(trimmed);
+}
 
 /** A long-lived ACP owner shared by standard ACP peers, DSH ACP and Claude ACP.
  * A provider is enabled only with an explicit installed command; no CLI is
@@ -979,20 +993,29 @@ export class AcpEngine implements ExecutionEngineProvider {
     this.notify("turn/started", { threadId: session.id, turn: this.turn(runtime), ...(inputId ? { clientMessageId: inputId } : {}) });
     void this.native(session).request("session/prompt", { sessionId: session.nativeId, prompt: nativePrompt }, 0).then(result => {
       if (runtime.active !== active || active.status !== "inProgress") return;
+      const agentMessages = active.items.filter(item => item.type === "agentMessage");
+      const hasOtherWork = active.items.some(item => item.type !== "userMessage" && item.type !== "agentMessage");
+      if (!hasOtherWork && agentMessages.length > 0 && isAcpAuthMessageText(agentMessages.map(item => String(item.text ?? "")).join("\n"))) {
+        this.options.onAuthFailure?.();
+        void this.failPrompt(session, runtime, "acpAuthRequired").catch(() => { this.persistenceFailed = true; });
+        return;
+      }
       active.status = result.stopReason === "cancelled" ? "interrupted" : "completed";
       session.lastTurn = { id: active.id, status: active.status }; void this.save(session).catch(() => {});
       for (const item of active.items) if (item.type === "agentMessage" || item.type === "reasoning") this.notify("item/completed", { threadId: session.id, turnId: active.id, item });
       this.notify("turn/completed", { threadId: session.id, turn: this.turn(runtime) });
       for (const key of this.callbacks.keys()) if (key.startsWith(`${this.incarnation}:${session.id}:${active.id}:`)) this.callbacks.delete(key);
-    }, () => {
+    }, error => {
       if (runtime.active !== active || active.status !== "inProgress") return;
-      const code = this.nativeOutcomeUnknown ? "acpPromptUnconfirmed" : "acpPromptFailed";
+      const authFailed = isAcpAuthError(error);
+      if (authFailed) this.options.onAuthFailure?.();
+      const code = this.nativeOutcomeUnknown ? "acpPromptUnconfirmed" : authFailed ? "acpAuthRequired" : "acpPromptFailed";
       void this.failPrompt(session, runtime, code).catch(() => { this.persistenceFailed = true; });
     }).finally(() => cli?.revoke()).catch(() => { this.persistenceFailed = true; });
     return { turn: this.turn(runtime) };
     } catch (error) { await cli?.revoke(); throw error; }
   }
-  private async failPrompt(session: Session, runtime: Runtime, code: "acpPromptFailed" | "acpPromptUnconfirmed"): Promise<void> {
+  private async failPrompt(session: Session, runtime: Runtime, code: "acpPromptFailed" | "acpPromptUnconfirmed" | "acpAuthRequired"): Promise<void> {
     const active = runtime.active; if (!active || active.status !== "inProgress") return;
     active.status = "failed";
     active.error = { message: code, codexErrorInfo: "other", additionalDetails: null };

@@ -289,8 +289,30 @@ export async function startRelayApplication(input: unknown, composition: RelayCo
 }
 
 export async function runRelayCli(options: RelayComposition & { loadConfiguration?: (path: string) => Promise<unknown> } = {}) {
-  const [path, ...extra] = process.argv.slice(2);
-  if (!path || extra.length) throw new Error('Usage: opencraft-relay /absolute/private-config.json');
+  const args = process.argv.slice(2);
+  if (args[0] === 'init') {
+    const directory = args[1];
+    let origin = '';
+    let port: number | undefined;
+    let targetPort: number | undefined;
+    for (let i = 2; i < args.length; i += 2) {
+      const flag = args[i], val = args[i + 1];
+      if (!val) throw new Error('Usage: opencraft-relay init /absolute/dir --origin https://relay.example.com [--port 8787] [--target-port 4200]');
+      if (flag === '--origin') origin = val;
+      else if (flag === '--port') port = Number(val);
+      else if (flag === '--target-port') targetPort = Number(val);
+      else throw new Error(`Unknown flag: ${flag}`);
+    }
+    if (!directory || !origin) {
+      throw new Error('Usage: opencraft-relay init /absolute/dir --origin https://relay.example.com [--port 8787] [--target-port 4200]');
+    }
+    const { initializeSelfHostedRelayDirectory } = await import('./init.js');
+    const initialized = await initializeSelfHostedRelayDirectory(directory, { origin, ...(port !== undefined ? { port } : {}), ...(targetPort !== undefined ? { targetPort } : {}) });
+    console.log(JSON.stringify({ ok: true, relayConfigPath: initialized.relayConfigPath, connectionConfigPath: initialized.connectionConfigPath, origin: initialized.origin, instanceId: initialized.instanceId }));
+    return initialized;
+  }
+  const [path, ...extra] = args;
+  if (!path || extra.length) throw new Error('Usage: opencraft-relay /absolute/private-config.json | opencraft-relay init /absolute/dir --origin https://relay.example.com');
   const app = await startRelayApplication(await (options.loadConfiguration ?? readPrivateJson)(path), { ...options,
     build: options.build ?? { sourceRevision: process.env.OPENCRAFT_RELAY_SOURCE_REVISION ?? null, buildId: process.env.OPENCRAFT_RELAY_BUILD_ID ?? null } });
   console.log('OpenCraft relay ready');

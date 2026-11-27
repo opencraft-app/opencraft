@@ -53,13 +53,18 @@ export function getChannelRuntime(fetcher:typeof fetch,transport:ChannelRpc,acti
     }));signal.throwIfAborted();return{all,groups,members:Object.fromEntries(members)};
   });
   const assistant=createChannelRead<PersonalAssistantStatus>(scope.signal,signal=>client.assistantStatus(signal));
-  const runtime={rpc,client,directory,assistant,identity,signal:scope.signal,subscribeScope:(fn:()=>void)=>{scopeListeners.add(fn);return()=>{scopeListeners.delete(fn)}},getScope:()=>!scope.signal.aborted};
+  const bots=createChannelRead<PersonalAssistantStatus[]>(scope.signal,async signal=>{
+    await rpc.connect();
+    const result=await rpc.request('opencraft/personal-assistant/bots/list',{},signal);
+    return result.bots.filter(r=>r.assistant&&!r.assistant.isDefault);
+  });
+  const runtime={rpc,client,directory,assistant,bots,identity,signal:scope.signal,subscribeScope:(fn:()=>void)=>{scopeListeners.add(fn);return()=>{scopeListeners.delete(fn)}},getScope:()=>!scope.signal.aborted};
   runtimes.set(transport,runtime);
   const detachIdentity=transport.onDisconnect(()=>{if(transport.draftScope!==identity)scope.abort(Error('Channel identity changed'));});
   const abort=()=>scope.abort(activation.reason);activation.addEventListener('abort',abort,{once:true});
-  const poll=setInterval(()=>{if(assistant.observed)void assistant.refresh();},2500);
+  const poll=setInterval(()=>{if(assistant.observed)void assistant.refresh();if(bots.observed)void bots.refresh();},2500);
   scope.signal.addEventListener('abort',()=>{clearInterval(poll);void transport.close().catch(()=>{});detachIdentity();activation.removeEventListener('abort',abort);for(const fn of [...scopeListeners])fn();},{once:true});
-  client.watch(undefined,async signal=>{await directory.refresh(signal);if(signal.aborted)return;if(directory.get().failed)throw directory.get().error;void assistant.refresh(signal);},error=>{if(denied(error))scope.abort(error);else{directory.fail(error);assistant.fail(error);}},scope.signal,{onInvalidate:()=>{void assistant.refresh();},onConnectionLost:()=>{directory.invalidate();assistant.invalidate();}});
+  client.watch(undefined,async signal=>{await directory.refresh(signal);if(signal.aborted)return;if(directory.get().failed)throw directory.get().error;void assistant.refresh(signal);void bots.refresh(signal);},error=>{if(denied(error))scope.abort(error);else{directory.fail(error);assistant.fail(error);bots.fail(error);}},scope.signal,{onInvalidate:()=>{void assistant.refresh();void bots.refresh();},onConnectionLost:()=>{directory.invalidate();assistant.invalidate();bots.invalidate();}});
   if(activation.aborted)abort();return runtime;
 }
-export type ChannelRuntime={readonly rpc:ChannelRpc;readonly client:ChannelsClient;readonly directory:ChannelRead<ChannelDirectory>;readonly assistant:ChannelRead<PersonalAssistantStatus>;readonly identity:string|undefined;readonly signal:AbortSignal;subscribeScope(fn:()=>void):()=>void;getScope():boolean};
+export type ChannelRuntime={readonly rpc:ChannelRpc;readonly client:ChannelsClient;readonly directory:ChannelRead<ChannelDirectory>;readonly assistant:ChannelRead<PersonalAssistantStatus>;readonly bots:ChannelRead<PersonalAssistantStatus[]>;readonly identity:string|undefined;readonly signal:AbortSignal;subscribeScope(fn:()=>void):()=>void;getScope():boolean};

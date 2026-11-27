@@ -15,10 +15,14 @@ export async function uploadWorkbenchAssets(
   assetsDir: string,
   log: (line: string) => void,
   retainedAssetsDirs: readonly string[] = [],
+  options: { readonly allowHostless?: boolean } = {},
 ) {
   const assetRoot = resolve(assetsDir);
   const indexHtml = await readFile(join(assetRoot, "index.html"), "utf8");
-  if (!indexHtml.includes('id="opencraft-deployment-config"') || !indexHtml.includes('"url":"/apphost"'))
+  if (
+    !indexHtml.includes('id="opencraft-deployment-config"') ||
+    (!options.allowHostless && !indexHtml.includes('"url":"/apphost"'))
+  )
     throw new Error("Preview index.html missing the cloud AppHost configuration");
   const manifest: Record<string, { hash: string; size: number }> = {};
   const files = new Map<string, { file: string; mime: string }>();

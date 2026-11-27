@@ -1,4 +1,4 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ExecutionEngineClient } from "@opencraft/appserver-client";
 import { permissionModeProfileId } from "@opencraft/appserver-protocol";
@@ -11,6 +11,7 @@ import type { AgentConversationUsage, AgentUsageSnapshot } from "@opencraft/apps
 import {
   AgentOnboardingService,
   ONBOARDING_AGENT_ENGINES as ENGINE_BY_AGENT,
+  readLocalCodexAuth,
   resolveExecutable,
   localAgentEnvironment,
   type OnboardingAgentId,
@@ -24,10 +25,73 @@ type Params = Record<string, unknown>;
 interface ConnectedAgentModel {
   id: string;
   name: string;
+  inputModalities?: ("text" | "image")[];
   serviceTiers: { id: string; name: string; description: string }[];
   supportedReasoningEfforts: { reasoningEffort: string; description: string }[];
   defaultReasoningEffort: string | null;
   isDefault?: boolean;
+}
+
+function parseConfiguredCodexModel(configToml: string): string | null {
+  for (const rawLine of configToml.split(/\r?\n/u)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    if (line.startsWith("[")) break;
+    const match = /^model\s*=\s*["']([^"']+)["']/u.exec(line);
+    if (match?.[1]?.trim()) return match[1].trim();
+  }
+  return null;
+}
+
+export async function readNativeCodexModelsCache(env: NodeJS.ProcessEnv, home: string): Promise<ConnectedAgentModel[]> {
+  const codexHome = env.CODEX_HOME?.trim() || join(home, ".codex");
+  try {
+    const [cacheRaw, configRaw] = await Promise.all([
+      readFile(join(codexHome, "models_cache.json"), "utf8"),
+      readFile(join(codexHome, "config.toml"), "utf8").catch(() => ""),
+    ]);
+    if (cacheRaw.length > 4 * 1024 * 1024) return [];
+    const parsed = JSON.parse(cacheRaw) as { models?: unknown };
+    if (!Array.isArray(parsed.models)) return [];
+    const configuredModel = parseConfiguredCodexModel(configRaw);
+    const visible = parsed.models
+      .filter((entry): entry is Record<string, unknown> => Boolean(entry && typeof entry === "object" && !Array.isArray(entry)))
+      .filter(entry => typeof entry.slug === "string" && entry.slug.trim().length > 0 && (!entry.visibility || entry.visibility === "list"))
+      .sort((left, right) => {
+        const lp = typeof left.priority === "number" ? left.priority : Number.MAX_SAFE_INTEGER;
+        const rp = typeof right.priority === "number" ? right.priority : Number.MAX_SAFE_INTEGER;
+        return lp - rp;
+      });
+    return visible.map((entry, index) => {
+      const slug = String(entry.slug).trim();
+      const name = typeof entry.display_name === "string" && entry.display_name.trim() ? entry.display_name.trim() : slug;
+      const levels = Array.isArray(entry.supported_reasoning_levels)
+        ? entry.supported_reasoning_levels.flatMap(item => {
+            if (!item || typeof item !== "object") return [];
+            const level = item as { effort?: unknown; reasoningEffort?: unknown; description?: unknown };
+            const effort = typeof level.effort === "string" ? level.effort : typeof level.reasoningEffort === "string" ? level.reasoningEffort : null;
+            return effort ? [{ reasoningEffort: effort, description: typeof level.description === "string" ? level.description : "" }] : [];
+          })
+        : [];
+      const speedTiers = Array.isArray(entry.additional_speed_tiers) ? entry.additional_speed_tiers : [];
+      const rawServiceTiers = Array.isArray(entry.service_tiers) ? entry.service_tiers : [];
+      const hasFast = speedTiers.includes("fast") || rawServiceTiers.some(tier => tier === "fast" || (tier && typeof tier === "object" && (tier as { id?: unknown }).id === "fast"));
+      const modalities: ("text" | "image")[] = Array.isArray(entry.input_modalities) && entry.input_modalities.includes("image")
+        ? ["text", "image"]
+        : ["text"];
+      return {
+        id: `codex:${slug}`,
+        name,
+        inputModalities: modalities,
+        supportedReasoningEfforts: levels,
+        defaultReasoningEffort: typeof entry.default_reasoning_level === "string" ? entry.default_reasoning_level : null,
+        serviceTiers: hasFast ? [{ id: "fast", name: "Fast", description: "Faster responses" }] : [],
+        isDefault: configuredModel ? slug === configuredModel : index === 0,
+      };
+    });
+  } catch {
+    return [];
+  }
 }
 
 const PLACEHOLDER = ":current";
@@ -152,18 +216,50 @@ export class ConnectedAgentHost {
     return { engineId, bridge: method === "thread/start" && engineId !== null && this.bridge?.engines.includes(engineId) === true };
   }
 
+  invalidateDiscovery(): void {
+    this.probedAt = 0;
+  }
+
+  /** Close a cached engine so the next turn/probe spawns a fresh process with updated credentials. */
+  async resetEngine(agentId: OnboardingAgentId): Promise<void> {
+    const engineId = ENGINE_BY_AGENT[agentId];
+    if (!engineId) return;
+    const pendingLoad = this.engineLoads.get(engineId);
+    if (pendingLoad) await pendingLoad.catch(() => undefined);
+    const existing = this.engines.get(engineId);
+    if (existing) {
+      this.engines.delete(engineId);
+      await existing.close().catch(() => undefined);
+    }
+    this.discovered.delete(engineId);
+    this.modelLoads.delete(engineId);
+    this.invalidateDiscovery();
+  }
+
   private savedModels: Promise<void> | null = null;
   private catalogRefresh: Promise<void> | null = null;
   private async readSavedModels(): Promise<void> {
     await (this.savedModels ??= (async () => {
       const ids: EngineId[] = ["codex", "cursor", "claude-code", "codebuddy"];
-      if (this.options.nativePi !== false && this.deps.env && await resolveExecutable(["pi"], this.deps)) ids.push("pi");
+      if (this.options.nativePi !== false && this.deps?.env && await resolveExecutable(["pi"], this.deps)) ids.push("pi");
       await Promise.allSettled(ids.map(async id => {
         const engine = await this.engine(id);
         const page = await engine.request("model/list", {}, { notify() {}, async request() {} });
         const models = this.projectModels(id, page.data ?? []);
         if (models.length && !this.discovered.has(id)) this.discovered.set(id, models);
       }));
+      if (!this.discovered.has("codex") && typeof this.deps?.homedir === "string" && typeof this.deps?.exists === "function") {
+        const [codexBin, codexAuth] = await Promise.all([
+          resolveExecutable(["codex"], this.deps),
+          readLocalCodexAuth(this.deps.env ?? {}, this.deps.homedir),
+        ]);
+        if (codexBin && codexAuth?.authenticated) {
+          const nativeCached = await readNativeCodexModelsCache(this.deps.env ?? {}, this.deps.homedir);
+          if (nativeCached.length > 0 && !this.discovered.has("codex")) {
+            this.discovered.set("codex", nativeCached);
+          }
+        }
+      }
     })());
   }
   async executionProviders() {
@@ -199,6 +295,7 @@ export class ConnectedAgentHost {
         id: model.id,
         model: model.id,
         displayName: model.name,
+        ...(model.inputModalities ? { inputModalities: model.inputModalities } : {}),
         isDefault: model.isDefault ?? false,
         serviceTiers: model.serviceTiers,
         supportedReasoningEfforts: model.supportedReasoningEfforts,
@@ -325,6 +422,13 @@ export class ConnectedAgentHost {
       this.discovered.set(engineId, models);
       return models;
     }
+    if (engineId === "codex" && typeof this.deps?.homedir === "string") {
+      const nativeCached = await readNativeCodexModelsCache(this.deps.env ?? {}, this.deps.homedir);
+      if (nativeCached.length > 0) {
+        this.discovered.set(engineId, nativeCached);
+        return nativeCached;
+      }
+    }
     const created = await engine.request("thread/start", {
       cwd: this.deps.homedir,
       ...(engineId === "codex" ? {} : { permissions: permissionModeProfileId("full"), approvalPolicy: "never", sandbox: "danger-full-access" }),
@@ -408,20 +512,28 @@ export class ConnectedAgentHost {
       return engine;
     }
     const launch = await this.launch(engineId);
+    const underlyingExecutable = engineId === "codex"
+      ? await resolveExecutable(["codex"], this.deps)
+      : engineId === "claude-code"
+        ? await resolveExecutable(["claude"], this.deps)
+        : null;
+    const baseEnv = await localAgentEnvironment(this.deps, launch.command, underlyingExecutable ? [underlyingExecutable] : []);
     if (this.closed) throw new Error("Connected agents are closed");
     const history = this.nativeHistory(engineId);
+    const onboardingId = (Object.entries(ENGINE_BY_AGENT).find(([, value]) => value === engineId)?.[0] ?? null) as OnboardingAgentId | null;
     const engine = new AcpEngine({
       executionCli: this.options.executionCli,
       id: engineId,
       label: LABELS[engineId],
       command: launch.command,
       args: launch.args,
-      env: await localAgentEnvironment(this.deps, launch.command),
+      env: engineId === "codex" && underlyingExecutable ? { ...baseEnv, CODEX_EXECUTABLE: underlyingExecutable } : baseEnv,
       modelPolicyPath:this.options.modelPolicyPath,
       cwd: this.deps.homedir,
       dataDirectory: directory,
       permission: "allow-once",
       timeoutMs: 120_000,
+      ...(onboardingId ? { onAuthFailure: () => { this.onboarding.markAuthenticationExpired(onboardingId); this.invalidateDiscovery(); } } : {}),
       ...(this.options.resolveStagedAttachment ? { resolveStagedAttachment: this.options.resolveStagedAttachment } : {}),
       ...(history ? { history } : {}),
     });

@@ -1,18 +1,89 @@
 import { WorkspacePlacementPicker, type WorkspacePlacementControl } from './workspace-placement-picker';
 import { DisclosureButton } from "@opencraft/design-system-web/button";
-import { CheckIcon as Check, ChevronDownIcon as ChevronDown } from "@opencraft/design-system-web/action-icons";
+import { AddIcon as Plus, CheckIcon as Check, ChevronDownIcon as ChevronDown } from "@opencraft/design-system-web/action-icons";
 import * as DropdownMenu from "@opencraft/design-system-web/dropdown-menu";
 import { FormattedMessage, useIntl } from "@opencraft/i18n/react";
 import { draftSubmissionOwnsNavigation, type NewThreadDraftSnapshot } from "@opencraft/workbench-runtime";
 import { menuGeometry } from "@opencraft/design-system/tokens";
-import { useMachineConnectionPhase } from "../runtime/appserver-runtime-context";
+import { useMachineConnectionPhase, useOptionalPersonalMachines } from "../runtime/appserver-runtime-context";
 import { ConnectionStatus } from "./target-connection-status";
 import { machineResourcePhaseLabel } from "./machine-resource-presentation";
 import { BranchIcon as GitBranch, CloudIcon as Cloud, LaptopIcon as Laptop, ServerIcon as Server } from "@opencraft/design-system-web/action-icons";
-import { type PointerEvent as ReactPointerEvent, type ReactNode, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, type PointerEvent as ReactPointerEvent, type ReactNode, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { type DraftWorkspaceOption } from "../runtime/draft-workspace-model";
 import { useAsyncNotices } from "./async-notices-context";
 import type { DraftHostOption } from "./new-thread-draft-page";
+
+const LazyAddMachineModal = lazy(() =>
+  import("./add-machine-modal").then((module) => ({ default: module.AddMachineModal })),
+);
+
+const EMPTY_PERSONAL_SUBSCRIBE = () => () => {};
+const NULL_PERSONAL_DIRECTORY = () => null;
+
+function WorkInAddMachineItem({
+  disabled,
+  onOpen,
+}: {
+  readonly disabled: boolean;
+  readonly onOpen: () => void;
+}) {
+  const intl = useIntl();
+  const personalMachines = useOptionalPersonalMachines();
+  const directory = useSyncExternalStore(
+    personalMachines ? personalMachines.subscribe : EMPTY_PERSONAL_SUBSCRIBE,
+    personalMachines ? personalMachines.getDirectorySnapshot : NULL_PERSONAL_DIRECTORY,
+    NULL_PERSONAL_DIRECTORY,
+  );
+  if (!personalMachines || !directory) return null;
+  return (
+    <>
+      <DropdownMenu.Separator className="opencraft-composer-selection-menu__separator" />
+      <DropdownMenu.Item
+        className="new-thread-project-menu__item"
+        disabled={disabled}
+        onSelect={() => {
+          onOpen();
+        }}
+      >
+        <Plus size={15} />
+        <span>
+          <strong>{intl.formatMessage({ id: "workIn.addMachine", defaultMessage: "Add machine…" })}</strong>
+        </span>
+      </DropdownMenu.Item>
+    </>
+  );
+}
+
+function WorkInAddMachineModalHost({
+  open,
+  portalContainer,
+  onReturnFocus,
+  onClose,
+}: {
+  readonly open: boolean;
+  readonly portalContainer: HTMLElement | null;
+  readonly onReturnFocus: () => void;
+  readonly onClose: () => void;
+}) {
+  const personalMachines = useOptionalPersonalMachines();
+  const notices = useAsyncNotices();
+  if (!open || !personalMachines) return null;
+  return (
+    <Suspense fallback={null}>
+      <LazyAddMachineModal
+        personalMachines={personalMachines}
+        portalContainer={portalContainer}
+        returnFocus={() => {
+          onReturnFocus();
+          return null;
+        }}
+        reportError={notices.error}
+        onClose={onClose}
+      />
+    </Suspense>
+  );
+}
 
 function MachineIcon({ role }: { role: DraftHostOption["role"] }) {
   const Icon = role === "local" ? Laptop : role === "cloud" ? Cloud : Server;
@@ -148,6 +219,13 @@ export function ExecutionUtilityBar({
   const intl = useIntl(), notices = useAsyncNotices();
   const selectionEpoch = useRef(0);
   const [switchingHostId, setSwitchingHostId] = useState<string | null>(null);
+  const [addMachineOpen, setAddMachineOpen] = useState(false);
+  const [openMenu, setOpenMenu] = useState<'host' | 'workspace' | null>(null);
+  const openMenuRef = useRef<'host' | 'workspace' | null>(null);
+  const setMenuState = (next: 'host' | 'workspace' | null) => {
+    openMenuRef.current = next;
+    setOpenMenu(next);
+  };
   const workspace = draft.target.execution.workspace;
   const executionLocked = draftSubmissionOwnsNavigation(draft.phase);
   const selectedWorkspace = useMemo(
@@ -164,7 +242,10 @@ export function ExecutionUtilityBar({
     : hostOptions.find((host) => host.id === switchingHostId) ?? activeHost;
   return (
     <ComposerUtilityScrollArea>
-      <DropdownMenu.Root>
+      <DropdownMenu.Root
+        open={openMenu === 'host'}
+        onOpenChange={(next) => setMenuState(next ? 'host' : (openMenuRef.current === 'host' ? null : openMenuRef.current))}
+      >
         <DropdownMenu.Trigger asChild>
           <DisclosureButton
             className="new-thread-context-trigger"
@@ -187,7 +268,10 @@ export function ExecutionUtilityBar({
             side="top"
             sideOffset={menuGeometry.rootSideOffset}
             collisionPadding={menuGeometry.collisionPadding}
-            onCloseAutoFocus={(event) => { event.preventDefault(); onReturnFocus(); }}
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              if (openMenuRef.current === null) onReturnFocus();
+            }}
           >
             <DropdownMenu.Label className="opencraft-composer-selection-menu__heading">{intl.formatMessage({ id: "workIn.title", defaultMessage: "Work in" })}</DropdownMenu.Label>
             <div className="new-thread-project-menu__items">
@@ -215,14 +299,26 @@ export function ExecutionUtilityBar({
                 );
               })}
               </DropdownMenu.Group>)}
-
+              <WorkInAddMachineItem
+                disabled={executionLocked}
+                onOpen={() => setAddMachineOpen(true)}
+              />
             </div>
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
       </DropdownMenu.Root>
+      <WorkInAddMachineModalHost
+        open={addMachineOpen}
+        portalContainer={portalContainer}
+        onReturnFocus={onReturnFocus}
+        onClose={() => setAddMachineOpen(false)}
+      />
 
       <WorkspacePlacementPicker control={placement} execution={draft.target.execution} locked={executionLocked}
-        portalContainer={portalContainer} onReturnFocus={onReturnFocus}
+        portalContainer={portalContainer}
+        open={openMenu === 'workspace'}
+        onOpenChange={(next) => setMenuState(next ? 'workspace' : (openMenuRef.current === 'workspace' ? null : openMenuRef.current))}
+        onReturnFocus={() => { if (openMenuRef.current === null) onReturnFocus(); }}
         workspaceOptions={workspaceOptions} workspaceOptionsLoading={workspaceOptionsLoading}
         canBrowse={connectionPhase === "ready" && activeHost !== null} nativeWorkspacePicking={nativeWorkspacePicking}
         onBrowseWorkspace={onBrowseWorkspace} onSelectWorkspace={onSelectWorkspace} />

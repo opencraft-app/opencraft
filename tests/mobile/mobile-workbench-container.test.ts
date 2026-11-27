@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { externalMobileUrl, isMobileContainerEvent, mobileNavigationDisposition, parseMobileContainerRequest } from "@opencraft/client-product/mobile-container";
-import { bindMobileContainer, mobileContainer, openMobileSourceSettings, reloadMobileWorkbench } from "../../apps/workbench-web/src/runtime/mobile-container";
+import { externalMobileUrl, isMobileContainerEvent, mobileNavigationDisposition, parseMobileContainerRequest, resolveMobileContainerTransport } from "@opencraft/client-product/mobile-container";
+import { bindMobileContainer, mobileContainer, mobileContainerSupportsValdi, openMobileSourceSettings, reloadMobileWorkbench } from "../../apps/workbench-web/src/runtime/mobile-container";
+import { requestMobileActionSheet, requestMobileConfirmDialog } from "../../apps/workbench-web/src/runtime/mobile-valdi-bridge";
+import { readWindowPresentation } from "../../apps/workbench-web/src/runtime/window-presentation";
 
 const identity = { version: 1, runtimeId: "current-document" };
 test("source settings and onboarding reload use only the current native bridge", () => {
@@ -90,4 +92,54 @@ test("container events use the existing navigation owner and teardown rejects la
   assert.equal(publish, null);
   send({ ...identity, type: "back" });
   assert.equal(backs, 1);
+});
+
+test("host-neutral opencraftMobileHost transport and Valdi dialog delegation work without ReactNativeWebView", async () => {
+  const valdiIdentity = { version: 1 as const, runtimeId: "native-valdi-doc", capabilities: { valdi: true } };
+  const target = new EventTarget() as Window;
+  const sent: Array<Record<string, unknown>> = [];
+  Object.assign(target, {
+    top: target,
+    navigator: {},
+    opencraftMobile: valdiIdentity,
+    opencraftMobileHost: { postMessage(raw: string) { sent.push(JSON.parse(raw)); } },
+  });
+  assert.notEqual(resolveMobileContainerTransport(target), null);
+  assert.equal(mobileContainerSupportsValdi(target), true);
+  assert.equal(readWindowPresentation(target).host, "native-container");
+
+  openMobileSourceSettings(target);
+  assert.equal(parseMobileContainerRequest(JSON.stringify(sent.at(-1)), valdiIdentity.runtimeId)?.type, "source-settings");
+
+  const confirmPromise = requestMobileConfirmDialog({
+    title: "Switch workspace?",
+    message: "Current session will close.",
+    confirmLabel: "Switch",
+    cancelLabel: "Cancel",
+    destructive: true,
+  }, target);
+  assert.notEqual(confirmPromise, null);
+  const confirmReq = parseMobileContainerRequest(JSON.stringify(sent.at(-1)), valdiIdentity.runtimeId);
+  assert.equal(confirmReq?.type, "confirm-dialog");
+  const confirmReply = new Event("opencraft-mobile");
+  Object.assign(confirmReply, { detail: { ...valdiIdentity, type: "confirm-dialog-result", requestId: (sent.at(-1) as { requestId: string }).requestId, confirmed: true } });
+  target.dispatchEvent(confirmReply);
+  assert.equal(await confirmPromise, true);
+
+  const sheetPromise = requestMobileActionSheet({
+    title: "Workspace options",
+    cancelLabel: "Cancel",
+    actions: [{ id: "reload", label: "Reload" }, { id: "reset", label: "Reset", destructive: true }],
+  }, target);
+  assert.notEqual(sheetPromise, null);
+  const sheetReq = parseMobileContainerRequest(JSON.stringify(sent.at(-1)), valdiIdentity.runtimeId);
+  assert.equal(sheetReq?.type, "action-sheet");
+  const sheetReply = new Event("opencraft-mobile");
+  Object.assign(sheetReply, { detail: { ...valdiIdentity, type: "action-sheet-result", requestId: (sent.at(-1) as { requestId: string }).requestId, actionId: "reload" } });
+  target.dispatchEvent(sheetReply);
+  assert.equal(await sheetPromise, "reload");
+
+  assert.equal(parseMobileContainerRequest(JSON.stringify({ ...valdiIdentity, type: "surface-state", surface: "welcome" }), valdiIdentity.runtimeId)?.type, "surface-state");
+  assert.equal(isMobileContainerEvent({ ...valdiIdentity, type: "navigate-settings", section: "valdi-ui-kit" }, valdiIdentity.runtimeId), true);
+  assert.equal(isMobileContainerEvent({ ...valdiIdentity, type: "theme-preference", preference: "dark" }, valdiIdentity.runtimeId), true);
 });

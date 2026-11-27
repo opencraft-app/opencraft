@@ -38,6 +38,8 @@
     "@opencraft/observability-contract": "0.1.0",
     "@opencraft/access-control": "0.1.0",
     "@opencraft/execution-environment": "0.1.0",
+    "@opencraft/plugin-relay-connect": "0.1.0",
+    "@opencraft/relay-protocol": "0.1.0",
     "@opencraft/thread-queue": "0.1.0"
   },
   "devDependencies": {
@@ -79,6 +81,7 @@
     "./codex-native-core-transport": "./src/codex-native-core-transport.ts",
     "./workspace-execution-transport": "./src/workspace-execution-transport.ts",
     "./opencraft-host-state-database": "./src/opencraft-host-state-database.ts",
-    "./provisional-threads": "./src/provisional-threads.ts"
+    "./provisional-threads": "./src/provisional-threads.ts",
+    "./relay-enrollment": "./src/relay-enrollment.ts"
   }
 }

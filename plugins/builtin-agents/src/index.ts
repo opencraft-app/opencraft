@@ -31,6 +31,7 @@ export type BuiltinAgentsExtensionOptions =
       readonly platform: "web";
       /** Server deployments contribute their own account page. */
       readonly includeCodexAccounts?: boolean;
+      readonly includeModelServices?: boolean;
       readonly requestHost: HostProtocolRequest;
     };
 
@@ -199,9 +200,12 @@ export function createBuiltinAgentsExtension(options: BuiltinAgentsExtensionOpti
       const controller = new ModelServicesController(service);
       const codexAccounts = options.platform === "web" && options.includeCodexAccounts === false
         ? null : new CodexAccountsService(options.requestHost, "local-codex");
-      api.views.register({ id: "opencraft.builtin-agents.model-services-view", title: "模型服务", viewType: "opencraft.builtin-agents.model-services", platforms: [platform] });
-      api.settings.registerPage({ id: "opencraft.builtin-agents.model-services", title: "Model services", titleMessage: { id: "settings.contributions.modelServices", defaultMessage: "Model services" }, viewId: "opencraft.builtin-agents.model-services-view", layout: "master-detail", targetHostId: service.hostId, modelConfiguration: true, modelReadiness: true, order: 0, icon: "brain", platforms: [platform] });
-      api.internal.register("platformViewRenderer", { viewType: "opencraft.builtin-agents.model-services", Component: createDeferredView(async () => (await import("./model-services/view")).createModelServicesView(controller)) });
+      const includeModelServices = !(options.platform === "web" && options.includeModelServices === false);
+      if (includeModelServices) {
+        api.views.register({ id: "opencraft.builtin-agents.model-services-view", title: "模型服务", viewType: "opencraft.builtin-agents.model-services", platforms: [platform] });
+        api.settings.registerPage({ id: "opencraft.builtin-agents.model-services", title: "Model services", titleMessage: { id: "settings.contributions.modelServices", defaultMessage: "Model services" }, viewId: "opencraft.builtin-agents.model-services-view", layout: "master-detail", targetHostId: service.hostId, modelConfiguration: true, modelReadiness: true, order: 0, icon: "brain", platforms: [platform] });
+        api.internal.register("platformViewRenderer", { viewType: "opencraft.builtin-agents.model-services", Component: createDeferredView(async () => (await import("./model-services/view")).createModelServicesView(controller)) });
+      }
       if (codexAccounts !== null) {
         api.views.register({ id: "opencraft.builtin-agents.codex-accounts-view", title: "Codex 账户", viewType: "opencraft.builtin-agents.codex-accounts", platforms: [platform] });
         api.settings.registerPage({ id: "opencraft.builtin-agents.codex-accounts", title: "Codex accounts", titleMessage: { id: "settings.contributions.codexAccounts", defaultMessage: "Codex accounts" }, viewId: "opencraft.builtin-agents.codex-accounts-view", targetHostId: codexAccounts.hostId, modelConfiguration: true, order: 1, icon: "user-round-cog", platforms: [platform] });

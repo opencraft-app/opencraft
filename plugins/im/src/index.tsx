@@ -84,6 +84,8 @@ export function createImExtension(
       api.internal.register('platformViewRenderer',{viewType:peopleEntry,Component:createDeferredView(async()=>(await people()).Entry)});
       api.internal.register('platformViewRenderer',{viewType:inboxType,Component:Inbox});
       api.internal.register('platformViewRenderer',{viewType:'opencraft.im.agents',Component:createDeferredView(async()=>(await people()).AgentsPage)});
+      const warmTimer=setTimeout(()=>{if(!api.signal.aborted){void people().catch(()=>{});void views().catch(()=>{});}},300);
+      api.subscriptions.add(()=>clearTimeout(warmTimer));
       if (api.signal.aborted) return;
       const searchClient=runtime.client;
       const removeSearch=api.internal.register(CHANNEL_SEARCH_CONTRIBUTION,{id:'native-channels',

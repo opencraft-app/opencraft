@@ -1,0 +1,262 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		110000000000000000000001 /* AppMain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 220000000000000000000001 /* AppMain.swift */; };
+		110000000000000000000002 /* SourceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 220000000000000000000002 /* SourceStore.swift */; };
+		110000000000000000000003 /* WorkbenchHostViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 220000000000000000000003 /* WorkbenchHostViewController.swift */; };
+		110000000000000000000004 /* ValdiOverlayView.m in Sources */ = {isa = PBXBuildFile; fileRef = 220000000000000000000005 /* ValdiOverlayView.m */; };
+		110000000000000000000005 /* OpenCraftValdi.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 220000000000000000000008 /* OpenCraftValdi.xcframework */; };
+		110000000000000000000006 /* OpenCraftValdi.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 220000000000000000000008 /* OpenCraftValdi.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		110000000000000000000007 /* WebBundle in Resources */ = {isa = PBXBuildFile; fileRef = 220000000000000000000009 /* WebBundle */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		330000000000000000000001 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				110000000000000000000006 /* OpenCraftValdi.xcframework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		220000000000000000000000 /* OpenCraftMobile.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OpenCraftMobile.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		220000000000000000000001 /* AppMain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppMain.swift; sourceTree = "<group>"; };
+		220000000000000000000002 /* SourceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceStore.swift; sourceTree = "<group>"; };
+		220000000000000000000003 /* WorkbenchHostViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkbenchHostViewController.swift; sourceTree = "<group>"; };
+		220000000000000000000004 /* ValdiOverlayView.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ValdiOverlayView.h; sourceTree = "<group>"; };
+		220000000000000000000005 /* ValdiOverlayView.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ValdiOverlayView.m; sourceTree = "<group>"; };
+		220000000000000000000006 /* OpenCraftMobile-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "OpenCraftMobile-Bridging-Header.h"; sourceTree = "<group>"; };
+		220000000000000000000007 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		220000000000000000000008 /* OpenCraftValdi.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = OpenCraftValdi.xcframework; path = Vendor/OpenCraftValdi.xcframework; sourceTree = "<group>"; };
+		220000000000000000000009 /* WebBundle */ = {isa = PBXFileReference; lastKnownFileType = folder; path = WebBundle; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		440000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				110000000000000000000005 /* OpenCraftValdi.xcframework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		550000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				550000000000000000000002 /* OpenCraftMobile */,
+				220000000000000000000008 /* OpenCraftValdi.xcframework */,
+				220000000000000000000009 /* WebBundle */,
+				550000000000000000000003 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		550000000000000000000002 /* OpenCraftMobile */ = {
+			isa = PBXGroup;
+			children = (
+				220000000000000000000001 /* AppMain.swift */,
+				220000000000000000000002 /* SourceStore.swift */,
+				220000000000000000000003 /* WorkbenchHostViewController.swift */,
+				220000000000000000000004 /* ValdiOverlayView.h */,
+				220000000000000000000005 /* ValdiOverlayView.m */,
+				220000000000000000000006 /* OpenCraftMobile-Bridging-Header.h */,
+				220000000000000000000007 /* Info.plist */,
+			);
+			path = OpenCraftMobile;
+			sourceTree = "<group>";
+		};
+		550000000000000000000003 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				220000000000000000000000 /* OpenCraftMobile.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		660000000000000000000001 /* OpenCraftMobile */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 770000000000000000000002 /* Build configuration list for PBXNativeTarget "OpenCraftMobile" */;
+			buildPhases = (
+				880000000000000000000001 /* Sources */,
+				440000000000000000000001 /* Frameworks */,
+				880000000000000000000002 /* Resources */,
+				330000000000000000000001 /* Embed Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = OpenCraftMobile;
+			productName = OpenCraftMobile;
+			productReference = 220000000000000000000000 /* OpenCraftMobile.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		990000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+			};
+			buildConfigurationList = 770000000000000000000001 /* Build configuration list for PBXProject "OpenCraftMobile" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 550000000000000000000001;
+			productRefGroup = 550000000000000000000003 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				660000000000000000000001 /* OpenCraftMobile */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		880000000000000000000002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				110000000000000000000007 /* WebBundle in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		880000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				110000000000000000000001 /* AppMain.swift in Sources */,
+				110000000000000000000002 /* SourceStore.swift in Sources */,
+				110000000000000000000003 /* WorkbenchHostViewController.swift in Sources */,
+				110000000000000000000004 /* ValdiOverlayView.m in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		AA0000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		AA0000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		AA0000000000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				"CODE_SIGN_IDENTITY[sdk=iphonesimulator*]" = "-";
+				CODE_SIGN_STYLE = Automatic;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/Vendor",
+				);
+				INFOPLIST_FILE = OpenCraftMobile/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.opencraft.workbench.native;
+				PRODUCT_MODULE_NAME = OpenCraftMobile;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_OBJC_BRIDGING_HEADER = "OpenCraftMobile/OpenCraftMobile-Bridging-Header.h";
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		AA0000000000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				"CODE_SIGN_IDENTITY[sdk=iphonesimulator*]" = "-";
+				CODE_SIGN_STYLE = Automatic;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/Vendor",
+				);
+				INFOPLIST_FILE = OpenCraftMobile/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.opencraft;
+				PRODUCT_MODULE_NAME = OpenCraftMobile;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_OBJC_BRIDGING_HEADER = "OpenCraftMobile/OpenCraftMobile-Bridging-Header.h";
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		770000000000000000000001 /* Build configuration list for PBXProject "OpenCraftMobile" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA0000000000000000000001 /* Debug */,
+				AA0000000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		770000000000000000000002 /* Build configuration list for PBXNativeTarget "OpenCraftMobile" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA0000000000000000000003 /* Debug */,
+				AA0000000000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+	};
+	rootObject = 990000000000000000000001 /* Project object */;
+}

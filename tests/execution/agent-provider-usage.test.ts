@@ -3,7 +3,7 @@ import test from "node:test";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { AgentProviderUsageService, codexQuota, cursorQuota } from "../../apps/local-agent-host/src/agent-provider-usage.js";
+import { AgentProviderUsageService, codexQuota, cursorQuota, isNativeOpenAiCodexRoute } from "../../apps/local-agent-host/src/agent-provider-usage.js";
 import type { OnboardingDeps } from "../../apps/local-agent-host/src/agent-onboarding.js";
 
 const codex = { plan_type: "pro", rate_limit: { primary_window: { used_percent: 23, limit_window_seconds: 18000, reset_at: 2000 } } };
@@ -80,4 +80,11 @@ test("account changes suppress late successful and failed responses; close abort
   assert.equal((await failed).windows.length, 0, "a failed response cannot restore the previous account's cached quota");
   gate = deferred<Response>(); started = deferred<void>(); const pending = f.service.read("codex"); await started.promise; f.service.close();
   assert.equal((await pending).windows.length, 0); assert.equal((await f.service.read("codex")).status, "unavailable");
+});
+
+test("Codex quota route guard skips native ChatGPT quota when config.toml routes to a custom provider or base URL", () => {
+  assert.equal(isNativeOpenAiCodexRoute(""), true);
+  assert.equal(isNativeOpenAiCodexRoute('model = "gpt-5.4"\nmodel_provider = "openai"\nopenai_base_url = "https://api.openai.com/v1"\n'), true);
+  assert.equal(isNativeOpenAiCodexRoute('model_provider = "openrouter"\n'), false);
+  assert.equal(isNativeOpenAiCodexRoute('openai_base_url = "https://proxy.example.com/v1"\n'), false);
 });

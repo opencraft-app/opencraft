@@ -210,14 +210,17 @@ export async function startLocalAgentHost(options: {
   const spaces = new ServerSpacesRuntime({directory:resolve(options.dataDirectory ?? join(homedir(), ".opencraft"),"collaboration")});
   cleanup.push(() => spaces.close());
   await spaces.ready;
-  const agentOnboarding = new AgentOnboardingService();
+  const productDataRoot = resolve(options.dataDirectory ?? join(homedir(), ".opencraft"));
+  const onboardingDeps = createOnboardingDeps(process.env, productDataRoot);
+  const agentOnboarding = new AgentOnboardingService(onboardingDeps, id => {
+    void connectedAgents?.resetEngine(id).catch(() => undefined);
+  });
   cleanup.push(() => agentOnboarding.close());
   let closing = false;
   let onEngineExit: ((error: Error) => void) | undefined;
   let engineStatus: "ready" | "restarting" | "failed" = "ready";
   const bridgeToken = randomBytes(32).toString("hex");
   const persistentSkillsRoot = resolve(options.skillsDirectory ?? join(homedir(), ".opencraft", "skills"));
-  const productDataRoot = resolve(options.dataDirectory ?? join(homedir(), ".opencraft"));
   const machineIdentity = options.machineIdentity
     ? parseRuntimeMachineIdentity(options.machineIdentity)
     : await readHostMachineIdentity(productDataRoot);
@@ -887,7 +890,16 @@ export async function startLocalAgentHost(options: {
             ? { ...await connectedAgents.status(), historyImport: true }
             : request.method === "opencraft/agents/onboarding/models"
               ? { models: await connectedAgents.listAgentModels(String((request.params as { id?: string } | null)?.id ?? "")) }
-            : { ...await agentOnboarding.act(request.params), historyImport: true };
+            : await (async () => {
+                const actParams = (request.params && typeof request.params === "object" ? request.params : {}) as { id?: unknown; action?: unknown };
+                const updated = await agentOnboarding.act(request.params);
+                if (typeof actParams.id === "string" && (actParams.action === "sign-in" || actParams.action === "submit-code")) {
+                  await connectedAgents.resetEngine(actParams.id as Parameters<typeof connectedAgents.resetEngine>[0]).catch(() => undefined);
+                } else {
+                  connectedAgents.invalidateDiscovery();
+                }
+                return { ...updated, historyImport: true };
+              })();
           send(socket, { jsonrpc: "2.0", id: request.id, result }); return;
         }
         if (request.method === "model/list") {

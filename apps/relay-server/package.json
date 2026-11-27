@@ -9,11 +9,21 @@
     "./authentication": "./src/authentication.ts",
     "./cluster-port": "./src/cluster-port.ts",
     "./redis": "./src/redis.ts",
-    "./session-store": "./src/session-store.ts"
+    "./session-store": "./src/session-store.ts",
+    "./init": "./src/init.ts",
+    "./cloud-crypto": "./src/cloudflare/crypto.ts",
+    "./cloud-domain": "./src/cloudflare/domain.ts",
+    "./cloudflare": "./src/cloudflare/worker.ts"
   },
   "dependencies": {
+    "@noble/hashes": "2.4.0",
+    "@opencraft/blob-storage": "0.1.0",
+    "@opencraft/document-storage": "0.1.0",
     "@opencraft/identity-core": "*",
+    "@opencraft/plugin-local-account": "0.1.0",
     "@opencraft/relay-protocol": "*",
+    "@opencraft/sql": "0.1.0",
+    "@opencraft/storage-cloudflare": "0.1.0",
     "ioredis": "^6.0.0",
     "ws": "^8.23.0",
     "@opencraft/hub-network": "0.1.0"

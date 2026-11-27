@@ -137,9 +137,25 @@ registerExtensionDataIpc(() => extensionData ??= new DesktopExtensionDataStore(d
 let desktopProductSession: DesktopProductSession | null = null;
 let desktopProductReady = false;
 const pendingProductUrls: string[] = [];
+const pendingRelayPairUrls: string[] = [];
 let startupCallbackFlight: Promise<boolean> | null = null;
 
+function deliverRelayPairUrl(url: string): void {
+  if (mainWebContents && !mainWebContents.isDestroyed()) {
+    mainWebContents.send("opencraft:relay-pair-url", url);
+  } else {
+    pendingRelayPairUrls.push(url);
+  }
+}
+
 function receiveProductUrl(url: string): void {
+  if (url.startsWith("opencraft://pair")) {
+    pendingRelayPairUrls.push(url);
+    void ensureMainWindow().then(() => {
+      for (const next of pendingRelayPairUrls.splice(0)) deliverRelayPairUrl(next);
+    }).catch(console.error);
+    return;
+  }
   if (!desktopProductReady) { pendingProductUrls.push(url); return; }
   const forwarding = desktopProductSession?.receiveUrl(url);
   if (forwarding && mainWindow === null && daemonManager === null) startupCallbackFlight = forwarding;
@@ -416,6 +432,47 @@ ipcMain.handle("opencraft:browser-clear-closed-data", async event => {
   const remaining = (JSON.parse(current["opencraft.browser-retired-storage.v1"] ?? "[]") as string[]).filter(id => !ids.includes(id));
   browserMetadata.write("state",JSON.stringify({...current,"opencraft.browser-retired-storage.v1":JSON.stringify(remaining)}));
   return {cleared};
+});
+const ALLOWED_RELAY_ACTIONS = new Set([
+  "status",
+  "enable",
+  "disable",
+  "pair-invite",
+  "approve-device",
+  "create-share",
+  "revoke-share",
+  "activate-license",
+  "refresh-routes",
+  "set-device-name",
+  "create-claim-url",
+  "open-claim-url",
+  "open-hub",
+  "publish-thread-index",
+]);
+ipcMain.handle("opencraft:relay-invoke", async (event, action: unknown, payload: unknown) => {
+  if (!trustedLoginCaller(event)) throw new Error("Untrusted relay caller");
+  if (typeof action !== "string" || !ALLOWED_RELAY_ACTIONS.has(action)) {
+    throw new Error("Invalid relay control action");
+  }
+  if (action === "open-hub") {
+    await shell.openExternal("https://my.opencraft.app");
+    return { ok: true };
+  }
+  if (!daemonManager) throw new Error("OpenCraft Daemon is not available");
+  if (action === "open-claim-url") {
+    const issued = (await daemonManager.requestRelay("create-claim-url", payload)) as {
+      claimUrl: string;
+      machineId: string;
+      displayName: string;
+    };
+    await shell.openExternal(issued.claimUrl);
+    return issued;
+  }
+  return daemonManager.requestRelay(action, payload);
+});
+ipcMain.handle("opencraft:relay-consume-pair-urls", (event) => {
+  if (!trustedLoginCaller(event)) throw new Error("Untrusted relay caller");
+  return pendingRelayPairUrls.splice(0);
 });
 ipcMain.handle("opencraft:skillhub-get", async (event, path: unknown) => {
   if (!trustedLoginCaller(event)) throw new Error("Untrusted SkillHub caller");

@@ -1,0 +1,71 @@
+.valdi-server-connection-surface {
+  width: 100%;
+}
+
+.valdi-modal-host-surface.modal-surface {
+  width: min(520px, calc(100vw - 24px));
+  max-width: 520px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  overflow: visible;
+}
+
+.valdi-add-machine-surface {
+  width: 100%;
+}
+
+.valdi-sidebar-dock-surface {
+  width: 100%;
+}
+
+.valdi-sidebar-orb-host {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  flex-shrink: 0;
+  transition: transform 160ms cubic-bezier(0.25, 0.8, 0.35, 1);
+}
+
+button:active > .valdi-sidebar-orb-host {
+  transform: scale(0.93);
+}
+
+.valdi-sidebar-orb-surface {
+  width: 38px;
+  height: 38px;
+}
+
+.valdi-sidebar-orb-host--chromeless > .valdi-sidebar-orb-surface {
+  width: 22px;
+  height: 22px;
+}
+
+:root[data-ui-density="touch"] .valdi-sidebar-orb-surface {
+  width: 44px;
+  height: 44px;
+}
+
+:root[data-ui-density="touch"] .valdi-sidebar-orb-host--chromeless > .valdi-sidebar-orb-surface {
+  width: 26px;
+  height: 26px;
+}
+
+.valdi-token-usage-surface {
+  width: 100%;
+}
+
+.valdi-chat-settings-surface,
+.valdi-plugins-settings-surface,
+.valdi-appearance-settings-surface,
+.valdi-appearance-settings-host,
+.valdi-token-usage-dashboard-surface,
+.valdi-token-usage-dashboard-host,
+.valdi-shortcuts-settings-surface,
+.valdi-archived-threads-surface,
+.valdi-voice-input-settings-surface,
+.valdi-remote-access-settings-surface {
+  width: 100%;
+}

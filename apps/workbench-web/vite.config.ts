@@ -34,6 +34,7 @@ export interface WorkbenchWebBuildFeatures extends WorkbenchChunkGroupOptions {
   readonly tasks?: boolean;
   /** Presentation may be installed independently; workflow ports stay owned here. */
   readonly tasksPresentation?: boolean;
+  readonly schedulesPresentation?: boolean;
   readonly pluginBranding?: boolean;
 }
 
@@ -91,10 +92,12 @@ export function createWorkbenchWebConfig(
   process.env.VITE_OPENCRAFT_PRESENTATION = JSON.stringify(resolveWorkbenchPresentation(features.presentation));
   process.env.VITE_INCLUDE_HYPERNODE_PLUGIN = includeHyperNodePlugin ? "true" : "false";
   process.env.VITE_INCLUDE_BUILTIN_AGENTS_PLUGIN = includeBuiltinAgentsPlugin ? "true" : "false";
-  process.env.VITE_INCLUDE_HEADLESS_MODEL_SERVICES = includeHeadlessModelServices ? "true" : "false";
+  process.env.VITE_INCLUDE_HEADLESS_MODEL_SERVICES = (includeHeadlessModelServices || process.env.VITE_INCLUDE_HEADLESS_MODEL_SERVICES === "true") ? "true" : "false";
   process.env.VITE_INCLUDE_HEADLESS_APPHOST = includeHeadlessModelServices ? "true" : "false";
+  process.env.VITE_INCLUDE_LOCAL_ASSETS = process.env.VITE_INCLUDE_LOCAL_ASSETS === "true" ? "true" : "false";
   process.env.VITE_INCLUDE_TASKS_PLUGIN = !isEmbeddedWorkbenchBuild && (features.tasks ?? true) ? "true" : "false";
-  process.env.VITE_INCLUDE_TASKS_PRESENTATION = features.tasksPresentation === false ? "false" : "true";
+  process.env.VITE_INCLUDE_TASKS_PRESENTATION = (features.tasksPresentation ?? process.env.OPENCRAFT_TASKS_PRESENTATION === "true") ? "true" : "false";
+  process.env.VITE_INCLUDE_SCHEDULES_PRESENTATION = (features.schedulesPresentation ?? process.env.OPENCRAFT_SCHEDULES_PRESENTATION === "true") ? "true" : "false";
 
   interface WebReleaseMetadata {
     readonly schemaVersion: 1;
@@ -192,7 +195,17 @@ export function createWorkbenchWebConfig(
   if (!["ws:", "wss:", "http:", "https:"].includes(developmentAppServer.protocol)
     || developmentAppServer.username || developmentAppServer.password || developmentAppServer.hash) throw new Error("Invalid development AppServer URL");
   const ownerToken = developmentAppServer.searchParams.get("token");
+  const developmentHubUrl = process.env.OPENCRAFT_HUB_URL?.trim();
+  const hubProxy: Record<string, { target: string; ws?: boolean; changeOrigin: boolean }> = developmentHubUrl ? {
+    "/__opencraft_assets": { target: developmentHubUrl, changeOrigin: false },
+    "/__opencraft_account": { target: developmentHubUrl, changeOrigin: false },
+    "/__opencraft_auth": { target: developmentHubUrl, changeOrigin: false },
+    "/__opencraft_channels": { target: developmentHubUrl, ws: true, changeOrigin: false },
+    "/__opencraft_model_gateway": { target: developmentHubUrl, changeOrigin: false },
+    "/setup": { target: developmentHubUrl, changeOrigin: false },
+  } : {};
   const appServerProxy = {
+    ...hubProxy,
     "/appserver": {
       target: developmentAppServer.origin.replace(/^ws/u, "http"),
       ws: true,

@@ -53,8 +53,8 @@ return <AsyncNoticesContext.Provider value={notices}><ScheduledTaskCatalogContex
 createIntlTestRoot(document.getElementById('app'),undefined,'zh-CN').render(<Proof/>);
 `;
 const vite = await createServer({ configFile: false, root: process.cwd(), cacheDir: output + "/vite", logLevel: "error",
-  optimizeDeps: { ...createWorkbenchWebConfig({ mode: "development", command: "serve" }, { pluginBranding: false }).optimizeDeps, entries: [] },
-  define: { 'process.env.NEXT_PUBLIC_REGION': '"cn"', 'process.env.NEXT_PUBLIC_PREVIEW_LOCALES':'""', 'import.meta.env.VITE_INCLUDE_HYPERNODE_PLUGIN':'"false"','import.meta.env.VITE_INCLUDE_BUILTIN_AGENTS_PLUGIN':'"false"' },
+  optimizeDeps: { ...createWorkbenchWebConfig({ mode: "development", command: "serve" }, { pluginBranding: false, schedulesPresentation: true }).optimizeDeps, entries: [] },
+  define: { 'process.env.NEXT_PUBLIC_REGION': '"cn"', 'process.env.NEXT_PUBLIC_PREVIEW_LOCALES':'""', 'import.meta.env.VITE_INCLUDE_HYPERNODE_PLUGIN':'"false"','import.meta.env.VITE_INCLUDE_BUILTIN_AGENTS_PLUGIN':'"false"','import.meta.env.VITE_INCLUDE_SCHEDULES_PRESENTATION':'"true"' },
   esbuild: { jsx: "automatic" }, resolve: { dedupe: ["react", "react-dom"] }, server: { host: "127.0.0.1", port: 0, hmr: false },
   plugins: [{ name: "schedule-catalog-proof", resolveId: id => ["/proof.tsx", "/feedback-proof.tsx"].includes(id) ? id : null, load: id => id === "/proof.tsx" ? source : id === "/feedback-proof.tsx" ? feedbackSource : null,
     configureServer(server) { server.middlewares.use((req, res, next) => { if (req.url !== "/" && req.url !== "/feedback") return next(); res.setHeader("content-type", "text/html");res.end('<meta name="viewport" content="width=device-width,initial-scale=1"><div id="app"></div><script type="module" src="'+(req.url === "/feedback" ? "/feedback-proof.tsx" : "/proof.tsx")+'"></script>'); }); } }] });
