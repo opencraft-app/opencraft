@@ -211,7 +211,7 @@ export class CodexOwnerConnection implements CodexOwnerPort {
       try { console.warn("[codex-native]", JSON.stringify({ event: "thread-start-rejected", requestId: p.id, ...createFailure })); }
       catch { /* Diagnostics must not turn a native reply into a transport loss. */ }
     }
-    pending.reject(new CodexBridgeError(kind, stale ? 'Target turn is no longer active' : 'Native request refused; query its outcome',unmaterialized?'unmaterialized':turnsUnavailable?'turns-unavailable':undefined,createFailure));
+    pending.reject(new CodexBridgeError(kind, stale ? 'Target turn is no longer active' : createFailure?.reason === 'model-catalog-unavailable' ? 'Models are temporarily unavailable. Try again later.' : 'Native request refused; query its outcome',unmaterialized?'unmaterialized':turnsUnavailable?'turns-unavailable':undefined,createFailure));
   }
   private write(value: unknown): void {
     if (this.failed || this.socket?.readyState !== WebSocket.OPEN) throw new CodexBridgeError('unknown-outcome', 'Core connection unavailable');

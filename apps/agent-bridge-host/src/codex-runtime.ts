@@ -152,7 +152,8 @@ export class CodexBridgeRuntime {
           message: error instanceof CodexBridgeError ? error.message : "Native command outcome unknown",
           ...(request.method === "session/create" && error instanceof CodexBridgeError && error.nativeCreateFailure
             ? { data: { nativeCreateFailure: error.nativeCreateFailure,
-              ...(kind === "explicit-reject" && error.nativeCreateFailure.notAllocated ? { creationOutcome: "not-allocated" } : {}) } } : {}),
+              ...(kind === "explicit-reject" && error.nativeCreateFailure.notAllocated ? { creationOutcome: "not-allocated",
+                ...(error.nativeCreateFailure.reason === "model-catalog-unavailable" ? { creationRejectionCode: "model_catalog_unavailable" } : {}) } : {}) } } : {}),
         },
       });
     }

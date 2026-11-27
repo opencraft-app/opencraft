@@ -202,7 +202,17 @@ test('real Unix WebSocket Upgrade attaches existing owner, stale error is typed,
   assert.deepEqual(uncertain.error.data, {
     nativeCreateFailure: { code: -32600, reason: 'unclassified-native-rejection', notAllocated: false },
   });
-  assert.equal(mutations, 3);
+  nativeFault = { code: -32600, message: 'No models are available. Set `model` explicitly or check your model catalog configuration.' };
+  await create();
+  const noModels = frames.at(-1);
+  assert.ok(noModels && 'error' in noModels);
+  assert.deepEqual(noModels.error.data, {
+    nativeCreateFailure: { code: -32600, reason: 'model-catalog-unavailable', notAllocated: true },
+    creationOutcome: 'not-allocated', creationRejectionCode: 'model_catalog_unavailable',
+  });
+  assert.equal(noModels.error.message, 'Models are temporarily unavailable. Try again later.');
+  assert.throws(() => runtime.adapter.nativeSession('public'), /not bound/);
+  assert.equal(mutations, 4);
   assert.match(diagnosticLines.join('\n'), /configuration-load-failed/);
   assert.doesNotMatch(diagnosticLines.join('\n') + JSON.stringify(frames), /private-fixture-value/);
   owner.close();
