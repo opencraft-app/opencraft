@@ -34,7 +34,7 @@ export async function createCodexPreview() {
     switch (method) {
       case 'opencraft/agents/onboarding/status': return { agents: [{ id: 'codex', installed: true, authenticated: true, account: null, activity: null, version: 'fixture', installUrl: 'https://example.invalid', canInstallPackage: false }] };
       case 'opencraft/agents/onboarding/models': return { models: [{ id: 'fixture-model', name: 'Fixture model' }] };
-      case 'initialize': return { userAgent: 'codex/0.167.0', capabilities: {} };
+      case 'initialize': return { userAgent: 'codex/0.167.2', capabilities: {} };
       case 'runtime/machine/read': return { machine: { machineId: '22345678-1234-4123-8123-123456789abc', name: 'Bridge UI fixture', platform: 'linux' }, agent: 'Codex' };
       case 'model/list': return { data: [{ id: 'fixture-model', model: 'fixture-model', displayName: 'Fixture model', description: 'Synthetic model', hidden: false, isDefault: true, supportedReasoningEfforts: [{ reasoningEffort: 'medium', description: 'Fixture' }], defaultReasoningEffort: 'medium', inputModalities: ['text'], supportsPersonality: false, additionalSpeedTiers: [], serviceTiers: [] }], nextCursor: null };
       case 'thread/list': return { data: [

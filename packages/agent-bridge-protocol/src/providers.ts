@@ -10,7 +10,7 @@
  */
 
 /** Pinned native Codex shipped in desktop packages (`runtime/codex`). */
-export const BUILTIN_CODEX_VERSION = "0.162.1" as const;
+export const BUILTIN_CODEX_VERSION = "0.167.2" as const;
 
 export interface BuiltinAgentSource {
   readonly kind: "builtin";

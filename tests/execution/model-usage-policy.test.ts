@@ -170,3 +170,81 @@ test("model-list replies wait for the policy owner and cannot escape their conne
   await new Promise<void>(resolve => setImmediate(resolve));
   assert.equal(responses.length, 2, "closing fences a delayed model projection");
 });
+
+test("effort restriction permits models whose declared efforts are all allowed, offers alternatives when a declared level is restricted, and falls back across null collaboration reasoning_effort", async t => {
+  const f = await fixture(t);
+  f.store.write(0, [{ engine: "codex", effort: "ultra" }], "admin");
+  const catalog = [
+    {
+      model: "configured/provider/reasoning",
+      defaultReasoningEffort: null,
+      supportedReasoningEfforts: [{ reasoningEffort: "low" }, { reasoningEffort: "medium" }, { reasoningEffort: "high" }],
+    },
+    {
+      model: "configured/provider/with-ultra",
+      defaultReasoningEffort: null,
+      supportedReasoningEfforts: [{ reasoningEffort: "high" }, { reasoningEffort: "ultra" }],
+    },
+    {
+      model: "configured/provider/undeclared",
+      defaultReasoningEffort: null,
+      supportedReasoningEfforts: [],
+    },
+  ];
+  assert.equal(assertModelPolicy(f.path, "codex", "configured/provider/reasoning", null, catalog), 1);
+  assert.throws(
+    () => assertModelPolicy(f.path, "codex", "configured/provider/with-ultra", null, catalog),
+    (e: any) => e.data?.kind === "effort" && e.data?.alternatives?.[0] === "high",
+  );
+  assert.throws(
+    () => assertModelPolicy(f.path, "codex", "configured/provider/undeclared", null, catalog),
+    (e: any) => e.data?.kind === "unresolved",
+  );
+
+  let listener: (s: string) => void = () => {};
+  const forwarded: any[] = [];
+  const inner: any = {
+    status: { state: "open" },
+    connect: async () => {},
+    close: async () => {},
+    subscribeStatus: () => () => {},
+    subscribeMessage: (fn: any) => { listener = fn; return () => {}; },
+    async send(frame: string) {
+      const m = JSON.parse(frame);
+      if (String(m.id).startsWith("model-policy:")) {
+        listener(JSON.stringify({
+          id: m.id,
+          result: m.method === "thread/read"
+            ? { thread: { model: "retired-model", reasoningEffort: "high" } }
+            : { data: catalog },
+        }));
+        return;
+      }
+      forwarded.push(m);
+    },
+  };
+  const gateway = new ModelPolicyTransport(inner, f.path, "codex", async (...args) => projectModelCatalog(...args));
+  const replies: any[] = [];
+  gateway.subscribeMessage(s => replies.push(JSON.parse(s)));
+  t.after(() => gateway.close());
+
+  await gateway.send(JSON.stringify({
+    id: "configured-null-default",
+    method: "turn/start",
+    params: {
+      threadId: "t",
+      collaborationMode: { mode: "default", settings: { model: "configured/provider/reasoning", reasoning_effort: null } },
+    },
+  }));
+  await gateway.send(JSON.stringify({
+    id: "collaboration-null-effort-with-param",
+    method: "turn/start",
+    params: {
+      threadId: "t",
+      effort: "high",
+      collaborationMode: { mode: "default", settings: { model: "configured/provider/with-ultra", reasoning_effort: null } },
+    },
+  }));
+  assert.equal(replies.length, 0);
+  assert.deepEqual(forwarded.map(m => m.id), ["configured-null-default", "collaboration-null-effort-with-param"]);
+});

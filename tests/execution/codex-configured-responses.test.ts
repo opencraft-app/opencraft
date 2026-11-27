@@ -159,3 +159,34 @@ test("real loopback HTTP ingress decodes native requests, isolates credentials a
   const removed = await fetch(ingress.url + "/v1/responses", { method: "POST", headers, body });
   assert.equal(removed.status, 404); await removed.text(); assert.equal(seen.length, 1);
 });
+
+test("configured Responses models with declared reasoningEfforts select a stable default reasoning level", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "codex-configured-reasoning-"));
+  const repository = new ModelConfigurationRepository(fileStateDocumentStore(directory));
+  const credentials = new ModelCredentialRepository(fileSecretStore(directory));
+  try {
+    await credentials.set("TEST_TOKENHUB", "external-key");
+    await repository.initialize({
+      schemaVersion: 1,
+      revision: 0,
+      defaultModel: null,
+      providers: [{
+        id: "test",
+        name: "TokenHub",
+        protocol: "openai-responses",
+        baseUrl: "https://provider.test/v1",
+        credentialRef: "TEST_TOKENHUB",
+        enabled: true,
+        models: [
+          { id: "ep/reasoning", name: "Reasoning", enabled: true, reasoningEfforts: { low: "low", medium: "medium", high: "high" } },
+          { id: "ep/high-only", name: "HighOnly", enabled: true, reasoningEfforts: { high: "high" } },
+        ],
+      }],
+    });
+    const catalog = await createConfiguredCodexResponses(directory).catalog();
+    assert.equal(catalog[0]!.default_reasoning_level, "medium");
+    assert.equal(catalog[1]!.default_reasoning_level, "high");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

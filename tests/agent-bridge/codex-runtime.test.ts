@@ -170,7 +170,7 @@ test('real Unix WebSocket Upgrade attaches existing owner, stale error is typed,
     const frame = JSON.parse(String(raw));
     if (frame.id === 'native-refresh' && frame.result) refreshed(frame.result);
     if (frame.method === 'initialized') socket.send(JSON.stringify({ id: 'native-refresh', method: 'account/chatgptAuthTokens/refresh', params: { reason: 'unauthorized' } }));
-    if (frame.method === 'initialize') socket.send(JSON.stringify({ id: frame.id, result: { userAgent: 'codex/0.167.0' } }));
+    if (frame.method === 'initialize') socket.send(JSON.stringify({ id: frame.id, result: { userAgent: 'codex/0.167.2' } }));
     if (frame.method === 'turn/steer') { mutations++; socket.send(JSON.stringify({ id: frame.id, error: { code: -32602, message: 'no active turn to steer' } })); }
   }));
   await new Promise<void>(resolve => native.listen(join(root, 'native.sock'), resolve));
@@ -200,7 +200,7 @@ test('an accounts-only Core gives broker auth while the deployment names the nat
   const reached = new Promise<void>(resolve => { initialized = resolve; });
   ws.on('connection', socket => socket.on('message', raw => {
     const frame = JSON.parse(String(raw));
-    if (frame.method === 'initialize') socket.send(JSON.stringify({ id: frame.id, result: { userAgent: 'codex/0.167.0' } }));
+    if (frame.method === 'initialize') socket.send(JSON.stringify({ id: frame.id, result: { userAgent: 'codex/0.167.2' } }));
     if (frame.method === 'initialized') initialized();
   }));
   // A socket elsewhere than the Core's directory, like a Gateway-local workspace endpoint.

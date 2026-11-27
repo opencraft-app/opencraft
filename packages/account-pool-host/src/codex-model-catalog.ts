@@ -1,3 +1,5 @@
+const DEFAULT_REASONING_LEVELS = ["medium", "low", "minimal", "high", "xhigh", "max"] as const;
+
 /** Codex catalog metadata describes declared capabilities, never guesses from a model name. */
 export function codexModelMetadata(
   slug: string,
@@ -13,11 +15,17 @@ export function codexModelMetadata(
   defaultEffort?: string,
 ) {
   const levels = model.reasoningEfforts && Object.keys(model.reasoningEfforts).filter((level) => level !== "off");
+  const resolvedDefault =
+    levels && levels.length > 0
+      ? defaultEffort && levels.includes(defaultEffort)
+        ? defaultEffort
+        : (DEFAULT_REASONING_LEVELS.find((level) => levels.includes(level)) ?? levels[0]!)
+      : null;
   return {
     slug,
     display_name: `${provider.name} · ${model.name ?? model.id}`,
     description: `${provider.protocol === "anthropic-messages" ? "Anthropic Messages" : "Responses API"} · ${provider.name}`,
-    default_reasoning_level: defaultEffort && levels && levels.includes(defaultEffort) ? defaultEffort : null,
+    default_reasoning_level: resolvedDefault,
     supported_reasoning_levels: (levels || []).map((level) => ({ effort: level, description: level })),
     shell_type: "unified_exec",
     visibility: "list",
