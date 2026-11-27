@@ -68,12 +68,14 @@ export class CodexOwnerConnection implements CodexOwnerPort {
     this.write({ method: 'initialized', params: {} });
   }
   private readonly initialConfigurations = new Map<string, InitialConfiguration>();
-  private readonly uncertainConfigurations=new Set<string>();
-  private readonly retirements = new Map<string,Record<string,any>>();
-  async configureExecution(threadId:string,environment:Readonly<Record<string,string>>,preparationDeadlineMs=Date.now()+10000,sessionMcp?:Record<string,unknown>|null):Promise<void> {
-    if(!Number.isSafeInteger(preparationDeadlineMs)||preparationDeadlineMs<=Date.now()||this.uncertainConfigurations.has(threadId))throw new CodexBridgeError('unsupported','cliUnavailable');
-    const deadline=performance.now()+Math.min(10000,preparationDeadlineMs-Date.now());
+  private readonly uncertainConfigurations = new Set<string>();
+  private readonly retirements = new Map<string, Record<string, any>>();
+  private readonly pendingSettings = new Map<string, Record<string, any>>();
+  async configureExecution(threadId:string,environment:Readonly<Record<string,string>>,preparationDeadlineMs=Date.now()+25000,sessionMcp?:Record<string,unknown>|null):Promise<void> {
+    if(!Number.isSafeInteger(preparationDeadlineMs)||preparationDeadlineMs<=Date.now())throw new CodexBridgeError('unsupported','cliUnavailable');
+    const deadline=performance.now()+Math.min(25000,preparationDeadlineMs-Date.now());
     const current=()=>{if(this.failed||performance.now()>=deadline)throw new CodexBridgeError('unsupported','cliUnavailable');};
+    if(this.uncertainConfigurations.has(threadId))this.initialConfigurations.delete(threadId);
     const initial=this.initialConfigurations.get(threadId);
     let initialSettings: Record<string, unknown> | undefined;
     if(initial) {
@@ -119,14 +121,23 @@ export class CodexOwnerConnection implements CodexOwnerPort {
       request:async(method,params)=>{
         current();
         try {return await this.request(method,params,Math.max(1,deadline-performance.now()));}
-        catch(error){if(method!=='thread/read'&&error instanceof CodexBridgeError&&error.kind==='unknown-outcome')this.uncertainConfigurations.add(threadId);throw error;}
+        catch(error){
+          const readOnlyResume=method==='thread/resume'&&params.config===undefined;
+          if(method!=='thread/read'&&!readOnlyResume&&error instanceof CodexBridgeError&&error.kind==='unknown-outcome'){
+            this.initialConfigurations.delete(threadId);
+            this.uncertainConfigurations.add(threadId);
+          }
+          throw error;
+        }
       },current,
-      initialSettings,
+      initialSettings: initialSettings ?? this.pendingSettings.get(threadId),
       stage:()=>{},nativeStatus:()=>{},ephemeral:()=>{throw new CodexBridgeError('unsupported','cliUnavailable');},
       cancelRelease:()=>{},retirement:()=>this.retirements.get(threadId),waitForRetirement:true,retirementTimeoutMs:Math.max(1,deadline-performance.now()),
-      pending:()=>new CodexBridgeError('unsupported','cliUnavailable: native runtime has not retired'),invalidate:()=>{},
-      retire:live=>{this.retirements.set(threadId,live);},unsubscribed:()=>{},clearRetirement:()=>{this.retirements.delete(threadId);},
+      pending:()=>new CodexBridgeError('unsupported','cliUnavailable: native runtime has not retired'),invalidate:()=>{this.initialConfigurations.delete(threadId);},
+      retire:live=>{this.retirements.set(threadId,live);this.pendingSettings.set(threadId,live);},unsubscribed:()=>{},clearRetirement:()=>{this.retirements.delete(threadId);},
     });
+    this.pendingSettings.delete(threadId);
+    this.uncertainConfigurations.delete(threadId);
   }
   private receive(frame: unknown): void {
     if (!frame || typeof frame !== 'object' || Array.isArray(frame)) throw Error('Invalid native frame');

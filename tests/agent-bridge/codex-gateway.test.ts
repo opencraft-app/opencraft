@@ -600,7 +600,7 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
       }
       if (f.method === 'initialize') {
         if (f.params.clientInfo.name === 'opencraft-codex-bridge') nativePeer = socket;
-        reply({ userAgent: 'codex/0.167.0' });
+        reply({ userAgent: 'codex/0.167.2' });
       }
       if (['thread/fork','thread/name/set','thread/archive','thread/unarchive','thread/delete','thread/goal/get','thread/goal/set','thread/goal/clear'].includes(f.method)) {
         lifecycleCalls.push({method:f.method,params:f.params});

@@ -907,8 +907,15 @@ export class BridgeHost {
         ...(cliEnvironment ? { cliEnvironment } : {}),
         ...(cliEnvironment || command.params.sessionMcp !== undefined
           ? {
-              cliPreparationDeadlineMs:
-                Date.now() + Math.min(10000, Math.max(1, Math.floor((this.options.requestTimeoutMs ?? 30000) / 2))),
+              cliPreparationDeadlineMs: (() => {
+                const requestTimeoutMs = this.options.requestTimeoutMs ?? 30000;
+                return (
+                  Date.now() +
+                  (requestTimeoutMs <= 10000
+                    ? Math.max(1, Math.floor(requestTimeoutMs / 2))
+                    : Math.min(25000, requestTimeoutMs - 5000))
+                );
+              })(),
             }
           : {}),
         threadId: receipt.route,

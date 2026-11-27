@@ -96,7 +96,7 @@ const binary =
 const native = {
   skip: existsSync(binary)
     ? false
-    : "Set SUPERAPP_TEST_CODEX_BINARY to verified Codex 0.162.1",
+    : "Set SUPERAPP_TEST_CODEX_BINARY to verified Codex 0.167.2",
   timeout: 45000,
 };
 const temporary = () => mkdtempSync(join(tmpdir(), "superapp-multi-harness-"));
@@ -473,7 +473,7 @@ test("native subprocess environment excludes inherited credentials and preload h
   writeFileSync(keyFile, "explicit-synthetic-key", { mode: 0o600 });
   writeFileSync(
     fake,
-    `#!${process.execPath}\nimport {createInterface} from 'node:readline';\nimport {writeFileSync} from 'node:fs';\nif(process.argv.includes('--version')){console.log('codex-cli 0.162.1');process.exit(0)}\nwriteFileSync(${JSON.stringify(capture)},JSON.stringify({names:Object.keys(process.env),argv:process.argv,explicitKey:process.env.SUPERAPP_CODEX_API_KEY==='explicit-synthetic-key',home:process.env.CODEX_HOME}));\nconst send=p=>console.log(JSON.stringify(p));\ncreateInterface({input:process.stdin}).on('line',line=>{const p=JSON.parse(line);if(!p.id)return;if(p.method==='initialize')send({id:p.id,result:{}});if(p.method==='thread/start')send({id:p.id,result:{thread:{id:'one'}}});if(p.method==='turn/start'){send({id:p.id,result:{turn:{id:'t1'}}});send({method:'item/completed',params:{threadId:'one',turnId:'t1',item:{type:'agentMessage',text:'{"approved":true}'}}});send({method:'turn/completed',params:{threadId:'one',turn:{id:'t1',status:'completed'}}});}});`,
+    `#!${process.execPath}\nimport {createInterface} from 'node:readline';\nimport {writeFileSync} from 'node:fs';\nif(process.argv.includes('--version')){console.log('codex-cli 0.167.2');process.exit(0)}\nwriteFileSync(${JSON.stringify(capture)},JSON.stringify({names:Object.keys(process.env),argv:process.argv,explicitKey:process.env.SUPERAPP_CODEX_API_KEY==='explicit-synthetic-key',home:process.env.CODEX_HOME}));\nconst send=p=>console.log(JSON.stringify(p));\ncreateInterface({input:process.stdin}).on('line',line=>{const p=JSON.parse(line);if(!p.id)return;if(p.method==='initialize')send({id:p.id,result:{}});if(p.method==='thread/start')send({id:p.id,result:{thread:{id:'one'}}});if(p.method==='turn/start'){send({id:p.id,result:{turn:{id:'t1'}}});send({method:'item/completed',params:{threadId:'one',turnId:'t1',item:{type:'agentMessage',text:'{"approved":true}'}}});send({method:'turn/completed',params:{threadId:'one',turn:{id:'t1',status:'completed'}}});}});`,
     { mode: 0o700 },
   );
   const oldKey = process.env.OPENAI_API_KEY,
@@ -602,7 +602,7 @@ test("turn identity rejects late events from the previous correction attempt, in
   writeFileSync(
     fake,
     `#!${process.execPath}\nimport {createInterface} from 'node:readline';
-if(process.argv.includes('--version')){console.log('codex-cli 0.162.1');process.exit(0)}
+if(process.argv.includes('--version')){console.log('codex-cli 0.167.2');process.exit(0)}
 const send=p=>console.log(JSON.stringify(p));let n=0;
 const item=(id,text)=>send({method:'item/completed',params:{threadId:'one',turnId:id,item:{type:'agentMessage',text}}});
 const done=id=>send({method:'turn/completed',params:{threadId:'one',turn:{id,status:'completed'}}});

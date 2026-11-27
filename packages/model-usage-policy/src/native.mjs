@@ -50,11 +50,24 @@ export class ModelPolicyError extends Error {
 export function assertModelPolicy(path, engine, model, effort, catalog = []) {
   const policy = readPolicy(path);
   if (!policy.rules.some(r=>r.engine===engine)) return policy.revision;
-  // A missing native default cannot mean "not restricted".
-  if (typeof model !== 'string' || !model || policy.rules.some(r=>r.engine===engine && r.effort !== undefined) && (typeof effort !== 'string' || !effort)) throw new ModelPolicyError('unresolved');
-  if (!denied(policy.rules,engine,model,effort)) return policy.revision;
+  if (typeof model !== 'string' || !model) throw new ModelPolicyError('unresolved');
   const canonical = gatewayPolicyModel(engine,model);
-  const kind = policy.rules.some(r=>r.engine===engine && r.effort===undefined && (r.model===undefined || r.model===model || r.model===canonical)) ? 'model' : 'effort';
+  const modelDenied = policy.rules.some(r=>r.engine===engine && r.effort===undefined && (r.model===undefined || r.model===model || r.model===canonical));
+  const effortRuleApplies = !modelDenied && policy.rules.some(r=>r.engine===engine && r.effort !== undefined && (r.model===undefined || r.model===model || r.model===canonical));
+  // A missing native default cannot mean "not restricted" unless every declared level for this model is permitted.
+  if (effortRuleApplies && (typeof effort !== 'string' || !effort)) {
+    const entry = catalog.find(m=>(m.model ?? m.id)===model);
+    const supported = Array.isArray(entry?.supportedReasoningEfforts)
+      ? entry.supportedReasoningEfforts.map(e=>e?.reasoningEffort ?? e).filter(e=>typeof e==='string' && e)
+      : null;
+    if (!entry || !supported?.length) throw new ModelPolicyError('unresolved');
+    if (supported.some(e=>denied(policy.rules,engine,model,e))) {
+      throw new ModelPolicyError('effort',supported.filter(e=>!denied(policy.rules,engine,model,e)).slice(0,10));
+    }
+    return policy.revision;
+  }
+  if (!modelDenied && !denied(policy.rules,engine,model,effort)) return policy.revision;
+  const kind = modelDenied ? 'model' : 'effort';
   const alternatives = kind === 'effort' ? (catalog.find(m=>(m.model ?? m.id)===model)?.supportedReasoningEfforts ?? []).map(e=>e.reasoningEffort).filter(e=>!denied(policy.rules,engine,model,e))
     : catalog.filter(m=>!denied(policy.rules,engine,m.model ?? m.id,m.defaultReasoningEffort)).map(m=>m.model ?? m.id);
   throw new ModelPolicyError(kind,alternatives.slice(0,10));
@@ -87,7 +100,7 @@ export function resolvePolicySelection(engine, params, thread, catalog) {
   const collaboration=engine==='codex' ? params.collaborationMode?.settings : null;
   const model=collaboration?.model ?? params.model ?? thread.model ?? catalog.find(m=>m.isDefault)?.model;
   const entry=catalog.find(m=>(m.model ?? m.id)===model);
-  const explicit=collaboration ? collaboration.reasoning_effort : params.effort ?? params.reasoningEffort ?? params.config?.model_reasoning_effort;
-  const effort=collaboration ? explicit ?? entry?.defaultReasoningEffort : explicit ?? (model===thread.model ? thread.reasoningEffort : null) ?? entry?.defaultReasoningEffort;
+  const explicit=collaboration?.reasoning_effort ?? params.effort ?? params.reasoningEffort ?? params.config?.model_reasoning_effort;
+  const effort=explicit ?? (model===thread.model ? thread.reasoningEffort : null) ?? entry?.defaultReasoningEffort;
   return {model,effort};
 }

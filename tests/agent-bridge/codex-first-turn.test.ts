@@ -205,3 +205,42 @@ test('on Windows an empty new rollout makes even the metadata read wait, then th
   await runtime.handle({jsonrpc:'2.0',id:'stuck',method:'history/read',params:{threadId:'canonical',view:'thread',includeTurns:true}});
   assert.ok(frames.find(f=>f.id==='stuck').error);
 });
+
+test('a timed-out large-rollout resume or settings update recovers on retry once native confirms idle while preserving permissions',async()=>{
+  for(const stage of ['notLoaded-apply','restore-settings'] as const){
+    let loaded=stage==='restore-settings';
+    let attempts=0;
+    const calls:{method:string;params:any}[]=[];
+    const owner=new CodexOwnerConnection('/unused','unused',()=>{},()=>{},()=>{});
+    (owner as any).write=(frame:any)=>{
+      calls.push(frame);
+      queueMicrotask(()=>{
+        const reply=(result:any)=>(owner as any).receive({id:frame.id,result});
+        if(frame.method==='thread/read')return reply({thread:{id:'native',status:{type:loaded?'idle':'notLoaded'},turns:[{id:'t1'}]}});
+        if(frame.method==='thread/unsubscribe'){loaded=false;return reply({status:'unsubscribed'});}
+        if(frame.method==='thread/resume'){
+          if(frame.params.config&&stage==='notLoaded-apply'&&++attempts===1)return;
+          loaded=true;
+          return reply({...settings,thread:{id:'native',status:{type:'idle'},turns:[]}});
+        }
+        if(frame.method==='thread/settings/update'){
+          if(stage==='restore-settings'&&++attempts===1)return;
+          return reply({});
+        }
+        reply({});
+      });
+    };
+    await assert.rejects(
+      owner.configureExecution('native',environment,Date.now()+(stage==='restore-settings'?350:40)),
+      (error:any)=>error?.kind==='unknown-outcome',
+    );
+    await owner.configureExecution('native',environment,Date.now()+2000);
+    const apply=calls.filter(c=>c.method==='thread/resume'&&c.params.config).at(-1)!.params;
+    assert.deepEqual(apply.config['shell_environment_policy.set'],environment);
+    if(stage==='restore-settings'){
+      const restored=calls.filter(c=>c.method==='thread/settings/update').at(-1)!.params;
+      assert.deepEqual(restored.sandboxPolicy,settings.sandbox);
+      assert.equal(restored.approvalsReviewer,'user');
+    }
+  }
+});

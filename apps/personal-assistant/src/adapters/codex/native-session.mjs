@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { validateCodexConfig } from "./config.mjs";
 import { readCodexKey } from "./credential-file.mjs";
-export const SUPPORTED_CODEX_VERSION = "codex-cli 0.162.1";
+export const SUPPORTED_CODEX_VERSION = "codex-cli 0.167.2";
 export const nativeUsage = (u) =>
   u
     ? {
