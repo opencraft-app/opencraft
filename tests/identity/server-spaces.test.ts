@@ -11,6 +11,9 @@ import { ServerSpacesLedger } from '../../packages/access-control/src/server-spa
 import { ServerSpacesRuntime } from '../../packages/access-control/src/server-spaces-runtime.js';
 import { ThreadAccessStore } from '../../packages/access-control/src/thread-access.js';
 import { ServerSpacesSession } from '../../packages/access-control/src/server-spaces-session.js';
+import { createConversationExecution } from '@opencraft/access-control/conversation-execution';
+import { AppHostServer } from '@opencraft/app-host-server';
+import { MemoryTransport } from '@opencraft/appserver-transport-memory';
 import type { ServerSpaceDirectory } from '@opencraft/appserver-protocol/server-spaces';
 
 async function fixture(t:test.TestContext) {
@@ -90,6 +93,37 @@ test('creation commits its captured space before a Native response can be publis
   await session.prepare(JSON.stringify({id:2,result:{thread:{id:'new'}}}));
   assert.equal(runtime.spaceFor('codex','new'),p.spaceId);
   assert(frames.some(f=>JSON.parse(f).id===1));
+});
+
+test('CLI creation reports a known denial when the Actor cannot create in the default space', async t => {
+  const f = await fixture(t);
+  const runtime = new ServerSpacesRuntime({ path: join(f.path, 'opencraft-server.sqlite'), ownerActorId: f.alice.actorId });
+  await runtime.ready;
+  let nativeStarts = 0;
+  const serverId = 'server:fixture:codex';
+  const host = new AppHostServer({
+    logicalClientRouting: true,
+    physicalHostLifetime: 'server',
+    createRpcAccessSession: (_host, context, emit) => new ServerSpacesSession(
+      runtime, context.actorContext, () => serverId, emit,
+      { receive: () => false, project: frame => frame, close() {} }, () => false,
+    ),
+    createTransport: () => new MemoryTransport({ server: {
+      receive(raw, peer) {
+        const packet = JSON.parse(raw);
+        if (packet.method === 'thread/start') nativeStarts++;
+        if (packet.id !== undefined) peer.send(JSON.stringify({
+          id: packet.id, __opencraftClient: packet.__opencraftClient, result: {},
+        }));
+      },
+    } }),
+  });
+  t.after(async () => { await host.close(); await runtime.close(); });
+  const execution = createConversationExecution(() => host, { serverId, hostId: 'local-codex' });
+  await assert.rejects(execution.create!({ serverId, cwd: f.path }, 'hello', 'denied', {
+    sender: null, actorContext: f.bob, resourceOwner: { id: 'fixture', assertCurrent() {} },
+  }), { status: 403, code: 'creation_forbidden' });
+  assert.equal(nativeStarts, 0);
 });
 
 test('previous Server schema upgrades without losing data and rejects modified migration checksums',async t=>{
