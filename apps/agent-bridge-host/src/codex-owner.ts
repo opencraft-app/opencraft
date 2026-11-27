@@ -7,6 +7,7 @@ import { CodexCoreReadIsolation } from '@opencraft/account-pool-host/codex-core-
 import { BRIDGE_MAX_FRAME_BYTES } from '@opencraft/agent-bridge-protocol';
 import { codexDeclaration } from './codex-declaration.js';
 import { CodexBridgeError, type CodexOwnerPort } from './codex.js';
+import { nativeCreateDiagnostic } from './codex-create-diagnostic.js';
 
 type InitialConfiguration = {
   config: Record<string, unknown>;
@@ -205,7 +206,12 @@ export class CodexOwnerConnection implements CodexOwnerPort {
       ||error?.code===-32603&&/^failed to read thread: thread-store internal error: failed to read session metadata [^\n]+: rollout at [^\n]+ is empty$/.test(message));
     const kind=stale?'stale-target':[-32600,-32601,-32602].includes(error?.code??0)?'explicit-reject':'unknown-outcome';
     if(kind==='explicit-reject'&&pending.initial&&!pending.observedTurn&&typeof pending.threadId==='string')this.initialConfigurations.set(pending.threadId,pending.initial);
-    pending.reject(new CodexBridgeError(stale ? 'stale-target' : [-32600, -32601, -32602].includes(error?.code ?? 0) ? 'explicit-reject' : 'unknown-outcome', stale ? 'Target turn is no longer active' : 'Native request refused; query its outcome',unmaterialized?'unmaterialized':turnsUnavailable?'turns-unavailable':undefined));
+    const createFailure = pending.method === "thread/start" ? nativeCreateDiagnostic(error?.code, message) : undefined;
+    if (createFailure) {
+      try { console.warn("[codex-native]", JSON.stringify({ event: "thread-start-rejected", requestId: p.id, ...createFailure })); }
+      catch { /* Diagnostics must not turn a native reply into a transport loss. */ }
+    }
+    pending.reject(new CodexBridgeError(kind, stale ? 'Target turn is no longer active' : 'Native request refused; query its outcome',unmaterialized?'unmaterialized':turnsUnavailable?'turns-unavailable':undefined,createFailure));
   }
   private write(value: unknown): void {
     if (this.failed || this.socket?.readyState !== WebSocket.OPEN) throw new CodexBridgeError('unknown-outcome', 'Core connection unavailable');

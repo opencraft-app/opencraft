@@ -24,11 +24,13 @@ test("create resolves Server project roots, preserves the Actor lane and returns
     outside = join(dir, "outside");
   await Promise.all([mkdir(root), mkdir(outside)]);
   await symlink(outside, join(root, "escape"));
-  const actors = new ActorStore(join(dir, "actors.sqlite"), Date.now, {
+  const owner = await openServerCoreOwner(dir);
+  const actors = new ActorStore(owner, Date.now, {
     policy: ({ capability }) => capability !== "conversation.create" || allowed,
   });
   let allowed = true,
     loseFirst = false,
+    startError: { code: number; data?: Record<string, unknown> } | undefined,
     admitted = true;
   const actor = actors.resolveHuman({
     provider: "local",
@@ -60,7 +62,9 @@ test("create resolves Server project roots, preserves the Actor lane and returns
               : method === "turn/start"
                 ? { turn: { id: "first-turn" } }
                 : {};
-        if (method === "turn/start" && loseFirst)
+        if (method === "thread/start" && startError)
+          emit({ id, __opencraftClient, error: startError });
+        else if (method === "turn/start" && loseFirst)
           emit({ id, __opencraftClient, error: { code: -32000, data: { resultUnknown: true } } });
         else emit({ id, __opencraftClient, result });
       };
@@ -89,7 +93,7 @@ test("create resolves Server project roots, preserves the Actor lane and returns
   const execution = createRoutedConversationExecution(() => host, { machineId: "fixture", engines: ["pi"] });
   const foreignServer = "server:foreign:codex";
   let foreignRequests = 0;
-  const service = new Collaboration(join(dir, "collaboration.sqlite"), actors, {
+  const service = new Collaboration(owner, actors, {
     ...execution,
     directory() {
       const directory = execution.directory();
@@ -103,11 +107,12 @@ test("create resolves Server project roots, preserves the Actor lane and returns
       }
       return execution.projects!(requestedServer, cursor, context);
     },
-  }, Date.now, () => admitted);
+  }, Date.now, () => admitted, undefined, undefined, owner.call);
   t.after(async () => {
     await service.close();
     await host.close();
     actors.close();
+    await owner.close();
     await rm(dir, { recursive: true, force: true });
   });
   assert.equal(service.capabilities.projectDiscovery, true);
@@ -219,6 +224,20 @@ test("create resolves Server project roots, preserves the Actor lane and returns
   assert.equal(operations.filter((row) => row.method === "thread/start").length, 4);
   assert.equal(operations.filter((row) => row.method === "turn/start").length, 3, "local revocation never dispatches or fakes a native reply");
 
+  const startCount = operations.filter(row => row.method === "thread/start").length;
+  startError = { code: -32006, data: { submissionOutcome: "rejected", bridgeErrorKind: "explicit-reject", creationOutcome: "not-allocated" } };
+  const definitive = { action: "create", serverId, cwd: root, operationKey: "definitive", content: "first" };
+  await assert.rejects(service.command(actor, definitive), { code: "creation_rejected", status: 400 });
+  assert.deepEqual(await service.command(actor, { action: "createLookup", serverId, operationKey: "definitive" }), {
+    found: true, receipt: { operationKey: "definitive", ref: null, creationState: "rejected", firstMessageState: "unknown", rejectionCode: "creation_rejected" },
+  });
+  await assert.rejects(service.command(actor, definitive), { code: "creation_rejected", status: 400 });
+  startError = { code: -32006, data: { submissionOutcome: "rejected", bridgeErrorKind: "explicit-reject" } };
+  assert.deepEqual(await execution.create!({ serverId, cwd: root }, "first", "unconfirmed", {
+    sender: null, actorContext: actor, resourceOwner: { id: "fixture", assertCurrent() {} },
+  }), { operationKey: "unconfirmed", ref: null, creationState: "unknown", firstMessageState: "unknown" });
+  assert.equal(operations.filter(row => row.method === "thread/start").length, startCount + 2);
+  assert.equal(operations.filter(row => row.method === "turn/start").length, 3);
 });
 
 test("create and tail reject invalid arguments before opening an SSH profile", async () => {

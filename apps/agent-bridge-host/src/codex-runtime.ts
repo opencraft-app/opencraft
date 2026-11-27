@@ -150,6 +150,9 @@ export class CodexBridgeRuntime {
           code,
           kind,
           message: error instanceof CodexBridgeError ? error.message : "Native command outcome unknown",
+          ...(request.method === "session/create" && error instanceof CodexBridgeError && error.nativeCreateFailure
+            ? { data: { nativeCreateFailure: error.nativeCreateFailure,
+              ...(kind === "explicit-reject" && error.nativeCreateFailure.notAllocated ? { creationOutcome: "not-allocated" } : {}) } } : {}),
         },
       });
     }
