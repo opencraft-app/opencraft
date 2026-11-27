@@ -45,12 +45,11 @@ export function initializeHeadlessCodexHost(appHostServer, { timeoutMs = 10_000,
 }
 
 /** The gateway owns a connection, never the independent execution process.
- * HTTP startup does not wait for this worker. Each attempt owns one cancellable
- * logical client; failed attempts back off, successful connections are monitored.
+ * HTTP startup does not wait for this worker. Failed attempts back off and
+ * successful connections are monitored until shutdown.
  */
-export function maintainHeadlessCodexHost(appHostServer, {
-  timeoutMs = 10_000, retryMs = 1_000, maxRetryMs = 30_000, pollMs = 30_000,
-  report = state => console.info('[headless-codex-readiness]', JSON.stringify(state)),
+function maintainHeadlessHost(appHostServer, hostId, connect, {
+  retryMs = 1_000, maxRetryMs = 30_000, pollMs = 30_000, report, unavailableCode, executionUnavailableCode,
 } = {}) {
   const controller = new AbortController();
   let timer, attempt = 0, current = { state: 'connecting', attempt: 0 };
@@ -65,10 +64,10 @@ export function maintainHeadlessCodexHost(appHostServer, {
   };
   const monitor = () => {
     if (controller.signal.aborted) return;
-    if (appHostServer.hostState('local-codex') === 'open') {
-      const execution = appHostServer.hostExecutionState?.('local-codex');
+    if (appHostServer.hostState(hostId) === 'open') {
+      const execution = appHostServer.hostExecutionState?.(hostId);
       publish(execution === 'recovering' || execution === 'unavailable'
-        ? {state:'unavailable',code:'codex-execution-unavailable',attempt:0} : {state:'ready',attempt:0});
+        ? {state:'unavailable',code:executionUnavailableCode,attempt:0} : {state:'ready',attempt:0});
       schedule(pollMs, monitor);
     }
     else void initialize();
@@ -76,13 +75,13 @@ export function maintainHeadlessCodexHost(appHostServer, {
   const initialize = async () => {
     attempt++;
     try {
-      await initializeHeadlessCodexHost(appHostServer, { timeoutMs, signal: controller.signal });
+      await connect(controller.signal);
       if (controller.signal.aborted) return;
       attempt = 0; publish({ state: 'ready', attempt: 0 }); schedule(pollMs, monitor);
     } catch {
       if (controller.signal.aborted) return;
       const delayMs = Math.min(maxRetryMs, retryMs * 2 ** Math.min(attempt - 1, 20));
-      publish({ state: 'unavailable', code: 'codex-host-unavailable', attempt, retryAt: Date.now() + delayMs });
+      publish({ state: 'unavailable', code: unavailableCode, attempt, retryAt: Date.now() + delayMs });
       schedule(delayMs, () => { void initialize(); });
     }
   };
@@ -91,4 +90,21 @@ export function maintainHeadlessCodexHost(appHostServer, {
     snapshot: () => ({ ...current }),
     close() { controller.abort(); clearTimeout(timer); },
   };
+}
+
+export function maintainHeadlessCodexHost(appHostServer, { timeoutMs = 10_000, ...options } = {}) {
+  return maintainHeadlessHost(appHostServer, 'local-codex',
+    signal => initializeHeadlessCodexHost(appHostServer, { timeoutMs, signal }), {
+      report: state => console.info('[headless-codex-readiness]', JSON.stringify(state)),
+      unavailableCode: 'codex-host-unavailable', executionUnavailableCode: 'codex-execution-unavailable', ...options,
+    });
+}
+
+/** Connect to the already running independent owner so the directory reflects its live connection. */
+export function maintainIndependentEngineHost(appHostServer, options = {}) {
+  return maintainHeadlessHost(appHostServer, 'opencraft-server',
+    signal => appHostServer.ensureHostConnected('opencraft-server', () => signal.throwIfAborted()), {
+      report: state => console.info('[headless-engine-readiness]', JSON.stringify(state)),
+      unavailableCode: 'engine-host-unavailable', executionUnavailableCode: 'engine-execution-unavailable', ...options,
+    });
 }

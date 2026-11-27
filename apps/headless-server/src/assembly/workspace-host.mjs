@@ -19,7 +19,7 @@ import { terminalResourceOwnerId } from "../host-resource-identity.ts";
 import { periodicOwnerWork } from "@opencraft/owner-wake";
 import { THREAD_ORCHESTRATION_TOOLS } from "@opencraft/appserver-protocol/collaboration";
 import { createLateBinding } from "./lifecycle.mjs";
-import { maintainHeadlessCodexHost } from "../headless-host-readiness.mjs";
+import { maintainHeadlessCodexHost, maintainIndependentEngineHost } from "../headless-host-readiness.mjs";
 import { CollaborationError } from "@opencraft/access-control/collaboration";
 import { waitForExecutionCliBinding } from "@opencraft/session-capabilities/execution-cli";
 import { createBridgeSessionMcp } from "@opencraft/opencraft-daemon/bridge-execution-admission";
@@ -70,7 +70,7 @@ export function assembleWorkspaceHost({ lifecycle, capabilities, appHost, codexB
   let executionIdentity, environmentMetadata, resourceAuthority, terminalScope;
   let remoteBrowser, browserCapabilities, authorizeBrowserExecution;
   let capabilityMcp, connectedExecutionCli, codexEngineHost;
-  let usageQueries, fileDownloads, codexReadiness;
+  let usageQueries, fileDownloads, codexReadiness, engineReadiness;
   // Native execution authorities of remote Codex Hosts, by their server ID;
   // written as their transports connect, read by browser and capability grants.
   const remoteExecutionAuthorities = new Map();
@@ -1002,18 +1002,25 @@ export function assembleWorkspaceHost({ lifecycle, capabilities, appHost, codexB
         void reconcileResources();
       });
     },
-    /** Keeps the local Codex Host initialized once the listener is up. */
-    maintainReadiness(appHostServer) {
-      codexReadiness = maintainHeadlessCodexHost(appHostServer);
+    /** Keep the configured external execution Hosts connected once the listener is up. */
+    maintainReadiness(appHostServer, externalCodex) {
+      if (externalCodex) codexReadiness = maintainHeadlessCodexHost(appHostServer);
+      if (independentEngine) engineReadiness = maintainIndependentEngineHost(appHostServer);
     },
     /** Readiness by Host for the Web health report; empty without a readiness owner. */
-    hostReadiness: () => (codexReadiness ? { "local-codex": codexReadiness.snapshot() } : {}),
+    hostReadiness: () => ({
+      ...(codexReadiness ? { "local-codex": codexReadiness.snapshot() } : {}),
+      ...(engineReadiness ? { "opencraft-server": engineReadiness.snapshot() } : {}),
+    }),
     // Shutdown step 1, before the entry phase: the reconciliation wake-up (synchronous), then the lifecycle.
     closeResourceReconciliation: () => resourceReconciliationTimer?.close(),
     closeConversationResources: () => conversationResources.current()?.close(),
     // Shutdown step 3 (entry phase, in parallel with the other entry owners);
     // the Git status withdrawal, browser capabilities and browser close in series.
-    closeReadiness: () => codexReadiness?.close(),
+    closeReadiness() {
+      codexReadiness?.close();
+      engineReadiness?.close();
+    },
     closeUsageQueries: () => usageQueries?.close(),
     withdrawGitStatus: () => withdrawGitStatus?.(),
     closeBrowserCapabilities: () => browserCapabilities?.close(),

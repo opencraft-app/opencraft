@@ -57,7 +57,7 @@ const runtime = (root, entry) => join(root, "runtime", entry);
 export async function relaunchBrainOwners(
   agent,
   owners,
-  { configure, startAppServer, startHosts, appServerReady, hostsReady },
+  { configure, startAppServer, startHosts, appServerReady, hostsReady, publishIssuer },
 ) {
   await agent.retire(owners.engineHost, { timeoutMs: 30_000 });
   await agent.retire(owners.dshHost, { timeoutMs: 30_000 });
@@ -68,6 +68,7 @@ export async function relaunchBrainOwners(
   await appServerReady();
   Object.assign(owners, startHosts());
   await hostsReady();
+  publishIssuer?.();
   // The DSH and Pi descriptors (pid, token) changed under the same incarnation.
   agent.endpointsReplaced();
 }
@@ -124,6 +125,7 @@ export const brainRole = {
     // published key (or an unissuable one until it exists) can be pinned. The
     // AppServer's attachment names the machine the Gateway reads from the shared data directory.
     const pinnedIssuer = await executionHostIssuer(paths);
+    let activeIssuer = pinnedIssuer;
     const machineId = paths.environmentDelivery
       ? (await readDaemonMachineIdentity(paths.dataDirectory)).machineId
       : undefined;
@@ -261,6 +263,7 @@ export const brainRole = {
     // engine descriptors come from `describe` on the control endpoint.
     await agent.publishEndpoint("codex-control", paths.appServerEndpoint, async () => ({
       token: await readPrivateToken(appServerTokenFile),
+      ...(activeIssuer === undefined ? {} : { environmentIssuer: activeIssuer }),
     }));
     await agent.publishEndpoint("codex-native", paths.appServerNativeSocket);
     await agent.publishEndpoint("pi", paths.engineSocket, () => readPrivateJson(paths.engineDescriptor));
@@ -300,7 +303,7 @@ export const brainRole = {
             machineId,
             pinned: pinnedIssuer,
             signal: agent.signal,
-            relaunch: (configure) =>
+            relaunch: (configure, issuer) =>
               serially(() =>
                 relaunchBrainOwners(agent, owners, {
                   configure,
@@ -308,6 +311,7 @@ export const brainRole = {
                   startHosts,
                   appServerReady,
                   hostsReady,
+                  publishIssuer: () => { activeIssuer = issuer; },
                 }),
               ),
           }).catch(() => agent.stop(1, "Environment issuer relaunch failed")),

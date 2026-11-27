@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
-import { initializeHeadlessCodexHost, maintainHeadlessCodexHost } from '../../apps/headless-server/src/headless-host-readiness.mjs';
+import { initializeHeadlessCodexHost, maintainHeadlessCodexHost, maintainIndependentEngineHost } from '../../apps/headless-server/src/headless-host-readiness.mjs';
+import { AppHostServer } from '@opencraft/app-host-server';
+import { createRoutedConversationExecution } from '@opencraft/access-control/conversation-execution';
+import { MemoryTransport } from '@opencraft/appserver-transport-memory';
 
 function hostFixture() {
   let available = false, opens = 0, closes = 0, state = 'failed';
@@ -52,4 +55,27 @@ test('readiness cancellation and timeout release transient clients without admit
   assert.equal(closes, 2);
   await assert.rejects(initializeHeadlessCodexHost(host, { signal: abort.signal }));
   assert.equal(closes, 2, 'already cancelled attempt must not acquire a client');
+});
+
+test('an independent Host makes DSH and Pi ready without a CLI catalog read', async t => {
+  const connections = [];
+  const appHost = new AppHostServer({
+    physicalHostLifetime: 'server',
+    createTransport(hostId) {
+      connections.push(hostId);
+      return new MemoryTransport({ server: { receive() {} } });
+    },
+  });
+  t.after(() => appHost.close());
+  const execution = createRoutedConversationExecution(() => appHost, { machineId: 'fixture', engines: ['dsh', 'pi'] });
+  const states = () => Object.fromEntries(execution.directory().servers.map(({ engine, connectionState }) => [engine, connectionState]));
+  assert.deepEqual(states(), { codex: 'unknown', dsh: 'unknown', pi: 'unknown' });
+  const ready = Promise.withResolvers();
+  const worker = maintainIndependentEngineHost(appHost, { report: status => {
+    if (status.state === 'ready') ready.resolve();
+  } });
+  t.after(() => worker.close());
+  await ready.promise;
+  assert.deepEqual(states(), { codex: 'unknown', dsh: 'ready', pi: 'ready' });
+  assert.deepEqual(connections, ['opencraft-server']);
 });
