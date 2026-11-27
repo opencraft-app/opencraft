@@ -21,8 +21,7 @@ export function nativeCreateDiagnostic(code: unknown, message: string): NativeCr
       return diagnostic("history-mode-unavailable", true);
     if (message === "projectId must not be empty" || message.startsWith("project not found: "))
       return diagnostic("project-unavailable", true);
-    if (message.startsWith("failed to load configuration: "))
-      return diagnostic("configuration-load-failed", true);
+    if (message.startsWith("failed to load configuration: ")) return diagnostic("configuration-load-failed", true);
   }
   if (message.startsWith("error creating thread: ")) return diagnostic("native-thread-initialization-failed");
   return diagnostic("unclassified-native-rejection");
