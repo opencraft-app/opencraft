@@ -524,6 +524,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         runtimeDirectory:humanGitRuntimeDirectory(join(dataDirectory,'git-runtime'),'gateway'),workerFile:options.gitWorkerFile??fileURLToPath(new URL('./personal-git-worker.mjs',import.meta.url)),
         ...gitOptions}) });
     workspaceRouting = deliveryRouting;
+    if (environmentLaunch) await options.awaitEnvironmentPin?.(environmentLaunch.issuer);
     const actorAccess = installation.openActorAccess();
     const engines = options.engines ?? ["dsh"];
     const conversationExecution = workspaceHost.openConversationExecution({ engines,
@@ -930,7 +931,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       codexExecutable: options.codexExecutable ?? join(root, "runtime/codex/bin/codex"), host: listenHost, port }) : undefined });
     nodeLocal.connectRelay(relayConfiguration, address.port);
     hubController.node?.start(hubTargetPort ?? address.port);
-    if (options.codexCoreEndpoint) workspaceHost.maintainReadiness(appHostServer);
+    workspaceHost.maintainReadiness(appHostServer, Boolean(options.codexCoreEndpoint));
     // Per-Actor sources replace the installation-wide provider; an identity
     // composition's providers are merged after them, as before. Without Actor
     // admission the installed source is published under the Worker's

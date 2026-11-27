@@ -1,6 +1,7 @@
 import { chmod, lstat, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import {
   createSandboxPool,
   createWorkspaceRuntime,
@@ -419,6 +420,19 @@ export async function openGatewayWorkspace({
       token: () => token("codex-control"),
       fence: fence("codex-control"),
     };
+    // The vault publishes before the Brain relaunches. Start the Gateway's clients
+    // only after the replacement owners are ready with that publication.
+    const awaitEnvironmentPin = async (issuer, { timeoutMs = 60_000, pollMs = 250 } = {}) => {
+      const deadline = performance.now() + timeoutMs;
+      do {
+        await runtime.observe();
+        const descriptor = await describe("codex-control");
+        // A Brain from before issuer reporting still uses the legacy startup path.
+        if (descriptor.environmentIssuer === undefined || descriptor.environmentIssuer === issuer) return;
+        await delay(pollMs);
+      } while (performance.now() < deadline);
+      throw new Error("Brain did not activate the published environment issuer");
+    };
     /** Workspaces resolved by id through configuration (§3.6): `default` here, others provisioned. */
     const workspaces = {
       ids: () => [WORKSPACE_ID, ...others.ids()],
@@ -436,6 +450,7 @@ export async function openGatewayWorkspace({
       sockets,
       tokenFiles,
       codexRuntime,
+      awaitEnvironmentPin,
       workspaces,
       piDescriptor: engineDescriptor("pi"),
       dshDescriptor: engineDescriptor("dsh"),

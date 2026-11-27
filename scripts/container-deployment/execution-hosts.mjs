@@ -137,7 +137,7 @@ export function relaunchOnIssuerChange({
     interval,
     log,
     replace: async (issuer) => {
-      await relaunch(() => writeExecutionHostConfigurations(paths, root, env, issuer, machineId));
+      await relaunch(() => writeExecutionHostConfigurations(paths, root, env, issuer, machineId), issuer);
       log(JSON.stringify({ type: "environment-issuer-pinned" }));
     },
   });

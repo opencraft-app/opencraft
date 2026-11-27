@@ -71,6 +71,7 @@ async function container(root, service, owners) {
   return {
     incarnation: agent.incarnation.id,
     endpoints: join(run, "endpoints"),
+    endpointsReplaced: () => agent.endpointsReplaced(),
     async stop() {
       await agent.stop(0);
       await Promise.all(servers.map((server) => new Promise((resolve) => server.close(resolve))));
@@ -89,6 +90,7 @@ test(
     const controlToken = randomBytes(32).toString("hex"),
       terminalToken = randomBytes(32).toString("hex"),
       piToken = randomBytes(16).toString("hex");
+    let activeIssuer = "old-issuer";
     const brainOwners = (run) => [
       [
         "codex-control",
@@ -110,7 +112,7 @@ test(
             }),
             path,
           ),
-        () => ({ token: controlToken }),
+        () => ({ token: controlToken, environmentIssuer: activeIssuer }),
       ],
       ["codex-native", echo],
       [
@@ -187,6 +189,11 @@ test(
     await roundTrip(workspace.sockets["codex-native"], "native bytes");
     await roundTrip(workspace.sockets.browser, "browser bytes");
     assert.equal((await workspace.codexHealth()).codexPid, 42);
+    await assert.rejects(workspace.awaitEnvironmentPin("new-issuer", { timeoutMs: 15, pollMs: 5 }), /did not activate/);
+    const nextPin = workspace.awaitEnvironmentPin("new-issuer", { timeoutMs: 1000, pollMs: 5 });
+    activeIssuer = "new-issuer";
+    brain.endpointsReplaced();
+    await nextPin;
     // The engine descriptor's in-environment socket is replaced by the Gateway's private listener.
     assert.match(
       (await workspace.piDescriptor()).websocketUrl,

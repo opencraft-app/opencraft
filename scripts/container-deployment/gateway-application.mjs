@@ -43,6 +43,7 @@ export async function startContainerGateway(composition = {}, compositionSha256,
       ...(web ? { productPluginRelease: { root: web.root, metadata: web.productPlugins } } : {}),
       // The vault owner publishes its issuer where Brain pins it into DSH, Pi and the Codex AppServer.
       ...(paths.environmentDelivery ? { environmentIssuer: { ...options.environmentIssuer, publish: paths.environmentIssuerFile } } : {}),
+      ...(paths.environmentDelivery ? { awaitEnvironmentPin: issuer => workspace.awaitEnvironmentPin(issuer) } : {}),
       runtimeDirectory: paths.runtimeDirectory,
       threadCliDirectory: paths.threadCliDirectory,
       terminalOwner: { directory: join(home, 'terminal'), endpoint: workspace.sockets.terminal, tokenFile: workspace.tokenFiles.terminal },

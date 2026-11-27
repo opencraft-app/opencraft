@@ -332,7 +332,7 @@ export interface WorkspaceHostAssembly {
   };
   /** Retries pending releases and starts the periodic archived-resource reconciliation. */
   startResourceReconciliation(options: { appHostServer: unknown; ownerWake: unknown }): void;
-  maintainReadiness(appHostServer: unknown): void;
+  maintainReadiness(appHostServer: unknown, externalCodex: boolean): void;
   hostReadiness(): Record<string, unknown>;
   // Shutdown step 1.
   /** Synchronous: disarms the reconciliation wake-up. */
