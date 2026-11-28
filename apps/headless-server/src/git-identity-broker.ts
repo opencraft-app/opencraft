@@ -105,7 +105,7 @@ export class GitIdentityBroker {
       if (current.status === 'unknown') return { status: 'unavailable' };
       if (current.status !== 'active' || current.executionId !== session.executionId || current.account !== session.account) return { status: 'expired' };
       if (this.options.store.read(session.account, session.host).revision !== session.revision) return { status: 'expired' };
-      return { status: 'configured', username: session.credential.identity.username, password: session.credential.token };
+      return { status: 'configured', username: session.credential.httpsUsername ?? session.credential.identity.username, password: session.credential.token };
     } catch { return { status: 'unavailable' }; }
   }
   async close(): Promise<void> { this.owner.close(); clearInterval(this.timer); await Promise.all([...this.sessions.keys()].map(id => this.remove(id, true))); }

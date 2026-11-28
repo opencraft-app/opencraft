@@ -216,7 +216,7 @@ async function request(input: unknown): Promise<Record<string, unknown>> {
   if (r.op !== "credential" || !(await authorized(session))) return { status: "expired" };
   if (session.credential.sshAuth || !session.credential.token || r.protocol !== "https" || r.host !== session.host)
     return { status: "denied" };
-  return { status: "configured", username: session.credential.identity.username, password: session.credential.token };
+  return { status: "configured", username: session.credential.httpsUsername ?? session.credential.identity.username, password: session.credential.token };
 }
 const diagnosticAt = new Map<string, number>();
 function unavailable(reason: string, requestId?: unknown): Record<string, unknown> {
