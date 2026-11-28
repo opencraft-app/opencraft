@@ -1,6 +1,7 @@
 export interface LifecycleWindow {
   isDestroyed(): boolean;
   isMinimized(): boolean;
+  isVisible?(): boolean;
   hide(): void;
   show(): void;
   focus(): void;
@@ -8,23 +9,33 @@ export interface LifecycleWindow {
   on(event: "close", listener: (event: { preventDefault(): void }) => void): unknown;
 }
 
+export type DesktopDockMode = "keep" | "menu-bar-only";
+export type DesktopQuitSource = "app" | "tray";
+export type DesktopQuitDecision = "quit" | "hide" | "cancel";
+
 /** One owner for window residence and explicit application shutdown. */
 export class DesktopLifecycle {
   private phase: "running" | "quitting" | "stopped" = "running";
   private opening: Promise<void> | null = null;
+  private confirming: Promise<void> | null = null;
   private stopping: Promise<void> | null = null;
   private visibilityRevision = 0;
+
   constructor(private readonly ports: {
     getWindow(): LifecycleWindow | null;
     createWindow(): Promise<void>;
     showDock(): Promise<void>;
     hideDock(): void;
+    dockMode?: () => DesktopDockMode;
+    confirmQuit?: (source: DesktopQuitSource) => Promise<DesktopQuitDecision>;
     stopRuntime(): Promise<void>;
     destroyTray(): void;
     exit(code: number): void;
     reportError(error: unknown): void;
   }) {}
+
   get quitting() { return this.phase !== "running"; }
+
   bindWindow(window: LifecycleWindow) {
     window.on("close", event => {
       if (this.quitting) return;
@@ -32,13 +43,28 @@ export class DesktopLifecycle {
       this.hide();
     });
   }
+
   hide() {
     if (this.quitting) return;
     this.visibilityRevision++;
     const window = this.ports.getWindow();
     if (window && !window.isDestroyed()) window.hide();
-    this.ports.hideDock();
+    if (this.ports.dockMode?.() === "menu-bar-only") {
+      this.ports.hideDock();
+    }
   }
+
+  async syncDock(): Promise<void> {
+    if (this.quitting) return;
+    if (this.ports.dockMode?.() === "menu-bar-only") {
+      const window = this.ports.getWindow();
+      const visible = window !== null && !window.isDestroyed() && (window.isVisible ? window.isVisible() : true);
+      if (!visible) this.ports.hideDock();
+      return;
+    }
+    await this.ports.showDock();
+  }
+
   show(): Promise<void> {
     if (this.quitting) return Promise.resolve();
     if (this.opening) return this.opening;
@@ -58,6 +84,31 @@ export class DesktopLifecycle {
     this.opening = opening;
     return opening;
   }
+
+  requestQuit(source: DesktopQuitSource = "app"): Promise<void> {
+    if (this.stopping) return this.stopping;
+    if (this.confirming) return this.confirming;
+    if (!this.ports.confirmQuit) return this.quit();
+    const confirming = Promise.resolve()
+      .then(async () => {
+        const decision = await this.ports.confirmQuit!(source);
+        if (this.quitting) return;
+        if (decision === "quit") {
+          await this.quit();
+        } else if (decision === "hide") {
+          this.hide();
+        }
+      })
+      .catch(error => {
+        this.ports.reportError(error);
+      })
+      .finally(() => {
+        if (this.confirming === confirming) this.confirming = null;
+      });
+    this.confirming = confirming;
+    return confirming;
+  }
+
   quit(): Promise<void> {
     if (this.stopping) return this.stopping;
     this.phase = "quitting";

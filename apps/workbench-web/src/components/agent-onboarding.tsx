@@ -3,7 +3,7 @@ import { useEffect, useId, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AppServerMethodParams, AppServerMethodResult, OnboardingAgentSnapshot, OnboardingSnapshot } from "@opencraft/appserver-protocol";
 import { useIntl } from "@opencraft/i18n/react";
-import { SettingsListItem, SettingsSection, SettingsSwitch } from "@opencraft/extension-react";
+import { SettingsListItem, SettingsSection, SettingsSwitch, SettingsTextInput } from "@opencraft/extension-react";
 import { CheckIcon } from "@opencraft/design-system-web/action-icons";
 import { ResetIcon } from "@opencraft/design-system-web/action-icons";
 import { IconButton } from "@opencraft/design-system-web/button";
@@ -52,6 +52,7 @@ function AgentOnboardingContent({ hostId, identityScope = "local", request, pres
   const continueHintId = useId();
   const queryKey = ["agent-onboarding", hostId, identityScope] as const;
   const [copied, setCopied] = useState<string | null>(null);
+  const [authCodes, setAuthCodes] = useState<Record<string, string>>({});
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [requestedStep, setStep] = useState<"agent" | "start">("agent");
   const [chosenAgent, setChosenAgent] = useState<string | null>(null);
@@ -71,11 +72,14 @@ function AgentOnboardingContent({ hostId, identityScope = "local", request, pres
     refetchInterval: query => query.state.data?.agents.some(agent => agent.activity?.phase === "running") ? 2000 : false,
   });
   const nameOf = (id: string) => intl.formatMessage(AGENT_NAMES[id] ?? { id: "onboard.agent.unknownName", defaultMessage: "Agent" });
-  const run = async (id: string, action: "sign-in" | "install" | "cancel") => {
+  const run = async (id: string, action: "sign-in" | "install" | "upgrade" | "submit-code" | "cancel", code?: string) => {
     setPendingId(id);
     try {
-      const result = await request("opencraft/agents/onboarding/act", { id, action });
-      if (isSnapshot(result)) queryClient.setQueryData(queryKey, result);
+      const result = await request("opencraft/agents/onboarding/act", { id, action, ...(code ? { code } : {}) });
+      if (isSnapshot(result)) {
+        queryClient.setQueryData(queryKey, result);
+        if (action === "submit-code") setAuthCodes(previous => ({ ...previous, [id]: "" }));
+      }
     } finally { setPendingId(null); }
   };
   const copyCode = async (id: string, code: string) => {
@@ -154,11 +158,15 @@ function AgentOnboardingContent({ hostId, identityScope = "local", request, pres
         const subline = activity?.phase === "running"
           ? intl.formatMessage(activity.kind === "install"
             ? { id: "onboard.agent.installing", defaultMessage: "Installing…" }
-            : { id: "onboard.agent.signingIn", defaultMessage: "Finish signing in below" })
+            : activity.kind === "upgrade"
+              ? { id: "onboard.agent.upgrading", defaultMessage: "Updating…" }
+              : { id: "onboard.agent.signingIn", defaultMessage: "Finish signing in below" })
           : activity?.phase === "failed"
             ? intl.formatMessage(activity.kind === "install"
               ? { id: "onboard.agent.installFailed", defaultMessage: "Install didn't finish" }
-              : { id: "onboard.agent.signInFailed", defaultMessage: "Sign-in didn't finish" })
+              : activity.kind === "upgrade"
+                ? { id: "onboard.agent.upgradeFailed", defaultMessage: "Update didn't finish" }
+                : { id: "onboard.agent.signInFailed", defaultMessage: "Sign-in didn't finish" })
             : agent && !agent.installed
               ? intl.formatMessage({ id: "onboard.agent.notInstalled", defaultMessage: "Not installed" })
               : !agent || agent.authenticated === true
@@ -169,8 +177,7 @@ function AgentOnboardingContent({ hostId, identityScope = "local", request, pres
         return <li key={entry.id} data-agent={agent?.id ?? entry.id} data-selected={!management && expanded === entry.id}>
           <SettingsListItem label={entry.label} description={subline} icon={<AgentIdentityIcon id={entry.id} />}
             actions={<span className="agent-onboard__actions">
-              {agentPreferences && !historyOnly ? <SettingsSwitch label={entry.label} checked={entry.ready && agentPreferences.enabled(entry.id)} disabled={!entry.ready || agentPreferences.saving || finishing} onCheckedChange={checked => agentPreferences.setEnabled(entry.id, checked)} /> : null}
-              {management && ready && status.data?.historyImport && (entry.id === "codex" || entry.id === "cursor") ? <Button size="sm" variant="ghost" disabled={historyBusy} aria-expanded={historyAgent === entry.id} onClick={() => setHistoryAgent(historyAgent === entry.id ? null : entry.id as "codex" | "cursor")}>
+              {management && entry.ready && status.data?.historyImport && (entry.id === "codex" || entry.id === "cursor") ? <Button size="sm" variant="ghost" disabled={historyBusy} aria-expanded={historyAgent === entry.id} onClick={() => setHistoryAgent(historyAgent === entry.id ? null : entry.id as "codex" | "cursor")}>
                 {intl.formatMessage({ id: "onboard.history.manage", defaultMessage: "Import conversations" })}
               </Button> : null}
               {ready && !management ? <Button size="sm" variant="ghost" aria-expanded={expanded === entry.id} aria-controls={`agent-models-${entry.id}`} onClick={() => setChosenAgent(entry.id)}>
@@ -188,9 +195,13 @@ function AgentOnboardingContent({ hostId, identityScope = "local", request, pres
               }}>
                 {intl.formatMessage({ id: "onboard.agent.install", defaultMessage: "Install" })}
               </Button> : null}
-              {agent && !activity && agent.installed && agent.authenticated === false ? <Button size="sm" disabled={pendingId === agent.id} onClick={() => { void run(agent!.id, "sign-in"); }}>
+              {agent && !activity && agent.installed && agent.authenticated === false ? <Button size="sm" variant="outline" disabled={pendingId === agent.id} onClick={() => { void run(agent!.id, "sign-in"); }}>
                 {intl.formatMessage({ id: "onboard.agent.signIn", defaultMessage: "Sign in" })}
               </Button> : null}
+              {agent && !activity && agent.installed && agent.authenticated !== false ? <Button size="sm" variant="ghost" disabled={pendingId === agent.id} onClick={() => { void run(agent!.id, "sign-in"); }}>
+                {intl.formatMessage({ id: "onboard.agent.signInAgain", defaultMessage: "Sign in again" })}
+              </Button> : null}
+              {agentPreferences && !historyOnly && entry.ready ? <SettingsSwitch label={entry.label} checked={agentPreferences.enabled(entry.id)} disabled={agentPreferences.saving || finishing} onCheckedChange={checked => agentPreferences.setEnabled(entry.id, checked)} /> : null}
             </span>} />
           {ready && !management && expanded === entry.id ? <div className="agent-onboard__models" id={`agent-models-${entry.id}`}>
             {expandedEntry?.native && agentModels.isPending ? <p role="status">{intl.formatMessage({ id: "onboard.agent.modelsLoading", defaultMessage: "Reading this agent's models…" })}</p> : null}
@@ -238,6 +249,23 @@ function AgentOnboardingContent({ hostId, identityScope = "local", request, pres
                   : intl.formatMessage({ id: "onboard.agent.copyCode", defaultMessage: "Copy code" })}
               </button>
             </span> : null}
+            {activity.awaitingCode && agent ? <form className="agent-onboard__code-form" onSubmit={event => {
+              event.preventDefault();
+              const submittedCode = (authCodes[agent.id] ?? "").trim();
+              if (submittedCode) void run(agent.id, "submit-code", submittedCode);
+            }}>
+              <SettingsTextInput
+                aria-label={intl.formatMessage({ id: "onboard.agent.authCodePlaceholder", defaultMessage: "Paste authorization code or callback URL" })}
+                placeholder={intl.formatMessage({ id: "onboard.agent.authCodePlaceholder", defaultMessage: "Paste authorization code or callback URL" })}
+                value={authCodes[agent.id] ?? ""}
+                onChange={event => setAuthCodes(previous => ({ ...previous, [agent.id]: event.currentTarget.value }))}
+                autoComplete="off"
+                disabled={pendingId === agent.id}
+              />
+              <Button size="sm" type="submit" disabled={pendingId === agent.id || !(authCodes[agent.id] ?? "").trim()}>
+                {intl.formatMessage({ id: "onboard.agent.submitCode", defaultMessage: "Submit code" })}
+              </Button>
+            </form> : null}
             {activity.log ? <details>
               <summary className="ui-native-disclosure">{intl.formatMessage({ id: "onboard.agent.viewLog", defaultMessage: "View log" })}</summary>
               <pre>{activity.log}</pre>

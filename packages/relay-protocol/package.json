@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./mux": "./src/mux.ts",
     "./node": "./src/node.ts",
     "./websocket-sender": "./src/websocket-sender.mjs"
   },

@@ -140,6 +140,8 @@ export class ImChannelsAppServer {
       if (!native) throw Error('channel_denied');
       if (request.method === 'opencraft/crew/desk') return native.crewDesk(actorContext,params);
       if (request.method === 'opencraft/crew/team') return native.crewTeam(actorContext,params);
+      if (request.method === 'opencraft/crew/teams' && !native.spaces)
+        throw Object.assign(Error('crew_teams_unavailable'), { code: 'crew_teams_unavailable', status: 503 });
       return native.communicate(actorContext,request.method,params);
     }
     const nativeCommand = request.method.startsWith('opencraft/channels/')

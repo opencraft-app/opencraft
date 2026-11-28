@@ -102,7 +102,7 @@
 .people-skeleton-line { block-size: 0.75em; max-inline-size: 100%; vertical-align: middle; }
 .people-skeleton-avatar { inline-size: 32px; block-size: 32px; flex-shrink: 0; }
 .people-assistant-summary > .people-skeleton-avatar { inline-size: 40px; block-size: 40px; }
-.people-skeleton-row { display: flex; align-items: center; gap: calc(3 * var(--spacing)); }
+.people-skeleton-row { display: flex; align-items: center; gap: calc(3 * var(--spacing)); min-inline-size: 0; max-inline-size: 100%; overflow: hidden; }
 .people-skeleton-copy { flex: 1; min-inline-size: 0; display: grid; gap: calc(2 * var(--spacing)); }
 .people-skeleton-rows--group .people-skeleton-row {
   padding: calc(4 * var(--spacing)) calc(2 * var(--spacing));
@@ -325,7 +325,8 @@
 
 // The Inbox uses the host's actual collection slot; it does not allocate columns.
 .people-page--inbox {
-  display: grid; grid-template-rows: auto auto minmax(0, 1fr); overflow: hidden;
+  display: flex; flex-direction: column; min-inline-size: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain;
+  > * { min-inline-size: 0; max-inline-size: 100%; }
   > .people-stream { min-block-size: 0; overflow: auto; overscroll-behavior: contain; }
   max-inline-size: none; margin: 0; padding: calc(3 * var(--spacing)); gap: calc(4 * var(--spacing));
   .people-toolbar-search { align-items: center; }

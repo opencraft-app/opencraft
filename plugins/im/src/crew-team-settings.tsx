@@ -387,17 +387,21 @@ export function CrewTeamStart({
               </>
             }
           >
-            <p className="crew-team-settings__empty">{f(mode === "create" ? "createAbout" : "joinAbout")}</p>
-            <SettingsRow layout="stacked" controlWidth="wide" label={f(mode === "create" ? "name" : "inviteLink")}>
-              <SettingsTextInput
-                aria-label={f(mode === "create" ? "name" : "inviteLink")}
-                value={value}
-                maxLength={mode === "create" ? 80 : 2048}
-                autoComplete="off"
-                disabled={busy}
-                onChange={(event) => setValue(event.target.value)}
-              />
-            </SettingsRow>
+            <div className="settings-panel-form">
+              <p className="crew-team-settings__empty">{f(mode === "create" ? "createAbout" : "joinAbout")}</p>
+              <SettingsGroup>
+                <SettingsRow layout="stacked" controlWidth="wide" label={f(mode === "create" ? "name" : "inviteLink")}>
+                  <SettingsTextInput
+                    aria-label={f(mode === "create" ? "name" : "inviteLink")}
+                    value={value}
+                    maxLength={mode === "create" ? 80 : 2048}
+                    autoComplete="off"
+                    disabled={busy}
+                    onChange={(event) => setValue(event.target.value)}
+                  />
+                </SettingsRow>
+              </SettingsGroup>
+            </div>
           </SettingsPanel>
         </form>
       </ModalContent>

@@ -180,6 +180,7 @@ for (const file of [
   // The WorkspaceHost object (cloudflare-deployment §5.7) and its shared routes.
   "apps/headless-server/src/workspace-host-routes.ts",
   "apps/headless-server/src/cloudflare",
+  "apps/relay-server/src/cloudflare",
   // The multi-chain migration ledger every runtime shares.
   "packages/sql/src/families.ts",
   "packages/access-control/src/commit-fence.ts",

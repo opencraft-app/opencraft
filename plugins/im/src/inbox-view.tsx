@@ -1,6 +1,7 @@
 import { useIntl } from "@opencraft/i18n/react";
 import type { ComponentType } from "react";
 import type { ExtensionSettingsViewProps } from "@opencraft/extension-react";
+import { InboxEmptySurface, ValdiSurface } from "@opencraft/design-system-web/valdi";
 
 /** Both directory and chat routes resolve to this same Component identity.
  * Route activation selects the group; shared ChannelRuntime owns all data. */
@@ -16,6 +17,6 @@ export function createInboxView({ Directory, Conversation, chatViewId }: {
     return <MasterDetail master={<Directory {...props} />} masterLabel={intl.formatMessage({ id: "people.title", defaultMessage: "Inbox" })}
       detailSelected={selected} detail={({ Header }) => selected
         ? <Conversation {...props} regions={{ ...props.regions, Header }} />
-        : <div className="im-inbox-empty" role="status"><p>{intl.formatMessage({ id: "im.channels.selectChat", defaultMessage: "Select a chat to start reading." })}</p></div>} />;
+        : <ValdiSurface component={InboxEmptySurface} viewModel={{ title: intl.formatMessage({ id: "im.channels.selectChat", defaultMessage: "Select a chat to start reading." }) }} style={{ width: "100%", height: "100%" }} />} />;
   };
 }

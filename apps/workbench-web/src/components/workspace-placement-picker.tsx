@@ -23,15 +23,22 @@ export interface WorkspacePlacementControl {
 /** One location picker owns directory, environment and optional source together. */
 export function WorkspacePlacementPicker({ control, execution, locked, portalContainer, onReturnFocus,
   workspaceOptions, workspaceOptionsLoading, canBrowse, nativeWorkspacePicking, onBrowseWorkspace, onSelectWorkspace,
+  open: controlledOpen, onOpenChange: controlledOnOpenChange,
 }: {
   control?: WorkspacePlacementControl; execution: ComposerExecutionTarget; locked: boolean;
   portalContainer: HTMLElement | null; onReturnFocus(): void;
   workspaceOptions: readonly DraftWorkspaceOption[]; workspaceOptionsLoading: boolean;
   canBrowse: boolean; nativeWorkspacePicking: boolean;
   onBrowseWorkspace(): void | Promise<void>; onSelectWorkspace(workspace: DraftWorkspaceOption): void;
+  open?: boolean; onOpenChange?: (open: boolean) => void;
 }) {
   const intl = useIntl(), notices = useAsyncNotices();
-  const [open, setOpen] = useState(false), [creating, setCreating] = useState(false), [query, setQuery] = useState('');
+  const [internalOpen, setInternalOpen] = useState(false), [creating, setCreating] = useState(false), [query, setQuery] = useState('');
+  const open = controlledOpen ?? internalOpen;
+  const setOpen = (next: boolean) => {
+    if (controlledOpen === undefined) setInternalOpen(next);
+    controlledOnOpenChange?.(next);
+  };
   const [picking, setPicking] = useState(false);
   const search = useRef<HTMLInputElement>(null);
   const catalog = control?.catalog;

@@ -14,6 +14,7 @@ import { EXTENSION_STORE_SCENARIOS } from "../storage/workerd/extension-stores.s
 import { LOGIN_ENTRY_SCENARIOS } from "../identity/workerd/login-entry.scenarios.ts";
 import { HTTP_EXCHANGE_SCENARIOS } from "../server/workerd/http-exchange.scenarios.ts";
 import { CLIENT_DO_SCENARIOS } from "../protocol/workerd/client-do.scenarios.ts";
+import { CLOUD_RELAY_SCENARIOS } from "../protocol/workerd/cloud-relay.scenarios.ts";
 import { RELAY_HUB_SCENARIOS } from "../protocol/workerd/relay-hub.scenarios.ts";
 
 export interface ScenarioGroup {
@@ -76,4 +77,9 @@ export const SCENARIO_GROUPS: readonly ScenarioGroup[] = [
     scenarios: CLIENT_DO_SCENARIOS,
   },
   { id: "relay-hub", label: "RelayHub (control link, stream budget, reservations)", scenarios: RELAY_HUB_SCENARIOS },
+  {
+    id: "cloud-relay",
+    label: "Sharded Cloud Relay (mux.v2, IdentityIndexDO, UserRelayDO, MachineRelayDO, DPoP, R2 offload)",
+    scenarios: CLOUD_RELAY_SCENARIOS,
+  },
 ];

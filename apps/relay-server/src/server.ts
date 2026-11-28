@@ -17,7 +17,9 @@ import {
   MACHINE_GATEWAY_CONTROL_PATH,
   MACHINE_GATEWAY_DATA_PATH,
   machineEnrollmentRequest,
+  RELAY_MUX_PATH,
 } from "@opencraft/relay-protocol";
+import { NodeMuxRelayBridge, matchRouteSecret } from "./mux-bridge.js";
 import { RelayAuthentication, type EntryOriginResolver } from './authentication.js';
 import type { RelayClusterPort, RelayHub } from './cluster-port.js';
 import { SERVERS_PATH, LEGACY_SERVERS_PATH, isServerPath, selectedPath, serverBase, selectorPage, scopedHtml, targetCookies, scopedCookies, selectionDefault, parseServerPaths, type ServerPaths } from './selection.js';
@@ -115,6 +117,7 @@ export function createRelayServer(routes: readonly RelayRoute[], options: { auth
     if (req.headers[DRAIN_HEADER] === DRAIN_CAPABILITY) headers.push(`${DRAIN_HEADER}: ${DRAIN_CAPABILITY}`);
   });
   const data = new WebSocketServer({ noServer: true, maxPayload: 65_536, perMessageDeflate: false });
+  const muxBridge = new NodeMuxRelayBridge();
   let closing = false, draining = false, accepting = true, upgrading = 0;
   const forget = (connection: Connection) => {
     if (connection.detached && connection.streams.size === 0) { allConnections.delete(connection); connection.releaseRetained?.(); }
@@ -155,6 +158,7 @@ export function createRelayServer(routes: readonly RelayRoute[], options: { auth
     return options.cluster ? options.cluster.open(route.instanceId, signal) : localChannel(route.instanceId, signal);
   }
   async function localChannel(instanceId: string, signal: AbortSignal, claim?: string): Promise<Duplex> {
+    if (!claim && muxBridge.has(instanceId) && !closing) return muxBridge.openDuplex(instanceId, signal);
     const connection = connections.get(instanceId);
     if (claim && connection?.claim !== claim) throw new Error('Retired relay owner');
     if (!connection || connection.detached || connection.socket.readyState !== WebSocket.OPEN || closing) throw new Error('Instance unavailable or busy');
@@ -466,6 +470,14 @@ export function createRelayServer(routes: readonly RelayRoute[], options: { auth
       })();
       return;
     }
+    if (req.url === RELAY_MUX_PATH) {
+      const handled = muxBridge.handleUpgrade(req, socket, head, secret => {
+        if (gatewayRoute && equal(gatewayRoute.credential, secret)) return gatewayRoute.instanceId;
+        return matchRouteSecret(byId.values(), secret);
+      });
+      if (!handled) reject(socket, 401);
+      return;
+    }
     if (req.url === CONTROL_PATH || req.url === MACHINE_GATEWAY_CONTROL_PATH) {
       const token = bearer(req);
       const route = req.url === MACHINE_GATEWAY_CONTROL_PATH
@@ -527,7 +539,7 @@ export function createRelayServer(routes: readonly RelayRoute[], options: { auth
     void handleUpgrade(req, socket, head).catch(() => reject(socket, 503)).finally(() => { upgrading--; });
   });
   options.cluster?.bind({ channel: localChannel, upgrade: (req, socket, head) => { server.emit('upgrade', req, socket, head); } });
-  const heartbeat = setInterval(() => { for (const connection of connections.values()) {
+  const heartbeat = setInterval(() => { muxBridge.heartbeat(); for (const connection of connections.values()) {
     if (!connection.alive) retire(connection); else { connection.alive = false; connection.socket.ping(); }
   } }, 15_000); heartbeat.unref();
   return { server, capacity, listServers, async beginEntryAuthentication(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -541,11 +553,11 @@ export function createRelayServer(routes: readonly RelayRoute[], options: { auth
     if (!authentication || !route || route.origin !== authentication.originFor(req)) return null;
     const principal = await authentication.authenticate(req, route);
     return principal && principal.expiresAt > Date.now() ? { principal, origin: route.origin } : null;
-  }, connected: (id: string) => connections.has(id),
+  }, connected: (id: string) => connections.has(id) || muxBridge.has(id),
     beginDrain() { draining = true; },
     stopAdmission() { draining = true; accepting = false; },
     activeRequests: () => responses.size,
-    activeStreams: () => upgrading + pending.size + businessUpgrades.size + [...allConnections].reduce((sum, c) => sum + c.streams.size, 0),
+    activeStreams: () => upgrading + pending.size + businessUpgrades.size + muxBridge.activeStreams() + [...allConnections].reduce((sum, c) => sum + c.streams.size, 0),
     handoffControls() {
       if (responses.size || pending.size) return;
       for (const connection of connections.values()) {
@@ -554,7 +566,7 @@ export function createRelayServer(routes: readonly RelayRoute[], options: { auth
       }
     },
     async close() {
-    closing = true; accepting = false; clearInterval(heartbeat); for (const connection of allConnections) retire(connection);
+    closing = true; accepting = false; clearInterval(heartbeat); muxBridge.close(); for (const connection of allConnections) retire(connection);
     for (const socket of upgraded) socket.destroy();
     await new Promise<void>(resolve => { server.close(() => resolve()); server.closeAllConnections(); }); controls.close(); data.close();
   } };

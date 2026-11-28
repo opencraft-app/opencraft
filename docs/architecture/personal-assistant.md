@@ -144,19 +144,21 @@ activation remain separate steps; importing the runtime alone does not start an 
 
 ## Agents directory and hiring
 
-`opencraft.im.agents` is the catalog and management route; Inbox remains the
-message entry. The only supported offer is the built-in personal assistant.
-The offer describes a capability, not a shared running Bot. Hiring calls the
-existing authenticated `personal-assistant/claim`: one durable resource per
-Human, created only after the explicit action. Repeated hiring is idempotent.
-A stopped assistant remains owned; enable resumes that resource with its memory
-and engine state. No marketplace provisioning, billing or additional instance
-schema is introduced.
+`opencraft.im.agents` is the unified `AssistantActor` (`session://`) directory and
+management route; Inbox remains the message entry. Built-in presets (`BUILTIN_ASSISTANT_PRESETS`)
+model the default personal assistant as `presetId: "personal-assistant"` with
+`cardinality: "singleton-per-human"`. Hiring dispatches `personal-assistant/bots/create`
+with `{ presetId: "personal-assistant", clientRequestId }` (converging idempotently
+with legacy `personal-assistant/claim` onto the same single resource per Human).
+Once hired, the singleton preset and any custom `cardinality: "multi"` assistants
+share the same `AssistantActor` lifecycle state machine (`bots/list`, `bots/pause`,
+`bots/update`), execution environment binding (`local` or registered sandbox templates),
+model selection (`models`, `model/set`), private memory (`memory`), delegated task
+profiles (`threads/*`), and direct-chat opening (`open` with `{ botId }`).
 
-“My Agents” uses `personal-assistant/get`, scoped to the current ActorContext.
+“My assistants” consumes a single `bots/list` replica scoped to the current
+`ActorContext`, eliminating duplicate `personal-assistant/get` + `bots/list` polling.
 The people directory and group invitation candidates exclude other Humans'
 private personal assistants on the server, before they reach the UI. Existing
-group-member visibility and authorized communication are unchanged. Model
-selection and lifecycle actions live in Agents; Inbox links there and keeps the
-existing assistant conversation shortcut. The same extension/authority contracts
-apply to desktop-hosted and headless installations.
+group-member visibility and authorized communication are unchanged. The same
+extension/authority contracts apply to desktop-hosted and headless installations.

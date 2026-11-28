@@ -96,6 +96,13 @@
     code { @include typography.role(control, primary); }
     button { padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer; }
   }
+  &__code-form {
+    display: flex;
+    flex-wrap: wrap;
+    width: 100%;
+    align-items: center;
+    gap: calc(var(--spacing) * 2);
+  }
   &__footer { display: flex; flex-wrap: wrap; gap: calc(var(--spacing) * 2); margin-top: calc(var(--spacing) * 3); }
 }
 

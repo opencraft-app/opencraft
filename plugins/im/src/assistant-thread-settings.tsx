@@ -120,7 +120,7 @@ export function AssistantThreadSettings({
       setCursor(result.nextCursor);
       setLoaded(true);
     } catch {
-      if (!c.signal.aborted) warn();
+      if (!c.signal.aborted && more) warn();
     } finally {
       if (busy.current === c) busy.current = null;
       if (!c.signal.aborted) setLoading(false);

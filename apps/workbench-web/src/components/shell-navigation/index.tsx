@@ -3,11 +3,12 @@ import { shellNavigationLabels } from "./navigation-labels";
 import { ShellNavigationButton } from "./navigation-button";
 import * as Popover from "@radix-ui/react-popover";
 import { useWorkbenchPresentationRoot } from "../workbench-presentation-root";
+import { useShellPresentation } from "../shell-presentation";
 import { useIntl } from "@opencraft/i18n/react";
 import { NavigationIcon } from "./navigation-action";
 import { AccountSignInMenu } from "./account-sign-in-menu";
 import { hasManagedWebUpdates, currentPlatform, useManagedWebUpdateNotice } from "../web-updates-settings";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import {
   AccountLeadingVisual,
   isAnonymousShellAccount,
@@ -15,6 +16,12 @@ import {
   shellAccountEntranceLabel,
   type ShellNavigationConfig,
 } from "./navigation-content";
+const LazyValdiSidebarOrb = lazy(() =>
+  import("./valdi-sidebar-dock").then((m) => ({ default: m.ValdiSidebarOrb })),
+);
+const LazyValdiSidebarTabDock = lazy(() =>
+  import("./valdi-sidebar-dock").then((m) => ({ default: m.ValdiSidebarTabDock })),
+);
 
 export type { ShellNavigationConfig } from "./navigation-content";
 const accountHeading = { id: "account.title", defaultMessage: "Account" };
@@ -23,11 +30,17 @@ export function ShellSidebarNavigation({ config, onInvoke }: {
   config: ShellNavigationConfig;
   onInvoke: (action: () => void) => void;
 }) {
+  const mobile = useShellPresentation()?.mobileSidebar ?? false;
+  const fallback = <NavigationStrip>
+    <NavigationContent config={config} surface="applications" compact includeSettings={false}
+      shortLabel tooltipSide="top" onInvoke={onInvoke} />
+  </NavigationStrip>;
   return <div className="shell-sidebar-navigation">
-    <NavigationStrip>
-      <NavigationContent config={config} surface="applications" compact includeSettings={false}
-        shortLabel tooltipSide="top" onInvoke={onInvoke} />
-    </NavigationStrip>
+    {mobile ? fallback : (
+      <Suspense fallback={fallback}>
+        <LazyValdiSidebarTabDock config={config} onInvoke={onInvoke} fallback={fallback} />
+      </Suspense>
+    )}
   </div>;
 }
 
@@ -61,7 +74,18 @@ export function ShellNavigationFooter({ config, visible, mobile, entranceId, onI
       aria-label={intl.formatMessage({ id: "settings.title", defaultMessage: "Settings" })}
       title={intl.formatMessage({ id: "settings.title", defaultMessage: "Settings" })}
       aria-current={config.settingsActive ? "page" : undefined} onClick={() => onInvoke(config.onOpenSettings)}>
-      <NavigationIcon name="settings" selected={config.settingsActive} />
+      {mobile ? (
+        <NavigationIcon name="settings" selected={config.settingsActive} />
+      ) : (
+        <Suspense fallback={<NavigationIcon name="settings" selected={config.settingsActive} />}>
+          <LazyValdiSidebarOrb
+            icon="settings"
+            active={Boolean(config.settingsActive)}
+            chromeless
+            fallback={<NavigationIcon name="settings" selected={config.settingsActive} />}
+          />
+        </Suspense>
+      )}
     </ShellNavigationButton>
     <ShellAccountEntrance config={config} visible={visible} mobile={mobile} id={`${entranceId}-account`} onInvoke={onInvoke} />
   </div>;

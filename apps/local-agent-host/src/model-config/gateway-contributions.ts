@@ -34,11 +34,14 @@ export function gatewayContributions({ models, credentials, store: gatewayStore 
       const current=await models.read(),store=gatewayStore();
       return current.providers.filter(provider=>store.canUse(provider.id,actor)).map(provider=>{
         const key=store.contribution(provider.id);
-        return {id:provider.id,name:provider.name,baseUrl:provider.baseUrl,protocol:provider.protocol,
+        return {id:provider.id,name:provider.name,catalogId:provider.catalogId,baseUrl:provider.baseUrl,protocol:provider.protocol,
           enabled:provider.enabled,owned:key?.actor===actor,scope:key?.scope??"team",revision:key?.revision??0,
           kind:provider.catalogId==='opencraft-human-subscription'?'subscription':key?'api-key':'platform',
           template:!provider.catalogId?.startsWith('opencraft-human-') && ["openai-responses","anthropic-messages"].includes(provider.protocol),
-          models:provider.models.filter(model=>model.type!=="asr").map(model=>({id:model.id,name:model.name??model.id,enabled:model.enabled}))};
+          models:provider.models.filter(model=>model.type!=="asr").map(model=>({id:model.id,name:model.name??model.id,enabled:model.enabled,
+            ...(model.contextWindow!==undefined?{contextWindow:model.contextWindow}:{}),
+            ...(model.maxTokens!==undefined?{maxTokens:model.maxTokens}:{}),
+            ...(model.input!==undefined?{input:model.input}:{})}))};
       });
     },
     async contribute(actor: string, input: Record<string, unknown>, assertCurrent:GatewayAuthorityCheck = ()=>{}) {
@@ -102,6 +105,118 @@ export function gatewayContributions({ models, credentials, store: gatewayStore 
       });
       await assertCurrent();if(store.contribution(provider)?.state==='preparing')store.contributionState(provider,actor,'shared');
       return {providerId:provider,scope:'personal',kind:'subscription'};
+    },
+    async discover(input: Record<string, unknown>) {
+      const { baseUrl, apiKey, protocol } = input;
+      if (typeof baseUrl !== "string" || !baseUrl.trim() || typeof protocol !== "string"
+        || !["openai-responses", "openai-completions", "anthropic-messages"].includes(protocol)) {
+        throw new ModelGatewayError("invalid_gateway_endpoint", 400);
+      }
+      let url: URL;
+      try { url = new URL(baseUrl.trim()); } catch { throw new ModelGatewayError("invalid_gateway_endpoint", 400); }
+      const isLoopback = url.hostname === "127.0.0.1" || url.hostname === "localhost" || url.hostname === "::1";
+      if ((isLoopback ? !["http:", "https:"].includes(url.protocol) : url.protocol !== "https:")
+        || url.username || url.password || url.search || url.hash) {
+        throw new ModelGatewayError("invalid_gateway_endpoint", 400);
+      }
+      const normalizedBaseUrl = `${url.origin}${url.pathname.replace(/\/(chat\/completions|responses|messages|models)\/?$/u, "").replace(/\/+$/u, "")}`;
+      const headers: Record<string, string> = { accept: "application/json" };
+      if (typeof apiKey === "string" && apiKey.trim()) {
+        if (protocol === "anthropic-messages") {
+          headers["x-api-key"] = apiKey.trim();
+          headers["anthropic-version"] = "2023-06-01";
+        } else {
+          headers.authorization = `Bearer ${apiKey.trim()}`;
+        }
+      }
+      let discovered: { id: string; name: string; contextWindow?: number; maxTokens?: number }[] = [];
+      let note: string | undefined;
+      try {
+        const response = await fetch(`${normalizedBaseUrl}/models`, {
+          headers,
+          redirect: "error",
+          signal: AbortSignal.timeout(8_000),
+        });
+        if (response.ok) {
+          const payload = (await response.json()) as { data?: Array<{ id?: string; display_name?: string; name?: string; context_length?: number; context_window?: number; max_tokens?: number }> };
+          const rows = Array.isArray(payload.data) ? payload.data : [];
+          discovered = rows
+            .filter((row): row is { id: string; display_name?: string; name?: string; context_length?: number; context_window?: number; max_tokens?: number } => typeof row?.id === "string" && row.id.trim().length > 0)
+            .slice(0, 80)
+            .map(row => ({
+              id: row.id.trim(),
+              name: (typeof row.display_name === "string" && row.display_name.trim()) || (typeof row.name === "string" && row.name.trim()) || row.id.trim(),
+              ...(typeof row.context_window === "number" && row.context_window > 0 ? { contextWindow: row.context_window }
+                : typeof row.context_length === "number" && row.context_length > 0 ? { contextWindow: row.context_length } : {}),
+              ...(typeof row.max_tokens === "number" && row.max_tokens > 0 ? { maxTokens: row.max_tokens } : {}),
+            }));
+        } else {
+          note = `HTTP ${response.status}`;
+        }
+      } catch {
+        note = "models_endpoint_unavailable";
+      }
+      return { normalizedBaseUrl, models: discovered, ...(note ? { note } : {}) };
+    },
+    async register(actor: string, input: Record<string, unknown>, assertCurrent: GatewayAuthorityCheck = () => {}) {
+      const { name, vendorId, baseUrl, protocol, apiKey, models: rawModels } = input;
+      const scope = input.scope ?? (input.shareWithTeam === true ? "team" : "personal");
+      if (!["personal", "team"].includes(String(scope))
+        || (scope === "team" && input.shareWithTeam !== true)
+        || typeof name !== "string" || !name.trim() || name.length > 128
+        || typeof baseUrl !== "string"
+        || typeof apiKey !== "string" || !apiKey || apiKey.length > 8192 || /\s/u.test(apiKey)
+        || !["openai-responses", "openai-completions", "anthropic-messages"].includes(String(protocol))
+        || !Array.isArray(rawModels) || rawModels.length === 0 || rawModels.length > 128) {
+        throw new ModelGatewayError("invalid_gateway_contribution", 400);
+      }
+      let url: URL;
+      try { url = new URL(baseUrl); } catch { throw new ModelGatewayError("invalid_gateway_endpoint", 400); }
+      const isLoopback = url.hostname === "127.0.0.1" || url.hostname === "localhost" || url.hostname === "::1";
+      if ((isLoopback ? !["http:", "https:"].includes(url.protocol) : url.protocol !== "https:")
+        || url.username || url.password || url.search || url.hash) {
+        throw new ModelGatewayError("invalid_gateway_endpoint", 400);
+      }
+      const normalizedBaseUrl = `${url.origin}${url.pathname.replace(/\/(chat\/completions|responses|messages|models)\/?$/u, "").replace(/\/+$/u, "")}`;
+      const sanitizedModels = rawModels.map(entry => {
+        if (!entry || typeof entry !== "object") throw new ModelGatewayError("invalid_gateway_contribution", 400);
+        const record = entry as Record<string, unknown>;
+        if (typeof record.id !== "string" || !/^[A-Za-z0-9_.:/-]{1,160}$/u.test(record.id)) {
+          throw new ModelGatewayError("invalid_gateway_contribution", 400);
+        }
+        const cw = typeof record.contextWindow === "number" && Number.isSafeInteger(record.contextWindow) && record.contextWindow > 0
+          ? record.contextWindow : undefined;
+        const mt = typeof record.maxTokens === "number" && Number.isSafeInteger(record.maxTokens) && record.maxTokens > 0
+          ? record.maxTokens : undefined;
+        return {
+          id: record.id,
+          name: typeof record.name === "string" && record.name.trim() ? record.name.trim() : record.id,
+          enabled: true,
+          ...(cw ? { contextWindow: cw } : {}),
+          ...(mt && (!cw || mt <= cw) ? { maxTokens: mt } : {}),
+        };
+      });
+      const provider = "gw-" + randomUUID(), ref = "GATEWAY_" + randomUUID().replaceAll("-", "");
+      const store = gatewayStore();
+      const current = await models.read();
+      await assertCurrent();
+      store.prepareContribution(provider, actor, typeof vendorId === "string" && vendorId.trim() ? vendorId.trim() : "custom", scope as "personal" | "team");
+      await credentials.set(ref, apiKey);
+      await update(current.revision, assertCurrent, draft => {
+        draft.providers.push({
+          id: provider,
+          name: name.trim(),
+          catalogId: typeof vendorId === "string" && vendorId.trim() ? vendorId.trim() : "custom",
+          protocol: String(protocol),
+          baseUrl: normalizedBaseUrl,
+          credentialRef: ref,
+          enabled: true,
+          models: sanitizedModels,
+        });
+      });
+      await assertCurrent();
+      store.contributionState(provider, actor, "shared");
+      return { providerId: provider, scope, shared: scope === "team", models: sanitizedModels.length };
     },
     async withdraw(actor: string, provider: string) {
       const store = gatewayStore();

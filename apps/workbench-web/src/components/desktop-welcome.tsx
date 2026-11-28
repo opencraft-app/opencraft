@@ -6,6 +6,7 @@ import { remoteServerOrigin } from '@opencraft/plugin-local-account/connections'
 import { useAsyncNotices } from './async-notices-context';
 import { ModalSurface } from './modal/modal-surface';
 import { ApplicationBrand } from './application-brand';
+import { valdiUiKitMessages } from './valdi-ui-kit-messages';
 import './desktop-welcome.scss';
 
 // Protocol example, identical in every locale.
@@ -14,12 +15,13 @@ const SERVER_ADDRESS_EXAMPLE = 'https://workbench.example.com';
 interface WelcomeChoicesProps {
   readonly onDismiss?: () => void;
   readonly onConfigureLocal?: () => void;
+  readonly onOpenUiKit?: () => void;
   readonly localStartCommand?: string;
   readonly onConnectServer?: (origin: string, signal: AbortSignal) => Promise<void>;
 }
 
 /** Shared choices; the containing route or dialog owns placement and dismissal. */
-export function WelcomeChoices({ onDismiss, onConfigureLocal, onConnectServer, localStartCommand }: WelcomeChoicesProps) {
+export function WelcomeChoices({ onDismiss, onConfigureLocal, onOpenUiKit, onConnectServer, localStartCommand }: WelcomeChoicesProps) {
   const intl = useIntl();
   const notices = useAsyncNotices();
   const [address, setAddress] = useState('');
@@ -91,6 +93,9 @@ export function WelcomeChoices({ onDismiss, onConfigureLocal, onConnectServer, l
       {onDismiss ? <footer className="desktop-welcome__footer">
         <span>{intl.formatMessage({ id: 'welcome.later.hint', defaultMessage: 'You can also configure everything later in Settings.' })}</span>
         <SettingsButton variant="quiet" onClick={onDismiss}>{intl.formatMessage({ id: 'welcome.later', defaultMessage: 'Set up later' })}</SettingsButton>
+      </footer> : onOpenUiKit ? <footer className="desktop-welcome__footer">
+        <span>{intl.formatMessage(valdiUiKitMessages.appearanceRowDescription)}</span>
+        <SettingsButton variant="primary" onClick={onOpenUiKit}>{intl.formatMessage(valdiUiKitMessages.openStyleLab)}</SettingsButton>
       </footer> : null}
     </main>;
 }

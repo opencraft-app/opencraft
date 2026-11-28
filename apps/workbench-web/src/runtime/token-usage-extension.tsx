@@ -19,7 +19,19 @@ export const tokenUsageExtension: TrustedExtensionDefinition = {
       Component: createDeferredView(async () => {
         const Dashboard = (await import("../components/token-usage-dashboard")).default;
         return function TokenUsageView({ host }: ExtensionSettingsViewProps) {
-          return <Dashboard key={host.activeHostId} hostId={host.activeHostId} />;
+          return (
+            <Dashboard
+              key={host.activeHostId}
+              hostId={host.activeHostId}
+              onManageModels={() => {
+                try {
+                  host.openView("opencraft.assets");
+                } catch {
+                  /* Assets extension is optional in stripped profiles. */
+                }
+              }}
+            />
+          );
         };
       }),
     });

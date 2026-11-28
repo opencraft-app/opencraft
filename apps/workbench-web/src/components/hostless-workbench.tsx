@@ -12,8 +12,12 @@ import { projectMiniApps, OVERHOME_VIEW_ID } from "../runtime/mini-apps";
 import { ApplicationRouteMotion, useApplicationDesktopBackdrop } from "./application-desktop-motion";
 import { ScheduledTaskCatalogContext, type ScheduledTaskCatalog } from "../runtime/scheduled-task-catalog-context";
 import { useIntl } from "@opencraft/i18n/react";
-import { mobileContainer, reloadMobileWorkbench } from "../runtime/mobile-container";
-import { MobileWorkbenchWelcome } from "./mobile-workbench-welcome";
+import {
+  mobileContainer,
+  mobileContainerSupportsValdi,
+  reloadMobileWorkbench,
+  reportMobileSurfaceState,
+} from "../runtime/mobile-container";
 import { groupWorkInMachines } from "../runtime/work-in-presentation";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { PlatformViewHost } from "@opencraft/extension-react";
@@ -63,7 +67,20 @@ import { ApplicationsSidebarFrame } from "./applications-sidebar";
 import { useResponsiveSidebarDock } from "./use-responsive-sidebar-dock";
 import { usePersistedSidebarWidth } from "./use-persisted-sidebar-width";
 
-import { WelcomeChoices } from "./desktop-welcome";
+const WelcomeChoices = lazy(async () => {
+  const module = await import("./desktop-welcome");
+  return { default: module.WelcomeChoices };
+});
+
+const RemoteWorkbenchWelcome = lazy(async () => {
+  const module = await import("./remote-workbench-welcome");
+  return { default: module.RemoteWorkbenchWelcome };
+});
+
+const MobileWorkbenchWelcome = lazy(async () => {
+  const module = await import("./mobile-workbench-welcome");
+  return { default: module.MobileWorkbenchWelcome };
+});
 
 const SettingsContent = lazy(async () => {
   const module = await import("./settings-page");
@@ -333,6 +350,43 @@ export function HostlessWorkbench({
   if (authenticationPresentation.modal) modalRequests.push(authenticationPresentation.modal);
   modalRequests.push(...announcementModalRequests);
 
+  const isMobileWelcomeSurface = Boolean(
+    mobileContainer()
+    && !routeSettingsOpen
+    && !standaloneManagementOpen
+    && applicationRoute.kind !== "extension-view"
+    && !extensionProjection.emptyWorkbenchNode,
+  );
+  const isStandaloneRemoteWelcome = Boolean(
+    !mobileContainer()
+    && typeof document !== "undefined"
+    && document.getElementById("opencraft-deployment-config") !== null
+    && !routeSettingsOpen
+    && !standaloneManagementOpen
+    && applicationRoute.kind !== "extension-view"
+    && !extensionProjection.emptyWorkbenchNode,
+  );
+  useEffect(() => {
+    reportMobileSurfaceState(isMobileWelcomeSurface ? "welcome" : "workbench");
+  }, [isMobileWelcomeSurface]);
+  const nativeValdiOwnsWelcome = isMobileWelcomeSurface && mobileContainerSupportsValdi();
+
+  if (isStandaloneRemoteWelcome) {
+    return (
+      <QueryClientProvider client={supervisor.queryClient}>
+        <ScheduledTaskCatalogContext.Provider value={EMPTY_SCHEDULE_CATALOG}>
+          <InternalDeveloperModeGate />
+          <main className="remote-welcome-standalone-stage">
+            <Suspense fallback={null}>
+              <RemoteWorkbenchWelcome hostProfiles={supervisor.hostProfiles} />
+            </Suspense>
+          </main>
+          <ModalHost requests={modalRequests} />
+        </ScheduledTaskCatalogContext.Provider>
+      </QueryClientProvider>
+    );
+  }
+
   return (
     <QueryClientProvider client={supervisor.queryClient}>
       <ScheduledTaskCatalogContext.Provider value={EMPTY_SCHEDULE_CATALOG}>
@@ -433,18 +487,30 @@ export function HostlessWorkbench({
               </RouteViewStack>
             ) : (
               <div className={extensionProjection.emptyWorkbenchNode ? "hostless-workbench__empty-stage" : "web-first-use-stage"}>
-                {extensionProjection.emptyWorkbenchNode ?? (mobileContainer() ? (
-                  <MobileWorkbenchWelcome
-                    onConnect={() => openSettings("mobile-connection")}
-                    onExplore={() => openSettings("appearance")}
-                  />
-                ) : (
-                  <section className="web-first-use-view">
-                    <WelcomeChoices localStartCommand="npm run dev:local" onConnectServer={async (origin, signal) => {
-                      if (!signal.aborted) window.location.assign(origin);
-                    }} />
-                  </section>
-                ))}
+                {extensionProjection.emptyWorkbenchNode ?? (
+                  <Suspense fallback={null}>
+                    {mobileContainer() ? (
+                      nativeValdiOwnsWelcome ? null : (
+                        <MobileWorkbenchWelcome
+                          onConnect={() => openSettings("mobile-connection")}
+                          onExplore={() => openSettings("appearance")}
+                        />
+                      )
+                    ) : typeof document !== "undefined" && document.getElementById("opencraft-deployment-config") !== null ? (
+                      <RemoteWorkbenchWelcome hostProfiles={supervisor.hostProfiles} />
+                    ) : (
+                      <section className="web-first-use-view">
+                        <WelcomeChoices
+                          localStartCommand="npm run dev:local"
+                          onOpenUiKit={() => openSettings("valdi-ui-kit")}
+                          onConnectServer={async (origin, signal) => {
+                            if (!signal.aborted) window.location.assign(origin);
+                          }}
+                        />
+                      </section>
+                    )}
+                  </Suspense>
+                )}
               </div>
             )}
             </ApplicationRouteMotion>

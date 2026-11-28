@@ -36,6 +36,7 @@ import type { BridgeGatewayOptions } from "@opencraft/agent-bridge-host/gateway"
 import { CodexEngineAdapter } from "./codex-engine-adapter.js";
 import { defaultWorkspace } from "./workspace-host.js";
 import { startOpenCraftDaemonServer } from "./server.js";
+import { DaemonRelayEnrollmentService, DEFAULT_CLOUD_RELAY_ORIGIN } from "./relay-enrollment.js";
 import { createDesktopAccountHost } from '@opencraft/plugin-local-account/desktop';
 import { humanLoginPage } from '@opencraft/plugin-local-account/login-page';
 import { desktopAccountEndpoint, startDesktopAccountServer, type DesktopAccountServer } from './desktop-account-endpoint.js';
@@ -346,11 +347,18 @@ export async function startOpenCraftDaemon(options: {
   if(humanAccounts) collaboration=new Collaboration(humanAccounts.storage,humanAccounts.actors,
     createRoutedConversationExecution(()=>appHost,{machineId:machineIdentity.machineId,engines:['dsh'],agentHostId:'local'}),Date.now,humanAccounts.admittedActor,undefined,(c,r)=>threadAccess!.allows(r.serverId,r.threadId,c));
   if(collaboration)assistantThreads=new AssistantThreadCommands(collaboration,createThreadOrchestrationExecution(()=>appHost),threadAccess!);
+  const relayEnrollment = new DaemonRelayEnrollmentService({
+    dataDirectory: options.dataDirectory,
+    appHost,
+    machineIdentity,
+    allowLoopbackInsecure: process.env.OPENCRAFT_ALLOW_INSECURE_LOOPBACK_RELAY === "1",
+  });
   let daemonServer: Awaited<ReturnType<typeof startOpenCraftDaemonServer>>;
   const close = (): Promise<void> => {
     if (closing !== null) return closing;
     let operation!: Promise<void>;
     operation = Promise.resolve().then(async () => {
+      relayEnrollment.close();
       keepAwake.close();
       await daemonServer.close();
       await personalAssistantHost?.close();
@@ -399,9 +407,103 @@ export async function startOpenCraftDaemon(options: {
       openRemoteWindow = openRemote;
       return { browserProof: humanAccounts!.browserProof, sessionToken: humanAccounts!.createNativeSession(), endpoint: accountServer!.endpoint };
     } } : {}),
+    handleRelayRequest: async (action: string, payload: unknown) => {
+      const record = payload && typeof payload === "object" && !Array.isArray(payload)
+        ? (payload as Record<string, unknown>)
+        : {};
+      switch (action) {
+        case "status":
+          return record.localOnly === true
+            ? relayEnrollment.status()
+            : relayEnrollment.inspectDetailedStatus({ ensureInvite: record.ensureInvite === true });
+        case "enable": {
+          const relayOrigin = typeof record.relayOrigin === "string" && record.relayOrigin.trim()
+            ? record.relayOrigin.trim()
+            : DEFAULT_CLOUD_RELAY_ORIGIN;
+          await relayEnrollment.enrollSovereignMachine({
+            relayOrigin,
+            ...(typeof record.displayName === "string" && record.displayName.trim() ? { displayName: record.displayName.trim() } : {}),
+            approvalRequired: record.approvalRequired === true,
+            ...(typeof record.licenseKey === "string" && record.licenseKey.trim() ? { licenseKey: record.licenseKey.trim() } : {}),
+          });
+          return relayEnrollment.inspectDetailedStatus({ ensureInvite: true });
+        }
+        case "disable":
+          await relayEnrollment.unenroll();
+          return relayEnrollment.status();
+        case "pair-invite":
+          return relayEnrollment.createPairingInvite({
+            ...(typeof record.approvalRequired === "boolean" ? { approvalRequired: record.approvalRequired } : {}),
+            ...(typeof record.ttlMs === "number" ? { ttlMs: record.ttlMs } : {}),
+          });
+        case "approve-device": {
+          if (typeof record.shortCode !== "string" || !record.shortCode.trim()) {
+            throw new Error("Short approval code is required");
+          }
+          await relayEnrollment.approvePendingDevice(record.shortCode.trim());
+          return relayEnrollment.inspectDetailedStatus({ ensureInvite: false });
+        }
+        case "revoke-device": {
+          if (typeof record.thumbprint !== "string" || !record.thumbprint.trim()) {
+            throw new Error("Device thumbprint is required");
+          }
+          await relayEnrollment.revokeApprovedDevice(record.thumbprint.trim());
+          return relayEnrollment.inspectDetailedStatus({ ensureInvite: false });
+        }
+        case "create-share":
+          return relayEnrollment.createShare({
+            allowExecution: record.allowExecution === true,
+            ...(typeof record.ttlMs === "number" ? { ttlMs: record.ttlMs } : {}),
+          });
+        case "revoke-share": {
+          if (typeof record.grantId !== "string" || !record.grantId.trim()) {
+            throw new Error("Share grantId is required");
+          }
+          await relayEnrollment.revokeShare(record.grantId.trim());
+          return relayEnrollment.inspectDetailedStatus({ ensureInvite: false });
+        }
+        case "activate-license": {
+          if (typeof record.licenseKey !== "string" || !record.licenseKey.trim()) {
+            throw new Error("License key is required");
+          }
+          const activated = await relayEnrollment.activateLicense(record.licenseKey.trim());
+          return { ...activated, status: await relayEnrollment.inspectDetailedStatus({ ensureInvite: false }) };
+        }
+        case "refresh-routes":
+          await relayEnrollment.refreshDirectRoutes();
+          return relayEnrollment.inspectDetailedStatus({ ensureInvite: false });
+        case "set-device-name": {
+          const name = typeof record.displayName === "string" ? record.displayName : "";
+          await relayEnrollment.setDeviceName(name);
+          return relayEnrollment.inspectDetailedStatus({ ensureInvite: false });
+        }
+        case "create-claim-url":
+          return relayEnrollment.createClaimUrl();
+        case "publish-thread-index": {
+          const rawThreads = Array.isArray(record.threads) ? record.threads : [];
+          await relayEnrollment.publishThreadIndex(
+            rawThreads as readonly {
+              readonly threadId: string;
+              readonly title: string;
+              readonly status: "idle" | "running" | "waiting" | "failed";
+              readonly updatedAt: number;
+            }[],
+          );
+          return { ok: true };
+        }
+        default:
+          throw new Error(`Unsupported relay action: ${action}`);
+      }
+    },
     onShutdownRequested: () => void close().then(() => process.exit(0), () => process.exit(1)),
   });
+    void relayEnrollment.loadAndResume().catch((error: unknown) => {
+      console.error(
+        `[opencraft-daemon] Cloud Relay resume skipped: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    });
   } catch (error) {
+    relayEnrollment.close();
     keepAwake.close();
     await personalAssistantHost?.close();
     await assistantThreads?.close();

@@ -94,6 +94,27 @@ contextBridge.exposeInMainWorld("opencraftDesktop", composeDesktopBridge({
   skillHub: Object.freeze({
     get: (path: string) => ipcRenderer.invoke("opencraft:skillhub-get", path),
   }),
+  relay: Object.freeze({
+    invoke: (action: string, payload?: unknown) => ipcRenderer.invoke("opencraft:relay-invoke", action, payload),
+    consumePairUrls: (): Promise<readonly string[]> => ipcRenderer.invoke("opencraft:relay-consume-pair-urls"),
+    onPairUrl: (listener: (url: string) => void) => {
+      const receive = (_event: Electron.IpcRendererEvent, url: unknown) => {
+        if (typeof url === "string") listener(url);
+      };
+      ipcRenderer.on("opencraft:relay-pair-url", receive);
+      return () => ipcRenderer.off("opencraft:relay-pair-url", receive);
+    },
+  }),
+  navigation: Object.freeze({
+    consumePendingSettings: (): Promise<string | null> => ipcRenderer.invoke("opencraft:consume-pending-settings"),
+    onOpenSettings: (listener: (section: string) => void) => {
+      const receive = (_event: Electron.IpcRendererEvent, section: unknown) => {
+        if (typeof section === "string" && section) listener(section);
+      };
+      ipcRenderer.on("opencraft:open-settings", receive);
+      return () => ipcRenderer.off("opencraft:open-settings", receive);
+    },
+  }),
   browserState: Object.freeze({
     read: () => ipcRenderer.invoke("opencraft:browser-state-read"),
     write: (key: string, value: string) => ipcRenderer.invoke("opencraft:browser-state-write", key, value),

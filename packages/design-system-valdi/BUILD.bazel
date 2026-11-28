@@ -1,0 +1,95 @@
+load("@build_bazel_rules_apple//apple:apple.bzl", "apple_xcframework")
+load("//bzl/valdi:rewrite_hdrs.bzl", "rewrite_hdrs")
+load("//bzl/valdi:valdi_module.bzl", "valdi_module")
+load("//bzl/valdi:valdi_web_package.bzl", "valdi_web_package")
+
+valdi_module(
+    name = "opencraft_design_valdi",
+    srcs = [
+        "src/ActionSheet.tsx",
+        "src/AddMachineSurface.tsx",
+        "src/AgentReadinessSurface.tsx",
+        "src/AppearanceSettingsSurface.tsx",
+        "src/ArchivedThreadsSurface.tsx",
+        "src/AssetsSurface.tsx",
+        "src/AssistantsSurface.tsx",
+        "src/Banner.tsx",
+        "src/Button.tsx",
+        "src/ChatSettingsSurface.tsx",
+        "src/ConfirmDialog.tsx",
+        "src/EmptyState.tsx",
+        "src/Gallery.tsx",
+        "src/Icon.tsx",
+        "src/InboxSurface.tsx",
+        "src/LabPlaygrounds.tsx",
+        "src/MobileNativeOverlay.tsx",
+        "src/MobileWelcomeSurface.tsx",
+        "src/ModelServicesSurface.tsx",
+        "src/PageControl.tsx",
+        "src/PluginsSettingsSurface.tsx",
+        "src/ProgressBar.tsx",
+        "src/RemoteAccessSettingsSurface.tsx",
+        "src/RemoteWorkbenchWelcomeSurface.tsx",
+        "src/SegmentedControl.tsx",
+        "src/SelectMenu.tsx",
+        "src/ServerConnectionSurface.tsx",
+        "src/SettingsGroup.tsx",
+        "src/ShortcutsSettingsSurface.tsx",
+        "src/SidebarDockSurface.tsx",
+        "src/Slider.tsx",
+        "src/Stepper.tsx",
+        "src/StyleLabData.ts",
+        "src/TabBar.tsx",
+        "src/TextField.tsx",
+        "src/Toggle.tsx",
+        "src/TokenUsageDashboardSurface.tsx",
+        "src/VoiceInputSettingsSurface.tsx",
+        "src/haptics.ts",
+        "src/index.ts",
+        "src/tokens.ts",
+        "tsconfig.json",
+    ],
+    ios_module_name = "OpenCraftDesignValdi",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/valdi_modules/src/valdi/valdi_core",
+        "//src/valdi_modules/src/valdi/valdi_tsx",
+    ],
+)
+
+valdi_web_package(
+    name = "opencraft_valdi_web_npm",
+    deps = [
+        ":opencraft_design_valdi",
+        "@valdi//src/valdi_modules/src/valdi/web_renderer",
+    ],
+    package_name = "opencraft_valdi_web_npm",
+)
+
+rewrite_hdrs(
+    name = "public_headers",
+    module_name = "OpenCraftValdi",
+    preserved_module_names = ["UIKit", "Foundation", "CoreFoundation", "CoreGraphics", "QuartzCore"],
+    flatten_paths = True,
+    srcs = [
+        "//valdi:valdi_ios_public_hdrs",
+        "//valdi_core:valdi_core_ios_public_hdrs",
+        "//src/valdi_modules/src/valdi/drawing:drawing_api_objc_hdrs",
+        "//src/valdi_modules/src/valdi/drawing:drawing_objc_hdrs",
+        ":opencraft_design_valdi_api_objc_hdrs",
+        ":opencraft_design_valdi_objc_hdrs",
+    ],
+)
+
+apple_xcframework(
+    name = "OpenCraftValdi_ios",
+    bundle_name = "OpenCraftValdi",
+    bundle_id = "app.opencraft.valdi",
+    data = ["//bzl/valdi:api_version_file"],
+    deps = ["//valdi", ":opencraft_design_valdi_objc"],
+    infoplists = ["//bzl/valdi:Info.plist"],
+    minimum_os_versions = {"ios": "15.0"},
+    families_required = {"ios": ["iphone", "ipad"]},
+    ios = {"device": ["arm64"], "simulator": ["arm64"]},
+    public_hdrs = [":public_headers"],
+)

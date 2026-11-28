@@ -2,11 +2,12 @@ import type { NativeConversationProject } from "./native-conversation-project";
 export type OnboardingAgentId = "codex" | "cursor" | "claude" | "codebuddy";
 
 export interface OnboardingActivity {
-  readonly kind: "sign-in" | "install";
+  readonly kind: "sign-in" | "install" | "upgrade";
   readonly phase: "running" | "failed";
   readonly message: string | null;
   readonly url: string | null;
   readonly userCode: string | null;
+  readonly awaitingCode?: boolean;
   readonly log: string;
 }
 
@@ -77,7 +78,7 @@ export interface AgentOnboardingMethodMap {
   };
   "opencraft/agents/onboarding/status": { params: Record<string, never>; result: OnboardingSnapshot };
   "opencraft/agents/onboarding/act": {
-    params: { id: string; action: "sign-in" | "install" | "cancel" };
+    params: { id: string; action: "sign-in" | "install" | "upgrade" | "submit-code" | "cancel"; code?: string };
     result: OnboardingSnapshot;
   };
   "opencraft/agents/onboarding/models": {

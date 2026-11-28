@@ -6,15 +6,23 @@ import "../styles/settings-page.scss";
 import { useOptionalAsyncNotices } from "./async-notices";
 import { WorkbenchIcon } from "./ui/workbench-icon";
 import { useDismissSidebarAfterSelection } from "./shell-presentation";
-import { ArchiveIcon as Archive, ArrowLeftIcon as ArrowLeft, ExtensionsIcon as Blocks, AgentIcon as Bot, DatabaseIcon as Database, LabIcon as FlaskConical, ServerIcon as Server, TerminalIcon as Terminal } from "@opencraft/design-system-web/action-icons";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { ArchiveIcon as Archive, ArrowLeftIcon as ArrowLeft, ExtensionsIcon as Blocks, AgentIcon as Bot, CloudIcon as Cloud, DatabaseIcon as Database, LabIcon as FlaskConical, ServerIcon as Server, TerminalIcon as Terminal } from "@opencraft/design-system-web/action-icons";
+import { lazy, Suspense, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { FormattedMessage, useIntl } from "@opencraft/i18n/react";
-import { defineMessages } from "@opencraft/i18n";
-import { LanguageSetting } from "../i18n/language-setting";
-import { TouchDensitySetting } from "./touch-density-setting";
-import { WorkbenchShortcutList } from "./workbench-shortcut-help";
+import { ShortcutsSettingsPage } from "./workbench-shortcut-help";
 import { ChatSettings } from "./chat-settings";
 import { AgentManagement, MachineAgentManagement } from "./agent-management";
+import { AppearanceSettings } from "./appearance-settings";
+
+const LazyRemoteAccessSettings = lazy(() =>
+  import("./remote-access-settings").then((mod) => ({ default: mod.RemoteAccessSettings })),
+);
+
+function hasDesktopRelayBridge(): boolean {
+  return Boolean(
+    (globalThis as typeof globalThis & { opencraftDesktop?: { relay?: unknown } }).opencraftDesktop?.relay,
+  );
+}
 import {
   getActivePersonalMachines,
   subscribeActivePersonalMachines,
@@ -24,16 +32,10 @@ import { HubNetworkSettings } from "./hub-network-settings";
 import { ServerInformationSettings } from "./server-information-settings";
 import { SshKeysSettings } from "./ssh-keys-settings";
 import { ExtensionLibrary } from "./extensions/extension-library";
-import { mobileContainer, openMobileSourceSettings } from "../runtime/mobile-container";
+import { mobileContainer } from "../runtime/mobile-container";
 import { MobileConnectionSettings, mobileConnectionMessages } from "./mobile-connection-settings";
 
-const appearanceMessages = defineMessages({
-  light: { id: "settings.light", defaultMessage: "Light" },
-  dark: { id: "settings.dark", defaultMessage: "Dark" },
-  system: { id: "settings.system", defaultMessage: "System" },
-});
-
-import type { ThemePreference } from "@opencraft/design-system/theme";
+import { resolveThemePreference, type ThemePreference } from "@opencraft/design-system/theme";
 import type { ExtensionContributionStore, ExtensionManager, ExtensionSupervisor } from "@opencraft/extension-runtime";
 import {
   SettingsActions,
@@ -42,19 +44,20 @@ import {
   SettingsPageHeader,
   SettingsRow,
   SettingsSection,
-  SettingsSegmented,
   type PlatformViewRendererRegistry,
   type PlatformViewRegions,
   type ProvisionHostInput,
 } from "@opencraft/extension-react";
 import type { HostConnectionProfile, WorkInMachine } from "@opencraft/workbench-runtime";
-import { getAppearanceThemePreviewProperties, type AppearanceThemeDescriptor } from "../appearance-theme";
+import type { AppearanceThemeDescriptor } from "../appearance-theme";
 import { useInternalDeveloperMode } from "../internal-developer-mode";
 import { WebUpdatesSettings, WebUpdatesNavigation, hasManagedWebUpdates } from "./web-updates-settings";
 import { MachineConnectionsAvailable, SettingsMachine, SettingsMachineIdentity, SettingsMachines } from "./settings-machines";
 import { replacementMachineSettingsSection, machineSettingsSection } from "../runtime/settings-machine-route";
 import { SqliteDebugSettings } from "./sqlite-debug-settings";
 import { DesktopWelcome } from "./desktop-welcome";
+import { ValdiStyleLabSettingsSection } from "./valdi-style-lab";
+import { valdiUiKitMessages } from "./valdi-ui-kit-messages";
 import {
   ArchivedThreadsSettings,
   type ArchivedThreadsSettingsProps,
@@ -313,6 +316,14 @@ export function SettingsNavigation({
             <>
               <NavigationItem
                 type="button"
+                aria-current={section === "valdi-ui-kit" ? "page" : undefined}
+                onClick={() => onSectionChange("valdi-ui-kit")}
+              >
+                <FlaskConical size={16} />
+                <span data-navigation-label="">{intl.formatMessage(valdiUiKitMessages.navTitle)}</span>
+              </NavigationItem>
+              <NavigationItem
+                type="button"
                 aria-current={section === "laboratory" ? "page" : undefined}
                 onClick={() => onSectionChange("laboratory")}
               >
@@ -355,6 +366,18 @@ export function SettingsNavigation({
             <span data-navigation-label=""><FormattedMessage id="settings.machines.title" defaultMessage="Machines" /></span>
             <NavigationCount className="settings-machines-count">{machines.length}</NavigationCount>
           </NavigationItem>
+          {hasDesktopRelayBridge() ? (
+            <NavigationItem
+              type="button"
+              aria-current={section === "remote-access" ? "page" : undefined}
+              onClick={() => onSectionChange("remote-access")}
+            >
+              <Cloud size={16} />
+              <span data-navigation-label="">
+                <FormattedMessage id="settings.remoteAccess.navTitle" defaultMessage="Remote Control" />
+              </span>
+            </NavigationItem>
+          ) : null}
         </NavigationGroup>
       </NavigationList>
     </div>
@@ -419,7 +442,7 @@ export function SettingsContent({
   platformViewRenderers,
   regions,
   archivedConversations,
-  personalMachines,
+  personalMachines = null,
   onRetryMachineConnection,
   onOpenView,
   onPushViewResource,
@@ -466,8 +489,9 @@ export function SettingsContent({
     if (replacement !== null) onSectionChange(replacement, "replace");
   }, [section, machines, onSectionChange]);
   useEffect(() => {
-    const internalOnly = internalExtensionPage || section === "laboratory" || section === "sqlite-debug";
-    if (internalOnly && (!internalDeveloperMode || (section === "sqlite-debug" && platform !== "electron"))) {
+    const hiddenSchedules = section === "opencraft.schedules" && import.meta.env.VITE_INCLUDE_SCHEDULES_PRESENTATION === "false";
+    const internalOnly = internalExtensionPage || section === "laboratory" || section === "sqlite-debug" || section === "valdi-ui-kit";
+    if (hiddenSchedules || (internalOnly && (!internalDeveloperMode || (section === "sqlite-debug" && platform !== "electron")))) {
       onSectionChange("appearance", "replace");
     }
   }, [internalDeveloperMode, internalExtensionPage, onSectionChange, platform, section]);
@@ -491,10 +515,10 @@ export function SettingsContent({
   }), [activeHostId, configurationHostId, onOpenView, onProvisionHost, onPushViewResource, onRemove, onReplaceViewResource, platform, profiles]);
 
   return (
-    <MachineConnectionsAvailable.Provider value={observeMachineConnections}><div className="settings-page__viewport" data-selection="chrome" data-layout={selectedExtensionPage?.layout ?? "document"}>
+    <MachineConnectionsAvailable.Provider value={observeMachineConnections}><div className="settings-page__viewport" data-selection="chrome" data-layout={section === "valdi-ui-kit" ? "wide" : (selectedExtensionPage?.layout ?? "document")}>
             <div className="settings-page__content">
               {configurationMachine !== null ? <SettingsMachineIdentity machine={configurationMachine} platform={platform} onSectionChange={onSectionChange} /> : null}
-              {section === "mobile-connection" && mobileContainer() ? <MobileConnectionSettings onProvisionHost={onProvisionHost} />
+              {section === "mobile-connection" ? <MobileConnectionSettings onProvisionHost={onProvisionHost} onCancel={!mobileContainer() ? () => onSectionChange("machines") : undefined} />
               : section === "machines" ? <SettingsMachines machines={machines} platform={platform} onSectionChange={onSectionChange} personalMachines={resolvedPersonalMachines} reportError={notices?.error} />
               : selectedMachine !== null ? <SettingsMachine machine={selectedMachine} pages={extensionPages.filter(page => page.management === undefined)} platform={platform} onSectionChange={onSectionChange} personalMachines={resolvedPersonalMachines} renderAgentManagement={hostId => <MachineAgentManagement hostId={hostId} />} onRetryConnection={resolvedRetryMachineConnection} reportError={notices?.error} />
               : section === 'server-information' && platform === 'web' && import.meta.env.VITE_INCLUDE_HEADLESS_APPHOST === 'true' ? <ServerInformationSettings />
@@ -534,79 +558,31 @@ export function SettingsContent({
               ) : section === "updates" && platform === "web" && hasManagedWebUpdates() ? (
                 <WebUpdatesSettings />
               ) : section === "shortcuts" ? (
-                <>
-                  <SettingsPageHeader title={intl.formatMessage({ id: "shortcuts.title", defaultMessage: "Keyboard shortcuts" })} />
-                  <WorkbenchShortcutList />
-                </>
+                <ShortcutsSettingsPage />
+              ) : section === "valdi-ui-kit" ? (
+                <ValdiStyleLabSettingsSection onThemePreferenceChange={onThemePreferenceChange} />
+              ) : section === "remote-access" && hasDesktopRelayBridge() ? (
+                <Suspense fallback={null}>
+                  <LazyRemoteAccessSettings
+                    resolvedTheme={resolveThemePreference(
+                      themePreference,
+                      typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches,
+                    )}
+                  />
+                </Suspense>
               ) : section === "appearance" ? (
-                <>
-                  <SettingsPageHeader title={intl.formatMessage({ id: "settings.appearance", defaultMessage: "Appearance" })} description={intl.formatMessage({ id: "settings.appearance.description", defaultMessage: "Choose how OpenCraft looks across the workbench." })} />
-
-                  <SettingsSection title={intl.formatMessage({ id: "settings.interface", defaultMessage: "Interface" })} description={intl.formatMessage({ id: "settings.interface.description", defaultMessage: "Shared display preferences apply across every Workbench view." })}>
-                    <SettingsGroup>
-                      <LanguageSetting />
-                      <TouchDensitySetting />
-                      {mobileContainer() && <SettingsRow
-                        label={intl.formatMessage({ id: "mobile.source", defaultMessage: "Workspace source" })}
-                        description={intl.formatMessage({ id: "mobile.description", defaultMessage: "Use the built-in workspace or open your own OpenCraft website." })}
-                        layout="stacked"
-                        controlWidth="compact"
-                      >
-                        <SettingsButton onClick={() => openMobileSourceSettings()}>{intl.formatMessage({ id: "mobile.source", defaultMessage: "Workspace source" })}</SettingsButton>
-                      </SettingsRow>}
-                      <SettingsRow
-                        label={intl.formatMessage({ id: "settings.appearance", defaultMessage: "Appearance" })}
-                        description={intl.formatMessage({ id: "settings.appearance.follow", defaultMessage: "Follow the system or keep one appearance." })}
-                        controlWidth="compact"
-                      >
-                        <SettingsSegmented
-                          label={intl.formatMessage({ id: "settings.appearance.mode", defaultMessage: "Appearance mode" })}
-                          value={themePreference}
-                          onValueChange={(value) => onThemePreferenceChange(value as ThemePreference)}
-                          options={(["light", "dark", "system"] as const).map((preference) => ({
-                            value: preference,
-                            label: intl.formatMessage(appearanceMessages[preference]),
-                          }))}
-                        />
-                      </SettingsRow>
-                      <SettingsRow
-                        label={intl.formatMessage({ id: "settings.theme", defaultMessage: "Theme" })}
-                        description={intl.formatMessage({ id: "settings.theme.description", defaultMessage: "Semantic palettes define every surface, border, and interaction state." })}
-                        layout="stacked"
-                        controlWidth="wide"
-                      >
-                        <div className="settings-theme-grid" role="radiogroup" aria-label="Theme">
-                          {themes.map((theme) => (
-                            <button
-                              type="button"
-                              role="radio"
-                              aria-checked={theme.id === themeId}
-                              className="settings-theme-card"
-                              key={theme.id}
-                              onClick={() => onThemeChange(theme.id)}
-                            >
-                              <span
-                                className="settings-theme-card__preview"
-                                data-theme-preview={theme.id}
-                                style={getAppearanceThemePreviewProperties(theme.id) as import("react").CSSProperties}
-                                aria-hidden="true"
-                              >
-                                <span />
-                                <span />
-                                <span />
-                              </span>
-                              <span className="settings-theme-card__copy">
-                                <strong>{theme.label}</strong>
-                                {theme.description && !(intl.locale.toLowerCase().startsWith("zh") && !/[\u4e00-\u9fff]/u.test(theme.description)) ? <small>{theme.description}</small> : null}
-                              </span>
-                              <span className="settings-theme-card__mark" aria-hidden="true" />
-                            </button>
-                          ))}
-                        </div>
-                      </SettingsRow>
-                    </SettingsGroup>
-                  </SettingsSection>
-                </>
+                <AppearanceSettings
+                  themes={themes}
+                  themeId={themeId}
+                  themePreference={themePreference}
+                  resolvedTheme={resolveThemePreference(
+                    themePreference,
+                    typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches,
+                  )}
+                  onThemeChange={onThemeChange}
+                  onThemePreferenceChange={onThemePreferenceChange}
+                  onOpenUiKit={() => onSectionChange("valdi-ui-kit")}
+                />
               ) : section === "laboratory" ? (
                 <>
                   <SettingsPageHeader title="Laboratory" description="Preview experimental Workbench platform capabilities." />
@@ -646,13 +622,7 @@ export function SettingsContent({
                   </SettingsSection>
                 </>
               ) : section === "plugins" ? (
-                <>
-                  <SettingsPageHeader
-                    title={intl.formatMessage({ id: "settings.plugins", defaultMessage: "Plugins" })}
-                    description={intl.formatMessage({ id: "settings.plugins.description", defaultMessage: "View installed plugins and their current status." })}
-                  />
-                  <ExtensionLibrary supervisor={extensionRuntime} manager={extensionManager} settingsHost={extensionViewHost} renderers={platformViewRenderers} reportError={notices?.error} />
-                </>
+                <ExtensionLibrary standalone supervisor={extensionRuntime} manager={extensionManager} settingsHost={extensionViewHost} renderers={platformViewRenderers} reportError={notices?.error} />
               ) : (
                 <SettingsSection
                   title="Settings section unavailable"

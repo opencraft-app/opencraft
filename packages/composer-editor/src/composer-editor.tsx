@@ -169,11 +169,45 @@ export function hasPermissionProfileChoices(
   return permissionProfiles.length > 0;
 }
 
+export interface ComposerAgentSetupEntry {
+  readonly id: string;
+  readonly engineId: string;
+  readonly label: string;
+  readonly installed: boolean;
+  readonly version: string | null;
+  readonly authenticated: boolean | null;
+  readonly account: string | null;
+  readonly enabled: boolean;
+  readonly canInstallPackage: boolean;
+  readonly installUrl: string;
+  readonly activity: {
+    readonly kind: "sign-in" | "install" | "upgrade";
+    readonly phase: "running" | "failed";
+    readonly message: string | null;
+    readonly url: string | null;
+    readonly userCode: string | null;
+    readonly awaitingCode?: boolean;
+  } | null;
+  readonly onInstall?: () => void;
+  readonly onSignIn?: () => void;
+  readonly onCancel?: () => void;
+  readonly onRecheck?: () => void;
+  readonly onEnable?: () => void;
+  readonly onSubmitCode?: (code: string) => void;
+}
+
 export interface ComposerAgentModelGroup {
   readonly id: string;
   readonly label: string;
   readonly active: boolean;
+  readonly machineId?: string;
+  readonly machineLabel?: string;
+  readonly machineRole?: "local" | "server" | "cloud";
+  readonly isLocalMachine?: boolean;
+  readonly isConversationMachine?: boolean;
+  readonly crossDevice?: boolean;
   readonly models: readonly ComposerModelOption[];
+  readonly residentAgents?: readonly ComposerAgentSetupEntry[];
   readonly loading?: boolean;
   readonly error?: string | null;
   readonly errorKind?: 'catalog' | 'preferences';
@@ -193,6 +227,7 @@ export interface ComposerAgentContinuation {
 export interface ComposerSelectionCatalog {
   readonly policyRestricted?: boolean;
   readonly agentGroups?: readonly ComposerAgentModelGroup[];
+  readonly residentAgents?: readonly ComposerAgentSetupEntry[];
   /** Existing conversation's Agent identity; present even without cross-Agent continuation. */
   readonly currentAgentId?: string | null;
   readonly currentAgentLabel?: string | null;

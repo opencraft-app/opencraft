@@ -2,6 +2,8 @@ import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore }
 import { useIntl } from "@opencraft/i18n/react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Button, IconButton } from "@opencraft/design-system-web/button";
+import { isTouchPresentation, subscribeTouchPresentation } from "@opencraft/design-system-web/input-presentation";
+import { AssetsSurface, ValdiSurface } from "@opencraft/design-system-web/valdi";
 import { ModalContent } from "@opencraft/design-system-web/modal-content";
 import { AdaptiveSheetHandle } from "@opencraft/design-system-web/adaptive-sheet";
 import { useWorkbenchPresentationRoot } from "@opencraft/design-system-web/presentation-root";
@@ -47,10 +49,35 @@ import { noAssetConnections, type AssetsViewOptions } from "./ports";
 import { parseAssetCatalog, connectionLabel, catalogRevision, mergeAssetCatalog } from "./catalog";
 import { ASSETS_CONNECTIONS_RESOURCE, ASSETS_VARIABLES_RESOURCE } from "./navigation";
 import { AssetDetails } from "./details";
+import { useAssetsModelGateway } from "./use-assets-models";
 import { DatabaseIcon, CloudIcon, CodeIcon, ServerIcon } from "@opencraft/design-system-web/action-icons";
 import "./view.scss";
 
-type Tab = "environments" | "connections" | "libraries";
+const snapshotReplicaByScope = new Map<string, SandboxConfigurationsSnapshot>();
+
+export async function warmAssetsCatalog(
+  fetcher: typeof fetch,
+  scope: string,
+  endpoint = "/__opencraft_assets/configurations",
+): Promise<void> {
+  if (!scope || snapshotReplicaByScope.has(scope)) return;
+  try {
+    const response = await fetcher(endpoint, {
+      method: "GET",
+      credentials: "same-origin",
+      cache: "no-store",
+      redirect: "error",
+      headers: { "x-opencraft-account-scope": scope },
+    });
+    if (!response.ok) return;
+    const parsed = parseAssetCatalog(await response.json(), scope);
+    snapshotReplicaByScope.set(scope, parsed);
+  } catch {
+    /* Optional warm-up only. */
+  }
+}
+
+type Tab = "environments" | "models" | "connections" | "libraries";
 type ConnectionDraft = {
   source: AssetSource;
   kind: "connection";
@@ -164,7 +191,10 @@ function AccountAssets({
   const [tab, setTab] = useState<Tab>(() =>
       personalVariables || activation.resourceUri === ASSETS_CONNECTIONS_RESOURCE ? "connections" : "environments",
     ),
-    [snapshot, setSnapshot] = useState<SandboxConfigurationsSnapshot>();
+    [snapshot, setSnapshot] = useState<SandboxConfigurationsSnapshot | undefined>(() => snapshotReplicaByScope.get(scope));
+  useEffect(() => {
+    if (snapshot) snapshotReplicaByScope.set(scope, snapshot);
+  }, [scope, snapshot]);
   // Resource navigation selects a section, just like the tabs: do not reset drafts.
   useEffect(() => {
     if (activation.resourceUri === ASSETS_CONNECTIONS_RESOURCE) setTab("connections");
@@ -541,7 +571,7 @@ function AccountAssets({
       root.current?.focus({ preventScroll: true });
     }
   }
-  const query = (tab === "libraries" ? "" : queries[tab]).trim().toLocaleLowerCase();
+  const query = (tab === "libraries" || tab === "models" ? "" : queries[tab]).trim().toLocaleLowerCase();
   const matches = (...fields: string[]) => fields.some((value) => value.toLocaleLowerCase().includes(query));
   const environmentRows =
     snapshot?.environments.filter((e) =>
@@ -690,224 +720,163 @@ function AccountAssets({
       />
     );
   };
+  const touch = useSyncExternalStore((onChange) => subscribeTouchPresentation(document, onChange), () => isTouchPresentation(document), () => false);
+  const modelsGateway = useAssetsModelGateway(fetcher);
   const totalConnections =
     (snapshot?.credentials.length ?? 0) + assetProviders.filter((p) => p.host && git.configured(p.host)).length;
+  const valdiAssetsViewModel: import("@opencraft/design-system-web/valdi").AssetsSurfaceProps = {
+    touch,
+    title: f("title"),
+    subtitle: f("catalogAbout"),
+    activeTab: tab,
+    librariesLabel: f("libraries"),
+    environmentsLabel: f("environments"),
+    modelsLabel: modelsGateway.available ? intl.formatMessage({ id: "people.model", defaultMessage: "Model" }) : undefined,
+    modelsTab: modelsGateway.available ? modelsGateway.viewModel : undefined,
+    connectionsLabel: f("connections"),
+    refreshLabel: f("refresh"),
+    refreshing: tab === "models" ? modelsGateway.viewModel.busy : (busy || git.busy),
+    primaryActionLabel: !editingHere && tab !== "libraries"
+      ? (tab === "models"
+          ? intl.formatMessage({ id: "modelServices.personal.add", defaultMessage: "Add" })
+          : f(tab === "environments" ? "addEnvironment" : "addConnection"))
+      : undefined,
+    primaryActionDisabled: tab === "models"
+      ? !modelsGateway.canAdd
+      : (tab === "environments" ? !canMutate || navigationBusy : !canOpenPicker),
+    errorMessage: error || (catalogReadError && !editingHere ? catalogReadError : undefined) || (tab === "connections" ? git.readError : undefined) || undefined,
+    noticeMessage: notice || undefined,
+    draftRetainedMessage: editor && !editingHere ? f("draftRetained") : undefined,
+    continueEditingLabel: f("continueEditing"),
+    editingHere,
+    loading: !snapshot || (tab === "connections" && !git.available && git.busy),
+    loadingLabel: f("loading"),
+    searchQuery: query,
+    searchPlaceholder: f("search"),
+    showEnvironmentSearch: (snapshot?.environments.length ?? 0) > 6 || Boolean(queries.environments),
+    showConnectionSearch: Boolean(totalConnections || queries.connections || providerFilter !== "all"),
+    providerFilter,
+    providerFilterOptions: [
+      { id: "all", title: f("allProviders") },
+      ...gitProviders.map((p) => ({ id: p.id, title: titleFor(p) })),
+    ],
+    libraries: (snapshot?.libraries ?? []).map((library) => ({
+      id: library.id,
+      name: library.name,
+      summary: intl.formatMessage(
+        { id: "assets.librarySummary", defaultMessage: "{status} · NFS · {path}" },
+        {
+          status: library.status === "configured" ? f("libraryConfigured") : f("libraryUnavailable"),
+          path: library.mountPath,
+        },
+      ),
+      compatibleText:
+        library.environmentIds
+          .map((id) => snapshot?.environments.find((e) => e.id === id && assetSource(e) === "platform")?.name)
+          .filter(Boolean)
+          .join(" · ") || f("libraryUnavailable"),
+      verifiedText: `${f("libraryVerified")}: ${library.verifiedAt}`,
+    })),
+    libraryEmptyText: f("libraryEmpty"),
+    libraryBoundaryText: f("libraryBoundary"),
+    libraryDetailsTitle: f("libraryCompatible"),
+    platformTitle: f("platform"),
+    localLabel: f("local"),
+    localDescription: f("localAbout"),
+    personalEnvironmentsTitle: f("personalEnvironments"),
+    environments: environmentRows.map((env) => ({
+      id: `${assetSource(env)}:${env.id}`,
+      name: env.name,
+      description: `E2B · ${f("template")} ${env.templateId}`,
+      source: assetSource(env) === "platform" ? "platform" : "personal",
+      editable: (assetSource(env) === "personal" || Boolean(snapshot?.canManagePlatform)) && canMutate,
+    })),
+    emptyEnvironmentText: f("emptyEnvironment"),
+    noResultsText: f("noResults"),
+    createEnvironmentLabel: f("createEnvironment"),
+    createEnvironmentDisabled: !canMutate || !environmentProvider,
+    clearFiltersLabel: f("clearFilters"),
+    environmentSaveHint: f("environmentSaveHint"),
+    viewAssistantsLabel: f("viewAssistants"),
+    connectionsTitle: f("connections"),
+    connections: [
+      ...gitProviders.map((provider) => ({
+        id: provider.id,
+        key: `git:${provider.id}`,
+        name: titleFor(provider),
+        description: git.description(provider.host!) || f("configured"),
+        kind: "git" as const,
+        disabled: !canManageGit || navigationBusy,
+      })),
+      ...connections.map((c) => ({
+        id: c.id,
+        key: `cloud:${assetSource(c)}:${c.id}`,
+        name: connectionLabel(c, snapshot?.credentials ?? []),
+        description: `E2B · ${f(assetSource(c))}`,
+        kind: "cloud" as const,
+        disabled: !canMutate,
+      })),
+    ],
+    emptyConnectionsText: f("emptyConnections"),
+    providerAboutText: f("providerAbout"),
+    addAccountLabel: f("addAccount"),
+    addAccountDisabled: !canOpenPicker,
+    codeAccountFooter: gitProviders.length && git.available ? f("codeAccountShort") : undefined,
+    envVariablesTitle: VariablesEditor ? f("envVariables") : undefined,
+    envVariablesLabel: VariablesEditor
+      ? intl.formatMessage({
+          ...(options.variablesTitleMessage ?? {
+            id: "assets.envVariables",
+            defaultMessage: labels.envVariables,
+          }),
+        })
+      : undefined,
+    envVariablesDescription: VariablesEditor ? f("envVariablesAbout") : undefined,
+    onTabChange: (nextTab) => setTab(nextTab),
+    onRefresh: tab === "models" ? () => void modelsGateway.refresh() : refresh,
+    onPrimaryAction: tab === "models"
+      ? modelsGateway.startAdd
+      : (tab === "environments" ? () => environmentProvider && guard(() => beginEnvironment()) : openPicker),
+    onContinueEditing: editor ? () => setTab(tabFor(editor)) : undefined,
+    onSearchChange: (nextQuery) => setQueries((prev) => ({ ...prev, [tab]: nextQuery })),
+    onProviderFilterChange: (value) => setProviderFilter(value),
+    onClearFilters: (targetTab) => clearFilters(targetTab),
+    onOpenLibrary: () => guard(() => setTab("environments")),
+    onOpenEnvironment: (envKey) => {
+      const target = environmentRows.find((e) => `${assetSource(e)}:${e.id}` === envKey);
+      if (target) guard(() => beginEnvironment(target));
+    },
+    onCreateEnvironment: () => environmentProvider && guard(() => beginEnvironment()),
+    onViewAssistants: () => guard(() => host.openView(options.assistantViewId ?? "opencraft.im.agents")),
+    onOpenConnection: (connKey) => {
+      if (connKey.startsWith("git:")) {
+        const providerId = connKey.slice(4);
+        const provider = gitProviders.find((p) => p.id === providerId);
+        if (provider) openProvider(provider);
+        return;
+      }
+      const target = connections.find((c) => `cloud:${assetSource(c)}:${c.id}` === connKey);
+      if (target) {
+        guard(() => {
+          setReturnEnvironment(undefined);
+          beginConnection(target);
+        });
+      }
+    },
+    onAddAccount: openPicker,
+    onOpenVariables: VariablesEditor
+      ? () =>
+          guard(() => {
+            setReturnEnvironment(undefined);
+            setDraft({ kind: "variables" });
+          })
+      : undefined,
+  };
   return (
     <StandardPage regions={regions} header={<StandardPageTitle>{f("title")}</StandardPageTitle>}>
       <SettingsCollectionDocument className="asset-catalog" ref={root} tabIndex={-1}>
-        <p className="asset-catalog__subtle asset-catalog__description">{f("catalogAbout")}</p>
-        <SettingsCollectionNavigation actions={actions}>
-          <SegmentedControl
-            appearance="underline"
-            width="content"
-            label={f("title")}
-            value={tab}
-            onValueChange={(value) => setTab(value as Tab)}
-            options={(["libraries", "environments", "connections"] as const).map((value) => ({
-              value,
-              label: f(value),
-            }))}
-          />
-        </SettingsCollectionNavigation>
-        {error || notice ? (
-          <div className="asset-catalog__feedback" aria-live="polite">
-            {error ? <SettingsNotice tone="error">{error}</SettingsNotice> : <span role="status">{notice}</span>}
-          </div>
-        ) : null}
+        <ValdiSurface component={AssetsSurface} viewModel={valdiAssetsViewModel} style={{ width: "100%" }} />
         {editingHere && catalogReadError ? <SettingsNotice tone="error">{catalogReadError}</SettingsNotice> : null}
-        {editor && !editingHere ? (
-          <SettingsNotice>
-            <span>{f("draftRetained")} </span>
-            <SettingsButton variant="quiet" onClick={() => setTab(tabFor(editor))}>
-              {f("continueEditing")}
-            </SettingsButton>
-          </SettingsNotice>
-        ) : null}
-        <SettingsCollection hidden={tab !== "libraries"} className="asset-catalog__sections">
-          <SettingsCollectionSection title={f("libraries")}>
-            {snapshot?.libraries?.length ? (
-              <SettingsGroup>
-                {snapshot.libraries.map((library) => (
-                  <SettingsCollectionRow
-                    key={library.id}
-                    label={library.name}
-                    icon={<DatabaseIcon />}
-                    description={intl.formatMessage(
-                      { id: "assets.librarySummary", defaultMessage: "{status} · NFS · {path}" },
-                      {
-                        status: library.status === "configured" ? f("libraryConfigured") : f("libraryUnavailable"),
-                        path: library.mountPath,
-                      },
-                    )}
-                    onClick={() => guard(() => setTab("environments"))}
-                  />
-                ))}
-              </SettingsGroup>
-            ) : (
-              <SettingsNotice>{f("libraryEmpty")}</SettingsNotice>
-            )}
-            <SettingsCollectionFooter>{f("libraryBoundary")}</SettingsCollectionFooter>
-            {snapshot?.libraries?.map((library) => (
-              <AssetDetails key={library.id} label={`${library.name} · ${f("libraryDetails")}`}>
-                <p>{f("libraryManaged")}</p>
-                <p>
-                  {f("libraryCompatible")}:{" "}
-                  {library.environmentIds
-                    .map((id) => snapshot.environments.find((e) => e.id === id && assetSource(e) === "platform")?.name)
-                    .filter(Boolean)
-                    .join(" · ") || f("libraryUnavailable")}
-                </p>
-                <p>
-                  {f("libraryVerified")}: {library.verifiedAt}
-                </p>
-                <p>{f("libraryScope")}</p>
-              </AssetDetails>
-            ))}
-          </SettingsCollectionSection>
-        </SettingsCollection>
-        <SettingsCollection
-          appearance="list"
-          hidden={tab !== "environments" || editingHere}
-          className="asset-catalog__sections"
-        >
-          {(snapshot?.environments.length ?? 0) > 6 || queries.environments ? searchControls("environments") : null}
-          <SettingsCollectionSection title={f("platform")}>
-            <SettingsGroup>
-              <SettingsListItem icon={<ServerIcon />} label={f("local")} description={f("localAbout")} />
-              {environmentRows.filter((e) => assetSource(e) === "platform").map(renderEnvironment)}
-            </SettingsGroup>
-          </SettingsCollectionSection>
-          <SettingsCollectionSection title={f("personalEnvironments")}>
-            <div className="asset-catalog__collection">
-              <SettingsGroup appearance={environmentRows.some((e) => assetSource(e) === "personal") ? "card" : "plain"}>
-                {!snapshot ? (
-                  busy ? (
-                    <SettingsNotice>{f("loading")}</SettingsNotice>
-                  ) : null
-                ) : environmentRows.some((e) => assetSource(e) === "personal") ? (
-                  environmentRows.filter((e) => assetSource(e) === "personal").map(renderEnvironment)
-                ) : (
-                  <div className="asset-catalog__empty">
-                    <p>{query ? f("noResults") : f("emptyEnvironment")}</p>
-                    <SettingsButton
-                      variant={query ? "quiet" : "primary"}
-                      disabled={!query && (!canMutate || !environmentProvider)}
-                      onClick={
-                        query
-                          ? () => clearFilters("environments")
-                          : () => environmentProvider && guard(() => beginEnvironment())
-                      }
-                    >
-                      {f(query ? "clearFilters" : "createEnvironment")}
-                    </SettingsButton>
-                  </div>
-                )}
-              </SettingsGroup>
-              {catalogReadError ? <SettingsNotice tone="error">{catalogReadError}</SettingsNotice> : null}
-            </div>
-          </SettingsCollectionSection>
-          <div>
-            <SettingsCollectionFooter>{f("environmentSaveHint")}</SettingsCollectionFooter>
-            <SettingsButton
-              variant="quiet"
-              onClick={() => guard(() => host.openView(options.assistantViewId ?? "opencraft.im.agents"))}
-            >
-              {f("viewAssistants")}
-            </SettingsButton>
-          </div>
-        </SettingsCollection>
-        <SettingsCollection
-          appearance="list"
-          hidden={tab !== "connections" || editingHere}
-          className="asset-catalog__sections"
-        >
-          <SettingsCollectionSection title={f("connections")}>
-            <div className="asset-catalog__collection">
-              {totalConnections || queries.connections || providerFilter !== "all"
-                ? searchControls("connections")
-                : null}
-              <SettingsGroup appearance={gitProviders.length || connections.length ? "card" : "plain"}>
-                {gitProviders.map((provider) => (
-                  <SettingsCollectionRow
-                    key={provider.id}
-                    icon={<CodeIcon />}
-                    label={titleFor(provider)}
-                    description={git.description(provider.host!) || f("configured")}
-                    aria-label={`${f("manage")} ${titleFor(provider)}`}
-                    disabled={!canManageGit || navigationBusy}
-                    onClick={() => openProvider(provider)}
-                  />
-                ))}
-                {connections.map((c) => (
-                  <SettingsCollectionRow
-                    key={`${assetSource(c)}:${c.id}`}
-                    label={connectionLabel(c, snapshot?.credentials ?? [])}
-                    icon={<CloudIcon />}
-                    description={`E2B · ${f(assetSource(c))}`}
-                    aria-label={`${f("manage")} ${c.name}`}
-                    disabled={!canMutate}
-                    onClick={() =>
-                      guard(() => {
-                        setReturnEnvironment(undefined);
-                        beginConnection(c);
-                      })
-                    }
-                  />
-                ))}
-                {!snapshot ? (
-                  busy ? (
-                    <SettingsNotice>{f("loading")}</SettingsNotice>
-                  ) : null
-                ) : !git.available && git.busy ? (
-                  <SettingsNotice>{f("loading")}</SettingsNotice>
-                ) : !connections.length && !gitProviders.length && !git.readError ? (
-                  <div className="asset-catalog__empty">
-                    <p>{query || providerFilter !== "all" ? f("noResults") : f("emptyConnections")}</p>
-                    {!query && providerFilter === "all" ? (
-                      <p className="asset-catalog__subtle">{f("providerAbout")}</p>
-                    ) : null}
-                    <SettingsButton
-                      variant={query || providerFilter !== "all" ? "quiet" : "primary"}
-                      disabled={!query && providerFilter === "all" && !canOpenPicker}
-                      onClick={query || providerFilter !== "all" ? () => clearFilters("connections") : openPicker}
-                    >
-                      {f(query || providerFilter !== "all" ? "clearFilters" : "addAccount")}
-                    </SettingsButton>
-                  </div>
-                ) : null}
-              </SettingsGroup>
-              {catalogReadError ? <SettingsNotice tone="error">{catalogReadError}</SettingsNotice> : null}
-              {git.readError ? <SettingsNotice tone="error">{git.readError}</SettingsNotice> : null}
-            </div>
-            {gitProviders.length && git.available ? (
-              <SettingsCollectionFooter>{f("codeAccountShort")}</SettingsCollectionFooter>
-            ) : null}
-          </SettingsCollectionSection>
-          {VariablesEditor ? (
-            <SettingsCollectionSection title={f("envVariables")}>
-              <SettingsGroup>
-                <SettingsCollectionRow
-                  icon={<CodeIcon />}
-                  label={intl.formatMessage({
-                    ...(options.variablesTitleMessage ?? {
-                      id: "assets.envVariables",
-                      defaultMessage: labels.envVariables,
-                    }),
-                  })}
-                  description={f("envVariablesAbout")}
-                  aria-label={f("openVariables")}
-                  disabled={navigationBusy}
-                  onClick={() =>
-                    guard(() => {
-                      setReturnEnvironment(undefined);
-                      setDraft({ kind: "variables" });
-                    })
-                  }
-                />
-              </SettingsGroup>
-            </SettingsCollectionSection>
-          ) : null}
-        </SettingsCollection>
         <Dialog.Root open={picker} onOpenChange={setPicker}>
           <ModalContent
             data-presentation="adaptive-sheet"

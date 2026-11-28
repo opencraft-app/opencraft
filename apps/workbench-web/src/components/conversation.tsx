@@ -359,6 +359,8 @@ function ErrorTimelineRenderer({ block, onRetry }: TimelineBlockRendererProps) {
   const sessionBusy = /This Codex session is in use by another Codex client/u.test(block.message);
   const message = sessionBusy
     ? intl.formatMessage({ id: "chat.nativeSession.busy", defaultMessage: "This conversation is open in another Codex client. Close it there to continue here, or keep its context in a new conversation. New conversations continue independently. Your unsent message stays here." })
+    : block.code === "acpAuthRequired"
+    ? intl.formatMessage({ id: "chat.agentAuthRequired", defaultMessage: "This Agent's sign-in expired or was rejected (401). Sign in again in Agent settings, then continue." })
     : block.code === "acpPromptFailed"
     ? intl.formatMessage({ id: "chat.agentRequestFailed", defaultMessage: "The Agent could not complete this response. You can continue to try again." })
     : block.code === "acpPromptUnconfirmed"

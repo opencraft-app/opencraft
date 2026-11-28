@@ -198,7 +198,7 @@
       "SQL statement": 33
     },
     "packages/access-control/src/personal-assistants.ts": {
-      "SQL statement": 26
+      "SQL statement": 24
     },
     "packages/access-control/src/thread-access.ts": {
       "SQL statement": 5

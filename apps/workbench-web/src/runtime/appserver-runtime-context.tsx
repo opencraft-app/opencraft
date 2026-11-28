@@ -1,3 +1,4 @@
+import type { PersonalMachinesController } from "./personal-machine-environment-source";
 import { bindConversationReturnLifecycle, type ConversationLifecycleSource } from "./conversation-return-lifecycle";
 import type { ChannelSearchRegistry } from './channel-search-contribution';
 import { beginObservedOperation } from "./observability";
@@ -411,6 +412,26 @@ export function useAppServerHosts(): AppServerHostCatalog {
   return value;
 }
 
+export function useOptionalPersonalMachines() {
+  const [controller, setController] = useState<PersonalMachinesController | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    let unsubscribe: (() => void) | undefined;
+    void import("./personal-machine-environment-source").then((mod) => {
+      if (cancelled) return;
+      setController(mod.getActivePersonalMachines());
+      unsubscribe = mod.subscribeActivePersonalMachines(() => {
+        setController(mod.getActivePersonalMachines());
+      });
+    }, () => undefined);
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, []);
+  return controller;
+}
+
 /** The private application context captures connection authority for UI intents. */
 export function useThreadPinWriter(): ThreadPinWriter {
   const application = useContext(ApplicationRuntimeContext);
@@ -460,6 +481,67 @@ function useHostStateValue<T>(hostId: string, select: (snapshot: ReturnType<AppS
     },
     () => { const runtime = registry.peekRuntime(hostId); return runtime ? select(runtime.getSnapshot()) : fallback; },
     () => fallback,
+  );
+}
+
+/**
+ * Synchronously reads a Host's negotiated initialize extension without triggering
+ * speculative trial RPCs (`-32601`). Returns `undefined` before handshake completes,
+ * `null` when handshake succeeded and the extension is absent, or the extension record.
+ */
+export function useHostExtensionCapability(
+  hostId: string,
+  extensionKey: string,
+): Readonly<Record<string, unknown>> | null | undefined {
+  const application = useContext(ApplicationRuntimeContext);
+  const registry = application?.registry ?? null;
+  return useSyncExternalStore(
+    useCallback(
+      (listener: () => void) => {
+        if (!registry) return () => {};
+        let runtime = registry.peekRuntime(hostId);
+        let unsubscribe = runtime?.subscribe(listener);
+        const removeRegistry = registry.subscribe(() => {
+          const next = registry.peekRuntime(hostId);
+          if (next !== runtime) {
+            unsubscribe?.();
+            runtime = next;
+            unsubscribe = runtime?.subscribe(listener);
+          }
+          listener();
+        });
+        return () => {
+          removeRegistry();
+          unsubscribe?.();
+        };
+      },
+      [hostId, registry],
+    ),
+    () => {
+      if (!registry) return undefined;
+      const init = registry.peekRuntime(hostId)?.resources.host.getInitializeResult() ?? null;
+      if (!init) return undefined;
+      const ext = init.capabilities?.extensions?.[extensionKey];
+      return ext && typeof ext === "object" ? (ext as Readonly<Record<string, unknown>>) : null;
+    },
+    () => undefined,
+  );
+}
+
+/** Reads the currently leased or most recently touched resident thread on `hostId`, if any. */
+export function useHostActiveThreadId(hostId: string): string | null {
+  return useHostStateValue(
+    hostId,
+    (snapshot) => {
+      const leased = snapshot.residentThreads.find((t) => t.viewLeaseCount > 0);
+      if (leased) return leased.threadId;
+      let latest: (typeof snapshot.residentThreads)[number] | null = null;
+      for (const item of snapshot.residentThreads) {
+        if (!latest || item.touchedAt > latest.touchedAt) latest = item;
+      }
+      return latest?.threadId ?? null;
+    },
+    null,
   );
 }
 

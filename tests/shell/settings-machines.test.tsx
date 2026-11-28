@@ -29,7 +29,7 @@ test("settings render machine ownership, cold/failed connections, first-level na
     loader: { ".scss": "empty", ".css": "empty", ".svg": "dataurl" },
     plugins: [{ name: "runtime-boundary", setup(builder) {
       builder.onResolve({ filter: /appearance-theme$/ }, () => ({ path: "appearance", namespace: "test-appearance" }));
-      builder.onLoad({ filter: /.*/, namespace: "test-appearance" }, () => ({ contents: 'export const getAppearanceThemePreviewProperties = () => ({}); export const useAppearanceTheme = () => ({ preference: "system", requestedThemeId: null });', loader: "js" }));
+      builder.onLoad({ filter: /.*/, namespace: "test-appearance" }, () => ({ contents: 'export const getAppearanceThemePreviewProperties = () => ({}); export const setThemePreference = () => {}; export const useAppearanceTheme = () => ({ preference: "system", resolvedTheme: "light", requestedThemeId: null });', loader: "js" }));
       builder.onResolve({ filter: /appserver-runtime-context$/ }, () => ({ path: "runtime", namespace: "test" }));
       builder.onLoad({ filter: /.*/, namespace: "test" }, () => ({ contents: 'export const useMachineConnectionPhase = () => "ready"; export const useHostConnectionPhase = id => id === "local-codex" ? "error" : "ready"; export const useHostExecutionState = () => undefined; export const useAppServerHosts = () => { throw new Error("unused"); }; export const useAppServerHostSnapshot = () => { throw new Error("unused"); }; export const useComposerCatalog = () => { throw new Error("unused"); };', loader: "js" }));
     }}], logLevel: "silent",
@@ -49,7 +49,7 @@ test("settings render machine ownership, cold/failed connections, first-level na
   const list = render(<SettingsMachines machines={machines} platform="web" onSectionChange={onSectionChange} />);
   assert.equal((list.match(/settings-control-list-item"/g) ?? []).length, 3);
   assert.equal((list.match(/>机器<\/h[123]>/g) ?? []).length, 1);
-  assert.match(list, /我的服务器/); assert.match(list, /未知机器 · unknown/); assert.match(list, /云端/); assert.match(list, /已暂停/);
+  assert.match(list, /我的服务器/); assert.match(list, /未知机器 · unknown/); assert.match(list, /云端/); assert.match(list, /已暂停/); assert.match(list, /连接服务器/);
   const pages = [
     { id: "model", title: "模型服务", targetHostId: "local", viewId: "model-view" },
     { id: "codex", title: "Codex 账户", targetHostId: "local-codex", viewId: "codex-view" },

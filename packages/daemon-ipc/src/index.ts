@@ -31,7 +31,9 @@ export type DaemonClientMessage =
   | { readonly type: "daemon/shutdown" }
   /** Native Main serves the renderer at `origin` and forwards account routes to the daemon. */
   | { readonly type: "account/attach"; readonly origin: string }
-  | { readonly type: "account/open-remote-result"; readonly id: string; readonly ok: boolean };
+  | { readonly type: "account/open-remote-result"; readonly id: string; readonly ok: boolean }
+  /** Trusted native Main invokes the daemon's Cloud Relay enrollment & sharing controller. */
+  | { readonly type: "relay/request"; readonly id: string; readonly action: string; readonly payload?: unknown };
 
 export type DaemonServerMessage =
   | {
@@ -53,7 +55,14 @@ export type DaemonServerMessage =
   /** Private proof and native session for Main's cookies, and the account route endpoint. */
   | { readonly type: "account/attached"; readonly browserProof: string; readonly sessionToken: string; readonly endpoint: string }
   /** The account service asks native Main to open a remote server window. */
-  | { readonly type: "account/open-remote"; readonly id: string; readonly origin: string };
+  | { readonly type: "account/open-remote"; readonly id: string; readonly origin: string }
+  | {
+      readonly type: "relay/response";
+      readonly id: string;
+      readonly ok: boolean;
+      readonly result?: unknown;
+      readonly error?: string;
+    };
 
 export function isDaemonClientHello(value: unknown): value is Extract<DaemonClientMessage, { type: "daemon/hello" }> {
   if (typeof value !== "object" || value === null) return false;

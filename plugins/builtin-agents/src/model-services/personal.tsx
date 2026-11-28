@@ -1,10 +1,16 @@
 import {useIntl} from '@opencraft/i18n/react';
 import {defineMessages} from '@opencraft/i18n';
-import {useEffect,useRef,useState,type ComponentType} from 'react';
-import * as Popover from '@radix-ui/react-popover';
-import {SettingsButton,SettingsNotice,SettingsPageHeader,SettingsSelect,SettingsSwitch,SettingsTextInput,type ExtensionSettingsViewProps} from '@opencraft/extension-react';
-import {BrandMark} from './brand-mark';
-import {NavigationList,NavigationItem} from '@opencraft/design-system-web/navigation';
+import {lazy,Suspense,useEffect,useRef,useState,useSyncExternalStore,type ComponentType} from 'react';
+import {isTouchPresentation,subscribeTouchPresentation} from '@opencraft/design-system-web/input-presentation';
+import {SettingsButton,type ExtensionSettingsViewProps} from '@opencraft/extension-react';
+
+const LazyValdiModelServicesSurface = lazy(async () => {
+  const mod = await import("@opencraft/design-system-web/valdi");
+  function ValdiModelServicesMount({ viewModel }: { readonly viewModel: import("@opencraft/design-system-web/valdi").ModelServicesSurfaceProps }) {
+    return <mod.ValdiSurface component={mod.ModelServicesSurface} viewModel={viewModel} style={{ width: "100%" }} />;
+  }
+  return { default: ValdiModelServicesMount };
+});
 
 const personalMessages=defineMessages({
   "onlyMe": {
@@ -349,54 +355,171 @@ export function createPersonalModelServicesView(fetcher:typeof fetch=globalThis.
     const visible=connections.filter(c=>c.name.toLowerCase().includes(query.toLowerCase()));
     const pick=(id:string)=>{setSelected(id);setAdding(false);setScopeOpen(false);setError('');setMessage('');};
     const add=()=>{setAdding(true);setScopeOpen(false);setError('');setMessage('');};
-    const row=(c:PersonalModelConnection)=><NavigationItem key={c.id} className="model-services-personal__connection" aria-current={!adding&&connection?.id===c.id?"page":undefined} onClick={()=>pick(c.id)}><BrandMark kind="provider" id={c.id} size={24}/><span>{c.name}<small>{c.owned?(c.scope==='personal'?intl.formatMessage(personalMessages.onlyMe):intl.formatMessage(personalMessages.sharedForUse)):intl.formatMessage(personalMessages.providedByPlatform)}</small></span></NavigationItem>;
+    const touch = useSyncExternalStore(onChange => subscribeTouchPresentation(document, onChange), () => isTouchPresentation(document), () => false);
+    const scopeLabel = (c: PersonalModelConnection) =>
+      c.owned
+        ? (c.scope === 'personal' ? intl.formatMessage(personalMessages.onlyMe) : intl.formatMessage(personalMessages.sharedForUse))
+        : intl.formatMessage(personalMessages.providedByPlatform);
     if(managePlatform&&doc?.canManage&&PlatformView)return <div className="model-services-personal__platform"><SettingsButton variant="quiet" onClick={()=>setManagePlatform(false)}>{intl.formatMessage(personalMessages.backToMyModels)}</SettingsButton><PlatformView {..._props}/></div>;
-    return <div className="model-services">
-      <SettingsPageHeader title={intl.formatMessage(personalMessages.modelServices)}/>
-      <aside className="model-services__navigation" aria-label={intl.formatMessage(personalMessages.modelConnections)}>
-        <div className="model-services__search"><SettingsTextInput aria-label={intl.formatMessage(personalMessages.searchConnections)} placeholder={intl.formatMessage(personalMessages.searchConnections)} value={query} onChange={e=>setQuery(e.target.value)}/><SettingsButton aria-label={intl.formatMessage(personalMessages.addMyConnection)} disabled={!doc||busy||!templates.length&&!doc.subscriptionAvailable} onClick={add}>{intl.formatMessage(personalMessages.add)}</SettingsButton></div>
-        <details open><summary className="ui-native-disclosure">{intl.formatMessage(personalMessages.myModels)}</summary><NavigationList label={intl.formatMessage(personalMessages.myModels)}>{visible.filter(c=>c.owned).map(row)}</NavigationList>{doc&&!connections.some(c=>c.owned)?<p className="model-services__muted">{intl.formatMessage(personalMessages.noPersonalConnectionsYet)}</p>:null}</details>
-        <details open><summary className="ui-native-disclosure">{intl.formatMessage(personalMessages.providedByPlatform)}</summary><NavigationList label={intl.formatMessage(personalMessages.platformModels)}>{visible.filter(c=>!c.owned).map(row)}</NavigationList></details>
-        {doc?.canManage&&PlatformView?<SettingsButton variant="quiet" disabled={busy} onClick={()=>setManagePlatform(true)}>{intl.formatMessage(personalMessages.managePlatformConnections)}</SettingsButton>:null}
-      </aside>
-      <div className="model-services__main">
-        <div className="model-services__mobile-select"><SettingsSelect aria-label={intl.formatMessage(personalMessages.selectAConnection)} value={adding?'':connection?.id??''} onChange={e=>pick(e.target.value)}><option value="">{intl.formatMessage(personalMessages.selectAConnection)}</option>{connections.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</SettingsSelect><SettingsButton aria-label={intl.formatMessage(personalMessages.addMyConnection)} disabled={!doc||busy||!templates.length&&!doc.subscriptionAvailable} onClick={add}>{intl.formatMessage(personalMessages.add)}</SettingsButton></div>
-        <div className="model-services__detail">
-          {!doc?<SettingsNotice>{error||intl.formatMessage(personalMessages.loadingModelConnections)}<SettingsButton disabled={busy} onClick={()=>void refresh()}>{intl.formatMessage(personalMessages.tryAgain)}</SettingsButton></SettingsNotice>:null}
-          {doc&&adding?<section className="model-services__config" aria-label={intl.formatMessage(personalMessages.addMyConnection)}>
-            <header><h2>{intl.formatMessage(personalMessages.addMyConnection)}</h2></header>
-            {doc.subscriptionAvailable?<div className="model-services__row"><label htmlFor="personal-model-type">{intl.formatMessage(personalMessages.connectionMethod)}</label><SettingsSelect id="personal-model-type" value={connectionType} disabled={busy||!!login} onChange={e=>setConnectionType(e.target.value)}><option value="api-key">{intl.formatMessage(personalMessages.enterAnAPIKey)}</option><option value="subscription">{intl.formatMessage(personalMessages.signInToACodexSubscription)}</option></SettingsSelect></div>:null}
-            {connectionType==='subscription'&&doc.subscriptionAvailable?<><div className="model-services__row"><div><label>{intl.formatMessage(personalMessages.myCodexSubscription)}</label><p>{intl.formatMessage(personalMessages.onlyYouAndYourAssistantsCanUse)}</p></div></div>
-            {login?<SettingsNotice><p>{intl.formatMessage(personalMessages.openTheSignInPageAndEnter)}<strong>{login.userCode}</strong></p><a href={login.verificationUrl} target="_blank" rel="noopener noreferrer">{intl.formatMessage(personalMessages.openSignInPage)}</a><p>{intl.formatMessage(personalMessages.connectsAutomaticallyAfterSignIn)}</p></SettingsNotice>:null}
-            <div className="model-services__connection-actions"><SettingsButton disabled={busy} onClick={()=>{if(login)void write({action:'subscription',operation:'cancel',sessionId:login.sessionId},()=>{setLogin(null);setAdding(false);});else setAdding(false);}}>{intl.formatMessage(personalMessages.cancel)}</SettingsButton><SettingsButton variant="primary" disabled={busy||!!login} onClick={()=>void write({action:'subscription',operation:'start'},subscriptionResult)}>{intl.formatMessage(personalMessages.signInAndConnect)}</SettingsButton></div></>:<>
-            <div className="model-services__row"><label htmlFor="personal-model-name">{intl.formatMessage(personalMessages.name)}</label><SettingsTextInput id="personal-model-name" value={name} disabled={busy} placeholder={intl.formatMessage(personalMessages.forExampleMyCodingModel)} onChange={e=>setName(e.target.value)}/></div>
-            <div className="model-services__row"><label htmlFor="personal-model-service">{intl.formatMessage(personalMessages.service)}</label><SettingsSelect id="personal-model-service" disabled={busy} value={template?.id??''} onChange={e=>{setTemplateId(e.target.value);setModelId('');setKey('');}}>{templates.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</SettingsSelect></div>
-            <div className="model-services__row"><label htmlFor="personal-model-model">{intl.formatMessage(personalMessages.model)}</label><SettingsSelect id="personal-model-model" disabled={busy} value={model?.id??''} onChange={e=>setModelId(e.target.value)}>{template?.models.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</SettingsSelect></div>
-            <div className="model-services__row"><div><label htmlFor="personal-model-key">{intl.formatMessage(personalMessages.apiKey)}</label><p>{template?.baseUrl}</p></div><SettingsTextInput id="personal-model-key" type="password" autoComplete="new-password" spellCheck={false} value={key} disabled={busy} onChange={e=>setKey(e.target.value)}/></div>
-            <div className="model-services__row"><div><label>{intl.formatMessage(personalMessages.availableTo)}</label><p>{intl.formatMessage(personalMessages.youAndYourAssistantsCanUseThis)}</p></div><span>{intl.formatMessage(personalMessages.onlyMe)}</span></div>
-            <div className="model-services__connection-actions"><SettingsButton disabled={busy} onClick={()=>{setAdding(false);setKey('');}}>{intl.formatMessage(personalMessages.cancel)}</SettingsButton><SettingsButton variant="primary" disabled={busy||!name.trim()||!key.trim()||!template||!model} onClick={()=>void write({action:'contribute',name,apiKey:key,baseUrl:template!.baseUrl,protocol:template!.protocol,model:model!.id,scope:'personal'},result=>{setKey('');setName('');setSelected(result.providerId);setAdding(false);})}>{intl.formatMessage(personalMessages.save)}</SettingsButton></div></>}
-          </section>:doc&&connection?<>
-            <section className="model-services__config" aria-label={intl.formatMessage(personalMessages.connectionSettings)}>
-              <header><BrandMark kind="provider" id={connection.id} size={24}/><h2>{connection.name}</h2></header>
-              <div className="model-services__connection-summary"><span>{connection.owned?intl.formatMessage(personalMessages.connectionConfigured): intl.formatMessage(personalMessages.providedByPlatform)} · {connection.enabled?intl.formatMessage(personalMessages.enabled):intl.formatMessage(personalMessages.notEnabled)}</span></div>
-              {connection.owned?<div className="model-services__row"><div><label>{intl.formatMessage(personalMessages.availableTo)}</label>{connection.scope==='personal'?<p>{intl.formatMessage(personalMessages.youAndYourAssistantsCanUseThis)}</p>:null}</div><div className="model-services__row-end"><span>{connection.scope==='personal'?intl.formatMessage(personalMessages.onlyMe):intl.formatMessage(personalMessages.usersOnThisPlatform)}</span>
-                {connection.kind!=='subscription'?<Popover.Root open={scopeOpen} onOpenChange={open=>{if(busy)return;setScopeOpen(open);if(open){setScope(connection.scope);setConsent(false);}}}><Popover.Trigger asChild><SettingsButton variant="quiet" disabled={busy}>{intl.formatMessage(personalMessages.change)}</SettingsButton></Popover.Trigger><Popover.Portal><Popover.Content className="model-services-actions model-services-personal__scope" align="end" sideOffset={6} collisionPadding={12} aria-label={intl.formatMessage(personalMessages.whoCanUseThis)}>
-                  <strong>{intl.formatMessage(personalMessages.whoCanUseThis)}</strong><SettingsSelect aria-label={intl.formatMessage(personalMessages.accessScope)} value={scope} disabled={busy} onChange={e=>{setScope(e.target.value as 'personal'|'team');setConsent(false);}}><option value="personal">{intl.formatMessage(personalMessages.onlyMe)}</option><option value="team">{intl.formatMessage(personalMessages.usersOnThisPlatform)}</option></SettingsSelect>
-                  {scope==='team'?<><p>{intl.formatMessage(personalMessages.otherPeopleCanSelectThisConnectionUpstream)}</p><div className="model-services__row"><span>{intl.formatMessage(personalMessages.allowOthersToUse)}</span><SettingsSwitch label={intl.formatMessage(personalMessages.allowOthersToUse)} checked={consent} disabled={busy} onCheckedChange={setConsent}/></div></>:<p>{intl.formatMessage(personalMessages.youAndYourAssistantsCanUseThis)}</p>}
-                  <div className="model-services__connection-actions"><SettingsButton disabled={busy} onClick={()=>setScopeOpen(false)}>{intl.formatMessage(personalMessages.cancel)}</SettingsButton><SettingsButton variant="primary" disabled={busy||scope===connection.scope||scope==='team'&&!consent} onClick={()=>void write({action:'scope',provider:connection.id,scope,revision:connection.revision,shareWithTeam:scope==='team'},()=>setScopeOpen(false))}>{intl.formatMessage(personalMessages.save)}</SettingsButton></div>
-                  {error?<SettingsNotice tone="error">{error}</SettingsNotice>:null}
-                </Popover.Content></Popover.Portal></Popover.Root>:null}
-              </div></div>:null}
-            </section>
-            <section className="model-services__models" aria-label={intl.formatMessage(personalMessages.modelList)}><div className="model-services__model-heading"><h3>{intl.formatMessage(personalMessages.model)}</h3></div>{connection.models.map(m=><div className="model-services__model" key={m.id}><BrandMark kind="model" id={m.id} size={32}/><div><strong>{m.name}</strong><small>{m.id}</small></div><span>{connection.enabled&&m.enabled?intl.formatMessage(personalMessages.available):intl.formatMessage(personalMessages.notEnabled)}</span></div>)}</section>
-            <details className="model-services__advanced"><summary className="ui-native-disclosure">{intl.formatMessage(personalMessages.advancedSettings)}</summary><div className="model-services__row"><span>{connection.kind==='subscription'?intl.formatMessage(personalMessages.connectionMethod):intl.formatMessage(personalMessages.serviceAddress)}</span><span>{connection.kind==='subscription'?intl.formatMessage(personalMessages.subscriptionSignInOnlyMe):connection.baseUrl}</span></div>{connection.owned?<div className="model-services__row"><div><label>{intl.formatMessage(personalMessages.disableConnection)}</label><p>{intl.formatMessage(personalMessages.stopsFutureCallsRequestsAlreadySentWill)}</p></div><SettingsButton disabled={busy} onClick={()=>void write({action:'withdraw',provider:connection.id},()=>setSelected(null))}>{intl.formatMessage(personalMessages.disable)}</SettingsButton></div>:null}</details>
-          </>:doc?<SettingsNotice>{intl.formatMessage(personalMessages.noModelServicesAreCurrentlyAvailable)}</SettingsNotice>:null}
-          {doc&&!adding?<section className="model-services__config" aria-label={intl.formatMessage(personalMessages.myUsage)}><header><h3>{intl.formatMessage(personalMessages.myConnectionUsage)}</h3></header><div className="model-services__row"><span>{intl.formatMessage(personalMessages.usedThisMonth)}</span><span className="model-services__row-end">{doc.usedTokens.toLocaleString()}  {intl.formatMessage(personalMessages.tokens)}</span></div>{doc.heldTokens>0?<div className="model-services__row"><span>{intl.formatMessage(personalMessages.processingOrUnconfirmed)}</span><span className="model-services__row-end">{doc.heldTokens.toLocaleString()}  {intl.formatMessage(personalMessages.tokens)}</span></div>:null}<div className="model-services__row"><div><label>{intl.formatMessage(personalMessages.usageLimit)}</label><p>{intl.formatMessage(personalMessages.controlsFutureRequestsByTokenCountNot)}</p></div><div className="model-services__row-end"><span>{doc.limit?intl.formatMessage(personalMessages.monthlyTokens, { count: Math.min(doc.limit.monthlyTokens,doc.personalLimit.monthlyTokens??Infinity).toLocaleString() }):intl.formatMessage(personalMessages.noPlatformAllowanceConfigured)}</span><SettingsButton variant="quiet" disabled={busy||!doc.limit} onClick={()=>{setLimitDraft(String(doc.personalLimit.monthlyTokens??doc.limit?.monthlyTokens??0));setLimitOpen(!limitOpen);}}>{intl.formatMessage(personalMessages.change)}</SettingsButton></div></div>
-          {limitOpen?<div className="model-services__row"><label htmlFor="personal-model-limit">{intl.formatMessage(personalMessages.maximumMonthlyUsage)}</label><div><SettingsTextInput id="personal-model-limit" type="number" min={0} step={1} value={limitDraft} disabled={busy} onChange={e=>setLimitDraft(e.target.value)}/><div className="model-services__connection-actions"><SettingsButton disabled={busy} onClick={()=>setLimitOpen(false)}>{intl.formatMessage(personalMessages.cancel)}</SettingsButton><SettingsButton disabled={busy||limitDraft.trim()===''||!Number.isSafeInteger(Number(limitDraft))||Number(limitDraft)<0} onClick={()=>void write({action:'personalLimit',monthlyTokens:Number(limitDraft),revision:doc.personalLimit.revision},()=>setLimitOpen(false))}>{intl.formatMessage(personalMessages.saveLimit)}</SettingsButton></div></div></div>:null}</section>:null}
-          {error&&doc&&!scopeOpen?<SettingsNotice tone="error">{error}<SettingsButton disabled={busy} onClick={()=>void refresh()}>{intl.formatMessage(personalMessages.refresh)}</SettingsButton></SettingsNotice>:null}
-          <p className="model-services__status" role="status">{busy?intl.formatMessage(personalMessages.saving):message}</p>
-        </div>
-      </div>
+    return <div style={{ width: '100%', padding: '24px', boxSizing: 'border-box' }}>
+      <Suspense fallback={null}>
+        <LazyValdiModelServicesSurface
+          viewModel={{
+            touch,
+            title: intl.formatMessage(personalMessages.modelServices),
+            addLabel: intl.formatMessage(personalMessages.add),
+            addDisabled: !doc || busy || (!templates.length && !doc.subscriptionAvailable),
+            managePlatformLabel: intl.formatMessage(personalMessages.managePlatformConnections),
+            showManagePlatform: Boolean(doc?.canManage && PlatformView),
+            loading: !doc && !error,
+            loadingText: intl.formatMessage(personalMessages.loadingModelConnections),
+            tryAgainLabel: intl.formatMessage(personalMessages.tryAgain),
+            errorMessage: error || undefined,
+            statusMessage: message || undefined,
+            busy,
+            savingText: intl.formatMessage(personalMessages.saving),
+            searchQuery: query,
+            searchPlaceholder: intl.formatMessage(personalMessages.searchConnections),
+            clearSearchLabel: intl.formatMessage({ id: 'settings.remoteAccess.clearInput', defaultMessage: 'Clear' }),
+            myModelsTitle: intl.formatMessage(personalMessages.myModels),
+            noPersonalConnectionsText: intl.formatMessage(personalMessages.noPersonalConnectionsYet),
+            platformModelsTitle: intl.formatMessage(personalMessages.providedByPlatform),
+            personalConnections: visible.filter(c => c.owned).map(c => ({
+              id: c.id,
+              name: c.name,
+              scopeLabel: scopeLabel(c),
+              owned: true,
+              selected: !adding && connection?.id === c.id,
+            })),
+            platformConnections: visible.filter(c => !c.owned).map(c => ({
+              id: c.id,
+              name: c.name,
+              scopeLabel: scopeLabel(c),
+              owned: false,
+              selected: !adding && connection?.id === c.id,
+            })),
+            adding,
+            addTitle: intl.formatMessage(personalMessages.addMyConnection),
+            subscriptionAvailable: doc?.subscriptionAvailable,
+            connectionMethodLabel: intl.formatMessage(personalMessages.connectionMethod),
+            connectionType: connectionType as 'api-key' | 'subscription',
+            connectionTypeOptions: [
+              { id: 'api-key', title: intl.formatMessage(personalMessages.enterAnAPIKey) },
+              { id: 'subscription', title: intl.formatMessage(personalMessages.signInToACodexSubscription) },
+            ],
+            subscriptionTitle: intl.formatMessage(personalMessages.myCodexSubscription),
+            subscriptionDescription: intl.formatMessage(personalMessages.onlyYouAndYourAssistantsCanUse),
+            subscriptionLoginCode: login?.userCode,
+            subscriptionLoginHint: login ? intl.formatMessage(personalMessages.connectsAutomaticallyAfterSignIn) : undefined,
+            signInAndConnectLabel: intl.formatMessage(personalMessages.signInAndConnect),
+            nameLabel: intl.formatMessage(personalMessages.name),
+            namePlaceholder: intl.formatMessage(personalMessages.forExampleMyCodingModel),
+            nameValue: name,
+            serviceLabel: intl.formatMessage(personalMessages.service),
+            serviceValue: template?.id ?? '',
+            serviceOptions: templates.map(c => ({ id: c.id, title: c.name })),
+            modelLabel: intl.formatMessage(personalMessages.model),
+            modelValue: model?.id ?? '',
+            modelOptions: (template?.models ?? []).map(m => ({ id: m.id, title: m.name })),
+            apiKeyLabel: intl.formatMessage(personalMessages.apiKey),
+            apiKeyBaseUrl: template?.baseUrl,
+            apiKeyValue: key,
+            availableToLabel: intl.formatMessage(personalMessages.availableTo),
+            availableToHint: intl.formatMessage(personalMessages.youAndYourAssistantsCanUseThis),
+            onlyMeLabel: intl.formatMessage(personalMessages.onlyMe),
+            saveLabel: intl.formatMessage(personalMessages.save),
+            saveDisabled: busy || !name.trim() || !key.trim() || !template || !model,
+            cancelLabel: intl.formatMessage(personalMessages.cancel),
+            hasSelectedConnection: Boolean(doc && connection),
+            selectedConnectionName: connection?.name,
+            selectedConnectionStatus: connection
+              ? `${connection.owned ? intl.formatMessage(personalMessages.connectionConfigured) : intl.formatMessage(personalMessages.providedByPlatform)} · ${connection.enabled ? intl.formatMessage(personalMessages.enabled) : intl.formatMessage(personalMessages.notEnabled)}`
+              : undefined,
+            selectedConnectionOwned: connection?.owned,
+            selectedConnectionSubscription: connection?.kind === 'subscription',
+            selectedConnectionScopeText: connection
+              ? (connection.scope === 'personal' ? intl.formatMessage(personalMessages.onlyMe) : intl.formatMessage(personalMessages.usersOnThisPlatform))
+              : undefined,
+            scopeOpen,
+            scopeDraft: scope,
+            scopeOptions: [
+              { id: 'personal', title: intl.formatMessage(personalMessages.onlyMe) },
+              { id: 'team', title: intl.formatMessage(personalMessages.usersOnThisPlatform) },
+            ],
+            scopeConsent: consent,
+            scopeTeamWarning: intl.formatMessage(personalMessages.otherPeopleCanSelectThisConnectionUpstream),
+            scopeAllowOthersLabel: intl.formatMessage(personalMessages.allowOthersToUse),
+            scopeSaveDisabled: busy || !connection || scope === connection.scope || (scope === 'team' && !consent),
+            changeLabel: intl.formatMessage(personalMessages.change),
+            modelsTitle: intl.formatMessage(personalMessages.model),
+            selectedModels: (connection?.models ?? []).map(m => ({
+              id: m.id,
+              name: m.name,
+              statusLabel: connection?.enabled && m.enabled ? intl.formatMessage(personalMessages.available) : intl.formatMessage(personalMessages.notEnabled),
+            })),
+            advancedTitle: intl.formatMessage(personalMessages.advancedSettings),
+            endpointLabel: connection?.kind === 'subscription' ? intl.formatMessage(personalMessages.connectionMethod) : intl.formatMessage(personalMessages.serviceAddress),
+            endpointValue: connection ? (connection.kind === 'subscription' ? intl.formatMessage(personalMessages.subscriptionSignInOnlyMe) : connection.baseUrl) : undefined,
+            disableLabel: intl.formatMessage(personalMessages.disableConnection),
+            disableDescription: intl.formatMessage(personalMessages.stopsFutureCallsRequestsAlreadySentWill),
+            disableActionLabel: intl.formatMessage(personalMessages.disable),
+            emptyDirectoryText: intl.formatMessage(personalMessages.noModelServicesAreCurrentlyAvailable),
+            usageTitle: intl.formatMessage(personalMessages.myConnectionUsage),
+            usedThisMonthLabel: intl.formatMessage(personalMessages.usedThisMonth),
+            usedThisMonthValue: doc ? `${doc.usedTokens.toLocaleString()} ${intl.formatMessage(personalMessages.tokens)}` : '0',
+            heldTokensLabel: intl.formatMessage(personalMessages.processingOrUnconfirmed),
+            heldTokensValue: doc && doc.heldTokens > 0 ? `${doc.heldTokens.toLocaleString()} ${intl.formatMessage(personalMessages.tokens)}` : undefined,
+            usageLimitLabel: intl.formatMessage(personalMessages.usageLimit),
+            usageLimitDescription: intl.formatMessage(personalMessages.controlsFutureRequestsByTokenCountNot),
+            usageLimitValue: doc?.limit
+              ? intl.formatMessage(personalMessages.monthlyTokens, { count: Math.min(doc.limit.monthlyTokens, doc.personalLimit.monthlyTokens ?? Infinity).toLocaleString() })
+              : intl.formatMessage(personalMessages.noPlatformAllowanceConfigured),
+            canEditLimit: Boolean(doc?.limit),
+            limitOpen,
+            limitDraft,
+            limitMaxLabel: intl.formatMessage(personalMessages.maximumMonthlyUsage),
+            limitSaveLabel: intl.formatMessage(personalMessages.saveLimit),
+            limitSaveDisabled: busy || limitDraft.trim() === '' || !Number.isSafeInteger(Number(limitDraft)) || Number(limitDraft) < 0,
+            onSearchChange: setQuery,
+            onStartAdd: add,
+            onCancelAdd: () => {
+              if (login) {
+                void write({ action: 'subscription', operation: 'cancel', sessionId: login.sessionId }, () => { setLogin(null); setAdding(false); });
+              } else {
+                setAdding(false);
+                setKey('');
+              }
+            },
+            onManagePlatform: () => setManagePlatform(true),
+            onRefresh: () => void refresh(),
+            onSelectConnection: pick,
+            onConnectionTypeChange: setConnectionType,
+            onStartSubscription: () => void write({ action: 'subscription', operation: 'start' }, subscriptionResult),
+            onNameChange: setName,
+            onServiceChange: nextId => { setTemplateId(nextId); setModelId(''); setKey(''); },
+            onModelChange: setModelId,
+            onApiKeyChange: setKey,
+            onSaveConnection: () => void write({ action: 'contribute', name, apiKey: key, baseUrl: template!.baseUrl, protocol: template!.protocol, model: model!.id, scope: 'personal' }, result => { setKey(''); setName(''); setSelected(result.providerId); setAdding(false); }),
+            onToggleScope: () => {
+              if (busy || !connection) return;
+              const next = !scopeOpen;
+              setScopeOpen(next);
+              if (next) { setScope(connection.scope); setConsent(false); }
+            },
+            onScopeDraftChange: nextScope => { setScope(nextScope); setConsent(false); },
+            onScopeConsentChange: setConsent,
+            onSaveScope: () => connection && void write({ action: 'scope', provider: connection.id, scope, revision: connection.revision, shareWithTeam: scope === 'team' }, () => setScopeOpen(false)),
+            onDisableConnection: () => connection && void write({ action: 'withdraw', provider: connection.id }, () => setSelected(null)),
+            onToggleLimit: () => {
+              if (!doc) return;
+              setLimitDraft(String(doc.personalLimit.monthlyTokens ?? doc.limit?.monthlyTokens ?? 0));
+              setLimitOpen(v => !v);
+            },
+            onLimitDraftChange: setLimitDraft,
+            onSaveLimit: () => doc && void write({ action: 'personalLimit', monthlyTokens: Number(limitDraft), revision: doc.personalLimit.revision }, () => setLimitOpen(false)),
+          }}
+        />
+      </Suspense>
     </div>;
   };
 }

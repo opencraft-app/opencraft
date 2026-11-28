@@ -73,13 +73,15 @@
 // (signed-in person partition, failure backoff) and the import stub. Before the
 // split the same feature measured 1,231,435 B. Reserve 216 B for content-hash
 // variance; JS/CSS/chunk limits and every demand-only boundary are unchanged.
-// Sidebar 16px alignment and Recent/Private SegmentedControl switcher measure
-// 1,231,438 B gzip against the 1,230,684 B main baseline (+754 B) because the
-// switcher and alignment tokens render on first paint while end-pull stays
-// lazily loaded. Reserve 462 B for content-hash variance; JS/CSS/chunk limits
-// and every demand-only boundary are unchanged.
-export const startupResourceBudget = Object.freeze({ javascript: 3_700_000, css: 734_000, gzip: 1_231_900 });
-export const startupJavaScriptChunkBudget = 120;
+// Sidebar 16px alignment, Recent/Private SegmentedControl switcher, Valdi UI kit
+// lazy-load stubs, composer agent pill/machine bookmarks, and Cloud Relay
+// supervisor wiring measure ~1,237.4 KB gzip (125 startup JS chunks) against the
+// 1,230,684 B main baseline; Valdi runtime, end-pull, Cloud Relay pairing UI,
+// and personal-machine source remain lazy-loaded. After merging main, the
+// integrated build measured 1,239,116 B gzip; reserve ~884 B for hash variance
+// and keep chunk budget at 126.
+export const startupResourceBudget = Object.freeze({ javascript: 3_700_000, css: 734_000, gzip: 1_240_000 });
+export const startupJavaScriptChunkBudget = 126;
 export const requiredStartupModule = /\/(?:apps\/workbench-web\/src\/(?:workbench-entry|main)\.tsx?|plugins\/(?:builtin-agents|headless-model-services)\/src\/runtime-entry\.tsx?|plugins\/builtin-agents\/src\/index\.tsx?)$/;
 /** Trusted build owners may add roots and exclusions without relaxing core limits. */
 export interface StartupResourcePolicy {

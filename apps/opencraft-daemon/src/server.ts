@@ -29,6 +29,7 @@ export interface OpenCraftDaemonServerOptions {
    * the daemon asks that same Main to open remote windows.
    */
   readonly attachAccount?: (origin: string, openRemote: (origin: string) => Promise<void>) => DesktopAccountAttachment;
+  readonly handleRelayRequest?: (action: string, payload: unknown) => Promise<unknown>;
 }
 
 export interface DesktopAccountAttachment {
@@ -166,6 +167,30 @@ export async function startOpenCraftDaemonServer(options: OpenCraftDaemonServerO
       if (role === "control" && message.type === "account/open-remote-result") {
         const settle = typeof message.id === "string" ? pendingRemote.get(message.id) : undefined;
         if (settle) { pendingRemote.delete(message.id); settle(message.ok === true); }
+        return;
+      }
+      if (role === "control" && message.type === "relay/request") {
+        const reqId = typeof message.id === "string" ? message.id : "";
+        const action = typeof message.action === "string" ? message.action : "";
+        if (!reqId || !action || !options.handleRelayRequest) {
+          channel.send({ type: "relay/response", id: reqId, ok: false, error: "Relay control service unavailable" });
+          return;
+        }
+        void options.handleRelayRequest(action, message.payload).then(
+          (result) => {
+            try { channel.send({ type: "relay/response", id: reqId, ok: true, result }); } catch { /* channel closed */ }
+          },
+          (error: unknown) => {
+            try {
+              channel.send({
+                type: "relay/response",
+                id: reqId,
+                ok: false,
+                error: error instanceof Error ? error.message : String(error),
+              });
+            } catch { /* channel closed */ }
+          },
+        );
         return;
       }
       if (role === "control" && message.type === "daemon/shutdown") {

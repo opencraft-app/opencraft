@@ -121,3 +121,48 @@ test('owned Bots remain listed after authority generation changes and require an
  const resumed=await f.call('bots/pause',{botId:a.binding.botId,paused:false,expectedRevision:0},current);assert.equal(resumed.assistant.binding.botId,a.binding.botId);assert.equal(resumed.assistant.paused,false);
  const credential=await f.service.provisionPersonalAssistant(current,a.binding.botId);assert.ok(f.actors.authenticateSession(credential.credential.token));
 });
+test('singleton-per-human preset hire via bots/create converges with claim and shares update, environment, pause, model and open contracts',async t=>{
+ const f=await fixture(t);
+ const detach=f.service.attachPersonalAssistantHost({
+  state:()=>({phase:'running'}),
+  wake(){},
+  models:async()=>({models:[{providerId:'fixture',modelId:'m1',label:'Fixture M1'}],available:true}),
+  validateModel:async()=>{},
+  environments:async()=>({local:true,templates:[{backendId:'e2b',id:'approved',name:'Approved template'}]}),
+  validateEnvironment:async(env:any)=>{if(env.kind==='sandbox'&&(env.backendId!=='e2b'||env.templateId!=='approved'))throw Error('assistant_environment_unavailable');},
+ });
+ t.after(detach);
+ const hired=await f.call('bots/create',{presetId:'personal-assistant',clientRequestId:'preset-hire-1'});
+ assert.equal(hired.assistant.presetId,'personal-assistant');
+ assert.equal(hired.assistant.cardinality,'singleton-per-human');
+ assert.equal(hired.assistant.isDefault,true);
+ assert.equal(hired.assistant.paused,false);
+ const hiredAgain=await f.call('bots/create',{presetId:'personal-assistant',clientRequestId:'preset-hire-2'});
+ const claimed=await f.call('claim');
+ assert.equal(hiredAgain.assistant.binding.botId,hired.assistant.binding.botId);
+ assert.equal(claimed.assistant.binding.botId,hired.assistant.binding.botId);
+ assert.equal((await f.call('bots/list')).bots.length,1);
+
+ const botId=hired.assistant.binding.botId;
+ const updated=await f.call('bots/update',{botId,name:'Chief of Staff',duties:'Coordinate engineering',environment:{kind:'sandbox',backendId:'e2b',templateId:'approved'},expectedRevision:0});
+ assert.equal(updated.assistant.actorId,hired.assistant.actorId);
+ assert.equal(updated.assistant.name,'Chief of Staff');
+ assert.equal(updated.assistant.presetId,'personal-assistant');
+ assert.equal(updated.assistant.cardinality,'singleton-per-human');
+ assert.deepEqual(updated.assistant.environment,{kind:'sandbox',backendId:'e2b',templateId:'approved'});
+
+ await f.call('model/set',{botId,model:{providerId:'fixture',modelId:'m1'},expectedRevision:0});
+ assert.equal((await f.call('get',{botId})).assistant.model.modelId,'m1');
+
+ const paused=await f.call('bots/pause',{botId,paused:true,expectedRevision:1});
+ assert.equal(paused.assistant.paused,true);
+ assert.equal(paused.runtime.phase,'stopped');
+
+ await f.call('revoke',{botId});
+ const rehired=await f.call('bots/create',{presetId:'personal-assistant',clientRequestId:'preset-rehire'});
+ assert.equal(rehired.assistant.binding.botId,botId);
+ assert.equal(rehired.assistant.paused,false);
+ assert.equal(rehired.assistant.state,'claimed');
+ const opened=await f.call('open',{botId});
+ assert.ok(opened.channel.id);
+});

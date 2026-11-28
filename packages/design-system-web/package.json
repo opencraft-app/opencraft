@@ -42,7 +42,8 @@
     "./object-controls": "./src/object-controls.tsx",
     "./object-controls.web": "./src/object-controls.web.scss",
     "./material-surface": "./src/material-surface.tsx",
-    "./material-surface.web": "./src/material-surface.web.scss"
+    "./material-surface.web": "./src/material-surface.web.scss",
+    "./valdi": "./src/valdi.tsx"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

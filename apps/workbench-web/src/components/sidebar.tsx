@@ -91,6 +91,7 @@ interface SidebarProps {
   showStart?: boolean;
   searchInDialog?: boolean;
   showNewChat?: boolean;
+  showScheduled?: boolean;
   threadActions?: ThreadActionCallbacks;
   threadBadge?: ThreadBadgeContribution | null;
   threadListGrouping?: ThreadListGroupingContribution | null;
@@ -243,7 +244,7 @@ const SidebarThreadContent = memo(function SidebarThreadContent({ thread, attent
 
 interface SidebarThreadPresentationProps {
   thread: SidebarThread; attention: boolean; pending: boolean; active: boolean; selected: boolean;
-  title: string; unread: boolean; activityId: string; disabled: boolean; projectGrouped: boolean;
+  title: string; unread: boolean; activityId: string; disabled: boolean; projectGrouped: boolean; showScheduled: boolean;
   rename: boolean; archive: boolean; fork: boolean; delete: boolean; pin?: boolean; reference?: boolean;
   threadBadge: ThreadBadgeContribution | null; threadListGrouping: ThreadListGroupingContribution | null;
   grouping: ThreadListGroupingSnapshot; menus: SidebarThreadMenuStore; actionOwner: ThreadActionOwner;
@@ -283,7 +284,7 @@ const SidebarThreadPresentation = memo(function SidebarThreadPresentation(props:
       icon={<ConversationAppearanceIcon hostId={thread.connectionHostId} threadId={thread.id} size={workbenchIconMetrics.core.settings} />}
       tooltip={[title, metadata, thread.connectionHostLabel].filter(Boolean).join(" · ")}
       status={thread.status} unread={unread} goalActive={thread.goalActive}
-      schedule={thread.schedule} twoLine={attention} resources={<SidebarBrowserResources store={menus} rowId={activityId} hostId={thread.connectionHostId} threadId={thread.id} unavailable={disabled}
+      schedule={props.showScheduled ? thread.schedule : undefined} twoLine={attention} resources={<SidebarBrowserResources store={menus} rowId={activityId} hostId={thread.connectionHostId} threadId={thread.id} unavailable={disabled}
         onOpenConversation={() => { openConversation(thread.connectionHostId, thread.id); }} />} badge={badge} badgePlacement={threadBadge?.placement}
       onInvoke={() => { menus.close(); openConversation(thread.connectionHostId, thread.id); }} />
   </SidebarThreadRowMenu>;
@@ -294,7 +295,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
     threads, activeHostId, activeThreadId, sidebarLayout, onSelectThread, onNewTask, onOpenSettings,
     pendingHostId = null, pendingThreadId = null, primaryActions = [], footerActions = [], footerAccessory,
     managementNavigation = null, catalogs = [], bots = [], botCreation = null,
-    showFooter = true, showStart = true, showNewChat = false, searchInDialog = false,
+    showFooter = true, showStart = true, showNewChat = false, showScheduled = true, searchInDialog = false,
     threadActions, threadBadge = null, threadListGrouping = null, threadCapabilities, pendingTitle, pendingDraftRows = [],
     threadCatalogs = [], threadCatalogDiscovery = null, onRetryThreadCatalog, onRetryThreadCatalogDiscovery,
   } = props;
@@ -413,9 +414,9 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
     const roots = sharedTree.roots.map(node => node.thread);
     const rootIds = new Set(roots.map(identity));
     const matchingReferences = references.filter(ref => rootIds.has(JSON.stringify([ref.hostId, ref.threadId])));
-    const taskFlow = { ...groupThreadsByTaskFlow(roots), scheduled: sharedMatching.filter(thread => thread.schedule && thread.schedule.status !== "deleted").sort((a, b) => b.updatedAt - a.updatedAt), mine: mineTree.roots.map(node => node.thread) };
+    const taskFlow = { ...groupThreadsByTaskFlow(roots), scheduled: showScheduled ? sharedMatching.filter(thread => thread.schedule && thread.schedule.status !== "deleted").sort((a, b) => b.updatedAt - a.updatedAt) : [], mine: mineTree.roots.map(node => node.thread) };
     return { matching, sharedMatching, matchingById, tree, matchingReferences, taskFlow };
-  }, [threads, references, allowedKeys, needle, serverFilter.serverId]);
+  }, [threads, references, allowedKeys, needle, serverFilter.serverId, showScheduled]);
   const selection = pendingHostId !== null && pendingThreadId !== null
     ? identity({ connectionHostId: pendingHostId, id: pendingThreadId })
     : identity({ connectionHostId: activeHostId, id: activeThreadId });
@@ -541,7 +542,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
       ?? { rename: !!threadActions, archive: !!threadActions, fork: !!threadActions, delete: !!threadActions, pin: !!threadActions?.onSetPinned };
     const unread = sidebarUnread(thread, threadListGrouping);
     return <SidebarParentRenderContext.Provider value={props}>
-      <SidebarThreadPresentation projectGrouped={projectGrouped} thread={thread} attention={attention} pending={pending} active={active}
+      <SidebarThreadPresentation projectGrouped={projectGrouped} showScheduled={showScheduled} thread={thread} attention={attention} pending={pending} active={active}
         selected={selected} title={title} unread={unread} activityId={activityId} disabled={disabled}
         rename={capabilities.rename} archive={capabilities.archive} fork={capabilities.fork}
         delete={capabilities.delete} pin={capabilities.pin} reference={capabilities.reference}
@@ -550,7 +551,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
     </SidebarParentRenderContext.Provider>;
   // Parent commits always reevaluate dynamic readers. Scalar row presentation
   // can reuse menu chrome while the badge still observes parent props updates.
-  }, [props, actionOwner, grouping, presentationRoot, dismiss, menus, rowIdPrefix, openRowConversation]);
+  }, [props, actionOwner, grouping, presentationRoot, dismiss, menus, rowIdPrefix, openRowConversation, showScheduled]);
   const renderThread = (thread: SidebarThread, attention = false, projectGrouped = false) => <SidebarThreadContent
     key={identity(thread)} thread={thread} attention={attention} projectGrouped={projectGrouped} render={renderThreadContent} />;
   const renderTreeNode = (node: SidebarThreadTreeNode<SidebarThread>, attention: boolean, projectGrouped = false): ReactNode => (
