@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { JsonRpcAppServerClient, type DuplexTransport, type ServerRequestResponseContext } from "@opencraft/appserver-client";
+import { AppServerResponseDeliveryError, JsonRpcAppServerClient, type DuplexTransport, type ServerRequestResponseContext } from "@opencraft/appserver-client";
 import { MemoryTransport, type InMemoryAppServerPeer } from "@opencraft/appserver-transport-memory";
 import { encodeJsonRpcMessage, isJsonRpcRequest, parseJsonRpcMessage } from "@opencraft/appserver-protocol";
 import { WebSocketTransport } from "@opencraft/appserver-transport-websocket";
@@ -98,6 +98,72 @@ test("resolved immediately settles its receipt without leaving a marker for a su
   } finally { old.resolve(null); await f.client.close(); }
 });
 
+for (const failure of ["encode-failed", "send-failed", "error-reply-send"] as const) {
+  test(`a response failure (${failure}) reports a fixed diagnostic and releases its receipt`, async () => {
+    const privateError = Object.assign(new Error("private transport message"), {
+      code: "private-code",
+      data: { value: "private-data" },
+    });
+    let sendAttempts = 0;
+    let failSend = true;
+    const f = fixture(memory => {
+      const send = memory.send.bind(memory);
+      memory.send = async (frame, signal) => {
+        if (!isJsonRpcRequest(parseJsonRpcMessage(frame))) {
+          sendAttempts++;
+          if (failSend) throw privateError;
+        }
+        await send(frame, signal);
+      };
+      return memory;
+    });
+    const method = "fixture/private-method";
+    const observed: Error[] = [];
+    f.client.subscribeProtocolError(error => observed.push(error));
+    let receipt!: ServerRequestResponseContext;
+    f.client.handleServerRequest(method, (_params, _request, context) => {
+      receipt = context;
+      switch (failure) {
+        case "encode-failed": return { toJSON() { throw privateError; } };
+        case "error-reply-send": throw privateError;
+        case "send-failed": return { value: "private-result" };
+      }
+    });
+
+    try {
+      await f.client.connect(params);
+      f.send({ id: 7, method, params: { value: "private-params" } });
+      await turn();
+      const reason = failure === "encode-failed" ? "encode-failed" : "send-failed";
+      await assert.rejects(receipt.delivered, error => {
+        assert.ok(error instanceof AppServerResponseDeliveryError);
+        assert.equal(error.reason, reason);
+        assert.equal(error.code, "TRANSPORT_ERROR");
+        assert.equal(error.cause, undefined);
+        assert.doesNotMatch(String(error), /private/);
+        assert.deepEqual(observed, [error]);
+        assert.equal(receipt.signal.reason, error);
+        return true;
+      });
+      assert.equal(receipt.retirement, "lost");
+      assert.equal(sendAttempts, failure === "encode-failed" ? 0 : 1);
+      assert.deepEqual(f.frames, []);
+
+      f.client.handleServerRequest(method, (_params, _request, context) => {
+        receipt = context;
+        return { confirmed: true };
+      });
+      // The Host can offer the request again after the failed receipt retires.
+      failSend = false;
+      f.send({ id: 7, method, params: {} });
+      await turn();
+      await receipt.delivered;
+      assert.equal(receipt.retirement, "answered");
+      assert.equal(f.frames.length, 1);
+    } finally { await f.client.close(); }
+  });
+}
+
 test("disconnect aborts a queued response send and never acknowledges its delivery", async () => {
   const gate = deferred<void>(); let signal: AbortSignal | undefined;
   const f = fixture(memory => ({
@@ -119,7 +185,9 @@ test("disconnect aborts a queued response send and never acknowledges its delive
     f.send({ id: 7, method: "fixture/instant", params: {} }); await turn();
     f.peer.close("lost during queue wait");
     assert.equal(signal?.aborted, true);
-    await assert.rejects(receipt.delivered, /transport closed/);
+    await assert.rejects(receipt.delivered, error =>
+      error instanceof AppServerResponseDeliveryError && error.reason === "connection-lost"
+        && !error.message.includes("lost during queue wait"));
     await f.client.connect(params); gate.resolve(); await turn();
     assert.deepEqual(f.frames, []);
   } finally { gate.resolve(); await f.client.close(); }
@@ -130,8 +198,10 @@ test("client close invalidates a held inbound request without waiting for its ha
   f.client.handleServerRequest("fixture/held", (_p, _r, c) => { receipt = c; return gate.promise; });
   await f.client.connect(params); f.send({ id: 7, method: "fixture/held", params: {} }); await turn();
   await f.client.close();
-  let rejected = false; void receipt.delivered.catch(() => { rejected = true; }); await turn();
-  try { assert.equal(rejected, true); } finally { gate.resolve(null); await turn(); }
+  try {
+    await assert.rejects(receipt.delivered, error => error instanceof AppServerResponseDeliveryError
+      && error.reason === "client-closed" && error.code === "CLOSED");
+  } finally { gate.resolve(null); await turn(); }
   assert.deepEqual(f.frames, []);
 });
 

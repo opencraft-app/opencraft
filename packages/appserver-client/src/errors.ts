@@ -23,6 +23,22 @@ export class AppServerClientError extends Error {
   }
 }
 
+const responseDeliveryMessages = {
+  "client-closed": "AppServer client closed",
+  "connection-lost": "AppServer transport closed before the response was confirmed",
+  "encode-failed": "Failed to encode the AppServer response",
+  "send-failed": "Failed to send the AppServer response",
+} as const;
+
+export type ServerResponseDeliveryFailure = keyof typeof responseDeliveryMessages;
+
+export class AppServerResponseDeliveryError extends AppServerClientError {
+  constructor(readonly reason: ServerResponseDeliveryFailure) {
+    super(reason === "client-closed" ? "CLOSED" : "TRANSPORT_ERROR", responseDeliveryMessages[reason]);
+    this.name = "AppServerResponseDeliveryError";
+  }
+}
+
 export class AppServerRpcError extends Error {
   readonly code: number;
   readonly data?: unknown;

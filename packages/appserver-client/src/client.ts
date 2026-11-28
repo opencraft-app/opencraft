@@ -24,7 +24,7 @@ import {
 
 import { executionEngineExtension } from "./execution-engine";
 import { elapsedNow } from "./clock";
-import { AppServerClientError, AppServerRpcError } from "./errors";
+import { AppServerClientError, AppServerResponseDeliveryError, AppServerRpcError } from "./errors";
 import { ClientObserverList } from "./observer-list";
 import type { DuplexTransport, TransportStatus } from "./transport";
 
@@ -63,7 +63,8 @@ export interface AppServerClientConfig {
  * A handler returning a result only releases the response payload to the
  * client. `delivered` settles after that JSON-RPC response is physically sent
  * on the receiving connection (or the Host resolves the request independently).
- * Connection loss rejects this receipt even if the handler is still running.
+ * Delivery failures reject this receipt with an AppServerResponseDeliveryError
+ * even if the handler is still running when its connection is lost.
  */
 export interface ServerRequestResponseContext {
   readonly delivered: Promise<void>;
@@ -562,7 +563,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
     this.initialized = null;
     this.initialization?.cancel(new AppServerClientError("CLOSED", "AppServer client closed"));
     this.rejectAllPending(new AppServerClientError("CLOSED", "AppServer client closed"));
-    this.invalidateServerRequests(new AppServerClientError("CLOSED", "AppServer client closed"));
+    this.invalidateServerRequests(new AppServerResponseDeliveryError("client-closed"));
     this.removeMessageListener();
     this.removeStatusListener();
     this.notificationListeners.clear();
@@ -691,28 +692,31 @@ export class JsonRpcAppServerClient implements AppServerClient {
     // A late handler may finish, but it no longer has a right to reply.
     if (!this.activeServerRequests.has(active)) return;
     if (this.closed || active.revision !== this.transportRevision || this.transport.status.state !== "open") {
-      this.settleServerRequest(active, new AppServerClientError("TRANSPORT_ERROR", "AppServer request belongs to a lost connection"));
+      this.settleServerRequest(active, new AppServerResponseDeliveryError("connection-lost"));
       return;
     }
     active.phase = "sending";
+    let frame: string;
     try {
-      const frame = encodeJsonRpcMessage(response);
-      // Serialization may execute user-defined data accessors. Recheck the
-      // exact native owner after it, immediately before transport admission.
-      if (!this.activeServerRequests.has(active)) return;
-      if (this.closed || active.revision !== this.transportRevision || this.transport.status.state !== "open") {
-        this.settleServerRequest(active, new AppServerClientError("TRANSPORT_ERROR", "AppServer request lost its connection before response admission"));
-        return;
-      }
+      frame = encodeJsonRpcMessage(response);
+    } catch {
+      const error = new AppServerResponseDeliveryError("encode-failed");
+      if (this.settleServerRequest(active, error)) this.emitProtocolError(error);
+      return;
+    }
+    // Serialization may execute user-defined data accessors. Recheck the
+    // exact native owner after it, immediately before transport admission.
+    if (!this.activeServerRequests.has(active)) return;
+    if (this.closed || active.revision !== this.transportRevision || this.transport.status.state !== "open") {
+      this.settleServerRequest(active, new AppServerResponseDeliveryError("connection-lost"));
+      return;
+    }
+    try {
       await this.transport.send(frame, active.controller.signal);
       this.settleServerRequest(active);
-    } catch (sendError) {
-      const deliveryError = new AppServerClientError(
-        "TRANSPORT_ERROR",
-        `Failed to answer AppServer request ${request.method}`,
-        { cause: sendError },
-      );
-      if (this.settleServerRequest(active, deliveryError)) this.emitProtocolError(deliveryError);
+    } catch {
+      const error = new AppServerResponseDeliveryError("send-failed");
+      if (this.settleServerRequest(active, error)) this.emitProtocolError(error);
     }
   }
 
@@ -839,7 +843,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
         id === status.failure?.notDispatchedRequestId ? "NOT_DISPATCHED" : "TRANSPORT_ERROR", reason,
       ), "failed");
     }
-    this.invalidateServerRequests(new AppServerClientError("TRANSPORT_ERROR", reason));
+    this.invalidateServerRequests(new AppServerResponseDeliveryError("connection-lost"));
   }
 
   private trackContextPreparation(notification: AppServerNotification): void {

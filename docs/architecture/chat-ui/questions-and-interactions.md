@@ -69,6 +69,13 @@ restore the response channel; it must not manufacture an empty or approving
 response. Follow-up snapshot failure cannot turn an accepted grant into a
 request to send it again. Group-conversation approval routing is unchanged.
 
+The native AppServer response receipt can reject with an
+`AppServerResponseDeliveryError`. Its stable `reason` distinguishes local response
+encoding failure, transport send failure, connection loss, and client closure.
+The error uses fixed messages and carries no transport cause or RPC data. A
+send failure or connection loss still leaves remote receipt unconfirmed.
+Consumers should use the existing interaction recovery policy for that outcome.
+
 Codex `agentMessage` Items with `delivery: "async"` and `questions` are not
 `item/tool/requestUserInput` server requests. The former remain ordinary
 assistant messages: their question cards are projected from the Item ID and
