@@ -1,10 +1,7 @@
 /**
- * Whether the desktop runs builtin Codex through the daemon's bridge stack.
- *
- * Every platform defaults to the bridge stack (Windows is verified by
- * .github/workflows/windows-codex-bridge.yml); `OPENCRAFT_CODEX_BRIDGE=0`
- * returns to the legacy local adapter as an escape hatch.
+ * Builtin Codex runs exclusively through the daemon's bridge stack across all
+ * desktop platforms (macOS, Linux, Windows).
  */
-export function codexBridgeStackEnabled(_platform: NodeJS.Platform, setting: string | undefined): boolean {
-  return setting?.trim() !== "0";
+export function codexBridgeStackEnabled(_platform: NodeJS.Platform, _setting?: string): boolean {
+  return true;
 }

@@ -60,9 +60,9 @@ export function applyExecutionProfile(argv, manifest) {
   }
   return result;
 }
-/** The release's Codex bridge programs, unless the operator chose the legacy path or an external bridge. */
-export async function codexBridgePrograms(releaseRoot, options, environment = process.env, location = 'execution/codex-bridge') {
-  if (environment.OPENCRAFT_CODEX_BRIDGE === '0' || options.codexAgentBridgeFile || options.codexBridgePrograms) return options.codexBridgePrograms;
+/** The release's Codex bridge programs unless an external bridge was explicitly supplied. */
+export async function codexBridgePrograms(releaseRoot, options, _environment = process.env, location = 'execution/codex-bridge') {
+  if (options.codexAgentBridgeFile || options.codexBridgePrograms) return options.codexBridgePrograms;
   const directory = join(releaseRoot, location);
   try { await stat(join(directory, 'engine-host.mjs')); return directory; }
   catch (error) { if (error.code === 'ENOENT') return undefined; throw error; }

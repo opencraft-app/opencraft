@@ -22,6 +22,8 @@ import { CodexProviderBridge } from "./codex-provider-bridge.js";
 import { codexSchedulesService } from "./codex-schedules-service.js";
 import { codexLegacyHandoffService } from "./codex-legacy-handoff.js";
 
+export { createServerCodexBridgeHost, type ServerCodexBridgeHostOptions } from "./server-codex-bridge-host.js";
+
 type Value = Record<string, unknown>;
 const object = (value: unknown): Value =>
   value && typeof value === "object" && !Array.isArray(value) ? (value as Value) : {};

@@ -178,6 +178,7 @@ export function projectNativeInitialize(value: unknown): Value {
   extensions["opencraft/read-history"] = { version: 1, initialTurnsPage: false };
   // Native Codex persists a new Thread at its first turn; the bridge adds itself as an engine provider.
   extensions[OPENCRAFT_THREAD_START_DURABILITY_EXTENSION] = OPENCRAFT_FIRST_TURN_DURABILITY_CAPABILITY;
+  extensions["opencraft/thread-orchestration-view"] = { version: 1 };
   extensions["opencraft/execution-engines"] = { version: 1, defaultEngine: "codex", providers: [] };
   return { ...result, capabilities: { ...capabilities, extensions } };
 }

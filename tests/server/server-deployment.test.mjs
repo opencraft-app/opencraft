@@ -560,7 +560,7 @@ test('a headless release runs Codex through its own Engine Host unless the opera
     await mkdir(directory, { recursive: true });
     await writeFile(join(directory, 'engine-host.mjs'), '');
     assert.equal(await codexBridgePrograms(root, {}, {}), directory);
-    assert.equal(await codexBridgePrograms(root, {}, { OPENCRAFT_CODEX_BRIDGE: '0' }), undefined);
+    assert.equal(await codexBridgePrograms(root, {}, { OPENCRAFT_CODEX_BRIDGE: '0' }), directory, 'single-stack server ignores legacy escape hatch');
     assert.equal(await codexBridgePrograms(root, { codexAgentBridgeFile: '/private/bridge.json' }, {}), undefined, 'an external bridge is not doubled');
     assert.equal(await codexBridgePrograms(root, { codexBridgePrograms: '/explicit' }, {}), '/explicit');
   } finally { await rm(root, { recursive: true, force: true }); }
