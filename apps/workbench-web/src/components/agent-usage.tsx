@@ -22,28 +22,22 @@ import type {
   AgentUsageWindow,
 } from "@opencraft/appserver-protocol";
 import { useAppServerHosts } from "../runtime/appserver-runtime-context";
+import {
+  buildUsageMachineOptions,
+  sanitizeEndpointDetail,
+  type UsageMachineOption,
+  type UsageMachineSourceHost,
+  type UsageMachineSourceProfile,
+} from "./agent-usage-machines";
 import "./agent-usage.scss";
 
-export interface UsageMachineOption {
-  readonly hostId: string;
-  readonly label: string;
-  readonly remote: boolean;
-  readonly connected?: boolean;
-  readonly detail?: string | null;
-}
-
-function sanitizeEndpointDetail(endpoint: string | null | undefined): string | null {
-  if (!endpoint) return null;
-  const trimmed = endpoint.trim();
-  if (!trimmed) return null;
-  try {
-    const parsed = new URL(trimmed);
-    const path = parsed.pathname && parsed.pathname !== "/" ? parsed.pathname.replace(/\/+$/u, "") : "";
-    return `${parsed.host}${path}` || null;
-  } catch {
-    return trimmed.replace(/^[a-z]+:\/\//iu, "").replace(/[?#].*$/u, "").replace(/\/+$/u, "") || null;
-  }
-}
+export {
+  buildUsageMachineOptions,
+  sanitizeEndpointDetail,
+  type UsageMachineOption,
+  type UsageMachineSourceHost,
+  type UsageMachineSourceProfile,
+};
 
 function formatCompactCount(intl: IntlShape, value: number | null | undefined): string {
   return value == null ? "—" : intl.formatNumber(value, { notation: "compact", maximumFractionDigits: 1 });
@@ -167,24 +161,15 @@ export function AgentUsage({ hostId, threadId, busy }: { hostId: string; threadI
   );
   const hostPhases = useSyncExternalStore(subscribeAllHosts, readHostPhases, readHostPhases);
 
-  const machines = useMemo<readonly UsageMachineOption[]>(() => {
-    const items: UsageMachineOption[] = [];
-    for (const host of hosts) {
-      const profile = profiles.find(entry => entry.hostId === host.hostId);
-      if (profile && !profile.enabled) continue;
-      const phase = agentRuntimes.getSnapshot(host.hostId).phase;
-      const remote = host.kind !== "local";
-      const label = host.kind === "local"
-        ? (profile?.machineIdentity?.name || intl.formatMessage({ id: "agentUsage.localMachine", defaultMessage: "Local" }))
-        : (profile?.machineIdentity?.name || profile?.displayName || host.label);
-      const detail = sanitizeEndpointDetail(profile?.transportEndpoint)
-        || profile?.executionLocation
-        || (profile?.displayName && profile.displayName !== label ? profile.displayName : null)
-        || host.hostId;
-      items.push({ hostId: host.hostId, label, remote, connected: phase === "ready", detail });
-    }
-    return items;
-  }, [hosts, profiles, agentRuntimes, intl, hostPhases]);
+  const machines = useMemo<readonly UsageMachineOption[]>(
+    () => buildUsageMachineOptions({
+      hosts,
+      profiles,
+      getPhase: id => agentRuntimes.getSnapshot(id).phase,
+      localFallbackLabel: intl.formatMessage({ id: "agentUsage.localMachine", defaultMessage: "Local" }),
+    }),
+    [hosts, profiles, agentRuntimes, intl, hostPhases],
+  );
 
   if (machines.length === 0) return null;
 
@@ -542,6 +527,8 @@ export function ConversationContextUsageView({
 }) {
   const intl = useIntl();
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const skipTriggerReturnFocus = useRef(false);
   const { query, unsupported } = useAgentUsageSnapshot({
     hostId,
     scope,
@@ -579,9 +566,16 @@ export function ConversationContextUsageView({
     : count(current?.last?.totalTokens);
 
   return (
-    <DropdownMenu.Root open={open} onOpenChange={setOpen}>
+    <DropdownMenu.Root
+      open={open}
+      onOpenChange={next => {
+        if (next) skipTriggerReturnFocus.current = false;
+        setOpen(next);
+      }}
+    >
       <DropdownMenu.Trigger asChild>
         <DisclosureButton
+          ref={triggerRef}
           size="accessory"
           className="agent-context__trigger"
           aria-label={triggerTitle}
@@ -602,9 +596,17 @@ export function ConversationContextUsageView({
           sideOffset={8}
           collisionPadding={12}
           data-agent-context-popover=""
+          onPointerDownOutside={() => { skipTriggerReturnFocus.current = true; }}
+          onInteractOutside={() => { skipTriggerReturnFocus.current = true; }}
+          onEscapeKeyDown={() => { skipTriggerReturnFocus.current = false; }}
           onCloseAutoFocus={event => {
-            // Keep composer focus undisturbed when closing via outside click.
+            if (skipTriggerReturnFocus.current) {
+              skipTriggerReturnFocus.current = false;
+              event.preventDefault();
+              return;
+            }
             event.preventDefault();
+            triggerRef.current?.focus();
           }}
         >
           {context ? (
@@ -691,6 +693,7 @@ export function ConversationContextUsageView({
                 contentLayout="row"
                 className="agent-context__settings-link"
                 onClick={() => {
+                  skipTriggerReturnFocus.current = true;
                   setOpen(false);
                   onOpenTokenUsage();
                 }}

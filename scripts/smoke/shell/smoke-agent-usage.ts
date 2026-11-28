@@ -68,6 +68,14 @@ try {
     if (touch) await ctxTrigger.tap(); else await ctxTrigger.click();
     await ctxPopover.getByText("Cursor reports context window only, without cumulative token breakdown.", { exact: true }).waitFor();
     await page.keyboard.press("Escape");
+    await ctxPopover.waitFor({ state: "detached" });
+    if (!touch) {
+      assert.equal(
+        await ctxTrigger.evaluate(el => el === document.activeElement),
+        true,
+        "Escape restores focus to the composer context trigger instead of dropping to body",
+      );
+    }
 
     // Unknown/unreported context quietly hides the composer trigger instead of showing "Not reported".
     await page.evaluate(() => (window as any).usageFixture.setThread("unknown_fixture"));
