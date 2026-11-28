@@ -12,20 +12,54 @@ import {SidebarLayoutStore} from '@opencraft/sidebar-layout';
 import {legacyDirectServerProjectionFromHost} from '@opencraft/workbench-runtime';
 import '/apps/workbench-web/src/styles/app.scss';initializeAppearanceTheme();
 const layout=await SidebarLayoutStore.open({load:async()=>null,save:async(_,v)=>v});const preferences=await openWorkbenchUiPreferences();
-const makeRows=(n)=>[...Array.from({length:8},(_,i)=>({id:'pin'+i,title:'Pinned '+String(i+1).padStart(2,'0'),pinned:true})),...Array.from({length:n},(_,i)=>({id:'recent'+i,title:'Recent '+String(i+1).padStart(2,'0')}))].map((row,i)=>({...row,project:'opencraft',status:'ready',connectionHostId:'host',connectionHostLabel:'Local',updatedAt:Date.now()/1000-i*86400,...legacyDirectServerProjectionFromHost({hostId:'host',hostKind:'local',label:'Local'})}));
-function Fixture(){const [rows,setRows]=React.useState(makeRows(31));window.setCount=n=>setRows(makeRows(n));return <UiPreferencesProvider runtime={preferences}><div className='shell-sidebar__column' data-navigation-layout={new URLSearchParams(location.search).get('layout')} style={{width:320,height:'100vh',gridTemplateColumns:'minmax(0,1fr)',gridTemplateRows:'minmax(0,1fr)'}}><div className='shell-sidebar__scroll'><Sidebar threads={rows} activeHostId='host' activeThreadId='recent30' sidebarLayout={layout} onSelectThread={()=>{}} onNewTask={()=>{}} onOpenSettings={()=>{}} showFooter={false}/></div></div></UiPreferencesProvider>};createIntlTestRoot(document.getElementById('root'),undefined,new URLSearchParams(location.search).get('locale')??'en-US').render(<Fixture/>);`;
+const mixed = new URLSearchParams(location.search).has('mixed');
+const day = new Date(); day.setHours(12,0,0,0);
+const today = day.getTime()/1000;
+const makeRows=(n)=>[...Array.from({length:8},(_,i)=>({id:'pin'+i,title:'Pinned '+String(i+1).padStart(2,'0'),pinned:true})),...Array.from({length:n},(_,i)=>({id:'recent'+i,title:'Recent '+String(i+1).padStart(2,'0')})),...(mixed ? Array.from({length:3},(_,i)=>({id:'sub'+i,title:'Sub-agent '+i,parentThreadId:'recent10'})) : [])].map((row,i)=>({...row,project:'opencraft',status:'ready',connectionHostId:'host',connectionHostLabel:'Local',updatedAt:today-(mixed && i<19 ? i : (mixed ? i-18 : i)*86400),...legacyDirectServerProjectionFromHost({hostId:'host',hostKind:'local',label:'Local'})}));
+function Fixture(){const [rows,setRows]=React.useState(makeRows(31));window.setCount=n=>setRows(makeRows(n));return <UiPreferencesProvider runtime={preferences}><div className='shell-sidebar__column' data-navigation-layout={new URLSearchParams(location.search).get('layout')} style={{width:320,height:'100vh',gridTemplateColumns:'minmax(0,1fr)',gridTemplateRows:location.search.includes('layout=mobile')?'0 minmax(0,1fr)':'minmax(0,1fr)'}}><div className='shell-sidebar__scroll'><Sidebar threads={rows} activeHostId='host' activeThreadId='recent30' sidebarLayout={layout} onSelectThread={()=>{}} onNewTask={()=>{}} onOpenSettings={()=>{}} showFooter={false}/></div></div></UiPreferencesProvider>};createIntlTestRoot(document.getElementById('root'),undefined,new URLSearchParams(location.search).get('locale')??'en-US').render(<Fixture/>);`;
 const vite=await createServer({configFile:false,root:process.cwd(),logLevel:'error',resolve:{dedupe:['react','react-dom']},esbuild:{jsx:'automatic'},server:{host:'127.0.0.1',port:0,hmr:false},plugins:[{name:'fixture',resolveId:id=>id==='/fixture.tsx'?id:null,load:id=>id==='/fixture.tsx'?source:null,configureServer(server){server.middlewares.use((req,res,next)=>{if(req.url?.split('?')[0]!=='/')return next();res.setHeader('content-type','text/html');res.end('<meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="/fixture.tsx"></script>')})}}]});
 let browser:any;
 try{await vite.listen();const pw=await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE??'playwright');const {chromium}=pw.default??pw;browser=await chromium.launch({headless:true,executablePath:process.env.OPENCRAFT_CHROMIUM_EXECUTABLE});const output=await mkdtemp(join(tmpdir(),'sidebar-recent-pages-'));
 for(const touch of [false,true])for(const theme of ['light','dark'])for(const locale of ['en-US','zh-CN']){
 console.log(JSON.stringify({touch,theme,locale}));
-const page=await browser.newPage({viewport:{width:touch?390:1000,height:900},hasTouch:touch,isMobile:touch});const errors:string[]=[];page.on('pageerror',(e:Error)=>errors.push(e.message));await page.addInitScript(t=>{(window as any).__name=(v:any)=>v;localStorage.setItem('opencraft.appearance-theme',t)},theme);await page.goto('http://127.0.0.1:'+(vite.httpServer!.address() as any).port+'/?locale='+locale+'&layout='+(touch?'mobile':'desktop'));
-const waitRows=async(count:number)=>{await page.waitForFunction(n=>document.querySelectorAll('[aria-label="Recent"] .sidebar-activity-item, [aria-label="最近"] .sidebar-activity-item').length===n,count);};
-const pinned=page.getByRole('region',{name:/^(Pinned|置顶)$/,exact:true});const recent=page.getByRole('region',{name:/^(Recent|最近)$/,exact:true});const rows=recent.locator('.sidebar-activity-item');const more=recent.getByRole('button',{name:/^(Show more|查看更多)$/,exact:true});const less=recent.getByRole('button',{name:/^(Show less|收起)$/,exact:true});await rows.first().waitFor({timeout:60000});
+const page=await browser.newPage({viewport:{width:touch?390:1000,height:560},hasTouch:touch,isMobile:touch});const errors:string[]=[];page.on('pageerror',(e:Error)=>errors.push(e.message));await page.addInitScript(t=>{(window as any).__name=(v:any)=>v;localStorage.setItem('opencraft.appearance-theme',t)},theme);const url='http://127.0.0.1:'+(vite.httpServer!.address() as any).port+'/?locale='+locale+'&layout='+(touch?'mobile':'desktop');
+const waitRows=async(count:number)=>{await page.waitForFunction(n=>document.querySelectorAll('[data-thread-id^="recent"]').length===n,count);};
+const pinned=page.getByRole('region',{name:/^(Pinned|置顶)$/,exact:true});const recent=page.getByRole('region',{name:/^(Recent|最近)$/,exact:true});const rows=recent.locator('.sidebar-activity-item');const more=recent.getByRole('button',{name:/^(Show more|查看更多)$/,exact:true});const less=recent.getByRole('button',{name:/^(Show less|收起)$/,exact:true});
 // Direct activation isolates click paging from scroll-to-control auto loading.
 const activate=async(button:any)=>{await page.waitForFunction((el:HTMLButtonElement)=>!el.disabled,await button.elementHandle());await button.evaluate((el:HTMLButtonElement)=>el.click());};
+// Same-day rows followed by a parent with sub-agents and older, dated rows.
+await page.setViewportSize({width:touch?390:1000,height:1200});
+await page.goto(url+'&mixed=1');
+await rows.first().waitFor({timeout:60000});
+await page.waitForFunction(touch => {
+  const root = document.querySelector<HTMLElement>(touch ? '.shell-sidebar__scroll' : '.sidebar-activity-list')!;
+  const footer = document.querySelector<HTMLElement>('.sidebar-activity-group[data-collapsed="false"] .sidebar-activity-pagination')!;
+  const row = footer.previousElementSibling?.querySelector('.sidebar-activity-item');
+  const readingBottom = root.getBoundingClientRect().bottom - (parseFloat(getComputedStyle(root).paddingBottom) || 0);
+  const remaining = readingBottom - footer.getBoundingClientRect().bottom;
+  return row && root.querySelector('[data-thread-id="sub2"]')
+    && remaining >= -1 && remaining < row.getBoundingClientRect().height + 30;
+}, touch, {timeout:4000});
+const recentRoots = recent.locator('[data-thread-id^="recent"]');
+const fittedCount = await recentRoots.count();
+assert.ok(fittedCount > 10 && fittedCount < 31, 'fill uses the available space without draining the directory');
+assert.equal(await less.count(), 0, 'automatic fill is part of the initial page');
+assert.equal(await more.count(), 1);
+await page.screenshot({path:join(output,locale+'-'+theme+'-'+(touch?'touch':'desktop')+'-tall.png')});
+const firstFittedRow = await rows.first().elementHandle();
+await page.setViewportSize({width:touch?390:1000,height:560});
+assert.equal(await recentRoots.count(), fittedCount, 'shrinking keeps already revealed conversations');
+assert.ok(await firstFittedRow!.evaluate(el => el.isConnected), 'resizing preserves existing row nodes');
+await activate(more);
+await waitRows(Math.min(fittedCount + 10, 31));
+await activate(less);
+await waitRows(fittedCount);
+await page.goto(url);
+await rows.first().waitFor({timeout:60000});
 assert.equal(await rows.count(),10,'selected recent row outside the page does not change page size');assert.equal(await less.count(),0);assert.equal(await pinned.locator('.sidebar-activity-item').count(),6);
+await pinned.getByRole('button',{name:/^(Pinned|置顶)$/,exact:true}).click();
 await activate(pinned.getByRole('button',{name:/^(Show more|查看更多)$/}));await page.waitForFunction(()=>document.querySelectorAll('[aria-label="Pinned"] .sidebar-activity-item, [aria-label="置顶"] .sidebar-activity-item').length===8);assert.equal(await pinned.locator('.sidebar-activity-item').count(),8);assert.equal(await rows.count(),10,'pinned paging is independent');
+await recent.getByRole('button',{name:/^(Recent|最近)$/,exact:true}).click();
 const typography=await more.evaluate(el=>({size:getComputedStyle(el).fontSize,color:getComputedStyle(el).color,height:el.getBoundingClientRect().height}));assert.equal(typography.size,'12px');assert.ok(typography.height>=(touch?44:30));
 for(const count of [20,30,31]){await activate(more);await waitRows(count);assert.equal(await rows.count(),count);assert.equal(await less.count(),1);assert.equal(await pinned.locator('.sidebar-activity-item').count(),8);}
 assert.equal(await more.count(),0);assert.equal(await recent.getByRole('status').innerText(),locale==='zh-CN'?'没有更多了':'No more conversations');const last=await rows.last().boundingBox();const bottom=await less.boundingBox();assert.ok(bottom!.y>=last!.y+last!.height-1,'controls follow last recent row');await less.scrollIntoViewIfNeeded();await page.screenshot({path:join(output,locale+'-'+theme+'-'+(touch?'touch':'desktop')+'.png')});await activate(less);assert.equal(await rows.count(),10);assert.equal(await less.count(),0);await activate(more);await waitRows(20);assert.equal(await rows.count(),20);await recent.getByRole('button',{name:/^(Recent|最近)$/,exact:true}).click();assert.equal(await more.isVisible(),false);await recent.getByRole('button',{name:/^(Recent|最近)$/,exact:true}).click();assert.equal(await rows.count(),20);await activate(less);
@@ -74,6 +108,6 @@ await movedScroll.evaluate(el=>{el.scrollTop=0});await page.waitForTimeout(30);
 await movedScroll.evaluate(el=>{el.scrollTop=el.scrollHeight});await waitRows(20);
 assert.equal(await rows.count(),20,'scroll arrival follows retained panel into new Shell owner');
 await activate(less);
-for(const count of [10,11,0]){await page.evaluate(n=>(window as any).setCount(n),count);await page.waitForTimeout(30);assert.equal(await rows.count(),Math.min(count,10));assert.equal(await more.count(),count>10?1:0);assert.equal(await less.count(),0);}
+for(const count of [10,11,0]){await page.evaluate(n=>(window as any).setCount(n),count);await page.waitForTimeout(30);assert.equal(await rows.count(),Math.min(count,10));assert.equal(await more.count(),count>10?1:0);assert.equal(await less.count(),0);assert.equal(await recent.getByRole('status').count(),0);}
 assert.deepEqual(errors,[]);await page.close();}
 console.log(JSON.stringify({passed:true,output}));}finally{await browser?.close();await vite.close();}
