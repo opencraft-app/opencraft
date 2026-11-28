@@ -99,6 +99,9 @@ test("an empty or failed embedded catalog leaves the picker available for status
   assert.match(empty, /opencraft-composer-mode__model-skeleton/u);
   assert.doesNotMatch(empty, /class="opencraft-composer-mode__model-label">模型</u);
   const failed = await render({ text: "", submissionDisabled: false, modelSelectionPolicy: "session", noModels: true, modelError: "internal failure" });
-  assert.match(failed, /title="无法加载模型，请重试。"/u);
+  const failedPicker = failed.match(/<button\b[^>]*class="[^"]*\bopencraft-composer-mode--intelligence\b[^"]*"[^>]*>/u)?.[0];
+  assert.ok(failedPicker, "a failed catalog still has a picker and a retry path");
+  assert.match(failedPicker, /aria-label="模型"/u);
+  assert.doesNotMatch(failedPicker, /\s(?:title|disabled)(?:=|[\s>])/u);
   assert.doesNotMatch(failed, /internal failure/u);
 });
