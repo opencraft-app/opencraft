@@ -42,7 +42,8 @@ export interface EphemeralEventPage {
 export type BridgeStreamMessage =
   | { readonly kind: 'hello'; readonly streamId: string; readonly highStreamSeq: number }
   | { readonly kind: 'ephemeral'; readonly event: EphemeralEvent }
-  | { readonly kind: 'outbox'; readonly high: number };
+  | { readonly kind: 'outbox'; readonly high: number }
+  | { readonly kind: 'command'; readonly commandId: string };
 export interface OutboxFence {
   readonly outboxId: string;
   readonly acknowledged: number;

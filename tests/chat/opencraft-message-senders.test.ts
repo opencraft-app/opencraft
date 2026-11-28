@@ -85,3 +85,45 @@ test("shared Chat projection keeps hidden authors without changing visible messa
   assert.deepEqual(messages.map(message => message.sender), [a, b]);
   assert.deepEqual(messages.map(message => message.message), ["hello", "follow-up"]);
 });
+
+test("sender lookups reuse prepared statements and cache committed hits and misses without leaking rolled-back writes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "message-senders-cache-"));
+  const host = new OpenCraftHostStateDatabase(root);
+  try {
+    let prepareCalls = 0;
+    const origPrepare = host.sql.prepare.bind(host.sql);
+    const instrumented = {
+      ...host.sql,
+      get inTransaction() {
+        return host.sql.inTransaction;
+      },
+      prepare(sql: string) {
+        prepareCalls++;
+        return origPrepare(sql);
+      },
+    };
+    const senders = new OpenCraftMessageSenders(instrumented);
+    assert.equal(senders.get("t", "absent"), null);
+    const preparesAfterFirstRead = prepareCalls;
+    assert.equal(preparesAfterFirstRead, 1);
+
+    // Repeated negative and positive lookups stay in memory without re-preparing SQL.
+    for (let i = 0; i < 20; i++) assert.equal(senders.get("t", "absent"), null);
+    senders.record("t", "m1", a);
+    const preparesAfterRecord = prepareCalls;
+    for (let i = 0; i < 20; i++) assert.deepEqual(senders.get("t", "m1"), a);
+    assert.equal(prepareCalls, preparesAfterRecord);
+
+    // Rolled-back outer transaction must never poison the in-memory cache.
+    assert.throws(() =>
+      host.transaction(() => {
+        senders.record("t", "rolled-back", b);
+        throw new Error("abort");
+      }),
+    );
+    assert.equal(senders.get("t", "rolled-back"), null);
+  } finally {
+    host.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});

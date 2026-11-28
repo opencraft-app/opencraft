@@ -7,6 +7,8 @@ import type { BridgeInboxIdentity, BridgeInboxPendingInteraction } from './inbox
  */
 export class GatewayInbox {
   readonly storage: Storage;
+  private knownCursor?: number;
+  private acknowledgedCursor?: number;
   constructor(path: string) { this.storage = new Storage(path, 'inbox'); }
   async pull(url: string, token: string): Promise<OutboxEvent[]> {
     await this.storage.ready;
@@ -17,16 +19,27 @@ export class GatewayInbox {
         method: 'POST', headers: { ...headers, 'content-type': 'application/json' }, body: JSON.stringify(body),
       }),
     }), {
-      cursor: () => this.storage.call<number>('cursor'),
-      apply: batch => this.storage.call('inbox', { batch }),
+      cursor: () => this.knownCursor ?? this.cursor(),
+      apply: async batch => {
+        this.knownCursor = undefined;
+        const result = await this.storage.call<{ cursor: number; inserted: OutboxEvent[] }>('inbox', { batch });
+        this.knownCursor = result.cursor;
+        return result;
+      },
     }, {
       fragmentOversized: true,
+      acknowledgedCursor: this.acknowledgedCursor,
+      onAcknowledged: cursor => { this.acknowledgedCursor = cursor; },
       isReadInterrupted: error => error instanceof TypeError ||
         (error instanceof DOMException && error.name === 'TimeoutError'),
     });
   }
   read(cursor = 0): Promise<OutboxEvent[]> { return this.storage.call('inboxRead', { cursor }); }
-  cursor(): Promise<number> { return this.storage.call('cursor'); }
+  async cursor(): Promise<number> {
+    const value = await this.storage.call<number>('cursor');
+    this.knownCursor = value;
+    return value;
+  }
   readIdentities(route: string, after: number, through: number, selection?: BridgeHistorySelection): Promise<BridgeInboxIdentity[]> {
     return this.storage.call('inboxReadIdentities', { route, after, through, selection });
   }

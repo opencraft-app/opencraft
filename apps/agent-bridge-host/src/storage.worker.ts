@@ -36,9 +36,18 @@ const { database: db, outcome } = (() => {
 })();
 if (!readOnly) db.exec('PRAGMA synchronous=FULL');
 const tx = <T>(action: () => T) => sqliteTransaction(db, action);
-const get = (sql: string, ...args: any[]) => db.prepare(sql).get(...args) as any;
-const all = (sql: string, ...args: any[]) => db.prepare(sql).all(...args) as any[];
-const run = (sql: string, ...args: any[]) => db.prepare(sql).run(...args);
+const statements = new Map<string, ReturnType<typeof db.prepare>>();
+const prepare = (sql: string) => {
+  let statement = statements.get(sql);
+  if (!statement) {
+    statement = db.prepare(sql);
+    statements.set(sql, statement);
+  }
+  return statement;
+};
+const get = (sql: string, ...args: any[]) => prepare(sql).get(...args) as any;
+const all = (sql: string, ...args: any[]) => prepare(sql).all(...args) as any[];
+const run = (sql: string, ...args: any[]) => prepare(sql).run(...args);
 const meta = (key: string) => get('SELECT value FROM meta WHERE key=?', key).value as string;
 const setMeta = (key: string, value: string | number) => run('UPDATE meta SET value=? WHERE key=?', String(value), key);
 class Refusal extends Error {}
@@ -114,7 +123,7 @@ const receipt = (id: string): Receipt | null => {
 const events = (cursor: number, limit: number): OutboxEvent[] => {
   const page: OutboxEvent[] = [];
   let bytes = 1024; // Fence, brackets and separators.
-  for (const row of db.prepare('SELECT * FROM outbox WHERE seq>? ORDER BY seq LIMIT ?').iterate(cursor, limit)) {
+  for (const row of prepare('SELECT * FROM outbox WHERE seq>? ORDER BY seq LIMIT ?').iterate(cursor, limit)) {
     const { payload, ...envelope } = row as unknown as OutboxEvent & { payload: string };
     const rowBytes = Buffer.byteLength(JSON.stringify(envelope)) + Buffer.byteLength(payload) + 16;
     if (page.length && bytes + rowBytes > BRIDGE_OUTBOX_PAGE_BYTES) break;
@@ -276,8 +285,10 @@ const operations: Record<string, (args: any) => any> = {
   // Idle for queue dispatch: no turn open in the assembled state and no turn command in custody.
   routeIdle: ({ route, excludingCommandId, forQueue = false }: { route: string; excludingCommandId?: string; forQueue?: boolean }) =>
     (!forQueue || queueActive(route)) && turnIdle(route, excludingCommandId),
-  queueChanged: ({ route }: { route: string }) => tx(() =>
-    require(publishQueueChanged(route), 'Queue Thread has no route')),
+  queueChanged: ({ route }: { route: string }) => tx(() => {
+    require(publishQueueChanged(route), 'Queue Thread has no route');
+    return { high: outboxHigh() };
+  }),
   snapshot: ({ adoptionOwnership = false }: { adoptionOwnership?: boolean } = {}) => ({
     epoch: Number(meta('epoch')), current: meta('current'), ack: Number(meta('ack')),
     historyIdentityPages: true, historyIdentitySelection: true, historyPublicTurnBatch: true, ephemeralStream: true,
@@ -567,13 +578,16 @@ const operations: Record<string, (args: any) => any> = {
         AND ${HISTORY_IDENTITIES} ORDER BY seq LIMIT 256`, route, after, end).map(historyIdentity);
     return { ...fence, identities };
   },
-  ack: ({ cursor, outboxId }: { cursor: number; outboxId?: string }) => tx(() => {
+  ack: ({ cursor, outboxId }: { cursor: number; outboxId?: string }) => {
     const fence = outboxFence();
     require(outboxId === undefined || outboxId === fence.outboxId, 'Outbox identity changed');
     require(Number.isSafeInteger(cursor) && cursor >= fence.acknowledged && cursor <= fence.high, 'Invalid acknowledgement');
-    setMeta('ack', cursor); run('DELETE FROM outbox WHERE seq<=?', cursor);
-    if (encodedOutboxEvent && encodedOutboxEvent.seq <= cursor) encodedOutboxEvent = undefined;
-  }),
+    if (cursor === fence.acknowledged) return;
+    tx(() => {
+      setMeta('ack', cursor); run('DELETE FROM outbox WHERE seq<=?', cursor);
+      if (encodedOutboxEvent && encodedOutboxEvent.seq <= cursor) encodedOutboxEvent = undefined;
+    });
+  },
   abandon: ({ route, id }: any) => tx(() => {
     const row = get('SELECT method,state,route FROM commands WHERE id=?', id);
     require(row && row.state === 'rejected' && CREATES.includes(row.method) && row.route === route,
@@ -610,6 +624,7 @@ const operations: Record<string, (args: any) => any> = {
   cursor: () => inbox!.cursor(),
   close: () => {
     if (!readOnly && !failed && db.isOpen) flushAllDirtyCheckpoints();
+    statements.clear();
     db.close();
     release();
   },

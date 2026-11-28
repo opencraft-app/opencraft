@@ -115,6 +115,7 @@ export class CodexProviderBridgeSession implements DuplexTransport {
   private interactions = new Map<string, { threadId: string; clients: Map<string, number> }>();
   private readonly humanInteractions = new HostInteractions();
   private poll?: ReturnType<typeof setInterval>;
+  private stopStreamState?: () => void;
   private closed = false;
   private connecting?: Promise<void>;
   private creations = new Set<Promise<unknown>>();
@@ -692,6 +693,20 @@ export class CodexProviderBridgeSession implements DuplexTransport {
       this.listeners.delete(listener);
     };
   }
+  private syncFallbackPolling(): void {
+    if (this.closed || this.policy.manualPull || this.gateway.isStreamConnected?.() === true) {
+      if (this.poll) {
+        clearInterval(this.poll);
+        this.poll = undefined;
+      }
+      return;
+    }
+    if (!this.poll) {
+      this.poll = setInterval(() => {
+        void this.gateway.pull().catch(() => {});
+      }, 100);
+    }
+  }
   connect(signal?: AbortSignal): Promise<void> {
     if (this.closed) return Promise.reject(Error("Bridge gateway is closed"));
     return (this.connecting ??= (async () => {
@@ -700,10 +715,10 @@ export class CodexProviderBridgeSession implements DuplexTransport {
         if (!canRetry || !(error instanceof BridgeOutboxReadError && error.retryable)) throw error;
       });
       await this.legacy.connect(signal);
-      if (!this.policy.manualPull)
-        this.poll = setInterval(() => {
-          void this.gateway.pull().catch(() => {});
-        }, 100);
+      if (!this.policy.manualPull) {
+        this.stopStreamState ??= this.gateway.subscribeStreamState?.(() => this.syncFallbackPolling());
+        this.syncFallbackPolling();
+      }
     })());
   }
   pull(): Promise<void> {
@@ -1210,8 +1225,6 @@ export class CodexProviderBridgeSession implements DuplexTransport {
               ],
             }
           : declared;
-        if (this.policy.executionGit && native.historyMode == null && native.ephemeral !== true)
-          Object.assign(native, { historyMode: "paginated" });
         result = await this.gateway.command(forkedId!, commandId, "session/fork", { sourceThreadId: threadId, native });
       } else if (method === "thread/name/set") {
         result = await command("session/rename", { name: p.name });
@@ -1365,7 +1378,12 @@ export class CodexProviderBridgeSession implements DuplexTransport {
     for (const abort of this.hostTools.values()) abort.abort();
     this.hostTools.clear();
     this.closed = true;
-    if (this.poll) clearInterval(this.poll);
+    this.stopStreamState?.();
+    this.stopStreamState = undefined;
+    if (this.poll) {
+      clearInterval(this.poll);
+      this.poll = undefined;
+    }
     await this.legacy.close();
     await this.gateway.close();
   }

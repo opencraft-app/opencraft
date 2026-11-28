@@ -3382,3 +3382,148 @@ test("polling-only BridgeGatewaySession drains ephemeral text and notification d
   assert.equal(outputDelta.itemId, startedItem.id, "ephemeral notification rewrites native item ID to canonical ID");
   assert.equal(outputDelta.delta, "file.txt\n");
 });
+
+test("SSE outbox wakeup arriving while inbox.pull is already in flight coalesces into an immediate follow-up pull", async () => {
+  let streamMessage: ((msg: any) => void) | undefined;
+  let storedEvents: OutboxEvent[] = [];
+  let inboxCursor = 0;
+  let pullCount = 0;
+  const pullStarted = Promise.withResolvers<void>();
+  const releaseFirstPull = Promise.withResolvers<void>();
+  const delivered: any[] = [];
+  const route = JSON.stringify(["server-1", "thread-coalesce"]);
+
+  const session = new BridgeGatewaySession(
+    {
+      serverId: "server-1",
+      async request(path) {
+        if (path.startsWith("/snapshot")) {
+          return new Response(
+            JSON.stringify({
+              current: "g1",
+              generations: [],
+              routes: [{ route, generation: "g1" }],
+              nativeSessions: [],
+              interactions: [],
+              ephemeralStream: true,
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        throw new Error(`Unexpected request: ${path}`);
+      },
+      subscribeStream(handlers) {
+        streamMessage = handlers.onMessage;
+        return () => {
+          streamMessage = undefined;
+        };
+      },
+      inbox: {
+        async cursor() {
+          return inboxCursor;
+        },
+        async readIdentities() {
+          return [];
+        },
+        async readPendingInteractions() {
+          return [];
+        },
+        async read(after) {
+          return storedEvents.filter((row) => row.seq > after);
+        },
+        async pull() {
+          const attempt = ++pullCount;
+          if (attempt === 2) {
+            pullStarted.resolve();
+            await releaseFirstPull.promise;
+            storedEvents = [
+              {
+                seq: 1,
+                route,
+                generation: "g1",
+                payload: { method: "thread/queue/changed", params: { threadId: route } },
+              },
+            ];
+            inboxCursor = 1;
+            return;
+          }
+          if (attempt >= 3) {
+            storedEvents = [
+              ...storedEvents,
+              {
+                seq: 2,
+                route,
+                generation: "g1",
+                payload: { method: "thread/archived", params: { threadId: route } },
+              },
+            ];
+            inboxCursor = 2;
+          }
+        },
+        async close() {},
+      },
+    },
+    (_threadId, frame) => delivered.push(frame),
+  );
+
+  await session.open();
+  assert.equal(pullCount, 1);
+  // Connect SSE stream (`hello` triggers catch-up pull #2).
+  streamMessage!({ kind: "hello", streamId: "stream-1", highStreamSeq: 0 });
+  await pullStarted.promise;
+  assert.equal(session.isStreamConnected(), true);
+  // While pull #2 is mid-flight, a new structural event commits at seq=2.
+  streamMessage!({ kind: "outbox", high: 2 });
+  releaseFirstPull.resolve();
+
+  await until(async () => delivered.map((f) => f.method), (methods) => methods.includes("thread/archived"));
+  assert.deepEqual(delivered.map((f) => f.method), ["thread/queue/changed", "thread/archived"]);
+  assert.equal(pullCount, 3, "in-flight outbox wakeup schedules exactly one follow-up pull without polling");
+  await session.close();
+});
+
+test("GatewayInbox skips redundant /ack HTTP writes and cursor Worker queries on empty no-op pulls while still acknowledging unconfirmed cursors on reopen", async (t) => {
+  const { host, root } = await setup(t);
+  const endpoint = await attachGateway(host, token);
+  let ackRequests = 0;
+  endpoint.server.on("request", (req) => {
+    if (req.url === "/ack") ackRequests++;
+  });
+  const inboxPath = join(root, "noop-ack-inbox.db");
+  let inbox = new GatewayInbox(inboxPath);
+  t.after(async () => {
+    await inbox.close().catch(() => {});
+    await endpoint.close();
+  });
+
+  // Initial empty pull at cursor=0 skips /ack completely.
+  assert.deepEqual(await inbox.pull(endpoint.url, token), []);
+  assert.equal(ackRequests, 0, "empty pull at cursor=0 sends zero /ack requests");
+
+  // Emit one real structural event: pull commits seq=1 and sends one /ack.
+  await host.accept({ serverId: "server-1", threadId: "thread-ack", commandId: "create-ack", method: "session/create", params: {} });
+  await until(async () => inbox.pull(endpoint.url, token), (rows) => rows.length > 0);
+  const acksAfterCommit = ackRequests;
+  assert.ok(acksAfterCommit >= 1);
+
+  // Subsequent empty pulls at an already-acknowledged cursor send zero /ack requests and zero Worker cursor RPCs.
+  let workerCalls = 0;
+  const origCall = inbox.storage.call.bind(inbox.storage);
+  inbox.storage.call = ((op: string, args?: unknown) => {
+    workerCalls++;
+    return origCall(op, args);
+  }) as typeof inbox.storage.call;
+  for (let i = 0; i < 5; i++) {
+    assert.deepEqual(await inbox.pull(endpoint.url, token), []);
+  }
+  assert.equal(ackRequests, acksAfterCommit, "repeated empty pulls at acknowledged cursor send zero /ack requests");
+  assert.equal(workerCalls, 0, "repeated empty pulls reuse cached cursor and skip empty inbox apply");
+
+  // Reopened GatewayInbox with cursor > 0 sends exactly one catch-up /ack on its first empty pull, then goes silent again.
+  await inbox.close();
+  inbox = new GatewayInbox(inboxPath);
+  assert.deepEqual(await inbox.pull(endpoint.url, token), []);
+  assert.equal(ackRequests, acksAfterCommit + 1, "reopened inbox confirms cursor > 0 once");
+  assert.deepEqual(await inbox.pull(endpoint.url, token), []);
+  assert.equal(ackRequests, acksAfterCommit + 1, "subsequent empty pulls after reopen stay silent");
+});
