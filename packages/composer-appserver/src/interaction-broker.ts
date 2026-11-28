@@ -1,3 +1,4 @@
+import { isCompleteUserInputAnswer } from "@opencraft/chat-core";
 import { SHARED_INTERACTIONS_CHANGED, SHARED_INTERACTIONS_EXTENSION, SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND, parseSharedInteractionSnapshot } from "@opencraft/appserver-protocol";
 import { executionEngineExtension } from "@opencraft/appserver-client";
 import type {
@@ -132,11 +133,17 @@ function responseResult(
         ...(response.strictAutoReview === undefined ? {} : { strictAutoReview: response.strictAutoReview }),
       };
       break;
-    case "item/tool/requestUserInput":
-      if (response.type === "question") return {
-        ...wrappedQuestionAnswers(response.answers),
-      };
-      break;
+    case "item/tool/requestUserInput": {
+      if (response.type !== "question") break;
+      const interaction = pending.interaction;
+      if (interaction.method === "item/tool/requestUserInput" && interaction.params.answerMode === "complete") {
+        if (response.skip) return { answers: {}, skip: true };
+        if (!isCompleteUserInputAnswer(interaction.params.questions, response.answers)) {
+          throw new AppServerInteractionError("RESPONSE_KIND_MISMATCH", "Answer each question or choose Skip.");
+        }
+      }
+      return wrappedQuestionAnswers(response.answers);
+    }
     case "mcpServer/elicitation/request":
       if (response.type === "elicitation") return {
         action: response.action,
@@ -196,6 +203,10 @@ function responseResult(
     "RESPONSE_KIND_MISMATCH",
     `${response.type} cannot answer ${pending.method}`,
   );
+}
+
+function isCompleteQuestionBatch(interaction: PendingInteraction): boolean {
+  return interaction.method === "item/tool/requestUserInput" && interaction.params.answerMode === "complete";
 }
 
 function cancelledResult(pending: DeferredServerRequest): unknown {
@@ -327,8 +338,12 @@ export class AppServerInteractionBroker implements InteractionResponsePort {
     }
     const result = responseResult(pending, response);
     if (pending.context.signal.aborted) throw new AppServerInteractionError("REQUEST_NOT_FOUND", "Native request has retired");
-    this.ledger.remember(pending.interaction, response);
-    pending.response = response;
+    // Complete-mode providers can acknowledge a subset before a disconnect.
+    // Their next native request carries the authoritative confirmed answers.
+    if (!isCompleteQuestionBatch(pending.interaction)) {
+      this.ledger.remember(pending.interaction, response);
+      pending.response = response;
+    }
     pending.resolve(result as never);
     await pending.delivered;
   }
@@ -413,7 +428,7 @@ export class AppServerInteractionBroker implements InteractionResponsePort {
       receivedAtMs: this.now(),
       params,
     } as PendingInteraction & { readonly threadId: string };
-    const remembered = this.ledger.recall(interaction);
+    const remembered = isCompleteQuestionBatch(interaction) ? null : this.ledger.recall(interaction);
     if (remembered !== null) {
       const result = responseResult({ method, interaction }, remembered.response);
       context.signal.addEventListener("abort", () => {

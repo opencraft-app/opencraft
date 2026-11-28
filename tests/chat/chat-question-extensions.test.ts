@@ -1,3 +1,4 @@
+import { createUserInputQuestionDrafts, userInputQuestionExtensions } from "@opencraft/chat-core";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { aggregateUserInputQuestionAnswers, createUserInputQuestionDrafts, selectUserInputQuestionOption, userInputQuestionExtensions, type UserInputQuestion } from "@opencraft/chat-core";
@@ -22,4 +23,12 @@ test("native plan detail/intent and multiple selections survive projection and a
     await interactions.respond("q", { result: { answers: { plan: { answers: ["A", "B", "Custom"] } } } });
     assert.deepEqual(response.value.answer.answers, [{ id: "plan", selected: ["A", "B"], custom: "Custom" }]);
   } finally { interactions.close(); }
+});
+
+test("recovered choices seed the UI without projecting confirmed secret text", () => {
+  assert.deepEqual(userInputQuestionExtensions({ isSecret: true, confirmedAnswer: ["synthetic"] }), { confirmedAnswer: [] });
+  assert.deepEqual(userInputQuestionExtensions({ confirmedAnswer: [false] }), {});
+  const options = [{ id: "one", label: "One", description: null }, { id: "two", label: "Two", description: null }];
+  const question = { id: "q", header: "Fixture", prompt: "Pick", isOther: true, isSecret: false, options, confirmedAnswer: ["Two"] };
+  assert.deepEqual(createUserInputQuestionDrafts([question]), [{ selectedOptionId: "two", freeformText: "" }]);
 });

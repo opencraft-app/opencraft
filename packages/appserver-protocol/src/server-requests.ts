@@ -75,8 +75,15 @@ export interface AppServerServerRequestMap {
     result: FileChangeRequestApprovalResponse;
   };
   "item/tool/requestUserInput": {
-    params: ToolRequestUserInputParams;
-    result: ToolRequestUserInputResponse;
+    params: Omit<ToolRequestUserInputParams, "questions"> & {
+      /** Provider-owned batches keep unanswered questions open until Submit or Skip. */
+      answerMode?: "complete";
+      questions: Array<ToolRequestUserInputParams["questions"][number] & {
+        multiSelect?: boolean;
+        confirmedAnswer?: readonly string[];
+      }>;
+    };
+    result: ToolRequestUserInputResponse & { skip?: true };
   };
   "mcpServer/elicitation/request": {
     params: McpServerElicitationRequestParams;

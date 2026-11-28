@@ -134,6 +134,7 @@ export type InteractionResponse =
       readonly type: "question";
       readonly requestId: string;
       readonly answers: Readonly<Record<string, readonly string[]>>;
+      readonly skip?: true;
     }
   | {
       readonly type: "option-picker";

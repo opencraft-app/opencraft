@@ -92,6 +92,32 @@ test("mixed Hosts use each conversation engine's complete approval capability se
   } finally { f.broker.dispose(); }
 });
 
+test("only a complete batch sends explicit Skip over the shared response wire", async () => {
+  const f = fixture();
+  const request = (complete: boolean) => ({
+    id: complete ? "complete" : "legacy", method: "item/tool/requestUserInput",
+    params: { threadId: "thread", turnId: "turn", itemId: "item",
+      ...(complete ? { answerMode: "complete" } : {}),
+      questions: ["a", "b"].map(id => ({ id, header: id, question: id, isOther: true, isSecret: false, options: null })),
+    }, state: "pending", receivedAtMs: 1,
+  });
+  const key = { hostId: "host", threadId: "thread" };
+  try {
+    f.emit(f.snapshot("fixture", 1, [request(true)]));
+    const requestId = [...f.stored.keys()][0]!;
+    await assert.rejects(f.broker.respond(key, { type: "question", requestId, answers: { a: ["partial"] } }), /Answer each/);
+    assert.equal(f.calls.length, 0);
+    const skipped = f.broker.respond(key, { type: "question", requestId, answers: {}, skip: true });
+    assert.deepEqual(f.calls[0].params.result, { answers: {}, skip: true });
+    f.finish({ disposition: "submitted", snapshot: f.snapshot("fixture", 2, [request(false)]) });
+    await skipped;
+    const legacy = f.broker.respond(key, { type: "question", requestId: [...f.stored.keys()][0]!, answers: {}, skip: true });
+    assert.deepEqual(f.calls[1].params.result, { answers: {} });
+    f.finish({ disposition: "submitted", snapshot: f.snapshot("fixture", 3, []) });
+    await legacy;
+  } finally { f.broker.dispose(); }
+});
+
 function forThread(snapshot: ReturnType<ReturnType<typeof fixture>["snapshot"]>, threadId: string) {
   return { ...snapshot, threadId, requests: snapshot.requests.map(source => ({
     ...source, params: { ...source.params, threadId },

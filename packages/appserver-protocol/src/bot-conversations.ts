@@ -206,6 +206,8 @@ export type AppServerBotInteraction =
       readonly questions: readonly {
         readonly questionId: string;
         readonly prompt: string;
+        /** Optional Markdown context, including safe authorization links. */
+        readonly detail?: string;
         readonly multiple?: boolean;
         readonly choices?: readonly { readonly value: string; readonly label: string }[];
       }[];
