@@ -1,16 +1,19 @@
 import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
 
-/** Reveal one page when scrolling reaches the end, without owning pagination.
- * Scroll movement, rather than visibility, avoids draining short lists on mount/resize.
+/** Fit the first page to the current scrollport, then reveal pages on user input.
  * Passive listeners leave native vertical scrolling and horizontal Shell gestures intact.
  */
-export function useSidebarEndPull(footerRef: RefObject<HTMLDivElement | null>, enabled: boolean, reveal: () => void) {
-  const action = useRef({ enabled, reveal });
-  useLayoutEffect(() => { action.current = { enabled, reveal }; });
+export function useSidebarEndPull(
+  footerRef: RefObject<HTMLDivElement | null>, enabled: boolean, reveal: () => void,
+  fill?: (additional: number) => void,
+) {
+  const action = useRef({ enabled, reveal, fill });
+  useLayoutEffect(() => { action.current = { enabled, reveal, fill }; });
   useEffect(() => {
     const footer = footerRef.current;
     const panel = footer?.closest<HTMLElement>(".sidebar-panel");
-    if (!footer || !panel) return;
+    const items = footer?.parentElement;
+    if (!footer || !panel || !items) return;
     const doc = panel.ownerDocument;
     let touch: { x: number; y: number } | null = null;
     let downward = false;
@@ -22,6 +25,41 @@ export function useSidebarEndPull(footerRef: RefObject<HTMLDivElement | null>, e
         ? column.querySelector<HTMLElement>(".shell-sidebar__scroll")
         : panel.querySelector<HTMLElement>(column ? ".sidebar-activity-list" : ".sidebar-content-scroll");
     };
+    // Measure the normal-flow tail, including any feedback below Recent. On
+    // mobile the scrollport also reserves padding for the floating controls.
+    let observedViewport: HTMLElement | null = null;
+    let frame: number | null = null;
+    const measure = () => {
+      frame = null;
+      const root = viewport();
+      if (root !== observedViewport) {
+        if (observedViewport) observer.unobserve(observedViewport);
+        if (root) observer.observe(root);
+        observedViewport = root;
+      }
+      if (!action.current.fill || !root?.clientHeight || !root.clientWidth || root.scrollTop !== 0
+        || root.scrollHeight > root.clientHeight || !footer.offsetHeight
+        || footer.closest('[inert], [aria-hidden="true"]')) return;
+      const lastBlock = footer.previousElementSibling;
+      const lastRow = lastBlock?.querySelector(".sidebar-activity-item");
+      if (!lastBlock || !lastRow) return;
+      const padding = Number.parseFloat(getComputedStyle(root).paddingBottom) || 0;
+      const bottom = root.getBoundingClientRect().top + root.clientTop + root.clientHeight - padding;
+      const contentBottom = root.contains(panel) ? panel.getBoundingClientRect().bottom
+        : Math.max(...Array.from(root.children, child => child.getBoundingClientRect().bottom));
+      const free = bottom - Math.max(contentBottom, footer.getBoundingClientRect().bottom);
+      const gap = Number.parseFloat(getComputedStyle(items).rowGap) || 0;
+      const rowHeight = lastRow.getBoundingClientRect().height + gap;
+      if (rowHeight <= 0 || free < rowHeight) return;
+      // A date heading or expanded descendants can make a row taller. Use the
+      // last block as an estimate and remeasure once the added rows have laid out.
+      const blockHeight = lastBlock.getBoundingClientRect().height + gap;
+      action.current.fill(Math.max(1, Math.floor(free / Math.max(rowHeight, blockHeight))));
+    };
+    // A reveal changes the measured boxes; schedule it outside observer delivery.
+    const observer = new ResizeObserver(() => { frame ??= requestAnimationFrame(measure); });
+    observer.observe(items);
+    observer.observe(panel);
     let lastViewport = viewport();
     let lastScrollTop = lastViewport?.scrollTop ?? 0;
     const atEnd = () => {
@@ -81,6 +119,8 @@ export function useSidebarEndPull(footerRef: RefObject<HTMLDivElement | null>, e
     doc.addEventListener("touchend", end, { capture: true, passive: true });
     doc.addEventListener("touchcancel", end, { capture: true, passive: true });
     return () => {
+      observer.disconnect();
+      if (frame !== null) cancelAnimationFrame(frame);
       doc.removeEventListener("scroll", scroll, true);
       doc.removeEventListener("wheel", wheel, true);
       doc.removeEventListener("touchstart", start, true);

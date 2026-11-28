@@ -141,11 +141,11 @@ metadata writes or full-directory pagination. The shared action owner shows
 Saving feedback even when the destination group is folded or paginated. Pending
 intents survive stale reads, rejected writes restore confirmed membership and
 report an error, and revoked connection scopes cannot project late results.
-Existing group priority, filtering, six-pin/ten-recent budgets and ordering remain.
+Existing group priority, filtering, section paging and ordering remain.
 
 Pinned conversations use presentation-only paging after filtering: six rows initially, six more per Show more, and Show less resets to six. Both controls belong below the last visible pinned row inside the pinned section, disappear with the collapsed section, and do not change catalog membership, selection, or recent pagination.
 
-Recent conversations use the same section-local paging controls as pinned conversations, with an independent ten-row initial limit and ten-row increments. Show less resets recent to ten. Filtering precedes slicing; selected identity, full task-flow groups, date headings and pin state remain independent of visibility. Both groups use shared small-control/tertiary styling and hide paging controls with their collapsed section.
+Recent conversations use the same section-local paging controls as pinned conversations. The first page starts at ten rows and fills available vertical space, keeping already shown rows when the scrollport shrinks. Continuation adds ten rows. Show less returns to the fitted first page. Filtering precedes slicing; selected identity, full task-flow groups, date headings and pin state remain independent of visibility. Both groups use shared small-control/tertiary styling and hide paging controls with their collapsed section.
 
 ### Mermaid diagram geometry and visual presentation (2026-10-17)
 

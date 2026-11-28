@@ -203,8 +203,9 @@ function sidebarUnread(thread: SidebarThread, grouping: ThreadListGroupingContri
   }) ?? true);
 }
 
-function SidebarPagination({ total, visibleCount, pageSize, onChange, pullToLoad = false }: {
-  total: number; visibleCount: number; pageSize: number; onChange: (count: number) => void; pullToLoad?: boolean;
+function SidebarPagination({ total, visibleCount, pageSize, initialCount = pageSize, onChange, onFill, pullToLoad = false }: {
+  total: number; visibleCount: number; pageSize: number; initialCount?: number;
+  onChange: (count: number) => void; onFill?: (count: number) => void; pullToLoad?: boolean;
 }) {
   const intl = useIntl();
   const [pending, startTransition] = useTransition();
@@ -214,15 +215,17 @@ function SidebarPagination({ total, visibleCount, pageSize, onChange, pullToLoad
   const reveal = () => {
     if (!pending && visibleCount < total) startTransition(() => onChange(visibleCount + pageSize));
   };
-  useSidebarEndPull(footerRef, pullToLoad && !pending && visibleCount < total, reveal);
+  useSidebarEndPull(footerRef, pullToLoad && !pending && visibleCount < total, reveal,
+    onFill && !pending && visibleCount < total
+      ? additional => onFill(Math.min(total, visibleCount + additional)) : undefined);
   const moreLabel = intl.formatMessage({ id: "sidebar.catalog.showMore", defaultMessage: "Show more" });
-  return <div className="sidebar-activity-pagination" ref={footerRef} aria-busy={pending} hidden={total <= pageSize}>
+  return <div className="sidebar-activity-pagination" ref={pullToLoad ? footerRef : undefined} aria-busy={pending} hidden={total <= initialCount}>
     {visibleCount < total ? <button type="button" className="sidebar-activity-more" onClick={reveal} disabled={pending} aria-label={moreLabel}>
       {pending ? <LoaderCircle size={14} className="is-spinning" aria-hidden="true" /> : <span>{moreLabel}</span>}
     </button> : pullToLoad ? <NavigationEmpty className="sidebar-activity-empty">
       {intl.formatMessage({ id: "sidebar.catalog.end", defaultMessage: "No more conversations" })}
     </NavigationEmpty> : null}
-    {visibleCount > pageSize ? <button type="button" className="sidebar-activity-more" disabled={pending} onClick={() => onChange(pageSize)}>
+    {visibleCount > initialCount ? <button type="button" className="sidebar-activity-more" disabled={pending} onClick={() => onChange(initialCount)}>
       {intl.formatMessage({ id: "sidebar.catalog.less", defaultMessage: "Show less" })}
     </button> : null}
   </div>;
@@ -309,7 +312,13 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   const [query, setQuery] = useState("");
   const [pinnedLimit, setPinnedLimit] = useState(PINNED_PAGE_SIZE);
   const [projectLimits, setProjectLimits] = useState<Record<string, number>>({});
-  const [recentLimit, setRecentLimit] = useState(RECENT_PAGE_SIZE);
+  const [recentPage, setRecentPage] = useState({ initial: RECENT_PAGE_SIZE, extra: 0 });
+  const recentLimit = recentPage.initial + recentPage.extra;
+  const setRecentLimit = (count: number) => setRecentPage(current => ({
+    ...current, extra: Math.max(0, count - current.initial),
+  }));
+  const fitRecentLimit = (count: number) => setRecentPage(current =>
+    current === recentPage && !current.extra ? { ...current, initial: count } : current);
   const [scheduledLimit, setScheduledLimit] = useState(PINNED_PAGE_SIZE);
   const [mineLimit, setMineLimit] = useState(RECENT_PAGE_SIZE);
   const [menus] = useState(() => new SidebarThreadMenuStore());
@@ -554,7 +563,10 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
           </div>;
         })}
         {limit !== undefined && update ? <SidebarPagination total={rows.length} visibleCount={limit}
-          pageSize={nativeProject ? 6 : key === "pinned" || key === "scheduled" ? PINNED_PAGE_SIZE : RECENT_PAGE_SIZE} onChange={update} pullToLoad={key === "recent"} /> : null}
+          pageSize={nativeProject ? 6 : key === "pinned" || key === "scheduled" ? PINNED_PAGE_SIZE : RECENT_PAGE_SIZE}
+          initialCount={key === "recent" ? recentPage.initial : undefined}
+          onFill={key === "recent" && !recentPage.extra ? fitRecentLimit : undefined}
+          onChange={update} pullToLoad={key === "recent"} /> : null}
     </SidebarConversationGroup>;
   };
   const visibleSections = [
