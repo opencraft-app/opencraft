@@ -26,14 +26,26 @@
 //   personal            the Human's accounts in this object's account pool (Node: the Codex Core over its
 //   subscriptions       control socket); device login and the subscription route are not assembled
 // Not assembled here: speech, device login and the Codex selection egress (cloudflare-deployment §5.6 "仍缺").
+import { createHash } from "node:crypto";
 import { durableObjectSqlDatabase } from "@opencraft/storage-cloudflare/sql";
 import { durableObjectStateDocumentStore } from "@opencraft/storage-cloudflare/state";
 import { durableObjectSecretStore } from "@opencraft/storage-cloudflare/secrets";
 import { importSecretSealingKey, sealedSecretStore } from "@opencraft/secret-storage/sealed";
 import { recordSealer } from "@opencraft/secret-storage/sealed-records";
 import { migrateModelPolicySqlDatabase } from "@opencraft/model-usage-policy/sql-owner";
-import { isMigrationLedgerObject } from "@opencraft/sql/families";
+import { MIGRATION_FAMILY_LEDGER_TABLE, applySqlMigrationFamilies, isMigrationLedgerObject } from "@opencraft/sql/families";
+import { hashSqlMigrations } from "@opencraft/sql/migrations";
 import { openAccountPoolSqlStorage, ownedByAccountPoolSchemas } from "@opencraft/account-pool-host/sql-owner";
+import { AccountEnvironment } from "@opencraft/execution-environment/account-environment";
+import {
+  EMPLOYEE_GIT_VAULT_MIGRATIONS,
+  EmployeeGitVault,
+} from "@opencraft/execution-environment/employee-git-vault";
+import { aes256GcmGitVaultCipher, deriveGitVaultKey } from "@opencraft/execution-environment/git-vault-cipher";
+import { SandboxConfigurationError, SandboxConfigurations } from "@opencraft/plugin-assets/server/configurations";
+import { createAssetsHttpExchange } from "@opencraft/plugin-assets/server/exchange";
+import { GitConnections, describeGitProviders } from "@opencraft/plugin-assets/server/git-connections";
+import { githubConnectionProvider } from "@opencraft/plugin-assets/server/github-provider";
 import { ModelGatewayStore } from "@opencraft/account-pool-host/model-gateway";
 import {
   accountPoolPersonalSubscriptions,
@@ -56,6 +68,7 @@ import type { HttpExchangeHandler } from "@opencraft/http-exchange";
 import { assembleAccount, type AccountAssembly } from "../assembly/account.mjs";
 import {
   ACCOUNT_AUTHORITY_PATH,
+  WORKSPACE_ASSETS_ENVIRONMENT_PATH,
   WORKSPACE_CODEX_CATALOG_PATH,
   WORKSPACE_CODEX_MODEL_DIRECTORY_PATH,
   accountRoute,
@@ -86,6 +99,8 @@ export interface AccountCoreServices {
   /** The credential lease exchange for bound callers; resolves null for any other path. */
   readonly leaseExchange: (request: Request) => Promise<Response | null>;
   readonly http: HttpExchangeHandler<FetchRequestView>;
+  readonly assetsHttp: HttpExchangeHandler<unknown>;
+  readonly accountEnvironment: AccountEnvironment;
   /** Asks the installation about one request; resolves its answer or the installation's own refusal. */
   ask(scope: AccountAuthorityScope, request: FetchRequestView): Promise<AccountAuthorityAnswer | Response>;
 }
@@ -143,9 +158,26 @@ export class AccountCore {
       ownedByRuntime: (name) =>
         name.startsWith("_cf_") ||
         isMigrationLedgerObject(name) ||
-        ownedByAccountPoolSchemas(name),
+        ownedByAccountPoolSchemas(name) ||
+        name === "schema_assets_migrations" ||
+        name === "employee_git_credentials",
     });
     const poolStorage = openAccountPoolSqlStorage(database, records);
+    applySqlMigrationFamilies(
+      database,
+      [{
+        id: "employee-git-vault",
+        migrations: hashSqlMigrations(EMPLOYEE_GIT_VAULT_MIGRATIONS, (sql) => createHash("sha256").update(sql).digest("hex")),
+        owns: (name) => name === "employee_git_credentials",
+      }],
+      { table: "schema_assets_migrations", composition: "beside-main" },
+    );
+    const vaultCipher = aes256GcmGitVaultCipher(deriveGitVaultKey(env.OPENCRAFT_ACCOUNT_SEALING_KEY!));
+    const vault = new EmployeeGitVault(database, vaultCipher);
+    const assetConfigurations = new SandboxConfigurations(vault);
+    const githubProvider = githubConnectionProvider();
+    const assetGit = new GitConnections(vault, [githubProvider]);
+    const accountEnvironment = new AccountEnvironment(vault);
     const gateway = new ModelGatewayStore(poolStorage.gateway);
     // A Human's pool is a view of the same storage (rows owned by that Human), built per use so it never holds
     // state the installation pool changed; it leaves affinity to the installation pool.
@@ -164,7 +196,7 @@ export class AccountCore {
         subscriptions: route ? accountPoolPersonalSubscriptions({ pool: personalPool, route }) : null,
       }),
     });
-    this.#disposers = [() => account.close()];
+    this.#disposers = [() => vault.close(), () => account.close()];
     if (env.OPENCRAFT_ACCOUNT_MODEL_BOOTSTRAP !== undefined)
       await bootstrapAccountModels(env.OPENCRAFT_ACCOUNT_MODEL_BOOTSTRAP, modelDocuments, account);
     const maintenance = env.ACCOUNT_MAINTENANCE;
@@ -212,12 +244,47 @@ export class AccountCore {
         return !(answer instanceof Response) && answer.scope === "gateway" ? answer.authority : null;
       },
     });
+    const assetsHttp = createAssetsHttpExchange({
+      async resolveIdentity(request) {
+        const view = request.identity as FetchRequestView;
+        const answer = await ask("gateway", view);
+        if (answer instanceof Response || answer.scope !== "gateway" || !answer.authority) return null;
+        const { actor, administrator, origin } = answer.authority;
+        const resolvedOrigin = origin ?? (view.headers.host ? `https://${view.headers.host}` : "");
+        return {
+          scope: `actor:${actor}`,
+          origin: resolvedOrigin,
+          allowCustomEndpoints: administrator,
+          canManagePlatform: administrator,
+          current: () => true,
+        };
+      },
+      gitHosts: [githubProvider.host],
+      gitProviders: describeGitProviders([githubProvider]),
+      environment: true,
+      configurationsSnapshot: (id) =>
+        Promise.resolve(assetConfigurations.snapshot(id.scope, id.allowCustomEndpoints, id.canManagePlatform)),
+      configurationsUpdate: (id, input) =>
+        Promise.resolve(assetConfigurations.update(id.scope, input, id.allowCustomEndpoints, id.canManagePlatform)),
+      gitSnapshot: (id) => Promise.resolve(assetGit.snapshot(id.scope)),
+      gitUpdate: (id, input) =>
+        assetGit.update(id.scope, input, () => {
+          if (!id.current()) throw new SandboxConfigurationError("forbidden", 403);
+        }),
+      environmentList: (id, scope, assertCurrent) =>
+        Promise.resolve(accountEnvironment.list(id.scope, scope, assertCurrent)),
+      environmentReplace: (id, scope, revision, input, assertCurrent) =>
+        Promise.resolve(accountEnvironment.replace(id.scope, scope, revision, input, assertCurrent)),
+      environmentProjects: async () => [],
+    });
     return {
       account,
       pool,
       personalPool,
       gateway,
       http,
+      assetsHttp,
+      accountEnvironment,
       ask,
       leaseExchange: serveCredentialLeaseExchange(account.credentialLeases),
     };
@@ -296,6 +363,29 @@ export class AccountCore {
     return Response.json({ data, nextCursor } satisfies ModelListResponse, { headers: { "cache-control": "no-store" } });
   }
 
+  async #workspaceAssetsEnvironment(environment: AccountEnvironment, request: Request): Promise<Response> {
+    if (request.method !== "POST") return fetchResponse(installationExchangeReply(MISSING));
+    const body = (await request.json().catch(() => null)) as { actorId?: unknown; projectId?: unknown } | null;
+    if (
+      !body ||
+      typeof body.actorId !== "string" ||
+      !body.actorId.startsWith("human://") ||
+      (body.projectId !== undefined && body.projectId !== null && typeof body.projectId !== "string")
+    ) {
+      return Response.json({ error: "invalid_assets_environment_request" }, { status: 400 });
+    }
+    try {
+      const env = environment.launchEnvironment(
+        `actor:${body.actorId}`,
+        { projectId: body.projectId ?? null },
+        {},
+      );
+      return Response.json({ env }, { headers: { "cache-control": "no-store" } });
+    } catch {
+      return Response.json({ env: {} }, { headers: { "cache-control": "no-store" } });
+    }
+  }
+
   /** The object's alarm: wakes whichever owner work is due (account renewals); each re-derives from state. */
   async alarm(): Promise<void> {
     this.#wake?.();
@@ -342,11 +432,14 @@ export class AccountCore {
     const { pathname } = url;
     if (pathname === WORKSPACE_CODEX_CATALOG_PATH) return this.#workspaceCodexCatalog(services.account, request, url);
     if (pathname === WORKSPACE_CODEX_MODEL_DIRECTORY_PATH) return this.#workspaceCodexModelDirectory(services.account, request, url);
-    if (!accountRoute(pathname)) return fetchResponse(installationExchangeReply(MISSING));
+    if (pathname === WORKSPACE_ASSETS_ENVIRONMENT_PATH) return this.#workspaceAssetsEnvironment(services.accountEnvironment, request);
+    const route = accountRoute(pathname);
+    if (!route) return fetchResponse(installationExchangeReply(MISSING));
     const gate = await services.ask("gate", fetchRequestView(request));
     if (gate instanceof Response) return gate;
     if (gate.scope === "gate" && gate.refusal) return fetchResponse(installationExchangeReply(gate.refusal));
-    const response = await serveFetchHttpExchange(request, services.http, {
+    const handler = route === "assets" ? services.assetsHttp : services.http;
+    const response = await serveFetchHttpExchange(request, handler as HttpExchangeHandler<FetchRequestView>, {
       clientAddress: request.headers.get("cf-connecting-ip"),
     });
     return response ?? fetchResponse(installationExchangeReply(MISSING));

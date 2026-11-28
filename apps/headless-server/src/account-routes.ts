@@ -13,16 +13,24 @@
 import type { InstallationReply } from "./installation-routes.js";
 
 /** Account services a front door can mount; an absent one answers its routes with `missing`. */
-export type AccountRouteService = "policy" | "gateway";
+export type AccountRouteService = "policy" | "gateway" | "assets";
 
 /** The model usage policy route (`@opencraft/model-usage-policy` POLICY_PATH). */
 export const MODEL_POLICY_ROUTE = "/__opencraft_model_policy";
 /** The model gateway route (`@opencraft/account-pool-host` MODEL_GATEWAY_PATH). */
 export const MODEL_GATEWAY_ROUTE = "/__opencraft_model_gateway";
+export const ASSETS_STATUS_ROUTE = "/__opencraft_assets/status";
+export const ASSETS_CONFIGURATIONS_ROUTE = "/__opencraft_assets/configurations";
+export const ASSETS_GIT_CONNECTIONS_ROUTE = "/__opencraft_assets/git-connections";
+export const ASSETS_ENVIRONMENT_ROUTE = "/__opencraft_assets/environment";
 
 const ROUTES: readonly (readonly [AccountRouteService, string])[] = [
   ["policy", MODEL_POLICY_ROUTE],
   ["gateway", MODEL_GATEWAY_ROUTE],
+  ["assets", ASSETS_STATUS_ROUTE],
+  ["assets", ASSETS_CONFIGURATIONS_ROUTE],
+  ["assets", ASSETS_GIT_CONNECTIONS_ROUTE],
+  ["assets", ASSETS_ENVIRONMENT_ROUTE],
 ];
 
 /** The account service that owns `pathname`, or null when the path is not an account route. */
@@ -98,12 +106,13 @@ export function installationAccountAuthorities<Request>({
 export const ACCOUNT_AUTHORITY_PATH = "/__opencraft_internal/account-authority";
 export const WORKSPACE_CODEX_CATALOG_PATH = "/__opencraft_internal/workspace-codex-catalog";
 export const WORKSPACE_CODEX_MODEL_DIRECTORY_PATH = "/__opencraft_internal/workspace-codex-model-directory";
+export const WORKSPACE_ASSETS_ENVIRONMENT_PATH = "/__opencraft_internal/workspace-assets-environment";
 
 /**
  * `gate`: the installation's admission gate for the request (a refusal or null);
  * `policy` / `gateway`: the account authority for it.
  */
-export type AccountAuthorityScope = "gate" | AccountRouteService;
+export type AccountAuthorityScope = "gate" | "policy" | "gateway";
 
 /** The request as the account's front door received it. */
 export interface AccountAuthorityQuery {
@@ -117,7 +126,7 @@ export interface AccountAuthorityQuery {
 
 export type AccountAuthorityAnswer =
   | { readonly scope: "gate"; readonly refusal: InstallationReply | null }
-  | { readonly scope: AccountRouteService; readonly authority: AccountAuthority | null };
+  | { readonly scope: "policy" | "gateway"; readonly authority: AccountAuthority | null };
 
 const SCOPES: readonly AccountAuthorityScope[] = ["gate", "policy", "gateway"];
 

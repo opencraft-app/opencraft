@@ -1293,4 +1293,90 @@ export const ACCOUNT_CORE_DO_SCENARIOS: readonly WorkerScenario[] = [
       }
     },
   },
+  {
+    name: "AccountCore serves /__opencraft_assets/* (status, environment, configurations) with sealed vault persistence across eviction",
+    async run({ runtime }) {
+      const object = await deploymentBackend(runtime);
+      try {
+        const anonymous = new Browser(object);
+        const anonStatus = await anonymous.call("/__opencraft_assets/status");
+        assert.equal(anonStatus.status, 401);
+
+        const owner = new Browser(object);
+        const setup = await owner.call("/__opencraft_account/setup", {
+          proof: PROOF,
+          mode: "web",
+          username: "owner",
+          password: OWNER_PASSWORD,
+        });
+        assert.equal(setup.status, 200, await setup.clone().text());
+
+        const status = await owner.call("/__opencraft_assets/status");
+        assert.equal(status.status, 200, await status.clone().text());
+        const statusBody = (await status.json()) as {
+          version: number;
+          scope: string | null;
+          gitHosts: string[];
+          environment?: boolean;
+        };
+        assert.equal(statusBody.version, 1);
+        assert.ok(statusBody.scope?.startsWith("actor:human://"), `unexpected scope: ${statusBody.scope}`);
+        assert.deepEqual(statusBody.gitHosts, ["github.com"]);
+        assert.equal(statusBody.environment, true);
+
+        const headers = { "x-opencraft-account-scope": statusBody.scope! };
+        const initialEnv = await owner.call("/__opencraft_assets/environment", undefined, headers);
+        assert.equal(initialEnv.status, 200, await initialEnv.clone().text());
+        const envDoc = (await initialEnv.json()) as {
+          projectId: string | null;
+          revision: number;
+          variables: unknown[];
+        };
+        assert.equal(envDoc.projectId, null);
+        assert.equal(envDoc.revision, 0);
+        assert.deepEqual(envDoc.variables, []);
+
+        const savedEnv = await owner.call(
+          "/__opencraft_assets/environment",
+          {
+            projectId: null,
+            revision: 0,
+            variables: [
+              { name: "DEMO_VAR", value: "hello", secret: false },
+              { name: "DEMO_SECRET", value: "s3cr3t", secret: true },
+            ],
+          },
+          headers,
+        );
+        assert.equal(savedEnv.status, 200, await savedEnv.clone().text());
+        const savedBody = (await savedEnv.json()) as {
+          revision: number;
+          variables: { name: string; value: string | null; secret: boolean }[];
+        };
+        assert.equal(savedBody.revision, 1);
+        assert.deepEqual(savedBody.variables, [
+          { name: "DEMO_VAR", value: "hello", secret: false },
+          { name: "DEMO_SECRET", value: null, secret: true },
+        ]);
+
+        const configs = await owner.call("/__opencraft_assets/configurations", undefined, headers);
+        assert.equal(configs.status, 200, await configs.clone().text());
+
+        await object.fetch("/__test/account/evict").catch(() => undefined);
+        const afterEvict = await owner.call("/__opencraft_assets/environment", undefined, headers);
+        assert.equal(afterEvict.status, 200, await afterEvict.clone().text());
+        const afterBody = (await afterEvict.json()) as {
+          revision: number;
+          variables: { name: string; value: string | null; secret: boolean }[];
+        };
+        assert.equal(afterBody.revision, 1);
+        assert.deepEqual(afterBody.variables, [
+          { name: "DEMO_VAR", value: "hello", secret: false },
+          { name: "DEMO_SECRET", value: null, secret: true },
+        ]);
+      } finally {
+        await object.close();
+      }
+    },
+  },
 ];

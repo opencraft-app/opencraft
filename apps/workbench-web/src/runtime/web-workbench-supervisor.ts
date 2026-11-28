@@ -525,7 +525,7 @@ export async function createWebWorkbenchApplicationSupervisor(
       await extensions.loadOptional('opencraft.account', async () =>
         (await import('@opencraft/plugin-local-account/client')).createLocalAccountExtension(globalThis.fetch.bind(globalThis)));
     }
-    if (headlessAppHost !== null || electronAppHost !== null) {
+    if (headlessAppHost !== null || electronAppHost !== null || hasDeploymentAppHost) {
       const assets = serverExtensions.find(extension => extension.assets)?.assets
         ?? (headlessAppHost !== null ? options.serverAssetsContribution : undefined);
       await extensions.loadOptional("opencraft.assets", async () =>
@@ -533,6 +533,8 @@ export async function createWebWorkbenchApplicationSupervisor(
           contribution: assets,
           subscribeIdentity: cordis.authentication.subscribe,
         }));
+    }
+    if (headlessAppHost !== null || electronAppHost !== null) {
       await extensions.loadOptional("opencraft.im", async () => {
         const { createImExtension } = await import("@opencraft/plugin-im");
         const { createChannelsRpc } = await import("./channels-rpc");
