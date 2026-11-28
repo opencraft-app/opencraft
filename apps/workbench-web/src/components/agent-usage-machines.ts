@@ -28,8 +28,7 @@ export function sanitizeEndpointDetail(endpoint: string | null | undefined): str
   const hasScheme = /^[a-z][a-z0-9+.-]*:\/\//iu.test(trimmed);
   try {
     const parsed = new URL(hasScheme ? trimmed : `https://${trimmed}`);
-    const path =
-      parsed.pathname && parsed.pathname !== "/" ? parsed.pathname.replace(/\/+$/u, "") : "";
+    const path = parsed.pathname && parsed.pathname !== "/" ? parsed.pathname.replace(/\/+$/u, "") : "";
     return `${parsed.host}${path}` || null;
   } catch {
     return (

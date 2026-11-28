@@ -10,14 +10,8 @@ test("sanitizeEndpointDetail strips scheme, userinfo, query, and hash without le
     sanitizeEndpointDetail("wss://user:secret-pass@dev.example.com:10100/rpc?token=topsecret#frag"),
     "dev.example.com:10100/rpc",
   );
-  assert.equal(
-    sanitizeEndpointDetail("https://join.woa.com/servers/mason/?session=abc"),
-    "join.woa.com/servers/mason",
-  );
-  assert.equal(
-    sanitizeEndpointDetail("admin:pw@10.0.0.8:8080/ws?api_key=123#top"),
-    "10.0.0.8:8080/ws",
-  );
+  assert.equal(sanitizeEndpointDetail("https://join.woa.com/servers/mason/?session=abc"), "join.woa.com/servers/mason");
+  assert.equal(sanitizeEndpointDetail("admin:pw@10.0.0.8:8080/ws?api_key=123#top"), "10.0.0.8:8080/ws");
   assert.equal(sanitizeEndpointDetail("   "), null);
   assert.equal(sanitizeEndpointDetail(null), null);
 });
