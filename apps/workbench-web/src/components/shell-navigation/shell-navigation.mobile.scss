@@ -9,7 +9,7 @@
   // Destination and conversation rows share this mobile content inset.
   --space-icon-leading-inset: 0px;
   --padding-shell-sidebar-inline: var(--padding-sidebar-content-inline);
-  --padding-navigation-row-inline: calc(var(--spacing) * 3);
+  --padding-navigation-row-inline: var(--padding-sidebar-navigation-row-inline);
   --padding-sidebar-activity-row-inline: var(--padding-navigation-row-inline);
   --padding-floating-navigation-inline: 8px;
   --padding-applications-sidebar-list-block: 0px;
@@ -177,8 +177,8 @@
   }
 }
 
-// Optical alignment is limited to touch drawer titles; desktop geometry and
-// nested conversation indentation remain owned by their existing layout.
+// Optical alignment applies to sidebar titles across touch and pointer layouts;
+// nested conversation indentation remains owned by its existing tree styles.
 .shell-sidebar__column[data-navigation-layout="mobile"] .sidebar-activity-item__title {
   @include typography.optical-start;
 }
@@ -186,12 +186,10 @@
 .shell-sidebar__column[data-navigation-layout="mobile"] {
   .applications-sidebar { padding-block: 0; }
   .applications-sidebar__list > button > svg { margin-inline-start: 0; }
-  .sidebar-list-toolbar { padding-inline: 0; margin-block-start: 8px; }
-  .sidebar-thread-group-toggle { padding-inline-start: 0; }
-  .sidebar-activity-more, .sidebar-activity-empty,
-  .sidebar-activity-pagination, .sidebar-display-mode-label { padding-inline-start: 0; margin-inline-start: 0; }
+  .sidebar-list-toolbar { margin-block-start: 8px; }
+  .sidebar-activity-pagination { margin-inline-start: 0; }
 }
-[data-mobile-sidebar] .shell-sidebar__header .app-shell-header__window-controls-rail[data-navigation-brand] { padding-inline-start: 0; }
+[data-mobile-sidebar] .shell-sidebar__header .app-shell-header__window-controls-rail[data-navigation-brand] { padding-inline-start: var(--padding-sidebar-content-inline); }
 
 // At the narrowest drawer width, primary actions retain their wording.
 // The shared capsule can omit its decorative icon to fit.

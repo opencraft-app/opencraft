@@ -156,7 +156,7 @@
   --height-sidebar-activity-row: 52px;
   --height-sidebar-activity-title-row: max(var(--height-sidebar-navigation-row), var(--size-control-hit-min));
   --padding-sidebar-activity-single-row-block: var(--spacing);
-  --padding-sidebar-activity-row-inline: 10px;
+  --padding-sidebar-activity-row-inline: var(--padding-sidebar-navigation-row-inline);
   --gap-sidebar-activity-groups: 6px;
   --gap-sidebar-activity-expanded-groups: 16px;
   --size-connection-status: 7px;
@@ -187,7 +187,7 @@
   --radius-accessory-control: var(--radius-md);
   --padding-navigation-list-inline: calc(var(--spacing) * 2);
   // Shell destination lists share one surface inset across apps and settings.
-  --padding-sidebar-content-inline: calc(var(--spacing) * 4);
+  --padding-sidebar-content-inline: calc(var(--spacing) * 2);
   // One destination-navigation contract for core, settings and plugin lists.
   --padding-sidebar-empty-block: 6px;
   --size-count-badge: 18px;
@@ -210,7 +210,7 @@
   --stroke-sidebar-navigation-icon: 1.5;
   --color-sidebar-navigation-icon: #8e939b;
   --gap-sidebar-navigation-icon-label: 12px;
-  --padding-sidebar-navigation-row-inline: 12px;
+  --padding-sidebar-navigation-row-inline: calc(var(--spacing) * 2);
   --size-sidebar-navigation-leading-slot: var(--size-sidebar-navigation-icon);
   --gap-toolbar-control: 6px;
   --size-toolbar-control-icon: 13px;

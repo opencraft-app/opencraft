@@ -731,9 +731,9 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
   align-items: center;
   gap: 4px;
   pointer-events: none;
-  // titlebar inset. This buffer belongs to the window rail and must not be
-  // interpolated with sidebar width.
-  --window-controls-padding-start: max(calc(var(--spacing-token-safe-header-left) + 6px), 8px);
+  // titlebar inset. Aligns the leading 16px toggle glyph inside its 28px hit
+  // box with the 16px sidebar content axis (8px outer gutter + 8px row inset).
+  --window-controls-padding-start: max(calc(var(--spacing-token-safe-header-left) + 6px), 10px);
   padding: 0 8px 0 var(--window-controls-padding-start);
 }
 
@@ -747,7 +747,7 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
 .application-brand {
   --application-brand-mark-size: 26px;
   white-space: nowrap; user-select: none;
-  &:not(button) { display: inline-flex; align-items: center; gap: 7px; }
+  &:not(button) { display: inline-flex; align-items: center; gap: 7px; margin-inline: var(--padding-toolbar-control-inline); }
   &:is(button) { pointer-events: auto; }
   .application-brand__mark { width: var(--application-brand-mark-size); height: var(--application-brand-mark-size); flex: 0 0 auto; object-fit: contain; }
   .application-brand__wordmark { @include typography.role(navigation-title, primary); }
@@ -756,6 +756,7 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
 
 // Brand and collapse control form one stable header across application routes.
 .app-shell-header__window-controls-rail[data-navigation-brand] {
+  --window-controls-padding-start: max(calc(var(--spacing-token-safe-header-left) + 6px), var(--padding-sidebar-content-inline));
   width: max-content;
   > .application-brand { flex: 0 0 auto; }
 }
@@ -1713,6 +1714,7 @@ svg[data-sidebar-toggle-icon-state] {
 
 .sidebar-activity-item__title {
   @include typography.role(thread-list-title, primary);
+  @include typography.optical-start;
   letter-spacing: normal;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -11254,6 +11256,28 @@ html[data-window-host="browser"] body {
   @include typography.role(toolbar-title, secondary);
   display: flex; align-items: center; justify-content: space-between;
   padding: var(--spacing) var(--padding-sidebar-activity-row-inline);
+}
+// Keep top primary actions visually separated from the conversation section.
+.sidebar-new-chat + .sidebar-tasks,
+.sidebar-entry-navigation:not(:empty) + .sidebar-content-scroll .sidebar-tasks:first-child {
+  padding-top: var(--spacing);
+  border-top: 1px solid var(--color-border-subtle);
+}
+.sidebar-access-switcher {
+  flex-shrink: 0;
+  margin: var(--spacing) 0 calc(var(--spacing) * 2);
+}
+.sidebar-access-switcher__option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--spacing) * 1.5);
+  min-width: 0;
+  .sidebar-activity-summary { margin-inline-start: 0; }
+}
+.sidebar-access-switcher__count {
+  @include typography.role(metadata, tertiary);
+  font-variant-numeric: tabular-nums;
 }
 .sidebar-list-mode-trigger { @include controls.quiet-control; display: grid; place-items: center; width: 28px; height: 28px; color: var(--color-text-secondary); }
 .sidebar-display-mode-label { @include typography.role(metadata, tertiary); padding: var(--padding-menu-item-block) var(--padding-menu-item-inline); }

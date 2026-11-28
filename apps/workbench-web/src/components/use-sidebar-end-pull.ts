@@ -15,6 +15,7 @@ export function useSidebarEndPull(footerRef: RefObject<HTMLDivElement | null>, e
     let touch: { x: number; y: number } | null = null;
     let downward = false;
     let consumed = false;
+    let userScroll = false;
     // Shell reparents this retained Sidebar between dock and drawer.
     const viewport = () => {
       const column = panel.closest(".shell-sidebar__column");
@@ -36,6 +37,7 @@ export function useSidebarEndPull(footerRef: RefObject<HTMLDivElement | null>, e
       if (!downward || consumed || !action.current.enabled || !atEnd()) return;
       consumed = true;
       downward = false;
+      userScroll = false;
       action.current.reveal();
     };
     const scroll = (event: Event) => {
@@ -44,10 +46,14 @@ export function useSidebarEndPull(footerRef: RefObject<HTMLDivElement | null>, e
       const previous = root === lastViewport ? lastScrollTop : 0;
       lastViewport = root;
       lastScrollTop = root.scrollTop;
-      if (root.scrollTop <= 0 || root.scrollTop < previous) return;
+      if (root.scrollTop <= 0 || root.scrollTop < previous) {
+        if (!atEnd()) consumed = false;
+        return;
+      }
+      if (!touch && !atEnd()) consumed = false;
+      if (!userScroll && !touch) return;
       // Scrollbar drags, keyboard navigation and touch momentum all arrive here.
       // A held touch still consumes at most one page, including its final scroll.
-      if (!touch) consumed = false;
       downward = true;
       tryReveal();
     };
@@ -56,13 +62,28 @@ export function useSidebarEndPull(footerRef: RefObject<HTMLDivElement | null>, e
     const wheel = (event: WheelEvent) => {
       if (!withinList(event)) return;
       downward = event.deltaY > 0 && Math.abs(event.deltaY) > Math.abs(event.deltaX);
+      userScroll = downward;
       // New rows move the end away. Continued scrolling can then arm the next page.
       if (!atEnd()) consumed = false;
       tryReveal();
     };
+    const pointerDown = (event: PointerEvent) => {
+      if (event.target === viewport()) {
+        userScroll = true;
+        if (!atEnd()) consumed = false;
+      }
+    };
+    const keyDown = (event: KeyboardEvent) => {
+      if (!withinList(event)) return;
+      if (event.key === "ArrowDown" || event.key === "PageDown" || event.key === "End" || event.key === " ") {
+        userScroll = true;
+        if (!atEnd()) consumed = false;
+      }
+    };
     const start = (event: TouchEvent) => {
       const point = event.touches.length === 1 && withinList(event) ? event.touches[0] : null;
       touch = point ? { x: point.clientX, y: point.clientY } : null;
+      userScroll = Boolean(touch);
       downward = false;
       consumed = false;
     };
@@ -76,6 +97,8 @@ export function useSidebarEndPull(footerRef: RefObject<HTMLDivElement | null>, e
     const end = () => { touch = null; downward = false; };
     doc.addEventListener("scroll", scroll, { capture: true, passive: true });
     doc.addEventListener("wheel", wheel, { capture: true, passive: true });
+    doc.addEventListener("pointerdown", pointerDown, { capture: true, passive: true });
+    doc.addEventListener("keydown", keyDown, { capture: true, passive: true });
     doc.addEventListener("touchstart", start, { capture: true, passive: true });
     doc.addEventListener("touchmove", move, { capture: true, passive: true });
     doc.addEventListener("touchend", end, { capture: true, passive: true });
@@ -83,6 +106,8 @@ export function useSidebarEndPull(footerRef: RefObject<HTMLDivElement | null>, e
     return () => {
       doc.removeEventListener("scroll", scroll, true);
       doc.removeEventListener("wheel", wheel, true);
+      doc.removeEventListener("pointerdown", pointerDown, true);
+      doc.removeEventListener("keydown", keyDown, true);
       doc.removeEventListener("touchstart", start, true);
       doc.removeEventListener("touchmove", move, true);
       doc.removeEventListener("touchend", end, true);
