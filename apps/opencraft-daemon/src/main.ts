@@ -22,6 +22,7 @@ import WebSocket from "ws";
 
 import { readDaemonMachineIdentity } from "./machine-identity.js";
 import { MachineIdentityTransport } from "./machine-transport.js";
+import { TurnActivityKeepAwake, type SleepInhibitor } from "./keep-awake.js";
 
 import { CodexProviderBridge } from "./codex-provider-bridge.js";
 import { codexAdmissionPaused } from "./codex-maintenance.js";
@@ -119,6 +120,7 @@ export async function startOpenCraftDaemon(options: {
   readonly createCodexTransport?: (options: ConstructorParameters<typeof CodexEngineAdapter>[0]) => CodexEngineAdapter;
   /** Deployment display name; defaults to the OS computer name. */
   readonly machineName?: string;
+  readonly sleepInhibitor?: SleepInhibitor;
 }) {
   codexCoreOptions(options); // Reject an invalid Core composition before owning any storage.
   nodeObserver("gateway");
@@ -220,6 +222,7 @@ export async function startOpenCraftDaemon(options: {
   let localAgent: Awaited<ReturnType<typeof startLocalAgentHost>> | null = null;
   let localAgentStarting: Promise<Awaited<ReturnType<typeof startLocalAgentHost>>> | null = null;
   const codexAgents = new Set<CodexEngineAdapter>();
+  const keepAwake = new TurnActivityKeepAwake(options.sleepInhibitor ? { inhibitor: options.sleepInhibitor } : {});
   let closing: Promise<void> | null = null;
   let collaboration: Collaboration | null = null;
   let assistantThreads: AssistantThreadCommands | undefined;
@@ -231,7 +234,7 @@ export async function startOpenCraftDaemon(options: {
     createTransport(hostId) {
       if(hostId===CHANNELS_HOST_ID && collaboration) return new ImChannelsAppServer(()=>collaboration);
       if (hostId !== "local" && hostId !== "local-codex") throw new Error(`OpenCraft Daemon does not own Host ${hostId}`);
-      return new MachineIdentityTransport(machineIdentity, hostId === "local" ? "OpenCraft" : "Codex", async () => {
+      const transport = new MachineIdentityTransport(machineIdentity, hostId === "local" ? "OpenCraft" : "Codex", async () => {
       if (hostId === "local") {
         localAgentStarting ??= startLocalAgentHost({
           storage,
@@ -334,6 +337,11 @@ export async function startOpenCraftDaemon(options: {
       }
       throw new Error(`OpenCraft Daemon does not own Host ${hostId}`);
       });
+      transport.subscribeMessage((frame) => keepAwake.observeFrame(hostId, frame));
+      transport.subscribeStatus((status) => {
+        if (status.state === "closed" || status.state === "failed") keepAwake.releaseHost(hostId);
+      });
+      return transport;
     },
   });
   if(humanAccounts) collaboration=new Collaboration(humanAccounts.storage,humanAccounts.actors,
@@ -351,6 +359,7 @@ export async function startOpenCraftDaemon(options: {
     let operation!: Promise<void>;
     operation = Promise.resolve().then(async () => {
       relayEnrollment.close();
+      keepAwake.close();
       await daemonServer.close();
       await personalAssistantHost?.close();
       await assistantThreads?.close();
@@ -493,6 +502,7 @@ export async function startOpenCraftDaemon(options: {
     });
   } catch (error) {
     relayEnrollment.close();
+    keepAwake.close();
     await personalAssistantHost?.close();
     await assistantThreads?.close();
     await collaboration?.close();

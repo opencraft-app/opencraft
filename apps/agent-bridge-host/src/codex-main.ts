@@ -60,6 +60,7 @@ for await (const chunk of process.stdin) {
   }
 }
 } finally {
+  runtime.close();
   owner.close();
   await Promise.allSettled(tasks);
   await output;

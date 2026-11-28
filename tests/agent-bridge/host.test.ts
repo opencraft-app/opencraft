@@ -3527,3 +3527,94 @@ test("GatewayInbox skips redundant /ack HTTP writes and cursor Worker queries on
   assert.deepEqual(await inbox.pull(endpoint.url, token), []);
   assert.equal(ackRequests, acksAfterCommit + 1, "subsequent empty pulls after reopen stay silent");
 });
+
+test("Peer notification ephemeral callbacks track cached outbox high-water mark and route ownership across rebind", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "bridge-peer-notif-"));
+  const storage = new Storage(join(root, "host.db"), "host");
+  t.after(async () => {
+    await storage.close().catch(() => {});
+    await rm(root, { recursive: true, force: true });
+  });
+  await storage.ready;
+  await storage.call("add", await config(root, "g1"));
+  await storage.call("add", await config(root, "g2"));
+  await storage.call("activate", { id: "g1", expected: "" });
+  const route = JSON.stringify(["server-1", "thread-1"]);
+  await storage.call("admit", { command: command("c1"), route, digest: "d1", maxSpoolBytes: 1 << 20 });
+  await storage.call("dispatch", { id: "c1" });
+  await storage.call("settle", { id: "c1", state: "accepted" });
+
+  const incarnation = "01234567-89ab-4def-8012-3456789abcde";
+  const openTurn = await storage.call("callback", {
+    generation: "g1",
+    id: `${incarnation}:request:open`,
+    method: "thread/delta",
+    params: {
+      threadId: route,
+      deltas: [
+        { op: "turn.open", nativeTurnId: "nt-1", scope: { threadId: route } },
+        { op: "item.open", nativeKey: "m-1", shape: { kind: "agentMessage", text: "" }, scope: { threadId: route } },
+      ],
+    },
+  });
+  assert.equal(openTurn.structuralWritten, true);
+  assert.equal(openTurn.high, 2);
+
+  const deltaNotif = await storage.call("callback", {
+    generation: "g1",
+    id: `${incarnation}:notification:1`,
+    method: "thread/delta",
+    params: {
+      threadId: route,
+      deltas: [{ op: "item.textDelta", nativeTurnId: "nt-1", nativeKey: "m-1", channel: "agentMessage", text: "fast", scope: { threadId: route } }],
+    },
+  });
+  assert.equal(deltaNotif.structuralWritten, false);
+  assert.equal(deltaNotif.high, 2);
+  assert.equal(deltaNotif.ephemeral.length, 1);
+  assert.equal(deltaNotif.ephemeral[0].afterSeq, 2);
+
+  await assert.rejects(
+    storage.call("callback", {
+      generation: "g2",
+      id: `${incarnation}:notification:2`,
+      method: "thread/notification",
+      params: { threadId: route, method: "item/commandExecution/outputDelta", params: { turnId: "nt-1", itemId: "c-1", delta: "x" } },
+    }),
+    /Callback generation does not own Thread/,
+  );
+
+  // Close turn and rebind route to g2; cached route ownership must update immediately.
+  await storage.call("callback", {
+    generation: "g1",
+    id: `${incarnation}:request:close`,
+    method: "thread/delta",
+    params: {
+      threadId: route,
+      deltas: [
+        { op: "item.close", nativeKey: "m-1", shape: { kind: "agentMessage", text: "fast" }, scope: { threadId: route } },
+        { op: "turn.close", nativeTurnId: "nt-1", status: "completed", scope: { threadId: route } },
+      ],
+    },
+  });
+  await storage.call("rebindRoute", { route, from: "g1", to: "g2" });
+
+  await assert.rejects(
+    storage.call("callback", {
+      generation: "g1",
+      id: `${incarnation}:notification:3`,
+      method: "thread/notification",
+      params: { threadId: route, method: "item/commandExecution/outputDelta", params: { turnId: "nt-1", itemId: "c-1", delta: "x" } },
+    }),
+    /Callback generation does not own Thread/,
+  );
+  const movedNotif = await storage.call("callback", {
+    generation: "g2",
+    id: `${incarnation}:notification:4`,
+    method: "thread/notification",
+    params: { threadId: route, method: "item/commandExecution/outputDelta", params: { turnId: "nt-1", itemId: "c-1", delta: "ok" } },
+  });
+  assert.equal(movedNotif.structuralWritten, false);
+  assert.equal(movedNotif.high, 4);
+  assert.equal(movedNotif.ephemeral[0].afterSeq, 4);
+});

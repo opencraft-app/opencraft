@@ -4,6 +4,7 @@ import { isHumanInteraction } from "@opencraft/appserver-protocol";
 import {
   BRIDGE_ERROR_CODES,
   negotiateHandshake,
+  type BridgeDelta,
   type BridgeWireMessage,
   type BridgeRequest,
   type BridgeInitializeParams,
@@ -11,6 +12,25 @@ import {
 } from "@opencraft/agent-bridge-protocol";
 import { CodexBridge, CodexBridgeError, type CodexOwnerPort } from "./codex.js";
 import { codexDeclaration } from "./codex-declaration.js";
+import { EPHEMERAL_THREAD_NOTIFICATIONS } from "./types.js";
+
+export const DEFAULT_CODEX_STREAM_COALESCE_MS = 10;
+export const MAX_COALESCED_STREAM_BYTES = 256 * 1024;
+const COALESCED_OUTPUT_NOTIFICATIONS: ReadonlySet<string> = new Set([
+  "item/commandExecution/outputDelta",
+  "item/fileChange/outputDelta",
+  "item/reasoning/summaryTextDelta",
+]);
+type BufferedTextDelta = Extract<BridgeDelta, { op: "item.textDelta" }>;
+type BufferedStreamEntry =
+  | { kind: "delta"; threadId: string; deltas: BufferedTextDelta[] }
+  | { kind: "notification"; threadId: string; method: string; params: Record<string, unknown> };
+
+function canMergeOutputNotification(previous: Record<string, unknown>, next: Record<string, unknown>): boolean {
+  const keys = Object.keys(previous);
+  if (keys.length !== Object.keys(next).length) return false;
+  return keys.every((key) => key === "delta" || previous[key] === next[key]);
+}
 
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value))
@@ -32,21 +52,129 @@ export class CodexBridgeRuntime {
   private initialized = false;
   private creating = new Set<string>();
   private interactions = new Map<string, { threadId: string; nativeId: string | number }>();
+  private bufferedStreams: BufferedStreamEntry[] = [];
+  private bufferedStreamBytes = 0;
+  private flushTimer: ReturnType<typeof setTimeout> | undefined;
   constructor(
     private owner: CodexRuntimeOwner,
     private send: (message: BridgeWireMessage) => void,
     private readonly nativeProjectless = false,
+    private readonly coalesceMs = DEFAULT_CODEX_STREAM_COALESCE_MS,
   ) {
     this.adapter = new CodexBridge(
       owner,
-      (threadId, deltas) => this.callback("thread/delta", { threadId, deltas }),
-      (threadId, method, params) => this.callback("thread/notification", { threadId, method, params }),
+      (threadId, deltas) => {
+        if (deltas.length > 0 && deltas.every((delta): delta is BufferedTextDelta => delta.op === "item.textDelta")) {
+          this.enqueueTextDeltas(threadId, deltas);
+          return;
+        }
+        this.callback("thread/delta", { threadId, deltas });
+      },
+      (threadId, method, params) => this.forwardNotification(threadId, method, params),
     );
   }
+  private scheduleFlush(): void {
+    if (this.flushTimer !== undefined) return;
+    this.flushTimer = setTimeout(() => {
+      this.flushTimer = undefined;
+      this.flush();
+    }, this.coalesceMs);
+    this.flushTimer.unref?.();
+  }
+  /** Synchronously emit any coalesced streaming deltas before structural boundaries or shutdown. */
+  flush(): void {
+    if (this.flushTimer !== undefined) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = undefined;
+    }
+    if (this.bufferedStreams.length === 0) return;
+    const batch = this.bufferedStreams.splice(0);
+    this.bufferedStreamBytes = 0;
+    for (const entry of batch) {
+      if (entry.kind === "delta") {
+        this.ephemeralCallback("thread/delta", { threadId: entry.threadId, deltas: entry.deltas });
+      } else {
+        this.ephemeralCallback("thread/notification", {
+          threadId: entry.threadId,
+          method: entry.method,
+          params: entry.params,
+        });
+      }
+    }
+  }
+  close(): void {
+    this.flush();
+  }
+  private enqueueTextDeltas(threadId: string, deltas: readonly BufferedTextDelta[]): void {
+    if (this.coalesceMs <= 0) {
+      this.ephemeralCallback("thread/delta", { threadId, deltas: [...deltas] });
+      return;
+    }
+    for (const delta of deltas) {
+      const chunkBytes = Buffer.byteLength(delta.text);
+      if (this.bufferedStreamBytes > 0 && this.bufferedStreamBytes + chunkBytes > MAX_COALESCED_STREAM_BYTES) {
+        this.flush();
+      }
+      const tail = this.bufferedStreams.at(-1);
+      if (tail?.kind === "delta" && tail.threadId === threadId) {
+        const last = tail.deltas.at(-1);
+        if (
+          last &&
+          last.nativeTurnId === delta.nativeTurnId &&
+          last.nativeKey === delta.nativeKey &&
+          last.channel === delta.channel &&
+          last.contentIndex === delta.contentIndex
+        ) {
+          tail.deltas[tail.deltas.length - 1] = { ...last, text: last.text + delta.text };
+        } else {
+          tail.deltas.push(delta);
+        }
+      } else {
+        this.bufferedStreams.push({ kind: "delta", threadId, deltas: [delta] });
+      }
+      this.bufferedStreamBytes += chunkBytes;
+      if (this.bufferedStreamBytes >= MAX_COALESCED_STREAM_BYTES) this.flush();
+      else this.scheduleFlush();
+    }
+  }
+  private forwardNotification(threadId: string, method: string, params: Record<string, unknown>): void {
+    if (this.coalesceMs > 0 && COALESCED_OUTPUT_NOTIFICATIONS.has(method) && typeof params.delta === "string") {
+      const chunkBytes = Buffer.byteLength(params.delta);
+      if (this.bufferedStreamBytes > 0 && this.bufferedStreamBytes + chunkBytes > MAX_COALESCED_STREAM_BYTES) {
+        this.flush();
+      }
+      const tail = this.bufferedStreams.at(-1);
+      if (
+        tail?.kind === "notification" &&
+        tail.threadId === threadId &&
+        tail.method === method &&
+        canMergeOutputNotification(tail.params, params)
+      ) {
+        tail.params = { ...tail.params, delta: String(tail.params.delta) + params.delta };
+      } else {
+        this.bufferedStreams.push({ kind: "notification", threadId, method, params });
+      }
+      this.bufferedStreamBytes += chunkBytes;
+      if (this.bufferedStreamBytes >= MAX_COALESCED_STREAM_BYTES) this.flush();
+      else this.scheduleFlush();
+      return;
+    }
+    if (EPHEMERAL_THREAD_NOTIFICATIONS.has(method)) {
+      this.flush();
+      this.ephemeralCallback("thread/notification", { threadId, method, params });
+      return;
+    }
+    this.callback("thread/notification", { threadId, method, params });
+  }
+  private ephemeralCallback(method: string, params: unknown): void {
+    this.send({ jsonrpc: "2.0", method, params });
+  }
   private callback(method: string, params: unknown): void {
+    this.flush();
     this.send({ jsonrpc: "2.0", id: `codex-event:${randomUUID()}`, method, params });
   }
   lost(): void {
+    this.flush();
     for (const [id, interaction] of this.interactions)
       this.retireInteraction(id, interaction.threadId, "connection-lost");
     for (const threadId of this.adapter.boundThreads())
@@ -130,8 +258,11 @@ export class CodexBridgeRuntime {
   }
   async handle(request: BridgeRequest): Promise<void> {
     try {
-      this.send({ jsonrpc: "2.0", id: request.id, result: await this.command(request.method, request.params) });
+      const result = await this.command(request.method, request.params);
+      this.flush();
+      this.send({ jsonrpc: "2.0", id: request.id, result });
     } catch (error) {
+      this.flush();
       // An oversized mutation receipt does not prove the mutation was rejected.
       const kind: BridgeErrorKind = error instanceof CodexBridgeError
         && (error.kind !== "frame-too-large" || request.method === "history/read") ? error.kind : "unknown-outcome";

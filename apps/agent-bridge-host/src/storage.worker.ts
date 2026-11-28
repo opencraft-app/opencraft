@@ -35,7 +35,18 @@ const { database: db, outcome } = (() => {
   catch (error) { release(); throw error; }
 })();
 if (!readOnly) db.exec('PRAGMA synchronous=FULL');
-const tx = <T>(action: () => T) => sqliteTransaction(db, action);
+let cachedOutboxHigh: number | undefined;
+const routeGenerations = new Map<string, string | null>();
+const PEER_NOTIFICATION_ID = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}:notification:\d+$/u;
+const tx = <T>(action: () => T) => {
+  try {
+    return sqliteTransaction(db, action);
+  } catch (error) {
+    cachedOutboxHigh = undefined;
+    routeGenerations.clear();
+    throw error;
+  }
+};
 const statements = new Map<string, ReturnType<typeof db.prepare>>();
 const prepare = (sql: string) => {
   let statement = statements.get(sql);
@@ -54,11 +65,25 @@ class Refusal extends Error {}
 const require = (condition: unknown, message: string): void => { if (!condition) throw new Refusal(message); };
 let failed = false;
 const sql = nodeSqlDatabase(db);
+function insertOutbox(route: string, generation: string, payload: string): void {
+  const result = run('INSERT INTO outbox(route,generation,payload) VALUES (?,?,?)', route, generation, payload);
+  cachedOutboxHigh = Number(result.lastInsertRowid);
+}
+function routeOwnedBy(route: string, generation: string): boolean {
+  let owner = routeGenerations.get(route);
+  if (owner === undefined) {
+    owner = (get('SELECT generation FROM routes WHERE route=?', route)?.generation as string | undefined) ?? null;
+    routeGenerations.set(route, owner);
+  }
+  return owner === generation;
+}
 function publishQueueChanged(route: string): boolean {
-  return run(
+  const result = run(
     'INSERT INTO outbox(route,generation,payload) SELECT route,generation,? FROM routes WHERE route=?',
     JSON.stringify({ method: 'thread/queue/changed', params: { threadId: route } }), route,
-  ).changes === 1;
+  );
+  if (result.changes === 1) cachedOutboxHigh = Number(result.lastInsertRowid);
+  return result.changes === 1;
 }
 
 const archivePending = (route: string): boolean =>
@@ -134,7 +159,7 @@ const events = (cursor: number, limit: number): OutboxEvent[] => {
   return page;
 };
 const outboxHigh = (): number =>
-  Number(get("SELECT coalesce((SELECT seq FROM sqlite_sequence WHERE name='outbox'),0) AS high").high);
+  cachedOutboxHigh ??= Number(get("SELECT coalesce((SELECT seq FROM sqlite_sequence WHERE name='outbox'),0) AS high").high);
 const outboxFence = (): OutboxFence => ({
   outboxId: meta('outbox-id'),
   acknowledged: Number(meta('ack')),
@@ -275,6 +300,7 @@ const operations: Record<string, (args: any) => any> = {
     require(!busy(route), 'Route became busy');
     flushRouteCheckpoint(route);
     run('UPDATE routes SET generation=? WHERE route=?', to, route);
+    routeGenerations.set(route, to);
   }),
   // A generation nothing is bound to any more, and whose events are acknowledged, is retired.
   retireUnused: ({ id }: any) => tx(() => {
@@ -312,6 +338,7 @@ const operations: Record<string, (args: any) => any> = {
       run(`UPDATE routes SET generation=? WHERE generation<>? AND generation IN (
         SELECT id FROM generations WHERE json_extract(config,'$.provider.providerId')='codex'
       )`, id, id);
+      routeGenerations.clear();
       // Receipts, events and checkpoints describe the original operation. Only
       // the route and its native binding change owners.
       run(`UPDATE native_sessions SET generation=? WHERE generation<>? AND route IN (
@@ -364,7 +391,9 @@ const operations: Record<string, (args: any) => any> = {
       require(CREATES.includes(command.method), 'Thread must be explicitly created');
       const generation = meta('current');
       require(get('SELECT 1 FROM generations WHERE id=? AND retired=0', generation), 'No active generation');
-      run('INSERT INTO routes(route,generation) VALUES (?,?)', route, generation); binding = { generation, archive_state: 'active' };
+      run('INSERT INTO routes(route,generation) VALUES (?,?)', route, generation);
+      routeGenerations.set(route, generation);
+      binding = { generation, archive_state: 'active' };
     }
     if (command.method === 'turn/start' || command.method === 'turn/steer')
       require(queueActive(route, binding.archive_state), 'Thread is archived or an archive operation is unresolved');
@@ -427,12 +456,62 @@ const operations: Record<string, (args: any) => any> = {
       const retiring = row.method === 'interaction/resolve' ? all('SELECT * FROM interactions WHERE route=? AND id=?', row.route, interactionId) : all('SELECT * FROM interactions WHERE route=?', row.route);
       for (const interaction of retiring) {
         run('DELETE FROM interactions WHERE route=? AND id=?', row.route, interaction.id);
-        run('INSERT INTO outbox(route,generation,payload) VALUES (?,?,?)', row.route, row.generation, JSON.stringify({ method: 'interaction/resolved', params: { threadId: row.route, interactionId: interaction.id, reason: 'resolved' } }));
+        insertOutbox(row.route, row.generation, JSON.stringify({ method: 'interaction/resolved', params: { threadId: row.route, interactionId: interaction.id, reason: 'resolved' } }));
       }
     }
     return row;
   }),
   callback: ({ generation, id, method, params }: any) => {
+    const isPeerNotification = typeof id === 'string' && PEER_NOTIFICATION_ID.test(id);
+    if (isPeerNotification) {
+      const route = params?.threadId;
+      require(typeof route === 'string' && routeOwnedBy(route, generation), 'Callback generation does not own Thread');
+      if (method === 'thread/notification' && typeof params.method === 'string' && EPHEMERAL_THREAD_NOTIFICATIONS.has(params.method)) {
+        require(BRIDGE_THREAD_NOTIFICATIONS.has(params.method) && params.params && typeof params.params === 'object' && !Array.isArray(params.params), 'Invalid thread notification');
+        const high = outboxHigh();
+        return {
+          high,
+          structuralWritten: false,
+          ephemeral: [{ route, generation, afterSeq: high, payload: { method: params.method, params: { ...params.params, threadId: route } } }],
+        };
+      }
+      if (method === 'thread/delta') {
+        const parsed = parseThreadDeltaParams(params);
+        require(parsed.ok, parsed.reason ?? 'Invalid delta');
+        require(parsed.params!.deltas.every(delta => delta.scope.threadId === route), 'Delta scope mismatch');
+        const current = checkpointEntry(route);
+        const state = current?.state ?? createAssemblerState(1);
+        const previousTime = current?.atMs ?? 0;
+        const now = Math.max(Date.now(), previousTime);
+        const result = assemble(state, parsed.params!.deltas, { threadId: route, clockSeed: now - state.seq });
+        const atMs = result.events.at(-1)?.atMs ?? now;
+        const structural = result.events.filter(event => event.kind !== 'agentMessage.delta');
+        const deltas = result.events.filter(event => event.kind === 'agentMessage.delta');
+        if (structural.length === 0) {
+          liveCheckpoints.set(route, { state: result.state, atMs, dirty: true });
+          const high = outboxHigh();
+          return {
+            high,
+            structuralWritten: false,
+            ephemeral: deltas.map(event => ({ route, generation, afterSeq: high, payload: { kind: 'canonical', event } })),
+          };
+        }
+        const digest = createHash('sha256').update(JSON.stringify({ method, params })).digest('hex');
+        return tx(() => {
+          persistCheckpoint(route, result.state, atMs);
+          for (const event of structural)
+            insertOutbox(route, generation, JSON.stringify({ kind: 'canonical', event }));
+          run('INSERT INTO callbacks VALUES (?,?,?)', generation, id, digest);
+          const high = outboxHigh();
+          return {
+            high,
+            structuralWritten: true,
+            ephemeral: deltas.map(event => ({ route, generation, afterSeq: high, payload: { kind: 'canonical', event } })),
+          };
+        });
+      }
+    }
+
     const digest = createHash('sha256').update(JSON.stringify({ method, params })).digest('hex');
     const callbackKey = `${generation}\0${id}`;
     const cachedDigest = ephemeralCallbacks.get(callbackKey);
@@ -446,7 +525,7 @@ const operations: Record<string, (args: any) => any> = {
       return { high: outboxHigh(), structuralWritten: false, ephemeral: [] };
     }
     const route = params.threadId;
-    require(typeof route === 'string' && get('SELECT 1 FROM routes WHERE route=? AND generation=?', route, generation), 'Callback generation does not own Thread');
+    require(typeof route === 'string' && routeOwnedBy(route, generation), 'Callback generation does not own Thread');
 
     if (method === 'thread/delta') {
       const parsed = parseThreadDeltaParams(params);
@@ -473,7 +552,7 @@ const operations: Record<string, (args: any) => any> = {
       return tx(() => {
         persistCheckpoint(route, result.state, atMs);
         for (const event of structural)
-          run('INSERT INTO outbox(route,generation,payload) VALUES (?,?,?)', route, generation, JSON.stringify({ kind: 'canonical', event }));
+          insertOutbox(route, generation, JSON.stringify({ kind: 'canonical', event }));
         run('INSERT INTO callbacks VALUES (?,?,?)', generation, id, digest);
         const high = outboxHigh();
         return {
@@ -502,7 +581,7 @@ const operations: Record<string, (args: any) => any> = {
           require(isTerminalInteraction(params.params), 'Invalid terminal interaction');
         if (params.method === 'thread/archived' || params.method === 'thread/unarchived')
           run('UPDATE routes SET archive_state=? WHERE route=?', params.method === 'thread/archived' ? 'archived' : 'active', route);
-        run('INSERT INTO outbox(route,generation,payload) VALUES (?,?,?)', route, generation, JSON.stringify({ method: params.method, params: { ...params.params, threadId: route } }));
+        insertOutbox(route, generation, JSON.stringify({ method: params.method, params: { ...params.params, threadId: route } }));
         run('INSERT INTO callbacks VALUES (?,?,?)', generation, id, digest);
         return { high: outboxHigh(), structuralWritten: true, ephemeral: [] };
       });
@@ -526,7 +605,7 @@ const operations: Record<string, (args: any) => any> = {
         require(typeof params.interactionId === 'string' && ['resolved', 'connection-lost'].includes(params.reason), 'Invalid interaction settlement');
         run('DELETE FROM interactions WHERE route=? AND id=?', route, params.interactionId);
       }
-      run('INSERT INTO outbox(route,generation,payload) VALUES (?,?,?)', route, generation, JSON.stringify({ method, params }));
+      insertOutbox(route, generation, JSON.stringify({ method, params }));
       run('INSERT INTO callbacks VALUES (?,?,?)', generation, id, digest);
       return { high: outboxHigh(), structuralWritten: true, ephemeral: [] };
     });
@@ -597,6 +676,7 @@ const operations: Record<string, (args: any) => any> = {
     require(!get('SELECT 1 FROM outbox WHERE route=?', route), 'Unacknowledged events retain the route');
     liveCheckpoints.delete(route);
     run('DELETE FROM routes WHERE route=?', route);
+    routeGenerations.set(route, null);
     return { abandoned: true };
   }),
   releaseRoute: ({ route }: any) => tx(() => {
@@ -607,6 +687,7 @@ const operations: Record<string, (args: any) => any> = {
     liveCheckpoints.delete(route);
     run('INSERT INTO released_routes SELECT route,generation FROM routes WHERE route=?', route);
     run('DELETE FROM routes WHERE route=?', route);
+    routeGenerations.set(route, null);
   }),
   retire: ({ id }: any) => tx(() => {
     require(meta('current') !== id, 'Cannot retire current generation');
