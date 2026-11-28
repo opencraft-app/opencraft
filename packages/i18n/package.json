@@ -5,7 +5,7 @@
   "type": "module",
   "exports": { ".": "./src/index.ts", "./react": "./src/react.tsx" },
   "scripts": { "typecheck": "tsc --noEmit" },
-  "dependencies": { "react-intl": "7.1.14" },
+  "dependencies": { "react-intl": "12.2.0" },
   "peerDependencies": { "react": "^19.0.0" },
   "devDependencies": { "@types/react": "~19.3.0", "typescript": "^6.0.3" }
 }
