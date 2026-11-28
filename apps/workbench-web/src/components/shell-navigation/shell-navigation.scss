@@ -8,7 +8,7 @@
 // A+D: AppShell still owns all dock/floating/gesture geometry and shared portals.
 .shell-sidebar__column {
   --padding-shell-sidebar-inline: var(--padding-sidebar-content-inline);
-  --padding-sidebar-activity-row-inline: 6px;
+  --padding-sidebar-activity-row-inline: var(--padding-sidebar-navigation-row-inline);
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-rows: minmax(0, 1fr) auto;
@@ -129,7 +129,7 @@
   .shell-sidebar__navigation {
     grid-column: 1; grid-row: 2;
     align-self: end;
-    padding-inline: calc(var(--padding-shell-sidebar-inline) + var(--padding-sidebar-activity-row-inline)) 0;
+    padding-inline: var(--padding-shell-sidebar-inline) 0;
     // Keep one footer row. Extra contributed destinations scroll natively
     // rather than making the entire sidebar footer taller.
     overflow: auto hidden;

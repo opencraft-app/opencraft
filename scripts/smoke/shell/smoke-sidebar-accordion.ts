@@ -40,8 +40,12 @@ try{
  const section=(name:string)=>page.getByRole('region',{name,exact:true});const button=(name:string)=>section(name).locator('.sidebar-thread-group-toggle');
  const expanded=()=>page.locator('.sidebar-thread-group-toggle[aria-expanded="true"]').count();
  const activate=async(name:string)=>{const b=button(name);await b.scrollIntoViewIfNeeded();if(mode.touch)await b.tap();else await b.click();await page.waitForTimeout(220);assert.ok(await expanded()<=1);};
+ const switcher=page.getByRole('radiogroup',{name:'对话',exact:true});const recentOption=switcher.getByRole('radio',{name:/最近/});const privateOption=switcher.getByRole('radio',{name:/私密/});
  assert.equal(await expanded(),1);assert.equal(await button('最近').getAttribute('aria-expanded'),'true');
- const editor=await page.getByLabel('Main draft').elementHandle();await activate('私密');assert.equal(await button('最近').getAttribute('aria-expanded'),'false');await activate('私密');assert.equal(await expanded(),0);
+ const editor=await page.getByLabel('Main draft').elementHandle();
+ if(mode.touch)await privateOption.tap();else await privateOption.click();await section('私密').waitFor();
+ if(mode.touch)await recentOption.tap();else await recentOption.click();await section('最近').waitFor();
+ await activate('置顶');assert.equal(await button('最近').getAttribute('aria-expanded'),'false');await activate('置顶');assert.equal(await expanded(),0);
  await page.evaluate(()=>(window as any).fixture.refresh());assert.equal(await expanded(),0,'catalog updates must not reopen collapsed sections');
  await activate('定时任务');assert.equal(await button('定时任务').getAttribute('aria-expanded'),'true');await activate('等你处理');assert.equal(await button('定时任务').getAttribute('aria-expanded'),'false');
  // Collapse a long group from its sticky heading and retain a visible title at the boundary.
@@ -53,9 +57,9 @@ try{
  const anchor=button('置顶');const y=(await anchor.boundingBox())!.y;if(mode.touch)await anchor.tap();else await anchor.click();await page.waitForTimeout(220);const anchorDelta=(await anchor.boundingBox())!.y-y;assert.ok(Math.abs(anchorDelta)<2,'available heading anchor is preserved');
  await page.screenshot({path:output+'/'+mode.width+'-'+mode.touch+'-'+theme+'-anchored.png'});await activate('置顶');assert.equal(await expanded(),0);await button('最近').focus();await page.keyboard.press('Enter');assert.equal(await expanded(),1);await page.keyboard.press('Space');assert.equal(await expanded(),0);
  // Rapid native activations before one React commit preserve toggle parity.
- await button('私密').evaluate(el=>{(el as HTMLButtonElement).click();(el as HTMLButtonElement).click()});assert.equal(await expanded(),0);
+ await button('置顶').evaluate(el=>{(el as HTMLButtonElement).click();(el as HTMLButtonElement).click()});assert.equal(await expanded(),0);
  await page.evaluate(()=>(window as any).fixture.group());await section('创建者甲').waitFor();assert.ok(await expanded()<=1);
- await activate('创建者甲');if(await button('创建者甲').getAttribute('aria-expanded')==='false')await activate('创建者甲');await activate('私密');assert.equal(await button('创建者甲').getAttribute('aria-expanded'),'false','fixed and contribution IDs do not collide');await activate('创建者乙');assert.equal(await button('私密').getAttribute('aria-expanded'),'false');await activate('创建者乙');assert.equal(await expanded(),0);await page.evaluate(()=>(window as any).fixture.refresh());assert.equal(await expanded(),0);
+ await activate('创建者甲');if(await button('创建者甲').getAttribute('aria-expanded')==='false')await activate('创建者甲');await activate('定时任务');assert.equal(await button('创建者甲').getAttribute('aria-expanded'),'false','fixed and contribution IDs do not collide');await activate('创建者乙');assert.equal(await button('定时任务').getAttribute('aria-expanded'),'false');await activate('创建者乙');assert.equal(await expanded(),0);await page.evaluate(()=>(window as any).fixture.refresh());assert.equal(await expanded(),0);
  await activate('创建者甲');await viewport.evaluate(el=>{const h=el.querySelector<HTMLElement>('[aria-label="创建者乙"] .sidebar-thread-group-heading')!;el.scrollTop+=h.getBoundingClientRect().top-el.getBoundingClientRect().top-60});await page.waitForTimeout(150);
  const lowerBefore=(await button('创建者乙').boundingBox())!.y;if(mode.touch)await button('创建者乙').tap();else await button('创建者乙').click();await page.waitForTimeout(220);const lowerDelta=(await button('创建者乙').boundingBox())!.y-lowerBefore;if(Math.abs(lowerDelta)>=2){console.log(JSON.stringify({mode,theme,lowerBefore,lowerDelta,geometry:await viewport.evaluate(el=>({scrollTop:el.scrollTop,height:el.clientHeight,total:el.scrollHeight,headers:[...el.querySelectorAll('.sidebar-thread-group-heading')].slice(0,4).map(h=>({label:h.textContent,y:h.getBoundingClientRect().top}))}))}));await page.screenshot({path:output+'/anchor-failure.png'})};const anchorLimits=await viewport.evaluate(el=>{const section=el.querySelector<HTMLElement>('[aria-label="创建者乙"]')!;return {natural:section.getBoundingClientRect().top+el.scrollTop,max:Math.max(0,el.scrollHeight-el.clientHeight)}});
  const expectedAfter=anchorLimits.natural-Math.max(0,Math.min(anchorLimits.max,anchorLimits.natural-lowerBefore));

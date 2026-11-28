@@ -26,9 +26,8 @@
   &[data-section="empty"] { --tone: var(--sidebar-icon-empty); }
 }
 // One icon column and one text column for every sidebar row, on touch and
-// pointer alike: 12px inner inset, 20px icon, 12px gap. Entry rows, New chat,
-// section headings and the empty state share both lines; conversation rows and
-// date headings sit on the icon line so dense lists keep their full width.
+// pointer alike: 8px inner inset, 20px icon, 12px gap. Entry rows, New chat,
+// section headings, date headings and conversation rows share the 16px axis.
 :root {
   --sidebar-align-inset: var(--padding-sidebar-navigation-row-inline);
   --sidebar-align-gap: var(--gap-sidebar-navigation-icon-label);

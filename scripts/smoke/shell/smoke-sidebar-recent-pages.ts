@@ -63,15 +63,45 @@ await recent.getByRole('button',{name:/^(Recent|最近)$/,exact:true}).click();
 const typography=await more.evaluate(el=>({size:getComputedStyle(el).fontSize,color:getComputedStyle(el).color,height:el.getBoundingClientRect().height}));assert.equal(typography.size,'12px');assert.ok(typography.height>=(touch?44:30));
 for(const count of [20,30,31]){await activate(more);await waitRows(count);assert.equal(await rows.count(),count);assert.equal(await less.count(),1);assert.equal(await pinned.locator('.sidebar-activity-item').count(),8);}
 assert.equal(await more.count(),0);assert.equal(await recent.getByRole('status').innerText(),locale==='zh-CN'?'没有更多了':'No more conversations');const last=await rows.last().boundingBox();const bottom=await less.boundingBox();assert.ok(bottom!.y>=last!.y+last!.height-1,'controls follow last recent row');await less.scrollIntoViewIfNeeded();await page.screenshot({path:join(output,locale+'-'+theme+'-'+(touch?'touch':'desktop')+'.png')});await activate(less);assert.equal(await rows.count(),10);assert.equal(await less.count(),0);await activate(more);await waitRows(20);assert.equal(await rows.count(),20);await recent.getByRole('button',{name:/^(Recent|最近)$/,exact:true}).click();assert.equal(await more.isVisible(),false);await recent.getByRole('button',{name:/^(Recent|最近)$/,exact:true}).click();assert.equal(await rows.count(),20);await activate(less);
-// Reaching the boundary reveals a page without another wheel/touch event.
+// Programmatic scrollTop alone must not load; reaching the boundary via real user scroll reveals one page.
 const scroll=page.locator(touch?'.shell-sidebar__scroll':'.sidebar-activity-list');
 await scroll.evaluate(el=>{el.scrollTop=0;});await page.waitForTimeout(80);
 const firstRow=await rows.first().elementHandle();
 await page.evaluate(()=>{(window as any).busySeen=false;(window as any).spinnerSeen=false;new MutationObserver(records=>{const footer=document.querySelector('.sidebar-activity-pagination[aria-busy="true"]');if(footer?.querySelector('.is-spinning')&&footer.querySelector('button')?.disabled&&footer.querySelector('button')?.textContent==='')(window as any).spinnerSeen=true;for(const r of records)if((r.target as Element).getAttribute('aria-busy')==='true'||r.oldValue==='true')(window as any).busySeen=true;}).observe(document.querySelector('.sidebar-activity-list')!,{subtree:true,attributes:true,attributeFilter:['aria-busy'],attributeOldValue:true});});
 await scroll.dispatchEvent('wheel',{deltaY:-20});await scroll.dispatchEvent('wheel',{deltaX:80,deltaY:5});await page.waitForTimeout(50);assert.equal(await rows.count(),10);
-const topBefore=await scroll.evaluate(el=>{const bottom=el.scrollHeight-el.clientHeight;el.scrollTop=bottom;return bottom;});
+// Prior downward wheel or scrollbar pointerdown that did not reach the end must not leave sticky scroll intent.
+await scroll.dispatchEvent('wheel',{deltaY:120});
+await scroll.dispatchEvent('pointerdown',{buttons:1});await scroll.dispatchEvent('pointerup',{buttons:0});
+await page.waitForTimeout(320);
+await scroll.evaluate(el=>{el.scrollTop=el.scrollHeight-el.clientHeight;});await page.waitForTimeout(100);
+assert.equal(await rows.count(),10,'programmatic scrollTop after completed downward scroll/scrollbar interaction does not load');
+// Even immediately after an unconsumed downward wheel, tapping or Space-activating Show more must reveal exactly one page (10 -> 20).
+await scroll.evaluate(el=>{el.scrollTop=Math.max(0,el.scrollHeight-el.clientHeight-10);});await page.waitForTimeout(40);
+await scroll.dispatchEvent('wheel',{deltaY:120});
+if(touch)await more.tap();else{await more.focus();await more.press('Space');}
+await waitRows(20);await page.waitForTimeout(120);
+assert.equal(await rows.count(),20,'tap/Space on Show more after downward wheel loads exactly one page');
+await activate(less);await waitRows(10);
+await scroll.evaluate(el=>{el.scrollTop=0;});await page.waitForTimeout(80);
+await page.evaluate(()=>{(window as any).busySeen=false;(window as any).spinnerSeen=false;});
+const pullToEnd=async(target:any)=>{
+ if(touch){
+  const box=await target.boundingBox();const x=box!.x+box!.width/2,y=box!.y+box!.height-80;
+  await target.evaluate((el:HTMLElement)=>{el.scrollTop=Math.max(0,el.scrollHeight-el.clientHeight-30);});await page.waitForTimeout(30);
+  const cdp=await page.context().newCDPSession(page);
+  await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y}]});
+  await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x,y:y-100}]});
+  await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await cdp.detach();
+ }else{
+  await target.evaluate((el:HTMLElement)=>{el.scrollTop=Math.max(0,el.scrollHeight-el.clientHeight-30);});await page.waitForTimeout(30);
+  await target.dispatchEvent('wheel',{deltaY:120});
+  await target.evaluate((el:HTMLElement)=>{el.scrollTop=el.scrollHeight-el.clientHeight;});
+ }
+};
+const topBefore=await scroll.evaluate(el=>el.scrollHeight-el.clientHeight);
+await pullToEnd(scroll);
 await waitRows(20);await page.waitForTimeout(80);
-assert.equal(await rows.count(),20,'scroll position alone loads exactly one page');
+assert.equal(await rows.count(),20,'user scroll arrival loads exactly one page');
 assert.equal(await firstRow!.evaluate(el=>el===document.querySelector('.sidebar-activity-group[aria-label="Recent"] .sidebar-activity-item, .sidebar-activity-group[aria-label="最近"] .sidebar-activity-item')),true,'existing row identity preserved');
 const topAfter=await scroll.evaluate(el=>el.scrollTop);assert.ok(Math.abs(topAfter-topBefore)<2,`page reveal keeps scroll position ${touch}: ${topBefore} -> ${topAfter}`);
 assert.equal(await page.evaluate(()=>(window as any).busySeen),true,'real transition publishes pending state');
@@ -93,7 +123,7 @@ if(touch){
  await scroll.evaluate(el=>{el.tabIndex=0;el.focus();});await page.keyboard.press('End');await waitRows(30);
 }
 await page.waitForTimeout(100);assert.equal(await rows.count(),30);
-await scroll.evaluate(el=>{el.scrollTop=el.scrollHeight;});await waitRows(31);
+await pullToEnd(scroll);await waitRows(31);
 assert.equal(await more.count(),0);assert.equal(await recent.getByRole('status').innerText(),locale==='zh-CN'?'没有更多了':'No more conversations');
 await page.screenshot({path:join(output,locale+'-'+theme+'-'+(touch?'touch':'desktop')+'-auto.png')});
 await activate(less);
@@ -105,7 +135,7 @@ await page.evaluate(()=>{
 });
 const movedScroll=page.locator(touch?'.owner-probe .shell-sidebar__scroll':'.owner-probe .sidebar-activity-list');
 await movedScroll.evaluate(el=>{el.scrollTop=0});await page.waitForTimeout(30);
-await movedScroll.evaluate(el=>{el.scrollTop=el.scrollHeight});await waitRows(20);
+await pullToEnd(movedScroll);await waitRows(20);
 assert.equal(await rows.count(),20,'scroll arrival follows retained panel into new Shell owner');
 await activate(less);
 for(const count of [10,11,0]){await page.evaluate(n=>(window as any).setCount(n),count);await page.waitForTimeout(30);assert.equal(await rows.count(),Math.min(count,10));assert.equal(await more.count(),count>10?1:0);assert.equal(await less.count(),0);assert.equal(await recent.getByRole('status').count(),0);}
