@@ -73,6 +73,19 @@ export function LoadingRingIcon(props: ActionIconProps) {
   </ActionGlyph>;
 }
 
+/** Determinate circular ring for bounded capacities such as a conversation context window. */
+export function ContextRingIcon({ percent, ...props }: ActionIconProps & { readonly percent: number }) {
+  const clamped = Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : 0;
+  const radius = 8;
+  const circumference = 2 * Math.PI * radius;
+  const visible = clamped > 0 ? Math.max(clamped, 3) : 0;
+  const dashOffset = circumference * (1 - visible / 100);
+  return <ActionGlyph {...props} strokeWidth={2.2} kind="context-ring">
+    <circle cx="12" cy="12" r={radius} opacity={0.22} />
+    {visible > 0 ? <circle cx="12" cy="12" r={radius} strokeDasharray={circumference} strokeDashoffset={dashOffset} transform="rotate(-90 12 12)" /> : null}
+  </ActionGlyph>;
+}
+
 /** Counterclockwise return shared by reset and retry actions. */
 export const ResetIcon = sharedActionIcon("ResetIcon");
 

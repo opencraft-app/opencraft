@@ -1,37 +1,394 @@
-@use '@opencraft/design-system/typography-mixins.web' as typography;
+@use "@opencraft/design-system/typography-mixins.web" as typography;
+
 .agent-usage {
   flex: 0 1 auto;
   min-height: 0;
   // The hairline is the list boundary; do not reserve a blank strip above it.
   margin-block-start: 0;
-  border-top: .5px solid var(--color-border-default);
+  border-top: 0.5px solid var(--color-border-default);
   color: var(--color-text-secondary);
   @include typography.role(metadata, secondary);
-  &__disclosure { width: 100%; }
-  &__summary { margin-inline-start: auto; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  &__content { max-height: min(42dvh, 24rem); overflow-y: auto; padding: calc(var(--spacing) * 2); }
-  &__machine-tabs { display: flex; flex-wrap: wrap; gap: var(--spacing); margin-block-end: calc(var(--spacing) * 2); }
-  &__machine-tab { max-width: 100%; }
-  &__machine-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  &__machine-badge { @include typography.role(caption, tertiary); }
-  &__header { display: flex; align-items: center; gap: var(--spacing); margin-block-end: calc(var(--spacing) * 2); }
-  &__tabs { display: flex; gap: var(--spacing); }
-  &__meta { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-end; text-align: end; }
-  &__account { @include typography.role(caption, tertiary); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  &__provider p, &__conversation p { margin: var(--spacing) 0; }
-  &__window { display: grid; grid-template-columns: max-content minmax(0, 1fr) max-content; align-items: center; column-gap: calc(var(--spacing) * 2); row-gap: var(--spacing); margin-block: calc(var(--spacing) * 2);
-    small { grid-column: 1 / -1; color: var(--color-text-tertiary); }
+
+  &__disclosure {
+    width: 100%;
   }
-  progress { appearance: none; width: 100%; height: var(--spacing); border: 0; border-radius: var(--radius-full); overflow: hidden;
-    &::-webkit-progress-bar { background: var(--color-border-subtle); }
-    &::-webkit-progress-value { background: var(--color-text-secondary); border-radius: var(--radius-full); }
-    &::-moz-progress-bar { background: var(--color-text-secondary); }
-    &[data-warning]::-webkit-progress-value { background: var(--color-text-warning); }
+
+  &__summary {
+    margin-inline-start: auto;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    @include typography.role(caption, secondary);
+
+    &[data-warning] {
+      color: var(--color-text-warning);
+    }
+
+    &[data-offline] {
+      color: var(--color-text-danger);
+    }
   }
-  &__conversation { border-top: .5px solid var(--color-border-default); margin-block-start: calc(var(--spacing) * 2); padding-block-start: calc(var(--spacing) * 2);
-    h4 { @include typography.role(metadata, secondary); margin: 0 0 var(--spacing); display: flex; justify-content: space-between; > small { color: var(--color-text-tertiary); } }
-    dl { margin: var(--spacing) 0; > div { display: flex; justify-content: space-between; gap: var(--spacing); } dd { margin: 0; font-variant-numeric: tabular-nums; } }
-    > small { color: var(--color-text-tertiary); }
+
+  &__content {
+    max-height: min(42dvh, 24rem);
+    overflow-y: auto;
+    padding: calc(var(--spacing) * 2);
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--spacing) * 2);
   }
-  &__context { display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; }
+
+  &__machine-tabs {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing);
+  }
+
+  &__machine-tab {
+    width: 100%;
+    max-width: 100%;
+    justify-content: flex-start;
+  }
+
+  &__status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: var(--radius-full);
+    flex: 0 0 auto;
+    background: var(--color-status-success);
+
+    &[data-offline] {
+      background: var(--color-text-danger);
+    }
+  }
+
+  &__machine-copy {
+    min-width: 0;
+    display: flex;
+    align-items: baseline;
+    gap: calc(var(--spacing) * 1.5);
+    flex: 1 1 auto;
+  }
+
+  &__machine-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__machine-badge {
+    @include typography.role(caption, tertiary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-inline-start: auto;
+  }
+
+  &__offline {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: calc(var(--spacing) * 2);
+    padding: calc(var(--spacing) * 2) calc(var(--spacing) * 2.5);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-border-subtle);
+    background: var(--color-background-surface);
+  }
+
+  &__offline-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+
+    strong {
+      @include typography.role(metadata, primary);
+    }
+
+    span {
+      @include typography.role(caption, tertiary);
+    }
+  }
+
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing);
+  }
+
+  &__tabs {
+    display: flex;
+    gap: var(--spacing);
+  }
+
+  &__account-row {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--spacing) * 1.5);
+    min-width: 0;
+  }
+
+  &__plan-badge {
+    padding: 1px calc(var(--spacing) * 1.5);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-border-subtle);
+    background: var(--color-background-surface);
+    @include typography.role(caption, secondary);
+    white-space: nowrap;
+  }
+
+  &__account {
+    @include typography.role(caption, tertiary);
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__provider {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--spacing) * 2);
+
+    p {
+      margin: 0;
+      @include typography.role(caption, secondary);
+    }
+  }
+
+  &__window {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr) max-content;
+    align-items: center;
+    column-gap: calc(var(--spacing) * 2);
+    row-gap: var(--spacing);
+
+    small {
+      grid-column: 1 / -1;
+      @include typography.role(caption, tertiary);
+    }
+  }
+
+  &__window-percent {
+    font-variant-numeric: tabular-nums;
+
+    &[data-warning] {
+      color: var(--color-text-warning);
+    }
+  }
+
+  &__window-cost {
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__read-at {
+    @include typography.role(caption, tertiary);
+  }
+
+  progress {
+    appearance: none;
+    width: 100%;
+    height: var(--spacing);
+    border: 0;
+    border-radius: var(--radius-full);
+    overflow: hidden;
+
+    &::-webkit-progress-bar {
+      background: var(--color-border-subtle);
+    }
+
+    &::-webkit-progress-value {
+      background: var(--color-text-secondary);
+      border-radius: var(--radius-full);
+    }
+
+    &::-moz-progress-bar {
+      background: var(--color-text-secondary);
+    }
+
+    &[data-warning]::-webkit-progress-value,
+    &[data-warning]::-moz-progress-bar {
+      background: var(--color-text-warning);
+    }
+  }
+}
+
+.agent-context {
+  &__trigger-value {
+    display: inline-flex;
+    align-items: center;
+    gap: calc(var(--spacing) * 1.25);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+
+    &[data-warning] {
+      color: var(--color-text-warning);
+    }
+  }
+
+  &__popover {
+    z-index: var(--layer-popover, 60);
+    width: min(300px, calc(100vw - 24px));
+    padding: calc(var(--spacing) * 3.5);
+    border-radius: var(--radius-xl);
+    border: 1px solid var(--color-border-default);
+    background: var(--color-background-elevated-primary-opaque);
+    box-shadow: var(--material-menu-shadow);
+    color: var(--color-text);
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--spacing) * 2.5);
+
+    progress {
+      appearance: none;
+      width: 100%;
+      height: var(--spacing);
+      border: 0;
+      border-radius: var(--radius-full);
+      overflow: hidden;
+      display: block;
+
+      &::-webkit-progress-bar {
+        background: var(--color-border-subtle);
+      }
+
+      &::-webkit-progress-value {
+        background: var(--color-text-secondary);
+        border-radius: var(--radius-full);
+      }
+
+      &::-moz-progress-bar {
+        background: var(--color-text-secondary);
+      }
+
+      &[data-warning]::-webkit-progress-value,
+      &[data-warning]::-moz-progress-bar {
+        background: var(--color-text-warning);
+      }
+    }
+  }
+
+  &__section {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--spacing) * 1.5);
+
+    &--tokens {
+      padding-top: calc(var(--spacing) * 2.5);
+      border-top: 0.5px solid var(--color-border-subtle);
+    }
+  }
+
+  &__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: calc(var(--spacing) * 2);
+  }
+
+  &__title {
+    @include typography.role(control, primary);
+  }
+
+  &__provider {
+    @include typography.role(caption, tertiary);
+  }
+
+  &__subtitle {
+    margin: 0;
+    @include typography.role(caption, tertiary);
+  }
+
+  &__meter {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--spacing) * 1.5);
+    margin-top: var(--spacing);
+  }
+
+  &__meter-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: calc(var(--spacing) * 2);
+    font-variant-numeric: tabular-nums;
+    @include typography.role(metadata, secondary);
+
+    strong {
+      color: var(--color-text);
+
+      &[data-warning] {
+        color: var(--color-text-warning);
+      }
+    }
+  }
+
+  &__warning {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: calc(var(--spacing) * 1.5);
+    color: var(--color-text-warning);
+    @include typography.role(caption, primary);
+  }
+
+  &__section-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: calc(var(--spacing) * 2);
+  }
+
+  &__section-label {
+    @include typography.role(caption, tertiary);
+  }
+
+  &__cache-rate {
+    @include typography.role(caption, secondary);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+
+    &[data-strong] {
+      color: var(--color-status-success);
+    }
+  }
+
+  &__dl {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing);
+    @include typography.role(metadata, secondary);
+
+    > div {
+      display: flex;
+      justify-content: space-between;
+      gap: calc(var(--spacing) * 2);
+    }
+
+    dd {
+      margin: 0;
+      color: var(--color-text);
+      font-variant-numeric: tabular-nums;
+    }
+  }
+
+  &__note {
+    margin: 0;
+    @include typography.role(caption, tertiary);
+  }
+
+  &__footer {
+    padding-top: calc(var(--spacing) * 1.5);
+    border-top: 0.5px solid var(--color-border-subtle);
+  }
+
+  &__settings-link {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  &__settings-label {
+    color: var(--color-text-accent);
+  }
 }

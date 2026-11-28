@@ -104,7 +104,7 @@ import { useStableEvent } from "@opencraft/react-runtime";
 import { nativeProjectPicker } from "./runtime/project-folder-picker";
 import { groupWorkInMachines as groupNewConversationMachines, workInAgentHosts, chooseWorkInHost, ThreadTitleWriter, legacyDirectServerProjectionFromHost } from "@opencraft/workbench-runtime";
 import { readCachedThreadName, writeCachedThreadName } from "./runtime/thread-title-cache";
-import { AgentUsage } from "./components/agent-usage";
+import { AgentUsage, ConversationContextUsage } from "./components/agent-usage";
 import { archiveThread } from "./runtime/thread-archive";
 import { forkAndOpenThread } from "./runtime/thread-fork-navigation";
 import { useSidebarDraftRows } from "./runtime/use-sidebar-draft-rows";
@@ -2848,7 +2848,22 @@ export function App({
                         </>}
                         shortcutCommands={threadShortcutCommands}
                         entryActions={composerDesktopEntry}
-                        endActions={presentation.connectorLauncher ? connectorPresentation.launcher : null}
+                        endActions={
+                          <>
+                            {presentation.connectorLauncher ? connectorPresentation.launcher : null}
+                            <ConversationContextUsage
+                              hostId={snapshot.hostId}
+                              threadId={draft === null ? activeThreadId ?? null : null}
+                              busy={isStreaming}
+                              portalContainer={portalContainer}
+                              onOpenTokenUsage={
+                                settingsContributionSnapshot.settingsPages.some(({ contribution }) => contribution.id === "opencraft.token-usage.page")
+                                  ? () => openSettingsFromConversation("opencraft.token-usage.page")
+                                  : undefined
+                              }
+                            />
+                          </>
+                        }
                         actionsDisabled={draft !== null && draftSubmissionOwnsNavigation(draft.phase)}
                         modelSelectionPolicy={modelSelectionPolicy}
                         placeholderPending={recoveryPlaceholder !== undefined}
