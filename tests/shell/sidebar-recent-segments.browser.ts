@@ -56,7 +56,7 @@ try {
   for (const width of [390, 1280]) for (const theme of ['light', 'dark']) {
     const locale = theme === 'light' ? 'en-US' : 'zh-CN';
     const text = locale === 'en-US' ? ['In progress', 'Today', 'Yesterday', 'Recent', 'Show more'] : ['进行中', '今天', '昨天', '最近', '查看更多'];
-    const context = await browser.newContext({ viewport: { width, height: 844 }, hasTouch: width === 390, isMobile: width === 390, timezoneId: 'Asia/Shanghai', reducedMotion: 'reduce' });
+    const context = await browser.newContext({ viewport: { width, height: 1040 }, hasTouch: width === 390, isMobile: width === 390, timezoneId: 'Asia/Shanghai', reducedMotion: 'reduce' });
     const page = await context.newPage(), errors: string[] = [];
     page.on('pageerror', e => errors.push(e.message));
     await page.clock.install({ time: new Date('2026-11-17T15:50:00Z') });
@@ -68,8 +68,16 @@ try {
     const recent = page.getByRole('region', { name: text[3], exact: true });
     const headings = () => recent.locator('h4.sidebar-activity-group__heading').allTextContents();
     assert.deepEqual(await headings(), text.slice(0, 3));
+    await page.waitForFunction(() => {
+      const root: HTMLElement = (window as any).fixture.scrollViewport();
+      const rows = root.querySelectorAll('.sidebar-activity-item');
+      const footer = root.querySelector('.sidebar-activity-group[data-collapsed="false"] .sidebar-activity-pagination:not([hidden])');
+      if (rows.length <= 10 || !footer) return false;
+      const bottom = root.getBoundingClientRect().bottom - (parseFloat(getComputedStyle(root).paddingBottom) || 0);
+      const remaining = bottom - footer.getBoundingClientRect().bottom;
+      return remaining >= -1 && remaining < rows[0]!.getBoundingClientRect().height + 2;
+    });
     await page.screenshot({ path: resolve(output, `${width}-${theme}-initial.png`) });
-    assert.equal(await recent.locator('.sidebar-activity-item').count(), 10);
     const firstRow = await recent.locator('[data-thread-id=r1] .sidebar-activity-item').elementHandle();
     const draft = await page.getByLabel('Conversation draft').elementHandle();
     await page.evaluate(() => { (window as any).rowIdentity = document.querySelector('[data-thread-id=r1] .sidebar-activity-item'); });
@@ -96,12 +104,13 @@ try {
     await page.evaluate(() => (window as any).fixture.start());
     await page.waitForFunction(() => Boolean(document.querySelector('[data-thread-id=r1] .is-running')));
     assert.equal(await firstRow!.evaluate(el => el.isConnected), true);
-    // Existing shared ten-row budget, not a second independent running page.
+    // Running and dated rows share the fitted budget and continuation increment.
     const more = recent.getByRole('button', { name: text[4], exact: true });
-    if (width === 390) await more.tap(); else await more.click();
+    const nextCount = await recent.locator('.sidebar-activity-item').count() + 10;
+    // Activate without scrolling the footer into view, which also loads a page.
+    await more.evaluate((button: HTMLButtonElement) => button.click());
     await page.clock.runFor(100);
-    await page.waitForFunction(() => document.querySelectorAll('.sidebar-activity-item').length === 20);
-    assert.equal(await recent.locator('.sidebar-activity-item').count(), 20);
+    await page.waitForFunction(count => document.querySelectorAll('.sidebar-activity-item').length === count, nextCount);
     await page.evaluate(() => { (window as any).fixture.scrollViewport().dataset.testScrollOwner = 'true'; });
     const scroll = page.locator('[data-test-scroll-owner=true]');
     await scroll.evaluate(el => { el.scrollTop = 150; });
@@ -126,7 +135,7 @@ try {
     assert.equal(await firstRow!.evaluate(el => el.isConnected), true, 'locale switch keeps the row DOM');
     assert.equal(await draft!.evaluate(el => (el as HTMLTextAreaElement).value), 'Keep this draft');
     assert.deepEqual(errors, []);
-    evidence.push({ width, theme, locale, rows: 200, visible: 20, headings: finalHeadings, localeSwitch: true, midnight: true, resume: true, rowIdentity: true, menuRetained: true, sharedPagination: true, catalogScansOnClock: 0, scrollBefore, errors });
+    evidence.push({ width, theme, locale, rows: 200, visible: nextCount, headings: finalHeadings, localeSwitch: true, midnight: true, resume: true, rowIdentity: true, menuRetained: true, sharedPagination: true, catalogScansOnClock: 0, scrollBefore, errors });
     await context.close();
   }
   await writeFile(resolve(output, 'results.json'), JSON.stringify(evidence, null, 2));

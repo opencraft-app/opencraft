@@ -375,13 +375,10 @@ visibility checks consume the viewport actually used by the current presentation
 
 ### Sidebar matching-results continuation
 
-The footer offers only Load more when the current search/server/personal-filter
-result has recent rows omitted by the ten-row display budget (selected-row
-inclusion counts as visible). Filtered-out conversations do not count toward
-continuation and never generate a hidden-people notice or Show all action. Loading
-expands the matching rows without changing any filter; once all are visible the
-footer disappears, with no Show less toggle. Product grouping owns its own rows
-and does not receive the standard task-flow continuation button.
+The footer offers Show more only when there are additional rows in the current
+search/server/personal-filter result. Continuing preserves the filter and leaves
+product grouping, which owns its own rows, independent of the standard Recent
+pagination.
 
 ### Desktop navigation surface (2026-10-15)
 
@@ -872,8 +869,9 @@ sticky-heading paint ownership remain intact; this is not list virtualization.
 
 ### Recent state and calendar headings
 
-Recent retains running-first ordering, canonical recency and its shared ten-row
-pagination budget. Its leading running run has one quiet `In progress` heading,
+Recent retains running-first ordering and canonical recency. Its first page
+starts at ten rows and grows when the Sidebar scrollport has room for more.
+Explicit continuation adds ten rows at a time. Its leading running run has one quiet `In progress` heading,
 not dates. Only non-running history receives local-day headings. This is a
 presentation within the existing flat keyed list, not another disclosure, data
 owner, copy of a conversation or running lease for an idle active goal. Completing

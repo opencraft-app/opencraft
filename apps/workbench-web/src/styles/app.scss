@@ -11573,6 +11573,8 @@ html[data-window-host="browser"] body {
   align-items: center;
   gap: var(--gap-control-group);
 
+  &[hidden] { display: none; }
+
   .sidebar-activity-more {
     @include typography.role(control-small, tertiary);
   }

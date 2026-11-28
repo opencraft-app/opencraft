@@ -11,6 +11,7 @@ export type SigningRegistration = 'unregistered' | 'pending' | 'registered' | 'm
 export interface GitVaultCredential {
   identity: { username: string; name: string; email: string; accountId?: string };
   token: string;
+  httpsUsername?: string;
   sshAuth?: { generation: string; publicKey: string; fingerprint: string; privateKey: string } | null;
   signing: null | { generation: string; publicKey: string; fingerprint: string; privateKey: string;
     registration: SigningRegistration; remoteKeyId?: number };
@@ -35,6 +36,7 @@ export function validateGitVaultCredential(value: GitVaultCredential): void {
   if (!value?.identity || !text(value.identity.username, 128) || !text(value.identity.name, 256)
     || !text(value.identity.email, 320) || !/^[^\s@]+@[^\s@]+$/u.test(value.identity.email)
     || !(text(value.token, 4096) || (value.token === '' && value.sshAuth !== undefined))) throw new GitVaultError('invalid');
+  if (value.httpsUsername !== undefined && !text(value.httpsUsername, 128)) throw new GitVaultError('invalid');
   if (value.sshAuth && (!text(value.sshAuth.generation, 128) || !text(value.sshAuth.publicKey, 1024)
     || !text(value.sshAuth.fingerprint, 128) || !value.sshAuth.privateKey.startsWith(PRIVATE_KEY_HEADER)
     || value.sshAuth.privateKey.length > 4096)) throw new GitVaultError('invalid');

@@ -22,7 +22,7 @@ const initial=[{id:'pin',title:'共享置顶',pinned:true},{id:'recent',title:'�
 {id:'private-child',title:'我的私有子会话',accessMode:'private',parentThreadId:'private'},
 {id:'private-scheduled',title:'私有计划任务',accessMode:'private',schedule:{status:'active'}},
 {id:'shared-child',title:'共享派生',parentThreadId:'private'},
-...Array.from({length:21},(_,i)=>({id:'recent-extra-'+i,title:'共享历史 '+i})),
+...Array.from({length:35},(_,i)=>({id:'recent-extra-'+i,title:'共享历史 '+i})),
 ...Array.from({length:10},(_,i)=>({id:'mine-'+i,title:'私有历史 '+i,accessMode:'private'}))]
 .map((row,i)=>({...row,project:'workspace',status:'ready',updatedAt:Date.now()/1000-i,connectionHostId:'local',connectionHostLabel:'Local',...legacyDirectServerProjectionFromHost({hostId:'local',hostKind:'local',label:'Local'})}));
 let projected=[];
@@ -68,14 +68,17 @@ try {
     assert.equal(await pin.locator('[data-thread-id="private"]').count(),0);
     assert.equal(await recent.locator('[data-thread-id="shared-child"]').count(),1);
     const activate=async(button:any)=>{await button.scrollIntoViewIfNeeded();if(touch)await button.tap();else{await button.focus();await button.press('Enter');}};
-    // Tapping or Space-activating "Show more" in Recent must reveal exactly one page (+10 -> 20, not 30).
-    assert.equal(await recent.locator('.sidebar-activity-item').count(),10);
+    // Tapping or Space-activating "Show more" in Recent must reveal exactly one page (+10, not +20).
+    await page.waitForTimeout(150);
+    const initialRecentCount=await recent.locator('.sidebar-activity-item').count();
+    assert.ok(initialRecentCount>=10&&initialRecentCount<30);
     const recentMore=recent.getByRole('button',{name:'查看更多',exact:true});
     await recentMore.scrollIntoViewIfNeeded();
     if(touch)await recentMore.tap();else{await recentMore.focus();await recentMore.press('Space');}
-    await page.waitForFunction(()=>document.querySelector('[aria-label="最近"]')?.querySelectorAll('.sidebar-activity-item').length===20);
+    const nextRecentCount=initialRecentCount+10;
+    await page.waitForFunction((expected:number)=>document.querySelector('[aria-label="最近"]')?.querySelectorAll('.sidebar-activity-item').length===expected,nextRecentCount);
     await page.waitForTimeout(150);
-    assert.equal(await recent.locator('.sidebar-activity-item').count(),20,'tap/Space on Show more loads exactly one page');
+    assert.equal(await recent.locator('.sidebar-activity-item').count(),nextRecentCount,'tap/Space on Show more loads exactly one page');
     // Searching a private parent + private child while in Recent must switch to Private (private child must not count as shared).
     const search=page.getByRole('searchbox');await search.fill('我的私有');
     const mine=page.getByRole('region',{name:'私密',exact:true});
