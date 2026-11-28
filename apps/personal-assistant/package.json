@@ -22,9 +22,9 @@
     "eval:memory-system": "node evaluation/memory-system.mjs"
   },
   "dependencies": {
-    "@earendil-works/chord": "1.3.0",
-    "@earendil-works/pi-ai": "1.3.0",
-    "@earendil-works/pi-durable": "1.3.0",
+    "@earendil-works/chord": "1.6.0",
+    "@earendil-works/pi-ai": "1.6.0",
+    "@earendil-works/pi-durable": "1.6.0",
     "@opencraft/appserver-protocol": "0.1.0",
     "@opencraft/identity-core": "0.1.0",
     "@opencraft/sandbox": "0.1.0",
