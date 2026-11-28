@@ -64,6 +64,11 @@ import { ApplicationsSidebarFrame } from "./components/applications-sidebar";
 import { ApplicationRouteMotion, useApplicationDesktopBackdrop } from "./components/application-desktop-motion";
 import { ImageEditorContext } from "@opencraft/extension-react";
 import { submitEmbeddedPrompt } from "./embedded-chat/embedded-prompt-submission";
+import {
+  projectEmbeddedSession,
+  type EmbeddedSessionMetadataProjector,
+  type EmbeddedWorkbenchAppSession,
+} from "./embedded-chat/embedded-session-projection";
 import { isEmbeddedConversationPainted } from "./embedded-chat/embedded-paint";
 import { createDeferredView } from "@opencraft/extension-react";
 const WorkspaceResourcePreviewPanel = createDeferredView(async () => (await import("./panels/workspace-resource-panel")).WorkspaceResourcePreviewPanel);
@@ -294,15 +299,7 @@ function humanizeCatalogValue(value: string): string {
     .join(" ");
 }
 
-export interface EmbeddedWorkbenchAppSession {
-  readonly chatId: string;
-  readonly title: string;
-  readonly createdAt: number;
-  readonly updatedAt: number;
-  readonly readOnly: boolean;
-  readonly running: boolean;
-  readonly pinned: boolean;
-}
+export type { EmbeddedWorkbenchAppSession } from "./embedded-chat/embedded-session-projection";
 
 export interface EmbeddedWorkbenchAppActions {
   submitPrompt(text: string): boolean;
@@ -315,6 +312,8 @@ export interface EmbeddedWorkbenchAppActions {
 }
 
 export interface EmbeddedWorkbenchAppPresentation {
+  /** Opt in to projecting display metadata for catalog rows in this embed. */
+  readonly projectSessionMetadata?: EmbeddedSessionMetadataProjector;
   readonly modelSelectionPolicy?: import("@opencraft/composer-core").ModelSelectionPolicy;
   readonly onConfigureModels?: () => void;
   readonly panelHost?: {
@@ -1725,16 +1724,7 @@ export function App({
     if (embedded === undefined) return [];
     return catalog.threads.map((thread): EmbeddedWorkbenchAppSession => {
       const protocolThread = catalog.protocolThreads.find((candidate) => candidate.id === thread.id);
-      const updatedAt = protocolThread?.updatedAt ?? 0;
-      return {
-        chatId: thread.id,
-        title: thread.title,
-        createdAt: updatedAt,
-        updatedAt,
-        readOnly: false,
-        running: thread.status === "running",
-        pinned: thread.pinned === true,
-      };
+      return projectEmbeddedSession(thread, protocolThread, embedded.projectSessionMetadata);
     });
   }, [catalog.protocolThreads, catalog.threads, embedded]);
   useEffect(() => {
