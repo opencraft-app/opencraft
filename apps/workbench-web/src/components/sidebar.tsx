@@ -14,7 +14,7 @@ import { canHandleWorkbenchShortcut, matchesWorkbenchShortcut, shortcutLabel, sh
 import * as ContextMenu from "@opencraft/design-system-web/context-menu";
 import * as DropdownMenu from "@opencraft/design-system-web/dropdown-menu";
 import { ThreadListModeItems } from "./thread-list-mode-menu";
-import { AvatarImage, useIdentityAvatarUrl, type ThreadBadgeContribution, type ThreadListGroup, type ThreadListGroupingContribution, type ThreadListGroupingSnapshot, type ThreadListLabel } from "@opencraft/extension-react";
+import { AvatarImage, SegmentedControl, useIdentityAvatarUrl, type ThreadBadgeContribution, type ThreadListGroup, type ThreadListGroupingContribution, type ThreadListGroupingSnapshot, type ThreadListLabel } from "@opencraft/extension-react";
 import { useWorkbenchPresentationRoot } from "./workbench-presentation-root";
 
 import { useIntl } from "@opencraft/i18n/react";
@@ -204,8 +204,9 @@ function sidebarUnread(thread: SidebarThread, grouping: ThreadListGroupingContri
   }) ?? true);
 }
 
-function SidebarPagination({ total, visibleCount, pageSize, onChange, pullToLoad = false }: {
-  total: number; visibleCount: number; pageSize: number; onChange: (count: number) => void; pullToLoad?: boolean;
+function SidebarPagination({ total, visibleCount, pageSize, initialCount = pageSize, onChange, onFill, pullToLoad = false }: {
+  total: number; visibleCount: number; pageSize: number; initialCount?: number;
+  onChange: (count: number) => void; onFill?: (count: number) => void; pullToLoad?: boolean;
 }) {
   const intl = useIntl();
   const [pending, startTransition] = useTransition();
@@ -215,15 +216,17 @@ function SidebarPagination({ total, visibleCount, pageSize, onChange, pullToLoad
   const reveal = () => {
     if (!pending && visibleCount < total) startTransition(() => onChange(visibleCount + pageSize));
   };
-  useSidebarEndPull(footerRef, pullToLoad && !pending && visibleCount < total, reveal);
+  useSidebarEndPull(footerRef, pullToLoad && !pending && visibleCount < total, reveal,
+    onFill && !pending && visibleCount < total
+      ? additional => onFill(Math.min(total, visibleCount + additional)) : undefined);
   const moreLabel = intl.formatMessage({ id: "sidebar.catalog.showMore", defaultMessage: "Show more" });
-  return <div className="sidebar-activity-pagination" ref={footerRef} aria-busy={pending} hidden={total <= pageSize}>
+  return <div className="sidebar-activity-pagination" ref={pullToLoad ? footerRef : undefined} aria-busy={pending} hidden={total <= initialCount}>
     {visibleCount < total ? <button type="button" className="sidebar-activity-more" onClick={reveal} disabled={pending} aria-label={moreLabel}>
       {pending ? <LoaderCircle size={14} className="is-spinning" aria-hidden="true" /> : <span>{moreLabel}</span>}
     </button> : pullToLoad ? <NavigationEmpty className="sidebar-activity-empty">
       {intl.formatMessage({ id: "sidebar.catalog.end", defaultMessage: "No more conversations" })}
     </NavigationEmpty> : null}
-    {visibleCount > pageSize ? <button type="button" className="sidebar-activity-more" disabled={pending} onClick={() => onChange(pageSize)}>
+    {visibleCount > initialCount ? <button type="button" className="sidebar-activity-more" disabled={pending} onClick={() => onChange(initialCount)}>
       {intl.formatMessage({ id: "sidebar.catalog.less", defaultMessage: "Show less" })}
     </button> : null}
   </div>;
@@ -310,7 +313,13 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   const [query, setQuery] = useState("");
   const [pinnedLimit, setPinnedLimit] = useState(PINNED_PAGE_SIZE);
   const [projectLimits, setProjectLimits] = useState<Record<string, number>>({});
-  const [recentLimit, setRecentLimit] = useState(RECENT_PAGE_SIZE);
+  const [recentPage, setRecentPage] = useState({ initial: RECENT_PAGE_SIZE, extra: 0 });
+  const recentLimit = recentPage.initial + recentPage.extra;
+  const setRecentLimit = (count: number) => setRecentPage(current => ({
+    ...current, extra: Math.max(0, count - current.initial),
+  }));
+  const fitRecentLimit = (count: number) => setRecentPage(current =>
+    current.extra || current.initial === count ? current : { ...current, initial: count });
   const [scheduledLimit, setScheduledLimit] = useState(PINNED_PAGE_SIZE);
   const [mineLimit, setMineLimit] = useState(RECENT_PAGE_SIZE);
   const [menus] = useState(() => new SidebarThreadMenuStore());
@@ -384,8 +393,9 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   const needle = query.trim().toLocaleLowerCase();
   const matchingDraftRows = pendingDraftRows.filter(row => (!serverFilter.serverId || row.serverId === serverFilter.serverId)
     && (!needle || row.title.toLocaleLowerCase().includes(needle)));
+  const rawActiveDraftKey = pendingDraftRows.find(row => row.active)?.key;
   const activeDraftKey = matchingDraftRows.find(row => row.active)?.key;
-  const { matching, matchingById, tree, matchingReferences, taskFlow } = useMemo(() => {
+  const { matching, sharedMatching, matchingById, tree, matchingReferences, taskFlow } = useMemo(() => {
     const allowed = new Set((JSON.parse(allowedKeys) as [string, string][]).map(key => JSON.stringify(key)));
     const matching = threads.filter(thread => thread.visibility !== "hidden"
       && (thread.accessMode === "private" || allowed.has(identity(thread)))
@@ -394,7 +404,8 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
     const matchingById = new Map(matching.map(thread => [identity(thread), thread]));
     // Access categories have independent trees: a private child of a shared
     // conversation (or the reverse) remains in its own visible section.
-    const sharedTree = sidebarThreadTree(matching.filter(thread => thread.accessMode !== "private"));
+    const sharedMatching = matching.filter(thread => thread.accessMode !== "private");
+    const sharedTree = sidebarThreadTree(sharedMatching);
     const mineTree = sidebarThreadTree(matching.filter(thread => thread.accessMode === "private"));
     const tree = {
       nodes: new Map([...sharedTree.nodes, ...mineTree.nodes]),
@@ -403,8 +414,8 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
     const roots = sharedTree.roots.map(node => node.thread);
     const rootIds = new Set(roots.map(identity));
     const matchingReferences = references.filter(ref => rootIds.has(JSON.stringify([ref.hostId, ref.threadId])));
-    const taskFlow = { ...groupThreadsByTaskFlow(roots), scheduled: showScheduled ? matching.filter(thread => thread.schedule && thread.schedule.status !== "deleted").sort((a, b) => b.updatedAt - a.updatedAt) : [], mine: mineTree.roots.map(node => node.thread) };
-    return { matching, matchingById, tree, matchingReferences, taskFlow };
+    const taskFlow = { ...groupThreadsByTaskFlow(roots), scheduled: showScheduled ? sharedMatching.filter(thread => thread.schedule && thread.schedule.status !== "deleted").sort((a, b) => b.updatedAt - a.updatedAt) : [], mine: mineTree.roots.map(node => node.thread) };
+    return { matching, sharedMatching, matchingById, tree, matchingReferences, taskFlow };
   }, [threads, references, allowedKeys, needle, serverFilter.serverId, showScheduled]);
   const selection = pendingHostId !== null && pendingThreadId !== null
     ? identity({ connectionHostId: pendingHostId, id: pendingThreadId })
@@ -416,10 +427,50 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   const groupKey = (key: string) => `group:${key}`;
   const selectedRoot = tree.rootByIdentity.get(selection) ?? selection;
   const containsSelected = (rows: readonly SidebarThread[]) => rows.some(thread => identity(thread) === selectedRoot);
+  const selectedInMine = containsSelected(taskFlow.mine);
+  const selectedThread = threads.find(thread => thread.visibility !== "hidden" && identity(thread) === selection);
+  const selectedScope: "private" | "recent" | null = selectedThread
+    ? (selectedThread.accessMode === "private" ? "private" : "recent")
+    : null;
+  const [accessScope, setAccessScope] = useState<"recent" | "private">(() => (rawActiveDraftKey !== undefined ? "recent" : selectedScope ?? "recent"));
+  const lastSelectionForScope = useRef(selection);
+  const lastSelectedScopeForScope = useRef<"private" | "recent" | null>(selectedScope);
+  const lastActiveDraftKeyForScope = useRef<string | undefined>(rawActiveDraftKey);
+  useLayoutEffect(() => {
+    const draftChanged = lastActiveDraftKeyForScope.current !== rawActiveDraftKey;
+    lastActiveDraftKeyForScope.current = rawActiveDraftKey;
+    const selectionChanged = lastSelectionForScope.current !== selection;
+    lastSelectionForScope.current = selection;
+    const selectedScopeChanged = selectedScope !== null && lastSelectedScopeForScope.current !== selectedScope;
+    if (selectionChanged || selectedScope !== null) lastSelectedScopeForScope.current = selectedScope;
+    if ((selectionChanged || selectedScopeChanged) && selectedScope !== null) {
+      setAccessScope(selectedScope);
+    } else if (draftChanged && rawActiveDraftKey !== undefined) {
+      setAccessScope("recent");
+    }
+  }, [rawActiveDraftKey, selection, selectedScope]);
+  const sharedMatchCount = sharedMatching.length + matchingDraftRows.length;
+  const searching = Boolean(needle);
+  const wasSearchingForScope = useRef(searching);
+  useLayoutEffect(() => {
+    const previouslySearching = wasSearchingForScope.current;
+    wasSearchingForScope.current = searching;
+    if (!searching) {
+      if (!previouslySearching) return;
+      if (rawActiveDraftKey !== undefined) setAccessScope("recent");
+      else if (selectedInMine) setAccessScope("private");
+      else if (matchingById.has(selection)) setAccessScope("recent");
+      return;
+    }
+    if (accessScope === "recent" && sharedMatchCount === 0 && taskFlow.mine.length > 0) setAccessScope("private");
+    else if (accessScope === "private" && taskFlow.mine.length === 0 && sharedMatchCount > 0) setAccessScope("recent");
+  }, [searching, accessScope, sharedMatchCount, taskFlow.mine.length, rawActiveDraftKey, selectedInMine, matchingById, selection]);
+  const hasSharedSiblings = Boolean(groupedSections) || taskFlow.scheduled.length > 0
+    || taskFlow.attention.length > 0 || taskFlow.pinned.length > 0 || nativeProjects.length > 0;
+  const flatRecent = !hasSharedSiblings;
   let initialSection: string | null;
   if (activeDraftKey !== undefined) initialSection = flowKey("recent");
   else if (!preferenceState.values["sidebar.scheduledCollapsed"] && taskFlow.scheduled.some(thread => identity(thread) === selection)) initialSection = flowKey("scheduled");
-  else if (containsSelected(taskFlow.mine)) initialSection = flowKey("mine");
   else if (groupedSections) {
     const group = groupedSections.find(group => !group.collapsed && group.threads.some(ref => JSON.stringify([ref.hostId, ref.threadId]) === selectedRoot))
       ?? groupedSections.find(group => !group.collapsed);
@@ -428,7 +479,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
     const selectedFlow = (["attention","pinned"] as const).find(key => containsSelected(taskFlow[key]));
     const selectedProject = nativeProjects.find(group=>containsSelected(group.threads));
     const fallback = recentWithoutProjects.length ? "recent" : nativeProjects[0] ? `native-project:${nativeProjects[0].key}`
-      : taskFlow.pinned.length ? "pinned" : taskFlow.attention.length ? "attention" : "mine";
+      : taskFlow.pinned.length ? "pinned" : taskFlow.attention.length ? "attention" : "recent";
     initialSection=flowKey(selectedFlow ?? (selectedProject ? `native-project:${selectedProject.key}` : fallback));
   }
   // Searching is its own disclosure scope: the open group follows the matches
@@ -469,7 +520,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   const busyCatalog = threadCatalogDiscovery === "loading" || applicableCatalogs.some(catalog => catalog.phase === "loading");
   const catalogErrors = applicableCatalogs.filter(catalog => catalog.phase === "error"
     || catalog.phase === "ready" && catalog.cachedAt !== undefined);
-  const empty = matching.length === 0 && matchingDraftRows.length === 0 && !busyCatalog && catalogErrors.length === 0 && threadCatalogDiscovery !== "error";
+  const empty = sharedMatchCount === 0 && !busyCatalog && catalogErrors.length === 0 && threadCatalogDiscovery !== "error";
   const filtersLabel = text("sidebar.filters", "Filters");
   const allServersLabel = text("sidebar.allServers", "All servers");
   const dismissAfter = (action: () => void) => { selectionIntent.current = null; menus.close(); action(); dismiss?.(); };
@@ -515,21 +566,48 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
     const node = tree.nodes.get(identity(thread));
     return node ? <ul className="sidebar-thread-tree" role="list">{renderTreeNode(node, attention, projectGrouped)}</ul> : null;
   };
+  const renderFlowRows = (key: string, rows: readonly SidebarThread[], limit?: number, update?: (count: number) => void, nativeProject = false) => {
+    const draftRows = key === "recent" ? matchingDraftRows : [];
+    const visible = limit === undefined ? rows : rows.slice(0, limit);
+    const headings = key === "recent" ? sidebarRecentHeadings(visible) : null;
+    const inProgress = () => <h4 className="sidebar-activity-group__heading">
+      {intl.formatMessage({ id: "sidebar.activity.inProgress", defaultMessage: "In progress" })}
+    </h4>;
+    return <>
+      {key === "mine" && !rows.length ? <NavigationEmpty className="sidebar-activity-empty"><SidebarEmptyIcon />{text("sidebar.access.empty", "No private conversations yet")}</NavigationEmpty> : null}
+      {draftRows.length ? inProgress() : null}
+      {draftRows.map(row => {
+        const label = row.title || text("onboard.history.untitled", "Untitled conversation");
+        return <SidebarActivityItem key={row.key} title={label} tooltip={label}
+          conversationKey={`draft:${row.key}`} active={row.active} selected={row.active}
+          pending status="ready" project="" unread={false} onInvoke={() => dismissAfter(row.onSelect)} />;
+      })}
+      {visible.map(thread => {
+        const heading = headings?.get(thread);
+        return <div key={identity(thread)}>
+          {heading === "running" && !draftRows.length ? inProgress()
+            : heading === "date" ? <SidebarDateHeading timestampMs={thread.updatedAt * 1_000} /> : null}
+          {key === "scheduled" ? renderThread(thread) : renderThreadTree(thread, key === "attention", nativeProject)}
+        </div>;
+      })}
+      {limit !== undefined && update ? <SidebarPagination total={rows.length} visibleCount={limit}
+        pageSize={nativeProject ? 6 : key === "pinned" || key === "scheduled" ? PINNED_PAGE_SIZE : RECENT_PAGE_SIZE}
+        initialCount={key === "recent" ? recentPage.initial : undefined}
+        onFill={key === "recent" && !recentPage.extra ? fitRecentLimit : undefined}
+        onChange={update} pullToLoad={key === "recent"} /> : null}
+    </>;
+  };
   const renderFlowSection = (key: string, title: string, rows: readonly SidebarThread[], limit?: number, update?: (count: number) => void, nativeProject = false) => {
     const draftRows = key === "recent" ? matchingDraftRows : [];
     if (!rows.length && !draftRows.length && key !== "mine") return null;
     const collapsed = sectionCollapsed(key);
     const visible = limit === undefined ? rows : rows.slice(0, limit);
-    const headings = key === "recent" ? sidebarRecentHeadings(visible) : null;
     const counts = key === "pinned" || key === "recent" || key === "attention" || nativeProject
       ? summarizeSidebarActivity(rows.flatMap(thread => { const node = tree.nodes.get(identity(thread)); return node ? [node] : []; }), thread => sidebarUnread(thread, threadListGrouping))
       : null;
     const summaryId = `${rowIdPrefix}-summary-${key}`;
     const hasSummary = counts !== null && (counts.unread + counts.attention + counts.running) > 0;
     const contentId = `${rowIdPrefix}-flow-${key}`;
-    const inProgress = () => <h4 className="sidebar-activity-group__heading">
-      {intl.formatMessage({ id: "sidebar.activity.inProgress", defaultMessage: "In progress" })}
-    </h4>;
     return <SidebarConversationGroup key={key} title={title} contentId={contentId}
       collapsed={collapsed} hasRows={visible.length > 0 || draftRows.length > 0} nativeProject={nativeProject}
       heading={<button type="button" className="sidebar-thread-group-toggle" aria-expanded={!collapsed} aria-controls={contentId}
@@ -538,38 +616,33 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
         {nativeProject ? <span className="sidebar-native-project-icon" aria-hidden="true"><FolderIcon size={16} /></span> : <SidebarSectionIcon section={key} />}<span className="sidebar-thread-group-label">{title}</span><ChevronDown size={12} data-group-disclosure="" className={collapsed ? "is-collapsed" : undefined} />
         {counts ? <SidebarActivitySummary id={summaryId} counts={counts} /> : null}
       </button>}>
-        {key === "mine" && !rows.length ? <NavigationEmpty className="sidebar-activity-empty"><SidebarEmptyIcon />{text("sidebar.access.empty", "No private conversations yet")}</NavigationEmpty> : null}
-        {draftRows.length ? inProgress() : null}
-        {draftRows.map(row => {
-          const label = row.title || text("onboard.history.untitled", "Untitled conversation");
-          return <SidebarActivityItem key={row.key} title={label} tooltip={label}
-            conversationKey={`draft:${row.key}`} active={row.active} selected={row.active}
-            pending status="ready" project="" unread={false} onInvoke={() => dismissAfter(row.onSelect)} />;
-        })}
-        {visible.map(thread => {
-          const heading = headings?.get(thread);
-          return <div key={identity(thread)}>
-            {heading === "running" && !draftRows.length ? inProgress()
-              : heading === "date" ? <SidebarDateHeading timestampMs={thread.updatedAt * 1_000} /> : null}
-            {key === "scheduled" ? renderThread(thread) : renderThreadTree(thread, key === "attention", nativeProject)}
-          </div>;
-        })}
-        {limit !== undefined && update ? <SidebarPagination total={rows.length} visibleCount={limit}
-          pageSize={nativeProject ? 6 : key === "pinned" || key === "scheduled" ? PINNED_PAGE_SIZE : RECENT_PAGE_SIZE} onChange={update} pullToLoad={key === "recent"} /> : null}
+        {renderFlowRows(key, rows, limit, update, nativeProject)}
     </SidebarConversationGroup>;
   };
-  const visibleSections = [
-    ...(groupedSections?.map(group => ({ ...group, collapsed: accordion.collapsed(groupKey(group.id)) })) ?? Object.entries({...taskFlow,recent:recentWithoutProjects}).filter(([id]) => id !== "mine" && id !== "scheduled").map(([id, rows]) => ({
-      id, collapsed: sectionCollapsed(id),
-      threads: rows.slice(0, id === "pinned" ? pinnedLimit : id === "recent" ? recentLimit : id === "scheduled" ? scheduledLimit : rows.length)
-        .map(thread => ({ hostId: thread.connectionHostId, threadId: thread.id })),
-    }))),
-    ...(!groupedSections ? nativeProjects.map(group => ({ id: `native-project:${group.key}`, collapsed: sectionCollapsed(`native-project:${group.key}`),
-      threads: group.threads.slice(0,projectLimits[group.key]??6).map(thread=>({hostId:thread.connectionHostId,threadId:thread.id})) })) : []),
-    { id: "scheduled", collapsed: sectionCollapsed("scheduled"), threads: taskFlow.scheduled.slice(0, scheduledLimit).map(thread => ({ hostId: thread.connectionHostId, threadId: thread.id })) },
-    { id: "mine", collapsed: sectionCollapsed("mine"),
-      threads: taskFlow.mine.slice(0, mineLimit).map(thread => ({ hostId: thread.connectionHostId, threadId: thread.id })) },
-  ];
+  const recentSummary = useMemo(
+    () => summarizeSidebarActivity(
+      recentWithoutProjects.flatMap(thread => { const node = tree.nodes.get(identity(thread)); return node ? [node] : []; }),
+      thread => sidebarUnread(thread, threadListGrouping),
+    ),
+    [recentWithoutProjects, tree, threadListGrouping],
+  );
+  const hasRecentSummary = (recentSummary.unread + recentSummary.attention + recentSummary.running) > 0;
+  const visibleSections = accessScope === "private"
+    ? [{
+        id: "mine",
+        collapsed: false,
+        threads: taskFlow.mine.slice(0, mineLimit).map(thread => ({ hostId: thread.connectionHostId, threadId: thread.id })),
+      }]
+    : [
+        ...(groupedSections?.map(group => ({ ...group, collapsed: accordion.collapsed(groupKey(group.id)) })) ?? Object.entries({...taskFlow,recent:recentWithoutProjects}).filter(([id]) => id !== "mine" && id !== "scheduled").map(([id, rows]) => ({
+          id, collapsed: id === "recent" && flatRecent ? false : sectionCollapsed(id),
+          threads: rows.slice(0, id === "pinned" ? pinnedLimit : id === "recent" ? recentLimit : id === "scheduled" ? scheduledLimit : rows.length)
+            .map(thread => ({ hostId: thread.connectionHostId, threadId: thread.id })),
+        }))),
+        ...(!groupedSections ? nativeProjects.map(group => ({ id: `native-project:${group.key}`, collapsed: sectionCollapsed(`native-project:${group.key}`),
+          threads: group.threads.slice(0,projectLimits[group.key]??6).map(thread=>({hostId:thread.connectionHostId,threadId:thread.id})) })) : []),
+        { id: "scheduled", collapsed: sectionCollapsed("scheduled"), threads: taskFlow.scheduled.slice(0, scheduledLimit).map(thread => ({ hostId: thread.connectionHostId, threadId: thread.id })) },
+      ];
   // Row menus, the badge and the list display menu are one exclusive overlay
   // owner; an owner whose row is no longer visible or no longer accepts
   // interaction must not keep the menu open.
@@ -694,45 +767,91 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
           {!searchInDialog ? <label className="sidebar-list-search"><Search size={14} aria-hidden="true" /><input type="search"
             aria-label={text("sidebar.search", "Search conversations")} placeholder={text("sidebar.search", "Search conversations")}
             value={query} onChange={event => setQuery(event.currentTarget.value)} /></label> : null}
+          <SegmentedControl
+            className="sidebar-access-switcher"
+            appearance="inset"
+            width="fill"
+            label={text("sidebar.conversations", "Conversations")}
+            value={accessScope}
+            onValueChange={next => {
+              menus.close();
+              setAccessScope(next === "private" ? "private" : "recent");
+            }}
+            options={[
+              {
+                value: "recent",
+                label: (
+                  <span className="sidebar-access-switcher__option">
+                    <span>{text("sidebar.flow.recent", "Recent")}</span>
+                    {hasRecentSummary ? <SidebarActivitySummary id={`${rowIdPrefix}-scope-summary-recent`} counts={recentSummary} /> : null}
+                  </span>
+                ),
+              },
+              {
+                value: "private",
+                label: (
+                  <span className="sidebar-access-switcher__option">
+                    <span>{text("sidebar.access.mine", "Private")}</span>
+                    {taskFlow.mine.length > 0 ? <span className="sidebar-access-switcher__count">{taskFlow.mine.length}</span> : null}
+                  </span>
+                ),
+              },
+            ]}
+          />
           <div className="sidebar-activity-list" ref={activityList}>
             {grouping.notice ? <NavigationEmpty className="sidebar-activity-empty">{label(grouping.notice)}</NavigationEmpty> : null}
-            {renderFlowSection("scheduled", text("schedules.catalog.title", "Scheduled tasks"), taskFlow.scheduled, scheduledLimit, setScheduledLimit)}
-            {groupedSections ? groupedSections.map(group => {
-              const key = groupKey(group.id);
-              const collapsed = accordion.collapsed(key);
-              const contentId = `${rowIdPrefix}-group-${encodeURIComponent(group.id)}`;
-              const title = label(group.label);
-              const rows = collapsed ? [] : group.threads.flatMap(ref => {
-                const thread = matchingById.get(JSON.stringify([ref.hostId, ref.threadId]));
-                return thread ? [thread] : [];
-              });
-              return <SidebarConversationGroup key={group.id} title={title} contentId={contentId}
-                collapsed={collapsed} hasRows={rows.length > 0}
-                heading={<button type="button" className="sidebar-thread-group-toggle" aria-expanded={!collapsed} aria-controls={contentId} onClick={event => {
-                  const next = accordion.toggle(key, event.currentTarget);
-                  if (accordion.openKey === flowKey("scheduled")) void preferences.set("sidebar.scheduledCollapsed", true);
-                  // Product-owned preferences remain product-owned; Shell projects
-                  // their initial intent into its exclusive disclosure layout.
-                  if ((next !== key) !== group.collapsed) threadListGrouping?.toggleGroup(group.id);
-                }}>
-                  <ThreadGroupAvatar group={group} />
-                  <span className="sidebar-thread-group-label">{title}</span><ChevronDown size={12} data-group-disclosure="" className={collapsed ? "is-collapsed" : undefined} />
-                </button>}>
-                {rows.map(thread => <div key={identity(thread)}>{renderThreadTree(thread)}</div>)}
-              </SidebarConversationGroup>;
-            }) : <>
-              {renderFlowSection("attention", text("sidebar.flow.attention", "Needs your attention"), taskFlow.attention)}
-              {renderFlowSection("pinned", text("sidebar.flow.pinned", "Pinned"), taskFlow.pinned, pinnedLimit, setPinnedLimit)}
+            {accessScope === "private" ? (
+              <section className="sidebar-activity-group sidebar-activity-group--flat" aria-label={text("sidebar.access.mine", "Private")} data-collapsed={false}>
+                <div className="sidebar-activity-group__items" id={`${rowIdPrefix}-flow-mine`}>
+                  {renderFlowRows("mine", taskFlow.mine, mineLimit, setMineLimit)}
+                </div>
+              </section>
+            ) : <>
+              {renderFlowSection("scheduled", text("schedules.catalog.title", "Scheduled tasks"), taskFlow.scheduled, scheduledLimit, setScheduledLimit)}
+              {groupedSections ? groupedSections.map(group => {
+                const key = groupKey(group.id);
+                const collapsed = accordion.collapsed(key);
+                const contentId = `${rowIdPrefix}-group-${encodeURIComponent(group.id)}`;
+                const title = label(group.label);
+                const rows = collapsed ? [] : group.threads.flatMap(ref => {
+                  const thread = matchingById.get(JSON.stringify([ref.hostId, ref.threadId]));
+                  return thread ? [thread] : [];
+                });
+                return <SidebarConversationGroup key={group.id} title={title} contentId={contentId}
+                  collapsed={collapsed} hasRows={rows.length > 0}
+                  heading={<button type="button" className="sidebar-thread-group-toggle" aria-expanded={!collapsed} aria-controls={contentId} onClick={event => {
+                    const next = accordion.toggle(key, event.currentTarget);
+                    if (accordion.openKey === flowKey("scheduled")) void preferences.set("sidebar.scheduledCollapsed", true);
+                    // Product-owned preferences remain product-owned; Shell projects
+                    // their initial intent into its exclusive disclosure layout.
+                    if ((next !== key) !== group.collapsed) threadListGrouping?.toggleGroup(group.id);
+                  }}>
+                    <ThreadGroupAvatar group={group} />
+                    <span className="sidebar-thread-group-label">{title}</span><ChevronDown size={12} data-group-disclosure="" className={collapsed ? "is-collapsed" : undefined} />
+                  </button>}>
+                  {rows.map(thread => <div key={identity(thread)}>{renderThreadTree(thread)}</div>)}
+                </SidebarConversationGroup>;
+              }) : <>
+                {renderFlowSection("attention", text("sidebar.flow.attention", "Needs your attention"), taskFlow.attention)}
+                {renderFlowSection("pinned", text("sidebar.flow.pinned", "Pinned"), taskFlow.pinned, pinnedLimit, setPinnedLimit)}
+              </>}
+              {!groupedSections && nativeProjects.length ? <div className="sidebar-native-projects">
+                <h3 className="sidebar-native-projects__title">{text("sidebar.nativeProjects", "Projects")}</h3>
+                {nativeProjects.map(group => renderFlowSection(`native-project:${group.key}`, group.label, group.threads, projectLimits[group.key] ?? 6,
+                  count => setProjectLimits(current => ({ ...current, [group.key]: count })), true))}
+              </div> : null}
+              {(!groupedSections || matchingDraftRows.length > 0) && (recentWithoutProjects.length > 0 || matchingDraftRows.length > 0) ? (
+                flatRecent ? (
+                  <section className="sidebar-activity-group sidebar-activity-group--flat" aria-label={text("sidebar.flow.recent", "Recent")} data-collapsed={false}>
+                    <div className="sidebar-activity-group__items" id={`${rowIdPrefix}-flow-recent`}>
+                      {renderFlowRows("recent", groupedSections ? [] : recentWithoutProjects, recentLimit, setRecentLimit)}
+                    </div>
+                  </section>
+                ) : renderFlowSection("recent", text("sidebar.flow.recent", "Recent"),
+                  groupedSections ? [] : recentWithoutProjects, recentLimit, setRecentLimit)
+              ) : null}
+              {empty ? <NavigationEmpty className="sidebar-activity-empty">{text("sidebar.empty", "No tasks yet")}</NavigationEmpty> : null}
             </>}
-            {renderFlowSection("mine", text("sidebar.access.mine", "Private"), taskFlow.mine, mineLimit, setMineLimit)}
-            {!groupedSections && nativeProjects.length ? <div className="sidebar-native-projects">
-              <h3 className="sidebar-native-projects__title">{text("sidebar.nativeProjects", "Projects")}</h3>
-              {nativeProjects.map(group => renderFlowSection(`native-project:${group.key}`, group.label, group.threads, projectLimits[group.key] ?? 6,
-                count => setProjectLimits(current => ({ ...current, [group.key]: count })), true))}
-            </div> : null}
-            {!groupedSections || matchingDraftRows.length ? renderFlowSection("recent", text("sidebar.flow.recent", "Recent"),
-              groupedSections ? [] : recentWithoutProjects, recentLimit, setRecentLimit) : null}
-            {empty ? <NavigationEmpty className="sidebar-activity-empty">{text("sidebar.empty", "No tasks yet")}</NavigationEmpty> : null}
             {catalogErrors.map(catalog => retryFeedback(catalog.hostId, intl.formatMessage(catalog.cachedAt !== undefined
               ? { id: "sidebar.catalog.cached", defaultMessage: "Showing saved {server} conversations; refresh failed" }
               : { id: "sidebar.catalog.error", defaultMessage: "Couldn't load {server} conversations" }, { server: catalog.label }), onRetryThreadCatalog ? () => onRetryThreadCatalog(catalog.hostId) : undefined))}

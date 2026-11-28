@@ -87,7 +87,11 @@ export const FilterIcon = glyph("filter", <path d="M4.5 6.5h15M8 12h8m-5.5 5.5h3
 export const ChartIcon = glyph("chart", <path d="M4.5 4.5v12a3 3 0 0 0 3 3h12M8 14l4-4 3 2.5 5-6" />);
 export const PulseIcon = glyph("pulse", <path d="M4 12h3l3-6 4 12 3-6h3" />);
 export const TargetIcon = glyph("target", <><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="4" /><circle cx="12" cy="12" r="0.75" fill="currentColor" stroke="none" /></>);
-export const GaugeIcon = glyph("gauge", <path d="M4.5 16.5a7.5 7.5 0 0 1 15 0M12 16.5l3.4-4.3" />);
+export const GaugeIcon = glyph("gauge", <>
+  <path d="M6.2 17.6a7.75 7.75 0 1 1 11.6 0" />
+  <path d="m12 12.75 3.6-3.6" />
+  <circle cx="12" cy="12.75" r="1.5" fill="currentColor" stroke="none" />
+</>);
 export const SparklesIcon = sharedActionIcon("SparklesIcon");
 export const AppearanceIcon = glyph("appearance", <><path d="M13 4a8 8 0 1 0 7 11.5A7.5 7.5 0 0 1 13 4Z" /><path d="M18.5 3.5v4m-2-2h4" /></>);
 export const SunriseIcon = glyph("sunrise", <path d="M7 15a5 5 0 0 1 10 0M4 15h16M6.5 19h11M12 4v2M5 8.5 6.5 10m12-1.5L17 10" />);

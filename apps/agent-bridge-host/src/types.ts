@@ -26,11 +26,39 @@ export interface Receipt {
   identities?: { nativeThreadId?: string; turn?: { nativeId: string; id: string } };
 }
 export interface OutboxEvent { seq: number; route: string; generation: string; payload: unknown }
+export interface EphemeralEvent {
+  readonly streamSeq: number;
+  readonly afterSeq: number;
+  readonly route: string;
+  readonly generation: string;
+  readonly payload: unknown;
+}
+export interface EphemeralEventPage {
+  readonly streamId: string;
+  readonly highStreamSeq: number;
+  readonly reset: boolean;
+  readonly events: readonly EphemeralEvent[];
+}
+export type BridgeStreamMessage =
+  | { readonly kind: 'hello'; readonly streamId: string; readonly highStreamSeq: number }
+  | { readonly kind: 'ephemeral'; readonly event: EphemeralEvent }
+  | { readonly kind: 'outbox'; readonly high: number }
+  | { readonly kind: 'command'; readonly commandId: string };
 export interface OutboxFence {
   readonly outboxId: string;
   readonly acknowledged: number;
   readonly high: number;
 }
+
+/** High-frequency streaming notifications that carry incremental deltas rather than durable state transitions. */
+export const EPHEMERAL_THREAD_NOTIFICATIONS: ReadonlySet<string> = new Set([
+  'turn/plan/updated',
+  'item/reasoning/summaryTextDelta',
+  'item/reasoning/summaryPartAdded',
+  'item/commandExecution/outputDelta',
+  'item/fileChange/outputDelta',
+  'item/fileChange/patchUpdated',
+]);
 
 export const BRIDGE_HISTORY_SELECTION_LIMIT = 1024;
 export interface BridgeHistorySelection {

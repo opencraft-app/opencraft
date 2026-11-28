@@ -114,3 +114,35 @@ test("Bridge live acknowledgements and forks preserve the same recorded attachme
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("OpenCraft message attachments cache empty and non-empty lookups and invalidate cleanly on record and cloneThread", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "message-attachments-cache-"));
+  const store = new OpenCraftMessageAttachments(directory);
+  try {
+    // Prime negative cache for an attachment-less message and target fork thread.
+    assert.deepEqual(store.list("source", "plain-msg"), []);
+    assert.deepEqual(store.list("source", "later-attached"), []);
+    assert.deepEqual(store.list("fork", "later-attached"), []);
+
+    const db = (store as any).db as import("node:sqlite").DatabaseSync;
+    let prepareCalls = 0;
+    const origPrepare = db.prepare.bind(db);
+    db.prepare = ((sql: string) => {
+      prepareCalls++;
+      return origPrepare(sql);
+    }) as typeof db.prepare;
+
+    // Repeated reads of empty and non-empty messages hit the in-memory LRU without preparing new SQL.
+    for (let i = 0; i < 20; i++) assert.deepEqual(store.list("source", "plain-msg"), []);
+    assert.equal(prepareCalls, 0);
+
+    // Recording attachments invalidates the prior negative cache entry and updates fork upon cloneThread.
+    store.record("source", "later-attached", [file]);
+    assert.deepEqual(store.list("source", "later-attached"), [file]);
+    store.cloneThread("source", "fork");
+    assert.deepEqual(store.list("fork", "later-attached"), [file]);
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});

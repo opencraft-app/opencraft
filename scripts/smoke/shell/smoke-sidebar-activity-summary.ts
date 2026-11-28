@@ -33,12 +33,19 @@ try {
       }, { name, expected });
       assert.deepEqual(await counts(name), expected);
     };
-    await region("私密").waitFor(); assert.equal(await page.getByRole("region", { name: "我的", exact: true }).count(), 0);
+    const switcher = page.getByRole("radiogroup", { name: "对话", exact: true });
+    const recentOption = switcher.getByRole("radio", { name: /最近/ });
+    const privateOption = switcher.getByRole("radio", { name: /私密/ });
+    await switcher.waitFor(); assert.equal(await switcher.getByRole("radio", { name: /我的/ }).count(), 0);
     await check("置顶", { unread: 3, attention: 2, running: 3 });
     await check("最近", { unread: 2, running: 1 });
     const attention = page.locator('.sidebar-activity-group').filter({ has: page.locator('.sidebar-thread-group-label', { hasText: '等你处理' }) });
     assert.equal(await attention.locator('[data-activity-kind="attention"]').first().textContent(), "2");
-    assert.equal(await heading("私密").locator(".sidebar-activity-summary").count(), 0);
+    assert.equal(await privateOption.locator(".sidebar-activity-summary").count(), 0);
+    if (touch) await privateOption.tap(); else await privateOption.click();
+    await region("私密").waitFor(); assert.equal(await page.getByRole("region", { name: "我的", exact: true }).count(), 0);
+    if (touch) await recentOption.tap(); else await recentOption.click();
+    await region("置顶").waitFor();
     const dimensions = async () => heading("置顶").evaluate(node => ({ height: node.getBoundingClientRect().height, width: node.getBoundingClientRect().width }));
     const before = await dimensions();
     await heading("置顶").scrollIntoViewIfNeeded();
@@ -60,7 +67,12 @@ try {
     await check("置顶", { unread: 3, attention: 2, running: 2 });
     assert.deepEqual(await dimensions(), before, "counts must retain heading geometry");
     await page.getByRole("searchbox").fill("最近会话 11");
-    await check("最近", { unread: 1 });
+    await page.waitForFunction(() => {
+      const radio = document.querySelector<HTMLElement>('[role="radiogroup"][aria-label="对话"] [role="radio"][data-value="recent"]');
+      const nodes = radio?.querySelectorAll("[data-activity-kind]");
+      return nodes && JSON.stringify(Object.fromEntries([...nodes].map(node => [node.getAttribute("data-activity-kind"), Number(node.textContent)]))) === JSON.stringify({ unread: 1 });
+    });
+    assert.deepEqual(await recentOption.locator("[data-activity-kind]").evaluateAll(nodes => Object.fromEntries(nodes.map(node => [node.getAttribute("data-activity-kind"), Number(node.textContent)]))), { unread: 1 });
     await page.getByRole("searchbox").fill("");
     await check("最近", { unread: 2, running: 1 });
     await page.evaluate(() => (window as any).sidebarSummaryFixture.preferences.set("sidebar.serverFilter", { serverId: "local", label: "Local" }));

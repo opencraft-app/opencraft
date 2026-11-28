@@ -23,11 +23,11 @@ const tokenPath = join(state, "daemon.token");
 const port = Number(process.env.OPENCRAFT_GATEWAY_PORT || "9988");
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid gateway port");
 
-// Codex runs through the provider bridge by default: the release's Engine Host programs are
-// started by the daemon against the same Core. OPENCRAFT_CODEX_BRIDGE=0 keeps the local Host path.
-const codexEngineHost = process.env.OPENCRAFT_CODEX_BRIDGE === "0" ? undefined
-  : await stat(join(releaseRoot, "execution/codex-bridge/engine-host.mjs")).then(() => join(releaseRoot, "execution/codex-bridge"),
-    error => { if (error.code === "ENOENT") return undefined; throw error; });
+// Codex runs exclusively through the provider bridge when the release ships Engine Host programs.
+const codexEngineHost = await stat(join(releaseRoot, "execution/codex-bridge/engine-host.mjs")).then(
+  () => join(releaseRoot, "execution/codex-bridge"),
+  error => { if (error.code === "ENOENT") return undefined; throw error; },
+);
 
 const daemon = await OpenCraftDaemonClientManager.open({
   endpoint: join(state, "daemon.sock"),

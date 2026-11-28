@@ -104,7 +104,6 @@ import { useStableEvent } from "@opencraft/react-runtime";
 import { nativeProjectPicker } from "./runtime/project-folder-picker";
 import { groupWorkInMachines as groupNewConversationMachines, workInAgentHosts, chooseWorkInHost, ThreadTitleWriter, legacyDirectServerProjectionFromHost } from "@opencraft/workbench-runtime";
 import { readCachedThreadName, writeCachedThreadName } from "./runtime/thread-title-cache";
-import { AgentUsage } from "./components/agent-usage";
 import { archiveThread } from "./runtime/thread-archive";
 import { forkAndOpenThread } from "./runtime/thread-fork-navigation";
 import { useSidebarDraftRows } from "./runtime/use-sidebar-draft-rows";
@@ -189,6 +188,8 @@ const TurnDiffReviewDialog = lazy(() => import("./components/conversation/turn-d
 import { ComposerTurnChangeSummary } from "./components/conversation/turn-diff-resource";
 import { Button } from "./components/ui/button";
 const HostAgentOnboarding = lazy(() => import("./components/agent-management").then(module => ({ default: module.HostAgentOnboarding })));
+const AgentUsage = lazy(() => import("./components/agent-usage").then(module => ({ default: module.AgentUsage })));
+const ConversationContextUsage = lazy(() => import("./components/agent-usage").then(module => ({ default: module.ConversationContextUsage })));
 import { DraftSetupNotice } from "./components/draft-setup-notice";
 import { NewThreadDraftPage } from "./components/new-thread-draft-page";
 import { isWorkbenchToolPage } from "./runtime/workbench-tool-pages";
@@ -2549,7 +2550,7 @@ export function App({
               {...sidebarCommands}
               managementNavigation={sidebarManagementNavigation}
               showFooter={false}
-              footerAccessory={<AgentUsage hostId={snapshot.hostId} threadId={draft === null ? activeThreadId ?? null : null} busy={isStreaming} />}
+              footerAccessory={<Suspense fallback={null}><AgentUsage hostId={snapshot.hostId} threadId={draft === null ? activeThreadId ?? null : null} busy={isStreaming} /></Suspense>}
               showNewChat={presentation.shellNavigation}
               showScheduled={schedulesPresentationEnabled}
               showStart={!presentation.shellNavigation}
@@ -2944,7 +2945,24 @@ export function App({
                         </>}
                         shortcutCommands={threadShortcutCommands}
                         entryActions={composerDesktopEntry}
-                        endActions={presentation.connectorLauncher ? connectorPresentation.launcher : null}
+                        endActions={
+                          <>
+                            {presentation.connectorLauncher ? connectorPresentation.launcher : null}
+                            <Suspense fallback={null}>
+                              <ConversationContextUsage
+                                hostId={snapshot.hostId}
+                                threadId={draft === null ? activeThreadId ?? null : null}
+                                busy={isStreaming}
+                                portalContainer={portalContainer}
+                                onOpenTokenUsage={
+                                  settingsContributionSnapshot.settingsPages.some(({ contribution }) => contribution.id === "opencraft.token-usage.page")
+                                    ? () => openSettingsFromConversation("opencraft.token-usage.page")
+                                    : undefined
+                                }
+                              />
+                            </Suspense>
+                          </>
+                        }
                         actionsDisabled={draft !== null && draftSubmissionOwnsNavigation(draft.phase)}
                         modelSelectionPolicy={modelSelectionPolicy}
                         placeholderPending={recoveryPlaceholder !== undefined}

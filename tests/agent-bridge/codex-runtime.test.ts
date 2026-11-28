@@ -165,6 +165,7 @@ test('real Unix WebSocket Upgrade attaches existing owner, stale error is typed,
   });
   const ws = new WebSocketServer({ server: native });
   let mutations = 0, refreshed!: (value: unknown) => void;
+  let nativeFault = { code: -32600, message: 'failed to load configuration: private-fixture-value' };
   const refreshResponse = new Promise(resolve => { refreshed = resolve; });
   ws.on('connection', socket => socket.on('message', raw => {
     const frame = JSON.parse(String(raw));
@@ -172,6 +173,7 @@ test('real Unix WebSocket Upgrade attaches existing owner, stale error is typed,
     if (frame.method === 'initialized') socket.send(JSON.stringify({ id: 'native-refresh', method: 'account/chatgptAuthTokens/refresh', params: { reason: 'unauthorized' } }));
     if (frame.method === 'initialize') socket.send(JSON.stringify({ id: frame.id, result: { userAgent: 'codex/0.167.2' } }));
     if (frame.method === 'turn/steer') { mutations++; socket.send(JSON.stringify({ id: frame.id, error: { code: -32602, message: 'no active turn to steer' } })); }
+    if (frame.method === 'thread/start') { mutations++; socket.send(JSON.stringify({ id: frame.id, error: nativeFault })); }
   }));
   await new Promise<void>(resolve => native.listen(join(root, 'native.sock'), resolve));
   await new Promise<void>(resolve => control.listen(join(root, 'control.sock'), resolve));
@@ -180,7 +182,39 @@ test('real Unix WebSocket Upgrade attaches existing owner, stale error is typed,
   await owner.connect();
   assert.deepEqual(await refreshResponse, { accessToken: 'synthetic-test', chatgptAccountId: 'opencraft-account-pool' });
   await assert.rejects(owner.request('turn/steer', { threadId: 'native', expectedTurnId: 'old', input: [] }), (e: any) => e.kind === 'stale-target');
-  assert.equal(mutations, 1);
+  const diagnosticLines: string[] = [];
+  t.mock.method(console, 'warn', (...args: unknown[]) => diagnosticLines.push(JSON.stringify(args)));
+  const frames: BridgeWireMessage[] = [];
+  const runtime = new CodexBridgeRuntime(owner, frame => frames.push(frame));
+  await runtime.handle({ jsonrpc: '2.0', id: 'init', method: 'initialize', params: { protocolVersion: 1, grammarRange: { min: 1, max: 1 } } });
+  const create = () => runtime.handle({ jsonrpc: '2.0', id: 'create', method: 'session/create', params: { threadId: 'public', native: { cwd: root } } });
+  await create();
+  const rejected = frames.at(-1);
+  assert.ok(rejected && 'error' in rejected);
+  assert.deepEqual(rejected.error.data, {
+    nativeCreateFailure: { code: -32600, reason: 'configuration-load-failed', notAllocated: true },
+    creationOutcome: 'not-allocated',
+  });
+  nativeFault = { code: -32600, message: 'unrecognized after dispatch: private-fixture-value' };
+  await create();
+  const uncertain = frames.at(-1);
+  assert.ok(uncertain && 'error' in uncertain);
+  assert.deepEqual(uncertain.error.data, {
+    nativeCreateFailure: { code: -32600, reason: 'unclassified-native-rejection', notAllocated: false },
+  });
+  nativeFault = { code: -32600, message: 'No models are available. Set `model` explicitly or check your model catalog configuration.' };
+  await create();
+  const noModels = frames.at(-1);
+  assert.ok(noModels && 'error' in noModels);
+  assert.deepEqual(noModels.error.data, {
+    nativeCreateFailure: { code: -32600, reason: 'model-catalog-unavailable', notAllocated: true },
+    creationOutcome: 'not-allocated', creationRejectionCode: 'model_catalog_unavailable',
+  });
+  assert.equal(noModels.error.message, 'Models are temporarily unavailable. Try again later.');
+  assert.throws(() => runtime.adapter.nativeSession('public'), /not bound/);
+  assert.equal(mutations, 4);
+  assert.match(diagnosticLines.join('\n'), /configuration-load-failed/);
+  assert.doesNotMatch(diagnosticLines.join('\n') + JSON.stringify(frames), /private-fixture-value/);
   owner.close();
   assert.equal(native.listening, true); assert.equal(control.listening, true);
 });
@@ -297,5 +331,5 @@ test('Codex Bridge accepts compiled Skill input and text over 64 KiB within the 
     { type: 'skill', name: 'fixture', path: '/workspace/fixture/SKILL.md' },
   ];
   await bridge.start('public', { input });
-  assert.deepEqual(calls, [{ method: 'turn/start', params: { threadId: 'native', input } }]);
+  assert.deepEqual(calls, [{ method: 'turn/start', params: { threadId: 'native', summary: 'auto', input } }]);
 });

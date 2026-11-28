@@ -279,8 +279,13 @@ export async function startOpenCraftDaemon(options: {
             backupPath: outcome.backupPath, movedAside: outcome.movedAsidePaths.length > 0,
           })));
         };
-        // With the daemon's own bridge stack every Thread runs on the bridge and no legacy Host is composed.
-        if (options.codexBridgeStack && codex.codexAgentBridge && codex.codexCoreEndpoint && !options.createCodexTransport) {
+        // With the daemon's own bridge stack or managed Engine Host, every Thread runs on the bridge and no legacy Host is composed.
+        if (
+          (options.codexBridgeStack || options.codexEngineHost || codex.codexAgentBridgeAdoptExisting) &&
+          codex.codexAgentBridge &&
+          codex.codexCoreEndpoint &&
+          !options.createCodexTransport
+        ) {
           hostServices = createCodexBridgeHost({
             coreEndpoint: codex.codexCoreEndpoint, coreAuthToken: options.authToken, bridge: codex.codexAgentBridge,
             codexDataDirectory: options.codexDataDirectory, artifactDirectory: join(options.dataDirectory, "artifacts"),

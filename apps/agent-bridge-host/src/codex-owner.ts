@@ -7,15 +7,35 @@ import { CodexCoreReadIsolation } from '@opencraft/account-pool-host/codex-core-
 import { BRIDGE_MAX_FRAME_BYTES } from '@opencraft/agent-bridge-protocol';
 import { codexDeclaration } from './codex-declaration.js';
 import { CodexBridgeError, type CodexOwnerPort } from './codex.js';
+import { nativeCreateDiagnostic } from './codex-create-diagnostic.js';
 
 type InitialConfiguration = {
+  origin: 'start' | 'fork';
   config: Record<string, unknown>;
   settings: Record<string, unknown>;
+  turnIds?: readonly string[];
 };
+
+const DISABLED_SESSION_MCP = { enabled: false, url: 'http://127.0.0.1:1/mcp' } as const;
+
+function matchesInstalledConfiguration(
+  config: Record<string, unknown>,
+  environment: Readonly<Record<string, string>>,
+  sessionMcp?: Record<string, unknown> | null,
+): boolean {
+  const mcp = sessionMcp ?? DISABLED_SESSION_MCP;
+  const installed = config['shell_environment_policy.set'] ?? {};
+  return (
+    isDeepStrictEqual(installed, { ...(installed as Record<string, unknown>), ...environment }) &&
+    (sessionMcp === undefined ||
+      isDeepStrictEqual(config['mcp_servers.opencraft_session'] ?? DISABLED_SESSION_MCP, mcp))
+  );
+}
 
 /** An attachment, never a launcher. Account refresh, proxy and execution remain
  * in the existing Core/AppServer process. Mutations are never retried. */
 export class CodexOwnerConnection implements CodexOwnerPort {
+  private control?: CodexCoreControlClient;
   private brokerAuth?: { accessToken: string; chatgptAccountId: string };
   private socket?: WebSocket;
   private historyReads?: CodexCoreReadIsolation;
@@ -32,10 +52,12 @@ export class CodexOwnerConnection implements CodexOwnerPort {
   async connect(): Promise<void> {
     if (this.socket || this.failed) throw new Error('Connection already used');
     const control = new CodexCoreControlClient(this.endpoint, this.token);
+    this.control = control;
     // An accounts-only Core serves broker auth but no runtime health.
     const [nativeSocket, auth] = await Promise.all([
       this.nativeSocket ?? control.health().then(health => health.nativeSocket), control.brokerAuth()]);
     this.brokerAuth = auth;
+    this.initialAuthFresh = true;
     this.socket = openCodexNativeSocket(nativeSocket, { maxPayload: BRIDGE_MAX_FRAME_BYTES, handshakeTimeout: 5000 });
     this.historyReads = new CodexCoreReadIsolation(async () => ({ nativeSocket }), {
       maxPayload: BRIDGE_MAX_FRAME_BYTES, concurrency: 4, queue: 64, timeoutMs: 30_000,
@@ -68,14 +90,20 @@ export class CodexOwnerConnection implements CodexOwnerPort {
     this.write({ method: 'initialized', params: {} });
   }
   private readonly initialConfigurations = new Map<string, InitialConfiguration>();
+  private readonly appliedConfigurations = new Map<string, Record<string, unknown>>();
   private readonly uncertainConfigurations = new Set<string>();
   private readonly retirements = new Map<string, Record<string, any>>();
   private readonly pendingSettings = new Map<string, Record<string, any>>();
+  private initialAuthFresh = false;
   async configureExecution(threadId:string,environment:Readonly<Record<string,string>>,preparationDeadlineMs=Date.now()+25000,sessionMcp?:Record<string,unknown>|null):Promise<void> {
     if(!Number.isSafeInteger(preparationDeadlineMs)||preparationDeadlineMs<=Date.now())throw new CodexBridgeError('unsupported','cliUnavailable');
     const deadline=performance.now()+Math.min(25000,preparationDeadlineMs-Date.now());
     const current=()=>{if(this.failed||performance.now()>=deadline)throw new CodexBridgeError('unsupported','cliUnavailable');};
-    if(this.uncertainConfigurations.has(threadId))this.initialConfigurations.delete(threadId);
+    if(this.uncertainConfigurations.has(threadId)){this.initialConfigurations.delete(threadId);this.appliedConfigurations.delete(threadId);}
+    const desiredConfig: Record<string, unknown> = {
+      ...(Object.keys(environment).length ? { 'shell_environment_policy.set': environment } : {}),
+      ...(sessionMcp !== undefined ? { 'mcp_servers.opencraft_session': sessionMcp ?? DISABLED_SESSION_MCP } : {}),
+    };
     const initial=this.initialConfigurations.get(threadId);
     let initialSettings: Record<string, unknown> | undefined;
     if(initial) {
@@ -84,19 +112,32 @@ export class CodexOwnerConnection implements CodexOwnerPort {
       current();
       if(read?.thread?.status?.type!=='idle'||read.thread.ephemeral===true)throw new CodexBridgeError('unsupported','cliUnavailable');
       try {
-        await this.request('thread/read',{threadId,includeTurns:true},Math.max(1,deadline-performance.now()));
-        // A materialized history defeats creation evidence, even if no event was observed.
-        this.initialConfigurations.delete(threadId);
+        const full = await this.request('thread/read',{threadId,includeTurns:true},Math.max(1,deadline-performance.now())) as any;
+        if (initial.origin === 'fork') {
+          const rawTurns = full?.thread?.turns;
+          const actualTurnIds = Array.isArray(rawTurns) && rawTurns.every((t: any) => typeof t?.id === 'string')
+            ? rawTurns.map((t: any) => t.id as string)
+            : undefined;
+          if (initial.turnIds !== undefined && actualTurnIds !== undefined
+            && isDeepStrictEqual(actualTurnIds, initial.turnIds) && this.initialConfigurations.get(threadId) === initial) {
+            if (matchesInstalledConfiguration(initial.config, environment, sessionMcp)) {
+              return;
+            }
+            initialSettings = initial.settings;
+          } else {
+            this.initialConfigurations.delete(threadId);
+          }
+        } else {
+          // A materialized history defeats creation evidence, even if no event was observed.
+          this.initialConfigurations.delete(threadId);
+        }
       } catch(error) {
         current();
         // Native cannot list turns yet: no first message is recorded, as when it is unmaterialized.
         if(!(error instanceof CodexBridgeError)||!['unmaterialized','turns-unavailable'].includes(error.nativeReason??''))throw error;
         if(this.initialConfigurations.get(threadId)===initial) {
-          const mcp=sessionMcp??{enabled:false,url:'http://127.0.0.1:1/mcp'};
-          const installed=initial.config['shell_environment_policy.set']??{};
-          if (isDeepStrictEqual(installed, { ...(installed as Record<string, unknown>), ...environment })
-            && (sessionMcp === undefined || isDeepStrictEqual(initial.config['mcp_servers.opencraft_session'] ?? { enabled: false, url: 'http://127.0.0.1:1/mcp' }, mcp))) {
-            // The admitted one-shot namespace was installed by native creation.
+          if (matchesInstalledConfiguration(initial.config, environment, sessionMcp)) {
+            // The admitted one-shot namespace was installed by native creation/fork.
             return;
           }
           // A paginated history read can flush an empty rollout before
@@ -113,11 +154,20 @@ export class CodexOwnerConnection implements CodexOwnerPort {
           initialSettings = initial.settings;
         }
       }
+    } else {
+      const applied = this.appliedConfigurations.get(threadId);
+      if (applied && isDeepStrictEqual(applied, desiredConfig)) {
+        current();
+        const read = await this.request('thread/read', { threadId, includeTurns: false }, Math.max(1, deadline - performance.now())) as any;
+        current();
+        if (read?.thread?.ephemeral === true) throw new CodexBridgeError('unsupported', 'cliUnavailable');
+        if (read?.thread?.status?.type === 'idle' && this.appliedConfigurations.get(threadId) === applied) {
+          return;
+        }
+        this.appliedConfigurations.delete(threadId);
+      }
     }
-    await refreshCodexExecutionConfiguration(threadId,{
-      ...(Object.keys(environment).length?{'shell_environment_policy.set':environment}:{}),
-      ...(sessionMcp!==undefined?{'mcp_servers.opencraft_session':sessionMcp??{enabled:false,url:'http://127.0.0.1:1/mcp'}}:{}),
-    },{
+    await refreshCodexExecutionConfiguration(threadId,desiredConfig,{
       request:async(method,params)=>{
         current();
         try {return await this.request(method,params,Math.max(1,deadline-performance.now()));}
@@ -125,6 +175,7 @@ export class CodexOwnerConnection implements CodexOwnerPort {
           const readOnlyResume=method==='thread/resume'&&params.config===undefined;
           if(method!=='thread/read'&&!readOnlyResume&&error instanceof CodexBridgeError&&error.kind==='unknown-outcome'){
             this.initialConfigurations.delete(threadId);
+            this.appliedConfigurations.delete(threadId);
             this.uncertainConfigurations.add(threadId);
           }
           throw error;
@@ -133,9 +184,10 @@ export class CodexOwnerConnection implements CodexOwnerPort {
       initialSettings: initialSettings ?? this.pendingSettings.get(threadId),
       stage:()=>{},nativeStatus:()=>{},ephemeral:()=>{throw new CodexBridgeError('unsupported','cliUnavailable');},
       cancelRelease:()=>{},retirement:()=>this.retirements.get(threadId),waitForRetirement:true,retirementTimeoutMs:Math.max(1,deadline-performance.now()),
-      pending:()=>new CodexBridgeError('unsupported','cliUnavailable: native runtime has not retired'),invalidate:()=>{this.initialConfigurations.delete(threadId);},
+      pending:()=>new CodexBridgeError('unsupported','cliUnavailable: native runtime has not retired'),invalidate:()=>{this.initialConfigurations.delete(threadId);this.appliedConfigurations.delete(threadId);},
       retire:live=>{this.retirements.set(threadId,live);this.pendingSettings.set(threadId,live);},unsubscribed:()=>{},clearRetirement:()=>{this.retirements.delete(threadId);},
     });
+    this.appliedConfigurations.set(threadId, structuredClone(desiredConfig));
     this.pendingSettings.delete(threadId);
     this.uncertainConfigurations.delete(threadId);
   }
@@ -143,8 +195,22 @@ export class CodexOwnerConnection implements CodexOwnerPort {
     if (!frame || typeof frame !== 'object' || Array.isArray(frame)) throw Error('Invalid native frame');
     const p = frame as Record<string, unknown>;
     if (p.method === 'account/chatgptAuthTokens/refresh' && (typeof p.id === 'string' || typeof p.id === 'number')) {
-      if (!this.brokerAuth) throw Error('Broker authentication unavailable');
-      this.resolve(p.id, this.brokerAuth); return;
+      const requestId = p.id;
+      const resolveAuth = this.initialAuthFresh
+        ? ((this.initialAuthFresh = false), Promise.resolve(this.brokerAuth))
+        : this.control
+          ? this.control.brokerAuth().then(fresh => (this.brokerAuth = fresh), () => this.brokerAuth)
+          : Promise.resolve(this.brokerAuth);
+      void resolveAuth
+        .then(auth => {
+          if (this.failed) return;
+          if (!auth) {
+            this.fail({ method: 'unknown', reason: 'connection' });
+            return;
+          }
+          try { this.resolve(requestId, auth); } catch { this.fail(); }
+        });
+      return;
     }
     if (typeof p.method === 'string') {
       if (p.method === 'thread/settings/updated') {
@@ -187,7 +253,12 @@ export class CodexOwnerConnection implements CodexOwnerPort {
       ||error?.code===-32603&&/^failed to read thread: thread-store internal error: failed to read session metadata [^\n]+: rollout at [^\n]+ is empty$/.test(message));
     const kind=stale?'stale-target':[-32600,-32601,-32602].includes(error?.code??0)?'explicit-reject':'unknown-outcome';
     if(kind==='explicit-reject'&&pending.initial&&!pending.observedTurn&&typeof pending.threadId==='string')this.initialConfigurations.set(pending.threadId,pending.initial);
-    pending.reject(new CodexBridgeError(stale ? 'stale-target' : [-32600, -32601, -32602].includes(error?.code ?? 0) ? 'explicit-reject' : 'unknown-outcome', stale ? 'Target turn is no longer active' : 'Native request refused; query its outcome',unmaterialized?'unmaterialized':turnsUnavailable?'turns-unavailable':undefined));
+    const createFailure = pending.method === "thread/start" ? nativeCreateDiagnostic(error?.code, message) : undefined;
+    if (createFailure) {
+      try { console.warn("[codex-native]", JSON.stringify({ event: "thread-start-rejected", requestId: p.id, ...createFailure })); }
+      catch { /* Diagnostics must not turn a native reply into a transport loss. */ }
+    }
+    pending.reject(new CodexBridgeError(kind, stale ? 'Target turn is no longer active' : createFailure?.reason === 'model-catalog-unavailable' ? 'Models are temporarily unavailable. Try again later.' : 'Native request refused; query its outcome',unmaterialized?'unmaterialized':turnsUnavailable?'turns-unavailable':undefined,createFailure));
   }
   private write(value: unknown): void {
     if (this.failed || this.socket?.readyState !== WebSocket.OPEN) throw new CodexBridgeError('unknown-outcome', 'Core connection unavailable');
@@ -205,14 +276,34 @@ export class CodexOwnerConnection implements CodexOwnerPort {
     if (this.pending.size >= 256) return Promise.reject(new CodexBridgeError('explicit-reject', 'Native request capacity reached'));
     const initial=method==='turn/start'&&typeof params.threadId==='string'?this.initialConfigurations.get(params.threadId):undefined;
     if(method==='turn/start'&&typeof params.threadId==='string')this.initialConfigurations.delete(params.threadId);
-    const initialConfig=method==='thread/start'&&params.config&&typeof params.config==='object'?structuredClone(params.config) as Record<string,unknown>:undefined;
+    if((method==='thread/unsubscribe'||method==='thread/delete'||(method==='thread/resume'&&params.config!==undefined))&&typeof params.threadId==='string'){
+      this.initialConfigurations.delete(params.threadId);
+      this.appliedConfigurations.delete(params.threadId);
+    }
+    const initialConfig=(method==='thread/start'||method==='thread/fork')&&params.config&&typeof params.config==='object'&&!Array.isArray(params.config)
+      ?structuredClone(params.config) as Record<string,unknown>
+      :undefined;
     const id = ++this.sequence;
     return new Promise((resolve, reject) => {
       const timer = historyReads ? undefined : setTimeout(() => { this.pending.delete(id); reject(new CodexBridgeError('unknown-outcome', 'Native request outcome unknown')); }, timeoutMs);
       this.pending.set(id, { resolve:value=>{
-        if(method==='thread/unsubscribe'&&typeof params.threadId==='string')this.initialConfigurations.delete(params.threadId);
+        if((method==='thread/unsubscribe'||method==='thread/delete')&&typeof params.threadId==='string'){
+          this.initialConfigurations.delete(params.threadId);
+          this.appliedConfigurations.delete(params.threadId);
+        }
         const nativeId=(value as any)?.thread?.id;
-        if(initialConfig&&typeof nativeId==='string')this.initialConfigurations.set(nativeId,{config:initialConfig,settings:value as Record<string,unknown>});
+        if(initialConfig&&typeof nativeId==='string'){
+          const rawTurns=(value as any)?.thread?.turns;
+          const turnIds=method==='thread/fork'&&params.excludeTurns!==true&&Array.isArray(rawTurns)&&rawTurns.every((t:any)=>typeof t?.id==='string')
+            ?rawTurns.map((t:any)=>t.id as string)
+            :undefined;
+          this.initialConfigurations.set(nativeId,{
+            origin:method==='thread/fork'?'fork':'start',
+            config:initialConfig,
+            settings:value as Record<string,unknown>,
+            ...(turnIds!==undefined?{turnIds}:{}),
+          });
+        }
         resolve(value);
       }, reject, timer, method,threadId:params.threadId,includeTurns:params.includeTurns,initial });
       const message = { id, method, params };
@@ -234,7 +325,7 @@ export class CodexOwnerConnection implements CodexOwnerPort {
     this.failed = true;
     this.historyReads?.close();
     for (const request of this.pending.values()) { clearTimeout(request.timer); request.reject(new CodexBridgeError('unknown-outcome', 'Native connection lost')); }
-    this.pending.clear(); this.initialConfigurations.clear(); this.socket?.terminate(); this.lost(fault ?? { method: 'unknown', reason: 'connection' });
+    this.pending.clear(); this.initialConfigurations.clear(); this.appliedConfigurations.clear(); this.socket?.terminate(); this.lost(fault ?? { method: 'unknown', reason: 'connection' });
   }
   close(): void { this.fail(); }
 }

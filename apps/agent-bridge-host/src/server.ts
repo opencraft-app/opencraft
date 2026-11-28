@@ -1,4 +1,4 @@
-import { createServer, type Server } from 'node:http';
+import { createServer, type Server, type ServerResponse } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { chmod } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
@@ -6,8 +6,9 @@ import { BridgeHost } from './host.js';
 import { BRIDGE_MAX_FRAME_BYTES } from '@opencraft/agent-bridge-protocol';
 import { BRIDGE_HISTORY_SELECTION_LIMIT, object, identifier, isOutboxId, oversizedBridgeRequest, type Generation } from './types.js';
 
-function gatewayServer(host: BridgeHost, token: string): Server {
+function gatewayServer(host: BridgeHost, token: string): { server: Server; closeStreams(): void } {
   if (Buffer.byteLength(token) < 32) throw Error('Private Host requires a token of at least 32 bytes');
+  const activeStreams = new Set<() => void>();
   const server = createServer(async (request, response) => {
     if(request.url==='/thread-cli') {
       if(request.headers.origin!==undefined||request.method!=='POST'){response.writeHead(403).end();return;}
@@ -29,6 +30,58 @@ function gatewayServer(host: BridgeHost, token: string): Server {
       const url = new URL(request.url!, 'http://localhost');
       let result: unknown;
       if (request.method === 'GET') {
+        if (url.pathname === '/events/stream') {
+          const after = Number(url.searchParams.get('after') ?? 0);
+          const replay = host.ephemeralEvents(after, 2048);
+          request.socket.setTimeout(0);
+          request.socket.setNoDelay(true);
+          response.writeHead(200, {
+            'content-type': 'text/event-stream; charset=utf-8',
+            'cache-control': 'no-cache, no-store',
+            'connection': 'keep-alive',
+            'x-accel-buffering': 'no',
+          });
+          response.flushHeaders();
+          let closed = false;
+          const send = (res: ServerResponse, eventName: string, data: unknown) => {
+            if (closed || res.writableEnded || res.destroyed) return;
+            res.write(`event: ${eventName}\ndata: ${JSON.stringify(data)}\n\n`);
+          };
+          let replayedThrough = replay.events.at(-1)?.streamSeq ?? after;
+          send(response, 'hello', { streamId: replay.streamId, highStreamSeq: replay.highStreamSeq, reset: replay.reset });
+          for (const event of replay.events) send(response, 'ephemeral', event);
+          let unsubscribe = () => {};
+          const heartbeat = setInterval(() => {
+            if (!closed && !response.writableEnded && !response.destroyed) response.write(': keepalive\n\n');
+          }, 15_000);
+          heartbeat.unref();
+          const closeStream = () => {
+            if (closed) return;
+            closed = true;
+            clearInterval(heartbeat);
+            activeStreams.delete(closeStream);
+            unsubscribe();
+            if (!response.writableEnded && !response.destroyed) response.end();
+          };
+          activeStreams.add(closeStream);
+          unsubscribe = host.subscribeStream({
+            onMessage(message) {
+              if (message.kind === 'ephemeral') {
+                if (message.event.streamSeq <= replayedThrough) return;
+                replayedThrough = message.event.streamSeq;
+                send(response, 'ephemeral', message.event);
+              } else if (message.kind === 'outbox') {
+                send(response, 'outbox', { high: message.high });
+              } else if (message.kind === 'command') {
+                send(response, 'command', { commandId: message.commandId });
+              }
+            },
+            onClose: closeStream,
+          });
+          request.on('close', closeStream);
+          response.on('error', closeStream);
+          return;
+        }
         switch (url.pathname) {
           case '/script/capabilities': result=host.scriptCapabilities();break;
           case '/script/show': result=await host.scriptResult(identifier(url.searchParams.get('key')));break;
@@ -38,6 +91,14 @@ function gatewayServer(host: BridgeHost, token: string): Server {
             const fragment = url.searchParams.get('fragment');
             result = await host.events(Number(url.searchParams.get('cursor') ?? 0), undefined,
               url.searchParams.get('fenced') === '1', fragment === null ? undefined : Number(fragment));
+            break;
+          }
+          case '/events/ephemeral': {
+            const limit = url.searchParams.get('limit');
+            result = host.ephemeralEvents(
+              Number(url.searchParams.get('after') ?? 0),
+              limit === null ? undefined : Number(limit),
+            );
             break;
           }
           case '/thread': result = await host.threadState(identifier(url.searchParams.get('serverId')), identifier(url.searchParams.get('threadId'))); break;
@@ -107,10 +168,16 @@ function gatewayServer(host: BridgeHost, token: string): Server {
     }
   });
   server.requestTimeout = 15_000;
-  return server;
+  return {
+    server,
+    closeStreams() {
+      for (const closeStream of [...activeStreams]) closeStream();
+    },
+  };
 }
 
-function closeGateway(server: Server): Promise<void> {
+function closeGateway(server: Server, closeStreams: () => void): Promise<void> {
+  closeStreams();
   return new Promise((resolve, reject) => {
     server.close(error => error ? reject(error) : resolve());
     server.closeIdleConnections();
@@ -128,23 +195,23 @@ function listen(server: Server, address: number | string): Promise<void> {
 
 /** Private attachment only. Closing it cannot close the execution owner. */
 export async function attachGateway(host: BridgeHost, token: string, port = 0): Promise<{ server: Server; url: string; close(): Promise<void> }> {
-  const server = gatewayServer(host, token);
+  const { server, closeStreams } = gatewayServer(host, token);
   await listen(server, port);
   const address = server.address();
   if (!address || typeof address === 'string') throw Error('Missing Host address');
-  return { server, url: `http://127.0.0.1:${address.port}`, close: () => closeGateway(server) };
+  return { server, url: `http://127.0.0.1:${address.port}`, close: () => closeGateway(server, closeStreams) };
 }
 
 /** Same authenticated RPC served on the workspace agent's private socket. */
 export async function attachGatewaySocket(host: BridgeHost, token: string, socketPath: string) {
   if (!isAbsolute(socketPath) || socketPath.includes('\0')) throw Error('Absolute private Bridge socket required');
-  const server = gatewayServer(host, token);
+  const { server, closeStreams } = gatewayServer(host, token);
   await listen(server, socketPath);
   try {
     await chmod(socketPath, 0o600);
   } catch (error) {
-    await closeGateway(server).catch(() => {});
+    await closeGateway(server, closeStreams).catch(() => {});
     throw error;
   }
-  return { server, socketPath, close: () => closeGateway(server) };
+  return { server, socketPath, close: () => closeGateway(server, closeStreams) };
 }

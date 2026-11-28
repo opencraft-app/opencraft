@@ -39,10 +39,12 @@ export async function refreshCodexExecutionConfiguration(threadId:string,config:
           return;
         }
         const deadline = Date.now() + (ports.retirementTimeoutMs??90_000);
+        let pollMs = 10;
         while (status !== "notLoaded") {
           current();
           if (Date.now() >= deadline) throw ports.pending();
-          await new Promise<void>(resolve => setTimeout(resolve, 250));
+          await new Promise<void>(resolve => setTimeout(resolve, Math.min(pollMs, Math.max(1, deadline - Date.now()))));
+          pollMs = Math.min(pollMs * 2, 250);
           const snapshot = record(await request("thread/read", { threadId, includeTurns: false }));
           status = string(record(record(snapshot.thread).status).type);
           ports.nativeStatus(["idle", "systemError", "notLoaded", "active"].includes(status) ? status : "unknown");

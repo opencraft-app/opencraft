@@ -1368,3 +1368,129 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
   assert.deepEqual((await host.snapshot()).interactions, []);
   assert.equal(currentGateway().interactions.size, 0);
 });
+
+for (const proven of [true, false]) test(`model catalog category crosses the Host only with non-allocation proof=${proven}`, async () => {
+  const frames: any[] = [];
+  const session = new CodexProviderBridgeSession({
+    status: { state: 'open' }, async connect() {}, async close() {}, async send() {},
+    subscribeStatus: () => () => {}, subscribeMessage: () => () => {},
+  }, publish => {
+    const gateway = new BridgeGatewaySession({
+      serverId: 'fixture', async request() { assert.fail('No native operation is needed'); },
+      inbox: { async cursor() { return 0; }, async read() { return []; }, async readIdentities() { return []; },
+        async readPendingInteractions() { return []; }, async pull() {}, async close() {} },
+    }, publish);
+    gateway.command = async (_thread, _id, method) => {
+      assert.equal(method, 'session/create');
+      throw Object.assign(Error('Models are temporarily unavailable. Try again later.'), {
+        code: -32006, kind: 'explicit-reject', data: { creationRejectionCode: 'model_catalog_unavailable',
+          ...(proven ? { creationOutcome: 'not-allocated' } : {}) },
+      });
+    };
+    return gateway;
+  });
+  session.subscribeMessage(raw => frames.push(JSON.parse(raw)));
+  try {
+    await session.send(JSON.stringify({ [LOGICAL_CLIENT_FIELD]: 'fixture', id: 'init', method: 'initialize', params: {} }));
+    await session.sendWithContext(JSON.stringify({ [LOGICAL_CLIENT_FIELD]: 'fixture', id: 'create', method: 'thread/start', params: {
+      agentBridge: { threadId: 'bridge:codex:no-models', clientRequestId: 'no-models' },
+    } }), { sender: null });
+    const error = frames.find(frame => frame.id === 'create').error;
+    assert.equal(error.code, -32006);
+    assert.equal(error.data.creationOutcome, proven ? 'not-allocated' : undefined);
+    assert.equal(error.data.creationRejectionCode, proven ? 'model_catalog_unavailable' : undefined);
+  } finally { await session.close(); }
+});
+
+test('CodexProviderBridge pauses 100ms outbox polling while SSE stream is connected and wakes immediately on outbox events', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'bridge-sse-idle-'));
+  const host = await BridgeHost.open({
+    path: join(root, 'host.db'),
+    policy: { id: 'sse-idle', capacity: { cpuMillis: 16000, memoryBytes: 32 * 1024 ** 3 } },
+    backend: localTestBackend(),
+  });
+  const attachment = await attachGateway(host, token);
+  let eventPullRequests = 0;
+  const sseSockets = new Set<import('node:net').Socket>();
+  attachment.server.on('request', (req) => {
+    if (req.url?.startsWith('/events?')) eventPullRequests++;
+    if (req.url?.startsWith('/events/stream')) sseSockets.add(req.socket);
+  });
+  const frames: any[] = [];
+  const legacy = {
+    status: { state: 'open' as const },
+    async connect() {},
+    async close() {},
+    subscribeStatus: () => () => {},
+    subscribeMessage: () => () => {},
+    async send() {},
+  };
+  const bridge = new CodexProviderBridge(legacy, {
+    url: attachment.url,
+    token,
+    serverId: 'server-sse',
+    inboxPath: join(root, 'inbox.db'),
+  });
+  bridge.subscribeMessage(raw => frames.push(JSON.parse(raw)));
+  t.after(async () => {
+    await bridge.close();
+    await attachment.close();
+    await host.close();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  await bridge.connect();
+  const gateway = (bridge as any).gateway as BridgeGatewaySession;
+  await until(() => gateway.isStreamConnected(), Boolean);
+  // Wait for initial hello catch-up pull to settle completely.
+  await delay(40);
+  assert.equal((bridge as any).poll, undefined, '100ms interval timer is cleared while SSE is connected');
+
+  const pullsBeforeIdle = eventPullRequests;
+  await delay(450);
+  assert.equal(eventPullRequests, pullsBeforeIdle, 'zero HTTP /events pulls occur during a 450ms idle window');
+
+  // Seed a subscribed route and verify SSE outbox wakeup delivers structural events without polling jitter.
+  const route = JSON.stringify(['server-sse', 'bridge:codex:sse-wake']);
+  const hostStorage = (host as any).storage as Storage;
+  await hostStorage.call('add', {
+    id: 'g-sse',
+    digest: '0'.repeat(64),
+    artifact: '/unused/codex.cjs',
+    provider: codexDeclaration,
+    launch: { command: ['/unused/codex.cjs'], cwd: root, env: {} },
+  });
+  await hostStorage.call('activate', { id: 'g-sse', expected: '' });
+  await hostStorage.call('admit', {
+    route,
+    digest: 'seed',
+    maxSpoolBytes: 1024 * 1024,
+    command: { serverId: 'server-sse', threadId: 'bridge:codex:sse-wake', commandId: 'seed', method: 'session/create', params: {} },
+  });
+  (bridge as any).clients.set('c1', { evidence: false, sharedInteractions: false, epoch: 1 });
+  (bridge as any).subscriptions.set('bridge:codex:sse-wake', new Map([['c1', { mode: 'live' }]]));
+  const committed = await hostStorage.call<{ high: number; structuralWritten: boolean }>('callback', {
+    generation: 'g-sse',
+    id: 'cb-wake-1',
+    method: 'thread/notification',
+    params: { threadId: route, method: 'thread/archived', params: {} },
+  });
+  (host as any).notifyOutbox(committed.high);
+  await until(() => frames.some(f => f.method === 'thread/archived' && f.params?.threadId === 'bridge:codex:sse-wake'), Boolean);
+  assert.equal(eventPullRequests, pullsBeforeIdle + 1, 'SSE outbox wakeup triggers exactly one /events pull');
+
+  // Simulate transient SSE drop: fallback polling resumes while disconnected and stops again upon reconnect.
+  const transitions: { connected: boolean; hasPoll: boolean }[] = [];
+  const unsubscribeState = gateway.subscribeStreamState(connected => {
+    transitions.push({ connected, hasPoll: (bridge as any).poll !== undefined });
+  });
+  for (const sock of sseSockets) sock.destroy();
+  await until(
+    () => transitions.some(t => !t.connected) && transitions.at(-1)?.connected === true,
+    Boolean,
+  );
+  unsubscribeState();
+  assert.equal(transitions.find(t => !t.connected)?.hasPoll, true, '100ms fallback poll activates synchronously on SSE disconnect');
+  assert.equal(transitions.at(-1)?.hasPoll, false, '100ms fallback poll clears synchronously on SSE reconnect');
+  assert.equal((bridge as any).poll, undefined);
+});

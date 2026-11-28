@@ -13,6 +13,7 @@ import {
   BRIDGE_ERROR_CODES,
   BRIDGE_GRAMMAR_RANGE,
   BRIDGE_MAX_COMMAND_BYTES,
+  BRIDGE_OUTBOX_PAGE_BYTES,
   BRIDGE_PROTOCOL_VERSION,
   isBridgeCommand,
   assertMethodAllowed,
@@ -22,7 +23,10 @@ import {
 } from "@opencraft/agent-bridge-protocol";
 import { Storage, StorageRefusal } from "./storage.js";
 import { Peer, successful } from "./peer.js";
-import { object, identifier, isArchiveCommand, oversizedBridgeRequest, routeKey, type BridgeHistorySelection, type Command, type Generation, type Receipt } from "./types.js";
+import {
+  object, identifier, isArchiveCommand, oversizedBridgeRequest, routeKey,
+  type BridgeHistorySelection, type BridgeStreamMessage, type Command, type EphemeralEvent, type EphemeralEventPage, type Generation, type Receipt,
+} from "./types.js";
 import { HostQueue } from "./queue.js";
 const CODEX_RECONNECT_DELAY_MS = 1_000;
 type CliFailureStage = "source" | "previous-lease" | "issue" | "reservation" | "cancelled" | "provider" | "native-configuration";
@@ -65,7 +69,7 @@ function hostRefusal(command: Command, message: string): Error & { code: number;
  * an explicit `unknown-outcome` keeps custody unknown; treating stale/invalid
  * refusals as unknown would block Thread release forever.
  */
-export function dispatchSettlement(response: BridgeWireMessage): Receipt["state"] {
+export function dispatchSettlement(response: BridgeWireMessage): "accepted" | "rejected" | "unknown" {
   if (successful(response)) return "accepted";
   if ("error" in response) return REFUSED_BRIDGE_ERRORS.has(response.error.kind) ? "rejected" : "unknown";
   return "unknown";
@@ -138,14 +142,103 @@ export class BridgeHost {
    * provider is never started again, so only the storage row stays.
    */
   private readonly draining = new Set<string>();
+  private streamSeq = 0;
+  private ephemeralBytes = 0;
+  private readonly ephemeralBuffer: { event: EphemeralEvent; bytes: number }[] = [];
+  private readonly streamListeners = new Set<{
+    onMessage(message: BridgeStreamMessage): void;
+    onClose(): void;
+  }>();
+  private readonly commandWaiters = new Map<string, Set<() => void>>();
   readonly incarnation = randomUUID();
   readonly queue: HostQueue;
+  private publishEphemeral(raw: { route: string; generation: string; afterSeq: number; payload: unknown }): void {
+    const event: EphemeralEvent = {
+      streamSeq: ++this.streamSeq,
+      afterSeq: raw.afterSeq,
+      route: raw.route,
+      generation: raw.generation,
+      payload: raw.payload,
+    };
+    const bytes = Buffer.byteLength(JSON.stringify(raw.payload)) + raw.route.length + raw.generation.length + 64;
+    this.ephemeralBuffer.push({ event, bytes });
+    this.ephemeralBytes += bytes;
+    while (
+      this.ephemeralBuffer.length > 2048 ||
+      (this.ephemeralBuffer.length > 1 && this.ephemeralBytes > 4 * 1024 * 1024)
+    ) {
+      const evicted = this.ephemeralBuffer.shift();
+      if (evicted) this.ephemeralBytes -= evicted.bytes;
+    }
+    const message: BridgeStreamMessage = { kind: "ephemeral", event };
+    for (const listener of this.streamListeners) {
+      try { listener.onMessage(message); } catch { /* isolated subscriber */ }
+    }
+  }
+  private notifyOutbox(high?: number): void {
+    const message: BridgeStreamMessage = high === undefined ? { kind: "outbox", high: 0 } : { kind: "outbox", high };
+    for (const listener of this.streamListeners) {
+      try { listener.onMessage(message); } catch { /* isolated subscriber */ }
+    }
+  }
+  private notifyCommand(commandId: string): void {
+    const waiters = this.commandWaiters.get(commandId);
+    if (waiters) {
+      this.commandWaiters.delete(commandId);
+      for (const wake of waiters) wake();
+    }
+    const message: BridgeStreamMessage = { kind: "command", commandId };
+    for (const listener of this.streamListeners) {
+      try { listener.onMessage(message); } catch { /* isolated subscriber */ }
+    }
+  }
+  private waitForCommand(commandId: string, timeoutMs: number): Promise<void> {
+    return new Promise((resolve) => {
+      let waiters = this.commandWaiters.get(commandId);
+      if (!waiters) {
+        waiters = new Set();
+        this.commandWaiters.set(commandId, waiters);
+      }
+      const finish = () => {
+        clearTimeout(timer);
+        const current = this.commandWaiters.get(commandId);
+        current?.delete(finish);
+        if (current && current.size === 0) this.commandWaiters.delete(commandId);
+        resolve();
+      };
+      const timer = setTimeout(finish, timeoutMs);
+      waiters.add(finish);
+    });
+  }
+  private async settleCommand(args: {
+    id: string;
+    state: "accepted" | "rejected" | "unknown";
+    response?: unknown;
+    interactionId?: unknown;
+    localStop?: boolean;
+  }): Promise<Receipt | null> {
+    const settled = await this.storage.call<Receipt | null>("settle", args);
+    this.notifyCommand(args.id);
+    if (
+      args.state === "accepted" &&
+      settled &&
+      ["interaction/resolve", "session/close", "session/delete", "turn/stop"].includes(settled.method)
+    ) {
+      this.notifyOutbox();
+    }
+    return settled;
+  }
   private constructor(private options: HostOptions) {
     this.storage = new Storage(options.path, "host", () => {
       this.closing = true;
+      for (const waiters of this.commandWaiters.values()) for (const wake of waiters) wake();
+      this.commandWaiters.clear();
+      for (const listener of [...this.streamListeners]) listener.onClose();
+      this.streamListeners.clear();
       if (this.pool) void this.pool.close().catch(() => {}); // retained cleanup promise is rechecked by close()
     });
     this.queue = new HostQueue(this.storage, {
+      outboxWritten: (high) => this.notifyOutbox(high),
       command: async (serverId, threadId, commandId, method, params) => {
         try {
           await this.accept({ commandId, serverId, threadId, method, params });
@@ -155,13 +248,11 @@ export class BridgeHost {
             throw Object.assign(error, { settlement: "rejected" });
           throw error;
         }
-        for (
-          const deadline = Date.now() + 35_000;
-          Date.now() < deadline;
-          await new Promise((resolve) => setTimeout(resolve, 25))
-        ) {
+        for (const deadline = Date.now() + 35_000; Date.now() < deadline; ) {
+          const wait = this.waitForCommand(commandId, 250);
           const receipt = await this.query(commandId);
           if (receipt && ["accepted", "rejected", "unknown"].includes(receipt.state)) return receipt;
+          await wait;
         }
         throw Error("Queued delivery outcome unknown");
       },
@@ -308,7 +399,13 @@ export class BridgeHost {
       const peer: Peer = new Peer(
         config,
         async (callbackId, method, params) => {
-          await this.storage.call("callback", { generation: id, id: callbackId, method, params: object(params) });
+          const committed = await this.storage.call<{
+            high: number;
+            structuralWritten: boolean;
+            ephemeral: readonly { route: string; generation: string; afterSeq: number; payload: unknown }[];
+          }>("callback", { generation: id, id: callbackId, method, params: object(params) });
+          if (committed?.structuralWritten) this.notifyOutbox(committed.high);
+          for (const item of committed?.ephemeral ?? []) this.publishEphemeral(item);
           const p = object(params);
           const route = String(p.threadId);
           // A retried legacy adoption can attach a route retained at startup.
@@ -685,8 +782,8 @@ export class BridgeHost {
     // the separate responsibility to reclaim the in-flight lease.
     await this.rejectCliCommand(pending.commandId, "cancelled");
   }
-  private rejectCliCommand(commandId: string, cliStage: CliFailureStage): Promise<void> {
-    return this.storage.call("settle", {
+  private rejectCliCommand(commandId: string, cliStage: CliFailureStage): Promise<Receipt | null> {
+    return this.settleCommand({
       id: commandId,
       state: "rejected",
       response: {
@@ -756,7 +853,7 @@ export class BridgeHost {
       } catch (error) {
         if (!(error instanceof CodexAttachmentUnavailable)) throw error;
         // Attachment negotiation failed before this command was sent.
-        await this.storage.call("settle", {
+        await this.settleCommand({
           id: command.commandId,
           state: "rejected",
           response: {
@@ -769,7 +866,7 @@ export class BridgeHost {
       }
       const admission = assertMethodAllowed(this.capabilities.get(receipt.generation)!, command.method);
       if (!admission.ok) {
-        await this.storage.call("settle", { id: command.commandId, state: "rejected" });
+        await this.settleCommand({ id: command.commandId, state: "rejected" });
         return;
       }
       if (!["session/create", "session/fork", "session/adopt"].includes(command.method)) {
@@ -777,7 +874,7 @@ export class BridgeHost {
           await this.bound(peer, receipt.route, receipt.epoch);
         } catch (error) {
           // Nothing was sent for this command: the session was not bound.
-          await this.storage.call("settle", {
+          await this.settleCommand({
             id: command.commandId,
             state: "rejected",
             response: {
@@ -801,7 +898,7 @@ export class BridgeHost {
           await this.cancelPendingCliIssue(receipt.route, "stop");
           try { await this.retryUnsentCliCleanup(receipt.route, pending, peer); }
           catch { await this.rejectCliCommand(command.commandId, "previous-lease"); return; }
-          await this.storage.call("settle", {
+          await this.settleCommand({
             id: command.commandId,
             state: "accepted",
             localStop: true,
@@ -930,7 +1027,7 @@ export class BridgeHost {
       if (state === "rejected" && start?.observed) state = "unknown";
       const sessionClosed = state === "accepted" && (command.method === "session/close" || command.method === "session/delete");
       if (sessionClosed) await this.cancelPendingCliIssue(receipt.route, "session-ended");
-      await this.storage.call("settle", {
+      await this.settleCommand({
         id: command.commandId,
         response,
         state,
@@ -976,7 +1073,7 @@ export class BridgeHost {
       }
     } catch {
       if (this.cliStarts.get(receipt.route)?.commandId === command.commandId) this.cliStarts.delete(receipt.route);
-      await this.storage.call("settle", dispatched ? { id: command.commandId, state: "unknown" } : {
+      await this.settleCommand(dispatched ? { id: command.commandId, state: "unknown" } : {
         id: command.commandId,
         state: "rejected",
         response: {
@@ -1178,6 +1275,37 @@ export class BridgeHost {
   events(cursor: number, limit = 256, fenced = false, fragmentOffset?: number): Promise<any> {
     return this.storage.call("events", { cursor, limit, fenced, fragmentOffset });
   }
+  ephemeralEvents(afterStreamSeq = 0, limit = 512): EphemeralEventPage {
+    if (!Number.isSafeInteger(afterStreamSeq) || afterStreamSeq < 0) throw Error("Invalid ephemeral cursor");
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 2048) throw Error("Invalid ephemeral page limit");
+    if (afterStreamSeq > this.streamSeq) {
+      return { streamId: this.incarnation, highStreamSeq: this.streamSeq, reset: true, events: [] };
+    }
+    const firstRetained = this.ephemeralBuffer[0]?.event.streamSeq;
+    const reset = afterStreamSeq > 0 && (
+      firstRetained === undefined ? this.streamSeq > afterStreamSeq : firstRetained > afterStreamSeq + 1
+    );
+    const events: EphemeralEvent[] = [];
+    let bytes = 512;
+    for (const entry of this.ephemeralBuffer) {
+      if (entry.event.streamSeq <= afterStreamSeq) continue;
+      if (events.length && bytes + entry.bytes > BRIDGE_OUTBOX_PAGE_BYTES) break;
+      events.push(entry.event);
+      bytes += entry.bytes;
+      if (events.length >= limit || bytes >= BRIDGE_OUTBOX_PAGE_BYTES) break;
+    }
+    return { streamId: this.incarnation, highStreamSeq: this.streamSeq, reset, events };
+  }
+  subscribeStream(listener: { onMessage(message: BridgeStreamMessage): void; onClose(): void }): () => void {
+    if (this.closing) {
+      listener.onClose();
+      return () => {};
+    }
+    this.streamListeners.add(listener);
+    return () => {
+      this.streamListeners.delete(listener);
+    };
+  }
   historyIdentities(serverId: string, threadId: string, after: number, through?: number, selection?: BridgeHistorySelection): Promise<unknown> {
     return this.storage.call("historyIdentities", { route: routeKey(serverId, threadId), after, through, selection });
   }
@@ -1217,6 +1345,10 @@ export class BridgeHost {
   }
   async close(): Promise<void> {
     this.closing = true;
+    for (const waiters of this.commandWaiters.values()) for (const wake of waiters) wake();
+    this.commandWaiters.clear();
+    for (const listener of [...this.streamListeners]) listener.onClose();
+    this.streamListeners.clear();
     this.queue.close();
     await Promise.allSettled([...this.admissions]);
     const cleanup = await Promise.allSettled([

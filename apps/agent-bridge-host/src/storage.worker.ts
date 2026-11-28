@@ -12,7 +12,10 @@ import { ThreadQueueStore } from '@opencraft/thread-queue';
 import { migrations } from './migrations.js';
 import { queuedCommandId, queuedTurnAcknowledgement } from './queue.js';
 import { BridgeInboxRefusal, createBridgeInboxStore, HISTORY_IDENTITIES, HISTORY_IDENTITY_COLUMNS, historyIdentity, prepareSelectedHistory } from './inbox-store.js';
-import { isArchiveCommand, type BridgeHistorySelection, type Receipt, type Generation, type OutboxEvent, type OutboxFence } from './types.js';
+import {
+  EPHEMERAL_THREAD_NOTIFICATIONS, isArchiveCommand,
+  type BridgeHistorySelection, type Receipt, type Generation, type OutboxEvent, type OutboxFence,
+} from './types.js';
 /** Commands that bring a Thread route into existence, and that end its native session. */
 const CREATES: readonly string[] = ['session/create', 'session/fork', 'session/adopt'];
 const ENDS: readonly string[] = ['session/close', 'session/delete'];
@@ -33,9 +36,18 @@ const { database: db, outcome } = (() => {
 })();
 if (!readOnly) db.exec('PRAGMA synchronous=FULL');
 const tx = <T>(action: () => T) => sqliteTransaction(db, action);
-const get = (sql: string, ...args: any[]) => db.prepare(sql).get(...args) as any;
-const all = (sql: string, ...args: any[]) => db.prepare(sql).all(...args) as any[];
-const run = (sql: string, ...args: any[]) => db.prepare(sql).run(...args);
+const statements = new Map<string, ReturnType<typeof db.prepare>>();
+const prepare = (sql: string) => {
+  let statement = statements.get(sql);
+  if (!statement) {
+    statement = db.prepare(sql);
+    statements.set(sql, statement);
+  }
+  return statement;
+};
+const get = (sql: string, ...args: any[]) => prepare(sql).get(...args) as any;
+const all = (sql: string, ...args: any[]) => prepare(sql).all(...args) as any[];
+const run = (sql: string, ...args: any[]) => prepare(sql).run(...args);
 const meta = (key: string) => get('SELECT value FROM meta WHERE key=?', key).value as string;
 const setMeta = (key: string, value: string | number) => run('UPDATE meta SET value=? WHERE key=?', String(value), key);
 class Refusal extends Error {}
@@ -111,7 +123,7 @@ const receipt = (id: string): Receipt | null => {
 const events = (cursor: number, limit: number): OutboxEvent[] => {
   const page: OutboxEvent[] = [];
   let bytes = 1024; // Fence, brackets and separators.
-  for (const row of db.prepare('SELECT * FROM outbox WHERE seq>? ORDER BY seq LIMIT ?').iterate(cursor, limit)) {
+  for (const row of prepare('SELECT * FROM outbox WHERE seq>? ORDER BY seq LIMIT ?').iterate(cursor, limit)) {
     const { payload, ...envelope } = row as unknown as OutboxEvent & { payload: string };
     const rowBytes = Buffer.byteLength(JSON.stringify(envelope)) + Buffer.byteLength(payload) + 16;
     if (page.length && bytes + rowBytes > BRIDGE_OUTBOX_PAGE_BYTES) break;
@@ -121,10 +133,12 @@ const events = (cursor: number, limit: number): OutboxEvent[] => {
   }
   return page;
 };
+const outboxHigh = (): number =>
+  Number(get("SELECT coalesce((SELECT seq FROM sqlite_sequence WHERE name='outbox'),0) AS high").high);
 const outboxFence = (): OutboxFence => ({
   outboxId: meta('outbox-id'),
   acknowledged: Number(meta('ack')),
-  high: Number(get("SELECT coalesce((SELECT seq FROM sqlite_sequence WHERE name='outbox'),0) AS high").high),
+  high: outboxHigh(),
 });
 interface EncodedOutboxEvent {
   cursor: number;
@@ -136,10 +150,50 @@ interface EncodedOutboxEvent {
 // Retained outbox rows are immutable. Keep one bounded encoding beside the
 // storage owner so fragment retries reuse its bytes without reviving acked rows.
 let encodedOutboxEvent: EncodedOutboxEvent | undefined;
-const checkpoint = (route: string): AssemblerState => {
-  const row = get('SELECT state FROM checkpoints WHERE route=?', route);
-  return row ? JSON.parse(row.state) : createAssemblerState(1);
-};
+// Streaming text/reasoning/plan deltas update assembler state in memory and
+// flush to SQLite on structural boundaries and graceful close, eliminating
+// per-token synchronous fsyncs while keeping live route state exact.
+const liveCheckpoints = new Map<string, { state: AssemblerState; atMs: number; dirty: boolean }>();
+const EPHEMERAL_CALLBACK_CACHE_LIMIT = 4096;
+const ephemeralCallbacks = new Map<string, string>();
+function rememberEphemeralCallback(key: string, digest: string): void {
+  if (ephemeralCallbacks.size >= EPHEMERAL_CALLBACK_CACHE_LIMIT && !ephemeralCallbacks.has(key)) {
+    const oldest = ephemeralCallbacks.keys().next().value;
+    if (oldest !== undefined) ephemeralCallbacks.delete(oldest);
+  }
+  ephemeralCallbacks.set(key, digest);
+}
+function checkpointEntry(route: string): { state: AssemblerState; atMs: number; dirty: boolean } | undefined {
+  const cached = liveCheckpoints.get(route);
+  if (cached) return cached;
+  const row = get('SELECT state,at_ms FROM checkpoints WHERE route=?', route);
+  if (!row) return undefined;
+  const entry = { state: JSON.parse(row.state) as AssemblerState, atMs: Number(row.at_ms), dirty: false };
+  liveCheckpoints.set(route, entry);
+  return entry;
+}
+function hasCheckpoint(route: string): boolean {
+  return liveCheckpoints.has(route) || !!get('SELECT 1 FROM checkpoints WHERE route=?', route);
+}
+function persistCheckpoint(route: string, state: AssemblerState, atMs: number): void {
+  run(
+    'INSERT INTO checkpoints VALUES (?,?,?) ON CONFLICT(route) DO UPDATE SET state=excluded.state,at_ms=excluded.at_ms',
+    route, JSON.stringify(state), atMs,
+  );
+  liveCheckpoints.set(route, { state, atMs, dirty: false });
+}
+function flushRouteCheckpoint(route: string): void {
+  const entry = liveCheckpoints.get(route);
+  if (entry?.dirty) persistCheckpoint(route, entry.state, entry.atMs);
+}
+function flushAllDirtyCheckpoints(): void {
+  const dirty = [...liveCheckpoints.entries()].filter(([, entry]) => entry.dirty);
+  if (!dirty.length) return;
+  tx(() => {
+    for (const [route, entry] of dirty) persistCheckpoint(route, entry.state, entry.atMs);
+  });
+}
+const checkpoint = (route: string): AssemblerState => checkpointEntry(route)?.state ?? createAssemblerState(1);
 function receiptWithIdentities(id: string): Receipt | null {
   const row = receipt(id);
   if (!row || row.state !== 'accepted' || !row.response || !isSuccess(row.response)) return row;
@@ -188,7 +242,7 @@ function retryableAdoptionRoutes(): string[] {
        AND count(*) FILTER (WHERE ${adoptionReceiptConflict}) = 0
   `);
   return candidates.flatMap(({ route }) =>
-    get('SELECT 1 FROM checkpoints WHERE route=?', route) || get('SELECT 1 FROM outbox WHERE route=?', route)
+    hasCheckpoint(route) || get('SELECT 1 FROM outbox WHERE route=?', route)
       ? [] : [route]);
 }
 
@@ -219,6 +273,7 @@ const operations: Record<string, (args: any) => any> = {
     require(get('SELECT generation FROM routes WHERE route=?', route)?.generation === from, 'Route moved meanwhile');
     require(get('SELECT 1 FROM generations WHERE id=? AND retired=0', to), 'Generation unavailable');
     require(!busy(route), 'Route became busy');
+    flushRouteCheckpoint(route);
     run('UPDATE routes SET generation=? WHERE route=?', to, route);
   }),
   // A generation nothing is bound to any more, and whose events are acknowledged, is retired.
@@ -230,11 +285,13 @@ const operations: Record<string, (args: any) => any> = {
   // Idle for queue dispatch: no turn open in the assembled state and no turn command in custody.
   routeIdle: ({ route, excludingCommandId, forQueue = false }: { route: string; excludingCommandId?: string; forQueue?: boolean }) =>
     (!forQueue || queueActive(route)) && turnIdle(route, excludingCommandId),
-  queueChanged: ({ route }: { route: string }) => tx(() =>
-    require(publishQueueChanged(route), 'Queue Thread has no route')),
+  queueChanged: ({ route }: { route: string }) => tx(() => {
+    require(publishQueueChanged(route), 'Queue Thread has no route');
+    return { high: outboxHigh() };
+  }),
   snapshot: ({ adoptionOwnership = false }: { adoptionOwnership?: boolean } = {}) => ({
     epoch: Number(meta('epoch')), current: meta('current'), ack: Number(meta('ack')),
-    historyIdentityPages: true, historyIdentitySelection: true, historyPublicTurnBatch: true,
+    historyIdentityPages: true, historyIdentitySelection: true, historyPublicTurnBatch: true, ephemeralStream: true,
     generations: all('SELECT * FROM generations').map(row => ({ ...row, config: JSON.parse(row.config) })),
     routes: all('SELECT * FROM routes'), nativeSessions: all('SELECT * FROM native_sessions'), interactions: all('SELECT * FROM interactions'),
     ...(adoptionOwnership ? { retryableAdoptionRoutes: retryableAdoptionRoutes() } : {}),
@@ -249,6 +306,7 @@ const operations: Record<string, (args: any) => any> = {
     const target = get('SELECT config FROM generations WHERE id=? AND retired=0', id);
     require(target, 'Generation unavailable');
     if (cutoverCodex) {
+      for (const [route, entry] of liveCheckpoints) if (entry.dirty) persistCheckpoint(route, entry.state, entry.atMs);
       const { provider } = JSON.parse(target.config) as Generation;
       require(provider.providerId === 'codex' && provider.capabilities.adoption, 'Codex generation does not support adoption');
       run(`UPDATE routes SET generation=? WHERE generation<>? AND generation IN (
@@ -297,7 +355,7 @@ const operations: Record<string, (args: any) => any> = {
       const adoption = command.method === 'session/adopt';
       require(!get('SELECT 1 FROM native_sessions WHERE route=?', route)
         && !get('SELECT 1 FROM outbox WHERE route=?', route)
-        && (!adoption || binding.archive_state === 'active' && !get('SELECT 1 FROM checkpoints WHERE route=?', route))
+        && (!adoption || binding.archive_state === 'active' && !hasCheckpoint(route))
         && !get(`SELECT 1 FROM commands WHERE route=? AND ${adoption ? adoptionReceiptConflict : "state<>'rejected'"}`, route),
         'Thread already exists');
     }
@@ -374,38 +432,91 @@ const operations: Record<string, (args: any) => any> = {
     }
     return row;
   }),
-  callback: ({ generation, id, method, params }: any) => tx(() => {
+  callback: ({ generation, id, method, params }: any) => {
     const digest = createHash('sha256').update(JSON.stringify({ method, params })).digest('hex');
+    const callbackKey = `${generation}\0${id}`;
+    const cachedDigest = ephemeralCallbacks.get(callbackKey);
+    if (cachedDigest !== undefined) {
+      require(cachedDigest === digest, 'Callback id reused');
+      return { high: outboxHigh(), structuralWritten: false, ephemeral: [] };
+    }
     const previous = get('SELECT digest FROM callbacks WHERE generation=? AND id=?', generation, id);
-    if (previous) { require(previous.digest === digest, 'Callback id reused'); return; }
+    if (previous) {
+      require(previous.digest === digest, 'Callback id reused');
+      return { high: outboxHigh(), structuralWritten: false, ephemeral: [] };
+    }
     const route = params.threadId;
     require(typeof route === 'string' && get('SELECT 1 FROM routes WHERE route=? AND generation=?', route, generation), 'Callback generation does not own Thread');
-    if (method === 'thread/identity') {
-      require(typeof params.providerThreadId === 'string' && (params.sessionRestorable === undefined || typeof params.sessionRestorable === 'boolean'), 'Invalid native identity');
-      run('INSERT INTO native_sessions VALUES (?,?,?,?) ON CONFLICT(route) DO UPDATE SET native_id=excluded.native_id,restorable=excluded.restorable', route, generation, params.providerThreadId, params.sessionRestorable === true ? 1 : 0);
-    }
-    if (method === 'interaction/request') require(typeof params.kind === 'string' && 'payload' in params, 'Invalid interaction');
-    if (method === 'provider/recovery') require(['sessionArchived','authRequired','restartRecommended','staleTurn','rateLimited'].includes(params.kind)
-      && typeof params.message === 'string' && typeof params.retryable === 'boolean', 'Invalid recovery');
+
     if (method === 'thread/delta') {
       const parsed = parseThreadDeltaParams(params);
       require(parsed.ok, parsed.reason ?? 'Invalid delta');
       require(parsed.params!.deltas.every(delta => delta.scope.threadId === route), 'Delta scope mismatch');
-      const state = checkpoint(route);
-      const previousTime = Number(get('SELECT at_ms FROM checkpoints WHERE route=?', route)?.at_ms ?? 0);
+      const current = checkpointEntry(route);
+      const state = current?.state ?? createAssemblerState(1);
+      const previousTime = current?.atMs ?? 0;
       const now = Math.max(Date.now(), previousTime);
       const result = assemble(state, parsed.params!.deltas, { threadId: route, clockSeed: now - state.seq });
-      run('INSERT INTO checkpoints VALUES (?,?,?) ON CONFLICT(route) DO UPDATE SET state=excluded.state,at_ms=excluded.at_ms', route, JSON.stringify(result.state), result.events.at(-1)?.atMs ?? now);
-      for (const event of result.events) run('INSERT INTO outbox(route,generation,payload) VALUES (?,?,?)', route, generation, JSON.stringify({ kind: 'canonical', event }));
-    } else if (method === 'thread/notification') {
-      // Store allow-listed notifications under their native methods for the gateway to publish.
+      const atMs = result.events.at(-1)?.atMs ?? now;
+      const structural = result.events.filter(event => event.kind !== 'agentMessage.delta');
+      const deltas = result.events.filter(event => event.kind === 'agentMessage.delta');
+      if (structural.length === 0) {
+        liveCheckpoints.set(route, { state: result.state, atMs, dirty: true });
+        rememberEphemeralCallback(callbackKey, digest);
+        const high = outboxHigh();
+        return {
+          high,
+          structuralWritten: false,
+          ephemeral: deltas.map(event => ({ route, generation, afterSeq: high, payload: { kind: 'canonical', event } })),
+        };
+      }
+      return tx(() => {
+        persistCheckpoint(route, result.state, atMs);
+        for (const event of structural)
+          run('INSERT INTO outbox(route,generation,payload) VALUES (?,?,?)', route, generation, JSON.stringify({ kind: 'canonical', event }));
+        run('INSERT INTO callbacks VALUES (?,?,?)', generation, id, digest);
+        const high = outboxHigh();
+        return {
+          high,
+          structuralWritten: true,
+          ephemeral: deltas.map(event => ({ route, generation, afterSeq: high, payload: { kind: 'canonical', event } })),
+        };
+      });
+    }
+
+    if (method === 'thread/notification') {
+      // Store allow-listed structural notifications under their native methods; stream pure deltas ephemerally.
       require(typeof params.method === 'string' && BRIDGE_THREAD_NOTIFICATIONS.has(params.method) && params.params && typeof params.params === 'object' && !Array.isArray(params.params), 'Invalid thread notification');
-      if (params.method === 'item/commandExecution/terminalInteraction')
-        require(isTerminalInteraction(params.params), 'Invalid terminal interaction');
-      if (params.method === 'thread/archived' || params.method === 'thread/unarchived')
-        run('UPDATE routes SET archive_state=? WHERE route=?', params.method === 'thread/archived' ? 'archived' : 'active', route);
-      run('INSERT INTO outbox(route,generation,payload) VALUES (?,?,?)', route, generation, JSON.stringify({ method: params.method, params: { ...params.params, threadId: route } }));
-    } else {
+      if (EPHEMERAL_THREAD_NOTIFICATIONS.has(params.method)) {
+        rememberEphemeralCallback(callbackKey, digest);
+        const high = outboxHigh();
+        return {
+          high,
+          structuralWritten: false,
+          ephemeral: [{ route, generation, afterSeq: high, payload: { method: params.method, params: { ...params.params, threadId: route } } }],
+        };
+      }
+      return tx(() => {
+        flushRouteCheckpoint(route);
+        if (params.method === 'item/commandExecution/terminalInteraction')
+          require(isTerminalInteraction(params.params), 'Invalid terminal interaction');
+        if (params.method === 'thread/archived' || params.method === 'thread/unarchived')
+          run('UPDATE routes SET archive_state=? WHERE route=?', params.method === 'thread/archived' ? 'archived' : 'active', route);
+        run('INSERT INTO outbox(route,generation,payload) VALUES (?,?,?)', route, generation, JSON.stringify({ method: params.method, params: { ...params.params, threadId: route } }));
+        run('INSERT INTO callbacks VALUES (?,?,?)', generation, id, digest);
+        return { high: outboxHigh(), structuralWritten: true, ephemeral: [] };
+      });
+    }
+
+    return tx(() => {
+      flushRouteCheckpoint(route);
+      if (method === 'thread/identity') {
+        require(typeof params.providerThreadId === 'string' && (params.sessionRestorable === undefined || typeof params.sessionRestorable === 'boolean'), 'Invalid native identity');
+        run('INSERT INTO native_sessions VALUES (?,?,?,?) ON CONFLICT(route) DO UPDATE SET native_id=excluded.native_id,restorable=excluded.restorable', route, generation, params.providerThreadId, params.sessionRestorable === true ? 1 : 0);
+      }
+      if (method === 'interaction/request') require(typeof params.kind === 'string' && 'payload' in params, 'Invalid interaction');
+      if (method === 'provider/recovery') require(['sessionArchived','authRequired','restartRecommended','staleTurn','rateLimited'].includes(params.kind)
+        && typeof params.message === 'string' && typeof params.retryable === 'boolean', 'Invalid recovery');
       require(['thread/identity', 'interaction/request', 'interaction/resolved', 'provider/recovery'].includes(method), 'Unsupported callback');
       if (method === 'interaction/request') {
         require(typeof params.interactionId === 'string', 'Missing interaction identity');
@@ -416,9 +527,10 @@ const operations: Record<string, (args: any) => any> = {
         run('DELETE FROM interactions WHERE route=? AND id=?', route, params.interactionId);
       }
       run('INSERT INTO outbox(route,generation,payload) VALUES (?,?,?)', route, generation, JSON.stringify({ method, params }));
-    }
-    run('INSERT INTO callbacks VALUES (?,?,?)', generation, id, digest);
-  }),
+      run('INSERT INTO callbacks VALUES (?,?,?)', generation, id, digest);
+      return { high: outboxHigh(), structuralWritten: true, ephemeral: [] };
+    });
+  },
   events: ({ cursor, limit, fenced = false, fragmentOffset }: {
     cursor: number; limit: number; fenced?: boolean; fragmentOffset?: number;
   }) => {
@@ -466,13 +578,16 @@ const operations: Record<string, (args: any) => any> = {
         AND ${HISTORY_IDENTITIES} ORDER BY seq LIMIT 256`, route, after, end).map(historyIdentity);
     return { ...fence, identities };
   },
-  ack: ({ cursor, outboxId }: { cursor: number; outboxId?: string }) => tx(() => {
+  ack: ({ cursor, outboxId }: { cursor: number; outboxId?: string }) => {
     const fence = outboxFence();
     require(outboxId === undefined || outboxId === fence.outboxId, 'Outbox identity changed');
     require(Number.isSafeInteger(cursor) && cursor >= fence.acknowledged && cursor <= fence.high, 'Invalid acknowledgement');
-    setMeta('ack', cursor); run('DELETE FROM outbox WHERE seq<=?', cursor);
-    if (encodedOutboxEvent && encodedOutboxEvent.seq <= cursor) encodedOutboxEvent = undefined;
-  }),
+    if (cursor === fence.acknowledged) return;
+    tx(() => {
+      setMeta('ack', cursor); run('DELETE FROM outbox WHERE seq<=?', cursor);
+      if (encodedOutboxEvent && encodedOutboxEvent.seq <= cursor) encodedOutboxEvent = undefined;
+    });
+  },
   abandon: ({ route, id }: any) => tx(() => {
     const row = get('SELECT method,state,route FROM commands WHERE id=?', id);
     require(row && row.state === 'rejected' && CREATES.includes(row.method) && row.route === route,
@@ -480,6 +595,7 @@ const operations: Record<string, (args: any) => any> = {
     require(!get('SELECT 1 FROM native_sessions WHERE route=?', route), 'Native session retains the route');
     require(!get('SELECT 1 FROM commands WHERE route=? AND id<>?', route), 'Other command custody retains the route');
     require(!get('SELECT 1 FROM outbox WHERE route=?', route), 'Unacknowledged events retain the route');
+    liveCheckpoints.delete(route);
     run('DELETE FROM routes WHERE route=?', route);
     return { abandoned: true };
   }),
@@ -487,6 +603,8 @@ const operations: Record<string, (args: any) => any> = {
     require(!busy(route), 'Thread still has work or unknown custody');
     require(get("SELECT 1 FROM commands WHERE route=? AND method IN ('session/close','session/delete') AND state='accepted'", route), 'Native close required');
     require(!get('SELECT 1 FROM outbox WHERE route=?', route), 'Thread events remain unacknowledged');
+    flushRouteCheckpoint(route);
+    liveCheckpoints.delete(route);
     run('INSERT INTO released_routes SELECT route,generation FROM routes WHERE route=?', route);
     run('DELETE FROM routes WHERE route=?', route);
   }),
@@ -504,7 +622,12 @@ const operations: Record<string, (args: any) => any> = {
   inboxReadPendingInteractions: ({ route, after, through, ids }: { route: string; after: number; through: number; ids: readonly string[] }) =>
     inbox!.readPendingInteractions(route, after, through, ids),
   cursor: () => inbox!.cursor(),
-  close: () => { db.close(); release(); },
+  close: () => {
+    if (!readOnly && !failed && db.isOpen) flushAllDirtyCheckpoints();
+    statements.clear();
+    db.close();
+    release();
+  },
 };
 parentPort!.on('message', ({ id, op, args }) => {
   try {

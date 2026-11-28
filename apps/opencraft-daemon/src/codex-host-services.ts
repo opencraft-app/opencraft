@@ -41,7 +41,7 @@ export interface CodexHostService {
   handles(method: string): boolean;
   /** Answer clients that have not initialized yet; default false. */
   readonly beforeInitialize?: boolean;
-  request(method: string, params: unknown, context: TransportSubmissionContext): unknown;
+  request(method: string, params: unknown, context: TransportSubmissionContext, clientId?: string): unknown;
   /** Initialize capability extensions this service contributes. */
   capabilities?(): Value;
   storage?(): readonly { name: string; outcome: DatabaseOutcome }[];
@@ -51,6 +51,8 @@ export interface CodexHostService {
   observe?(method: string, params: Value, result: unknown): void;
   /** A notification on its way to clients. */
   notification?(method: string, params: Value): void;
+  /** Logical client disconnected from this Host. */
+  disconnect?(clientId: string): void;
   close(): void | Promise<void>;
 }
 
@@ -249,7 +251,16 @@ export class CodexHostServices implements DuplexTransport, CodexHostServiceClien
       this.clients.add(client);
       if (frame.id !== undefined) this.initializing.add(JSON.stringify([client, frame.id]));
     }
-    if (method === "runtime/client/disconnect" && client) this.clients.delete(client);
+    if (method === "runtime/client/disconnect" && client) {
+      this.clients.delete(client);
+      for (const candidate of this.services) {
+        try {
+          candidate.disconnect?.(client);
+        } catch {
+          /* disconnect cleanup never blocks routing */
+        }
+      }
+    }
     const service = method ? this.services.find((candidate) => candidate.handles(method)) : undefined;
     if (!service && method)
       for (const candidate of this.services) {
@@ -275,7 +286,7 @@ export class CodexHostServices implements DuplexTransport, CodexHostServiceClien
     }
     try {
       this.emit(
-        { id: frame.id, result: (await service.request(method, frame.params, context)) ?? null },
+        { id: frame.id, result: (await service.request(method, frame.params, context, client || undefined)) ?? null },
         client || undefined,
       );
     } catch (cause) {
@@ -385,6 +396,7 @@ const text = (value: unknown) => (typeof value === "string" ? value : "");
 export function codexModelsService(
   native: CodexNativeRequests,
   viewer: (context: TransportSubmissionContext) => string | null = () => null,
+  filterGatewayModelCatalog?: (path: string, actorId: string | null, models: unknown[]) => Promise<unknown[]>,
 ): CodexHostService {
   return {
     handles: (method) => method === "model/list" || method === "permissionProfile/list",
@@ -406,6 +418,13 @@ export function codexModelsService(
       const result = object(projectNativeCodexModelCatalog(reply));
       const gatewayPath = configuredModelGatewayPath();
       if (!gatewayPath || !Array.isArray(result.data)) return result;
+      if (filterGatewayModelCatalog) {
+        context.resourceOwner?.assertCurrent();
+        return {
+          ...result,
+          data: await filterGatewayModelCatalog(gatewayPath, viewer(context), result.data),
+        };
+      }
       const ledger = new ModelGatewayStore(gatewayPath);
       try {
         const actor = viewer(context);
@@ -509,7 +528,11 @@ export function codexTitlesService(
     changed: (threadId, name) => clients.broadcast("thread/name/updated", { threadId, threadName: name }),
     failed: () => console.warn("[codex-host-services]", JSON.stringify({ event: "thread-title-failed" })),
   });
-  const stop = native.subscribeNotification((method, params) => void titles.notification(method, params));
+  const stop = native.subscribeNotification((method, params) => {
+    const id = typeof params.threadId === "string" ? params.threadId : "";
+    const translated = id && !titles.owns(id) ? (identities?.toPublic(id) ?? id) : id;
+    void titles.notification(method, translated && translated !== id ? { ...params, threadId: translated } : params);
+  });
   return {
     handles: () => false,
     request: () => null,

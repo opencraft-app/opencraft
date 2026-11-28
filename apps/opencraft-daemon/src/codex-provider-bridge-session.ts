@@ -26,6 +26,7 @@ import {
 } from "@opencraft/appserver-protocol";
 import { CODEX_MAINTENANCE_READ, codexMaintenanceError, isCodexAdmission } from "./codex-admission-policy.js";
 import { readQueuedInputCompletion } from "./input-completion.js";
+import { projectThreadTopologyResult } from "./thread-orchestration-projection.js";
 
 type BridgeQueueRow = {
   id: string;
@@ -114,6 +115,7 @@ export class CodexProviderBridgeSession implements DuplexTransport {
   private interactions = new Map<string, { threadId: string; clients: Map<string, number> }>();
   private readonly humanInteractions = new HostInteractions();
   private poll?: ReturnType<typeof setInterval>;
+  private stopStreamState?: () => void;
   private closed = false;
   private connecting?: Promise<void>;
   private creations = new Set<Promise<unknown>>();
@@ -226,6 +228,8 @@ export class CodexProviderBridgeSession implements DuplexTransport {
         result: unknown,
         sender: TransportSubmissionContext["sender"],
       ) => void;
+      /** Thread orchestration topology (parentThreadId / visibility) keyed by public Thread ID. */
+      topology?: (threadId: string) => { parentThreadId: string | null; visibility: "visible" | "hidden" } | null;
       beforeUserInput?: (method: string, threadId: string) => void;
     } = {},
   ) {
@@ -689,6 +693,20 @@ export class CodexProviderBridgeSession implements DuplexTransport {
       this.listeners.delete(listener);
     };
   }
+  private syncFallbackPolling(): void {
+    if (this.closed || this.policy.manualPull || this.gateway.isStreamConnected?.() === true) {
+      if (this.poll) {
+        clearInterval(this.poll);
+        this.poll = undefined;
+      }
+      return;
+    }
+    if (!this.poll) {
+      this.poll = setInterval(() => {
+        void this.gateway.pull().catch(() => {});
+      }, 100);
+    }
+  }
   connect(signal?: AbortSignal): Promise<void> {
     if (this.closed) return Promise.reject(Error("Bridge gateway is closed"));
     return (this.connecting ??= (async () => {
@@ -697,10 +715,10 @@ export class CodexProviderBridgeSession implements DuplexTransport {
         if (!canRetry || !(error instanceof BridgeOutboxReadError && error.retryable)) throw error;
       });
       await this.legacy.connect(signal);
-      if (!this.policy.manualPull)
-        this.poll = setInterval(() => {
-          void this.gateway.pull().catch(() => {});
-        }, 100);
+      if (!this.policy.manualPull) {
+        this.stopStreamState ??= this.gateway.subscribeStreamState?.(() => this.syncFallbackPolling());
+        this.syncFallbackPolling();
+      }
     })());
   }
   pull(): Promise<void> {
@@ -829,7 +847,10 @@ export class CodexProviderBridgeSession implements DuplexTransport {
       }
       if (pending.method === "thread/list" && "result" in frame) {
         this.catalog.observeResult(pending.method, pending.params, result);
-        frame.result = this.catalog.projectList(pending.params, result);
+        const projected = this.catalog.projectList(pending.params, result);
+        frame.result = this.policy.topology
+          ? projectThreadTopologyResult(pending.method, projected, this.policy.topology)
+          : projected;
       }
     }
     this.emit(frame);
@@ -967,9 +988,16 @@ export class CodexProviderBridgeSession implements DuplexTransport {
       return;
     }
     if (optIn && threadId) this.gateway.reserve(threadId);
-    // A fork of a bridge Thread is a new bridge Thread; native fork is not idempotent either.
+    // A fork of a bridge Thread is a new bridge Thread; preserve an admission-assigned or deterministic retry ID when supplied.
+    const forkSeed = method === "thread/fork" ? String(object(p.agentBridge).threadId ?? "") : "";
     const forkedId =
-      method === "thread/fork" && !optIn && this.gateway.owns(threadId) ? `bridge:codex:${randomUUID()}` : undefined;
+      method === "thread/fork" && !optIn && this.gateway.owns(threadId)
+        ? forkSeed
+          ? forkSeed.startsWith("bridge:codex:") ? forkSeed : `bridge:codex:${forkSeed}`
+          : typeof p.clientUserMessageId === "string" && p.clientUserMessageId
+            ? `bridge:codex:fork-${createHash("sha256").update(JSON.stringify([threadId, p.clientUserMessageId])).digest("hex").slice(0, 32)}`
+            : `bridge:codex:${randomUUID()}`
+        : undefined;
     if (forkedId) this.gateway.reserve(forkedId);
     if (!optIn && !this.gateway.owns(threadId)) {
       if (threadId.startsWith("bridge:codex:"))
@@ -1183,7 +1211,20 @@ export class CodexProviderBridgeSession implements DuplexTransport {
         result = await this.gateway.observe(threadId, { view: "occurrences",
           searchTerm: p.searchTerm, limit: p.limit, cursor: p.cursor });
       } else if (method === "thread/fork") {
-        const { threadId: _, ...native } = p;
+        const { threadId: _, agentBridge: _agentBridge, workspaceFork: _workspaceFork, ...declared } = p;
+        const owned = this.policy.creationTools?.() ?? [];
+        const names = new Set(owned.map((tool) => String(tool.name)));
+        const native = owned.length
+          ? {
+              ...declared,
+              dynamicTools: [
+                ...(Array.isArray(declared.dynamicTools)
+                  ? declared.dynamicTools.filter((tool: unknown) => !names.has(String(object(tool).name)))
+                  : []),
+                ...owned,
+              ],
+            }
+          : declared;
         result = await this.gateway.command(forkedId!, commandId, "session/fork", { sourceThreadId: threadId, native });
       } else if (method === "thread/name/set") {
         result = await command("session/rename", { name: p.name });
@@ -1259,7 +1300,10 @@ export class CodexProviderBridgeSession implements DuplexTransport {
           throw Object.assign(Error("Invalid input IDs"), { code: -32602 });
         result = await this.gateway.status(threadId, inputIds);
       } else throw Object.assign(Error("Method unavailable for this bridge thread"), { code: -32601 });
-      const visible = historyRead ? result : this.gateway.history(forkedId ?? threadId, result);
+      const rawVisible = historyRead ? result : this.gateway.history(forkedId ?? threadId, result);
+      const visible = this.policy.topology
+        ? projectThreadTopologyResult(method, rawVisible, this.policy.topology)
+        : rawVisible;
       // An accepted operation still belongs to the Thread after its sending client disconnects.
       this.catalog.observeResult(method, { ...p, threadId }, visible);
       this.policy.observeIdentityResult?.(method, { ...p, threadId }, visible, context.sender);
@@ -1313,6 +1357,9 @@ export class CodexProviderBridgeSession implements DuplexTransport {
                   && ["source", "previous-lease", "issue", "reservation", "cancelled", "provider", "native-configuration"].includes(size.cliStage)
                   ? { cliStage: size.cliStage } : {}),
                 ...(cause instanceof InteractionFault ? cause.domainData : {}),
+                ...(optIn && method === "thread/start" && error.code === -32006 && error.kind === "explicit-reject"
+                  && size.creationOutcome === "not-allocated" ? { creationOutcome: "not-allocated",
+                    ...(size.creationRejectionCode === "model_catalog_unavailable" ? { creationRejectionCode: size.creationRejectionCode } : {}) } : {}),
                 submissionOutcome: oversizedHistory || rejected ? "rejected" : "unknown",
                 retryable: false,
                 bridgeErrorKind: error.kind ?? (rejected ? "explicit-reject" : "unknown-outcome"),
@@ -1331,7 +1378,12 @@ export class CodexProviderBridgeSession implements DuplexTransport {
     for (const abort of this.hostTools.values()) abort.abort();
     this.hostTools.clear();
     this.closed = true;
-    if (this.poll) clearInterval(this.poll);
+    this.stopStreamState?.();
+    this.stopStreamState = undefined;
+    if (this.poll) {
+      clearInterval(this.poll);
+      this.poll = undefined;
+    }
     await this.legacy.close();
     await this.gateway.close();
   }

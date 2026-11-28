@@ -21,7 +21,7 @@ import { codexAdmissionPaused,createServerCodexBridge,openCodexRollbackHistory,r
 import { CodexHostServices, codexAccountsService, codexModelsService, codexPinsService, codexTasksService } from '@opencraft/opencraft-daemon/codex-host-services';
 import { CodexNativeReader } from '@opencraft/opencraft-daemon/codex-native-reader';
 import { startCodexEngineHost } from '@opencraft/opencraft-daemon/codex-bridge-stack';
-import { resolveCodexPermissions } from '@opencraft/opencraft-daemon/codex-bridge-host';
+import { createServerCodexBridgeHost, resolveCodexPermissions } from '@opencraft/opencraft-daemon/codex-bridge-host';
 import { codexBridgeConversationTools, codexBridgeCreationTools } from '@opencraft/opencraft-daemon/codex-bridge-conversation-tools';
 import { openServerCoreOwner } from "@opencraft/storage-node/server-owner";
 import { prepareProductServerMigrations } from "@opencraft/storage-node/server-composition";
@@ -710,17 +710,86 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         }), usageQueries, actorId => actorStore.get(actorId)),
         remoteCodex: (binding, hostId) => new MachineIdentityTransport(null, "Codex", () => createRemoteCodexTransport(binding, hostId)),
         localCodex: hostId => {
-        // Host-wide duties (tasks first) are answered by the services front before Thread routing.
-        let codexAdapterStorage = [], codexFront, codexRouting;
-        const codexReader = options.codexCoreEndpoint
-          ? new CodexNativeReader(options.codexCoreEndpoint, options.codexCoreAuthToken, undefined, options.codexRuntime)
-          : undefined;
         // Host-owned dynamic tools (browser), for local and bridge Threads alike.
         const codexNativeTool = (context, tool, args, signal) => browserCapabilities.invokeNative({
           serverId: conversationExecution.serverForThread(context.threadId),
           threadId: context.threadId,
           execution: { turnId: context.turnId, callId: context.callId },
         }, tool, args, signal);
+        const serverCodexAdmission = {
+          admit:async (threadId,inputId,input,context)=>{
+            if(context.collaborationRequestId) {
+              if(inputId!=='actor-input:'+context.collaborationRequestId)throw Error('Invalid admitted input');
+            } else if(!context.commitExecution) {
+              // An anonymous deployment's input carries no actor of its own: the agent driver admits it
+              // as the deployment operator, which this admission then authorizes as it would a login.
+              const actor=context.actorContext??operator.context();
+              if(!actor)throw Error('Execution admission required');
+              actorCollaboration.authorizeExecution(actor,threadId,inputId,input);
+            }
+            // Continuation uses the previous Turn's recorded delegation.
+            await actorCollaboration.admittedExecution(threadId,inputId);
+            return {serverId:conversationExecution.serverForThread(threadId),threadId,
+              execution:{inputId,executionId:createHash('sha256').update(JSON.stringify([threadId,inputId])).digest('hex')}};
+          },
+          sign:session=>executionCliSourceToken(capabilityKey,session),
+          ...bridgeSessionMcp,
+          started:(threadId,inputId,turnId)=>actorCollaboration.executionStarted(threadId,inputId,turnId),
+        };
+        if (lateCodexBridge.get() && options.codexCoreEndpoint && !hasCodexWorkspaceHooks(workspaceRouting ?? composition) && !options.createCodexTransport) {
+          return anonymousDriver(new McpAppsTransport(new MachineIdentityTransport(machineIdentity, "Codex", () => createServerCodexBridgeHost({
+            coreEndpoint: options.codexCoreEndpoint,
+            coreAuthToken: options.codexCoreAuthToken,
+            ...(options.codexRuntime ? { coreRuntime: options.codexRuntime } : {}),
+            bridge: lateCodexBridge.get(),
+            admission: serverCodexAdmission,
+            codexDataDirectory: join(dataDirectory, "codex"),
+            artifactDirectory: join(dataDirectory, "artifacts"),
+            prepareArtifact: fileSystem ? (artifact, owner, signal) => fileSystem.prepareArtifact(artifact, owner, signal) : undefined,
+            readGeneratedFile: fileSystem ? (path, signal) => fileSystem.openFile(path, false, signal ?? new AbortController().signal) : undefined,
+            createThreadMetadata,
+            ...(gitExecutionOwner ? { createExecutionGit: codexExecutionGit(gitExecutionOwner, {
+              directory: dataDirectory, runtimeDirectory: humanGitRuntimeDirectory(join(dataDirectory, 'codex-git-runtime'), 'codex'),
+              workerFile: options.gitWorkerFile ?? fileURLToPath(new URL('./personal-git-worker.mjs', import.meta.url)),
+              authorize: scope => {
+                const actorId = scope.account.slice('actor:'.length), actor = actorStore.get(actorId);
+                return !lifecycle.closing() && actor?.enabled === true && actor.kind === 'human'
+                  && actor.generation === scope.actorGeneration && instanceAccess.admitsActor(actorId);
+              },
+            }) } : {}),
+            tokenUsage: {
+              queryWorkerEntry: tokenUsageQueryWorkerEntry,
+              serverId: `server:${machineIdentity.machineId}:codex`,
+              ...(process.env.OPENCRAFT_TOKEN_USAGE_SOURCE === 'ledger' ? {} : { derivedQueries: usageQueries }),
+              actor: context => actorStore.isCurrent(context) ? actorStore.get(context.actorId) : null,
+              person: actorId => actorStore.get(actorId),
+              submission: (threadId, inputId) => actorCollaboration.usageSubmission(threadId, inputId),
+            },
+            collaboration: {
+              capabilities: actorCollaboration.capabilities,
+              command: (context, body, submission) => actorCollaboration.command(context, body, submission),
+              authorize: (context, threadId, inputId, input) => actorCollaboration.authorizeExecution(context, threadId, inputId, input),
+              prepare: (context, input) => actorCollaboration.referenceContext(context, input),
+              topology: threadId => actorCollaboration.threadTopology(threadId),
+            },
+            collaborationInput: {
+              mode: id => actorCollaboration.inputMode(id),
+              authorize: (threadId, id, mode, expectedTurnId) => actorCollaboration.authorizeInput(threadId, id, mode, expectedTurnId),
+            },
+            nativeTool: codexBridgeConversationTools(actorCollaboration, codexNativeTool),
+            creationTools: codexBridgeCreationTools,
+            filterGatewayModelCatalog: serverStorage.call.filterGatewayModelCatalog,
+            modelViewer: context => context.actorContext && actorStore.isCurrent(context.actorContext)
+              ? actorStore.get(context.actorContext.actorId)?.id ?? null : null,
+            desktop,
+            storageOpened: storageOpened(hostId),
+          })), mcpApps), hostId);
+        }
+        // Host-wide duties (tasks first) are answered by the services front before Thread routing.
+        let codexAdapterStorage = [], codexFront, codexRouting;
+        const codexReader = options.codexCoreEndpoint
+          ? new CodexNativeReader(options.codexCoreEndpoint, options.codexCoreAuthToken, undefined, options.codexRuntime)
+          : undefined;
         const reportLocalCodexStorage = () => storageOpened(hostId)([...codexAdapterStorage, ...(codexFront?.storage() ?? [])]);
         return anonymousDriver(new McpAppsTransport(new MachineIdentityTransport(machineIdentity, "Codex", () => codexFront = new CodexHostServices(codexRouting = createServerCodexBridge(createCodexTransport({
           historyImageResources: process.env.OPENCRAFT_HISTORY_IMAGE_RESOURCES === "1",
@@ -824,26 +893,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           ...createCodexWorkspaceHooks(workspaceRouting ?? composition, hostId),
           nativeCodexHomeDirectory: join(dataDirectory, "native-codex"),
           desktop,
-        }), lateCodexBridge.get(), {
-          admit:async (threadId,inputId,input,context)=>{
-            if(context.collaborationRequestId) {
-              if(inputId!=='actor-input:'+context.collaborationRequestId)throw Error('Invalid admitted input');
-            } else if(!context.commitExecution) {
-              // An anonymous deployment's input carries no actor of its own: the agent driver admits it
-              // as the deployment operator, which this admission then authorizes as it would a login.
-              const actor=context.actorContext??operator.context();
-              if(!actor)throw Error('Execution admission required');
-              actorCollaboration.authorizeExecution(actor,threadId,inputId,input);
-            }
-            // Continuation uses the previous Turn's recorded delegation.
-            await actorCollaboration.admittedExecution(threadId,inputId);
-            return {serverId:conversationExecution.serverForThread(threadId),threadId,
-              execution:{inputId,executionId:createHash('sha256').update(JSON.stringify([threadId,inputId])).digest('hex')}};
-          },
-          sign:session=>executionCliSourceToken(capabilityKey,session),
-          ...bridgeSessionMcp,
-          started:(threadId,inputId,turnId)=>actorCollaboration.executionStarted(threadId,inputId,turnId),
-        },{admissionPaused:()=>codexAdmissionPaused(join(dataDirectory,"codex")),
+        }), lateCodexBridge.get(), serverCodexAdmission, {admissionPaused:()=>codexAdmissionPaused(join(dataDirectory,"codex")),
           // Bridge Threads get the conversation tools the local Host gives its own, then the browser tools.
           nativeTool:codexBridgeConversationTools(actorCollaboration,codexNativeTool),creationTools:codexBridgeCreationTools,
           ...(codexEngineHost&&codexReader?{adoptExisting:true,newThreads:true,
@@ -854,7 +904,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
               return mkdtemp(join(projectless,'thread-'));
             }}:{})}), clients => [codexTasksService(join(dataDirectory, "codex", "tasks.sqlite"), clients, reportLocalCodexStorage),
           ...(options.codexCoreEndpoint ? [codexAccountsService(new CodexCoreControlClient(options.codexCoreEndpoint, options.codexCoreAuthToken))] : []),
-          ...(codexReader ? [codexModelsService(codexReader, context => context.actorContext && actorStore.isCurrent(context.actorContext) ? actorStore.get(context.actorContext.actorId)?.id ?? null : null),
+          ...(codexReader ? [codexModelsService(codexReader, context => context.actorContext && actorStore.isCurrent(context.actorContext) ? actorStore.get(context.actorContext.actorId)?.id ?? null : null, serverStorage.call.filterGatewayModelCatalog),
             codexPinsService(codexReader, clients, {
               toNative: id => codexRouting?.threadIdentities?.()?.toNative(id),
               toPublic: id => codexRollbackHistory?.toPublic(id) ?? codexRouting?.threadIdentities?.()?.toPublic(id),

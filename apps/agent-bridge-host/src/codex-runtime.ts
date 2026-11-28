@@ -150,6 +150,10 @@ export class CodexBridgeRuntime {
           code,
           kind,
           message: error instanceof CodexBridgeError ? error.message : "Native command outcome unknown",
+          ...(request.method === "session/create" && error instanceof CodexBridgeError && error.nativeCreateFailure
+            ? { data: { nativeCreateFailure: error.nativeCreateFailure,
+              ...(kind === "explicit-reject" && error.nativeCreateFailure.notAllocated ? { creationOutcome: "not-allocated",
+                ...(error.nativeCreateFailure.reason === "model-catalog-unavailable" ? { creationRejectionCode: "model_catalog_unavailable" } : {}) } : {}) } } : {}),
         },
       });
     }
@@ -193,8 +197,8 @@ export class CodexBridgeRuntime {
             "shell_environment_policy.set": { ...(configured == null ? {} : object(configured)), ...environment },
           };
           // The attached minimum native supports materialization probes for legacy history.
-          // Respect an explicitly selected history contract.
-          native.historyMode ??= "legacy";
+          // Respect an explicitly selected history contract on new sessions; forks inherit their source's format.
+          if (method === "session/create") native.historyMode ??= "legacy";
         }
         // A fork inherits its source's workspace; only a new session must name one.
         const source = method === "session/fork" ? this.adapter.nativeSession(identifier(p.sourceThreadId)) : undefined;

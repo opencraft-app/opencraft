@@ -148,3 +148,13 @@ test('an explicit SSH identity draft preserves metadata without retaining a reti
   assert.equal(store.status('employee:1', 'git.example.test').tokenConfigured, false);
   assert.throws(() => store.write('employee:2', 'github.com', 0, { ...credential(), token: '' }));
 });
+
+test('optional httpsUsername persists in encrypted credentials and rejects invalid values', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'git-https-user-test-')); t.after(() => rm(root, { recursive: true, force: true }));
+  const store = await EmployeeGitVaultStore.open(root); t.after(() => store.close());
+  const oauth = { ...credential(), httpsUsername: 'oauth2' };
+  store.write('employee:1', 'git.example.test', 0, oauth);
+  assert.deepEqual(store.read('employee:1', 'git.example.test').credential, oauth);
+  assert.throws(() => store.write('employee:2', 'git.example.test', 0, { ...credential(), httpsUsername: '' }));
+  assert.throws(() => store.write('employee:3', 'git.example.test', 0, { ...credential(), httpsUsername: 'bad\nuser' }));
+});

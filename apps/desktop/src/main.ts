@@ -936,9 +936,8 @@ async function bootstrap(): Promise<void> {
     })),
     codexDataDirectory: desktopPaths.codexDataDirectory,
     nativeCodexHomeDirectory: process.env.CODEX_HOME?.trim() || join(homedir(), ".codex"),
-    // Codex through the daemon's bridge stack: default on macOS/Linux (`OPENCRAFT_CODEX_BRIDGE=0`
-    // returns to the legacy adapter), opt-in on Windows until verified on real machines.
-    ...(codexBridgeStackEnabled(process.platform, process.env.OPENCRAFT_CODEX_BRIDGE) ? {
+    // Codex runs exclusively through the daemon's bridge stack on every desktop platform.
+    ...(codexBridgeStackEnabled(process.platform) ? {
       codexBridgeStack: app.isPackaged
         ? join(process.resourcesPath, "runtime/codex-bridge")
         // Source runs only: drills substitute a programs copy whose Core talks to a local model.

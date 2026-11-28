@@ -83,7 +83,9 @@ After a lost acknowledgement use `thread lookup --server <server-id> --key <key>
 without a conversation reference. It reads the durable receipt without creating
 a thread or sending input, including after a Headless restart. A receipt can
 confirm the thread while the first input remains unknown. An absent receipt or
-unknown outcome is not authority to resend. On older Servers without
+unknown outcome is not authority to resend. A confirmed rejection before
+allocation is recorded as `creationState: rejected` without a thread
+reference. The original operation key remains settled. On older Servers without
 `createLookup`, create remains available where advertised; the key is only a
 correlation ID. An uncertain result exits 7 and retains any known reference.
 An explicit first-message rejection after allocation exits 8 with the reference.

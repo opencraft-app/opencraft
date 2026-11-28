@@ -101,8 +101,17 @@ export class BridgeExecutionAdmissionTransport implements DuplexTransport {
       frame.params={...frame.params,agentBridge:{threadId:randomUUID(),clientRequestId:`implicit:${randomUUID()}`}};
       raw=JSON.stringify(frame);
     }
-    const p=frame.params??{};
-    if(frame.method==='thread/start'&&p.agentBridge&&this.port.prepareSessionMcp) {
+    let p=frame.params??{};
+    if(frame.method==='thread/fork'&&frame.id!==undefined&&typeof p.threadId==='string'&&this.port.prepareSessionMcp&&(
+      p.threadId.startsWith('bridge:codex:')||await (this.inner as {prepareRoute?:(method:string,threadId:string)=>Promise<boolean>}).prepareRoute?.('thread/fork',p.threadId)===true
+    )&&p.agentBridge===undefined) {
+      const forkKey=typeof p.clientUserMessageId==='string'&&p.clientUserMessageId
+        ?`bridge:codex:fork-${createHash('sha256').update(JSON.stringify([p.threadId,p.clientUserMessageId])).digest('hex').slice(0,32)}`
+        :`bridge:codex:${randomUUID()}`;
+      frame.params=p={...p,agentBridge:{threadId:forkKey,clientRequestId:typeof p.clientUserMessageId==='string'&&p.clientUserMessageId?p.clientUserMessageId:`fork:${randomUUID()}`}};
+      raw=JSON.stringify(frame);
+    }
+    if((frame.method==='thread/start'||frame.method==='thread/fork')&&p.agentBridge&&this.port.prepareSessionMcp) {
       const seed=p.agentBridge.threadId;
       if(typeof seed==='string'&&seed) {
         const threadId=seed.startsWith('bridge:codex:')?seed:'bridge:codex:'+seed;
