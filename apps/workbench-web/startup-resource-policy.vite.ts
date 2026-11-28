@@ -77,9 +77,10 @@
 // lazy-load stubs, composer agent pill/machine bookmarks, and Cloud Relay
 // supervisor wiring measure ~1,237.4 KB gzip (125 startup JS chunks) against the
 // 1,230,684 B main baseline; Valdi runtime, end-pull, Cloud Relay pairing UI,
-// and personal-machine source remain lazy-loaded. Reserve ~1.5 KB for hash
-// variance and keep chunk budget at 126.
-export const startupResourceBudget = Object.freeze({ javascript: 3_700_000, css: 734_000, gzip: 1_239_000 });
+// and personal-machine source remain lazy-loaded. After merging main, the
+// integrated build measured 1,239,116 B gzip; reserve ~884 B for hash variance
+// and keep chunk budget at 126.
+export const startupResourceBudget = Object.freeze({ javascript: 3_700_000, css: 734_000, gzip: 1_240_000 });
 export const startupJavaScriptChunkBudget = 126;
 export const requiredStartupModule = /\/(?:apps\/workbench-web\/src\/(?:workbench-entry|main)\.tsx?|plugins\/(?:builtin-agents|headless-model-services)\/src\/runtime-entry\.tsx?|plugins\/builtin-agents\/src\/index\.tsx?)$/;
 /** Trusted build owners may add roots and exclusions without relaxing core limits. */

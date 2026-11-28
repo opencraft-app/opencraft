@@ -157,8 +157,8 @@ test("members read the phonebook but cannot change it", async () => {
     "zh-CN",
   );
   try {
-    assert.match(view.text(), /电话簿/);
-    assert.match(view.text(), /只有服务器所有者可以修改电话簿/);
+    assert.match(view.text(), /协作联系名录/);
+    assert.match(view.text(), /只有团队所有者可以修改协作联系名录/);
     assert.ok(view.switches().every((s) => s.disabled));
   } finally {
     await view.close();
