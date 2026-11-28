@@ -3482,3 +3482,55 @@ test("native file-change history is identical across independent tab replicas, r
     finally { refreshed.dispose(); }
   } finally { for (const runtime of runtimes) runtime.dispose(); }
 });
+
+for (const [connected, pending] of [[true, false], [false, false], [true, true]] as const) {
+  test(`attachment during initial Replica recovery ${pending ? "does not overtake pending local text" : connected ? "waits in the online command owner" : "stays unadmitted while offline"}`, async (t) => {
+    const replica = new FakeReplica(threadView({ turns: [], pendingInteractions: [] }), false);
+    const key = createConversationKey("local", "thread-one");
+    const composer = createComposerController({ type: "existing-thread", key }, {
+      now: () => 1, createId: () => "first-attachment",
+    });
+    composer.dispatch({ type: "set-document", document: { version: 1, blocks: [
+      { type: "paragraph", children: [{ type: "text", text: "Read my attachment" }] },
+    ] } });
+    const original = composer.createSubmitIntent();
+    let writes = 0;
+    let release: (() => void) | undefined;
+    t.after(() => release?.());
+    const runtime = createReplicaConversationRuntime({ key, replica,
+      canDispatchOutbox: () => connected,
+      outbox: {
+        read: () => pending ? [{ intent: original, state: "waiting" }] : [],
+        write: () => { writes++; },
+        subscribe: () => () => {},
+      },
+      commands: commands({ async submit(intent) {
+        // The AppServer command owner gates dispatch on the initial Resume.
+        await new Promise<void>(resolve => { release = resolve; });
+        assert.equal(replica.getSnapshot().authoritative, true);
+        return receipt(intent.commandId, intent.clientMessageId);
+      } }), history: { async loadOlder() {} },
+    });
+    t.after(() => runtime.dispose());
+    const intent = { ...original, commandId: "with-attachment", clientMessageId: "with-attachment", attachments: [{
+      id: "attachment", name: "verification.txt", mimeType: "text/plain", size: 12,
+      uri: "file:///workspace/verification.txt", lifecycle: "ready" as const, error: null,
+    }] };
+    if (!connected || pending) {
+      await assert.rejects(runtime.submit(intent), /Reconnect before sending attachments/);
+      assert.equal(release, undefined);
+      assert.equal(runtime.getSnapshot().queuedSubmissions.some(row => row.local), pending);
+    } else {
+      let rejection: unknown;
+      const submission = runtime.submit(intent).catch(error => { rejection = error; return null; });
+      await new Promise<void>(resolve => setImmediate(resolve));
+      assert.equal(rejection, undefined, "a connected first attachment must not be rejected by offline storage admission");
+      assert.equal(runtime.getSnapshot().pendingSubmissions.length, 1);
+      assert.equal(typeof release, "function");
+      replica.setAuthority(true);
+      release!();
+      assert.ok(await submission);
+    }
+    assert.equal(writes, 0, "transient attachment handles never enter the durable text outbox");
+  });
+}

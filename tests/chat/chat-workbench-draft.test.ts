@@ -10,6 +10,7 @@ import {
   isJsonRpcRequest,
   parseJsonRpcMessage,
   OPENCRAFT_RESUME_HISTORY_EXTENSION,
+  type AppServerMethodParams,
   type JsonRpcRequest,
 } from "@opencraft/appserver-protocol";
 
@@ -909,6 +910,53 @@ test("a first Turn paints optimistically but cannot overtake its authoritative R
   }
 });
 
+
+test("a cold connected attachment waits for the real Workbench command owner", async () => {
+  const harness = createHarness(false, true);
+  let outboxWrites = 0;
+  const runtime = createAppServerWorkbenchRuntime({
+    hostId: "local", transport: harness.transport, autoReconnect: false,
+    outbox: { read: () => [], write: () => { outboxWrites++; }, subscribe: () => () => {} },
+  });
+  try {
+    await runtime.connect();
+    const lease = await runtime.acquireThread("thread-created");
+    try {
+      await waitForRequest(harness, "thread/read");
+      assert.equal(lease.getSnapshot().authoritative, false);
+      const submission = lease.submit({
+        ...intent({
+          type: "new-thread", draftId: "staged-draft",
+          execution: { hostId: "local", workspace: { cwd: "/workspace", runtimeWorkspaceRoots: ["/workspace"] } },
+        }),
+        target: { type: "existing-thread", key: createConversationKey("local", "thread-created") },
+        attachments: [{
+          id: "staged-file", name: "notes.txt", mimeType: "text/plain", size: 9,
+          lifecycle: "ready", error: null, uri: "file:///workspace/notes.txt",
+          metadata: { transport: "opencraft-attachment-staging", attachmentHostId: "local" },
+        }],
+      });
+      const checkedSubmission = assert.doesNotReject(submission);
+      // Observe rejection immediately, even if a pre-release assertion fails.
+      void checkedSubmission.catch(() => {});
+      await new Promise<void>(resolve => setImmediate(resolve));
+      assert.equal(harness.requests.filter(request => request.method === "turn/start").length, 0);
+      assert.equal(runtime.getThreadResidency("thread-created")?.pendingCommandCount, 1);
+      assert.equal(outboxWrites, 0);
+
+      harness.releaseResume();
+      await checkedSubmission;
+      assert.equal(lease.getSnapshot().authoritative, true);
+      const starts = harness.requests.filter(request => request.method === "turn/start");
+      assert.equal(starts.length, 1);
+      const { input } = starts[0]!.params as AppServerMethodParams<"turn/start">;
+      assert.deepEqual(input.find(item => item.type === "mention"), {
+        type: "mention", name: "notes.txt", path: "/workspace/notes.txt",
+      });
+      assert.equal(outboxWrites, 0);
+    } finally { lease.release(); }
+  } finally { await runtime.dispose(); }
+});
 
 test("a mounted observer is a residency owner after its View lease is released", async () => {
   const harness = createHarness();

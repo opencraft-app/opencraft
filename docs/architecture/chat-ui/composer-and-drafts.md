@@ -173,6 +173,12 @@ wait; it cannot redirect to a replacement Host/account. Inline image processing
 remains independent of Host readiness. This retains bytes within the running
 Application, without changing the refresh persistence limits below.
 
+For an existing conversation with a ready Host and an empty local queue, a first
+submission with attachments or attached context can wait for the initial history
+in the online command owner. History and connection checks still gate dispatch.
+While offline or behind waiting local messages, these transient inputs remain in
+the draft. The durable text outbox cannot store their handles.
+
 ## Browser-local input drafts
 
 Native channel chat uses the same Composer submission settlement as task chat.
