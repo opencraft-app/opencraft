@@ -1,3 +1,5 @@
+import { flushSync } from "react-dom";
+
 interface SidebarPageAction {
   enabled: boolean;
   reveal: () => void;
@@ -24,6 +26,7 @@ export function attachSidebarPageReveal(footer: HTMLDivElement, action: () => Si
   // mobile the scrollport also reserves padding for the floating controls.
   let observedViewport: HTMLElement | null = null;
   let frame: number | null = null;
+  let rejected: { root: HTMLElement; lastBlock: Element; width: number; free: number } | undefined;
   const measure = () => {
     frame = null;
     const root = viewport();
@@ -38,7 +41,7 @@ export function attachSidebarPageReveal(footer: HTMLDivElement, action: () => Si
       !root?.clientHeight ||
       !root.clientWidth ||
       root.scrollTop !== 0 ||
-      root.scrollHeight > root.clientHeight ||
+      root.scrollHeight > root.clientHeight + 1 ||
       !footer.offsetHeight ||
       footer.closest('[inert], [aria-hidden="true"]')
     )
@@ -55,10 +58,35 @@ export function attachSidebarPageReveal(footer: HTMLDivElement, action: () => Si
     const gap = Number.parseFloat(getComputedStyle(items).rowGap) || 0;
     const rowHeight = lastRow.getBoundingClientRect().height + gap;
     if (rowHeight <= 0 || free < rowHeight) return;
-    // A date heading or expanded descendants can make a row taller. Use the
-    // last block as an estimate and remeasure once the added rows have laid out.
-    const blockHeight = lastBlock.getBoundingClientRect().height + gap;
-    fill(Math.max(1, Math.floor(free / Math.max(rowHeight, blockHeight))));
+    const width = root.clientWidth;
+    if (
+      rejected?.root === root &&
+      rejected.lastBlock === lastBlock &&
+      rejected.width === width &&
+      free <= rejected.free
+    )
+      return;
+
+    // Block heights vary with dates and descendants. Probe the estimated count,
+    // then find the largest fitting prefix before the browser paints. A later
+    // resize starts from the committed page and never removes those rows.
+    const guess = Math.max(1, Math.floor(free / Math.max(rowHeight, lastBlock.getBoundingClientRect().height + gap)));
+    let applied = 0;
+    const tryFit = (additional: number) => {
+      flushSync(() => fill(additional));
+      applied = additional;
+      return root.scrollHeight <= root.clientHeight + 1;
+    };
+    if (tryFit(guess)) return;
+    let low = 0;
+    let high = guess;
+    while (high - low > 1) {
+      const mid = Math.floor((low + high) / 2);
+      if (tryFit(mid)) low = mid;
+      else high = mid;
+    }
+    if (applied !== low) tryFit(low);
+    if (low === 0) rejected = { root, lastBlock, width, free };
   };
   // A reveal changes the measured boxes; schedule it outside observer delivery.
   const observer = new ResizeObserver(() => {

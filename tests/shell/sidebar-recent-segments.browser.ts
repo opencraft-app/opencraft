@@ -74,7 +74,8 @@ try {
       const footer = root.querySelector('.sidebar-activity-group[data-collapsed="false"] .sidebar-activity-pagination:not([hidden])');
       if (rows.length <= 10 || !footer) return false;
       const bottom = root.getBoundingClientRect().bottom - (parseFloat(getComputedStyle(root).paddingBottom) || 0);
-      return bottom - footer.getBoundingClientRect().bottom < rows[0]!.getBoundingClientRect().height + 2;
+      const remaining = bottom - footer.getBoundingClientRect().bottom;
+      return remaining >= -1 && remaining < rows[0]!.getBoundingClientRect().height + 2;
     });
     await page.screenshot({ path: resolve(output, `${width}-${theme}-initial.png`) });
     const firstRow = await recent.locator('[data-thread-id=r1] .sidebar-activity-item').elementHandle();

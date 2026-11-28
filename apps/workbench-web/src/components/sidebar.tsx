@@ -318,7 +318,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
     ...current, extra: Math.max(0, count - current.initial),
   }));
   const fitRecentLimit = (count: number) => setRecentPage(current =>
-    current === recentPage && !current.extra ? { ...current, initial: count } : current);
+    current.extra || current.initial === count ? current : { ...current, initial: count });
   const [scheduledLimit, setScheduledLimit] = useState(PINNED_PAGE_SIZE);
   const [mineLimit, setMineLimit] = useState(RECENT_PAGE_SIZE);
   const [menus] = useState(() => new SidebarThreadMenuStore());
