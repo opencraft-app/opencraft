@@ -76,11 +76,11 @@ export function randomBase64Url(byteLength = 32): string {
 
 const SHORT_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
-/** Unambiguous 6-character device approval code formatted as `XXX-XXX`. */
+/** Unambiguous 6-character device approval code formatted as `XXX-XXX` (32-symbol 5-bit alphabet). */
 export function randomApprovalCode(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(6));
   let chars = "";
-  for (let i = 0; i < 6; i++) chars += SHORT_ALPHABET[bytes[i]! % SHORT_ALPHABET.length];
+  for (let i = 0; i < 6; i++) chars += SHORT_ALPHABET[bytes[i]! >>> 3];
   return `${chars.slice(0, 3)}-${chars.slice(3, 6)}`;
 }
 

@@ -6,6 +6,7 @@ import {
   type AssistantActorCardItem,
   type AssistantPresetCardItem,
   type InboxGroupItem,
+  type InboxTeamSection,
 } from '@opencraft/design-system-web/valdi';
 import { PeopleEntryGlyph as EntryGlyph } from '@opencraft/design-system-web/action-icons';
 import {
@@ -13,13 +14,22 @@ import {
   type AssistantActorBusyState,
   type ManagedBotsActions,
 } from './managed-bots';
-// Crew work and the desk load when the Work tab is first opened, or during idle warm-up.
+// Crew work, desk, and team modals load on demand or during idle warm-up.
 const loadCrewWorkView = () => import('./crew-work-view');
 const CrewWorkList = lazy(() => loadCrewWorkView().then(m => ({ default: m.CrewWorkList })));
+const CrewDesk = lazy(() => import('./crew-desk').then(m => ({ default: m.CrewDesk })));
+const CrewTeamSettings = lazy(() => import('./crew-team-settings').then(m => ({ default: m.CrewTeamSettings })));
+const CrewTeamStart = lazy(() => import('./crew-team-settings').then(m => ({ default: m.CrewTeamStart })));
 import { getChannelRuntime, type ChannelRuntime, type ChannelRead, type ChannelReadState } from './channel-runtime';
 import { combineAbortSignals } from '@opencraft/appserver-client/transport';
 import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import type { AssistantPresetId, ChannelGroupCreateOption, ChannelPerson } from '@opencraft/appserver-protocol';
+import type {
+  AssistantPresetId,
+  ChannelGroupCreateOption,
+  ChannelPerson,
+  CrewPhonebookEntry,
+  CrewTeam,
+} from '@opencraft/appserver-protocol';
 import { NavigationList, NavigationItem } from '@opencraft/design-system-web/navigation';
 import { StandardPage, StandardPageTitle, type ExtensionSettingsViewProps } from '@opencraft/extension-react';
 import { useIntl } from '@opencraft/i18n/react';
@@ -29,8 +39,10 @@ import { parseChannelResource } from './channel-search';
 import {
   formatAssistantDisplayName,
   formatEnvironmentLabel,
+  isHostAssistantRunnerUnavailable,
   normalizeAssistantActorList,
   projectAvailableAssistantPresets,
+  resolveAssistantTeamPlacement,
 } from './assistant-actors';
 import './people.scss';
 
@@ -60,6 +72,24 @@ const messages = {
     id: 'agents.emptyMine',
     defaultMessage: 'No assistants hired yet. Hire a preset below or create a new assistant.',
   },
+  scopePersonalOnly: { id: 'agents.scope.personalOnly', defaultMessage: 'Only you' },
+  scopePrivateOnly: { id: 'agents.scope.privateOnly', defaultMessage: 'Private to you' },
+  scopeAssignedTeam: { id: 'agents.scope.assignedTeam', defaultMessage: 'Team: {team}' },
+  hostRunnerUnavailable: {
+    id: 'agents.host.runnerUnavailable',
+    defaultMessage:
+      'Background assistant runtime is not active on this lightweight host. Assistant configurations and memories are saved; connect a full Desktop or Headless host to run them.',
+  },
+  teamAssistantDispatch: {
+    id: 'people.teamAssistantDispatch',
+    defaultMessage: 'Team assistant · Message to hand off work',
+  },
+  deskShort: { id: 'people.deskShort', defaultMessage: 'Desk' },
+  teamCount: { id: 'crew.teams.count', defaultMessage: '{count, plural, one {# member} other {# members}}' },
+  teamSettings: { id: 'crew.teams.settings', defaultMessage: 'Manage {name}' },
+  teamOthers: { id: 'crew.teams.others', defaultMessage: 'Other people' },
+  teamCreate: { id: 'crew.teams.create', defaultMessage: 'New team' },
+  teamJoin: { id: 'crew.teams.join', defaultMessage: 'Join a team' },
   groups: { id: 'people.groups', defaultMessage: 'Group chats' },
   noGroups: { id: 'people.noGroups', defaultMessage: 'No recent group messages.' },
   searchAll: { id: 'people.searchAll', defaultMessage: 'Search groups, people and assistants' },
@@ -195,6 +225,7 @@ export function createPeopleViews(
 
   const groupsResource = runtime.directory;
   const assistantsResource = runtime.assistants;
+  const teamsResource = runtime.teams;
 
   function Entry({ host }: ExtensionSettingsViewProps) {
     const intl = useIntl();
@@ -238,6 +269,9 @@ export function createPeopleViews(
     const [openingBotId, setOpeningBotId] = useState<string | null>(null);
     const [tab, setTab] = useState('groups');
     const [listRetry, setListRetry] = useState(0);
+    const [managingTeamId, setManagingTeamId] = useState<string | null>(null);
+    const [startingTeamMode, setStartingTeamMode] = useState<'create' | 'join' | null>(null);
+    const [deskBot, setDeskBot] = useState<CrewPhonebookEntry | null>(null);
     const [actorMutation, setActorMutation] = useState<AssistantActorBusyState>({
       busy: false,
       activeBotId: null,
@@ -247,8 +281,10 @@ export function createPeopleViews(
 
     const groupsState = useResource(groupsResource, 0);
     const assistantsState = useResource(assistantsResource, 0);
+    const teamsState = useResource(teamsResource, 0);
     const groups = groupsState.value?.groups ?? [];
     const groupsPending = !groupsState.value && !groupsState.failed;
+    const teams = teamsState.value;
 
     const lifetime = useRef<AbortController | null>(null);
     const [query, setQuery] = useState('');
@@ -279,6 +315,7 @@ export function createPeopleViews(
     const normalizedActors = normalizeAssistantActorList(assistantRows ?? []);
     const availablePresets = projectAvailableAssistantPresets(assistantRows ?? []);
     const actorRevisionKey = normalizedActors.map(a => `${a.botId}:${a.paused ? 0 : 1}`).join(',');
+    const hostRunnerOffline = isHostAssistantRunnerUnavailable(normalizedActors);
 
     useEffect(() => {
       if (mode === 'agents') return;
@@ -355,8 +392,11 @@ export function createPeopleViews(
       }
     }
 
-    const visiblePeople = people.filter(person => person.kind === 'human' || person.canMessage);
     const normalizedQuery = query.trim().toLocaleLowerCase();
+    const teamedActorIds = new Set((teams ?? []).flatMap(t => t.members.map(m => m.actorId)));
+    const visiblePeople = people.filter(
+      person => (person.kind === 'human' || person.canMessage) && (Boolean(search) || !teamedActorIds.has(person.actorId)),
+    );
     const visibleGroups = groups.filter(group => group.title.toLocaleLowerCase().includes(normalizedQuery));
     const selectedChannel =
       host.activeView?.viewId === chatViewId ? parseChannelResource(host.activeView.resourceUri)?.id : undefined;
@@ -377,26 +417,28 @@ export function createPeopleViews(
     const inboxAssistantEntries: InboxGroupItem[] = normalizedActors
       .filter(actor => !actor.paused && (actor.isSingletonPreset || Boolean(actor.channelId)))
       .flatMap((actor): InboxGroupItem[] => {
-        const displayTitle = actor.isSingletonPreset && (!actor.rawName || actor.rawName === 'Personal assistant')
-          ? f('assistant')
-          : formatAssistantDisplayName(actor, personalLabel);
+        const displayTitle =
+          actor.isSingletonPreset && (!actor.rawName || actor.rawName === 'Personal assistant')
+            ? f('assistant')
+            : formatAssistantDisplayName(actor, personalLabel);
         if (normalizedQuery && !displayTitle.toLocaleLowerCase().includes(normalizedQuery)) {
           return [];
         }
         const dmChannel = actor.channelId ? groupsState.value?.all.find(g => g.id === actor.channelId) : undefined;
-        return [{
-          id: `assistant:${actor.botId}`,
-          title: displayTitle,
-          preview: dmChannel?.latestMessage?.text || f('ready'),
-          ...(dmChannel?.latestMessage ? { metaText: formatAt(dmChannel.latestMessage.at) } : {}),
-          ...(dmChannel?.unreadCount
-            ? { unreadText: dmChannel.unreadCount > 99 ? '99+' : String(dmChannel.unreadCount) }
-            : {}),
-          selected: Boolean(actor.channelId && selectedChannel === actor.channelId),
-          isAssistant: true,
-          disabled:
-            openingBotId === actor.botId || !assistantsState.authoritative || !groupsState.authoritative,
-        }];
+        return [
+          {
+            id: `assistant:${actor.botId}`,
+            title: displayTitle,
+            preview: dmChannel?.latestMessage?.text || f('ready'),
+            ...(dmChannel?.latestMessage ? { metaText: formatAt(dmChannel.latestMessage.at) } : {}),
+            ...(dmChannel?.unreadCount
+              ? { unreadText: dmChannel.unreadCount > 99 ? '99+' : String(dmChannel.unreadCount) }
+              : {}),
+            selected: Boolean(actor.channelId && selectedChannel === actor.channelId),
+            isAssistant: true,
+            disabled: openingBotId === actor.botId || !assistantsState.authoritative || !groupsState.authoritative,
+          },
+        ];
       });
 
     const inboxGroupsList: InboxGroupItem[] = [
@@ -405,18 +447,64 @@ export function createPeopleViews(
         id: group.id,
         title: group.title,
         preview: `${group.mentionUnreadCount ? `[${intl.formatMessage({ id: 'im.channels.mentionedMe', defaultMessage: 'Mentioned you' })}] ` : ''}${group.latestMessage?.text || f('image')}`,
-        metaText: group.latestMessage ? formatAt(group.latestMessage.at) : undefined,
-        unreadText: group.unreadCount ? (group.unreadCount > 99 ? '99+' : String(group.unreadCount)) : undefined,
+        ...(group.latestMessage ? { metaText: formatAt(group.latestMessage.at) } : {}),
+        ...(group.unreadCount ? { unreadText: group.unreadCount > 99 ? '99+' : String(group.unreadCount) } : {}),
         selected: selectedChannel === group.id,
         disabled: !groupsState.authoritative,
       })),
     ];
 
+    const inboxTeamSections: InboxTeamSection[] = (teams ?? [])
+      .map((team): InboxTeamSection | null => {
+        const filteredMembers = normalizedQuery
+          ? team.members.filter(m => m.displayName.toLocaleLowerCase().includes(normalizedQuery))
+          : team.members;
+        if (normalizedQuery && filteredMembers.length === 0 && !team.name.toLocaleLowerCase().includes(normalizedQuery)) {
+          return null;
+        }
+        return {
+          id: team.id,
+          name: team.name,
+          countLabel: intl.formatMessage(messages.teamCount, { count: team.members.length }),
+          ...(team.role === 'owner'
+            ? { manageLabel: intl.formatMessage(messages.teamSettings, { name: team.name }) }
+            : {}),
+          members: filteredMembers.map(member => {
+            const isSession = member.kind === 'session';
+            const ownedActor = isSession ? normalizedActors.find(a => a.actorId === member.actorId) : undefined;
+            return {
+              id: member.actorId,
+              displayName: member.displayName,
+              kindLabel: isSession
+                ? ownedActor
+                  ? f('bot')
+                  : f('teamAssistantDispatch')
+                : f('human'),
+              isBot: isSession,
+              reachable: isSession || team.openContact,
+              busy: openingPerson === member.actorId,
+              ...(isSession ? { deskLabel: f('deskShort') } : {}),
+            };
+          }),
+        };
+      })
+      .filter((section): section is InboxTeamSection => section !== null);
+
     const actorCardItems: AssistantActorCardItem[] = normalizedActors.map(actor => {
       const displayTitle = formatAssistantDisplayName(actor, personalLabel);
-      const badgeText =
-        actor.isSingletonPreset && displayTitle !== personalLabel ? f('presetBadge') : undefined;
-      const phaseSummary = actor.paused ? fb('paused', 'Paused') : f(actor.phase);
+      const badgeText = actor.isSingletonPreset && displayTitle !== personalLabel ? f('presetBadge') : undefined;
+      const placement = resolveAssistantTeamPlacement(actor, teams);
+      const scopeText =
+        placement.kind === 'personal-only'
+          ? f('scopePersonalOnly')
+          : placement.kind === 'assigned'
+            ? intl.formatMessage(messages.scopeAssignedTeam, { team: placement.teamName })
+            : f('scopePrivateOnly');
+      const phaseSummary = actor.paused
+        ? fb('paused', 'Paused')
+        : hostRunnerOffline && actor.phase === 'unavailable'
+          ? fb('unavailable', 'Unavailable')
+          : f(actor.phase).replace(/[。.]+$/u, '');
       const envSummary = formatEnvironmentLabel(actor.environment, fb('local', 'Local machine'));
       const modelSummary = actor.model?.modelId ?? fb('noModel', 'No model selected');
       const statusText = `${phaseSummary} · ${envSummary} · ${modelSummary}`;
@@ -435,9 +523,10 @@ export function createPeopleViews(
       return {
         id: actor.botId,
         title: displayTitle,
-        badgeText,
+        ...(badgeText ? { badgeText } : {}),
+        scopeText,
         statusText,
-        dutiesText: actor.duties.trim() || undefined,
+        ...(actor.duties.trim() ? { dutiesText: actor.duties.trim() } : {}),
         paused: actor.paused,
         configRequired,
         primaryActionKind,
@@ -460,9 +549,8 @@ export function createPeopleViews(
       disabled: actorMutation.busy || assistantsLoading || assistantsFailed,
     }));
 
-    const surfaceError = assistantsFailed
-      ? f('failed')
-      : actorMutation.error;
+    const surfaceError = assistantsFailed ? f('failed') : actorMutation.error;
+    const managingTeam: CrewTeam | null = (teams ?? []).find(t => t.id === managingTeamId) ?? null;
 
     return (
       <StandardPage
@@ -478,6 +566,7 @@ export function createPeopleViews(
               signal={signal}
               onOpen={id => host.openView(chatViewId, 'opencraft-channel:' + id)}
               botsResource={assistantsResource}
+              teamsResource={teamsResource}
               actionsRef={managedBotsActionsRef}
               onStateChange={setActorMutation}
             />
@@ -486,8 +575,9 @@ export function createPeopleViews(
               style={{ width: '100%' }}
               viewModel={{
                 touch,
+                ...(hostRunnerOffline ? { hostNoticeText: f('hostRunnerUnavailable') } : {}),
                 loading: assistantsLoading,
-                errorText: surfaceError,
+                ...(surfaceError ? { errorText: surfaceError } : {}),
                 retryLabel: f('retry'),
                 myAgentsTitle: f('myAgents'),
                 myAgentsDescription: fb(
@@ -542,7 +632,6 @@ export function createPeopleViews(
               style={{ width: '100%', minWidth: 0, maxWidth: '100%' }}
               viewModel={{
                 touch,
-                title: intl.formatMessage(title),
                 activeTab: tab as 'groups' | 'work' | 'members',
                 searchQuery: query,
                 searchPlaceholder: f('searchAll'),
@@ -558,11 +647,16 @@ export function createPeopleViews(
                 loadingText: f('loading'),
                 retryLabel: f('retry'),
                 groupsLoading: groupsPending,
-                groupsError: groupsState.failed ? f('failed') : undefined,
+                ...(groupsState.failed ? { groupsError: f('failed') } : {}),
                 emptyGroupsText: f('noGroups'),
                 groups: inboxGroupsList,
+                teamsSupported: teams !== null && teams !== undefined,
+                teams: inboxTeamSections,
+                createTeamLabel: f('teamCreate'),
+                joinTeamLabel: f('teamJoin'),
+                otherMembersTitle: f('teamOthers'),
                 membersLoading: listing,
-                membersError: listFailed ? f('listFailed') : undefined,
+                ...(listFailed ? { membersError: f('listFailed') } : {}),
                 emptyMembersText: f('empty'),
                 members: visiblePeople.map(person => ({
                   id: person.actorId,
@@ -587,37 +681,58 @@ export function createPeopleViews(
                   }
                 },
                 onRetryGroups: () => void groupsResource.refresh(),
-                onOpenMember: id => void openDirect(id),
+                onOpenMember: id => {
+                  const ownedActor = normalizedActors.find(a => a.actorId === id);
+                  if (ownedActor) {
+                    void openAssistantConversation(ownedActor.botId, ownedActor.isSingletonPreset);
+                  } else {
+                    void openDirect(id);
+                  }
+                },
                 onRetryMembers: () => setListRetry(n => n + 1),
-                onLoadMoreMembers: next
-                  ? () => {
-                      const epoch = listEpoch.current;
-                      const controller = lifetime.current;
-                      if (!controller) return;
-                      setListing(true);
-                      void rpc
-                        .request(
-                          'opencraft/channels/people/list',
-                          { after: next, ...(search ? { query: search } : {}) },
-                          controller.signal,
-                        )
-                        .then(result => {
-                          if (!controller.signal.aborted && epoch === listEpoch.current) {
-                            setPeople(rows => [
-                              ...rows,
-                              ...result.people.filter(p => !rows.some(r => r.actorId === p.actorId)),
-                            ]);
-                            setNext(result.next);
-                          }
-                        })
-                        .catch(() => {
-                          if (!controller.signal.aborted) warn();
-                        })
-                        .finally(() => {
-                          if (!controller.signal.aborted && epoch === listEpoch.current) setListing(false);
-                        });
+                onManageTeam: teamId => setManagingTeamId(teamId),
+                onOpenBotDesk: actorId => {
+                  for (const t of teams ?? []) {
+                    const found = t.members.find(m => m.actorId === actorId && m.kind === 'session');
+                    if (found) {
+                      setDeskBot(found);
+                      return;
                     }
-                  : undefined,
+                  }
+                },
+                onCreateTeam: () => setStartingTeamMode('create'),
+                onJoinTeam: () => setStartingTeamMode('join'),
+                ...(next
+                  ? {
+                      onLoadMoreMembers: () => {
+                        const epoch = listEpoch.current;
+                        const controller = lifetime.current;
+                        if (!controller) return;
+                        setListing(true);
+                        void rpc
+                          .request(
+                            'opencraft/channels/people/list',
+                            { after: next, ...(search ? { query: search } : {}) },
+                            controller.signal,
+                          )
+                          .then(result => {
+                            if (!controller.signal.aborted && epoch === listEpoch.current) {
+                              setPeople(rows => [
+                                ...rows,
+                                ...result.people.filter(p => !rows.some(r => r.actorId === p.actorId)),
+                              ]);
+                              setNext(result.next);
+                            }
+                          })
+                          .catch(() => {
+                            if (!controller.signal.aborted) warn();
+                          })
+                          .finally(() => {
+                            if (!controller.signal.aborted && epoch === listEpoch.current) setListing(false);
+                          });
+                      },
+                    }
+                  : {}),
               }}
             />
             {tab === 'work' ? (
@@ -628,6 +743,40 @@ export function createPeopleViews(
                   reportError={reportError}
                   placeholder={<SkeletonRows count={3} variant="group" />}
                   onOpenChat={id => host.openView(chatViewId, 'opencraft-channel:' + id)}
+                />
+              </Suspense>
+            ) : null}
+            {startingTeamMode ? (
+              <Suspense fallback={null}>
+                <CrewTeamStart
+                  rpc={rpc}
+                  mode={startingTeamMode}
+                  reportError={reportError}
+                  onChanged={updated => teamsResource.set(updated)}
+                  onClose={() => setStartingTeamMode(null)}
+                />
+              </Suspense>
+            ) : null}
+            {managingTeam ? (
+              <Suspense fallback={null}>
+                <CrewTeamSettings
+                  rpc={rpc}
+                  team={managingTeam}
+                  reportError={reportError}
+                  onChanged={updated => teamsResource.set(updated)}
+                  onClose={() => setManagingTeamId(null)}
+                />
+              </Suspense>
+            ) : null}
+            {deskBot ? (
+              <Suspense fallback={null}>
+                <CrewDesk
+                  rpc={rpc}
+                  bot={deskBot}
+                  open
+                  onOpenChange={nextOpen => {
+                    if (!nextOpen) setDeskBot(null);
+                  }}
                 />
               </Suspense>
             ) : null}

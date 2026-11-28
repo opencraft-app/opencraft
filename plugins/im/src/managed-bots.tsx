@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type MutableRefObject } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore, type MutableRefObject } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { ModalContent } from '@opencraft/design-system-web/modal-content';
 import { CompanionAvatar } from '@opencraft/design-system-web/companion-avatar';
@@ -17,6 +17,8 @@ import type {
   AssistantPresetId,
   BotEnvironment,
   BotEnvironmentCatalog,
+  CrewPhonebookEntry,
+  CrewTeam,
   PersonalAssistantModelCatalog,
   PersonalAssistantStatus,
 } from '@opencraft/appserver-protocol';
@@ -24,14 +26,18 @@ import type { ChannelRpc } from './channel-client';
 import type { ChannelRead } from './channel-runtime';
 import { AssistantMemory } from './assistant-memory';
 import { AssistantThreadSettings } from './assistant-thread-settings';
+import { CrewPhonebook } from './crew-phonebook';
 import {
   formatAssistantDisplayName,
   formatEnvironmentLabel,
   isAssistantPaused,
   normalizeAssistantActor,
+  resolveAssistantTeamPlacement,
   upsertAssistantStatusList,
 } from './assistant-actors';
 import './managed-bots.scss';
+
+const CrewDesk = lazy(() => import('./crew-desk').then(m => ({ default: m.CrewDesk })));
 
 const labels = {
   title: 'Additional assistants',
@@ -93,6 +99,30 @@ const modelMessages = {
     id: 'people.modelFailed',
     defaultMessage: 'The model was not saved. Choose it again.',
   },
+  scopePersonalOnly: { id: 'agents.scope.personalOnly', defaultMessage: 'Only you' },
+  scopePersonalOnlyAbout: {
+    id: 'agents.scope.personalOnlyAbout',
+    defaultMessage:
+      'Your personal assistant can read group chats and conversations you have access to, so it stays private to you and never joins a shared team.',
+  },
+  teamSectionTitle: { id: 'agents.team.sectionTitle', defaultMessage: 'Team collaboration' },
+  teamSectionAbout: {
+    id: 'agents.team.sectionAbout',
+    defaultMessage:
+      'Assign this assistant to a team so teammates or other assistants can hand it work. Your private chat and private memory stay isolated.',
+  },
+  teamPlacementLabel: { id: 'agents.team.placementLabel', defaultMessage: 'Assigned team' },
+  teamNoneOption: { id: 'agents.team.noneOption', defaultMessage: 'Not assigned (private chat only)' },
+  teamMemberReadOnly: { id: 'agents.team.memberReadOnly', defaultMessage: 'Managed by {team} owner' },
+  teamQuickGroupHint: {
+    id: 'agents.team.quickGroupHint',
+    defaultMessage:
+      'Create a collaboration group so your assistants can hand off tasks to each other, or invite teammates later.',
+  },
+  teamQuickGroupAction: { id: 'agents.team.quickGroupAction', defaultMessage: 'Enable multi-assistant group' },
+  teamDefaultGroupName: { id: 'agents.team.defaultGroupName', defaultMessage: 'Assistant collaboration' },
+  teamOpenDesk: { id: 'agents.team.openDesk', defaultMessage: 'Open desk' },
+  teamFailed: { id: 'crew.teams.failed', defaultMessage: 'The team was not changed. Try again.' },
 };
 
 type Editor = {
@@ -121,16 +151,15 @@ export interface AssistantActorBusyState {
 }
 
 /**
- * Unified `AssistantActor` (`session://`) mutation, settings, and memory controller.
- * Both `singleton-per-human` presets (Personal Assistant) and `multi` custom assistants
- * share the same settings dialog, environment binding, model selection, memory viewer,
- * pause/resume lifecycle, and direct-chat contract.
+ * Unified `AssistantActor` (`session://`) mutation, settings, team placement,
+ * collaboration phonebook, and memory controller.
  */
 export function ManagedBots({
   rpc,
   signal,
   onOpen,
   botsResource,
+  teamsResource,
   actionsRef,
   onStateChange,
 }: {
@@ -138,6 +167,7 @@ export function ManagedBots({
   signal: AbortSignal;
   onOpen: (id: string) => void;
   botsResource?: ChannelRead<PersonalAssistantStatus[]>;
+  teamsResource?: ChannelRead<CrewTeam[] | null>;
   actionsRef?: MutableRefObject<ManagedBotsActions | null>;
   onStateChange?: (state: AssistantActorBusyState) => void;
 }) {
@@ -151,9 +181,15 @@ export function ManagedBots({
     botsResource ? botsResource.get : () => emptyState,
     () => emptyState,
   );
+  const teamsReplica = useSyncExternalStore(
+    teamsResource ? teamsResource.subscribe : noopSub,
+    teamsResource ? teamsResource.get : () => emptyState,
+    () => emptyState,
+  );
   const [localRows, setLocalRows] = useState<PersonalAssistantStatus[]>();
   const [localFailed, setLocalFailed] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [teamBusy, setTeamBusy] = useState(false);
   const [activeBotId, setActiveBotId] = useState<string | null>(null);
   const [activePresetId, setActivePresetId] = useState<AssistantPresetId | null>(null);
   const [operation, setOperation] = useState<'open' | 'pause' | 'hire' | null>(null);
@@ -162,12 +198,14 @@ export function ManagedBots({
 
   const rows = botsResource ? replica.value : localRows;
   const failed = botsResource ? replica.failed && !replica.value : localFailed;
+  const teams = teamsResource ? teamsReplica.value : undefined;
 
   const [editor, setEditor] = useState<Editor>();
   const [catalog, setCatalog] = useState<BotEnvironmentCatalog>();
   const [models, setModels] = useState<PersonalAssistantModelCatalog>();
   const [modelsLoading, setModelsLoading] = useState(false);
   const [memory, setMemory] = useState<PersonalAssistantStatus>();
+  const [deskBot, setDeskBot] = useState<CrewPhonebookEntry | null>(null);
 
   const life = useRef<AbortController | null>(null);
   const lock = useRef(false);
@@ -244,9 +282,7 @@ export function ManagedBots({
     if (lock.current) return;
     const e = ++editorEpoch.current;
     const normalized = status ? normalizeAssistantActor(status) : null;
-    const initialName = normalized
-      ? formatAssistantDisplayName(normalized, personalTitle)
-      : '';
+    const initialName = normalized ? formatAssistantDisplayName(normalized, personalTitle) : '';
     setEditor(
       retained ?? {
         status,
@@ -259,6 +295,9 @@ export function ManagedBots({
     setModels(undefined);
     setModelsLoading(Boolean(status?.assistant));
     setError('');
+    if (teamsResource && teamsResource.get().value === undefined) {
+      void teamsResource.refresh();
+    }
     try {
       const s = request();
       await rpc.connect();
@@ -284,14 +323,14 @@ export function ManagedBots({
   }
 
   function closeEditor() {
-    if (lock.current) return;
+    if (lock.current || teamBusy) return;
     editorEpoch.current++;
     setEditor(undefined);
     setError('');
   }
 
   async function commitEditor() {
-    if (!editor || lock.current || !editor.name.trim() || !catalog) return;
+    if (!editor || lock.current || teamBusy || !editor.name.trim() || !catalog) return;
     const existing = editor.status?.assistant;
     if (existing) {
       const normalized = normalizeAssistantActor(editor.status!);
@@ -498,6 +537,74 @@ export function ManagedBots({
     }
   }
 
+  async function changeTeamPlacement(actorId: string, currentTeamId: string | null, nextTeamId: string) {
+    if (teamBusy || lock.current || (currentTeamId ?? '') === nextTeamId) return;
+    setTeamBusy(true);
+    setError('');
+    try {
+      const s = request();
+      await rpc.connect();
+      let latestTeams: CrewTeam[] | undefined;
+      if (currentTeamId) {
+        const removed = await rpc.request(
+          'opencraft/crew/team',
+          { action: 'removeAgent', spaceId: currentTeamId, actorId },
+          s,
+        );
+        if (removed && 'teams' in removed) latestTeams = removed.teams;
+      }
+      if (nextTeamId) {
+        const added = await rpc.request(
+          'opencraft/crew/team',
+          { action: 'addAgent', spaceId: nextTeamId, actorId },
+          s,
+        );
+        if (added && 'teams' in added) latestTeams = added.teams;
+      }
+      if (!s.aborted) {
+        if (latestTeams && teamsResource) teamsResource.set(latestTeams);
+        else await teamsResource?.refresh();
+      }
+    } catch {
+      if (!life.current?.signal.aborted) setError(intl.formatMessage(modelMessages.teamFailed));
+    } finally {
+      if (!life.current?.signal.aborted) setTeamBusy(false);
+    }
+  }
+
+  async function createQuickSoloTeamAndAssign(actorId: string) {
+    if (teamBusy || lock.current) return;
+    setTeamBusy(true);
+    setError('');
+    try {
+      const s = request();
+      await rpc.connect();
+      const defaultName = intl.formatMessage(modelMessages.teamDefaultGroupName);
+      const created = await rpc.request('opencraft/crew/team', { action: 'create', name: defaultName }, s);
+      if (s.aborted) return;
+      const createdTeams = created && 'teams' in created ? created.teams : [];
+      const targetTeam = createdTeams.find(t => t.role === 'owner' && t.name === defaultName) ?? createdTeams.find(t => t.role === 'owner');
+      if (targetTeam) {
+        const added = await rpc.request(
+          'opencraft/crew/team',
+          { action: 'addAgent', spaceId: targetTeam.id, actorId },
+          s,
+        );
+        if (!s.aborted && added && 'teams' in added && teamsResource) {
+          teamsResource.set(added.teams);
+          return;
+        }
+      }
+      if (!s.aborted && teamsResource) {
+        teamsResource.set(createdTeams);
+      }
+    } catch {
+      if (!life.current?.signal.aborted) setError(intl.formatMessage(modelMessages.teamFailed));
+    } finally {
+      if (!life.current?.signal.aborted) setTeamBusy(false);
+    }
+  }
+
   const environmentValue =
     editor?.environment.kind === 'sandbox'
       ? JSON.stringify([editor.environment.backendId, editor.environment.templateId])
@@ -553,6 +660,10 @@ export function ManagedBots({
     };
   }
 
+  const editingActor = editor?.status ? normalizeAssistantActor(editor.status) : null;
+  const editingPlacement = editingActor ? resolveAssistantTeamPlacement(editingActor, teams) : null;
+  const ownedTeams = (teams ?? []).filter(t => t.role === 'owner');
+
   const memoryDisplayName = memory
     ? (() => {
         const normalized = normalizeAssistantActor(memory);
@@ -572,10 +683,10 @@ export function ManagedBots({
           <ModalContent
             className="managed-bots__dialog"
             onEscapeKeyDown={e => {
-              if (busy) e.preventDefault();
+              if (busy || teamBusy) e.preventDefault();
             }}
             onInteractOutside={e => {
-              if (busy) e.preventDefault();
+              if (busy || teamBusy) e.preventDefault();
             }}
           >
             <SettingsPanel
@@ -586,12 +697,12 @@ export function ManagedBots({
               }
               footer={
                 <>
-                  <SettingsButton disabled={busy} onClick={closeEditor}>
+                  <SettingsButton disabled={busy || teamBusy} onClick={closeEditor}>
                     {f('cancel')}
                   </SettingsButton>
                   <SettingsButton
                     variant="primary"
-                    disabled={busy || !editor.name.trim() || !catalog}
+                    disabled={busy || teamBusy || !editor.name.trim() || !catalog}
                     loading={busy}
                     onClick={() => void commitEditor()}
                   >
@@ -600,7 +711,7 @@ export function ManagedBots({
                 </>
               }
             >
-              <Dialog.Description>{f('privacy')}</Dialog.Description>
+              <Dialog.Description className="managed-bots__hint">{f('privacy')}</Dialog.Description>
               {editor.status ? <p className="managed-bots__hint">{f('settingsImpact')}</p> : null}
               <SettingsGroup>
                 <SettingsRow layout="stacked" controlWidth="wide" label={f('name')}>
@@ -667,21 +778,119 @@ export function ManagedBots({
               {catalog && !catalog.templates.length ? (
                 <p className="managed-bots__hint">{f('e2bUnavailable')}</p>
               ) : null}
+              {editingActor ? (
+                editingActor.collaborationScope === 'personal-only' ? (
+                  <SettingsSection
+                    title={intl.formatMessage(modelMessages.teamSectionTitle)}
+                    description={intl.formatMessage(modelMessages.scopePersonalOnlyAbout)}
+                  >
+                    <SettingsGroup>
+                      <SettingsRow label={intl.formatMessage(modelMessages.teamPlacementLabel)}>
+                        <span className="managed-bots__hint">
+                          {intl.formatMessage(modelMessages.scopePersonalOnly)}
+                        </span>
+                      </SettingsRow>
+                    </SettingsGroup>
+                  </SettingsSection>
+                ) : teams !== null && teams !== undefined ? (
+                  <>
+                    <SettingsSection
+                      title={intl.formatMessage(modelMessages.teamSectionTitle)}
+                      description={intl.formatMessage(modelMessages.teamSectionAbout)}
+                    >
+                      {ownedTeams.length === 0 && editingPlacement?.kind !== 'assigned' ? (
+                        <SettingsGroup>
+                          <SettingsRow
+                            label={intl.formatMessage(modelMessages.teamPlacementLabel)}
+                            description={intl.formatMessage(modelMessages.teamQuickGroupHint)}
+                            layout="stacked"
+                          >
+                            <SettingsButton
+                              disabled={busy || teamBusy}
+                              loading={teamBusy}
+                              onClick={() => void createQuickSoloTeamAndAssign(editingActor.actorId)}
+                            >
+                              {intl.formatMessage(modelMessages.teamQuickGroupAction)}
+                            </SettingsButton>
+                          </SettingsRow>
+                        </SettingsGroup>
+                      ) : editingPlacement?.kind === 'assigned' && !editingPlacement.canManageTeam ? (
+                        <SettingsGroup>
+                          <SettingsRow label={intl.formatMessage(modelMessages.teamPlacementLabel)}>
+                            <span className="managed-bots__hint">
+                              {intl.formatMessage(modelMessages.teamMemberReadOnly, {
+                                team: editingPlacement.teamName,
+                              })}
+                            </span>
+                          </SettingsRow>
+                        </SettingsGroup>
+                      ) : (
+                        <SettingsGroup>
+                          <SettingsRow
+                            layout="stacked"
+                            controlWidth="wide"
+                            label={intl.formatMessage(modelMessages.teamPlacementLabel)}
+                          >
+                            <SettingsChoiceSelect
+                              label={intl.formatMessage(modelMessages.teamPlacementLabel)}
+                              value={editingPlacement?.kind === 'assigned' ? editingPlacement.teamId : ''}
+                              disabled={busy || teamBusy}
+                              options={[
+                                { value: '', label: intl.formatMessage(modelMessages.teamNoneOption) },
+                                ...ownedTeams.map(t => ({ value: t.id, label: t.name })),
+                              ]}
+                              onValueChange={nextId =>
+                                void changeTeamPlacement(
+                                  editingActor.actorId,
+                                  editingPlacement?.kind === 'assigned' ? editingPlacement.teamId : null,
+                                  nextId,
+                                )
+                              }
+                            />
+                          </SettingsRow>
+                        </SettingsGroup>
+                      )}
+                    </SettingsSection>
+                    {editingPlacement?.kind === 'assigned' ? (
+                      <CrewPhonebook
+                        key={editingActor.actorId + ':' + editingPlacement.teamId}
+                        rpc={rpc}
+                        botId={editingActor.actorId}
+                        reportError={issue => setError(issue.message)}
+                      />
+                    ) : null}
+                  </>
+                ) : null
+              ) : null}
               {editor.status?.assistant ? (
                 <AssistantThreadSettings
                   rpc={rpc}
                   botId={editor.status.assistant.binding.botId}
-                  reportError={() => setError(f('failed'))}
+                  reportError={issue => setError(issue.message)}
                 />
               ) : null}
               {editor.status?.assistant ? (
                 <div className="managed-bots__actions">
-                  <SettingsButton disabled={busy} onClick={() => setMemory(editor.status)}>
+                  <SettingsButton disabled={busy || teamBusy} onClick={() => setMemory(editor.status)}>
                     {f('memory')}
                   </SettingsButton>
+                  {editingActor && editingPlacement?.kind === 'assigned' ? (
+                    <SettingsButton
+                      disabled={busy || teamBusy}
+                      onClick={() =>
+                        setDeskBot({
+                          actorId: editingActor.actorId,
+                          displayName: formatAssistantDisplayName(editingActor, personalTitle),
+                          kind: 'session',
+                        })
+                      }
+                    >
+                      {intl.formatMessage(modelMessages.teamOpenDesk)}
+                    </SettingsButton>
+                  ) : null}
                   <SettingsButton
                     variant="quiet"
-                    disabled={busy}
+                    disabled={busy || teamBusy}
                     onClick={() => void operate(editor.status!, 'pause')}
                   >
                     {f(isAssistantPaused(editor.status.assistant) ? 'resume' : 'pause')}
@@ -691,7 +900,7 @@ export function ManagedBots({
               {error ? (
                 <p role="alert">
                   {error}{' '}
-                  <SettingsButton disabled={busy} onClick={() => void openEditor(editor.status, editor)}>
+                  <SettingsButton disabled={busy || teamBusy} onClick={() => void openEditor(editor.status, editor)}>
                     {f('retry')}
                   </SettingsButton>
                 </p>
@@ -707,30 +916,52 @@ export function ManagedBots({
             if (!o && (!memoryGuard.current || memoryGuard.current())) setMemory(undefined);
           }}
         >
-          <ModalContent className="managed-bots__memory">
-            <Dialog.Title>
-              {memoryDisplayName} · {f('memory')}
-            </Dialog.Title>
-            <Dialog.Description>{f('privacy')}</Dialog.Description>
-            <AssistantMemory
-              rpc={rpc}
-              binding={memory.assistant.binding}
-              registerCloseGuard={g => {
-                memoryGuard.current = g;
-                return () => {
-                  if (memoryGuard.current === g) memoryGuard.current = null;
-                };
-              }}
-            />
-            <SettingsButton
-              onClick={() => {
-                if (!memoryGuard.current || memoryGuard.current()) setMemory(undefined);
-              }}
+          <ModalContent className="managed-bots__memory" data-size="wide">
+            <SettingsPanel
+              title={
+                <Dialog.Title asChild>
+                  <span>
+                    {memoryDisplayName} · {f('memory')}
+                  </span>
+                </Dialog.Title>
+              }
+              footer={
+                <SettingsButton
+                  variant="primary"
+                  onClick={() => {
+                    if (!memoryGuard.current || memoryGuard.current()) setMemory(undefined);
+                  }}
+                >
+                  {f('close')}
+                </SettingsButton>
+              }
             >
-              {f('close')}
-            </SettingsButton>
+              <Dialog.Description className="managed-bots__hint">{f('privacy')}</Dialog.Description>
+              <AssistantMemory
+                rpc={rpc}
+                binding={memory.assistant.binding}
+                registerCloseGuard={g => {
+                  memoryGuard.current = g;
+                  return () => {
+                    if (memoryGuard.current === g) memoryGuard.current = null;
+                  };
+                }}
+              />
+            </SettingsPanel>
           </ModalContent>
         </Dialog.Root>
+      ) : null}
+      {deskBot ? (
+        <Suspense fallback={null}>
+          <CrewDesk
+            rpc={rpc}
+            bot={deskBot}
+            open
+            onOpenChange={next => {
+              if (!next) setDeskBot(null);
+            }}
+          />
+        </Suspense>
       ) : null}
     </>
   );

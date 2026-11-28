@@ -89,6 +89,8 @@ export {
   type InboxMemberItem,
   type InboxSurfaceProps,
   type InboxTabId,
+  type InboxTeamMemberItem,
+  type InboxTeamSection,
   type ManagedBotItem,
   type MobileWelcomeProps,
   type ModelServiceConnectionItem,

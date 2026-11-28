@@ -892,7 +892,12 @@ export class TokenUsageDashboardSurface extends StatefulComponent<TokenUsageDash
     </view>;
   }
 
-  private renderGatewayBudget(gateway: TokenUsageGatewaySection, dark: boolean, narrow: boolean, touch?: boolean): void {
+  private renderGatewayBudget(
+    gateway: TokenUsageGatewaySection,
+    dark: boolean,
+    narrow: boolean,
+    touch?: boolean,
+  ): void {
     const c = themeColors(dark);
     const m = themeMetrics(touch);
 

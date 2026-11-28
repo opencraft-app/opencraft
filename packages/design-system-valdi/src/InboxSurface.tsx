@@ -30,10 +30,28 @@ export type InboxMemberItem = {
   readonly busy?: boolean;
 };
 
+export type InboxTeamMemberItem = {
+  readonly id: string;
+  readonly displayName: string;
+  readonly kindLabel: string;
+  readonly isBot?: boolean;
+  readonly reachable?: boolean;
+  readonly busy?: boolean;
+  readonly deskLabel?: string;
+};
+
+export type InboxTeamSection = {
+  readonly id: string;
+  readonly name: string;
+  readonly countLabel: string;
+  readonly manageLabel?: string;
+  readonly members: readonly InboxTeamMemberItem[];
+};
+
 export type InboxSurfaceProps = {
   readonly dark?: boolean;
   readonly touch?: boolean;
-  readonly title: string;
+  readonly title?: string;
   readonly activeTab: InboxTabId;
   readonly searchQuery: string;
   readonly searchPlaceholder: string;
@@ -49,6 +67,11 @@ export type InboxSurfaceProps = {
   readonly groupsError?: string;
   readonly emptyGroupsText: string;
   readonly groups: readonly InboxGroupItem[];
+  readonly teamsSupported?: boolean;
+  readonly teams?: readonly InboxTeamSection[];
+  readonly createTeamLabel?: string;
+  readonly joinTeamLabel?: string;
+  readonly otherMembersTitle?: string;
   readonly membersLoading?: boolean;
   readonly membersError?: string;
   readonly emptyMembersText: string;
@@ -63,6 +86,10 @@ export type InboxSurfaceProps = {
   readonly onOpenMember: (id: string) => void;
   readonly onRetryMembers: () => void;
   readonly onLoadMoreMembers?: () => void;
+  readonly onManageTeam?: (teamId: string) => void;
+  readonly onOpenBotDesk?: (actorId: string) => void;
+  readonly onCreateTeam?: () => void;
+  readonly onJoinTeam?: () => void;
   readonly onHaptic?: (style: string) => void;
 };
 
@@ -85,9 +112,11 @@ export class InboxSurface extends StatefulComponent<InboxSurfaceProps, Record<st
     const dark = Boolean(vm.dark);
     const c = themeColors(dark);
     const m = themeMetrics(vm.touch);
+    const teams = vm.teams ?? [];
+    const hasTeams = teams.length > 0;
 
     <view width="100%" gap={20}>
-      <SettingsPageHeader title={vm.title} touch={vm.touch} dark={dark} />
+      {vm.title ? <SettingsPageHeader title={vm.title} touch={vm.touch} dark={dark} /> : null}
 
       <view width="100%" gap={12}>
         <view width="100%" flexDirection="row" alignItems="center" gap={8}>
@@ -120,7 +149,7 @@ export class InboxSurface extends StatefulComponent<InboxSurfaceProps, Record<st
 
         <SegmentedControl
           id="oc-inbox-tabs"
-          label={vm.title}
+          label={vm.title ?? vm.groupsLabel}
           value={vm.activeTab}
           options={[
             { id: "groups", title: vm.groupsLabel },
@@ -193,7 +222,7 @@ export class InboxSurface extends StatefulComponent<InboxSurfaceProps, Record<st
       ) : null}
 
       {vm.activeTab === "members" ? (
-        <view width="100%" gap={12}>
+        <view width="100%" gap={16}>
           {vm.membersError ? (
             <Banner id="oc-inbox-members-error" tone="danger" title={vm.membersError} touch={vm.touch} dark={dark}>
               <Button
@@ -208,7 +237,95 @@ export class InboxSurface extends StatefulComponent<InboxSurfaceProps, Record<st
             </Banner>
           ) : null}
 
-          {vm.membersLoading && vm.members.length === 0 ? (
+          {hasTeams
+            ? teams.forEach((team) => {
+                <SettingsGroup
+                  key={team.id}
+                  title={team.name}
+                  description={team.countLabel}
+                  touch={vm.touch}
+                  dark={dark}
+                >
+                  {team.manageLabel && vm.onManageTeam ? (
+                    <view
+                      width="100%"
+                      paddingLeft={16}
+                      paddingRight={16}
+                      paddingTop={10}
+                      paddingBottom={10}
+                      flexDirection="row"
+                      alignItems="center"
+                      justifyContent="flex-end"
+                    >
+                      <Button
+                        id={`oc-inbox-team-manage-${team.id}`}
+                        title={team.manageLabel}
+                        variant="secondary"
+                        size="sm"
+                        touch={vm.touch}
+                        dark={dark}
+                        onPress={() => vm.onManageTeam?.(team.id)}
+                      />
+                    </view>
+                  ) : null}
+                  {team.members.forEach((member, idx) => {
+                    <SettingsListItem
+                      key={member.id}
+                      id={`oc-inbox-team-member-${team.id}-${member.id}`}
+                      icon={member.isBot ? "bot" : "user"}
+                      title={member.displayName}
+                      description={member.isBot ? member.kindLabel : undefined}
+                      metadata={member.isBot ? undefined : member.kindLabel}
+                      divider={idx > 0 || Boolean(team.manageLabel && vm.onManageTeam)}
+                      touch={vm.touch}
+                      dark={dark}
+                      onOpen={member.reachable && !member.busy ? () => vm.onOpenMember(member.id) : undefined}
+                    >
+                      {member.isBot && member.deskLabel && vm.onOpenBotDesk ? (
+                        <Button
+                          id={`oc-inbox-team-desk-${member.id}`}
+                          title={member.deskLabel}
+                          variant="secondary"
+                          size="sm"
+                          touch={vm.touch}
+                          dark={dark}
+                          onPress={() => vm.onOpenBotDesk?.(member.id)}
+                        />
+                      ) : undefined}
+                    </SettingsListItem>;
+                  })}
+                </SettingsGroup>;
+              })
+            : null}
+
+          {vm.teamsSupported && (vm.createTeamLabel || vm.joinTeamLabel) ? (
+            <view width="100%" flexDirection="row" alignItems="center" flexWrap="wrap" gap={8}>
+              {vm.createTeamLabel && vm.onCreateTeam ? (
+                <Button
+                  id="oc-inbox-team-create"
+                  title={vm.createTeamLabel}
+                  variant="secondary"
+                  size="sm"
+                  touch={vm.touch}
+                  dark={dark}
+                  onPress={vm.onCreateTeam}
+                />
+              ) : null}
+              {vm.joinTeamLabel && vm.onJoinTeam ? (
+                <Button
+                  id="oc-inbox-team-join"
+                  title={vm.joinTeamLabel}
+                  variant="secondary"
+                  size="sm"
+                  touch={vm.touch}
+                  dark={dark}
+                  onPress={vm.onJoinTeam}
+                />
+              ) : null}
+            </view>
+          ) : null}
+
+          {vm.membersLoading && vm.members.length === 0 && !hasTeams ? (
             <view
               class="oc-cold-skeleton"
               width="100%"
@@ -224,7 +341,7 @@ export class InboxSurface extends StatefulComponent<InboxSurfaceProps, Record<st
               <view width="40%" height={11} borderRadius={5} backgroundColor={c.recessed} />
             </view>
           ) : vm.members.length > 0 ? (
-            <SettingsGroup title="" touch={vm.touch} dark={dark}>
+            <SettingsGroup title={hasTeams ? (vm.otherMembersTitle ?? "") : ""} touch={vm.touch} dark={dark}>
               {vm.members.forEach((member, idx) => {
                 <SettingsListItem
                   key={member.id}
@@ -239,7 +356,7 @@ export class InboxSurface extends StatefulComponent<InboxSurfaceProps, Record<st
                 />;
               })}
             </SettingsGroup>
-          ) : !vm.membersError ? (
+          ) : !vm.membersError && !hasTeams ? (
             <EmptyState icon="user" title={vm.emptyMembersText} description="" dark={dark} />
           ) : null}
 

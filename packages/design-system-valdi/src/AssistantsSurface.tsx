@@ -9,6 +9,7 @@ export type AssistantActorCardItem = {
   readonly id: string;
   readonly title: string;
   readonly badgeText?: string;
+  readonly scopeText?: string;
   readonly statusText: string;
   readonly dutiesText?: string;
   readonly paused: boolean;
@@ -40,6 +41,7 @@ export type AssistantsSurfaceProps = {
   readonly touch?: boolean;
   readonly title?: string;
   readonly subtitle?: string;
+  readonly hostNoticeText?: string;
   readonly loading?: boolean;
   readonly errorText?: string;
   readonly retryLabel: string;
@@ -64,7 +66,7 @@ export type AssistantsSurfaceProps = {
 /**
  * Unified OpenCraft Valdi surface for Assistants (`/views/opencraft.im.agents`).
  * Presents all `AssistantActor` (`session://`) instances under one lifecycle,
- * memory, settings, environment, and DM contract, with built-in presets below.
+ * collaboration scope, memory, settings, environment, and DM contract.
  */
 export class AssistantsSurface extends StatefulComponent<AssistantsSurfaceProps, Record<string, never>> {
   state: Record<string, never> = {};
@@ -90,6 +92,10 @@ export class AssistantsSurface extends StatefulComponent<AssistantsSurfaceProps,
         <SettingsPageHeader title={vm.title ?? ""} description={vm.subtitle} touch={vm.touch} dark={dark} />
       ) : null}
 
+      {vm.hostNoticeText ? (
+        <Banner id="oc-assistants-host-notice" tone="info" title={vm.hostNoticeText} touch={vm.touch} dark={dark} />
+      ) : null}
+
       {vm.errorText ? (
         <Banner id="oc-assistants-error" tone="danger" title={vm.errorText} touch={vm.touch} dark={dark}>
           <Button
@@ -105,14 +111,7 @@ export class AssistantsSurface extends StatefulComponent<AssistantsSurfaceProps,
       ) : null}
 
       <SettingsGroup title={vm.myAgentsTitle} description={vm.myAgentsDescription} touch={vm.touch} dark={dark}>
-        <view
-          width="100%"
-          padding={16}
-          flexDirection="row"
-          alignItems="center"
-          justifyContent="space-between"
-          gap={12}
-        >
+        <view width="100%" padding={16} flexDirection="row" alignItems="center" justifyContent="space-between" gap={12}>
           <view flexGrow={1} flexShrink={1} minWidth={0}>
             {vm.actors.length === 0 && !showSkeleton && !vm.errorText ? (
               <label value={vm.emptyMineText} font={m.fonts.detail} color={c.muted} numberOfLines={0} />
@@ -151,10 +150,11 @@ export class AssistantsSurface extends StatefulComponent<AssistantsSurfaceProps,
 
         {vm.actors.length > 0
           ? vm.actors.forEach((actor) => {
-              const titleText = actor.badgeText ? `${actor.title} · ${actor.badgeText}` : actor.title;
-              const detailText = actor.dutiesText
-                ? `${actor.statusText}\n${actor.dutiesText}`
-                : actor.statusText;
+              const titleParts = [actor.title];
+              if (actor.badgeText) titleParts.push(actor.badgeText);
+              const titleText = titleParts.join(" · ");
+              const statusWithScope = actor.scopeText ? `${actor.scopeText} · ${actor.statusText}` : actor.statusText;
+              const detailText = actor.dutiesText ? `${statusWithScope}\n${actor.dutiesText}` : statusWithScope;
               const primaryVariant =
                 actor.primaryActionKind === "resume" || actor.primaryActionKind === "choose-model"
                   ? "primary"

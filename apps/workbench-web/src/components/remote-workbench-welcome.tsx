@@ -59,7 +59,10 @@ function useSystemPrefersDark(): boolean {
       mq.addEventListener("change", onStoreChange);
       return () => mq.removeEventListener("change", onStoreChange);
     },
-    () => (typeof window !== "undefined" && window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)").matches : false),
+    () =>
+      typeof window !== "undefined" && window.matchMedia
+        ? window.matchMedia("(prefers-color-scheme: dark)").matches
+        : false,
     () => false,
   );
 }

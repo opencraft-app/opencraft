@@ -413,7 +413,9 @@ export async function startOpenCraftDaemon(options: {
         : {};
       switch (action) {
         case "status":
-          return relayEnrollment.inspectDetailedStatus({ ensureInvite: record.ensureInvite === true });
+          return record.localOnly === true
+            ? relayEnrollment.status()
+            : relayEnrollment.inspectDetailedStatus({ ensureInvite: record.ensureInvite === true });
         case "enable": {
           const relayOrigin = typeof record.relayOrigin === "string" && record.relayOrigin.trim()
             ? record.relayOrigin.trim()

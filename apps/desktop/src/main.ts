@@ -21,7 +21,8 @@ import {
   type DesktopDirectoryPlan,
 } from "./desktop-directories.js";
 import { DesktopLifecycle } from "./desktop-lifecycle.js";
-import { createDesktopTray } from "./desktop-tray.js";
+import { evaluateDesktopQuit, type PersistedQuitBehavior } from "./desktop-quit-guard.js";
+import { createDesktopTray, type DesktopTrayController, type DesktopTrayState } from "./desktop-tray.js";
 import { createDesktopLocaleRuntime, requireDesktopLocale } from "./desktop-locale.js";
 import { installBrowserGuests } from "./browser-guests.js";
 import { installBrowserAutomationIpc } from './browser-automation-ipc.js';
@@ -54,7 +55,6 @@ import { remoteServerOrigin } from '@opencraft/plugin-local-account/connections'
 
 import {
   BrowserWindow,
-  Tray,
   app,
   dialog,
   ipcMain,
@@ -103,19 +103,24 @@ const remoteWindows = new Set<BrowserWindow>();
 let mainWebContents: WebContents | null = null;
 let browserGuests: ReturnType<typeof installBrowserGuests> | null = null;
 let browserPermissions!: BrowserPermissionPolicy;
-let tray: Tray | null = null;
+let tray: DesktopTrayController | null = null;
 let loopbackHost: WorkbenchStaticServer | null = null;
 let accountAttachment: DesktopAccountAttachment | null = null;
 let rendererOrigin: string | null = null;
 let daemonManager: OpenCraftDaemonClientManager | null = null;
 const daemonBridges = new Set<{ close(): void }>();
 let daemonBridgeSequence = 0;
-const desktopPowerSave = new DesktopPowerSaveCoordinator({
-  start: () => powerSaveBlocker.start("prevent-app-suspension"),
-  stop: (id) => {
-    if (powerSaveBlocker.isStarted(id)) powerSaveBlocker.stop(id);
+const desktopPowerSave = new DesktopPowerSaveCoordinator(
+  {
+    start: () => powerSaveBlocker.start("prevent-app-suspension"),
+    stop: (id) => {
+      if (powerSaveBlocker.isStarted(id)) powerSaveBlocker.stop(id);
+    },
   },
-});
+  {
+    onChange: () => refreshDesktopTrayState(),
+  },
+);
 let sqliteDebugReader!: SqliteDebugReader;
 let desktopClientStorage!: BorrowedDatabase;
 let uiPreferences!: DesktopUiPreferenceStore;
@@ -148,7 +153,17 @@ let desktopProductSession: DesktopProductSession | null = null;
 let desktopProductReady = false;
 const pendingProductUrls: string[] = [];
 const pendingRelayPairUrls: string[] = [];
+let pendingSettingsSection: string | null = null;
 let startupCallbackFlight: Promise<boolean> | null = null;
+
+async function openDesktopSettings(section: string): Promise<void> {
+  pendingSettingsSection = section;
+  await ensureMainWindow();
+  if (mainWebContents && !mainWebContents.isDestroyed() && !mainWebContents.isLoadingMainFrame()) {
+    pendingSettingsSection = null;
+    mainWebContents.send("opencraft:open-settings", section);
+  }
+}
 
 function deliverRelayPairUrl(url: string): void {
   if (mainWebContents && !mainWebContents.isDestroyed()) {
@@ -464,8 +479,14 @@ const ALLOWED_RELAY_ACTIONS = new Set([
 
 type RelaySleepProtectionMode = "ac" | "always" | "off";
 const RELAY_SLEEP_PROTECTION_KEY = "relay-sleep-protection-mode";
+const DESKTOP_MENU_BAR_ONLY_KEY = "desktop-menu-bar-only";
+const QUIT_PROTECTION_BEHAVIOR_KEY = "quit-protection-behavior";
 let relayEnrolledState = false;
+let relayConnectedState = false;
+let relayActiveWatchers = 0;
 let relaySleepBlockerId: number | null = null;
+let relayStatusPollTimer: ReturnType<typeof setInterval> | null = null;
+let relayStatusPollInFlight = false;
 
 function readRelaySleepProtectionMode(): RelaySleepProtectionMode {
   try {
@@ -473,6 +494,52 @@ function readRelaySleepProtectionMode(): RelaySleepProtectionMode {
     if (raw === "ac" || raw === "always" || raw === "off") return raw;
   } catch {}
   return "ac";
+}
+
+function readMenuBarOnly(): boolean {
+  try {
+    return productStorage?.read(DESKTOP_MENU_BAR_ONLY_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function writeMenuBarOnly(enabled: boolean): void {
+  productStorage?.write(DESKTOP_MENU_BAR_ONLY_KEY, enabled ? "true" : "false");
+}
+
+function readQuitProtectionBehavior(): PersistedQuitBehavior {
+  try {
+    const raw = productStorage?.read(QUIT_PROTECTION_BEHAVIOR_KEY);
+    if (raw === "ask" || raw === "hide" || raw === "quit") return raw;
+  } catch {}
+  return "ask";
+}
+
+function writeQuitProtectionBehavior(behavior: PersistedQuitBehavior): void {
+  productStorage?.write(QUIT_PROTECTION_BEHAVIOR_KEY, behavior);
+}
+
+function isLoginItemSupported(): boolean {
+  return app.isPackaged && (process.platform === "darwin" || process.platform === "win32");
+}
+
+function readOpenAtLogin(): boolean {
+  if (!isLoginItemSupported()) return false;
+  try {
+    return app.getLoginItemSettings().openAtLogin === true;
+  } catch {
+    return false;
+  }
+}
+
+function writeOpenAtLogin(enabled: boolean): void {
+  if (!isLoginItemSupported()) return;
+  try {
+    app.setLoginItemSettings({ openAtLogin: enabled });
+  } catch (error) {
+    console.warn("[opencraft login-item] Could not update login item:", error);
+  }
 }
 
 function safeIsOnBatteryPower(): boolean {
@@ -491,6 +558,13 @@ function stopRelaySleepBlocker(): void {
       }
     } catch {}
     relaySleepBlockerId = null;
+  }
+}
+
+function stopRelayStatusPolling(): void {
+  if (relayStatusPollTimer !== null) {
+    clearInterval(relayStatusPollTimer);
+    relayStatusPollTimer = null;
   }
 }
 
@@ -525,13 +599,62 @@ function reconcileRelaySleepBlocker(): {
   return { sleepProtectionMode: mode, sleepBlockerActive: active, onBattery };
 }
 
+function buildDesktopTrayState(): DesktopTrayState {
+  const sleep = reconcileRelaySleepBlocker();
+  return {
+    ...(daemonManager
+      ? {
+          relay: {
+            status: !relayEnrolledState ? "disabled" : relayConnectedState ? "online" : "connecting",
+            activeWatchers: relayActiveWatchers,
+            sleepProtectionMode: sleep.sleepProtectionMode,
+            sleepBlockerActive: sleep.sleepBlockerActive,
+          },
+          activeTaskCount: desktopPowerSave.activeCount,
+          taskKeepAwakeActive: desktopPowerSave.isBlocking,
+        }
+      : {}),
+    ...(isLoginItemSupported() ? { openAtLogin: readOpenAtLogin() } : {}),
+    ...(process.platform === "darwin" ? { menuBarOnly: readMenuBarOnly() } : {}),
+  };
+}
+
+function refreshDesktopTrayState(): void {
+  tray?.setState(buildDesktopTrayState());
+}
+
 function enrichRelayStatusWithSleepState(result: unknown): unknown {
   if (!result || typeof result !== "object" || Array.isArray(result)) return result;
   const rec = result as Record<string, unknown>;
   if (typeof rec.enrolled === "boolean") {
     relayEnrolledState = rec.enrolled;
   }
-  return { ...rec, ...reconcileRelaySleepBlocker() };
+  if (typeof rec.connected === "boolean") {
+    relayConnectedState = rec.connected;
+  }
+  if (typeof rec.activeWatchers === "number" && Number.isFinite(rec.activeWatchers)) {
+    relayActiveWatchers = Math.max(0, Math.floor(rec.activeWatchers));
+  }
+  if (!relayEnrolledState) {
+    relayConnectedState = false;
+    relayActiveWatchers = 0;
+  }
+  const sleep = reconcileRelaySleepBlocker();
+  refreshDesktopTrayState();
+  return { ...rec, ...sleep };
+}
+
+async function pollLocalRelayStatus(): Promise<void> {
+  if (relayStatusPollInFlight || lifecycle.quitting || !daemonManager) return;
+  relayStatusPollInFlight = true;
+  try {
+    const res = await daemonManager.requestRelay("status", { localOnly: true });
+    enrichRelayStatusWithSleepState(res);
+  } catch {
+    // Transient daemon restarts will be caught on the next tick.
+  } finally {
+    relayStatusPollInFlight = false;
+  }
 }
 
 ipcMain.handle("opencraft:relay-invoke", async (event, action: unknown, payload: unknown) => {
@@ -569,6 +692,12 @@ ipcMain.handle("opencraft:relay-invoke", async (event, action: unknown, payload:
 ipcMain.handle("opencraft:relay-consume-pair-urls", (event) => {
   if (!trustedLoginCaller(event)) throw new Error("Untrusted relay caller");
   return pendingRelayPairUrls.splice(0);
+});
+ipcMain.handle("opencraft:consume-pending-settings", (event) => {
+  if (!trustedLoginCaller(event)) throw new Error("Untrusted navigation caller");
+  const next = pendingSettingsSection;
+  pendingSettingsSection = null;
+  return next;
 });
 ipcMain.handle("opencraft:skillhub-get", async (event, path: unknown) => {
   if (!trustedLoginCaller(event)) throw new Error("Untrusted SkillHub caller");
@@ -934,7 +1063,22 @@ const lifecycle = new DesktopLifecycle({
   createWindow: createMainWindow,
   showDock: async () => { if (process.platform === "darwin") await app.dock?.show(); },
   hideDock: () => { if (process.platform === "darwin") app.dock?.hide(); },
+  dockMode: () => (process.platform === "darwin" && readMenuBarOnly() ? "menu-bar-only" : "keep"),
+  confirmQuit: (source) =>
+    evaluateDesktopQuit({
+      source,
+      relayEnrolled: relayEnrolledState,
+      activeTaskCount: desktopPowerSave.activeCount,
+      locale: desktopLocale,
+      readSavedBehavior: readQuitProtectionBehavior,
+      writeSavedBehavior: writeQuitProtectionBehavior,
+      showDialog: async (spec) => {
+        const owner = mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() ? mainWindow : undefined;
+        return owner ? dialog.showMessageBox(owner, spec) : dialog.showMessageBox(spec);
+      },
+    }),
   stopRuntime: async () => {
+    stopRelayStatusPolling();
     stopRelaySleepBlocker();
     desktopPowerSave.close();
     desktopServers.close();
@@ -968,7 +1112,7 @@ const lifecycle = new DesktopLifecycle({
     const errors = results.filter(result => result.status === "rejected");
     if (errors.length || productErrors.length) throw new AggregateError([...productErrors, ...errors.map(result => result.reason)], "Desktop shutdown failed");
   },
-  destroyTray: () => { if (tray && !tray.isDestroyed()) tray.destroy(); tray = null; },
+  destroyTray: () => { tray?.destroy(); tray = null; },
   reportError: error => console.error("Desktop lifecycle:", error),
   exit: code => app.exit(code),
 });
@@ -992,7 +1136,7 @@ async function bootstrap(): Promise<void> {
     void ensureMainWindow().catch(console.error);
   });
   app.on("activate", () => { void ensureMainWindow().catch(console.error); });
-  app.on("before-quit", event => { event.preventDefault(); void lifecycle.quit(); });
+  app.on("before-quit", event => { event.preventDefault(); void lifecycle.requestQuit("app"); });
   app.on("window-all-closed", () => { /* Resident host; only explicit Quit stops runtime. */ });
 
   await app.whenReady();
@@ -1050,21 +1194,59 @@ async function bootstrap(): Promise<void> {
   if (daemonManager) {
     const onPowerSourceChange = () => {
       reconcileRelaySleepBlocker();
+      refreshDesktopTrayState();
+    };
+    const onSystemResume = () => {
+      void pollLocalRelayStatus();
     };
     powerMonitor.on("on-ac", onPowerSourceChange);
     powerMonitor.on("on-battery", onPowerSourceChange);
-    void daemonManager
-      .requestRelay("status", { ensureInvite: false })
-      .then((res) => {
-        enrichRelayStatusWithSleepState(res);
-      })
-      .catch(() => undefined);
+    powerMonitor.on("resume", onSystemResume);
+    void pollLocalRelayStatus();
+    relayStatusPollTimer = setInterval(() => {
+      void pollLocalRelayStatus();
+    }, 10_000);
+    relayStatusPollTimer.unref?.();
   }
   let localeOverride: unknown;
   try { localeOverride = JSON.parse(uiPreferences.load("locale.override")?.valueJson ?? '""'); } catch { /* Invalid preferences use system locale. */ }
   await desktopLocale.update({ localeOverride: typeof localeOverride === "string" ? localeOverride : null,
     localeSource: "SYSTEM", systemLocale: app.getPreferredSystemLanguages()[0] ?? app.getLocale() });
-  tray = createDesktopTray({ open: () => { void lifecycle.show().catch(console.error); }, quit: () => { void lifecycle.quit(); } }, desktopLocale);
+  tray = createDesktopTray(
+    {
+      open: () => { void lifecycle.show().catch(console.error); },
+      quit: () => { void lifecycle.requestQuit("tray"); },
+      ...(daemonManager
+        ? {
+            openRemoteSettings: () => { void openDesktopSettings("remote-access").catch(console.error); },
+            setSleepProtectionMode: (mode) => {
+              productStorage.write(RELAY_SLEEP_PROTECTION_KEY, mode);
+              reconcileRelaySleepBlocker();
+              refreshDesktopTrayState();
+            },
+          }
+        : {}),
+      ...(isLoginItemSupported()
+        ? {
+            setOpenAtLogin: (enabled) => {
+              writeOpenAtLogin(enabled);
+              refreshDesktopTrayState();
+            },
+          }
+        : {}),
+      ...(process.platform === "darwin"
+        ? {
+            setMenuBarOnly: (enabled) => {
+              writeMenuBarOnly(enabled);
+              void lifecycle.syncDock().catch(console.error);
+              refreshDesktopTrayState();
+            },
+          }
+        : {}),
+    },
+    desktopLocale,
+    buildDesktopTrayState(),
+  );
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
     const trustedRenderer = rendererOrigin !== null
       && webContents === mainWebContents

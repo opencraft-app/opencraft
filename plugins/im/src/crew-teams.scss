@@ -13,6 +13,13 @@
   > .people-member, > .people-member.people-member--open.ui-object-row-button { border-block-end: 0; }
 }
 .crew-team__others { margin: calc(5 * var(--spacing)) 0 0; padding-block: calc(2 * var(--spacing)); @include typography.role(metadata, secondary); }
+.crew-team-settings .settings-panel__body {
+  display: flex;
+  flex-direction: column;
+  gap: calc(4 * var(--spacing));
+  > .settings-control-section:not(:first-child) { margin-block-start: 0; }
+  > .settings-panel-form { padding-block: 0; display: flex; flex-direction: column; gap: calc(3 * var(--spacing)); }
+}
 .crew-team-settings__agent { display: inline-flex; align-items: center; gap: calc(2 * var(--spacing)); }
 .crew-team-settings__actions { display: inline-flex; gap: var(--spacing); }
 .crew-team-settings__empty { margin: 0; @include typography.role(metadata, secondary); }

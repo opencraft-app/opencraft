@@ -854,9 +854,29 @@ export async function createWebWorkbenchApplicationSupervisor(
   ) !== null;
   const deploymentDefaultHostId = conversationDeploymentDefaultHost({ platform, headlessAppHost: headlessAppHost !== null });
   const initialHostId = chooseInitialConversationHost({ profiles, requestedHostId, persistedHostId, persistedHasThread, deploymentDefaultHostId });
+  const bindDesktopSettingsNavigation = (target: { openSettings(slug?: string): void }) => {
+    if (platform !== "electron") return;
+    const desktopNavigationBridge = (globalThis as typeof globalThis & {
+      opencraftDesktop?: {
+        navigation?: {
+          consumePendingSettings?: () => Promise<string | null>;
+          onOpenSettings?: (listener: (section: string) => void) => () => void;
+        };
+      };
+    }).opencraftDesktop?.navigation;
+    if (!desktopNavigationBridge) return;
+    const stopOpenSettings = desktopNavigationBridge.onOpenSettings?.((section) => {
+      target.openSettings(section);
+    });
+    if (stopOpenSettings) startupRollback.push(stopOpenSettings);
+    void desktopNavigationBridge.consumePendingSettings?.().then((section) => {
+      if (section) target.openSettings(section);
+    }).catch(() => undefined);
+  };
   if (initialHostId === undefined) {
     const navigation = createApplicationNavigation(null, routerOptions);
     startupRollback.push(() => navigation.dispose());
+    bindDesktopSettingsNavigation(navigation);
     agentRuntimes.markUnavailable(new Error("No Agent Runtime is configured"));
     const provisionHost = (input: ProvisionHostInput, options?: { signal?: AbortSignal }) => persistProvisionedHost(
       input,
@@ -1296,6 +1316,7 @@ export async function createWebWorkbenchApplicationSupervisor(
     },
   );
   startupRollback.push(() => navigation.dispose());
+  bindDesktopSettingsNavigation(navigation);
   // Browser startup owns only local identity construction. Physical Host
   // connection and Thread hydration continue after the shell can render.
   if (initialThreadLocation || requestedDraft) draftRecovery.markCold(navigation.getSnapshot().routeScopeId);

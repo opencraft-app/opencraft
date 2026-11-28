@@ -26,7 +26,9 @@ export default [
   },
   {
     // Product source is type checked by its workspace project, so promise rules can see types.
+    // `packages/design-system-valdi` is compiled by Bazel (`BUILD.bazel`) rather than an npm workspace tsconfig.
     files: ["{apps,packages,plugins}/*/src/**/*.{ts,mts,cts,tsx}"],
+    ignores: ["packages/design-system-valdi/**"],
     languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: root } },
     rules: {
       "@typescript-eslint/no-explicit-any": "error",

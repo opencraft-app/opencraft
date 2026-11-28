@@ -4,10 +4,24 @@ import {
   type AssistantPreset,
   type AssistantPresetId,
   type BotEnvironment,
+  type CrewTeam,
   type PersonalAssistant,
   type PersonalAssistantRuntimeState,
   type PersonalAssistantStatus,
-} from '@opencraft/appserver-protocol';
+} from "@opencraft/appserver-protocol";
+
+export type AssistantCollaborationScope = "personal-only" | "team-eligible";
+
+export type AssistantTeamPlacement =
+  | { readonly kind: "personal-only" }
+  | { readonly kind: "private-local" }
+  | { readonly kind: "unassigned" }
+  | {
+      readonly kind: "assigned";
+      readonly teamId: string;
+      readonly teamName: string;
+      readonly canManageTeam: boolean;
+    };
 
 export interface NormalizedAssistantActor {
   readonly botId: string;
@@ -15,31 +29,36 @@ export interface NormalizedAssistantActor {
   readonly assignmentId: string;
   readonly presetId: AssistantPresetId | null;
   readonly cardinality: AssistantCardinality;
+  readonly collaborationScope: AssistantCollaborationScope;
   readonly isSingletonPreset: boolean;
   readonly rawName: string;
   readonly duties: string;
   readonly environment: BotEnvironment;
   readonly paused: boolean;
-  readonly phase: PersonalAssistantRuntimeState['phase'];
+  readonly phase: PersonalAssistantRuntimeState["phase"];
   readonly configRevision: number;
   readonly modelRevision: number;
-  readonly model: PersonalAssistant['model'];
+  readonly model: PersonalAssistant["model"];
   readonly channelId: string | null;
   readonly status: PersonalAssistantStatus;
 }
 
 export function resolveAssistantPresetId(assistant: PersonalAssistant): AssistantPresetId | null {
   if (assistant.presetId) return assistant.presetId;
-  return assistant.isDefault ? 'personal-assistant' : null;
+  return assistant.isDefault ? "personal-assistant" : null;
 }
 
 export function resolveAssistantCardinality(assistant: PersonalAssistant): AssistantCardinality {
   if (assistant.cardinality) return assistant.cardinality;
-  return resolveAssistantPresetId(assistant) === 'personal-assistant' ? 'singleton-per-human' : 'multi';
+  return resolveAssistantPresetId(assistant) === "personal-assistant" ? "singleton-per-human" : "multi";
+}
+
+export function resolveAssistantCollaborationScope(assistant: PersonalAssistant): AssistantCollaborationScope {
+  return resolveAssistantCardinality(assistant) === "singleton-per-human" ? "personal-only" : "team-eligible";
 }
 
 export function isAssistantPaused(assistant: PersonalAssistant): boolean {
-  return Boolean(assistant.paused) || assistant.state !== 'claimed';
+  return Boolean(assistant.paused) || assistant.state !== "claimed";
 }
 
 export function normalizeAssistantActor(status: PersonalAssistantStatus): NormalizedAssistantActor | null {
@@ -47,18 +66,20 @@ export function normalizeAssistantActor(status: PersonalAssistantStatus): Normal
   if (!assistant) return null;
   const presetId = resolveAssistantPresetId(assistant);
   const cardinality = resolveAssistantCardinality(assistant);
+  const collaborationScope = resolveAssistantCollaborationScope(assistant);
   const paused = isAssistantPaused(assistant);
-  const phase: PersonalAssistantRuntimeState['phase'] = paused ? 'stopped' : status.runtime.phase;
+  const phase: PersonalAssistantRuntimeState["phase"] = paused ? "stopped" : status.runtime.phase;
   return {
     botId: assistant.binding.botId,
     actorId: assistant.actorId,
     assignmentId: assistant.binding.assignmentId,
     presetId,
     cardinality,
-    isSingletonPreset: cardinality === 'singleton-per-human',
-    rawName: assistant.name ?? '',
-    duties: assistant.duties ?? '',
-    environment: assistant.environment ?? { kind: 'local' },
+    collaborationScope,
+    isSingletonPreset: cardinality === "singleton-per-human",
+    rawName: assistant.name ?? "",
+    duties: assistant.duties ?? "",
+    environment: assistant.environment ?? { kind: "local" },
     paused,
     phase,
     configRevision: assistant.configRevision ?? 0,
@@ -84,6 +105,34 @@ export function normalizeAssistantActorList(rows: readonly PersonalAssistantStat
   return normalized;
 }
 
+export function resolveAssistantTeamPlacement(
+  actor: NormalizedAssistantActor,
+  teams: readonly CrewTeam[] | null | undefined,
+): AssistantTeamPlacement {
+  if (actor.collaborationScope === "personal-only") {
+    return { kind: "personal-only" };
+  }
+  if (!teams) {
+    return { kind: "private-local" };
+  }
+  for (const team of teams) {
+    if (team.members.some((member) => member.actorId === actor.actorId)) {
+      return {
+        kind: "assigned",
+        teamId: team.id,
+        teamName: team.name,
+        canManageTeam: team.role === "owner",
+      };
+    }
+  }
+  return { kind: "unassigned" };
+}
+
+export function isHostAssistantRunnerUnavailable(actors: readonly NormalizedAssistantActor[]): boolean {
+  const activeActors = actors.filter((actor) => !actor.paused);
+  return activeActors.length > 0 && activeActors.every((actor) => actor.phase === "unavailable");
+}
+
 export function projectAvailableAssistantPresets(
   rows: readonly PersonalAssistantStatus[],
   presets: readonly AssistantPreset[] = BUILTIN_ASSISTANT_PRESETS,
@@ -94,7 +143,7 @@ export function projectAvailableAssistantPresets(
     const presetId = resolveAssistantPresetId(row.assistant);
     if (presetId) hiredPresetIds.add(presetId);
   }
-  return presets.filter(preset => preset.cardinality !== 'singleton-per-human' || !hiredPresetIds.has(preset.id));
+  return presets.filter((preset) => preset.cardinality !== "singleton-per-human" || !hiredPresetIds.has(preset.id));
 }
 
 export function upsertAssistantStatusList(
@@ -103,23 +152,21 @@ export function upsertAssistantStatusList(
 ): PersonalAssistantStatus[] {
   if (!updated.assistant) return [...(current ?? [])];
   const targetBotId = updated.assistant.binding.botId;
-  const next = (current ?? []).filter(item => item.assistant && item.assistant.binding.botId !== targetBotId);
+  const next = (current ?? []).filter((item) => item.assistant && item.assistant.binding.botId !== targetBotId);
   next.push(updated);
-  return normalizeAssistantActorList(next).map(actor => actor.status);
+  return normalizeAssistantActorList(next).map((actor) => actor.status);
 }
 
 export function formatAssistantDisplayName(actor: NormalizedAssistantActor, localizedPersonalTitle: string): string {
   const trimmed = actor.rawName.trim();
-  if (actor.presetId === 'personal-assistant' && (!trimmed || trimmed === 'Personal assistant')) {
+  if (actor.presetId === "personal-assistant" && (!trimmed || trimmed === "Personal assistant")) {
     return localizedPersonalTitle;
   }
   return trimmed || actor.actorId;
 }
 
 export function formatEnvironmentLabel(environment: BotEnvironment, localLabel: string): string {
-  if (environment.kind === 'local') return localLabel;
-  const backendLabel = environment.backendId.startsWith('e2b-')
-    ? 'E2B'
-    : environment.backendId.toLocaleUpperCase();
+  if (environment.kind === "local") return localLabel;
+  const backendLabel = environment.backendId.startsWith("e2b-") ? "E2B" : environment.backendId.toLocaleUpperCase();
   return `${backendLabel} · ${environment.templateId}`;
 }

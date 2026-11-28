@@ -586,9 +586,7 @@ export function RemoteAccessSettings({ resolvedTheme }: { readonly resolvedTheme
       hubActionLabel: status?.hubClaimed
         ? intl.formatMessage(remoteAccessMessages.hubOpenAction)
         : intl.formatMessage(remoteAccessMessages.hubClaimAction),
-      hubRebindActionLabel: status?.hubClaimed
-        ? intl.formatMessage(remoteAccessMessages.hubRebindAction)
-        : undefined,
+      hubRebindActionLabel: status?.hubClaimed ? intl.formatMessage(remoteAccessMessages.hubRebindAction) : undefined,
       claimingHub,
       approvalsGroupTitle: intl.formatMessage(remoteAccessMessages.approvalsGroupTitle),
       approvalsGroupDescription: intl.formatMessage(remoteAccessMessages.approvalsGroupDescription),

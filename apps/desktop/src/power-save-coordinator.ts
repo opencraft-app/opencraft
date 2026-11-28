@@ -12,6 +12,7 @@ export interface DesktopPowerSaveCoordinatorOptions {
   readonly now?: () => number;
   readonly setTimer?: (callback: () => void, delayMs: number) => ReturnType<typeof setTimeout>;
   readonly clearTimer?: (handle: ReturnType<typeof setTimeout>) => void;
+  readonly onChange?: () => void;
 }
 
 const LOCAL_DAEMON_HOSTS: ReadonlySet<string> = new Set(["local", "local-codex"]);
@@ -36,6 +37,7 @@ export class DesktopPowerSaveCoordinator {
   private readonly now: () => number;
   private readonly setTimer: (callback: () => void, delayMs: number) => ReturnType<typeof setTimeout>;
   private readonly clearTimer: (handle: ReturnType<typeof setTimeout>) => void;
+  private readonly onChange?: () => void;
 
   private readonly activeThreads = new Set<string>();
   private blockerId: number | null = null;
@@ -59,6 +61,7 @@ export class DesktopPowerSaveCoordinator {
         return timer;
       });
     this.clearTimer = options.clearTimer ?? ((handle) => clearTimeout(handle));
+    this.onChange = options.onChange;
   }
 
   get activeCount(): number {
@@ -168,18 +171,26 @@ export class DesktopPowerSaveCoordinator {
         changed = true;
       }
     }
-    if (changed && this.activeThreads.size === 0) {
-      this.cancelSilenceTimer();
-      this.scheduleGraceRelease();
+    if (changed) {
+      if (this.activeThreads.size === 0) {
+        this.cancelSilenceTimer();
+        this.scheduleGraceRelease();
+      }
+      this.onChange?.();
     }
   }
 
   private markActive(key: string): void {
+    const added = !this.activeThreads.has(key);
     this.activeThreads.add(key);
     this.lastActivityAtMs = this.now();
     this.cancelGraceTimer();
+    const wasBlocking = this.blockerId !== null;
     this.ensureBlocking();
     this.scheduleSilenceCheck();
+    if (added || (!wasBlocking && this.blockerId !== null)) {
+      this.onChange?.();
+    }
   }
 
   private markInactive(key: string): void {
@@ -188,6 +199,7 @@ export class DesktopPowerSaveCoordinator {
       this.cancelSilenceTimer();
       this.scheduleGraceRelease();
     }
+    this.onChange?.();
   }
 
   private ensureBlocking(): void {
@@ -199,7 +211,10 @@ export class DesktopPowerSaveCoordinator {
   private stopBlocking(): void {
     const id = this.blockerId;
     this.blockerId = null;
-    if (id !== null) this.blocker.stop(id);
+    if (id !== null) {
+      this.blocker.stop(id);
+      if (!this.closed) this.onChange?.();
+    }
   }
 
   private scheduleGraceRelease(): void {

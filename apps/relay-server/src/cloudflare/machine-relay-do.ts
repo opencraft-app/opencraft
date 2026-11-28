@@ -380,7 +380,9 @@ export class MachineRelayDO {
               approvedAt: d.approvedAt,
               activeStreams: streamsByDevice.get(d.thumbprint) ?? 0,
             }))
-            .sort((a, b) => (b.activeStreams > 0 ? 1 : 0) - (a.activeStreams > 0 ? 1 : 0) || b.approvedAt - a.approvedAt)
+            .sort(
+              (a, b) => (b.activeStreams > 0 ? 1 : 0) - (a.activeStreams > 0 ? 1 : 0) || b.approvedAt - a.approvedAt,
+            )
         : [];
       return json(200, {
         online: host !== null,

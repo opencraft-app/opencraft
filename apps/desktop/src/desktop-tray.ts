@@ -1,30 +1,72 @@
 import { app, Menu, nativeImage, Tray } from "electron";
 import { join } from "node:path";
 import type { IntlPort } from "@opencraft/i18n";
+import {
+  bindDesktopTrayPlatformEvents,
+  buildDesktopTrayTemplate,
+  formatDesktopTrayTooltip,
+  resolveDesktopTrayIconSpec,
+  type DesktopTrayCommands,
+  type DesktopTrayState,
+} from "./desktop-tray-model.js";
 
-export function createDesktopTrayMenu(commands: { open(): void; quit(): void }, locale: IntlPort): Menu {
-  const intl = locale.getSnapshot().intl;
-  return Menu.buildFromTemplate([
-    { label: intl.formatMessage({ id: "desktop.open", defaultMessage: "Open OpenCraft" }), click: commands.open },
-    { type: "separator" },
-    { label: intl.formatMessage({ id: "desktop.quit", defaultMessage: "Quit OpenCraft" }), click: commands.quit },
-  ]);
+export {
+  bindDesktopTrayPlatformEvents,
+  buildDesktopTrayTemplate,
+  formatDesktopTrayTooltip,
+  resolveDesktopTrayIconSpec,
+  type DesktopTrayCommands,
+  type DesktopTrayState,
+  type TrayRelayConnectionState,
+  type TraySleepProtectionMode,
+} from "./desktop-tray-model.js";
+
+export interface DesktopTrayController {
+  readonly tray: Tray;
+  setState(state: DesktopTrayState): void;
+  destroy(): void;
 }
 
-export function createDesktopTray(commands: { open(): void; quit(): void }, locale: IntlPort): Tray {
+export function createDesktopTrayMenu(
+  commands: DesktopTrayCommands,
+  locale: IntlPort,
+  state?: DesktopTrayState,
+): Menu {
+  return Menu.buildFromTemplate(buildDesktopTrayTemplate(commands, locale, state));
+}
+
+export function createDesktopTray(
+  commands: DesktopTrayCommands,
+  locale: IntlPort,
+  initialState?: DesktopTrayState,
+): DesktopTrayController {
   const root = app.isPackaged ? join(process.resourcesPath, "tray") : join(app.getAppPath(), "build/tray");
-  const icon = nativeImage.createFromPath(join(root, "trayTemplate.png"));
+  const spec = resolveDesktopTrayIconSpec(root, process.platform);
+  let icon = nativeImage.createFromPath(spec.iconPath);
+  if (icon.isEmpty() && spec.fallbackIconPath) {
+    icon = nativeImage.createFromPath(spec.fallbackIconPath);
+  }
   if (icon.isEmpty()) throw new Error("Packaged tray icon is missing");
-  if (process.platform === "darwin") icon.setTemplateImage(true);
+  if (spec.templateImage) icon.setTemplateImage(true);
   const tray = new Tray(icon);
-  tray.setToolTip("OpenCraft");
+  let currentState = initialState;
   const update = () => {
     if (tray.isDestroyed()) return;
-    tray.setContextMenu(createDesktopTrayMenu(commands, locale));
+    tray.setToolTip(formatDesktopTrayTooltip(locale, currentState));
+    tray.setContextMenu(createDesktopTrayMenu(commands, locale, currentState));
   };
   update();
-  // Both tray and the application-scoped locale runtime retire at app shutdown.
-  locale.subscribe(update);
-  // Clicking the status item opens its native menu, not the main window.
-  return tray;
+  const unsubscribeLocale = locale.subscribe(update);
+  bindDesktopTrayPlatformEvents(tray, commands, process.platform);
+  return {
+    tray,
+    setState(nextState: DesktopTrayState) {
+      currentState = nextState;
+      update();
+    },
+    destroy() {
+      unsubscribeLocale();
+      if (!tray.isDestroyed()) tray.destroy();
+    },
+  };
 }

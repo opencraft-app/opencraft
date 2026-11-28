@@ -30,6 +30,8 @@ export {
   type InboxMemberItem,
   type InboxSurfaceProps,
   type InboxTabId,
+  type InboxTeamMemberItem,
+  type InboxTeamSection,
 } from "./InboxSurface";
 export { Banner } from "./Banner";
 export { Button } from "./Button";

@@ -249,9 +249,7 @@ export async function disconnectAllCloudRelaySessions(store: HostConnectionProfi
   } catch {
     // Restricted storage
   }
-  const relayProfiles = store
-    .getSnapshot()
-    .profiles.filter((p) => p.providerId === CLOUD_RELAY_PROVIDER_ID);
+  const relayProfiles = store.getSnapshot().profiles.filter((p) => p.providerId === CLOUD_RELAY_PROVIDER_ID);
   for (const p of relayProfiles) {
     await store.remove(p.hostId).catch(() => undefined);
   }

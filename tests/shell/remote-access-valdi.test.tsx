@@ -477,7 +477,10 @@ testScenariosOnMiniflare("remote-access-p0p1-workerd", [
 
         // 8. Authorized devices list excludes Owner Workstation, revokes single browser instantly (403 even when approvalRequired=false), and recovers on fresh QR redeem!
         const statusBeforeRevoke = await daemonA.inspectDetailedStatus();
-        assert.ok((statusBeforeRevoke.approvedDevices ?? []).length >= 1, "Paired browser must appear in approvedDevices");
+        assert.ok(
+          (statusBeforeRevoke.approvedDevices ?? []).length >= 1,
+          "Paired browser must appear in approvedDevices",
+        );
         assert.equal(
           (statusBeforeRevoke.approvedDevices ?? []).some((d) => d.label === "Owner Workstation"),
           false,
@@ -522,8 +525,14 @@ testScenariosOnMiniflare("remote-access-p0p1-workerd", [
         const overviewAfterRevoke = (await overviewAfterRevokeRes.json()) as {
           machines: ReadonlyArray<{ machineId: string }>;
         };
-        assert.equal(overviewAfterRevoke.machines.some((m) => m.machineId === enrA.machineId), false);
-        assert.equal(overviewAfterRevoke.machines.some((m) => m.machineId === enrB.machineId), true);
+        assert.equal(
+          overviewAfterRevoke.machines.some((m) => m.machineId === enrA.machineId),
+          false,
+        );
+        assert.equal(
+          overviewAfterRevoke.machines.some((m) => m.machineId === enrB.machineId),
+          true,
+        );
 
         // Fresh QR redeem explicitly clears revocation and restores access!
         const inviteRecover = await daemonA.createPairingInvite();

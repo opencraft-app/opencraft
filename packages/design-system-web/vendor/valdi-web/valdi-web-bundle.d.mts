@@ -1342,6 +1342,7 @@ export type AssistantActorCardItem = {
   readonly id: string;
   readonly title: string;
   readonly badgeText?: string;
+  readonly scopeText?: string;
   readonly statusText: string;
   readonly dutiesText?: string;
   readonly paused: boolean;
@@ -1372,6 +1373,7 @@ export type AssistantsSurfaceProps = {
   readonly touch?: boolean;
   readonly title?: string;
   readonly subtitle?: string;
+  readonly hostNoticeText?: string;
   readonly loading?: boolean;
   readonly errorText?: string;
   readonly retryLabel: string;
@@ -1417,10 +1419,28 @@ export type InboxMemberItem = {
   readonly busy?: boolean;
 };
 
+export type InboxTeamMemberItem = {
+  readonly id: string;
+  readonly displayName: string;
+  readonly kindLabel: string;
+  readonly isBot?: boolean;
+  readonly reachable?: boolean;
+  readonly busy?: boolean;
+  readonly deskLabel?: string;
+};
+
+export type InboxTeamSection = {
+  readonly id: string;
+  readonly name: string;
+  readonly countLabel: string;
+  readonly manageLabel?: string;
+  readonly members: readonly InboxTeamMemberItem[];
+};
+
 export type InboxSurfaceProps = {
   readonly dark?: boolean;
   readonly touch?: boolean;
-  readonly title: string;
+  readonly title?: string;
   readonly activeTab: InboxTabId;
   readonly searchQuery: string;
   readonly searchPlaceholder: string;
@@ -1436,6 +1456,11 @@ export type InboxSurfaceProps = {
   readonly groupsError?: string;
   readonly emptyGroupsText: string;
   readonly groups: readonly InboxGroupItem[];
+  readonly teamsSupported?: boolean;
+  readonly teams?: readonly InboxTeamSection[];
+  readonly createTeamLabel?: string;
+  readonly joinTeamLabel?: string;
+  readonly otherMembersTitle?: string;
   readonly membersLoading?: boolean;
   readonly membersError?: string;
   readonly emptyMembersText: string;
@@ -1450,6 +1475,10 @@ export type InboxSurfaceProps = {
   readonly onOpenMember: (id: string) => void;
   readonly onRetryMembers: () => void;
   readonly onLoadMoreMembers?: () => void;
+  readonly onManageTeam?: (teamId: string) => void;
+  readonly onOpenBotDesk?: (actorId: string) => void;
+  readonly onCreateTeam?: () => void;
+  readonly onJoinTeam?: () => void;
   readonly onHaptic?: (style: string) => void;
 };
 
