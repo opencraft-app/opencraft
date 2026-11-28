@@ -44,6 +44,7 @@ test("Docker references include bind sources without exposing container environm
     return { stdout: args[0] === "ps" ? "abc\ndef\n" : '[{"Type":"bind","Source":"/releases/old/web"}]\n[{"Type":"volume","Source":"/volume"}]\n' };
   });
   assert.deepEqual(state, { roots: ["/releases/old/web"], unknown: false });
+  assert.deepEqual(calls[0], ["docker", "ps", "-aq"]);
   assert.deepEqual(calls[1], ["docker", "inspect", "--format", "{{json .Mounts}}", "abc", "def"]);
 });
 

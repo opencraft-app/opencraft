@@ -285,8 +285,9 @@ export async function runRetention({
     for (const child of children) {
       const parent = candidates.find(candidate => child.path.startsWith(`${candidate.path}/`));
       if (parent) parent.keepReason ??= "artifact-owner";
-      if (!candidates.some(candidate => candidate.path === child.path))
-        candidates.push({ ...await inspect(child.path, now, procRoot, child.kind === "release" ? child.path : undefined), ...child });
+      const existing = candidates.find(candidate => candidate.path === child.path);
+      if (existing) Object.assign(existing, child);
+      else candidates.push({ ...await inspect(child.path, now, procRoot, child.kind === "release" ? child.path : undefined), ...child });
     }
   }
 
@@ -301,9 +302,11 @@ export async function runRetention({
       if (apply) {
         // Re-read process references, credentials and owner pointers immediately
         // before deletion; a deployment may have changed during the scan.
-        const owner = candidate.kind ? await recheckArtifact(candidate, roots, report) : {};
-        Object.assign(candidate, await inspect(candidate.path, now, procRoot, candidate.kind === "release" ? candidate.path : undefined), owner);
         const containers = await refreshContainerState();
+        const current = await inspect(candidate.path, now, procRoot, candidate.kind === "release" ? candidate.path : undefined);
+        const owner = candidate.kind ? await recheckArtifact(candidate, roots, report) : {};
+        Object.assign(candidate, current, owner);
+        if (containers.roots.some(root => protectedByRoot(candidate.path, root))) candidate.keepReason = "container-mount";
         if (containers.unknown) candidate.keepReason = "container-references-unknown";
         if (eligibleForRemoval(candidate, repoRoot, [...resolvedProtectedRoots, ...containers.roots])) {
           await removeCandidate(candidate, repoRoot);

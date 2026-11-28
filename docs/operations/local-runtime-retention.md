@@ -83,7 +83,7 @@ and `previous` symlink targets. Before publishing a new `current`, record the ol
 current as `previous`; run cleanup after acceptance. For older installations
 without `previous`, the newest other release is retained as a rollback fallback.
 A missing, invalid or broken pointer keeps all releases until the owner repairs
-it. Other symlink targets, credentials, process references, Docker bind mounts
+it. An uninspectable or symlinked release root also keeps its owner directory. Other symlink targets, credentials, process references, Docker bind mounts (including stopped/created containers)
 and explicit protected roots also keep a release. The containing owner directory
 is retained. Within a managed release's `artifacts/dsh-runtime/node_modules`,
 SDK implementation/type/source-map filenames containing `token` or `credential`

@@ -71,8 +71,8 @@ async function completedArtifacts(stage) {
       throw new Error("Disposable paths must stay below their stage, excluding .git");
     const path = resolve(stage, name);
     if (!under(path, stage) || path === manifestPath) throw new Error("Invalid disposable path");
-    if (!await realDirectory(resolve(path, ".."))) throw new Error("Symlinked artifact parent");
     try {
+      if (!await realDirectory(resolve(path, ".."))) throw new Error("Symlinked artifact parent");
       const info = await lstat(path);
       if (info.isSymbolicLink()) continue;
       if (info.isFile() || info.isDirectory()) result.push({ path, kind: "accepted-artifact", owner: stage });
@@ -85,7 +85,7 @@ async function completedArtifacts(stage) {
 export async function artifactCandidates(root, report = () => {}) {
   const result = [];
   for (const owner of await entries(root)) {
-    if (!owner.isDirectory()) continue;
+    if (!owner.isDirectory() || (basename(root) === ".local" && owner.name === "maintenance")) continue;
     const path = join(root, owner.name);
     if (owner.name === "steward" && basename(root) === ".local") {
       for (const stage of await entries(path)) {
@@ -95,13 +95,23 @@ export async function artifactCandidates(root, report = () => {}) {
       }
     } else {
       const releases = join(path, "compose", "releases");
-      try { result.push(...await releaseCandidates(releases)); }
-      catch (error) { if (error.code !== "ENOENT") report(`kept\t${releases}\treason=release-inspection-failed:${error.message}`); }
+      try {
+        await lstat(releases);
+        // The owner's config/current release remains recovery state even if a
+        // symlinked or unreadable release root prevents granular inspection.
+        result.push({ path, kind: "artifact-owner", keepReason: "artifact-owner" });
+        result.push(...await releaseCandidates(releases));
+      } catch (error) {
+        if (error.code !== "ENOENT") {
+          result.push({ path, kind: "artifact-owner", keepReason: "release-inspection-failed" });
+          report(`kept\t${releases}\treason=release-inspection-failed:${error.message}`);
+        }
+      }
     }
   }
   // Overlapping manifest paths must never cause a second removal/audit entry.
-  return result.filter((candidate, index) => !result.some((other, otherIndex) =>
-    otherIndex !== index && under(candidate.path, other.path) && (candidate.path !== other.path || otherIndex < index)));
+  return result.filter((candidate, index) => candidate.kind === "artifact-owner" || !result.some((other, otherIndex) =>
+    other.kind !== "artifact-owner" && otherIndex !== index && under(candidate.path, other.path) && (candidate.path !== other.path || otherIndex < index)));
 }
 
 export async function recheckArtifact(candidate, roots, report) {
@@ -112,7 +122,7 @@ export async function recheckArtifact(candidate, roots, report) {
 /** Bind mounts are host references even when no process currently has a file open. */
 export async function dockerReferences(run = execute) {
   try {
-    const { stdout } = await run("docker", ["ps", "-q"], { timeout: 15_000 });
+    const { stdout } = await run("docker", ["ps", "-aq"], { timeout: 15_000 });
     const ids = stdout.trim().split(/\s+/u).filter(Boolean);
     if (!ids.length) return { roots: [], unknown: false };
     const inspected = await run("docker", ["inspect", "--format", "{{json .Mounts}}", ...ids], { timeout: 15_000, maxBuffer: 8 * 1024 * 1024 });

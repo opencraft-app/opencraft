@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { symlinkSync, unlinkSync } from "node:fs";
 import { execFile } from "node:child_process";
-import { chmod, copyFile, lstat, mkdir, mkdtemp, readFile, rm, symlink, utimes, writeFile } from "node:fs/promises";
+import { chmod, copyFile, lstat, mkdir, mkdtemp, readFile, rename, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -431,4 +431,79 @@ test("source-like credential names outside a managed dependency tree remain prot
   await writeFile(join(old, "credentials.js"), "private script");
   assert.equal((await f.run({ apply: true })).eligible.length, 0);
   assert.equal(await readFile(join(old, "credentials.js"), "utf8"), "private script");
+});
+
+test("audit history is retained even if it contains a Compose release layout", async t => {
+  const f = await fixture(t), root = join(f.repoRoot, ".local/maintenance/compose/releases");
+  for (const name of ["old", "rollback", "live"]) {
+    await mkdir(join(root, name), { recursive: true });
+    await writeFile(join(root, name, "evidence.log"), "audit history");
+  }
+  await symlink("live", join(root, "current"));
+  await symlink("rollback", join(root, "previous"));
+  assert.equal((await f.run({ apply: true })).eligible.length, 0);
+  assert.equal(await readFile(join(root, "old/evidence.log"), "utf8"), "audit history");
+});
+
+test("release pointer changes during the reference probe are observed before deletion", async t => {
+  const f = await fixture(t), root = await releases(f);
+  const result = await f.run({ apply: true, refreshContainerState: async () => {
+    await symlink("old", join(root, "previous"));
+    return { roots: [], unknown: false };
+  } });
+  assert.equal(result.eligible.length, 0);
+  assert.ok((await lstat(join(root, "old"))).isDirectory());
+});
+
+test("a checkout accessed through a symlink retains its owner and current release", async t => {
+  const f = await fixture(t), root = await releases(f);
+  const alias = `${f.repoRoot}-alias`;
+  await symlink(f.repoRoot, alias);
+  t.after(() => rm(alias));
+  const result = await f.run({ repoRoot: alias });
+  assert.equal(result.eligible.length, 0);
+  await f.run({ repoRoot: alias, apply: true });
+  assert.ok((await lstat(join(root, "live"))).isDirectory());
+  assert.ok((await lstat(join(root, "old"))).isDirectory());
+});
+
+test("a symlinked release directory retains its containing owner", async t => {
+  const f = await fixture(t), root = await releases(f);
+  const moved = join(f.repoRoot, "releases");
+  await rename(root, moved);
+  await symlink(moved, root);
+  assert.equal((await f.run({ apply: true })).eligible.length, 0);
+  assert.ok((await lstat(join(moved, "live"))).isDirectory());
+  assert.ok((await lstat(join(f.repoRoot, ".local/site"))).isDirectory());
+});
+
+test("missing nested manifest parents do not block remaining completed artifacts", async t => {
+  const f = await fixture(t), stage = await disposable(f, ["gone/blob", "remaining"]);
+  await rm(join(stage, "gone"), { recursive: true });
+  const result = await f.run({ apply: true });
+  assert.deepEqual(result.eligible.map(entry => entry.path), [join(stage, "remaining")]);
+  await assertMissing(join(stage, "remaining"));
+  assert.equal((await f.run({ apply: true })).eligible.length, 0);
+});
+
+test("dry run reports managed releases/artifacts without deletion or audit writes, matching apply", async t => {
+  const f = await fixture(t), root = await releases(f), stage = await disposable(f);
+  const preview = await f.run();
+  assert.deepEqual(preview.eligible.map(entry => entry.path).sort(), [join(root, "old"), join(stage, "official-image"), join(stage, "ready-package")].sort());
+  assert.ok((await lstat(join(root, "old"))).isDirectory());
+  assert.ok((await lstat(join(stage, "ready-package"))).isDirectory());
+  await assertMissing(join(f.repoRoot, ".local/maintenance"));
+  for (const entry of preview.eligible) assert.ok(f.output.some(line => line.startsWith("would-remove\t") && line.includes(entry.path.slice(f.repoRoot.length + 1))));
+  const applied = await f.run({ apply: true });
+  assert.deepEqual(applied.eligible.map(entry => entry.path), preview.eligible.map(entry => entry.path));
+});
+
+test("a process opening a release during Docker inspection prevents removal", async t => {
+  const f = await fixture(t), root = await releases(f);
+  const result = await f.run({ apply: true, refreshContainerState: async () => {
+    await createProcess(f, "fd", join(root, "old/web.js"));
+    return { roots: [], unknown: false };
+  } });
+  assert.equal(result.eligible.length, 0);
+  assert.ok((await lstat(join(root, "old"))).isDirectory());
 });
