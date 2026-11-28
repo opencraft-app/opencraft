@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { appendFile, lstat, mkdir, readFile, readdir, readlink, rm } from "node:fs/promises";
 import { basename, join, relative, resolve, sep } from "node:path";
+import { artifactCandidates, dockerReferences, recheckArtifact } from "./artifact-retention.mjs";
 
 export const DAY = 86_400_000;
 
@@ -11,9 +12,21 @@ export function dateStamped(name) {
   return /(?:^|[-_])20\d{6}$/.test(name);
 }
 
-function sensitiveFileKind(name) {
+function packagedDependencySource(path, release) {
+  if (!release) return false;
+  const name = relative(release, path).split(sep).join("/");
+  if (!name.startsWith("artifacts/dsh-runtime/node_modules/")) return false;
+  // Installed SDK implementation/types are generated dependency code, even when
+  // named credentials.js or tokenIdentity.d.ts. Private files (.env, *.key,
+  // *.pem), credential JSON and protected directories still take precedence.
+  if (/\.(?:[cm]?js|[cm]?ts|map)$/u.test(name)) return true;
+  return /^artifacts\/dsh-runtime\/node_modules\/@earendil-works\/pi-ai\/dist\/providers\/data\/(?:qwen|xiaomi)-token-plan(?:-cn|-sgp|-ams)?\.json$/u.test(name);
+}
+
+function sensitiveFileKind(name, dependencySource = false) {
   const lowerName = name.toLowerCase();
-  if (/^(?:\.env(?:\..*)?|.*\.(?:pem|key)|.*(?:credential|token).*)$/.test(lowerName)) {
+  if (/^(?:\.env(?:\..*)?|.*\.(?:pem|key))$/.test(lowerName) ||
+      (!dependencySource && /(?:credential|token)/u.test(lowerName))) {
     return "credential";
   }
   if (/\.(?:db|sqlite.*)$/.test(lowerName) || /-(?:wal|shm)$/.test(lowerName)) {
@@ -53,17 +66,19 @@ function isAuditDirectory(path, repoRoot) {
   return path === join(repoRoot, '.local', 'maintenance');
 }
 
-async function treeStats(path) {
+async function treeStats(path, release) {
   let newest = 0;
   let bytes = 0;
   let sensitive = null;
   let credential = null;
   let protectedDescendant = false;
+  let gitDescendant = false;
 
   async function visit(entryPath) {
     // lstat measures the link itself; neither scanning nor removal follows it.
     const info = await lstat(entryPath);
     newest = Math.max(newest, info.mtimeMs);
+    if (basename(entryPath) === ".git") gitDescendant = true;
     if (/^(?:team-credentials|credentials|private)$/u.test(basename(entryPath))) {
       protectedDescendant = true;
     }
@@ -75,7 +90,7 @@ async function treeStats(path) {
     }
 
     bytes += info.size;
-    const kind = sensitiveFileKind(basename(entryPath));
+    const kind = sensitiveFileKind(basename(entryPath), packagedDependencySource(entryPath, release));
     if (kind && !sensitive) {
       sensitive = { kind, path: entryPath };
     }
@@ -85,7 +100,7 @@ async function treeStats(path) {
   }
 
   await visit(path);
-  return { newest, bytes, sensitive, credential, protectedDescendant };
+  return { newest, bytes, sensitive, credential, protectedDescendant, gitDescendant };
 }
 
 function referencesDirectory(target, path) {
@@ -156,8 +171,8 @@ export async function processReferences(path, procRoot = "/proc") {
   return { refs, unknown, reason: unknown ? "proc-read-unknown" : undefined };
 }
 
-export async function inspect(path, at = Date.now(), procRoot = "/proc") {
-  const tree = await treeStats(path);
+export async function inspect(path, at = Date.now(), procRoot = "/proc", release) {
+  const tree = await treeStats(path, release);
   const proc = await processReferences(path, procRoot);
   return {
     path,
@@ -167,24 +182,29 @@ export async function inspect(path, at = Date.now(), procRoot = "/proc") {
     sensitive: tree.sensitive,
     credential: tree.credential,
     protectedDescendant: tree.protectedDescendant,
+    gitDescendant: tree.gitDescendant,
     ...proc,
   };
 }
 
 function eligibleForRemoval(candidate, repoRoot, protectedRoots) {
   return (
+    !candidate.keepReason &&
     !candidate.unknown &&
     candidate.refs.length === 0 &&
     !candidate.credential &&
     !protectedDirectory(candidate.path, repoRoot) &&
     !candidate.protectedDescendant &&
-    !protectedSteward(candidate.path, repoRoot) &&
+    !(candidate.kind === "accepted-artifact" && candidate.gitDescendant) &&
+    !(candidate.kind !== "accepted-artifact" && protectedSteward(candidate.path, repoRoot)) &&
     !protectedRoots.some((root) => protectedByRoot(candidate.path, root))
   );
 }
 
 function retentionReasons(candidate, repoRoot, protectedRoots = []) {
   const reasons = [];
+  if (candidate.keepReason) reasons.push(`reason=${candidate.keepReason}`);
+  if (candidate.kind === "accepted-artifact" && candidate.gitDescendant) reasons.push("reason=workbook-git-history");
   if (candidate.unknown) {
     reasons.push(`reason=${candidate.reason}`);
   }
@@ -204,7 +224,7 @@ function retentionReasons(candidate, repoRoot, protectedRoots = []) {
   if (candidate.protectedDescendant) {
     reasons.push("reason=protected-descendant");
   }
-  if (protectedSteward(candidate.path, repoRoot)) {
+  if (candidate.kind !== "accepted-artifact" && protectedSteward(candidate.path, repoRoot)) {
     reasons.push("reason=protected-steward");
   }
   if (protectedRoots.some((root) => protectedByRoot(candidate.path, root))) {
@@ -248,6 +268,8 @@ export async function runRetention({
   now = Date.now(),
   apply = false,
   protectedRoots = [],
+  containerState = { roots: [], unknown: false },
+  refreshContainerState = async () => containerState,
   report = console.log,
 } = {}) {
   const candidates = [];
@@ -259,22 +281,45 @@ export async function runRetention({
         if (!isAuditDirectory(path, repoRoot)) candidates.push(await inspect(path, now, procRoot));
       }
     }
+    const children = await artifactCandidates(root, report);
+    for (const child of children) {
+      const parent = candidates.find(candidate => child.path.startsWith(`${candidate.path}/`));
+      if (parent) parent.keepReason ??= "artifact-owner";
+      const existing = candidates.find(candidate => candidate.path === child.path);
+      if (existing) Object.assign(existing, child);
+      else candidates.push({ ...await inspect(child.path, now, procRoot, child.kind === "release" ? child.path : undefined), ...child });
+    }
   }
 
-  const resolvedProtectedRoots = protectedRoots.map((root) => resolve(root));
-  const eligible = candidates.filter((candidate) => eligibleForRemoval(candidate, repoRoot, resolvedProtectedRoots));
-  const bytes = eligible.reduce((sum, candidate) => sum + candidate.size, 0);
+  const resolvedProtectedRoots = [...protectedRoots, ...containerState.roots].map((root) => resolve(root));
+  if (containerState.unknown) for (const candidate of candidates) candidate.keepReason = "container-references-unknown";
+  let eligible = candidates.filter((candidate) => eligibleForRemoval(candidate, repoRoot, resolvedProtectedRoots));
+
   for (const candidate of candidates) {
     let status = "kept";
     if (eligible.includes(candidate)) {
       status = "would-remove";
       if (apply) {
-        await removeCandidate(candidate, repoRoot);
-        status = "removed";
+        // Re-read process references, credentials and owner pointers immediately
+        // before deletion; a deployment may have changed during the scan.
+        const containers = await refreshContainerState();
+        const current = await inspect(candidate.path, now, procRoot, candidate.kind === "release" ? candidate.path : undefined);
+        const owner = candidate.kind ? await recheckArtifact(candidate, roots, report) : {};
+        Object.assign(candidate, current, owner);
+        if (containers.roots.some(root => protectedByRoot(candidate.path, root))) candidate.keepReason = "container-mount";
+        if (containers.unknown) candidate.keepReason = "container-references-unknown";
+        if (eligibleForRemoval(candidate, repoRoot, [...resolvedProtectedRoots, ...containers.roots])) {
+          await removeCandidate(candidate, repoRoot);
+          status = "removed";
+        } else {
+          eligible = eligible.filter(entry => entry !== candidate);
+          status = "kept";
+        }
       }
     }
     reportCandidate(candidate, status, repoRoot, report, resolvedProtectedRoots);
   }
+  const bytes = eligible.reduce((sum, candidate) => sum + candidate.size, 0);
   report(
     [
       "summary",
@@ -298,6 +343,8 @@ async function main() {
   await runRetention({
     roots,
     protectedRoots,
+    containerState: await dockerReferences(),
+    refreshContainerState: dockerReferences,
     procRoot: process.env.OPENCRAFT_LOCAL_RUNTIME_PROC_ROOT || "/proc",
     apply: process.argv.includes("--apply"),
     now: nowArgument ? new Date(nowArgument.slice(6)).getTime() : Date.now(),
