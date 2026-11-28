@@ -69,7 +69,7 @@ function hostRefusal(command: Command, message: string): Error & { code: number;
  * an explicit `unknown-outcome` keeps custody unknown; treating stale/invalid
  * refusals as unknown would block Thread release forever.
  */
-export function dispatchSettlement(response: BridgeWireMessage): Receipt["state"] {
+export function dispatchSettlement(response: BridgeWireMessage): "accepted" | "rejected" | "unknown" {
   if (successful(response)) return "accepted";
   if ("error" in response) return REFUSED_BRIDGE_ERRORS.has(response.error.kind) ? "rejected" : "unknown";
   return "unknown";
@@ -149,6 +149,7 @@ export class BridgeHost {
     onMessage(message: BridgeStreamMessage): void;
     onClose(): void;
   }>();
+  private readonly commandWaiters = new Map<string, Set<() => void>>();
   readonly incarnation = randomUUID();
   readonly queue: HostQueue;
   private publishEphemeral(raw: { route: string; generation: string; afterSeq: number; payload: unknown }): void {
@@ -180,15 +181,64 @@ export class BridgeHost {
       try { listener.onMessage(message); } catch { /* isolated subscriber */ }
     }
   }
+  private notifyCommand(commandId: string): void {
+    const waiters = this.commandWaiters.get(commandId);
+    if (waiters) {
+      this.commandWaiters.delete(commandId);
+      for (const wake of waiters) wake();
+    }
+    const message: BridgeStreamMessage = { kind: "command", commandId };
+    for (const listener of this.streamListeners) {
+      try { listener.onMessage(message); } catch { /* isolated subscriber */ }
+    }
+  }
+  private waitForCommand(commandId: string, timeoutMs: number): Promise<void> {
+    return new Promise((resolve) => {
+      let waiters = this.commandWaiters.get(commandId);
+      if (!waiters) {
+        waiters = new Set();
+        this.commandWaiters.set(commandId, waiters);
+      }
+      const finish = () => {
+        clearTimeout(timer);
+        const current = this.commandWaiters.get(commandId);
+        current?.delete(finish);
+        if (current && current.size === 0) this.commandWaiters.delete(commandId);
+        resolve();
+      };
+      const timer = setTimeout(finish, timeoutMs);
+      waiters.add(finish);
+    });
+  }
+  private async settleCommand(args: {
+    id: string;
+    state: "accepted" | "rejected" | "unknown";
+    response?: unknown;
+    interactionId?: unknown;
+    localStop?: boolean;
+  }): Promise<Receipt | null> {
+    const settled = await this.storage.call<Receipt | null>("settle", args);
+    this.notifyCommand(args.id);
+    if (
+      args.state === "accepted" &&
+      settled &&
+      ["interaction/resolve", "session/close", "session/delete", "turn/stop"].includes(settled.method)
+    ) {
+      this.notifyOutbox();
+    }
+    return settled;
+  }
   private constructor(private options: HostOptions) {
     this.storage = new Storage(options.path, "host", () => {
       this.closing = true;
+      for (const waiters of this.commandWaiters.values()) for (const wake of waiters) wake();
+      this.commandWaiters.clear();
       for (const listener of [...this.streamListeners]) listener.onClose();
       this.streamListeners.clear();
       if (this.pool) void this.pool.close().catch(() => {}); // retained cleanup promise is rechecked by close()
     });
     this.queue = new HostQueue(this.storage, {
-      outboxWritten: () => this.notifyOutbox(),
+      outboxWritten: (high) => this.notifyOutbox(high),
       command: async (serverId, threadId, commandId, method, params) => {
         try {
           await this.accept({ commandId, serverId, threadId, method, params });
@@ -198,13 +248,11 @@ export class BridgeHost {
             throw Object.assign(error, { settlement: "rejected" });
           throw error;
         }
-        for (
-          const deadline = Date.now() + 35_000;
-          Date.now() < deadline;
-          await new Promise((resolve) => setTimeout(resolve, 25))
-        ) {
+        for (const deadline = Date.now() + 35_000; Date.now() < deadline; ) {
+          const wait = this.waitForCommand(commandId, 250);
           const receipt = await this.query(commandId);
           if (receipt && ["accepted", "rejected", "unknown"].includes(receipt.state)) return receipt;
+          await wait;
         }
         throw Error("Queued delivery outcome unknown");
       },
@@ -734,8 +782,8 @@ export class BridgeHost {
     // the separate responsibility to reclaim the in-flight lease.
     await this.rejectCliCommand(pending.commandId, "cancelled");
   }
-  private rejectCliCommand(commandId: string, cliStage: CliFailureStage): Promise<void> {
-    return this.storage.call("settle", {
+  private rejectCliCommand(commandId: string, cliStage: CliFailureStage): Promise<Receipt | null> {
+    return this.settleCommand({
       id: commandId,
       state: "rejected",
       response: {
@@ -805,7 +853,7 @@ export class BridgeHost {
       } catch (error) {
         if (!(error instanceof CodexAttachmentUnavailable)) throw error;
         // Attachment negotiation failed before this command was sent.
-        await this.storage.call("settle", {
+        await this.settleCommand({
           id: command.commandId,
           state: "rejected",
           response: {
@@ -818,7 +866,7 @@ export class BridgeHost {
       }
       const admission = assertMethodAllowed(this.capabilities.get(receipt.generation)!, command.method);
       if (!admission.ok) {
-        await this.storage.call("settle", { id: command.commandId, state: "rejected" });
+        await this.settleCommand({ id: command.commandId, state: "rejected" });
         return;
       }
       if (!["session/create", "session/fork", "session/adopt"].includes(command.method)) {
@@ -826,7 +874,7 @@ export class BridgeHost {
           await this.bound(peer, receipt.route, receipt.epoch);
         } catch (error) {
           // Nothing was sent for this command: the session was not bound.
-          await this.storage.call("settle", {
+          await this.settleCommand({
             id: command.commandId,
             state: "rejected",
             response: {
@@ -850,7 +898,7 @@ export class BridgeHost {
           await this.cancelPendingCliIssue(receipt.route, "stop");
           try { await this.retryUnsentCliCleanup(receipt.route, pending, peer); }
           catch { await this.rejectCliCommand(command.commandId, "previous-lease"); return; }
-          await this.storage.call("settle", {
+          await this.settleCommand({
             id: command.commandId,
             state: "accepted",
             localStop: true,
@@ -979,14 +1027,12 @@ export class BridgeHost {
       if (state === "rejected" && start?.observed) state = "unknown";
       const sessionClosed = state === "accepted" && (command.method === "session/close" || command.method === "session/delete");
       if (sessionClosed) await this.cancelPendingCliIssue(receipt.route, "session-ended");
-      await this.storage.call("settle", {
+      await this.settleCommand({
         id: command.commandId,
         response,
         state,
         interactionId: command.params.interactionId,
       });
-      if (state === "accepted" && ["interaction/resolve", "session/close", "session/delete", "turn/stop"].includes(command.method))
-        this.notifyOutbox();
       if (
         (["session/create", "session/fork", "session/adopt"].includes(command.method) && state === "rejected") ||
         sessionClosed
@@ -1027,7 +1073,7 @@ export class BridgeHost {
       }
     } catch {
       if (this.cliStarts.get(receipt.route)?.commandId === command.commandId) this.cliStarts.delete(receipt.route);
-      await this.storage.call("settle", dispatched ? { id: command.commandId, state: "unknown" } : {
+      await this.settleCommand(dispatched ? { id: command.commandId, state: "unknown" } : {
         id: command.commandId,
         state: "rejected",
         response: {
@@ -1299,6 +1345,8 @@ export class BridgeHost {
   }
   async close(): Promise<void> {
     this.closing = true;
+    for (const waiters of this.commandWaiters.values()) for (const wake of waiters) wake();
+    this.commandWaiters.clear();
     for (const listener of [...this.streamListeners]) listener.onClose();
     this.streamListeners.clear();
     this.queue.close();

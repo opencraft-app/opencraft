@@ -72,6 +72,8 @@ function gatewayServer(host: BridgeHost, token: string): { server: Server; close
                 send(response, 'ephemeral', message.event);
               } else if (message.kind === 'outbox') {
                 send(response, 'outbox', { high: message.high });
+              } else if (message.kind === 'command') {
+                send(response, 'command', { commandId: message.commandId });
               }
             },
             onClose: closeStream,

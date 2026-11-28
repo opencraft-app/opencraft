@@ -1,9 +1,11 @@
 import { ownedDatabasePath } from "./owned-database-path.js";
 import { acquireOwnedStorageLease } from "./owned-storage-lease.js";
-import type { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync, StatementSync } from "node:sqlite";
 import { openManagedDatabase, createSchemaValidator, createMissingLegacyObjects, type DatabaseOutcome } from "@opencraft/sqlite-node";
 
 import type { AttachmentRef } from "@opencraft/appserver-protocol";
+
+const ATTACHMENT_CACHE_LIMIT = 2048;
 
 export const OPENCRAFT_MESSAGE_ATTACHMENTS_BASELINE = `
 CREATE TABLE codex_message_attachments (
@@ -36,6 +38,10 @@ const legacy = createMissingLegacyObjects(OPENCRAFT_MESSAGE_ATTACHMENTS_BASELINE
 export class OpenCraftMessageAttachments {
   private readonly db: DatabaseSync;
   private readonly recent = new Map<string, AttachmentRef[]>();
+  private insertStmt?: StatementSync;
+  private listStmt?: StatementSync;
+  private hasRefStmt?: StatementSync;
+  private cloneStmt?: StatementSync;
   readonly outcome: DatabaseOutcome;
   readonly path: string;
   private readonly releaseLease: () => void;
@@ -54,10 +60,19 @@ export class OpenCraftMessageAttachments {
 
   close(): void { this.recent.clear(); try { this.db.close(); } finally { this.releaseLease(); } }
 
+  private invalidateThread(threadId: string): void {
+    const prefix = `["${JSON.stringify(threadId).slice(1, -1)}",`;
+    for (const key of this.recent.keys()) {
+      if (key.startsWith(prefix)) this.recent.delete(key);
+    }
+  }
+
   /** Record before dispatch. A retry may repeat the same identity, never replace it. */
   record(threadId: string, clientMessageId: string, refs: readonly AttachmentRef[]): void {
     if (!threadId || !clientMessageId) throw new Error("Attachment message identity is required");
     if (refs.length === 0) return;
+    const key = JSON.stringify([threadId, clientMessageId]);
+    this.recent.delete(key);
     const existing = this.list(threadId, clientMessageId);
     if (existing.length > 0) {
       if (JSON.stringify(existing) !== JSON.stringify(refs)) {
@@ -65,10 +80,11 @@ export class OpenCraftMessageAttachments {
       }
       return;
     }
+    this.recent.delete(key);
     this.db.exec("BEGIN IMMEDIATE");
     try {
-      const insert = this.db.prepare(`INSERT INTO opencraft_message_attachments
-        (thread_id,client_message_id,attachment_id,ordinal,ref_json) VALUES(?,?,?,?,?)`);
+      const insert = (this.insertStmt ??= this.db.prepare(`INSERT INTO opencraft_message_attachments
+        (thread_id,client_message_id,attachment_id,ordinal,ref_json) VALUES(?,?,?,?,?)`));
       refs.forEach((ref, ordinal) => insert.run(threadId, clientMessageId, ref.id, ordinal, JSON.stringify(ref)));
       this.db.exec("COMMIT");
       this.remember(threadId, clientMessageId, [...refs]);
@@ -84,34 +100,41 @@ export class OpenCraftMessageAttachments {
   }
 
   private remember(threadId: string, clientMessageId: string, refs: AttachmentRef[]): void {
-    if (!refs.length) return;
     const key = JSON.stringify([threadId, clientMessageId]);
     this.recent.delete(key);
     this.recent.set(key, refs);
-    if (this.recent.size > 128) this.recent.delete(this.recent.keys().next().value!);
+    if (this.recent.size > ATTACHMENT_CACHE_LIMIT) this.recent.delete(this.recent.keys().next().value!);
   }
 
   list(threadId: string, clientMessageId: string): AttachmentRef[] {
-    const refs = this.db.prepare(`SELECT ref_json FROM opencraft_message_attachments
-      WHERE thread_id=? AND client_message_id=? ORDER BY ordinal`)
+    const key = JSON.stringify([threadId, clientMessageId]);
+    const cached = this.recent.get(key);
+    if (cached !== undefined) {
+      this.remember(threadId, clientMessageId, cached);
+      return [...cached];
+    }
+    const refs = (this.listStmt ??= this.db.prepare(`SELECT ref_json FROM opencraft_message_attachments
+      WHERE thread_id=? AND client_message_id=? ORDER BY ordinal`))
       .all(threadId, clientMessageId)
       .map(row => JSON.parse(String(row.ref_json)) as AttachmentRef);
     this.remember(threadId, clientMessageId, refs);
-    return refs;
+    return [...refs];
   }
 
   hasReference(attachmentId: string): boolean {
-    return this.db.prepare("SELECT 1 FROM opencraft_message_attachments WHERE attachment_id=? LIMIT 1")
+    return (this.hasRefStmt ??= this.db.prepare("SELECT 1 FROM opencraft_message_attachments WHERE attachment_id=? LIMIT 1"))
       .get(attachmentId) !== undefined;
   }
 
   /** A fork keeps historical messages but receives a new Thread identity. */
   cloneThread(sourceThreadId: string, targetThreadId: string): void {
     if (!sourceThreadId || !targetThreadId || sourceThreadId === targetThreadId) return;
-    this.db.prepare(`INSERT OR IGNORE INTO opencraft_message_attachments
+    this.invalidateThread(targetThreadId);
+    (this.cloneStmt ??= this.db.prepare(`INSERT OR IGNORE INTO opencraft_message_attachments
       (thread_id,client_message_id,attachment_id,ordinal,ref_json)
       SELECT ?,client_message_id,attachment_id,ordinal,ref_json
-      FROM opencraft_message_attachments WHERE thread_id=?`)
+      FROM opencraft_message_attachments WHERE thread_id=?`))
       .run(targetThreadId, sourceThreadId);
+    this.invalidateThread(targetThreadId);
   }
 }

@@ -244,3 +244,150 @@ test('a timed-out large-rollout resume or settings update recovers on retry once
     }
   }
 });
+
+test('forked session with existing parent turns uses fork-installed CLI and MCP reservation on first Turn without unsubscribe or resume', async () => {
+  const mcpConfig = {
+    url: 'http://127.0.0.1:1/mcp',
+    http_headers: { Authorization: 'Bearer fork-reserved-mcp' },
+    tools: { approved_read: { approval_mode: 'approve' } },
+  };
+  const calls: { method: string; params: any }[] = [];
+  let forkTurns = [{ id: 'parent-turn-1' }, { id: 'parent-turn-2' }];
+  let forkLoaded = true;
+  const owner = new CodexOwnerConnection('/unused', 'unused', () => {}, () => {}, () => {});
+  (owner as any).write = (frame: any) => {
+    calls.push(frame);
+    queueMicrotask(() => {
+      const reply = (result: any) => (owner as any).receive({ id: frame.id, result });
+      if (frame.method === 'thread/start') {
+        return reply({ ...settings, thread: { id: 'native-parent', status: { type: 'idle' }, turns: [] } });
+      }
+      if (frame.method === 'thread/fork') {
+        return reply({
+          ...settings,
+          thread: { id: 'native-fork', parentThreadId: 'native-parent', status: { type: 'idle' }, turns: forkTurns },
+        });
+      }
+      if (frame.method === 'thread/read') {
+        return reply({
+          thread: {
+            id: frame.params.threadId,
+            status: { type: forkLoaded ? 'idle' : 'notLoaded' },
+            turns: frame.params.includeTurns ? forkTurns : [],
+          },
+        });
+      }
+      if (frame.method === 'thread/unsubscribe') {
+        forkLoaded = false;
+        return reply({ status: 'unsubscribed' });
+      }
+      if (frame.method === 'thread/resume') {
+        forkLoaded = true;
+        return reply({ ...settings, thread: { id: frame.params.threadId, status: { type: 'idle' }, turns: forkTurns } });
+      }
+      if (frame.method === 'turn/start') {
+        forkTurns = [...forkTurns, { id: 'fork-turn-1' }];
+        return reply({ turn: { id: 'fork-turn-1' } });
+      }
+      reply({});
+    });
+  };
+  const frames: any[] = [];
+  const runtime = new CodexBridgeRuntime(owner, f => frames.push(f));
+  await runtime.handle({ jsonrpc: '2.0', id: 'init', method: 'initialize', params: { protocolVersion: 1, grammarRange: { min: 1, max: 1 } } });
+  await runtime.handle({
+    jsonrpc: '2.0',
+    id: 'create-parent',
+    method: 'session/create',
+    params: { threadId: 'parent-route', native: { cwd: '/workspace' } },
+  });
+  await runtime.handle({
+    jsonrpc: '2.0',
+    id: 'fork-child',
+    method: 'session/fork',
+    params: {
+      threadId: 'fork-route',
+      sourceThreadId: 'parent-route',
+      cliEnvironment: environment,
+      native: { config: { 'mcp_servers.opencraft_session': mcpConfig } },
+    },
+  });
+  assert.equal(frames.find(f => f.id === 'fork-child').error, undefined);
+  const forkCall = calls.find(c => c.method === 'thread/fork')!;
+  assert.equal(forkCall.params.historyMode, undefined, 'thread/fork does not inject unsupported historyMode');
+  assert.deepEqual(forkCall.params.config['shell_environment_policy.set'], environment);
+  assert.deepEqual(forkCall.params.config['mcp_servers.opencraft_session'], mcpConfig);
+
+  const beforeStartCount = calls.length;
+  await runtime.handle({
+    jsonrpc: '2.0',
+    id: 'start-fork',
+    method: 'turn/start',
+    params: {
+      threadId: 'fork-route',
+      native: { input: [{ type: 'text', text: 'first forked turn' }] },
+      cliEnvironment: environment,
+      sessionMcp: mcpConfig,
+    },
+  });
+  assert.equal(frames.find(f => f.id === 'start-fork').error, undefined);
+  const firstTurnCalls = calls.slice(beforeStartCount).map(c => c.method);
+  assert.ok(!firstTurnCalls.includes('thread/unsubscribe'), 'fork first turn never unsubscribes native runtime');
+  assert.ok(!firstTurnCalls.includes('thread/resume'), 'fork first turn never reloads native runtime');
+  assert.ok(!firstTurnCalls.includes('thread/settings/update'), 'fork first turn never rewrites settings');
+  assert.ok(firstTurnCalls.includes('turn/start'));
+
+  // Subsequent configureExecution with an identical applied configuration also skips unsubscribe/resume;
+  // changing environment or MCP triggers refreshCodexExecutionConfiguration.
+  const nextEnv = { OPENCRAFT_THREAD_CLI: 'turn-2-launcher', PATH: 'turn-2-path' };
+  await owner.configureExecution('native-fork', nextEnv, Date.now() + 5000, null);
+  assert.equal(calls.filter(c => c.method === 'thread/unsubscribe').length, 1);
+  const afterApply = calls.length;
+  await owner.configureExecution('native-fork', nextEnv, Date.now() + 5000, null);
+  assert.deepEqual(
+    calls.slice(afterApply).map(c => c.method),
+    ['thread/read'],
+    'unchanged applied configuration on an idle session verifies status without unsubscribe/resume',
+  );
+  // If Codex Core evicted the session to notLoaded, configureExecution reloads it cleanly.
+  forkLoaded = false;
+  await owner.configureExecution('native-fork', nextEnv, Date.now() + 5000, null);
+  assert.equal(calls.filter(c => c.method === 'thread/resume' && c.params.config).length, 2);
+});
+
+test('forked session whose history advanced externally after fork invalidates fork evidence and refreshes configuration', async () => {
+  const calls: { method: string; params: any }[] = [];
+  let loaded = true;
+  const owner = new CodexOwnerConnection('/unused', 'unused', () => {}, () => {}, () => {});
+  (owner as any).write = (frame: any) => {
+    calls.push(frame);
+    queueMicrotask(() => {
+      const reply = (result: any) => (owner as any).receive({ id: frame.id, result });
+      if (frame.method === 'thread/fork') {
+        return reply({ ...settings, thread: { id: 'native-fork', status: { type: 'idle' }, turns: [{ id: 't1' }] } });
+      }
+      if (frame.method === 'thread/read') {
+        return reply({
+          thread: {
+            id: 'native-fork',
+            status: { type: loaded ? 'idle' : 'notLoaded' },
+            turns: frame.params.includeTurns ? [{ id: 't1' }, { id: 'external-turn' }] : [],
+          },
+        });
+      }
+      if (frame.method === 'thread/unsubscribe') {
+        loaded = false;
+        return reply({ status: 'unsubscribed' });
+      }
+      if (frame.method === 'thread/resume') {
+        loaded = true;
+        return reply({ ...settings, thread: { id: 'native-fork', status: { type: 'idle' }, turns: [] } });
+      }
+      reply({});
+    });
+  };
+  await owner.request('thread/fork', { threadId: 'parent', config: { 'shell_environment_policy.set': environment } });
+  await owner.configureExecution('native-fork', environment, Date.now() + 5000);
+  assert.equal(calls.filter(c => c.method === 'thread/unsubscribe').length, 1);
+  assert.equal(calls.filter(c => c.method === 'thread/resume' && c.params.config).length, 1);
+});

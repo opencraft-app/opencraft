@@ -149,13 +149,16 @@ export async function pullBridgeInbox(
       fence?: OutboxFence,
     ): { cursor: number; inserted: OutboxEvent[] } | Promise<{ cursor: number; inserted: OutboxEvent[] }>;
   },
-  { fenced = false, fragmentOversized = false, isReadInterrupted }: {
+  { fenced = false, fragmentOversized = false, acknowledgedCursor, onAcknowledged, isReadInterrupted }: {
     fenced?: boolean;
     fragmentOversized?: boolean;
+    acknowledgedCursor?: number;
+    onAcknowledged?: (cursor: number) => void;
     isReadInterrupted?: (error: unknown) => boolean;
   } = {},
 ): Promise<OutboxEvent[]> {
-  const path = `/events?cursor=${await store.cursor()}${fenced ? "&fenced=1" : ""}`;
+  const currentCursor = await store.cursor();
+  const path = `/events?cursor=${currentCursor}${fenced ? "&fenced=1" : ""}`;
   const read = async (offset: number): Promise<unknown> => {
     try {
       const response = await request(fragmentOversized ? `${path}&fragment=${offset}` : path);
@@ -196,11 +199,19 @@ export async function pullBridgeInbox(
     )
   )
     throw Error("Invalid outbox batch");
+  if (!fence && batch.length === 0 && (currentCursor === 0 || acknowledgedCursor === currentCursor)) {
+    onAcknowledged?.(currentCursor);
+    return [];
+  }
   const committed = await store.apply(batch, fence);
-  if (fence && committed.cursor === fence.acknowledged) return committed.inserted;
+  if (fence && committed.cursor === fence.acknowledged) {
+    onAcknowledged?.(committed.cursor);
+    return committed.inserted;
+  }
   const ack = await request("/ack", { cursor: committed.cursor, ...(fence ? { outboxId: fence.outboxId } : {}) })
     .catch(error => { throw new BridgeOutboxAckError(undefined, error); });
   if (!ack.ok) throw new BridgeOutboxAckError(ack.status);
+  onAcknowledged?.(committed.cursor);
   return committed.inserted;
 }
 
@@ -241,6 +252,8 @@ export class BridgeGatewaySession {
   private historyPublicTurnBatch = false;
   private ephemeralStreamSupported = false;
   private streamConnected = false;
+  private readonly streamStateListeners = new Set<(connected: boolean) => void>();
+  private readonly commandWaiters = new Map<string, Set<() => void>>();
   private stopStream?: () => void;
   private streamId: string | null = null;
   private streamCursor = 0;
@@ -253,10 +266,59 @@ export class BridgeGatewaySession {
   private readonly reconciledSettlements = new Set<string>();
   private cursor = 0;
   private pulling?: Promise<void>;
+  private pullRequested = false;
+  private retryPullTimer?: ReturnType<typeof setTimeout>;
   constructor(
     private readonly ports: BridgeGatewayPorts,
     private event: (threadId: string, frame: unknown) => void,
   ) {}
+  isStreamConnected(): boolean {
+    return this.streamConnected;
+  }
+  subscribeStreamState(listener: (connected: boolean) => void): () => void {
+    this.streamStateListeners.add(listener);
+    return () => {
+      this.streamStateListeners.delete(listener);
+    };
+  }
+  private setStreamConnected(connected: boolean): void {
+    if (this.streamConnected === connected) return;
+    this.streamConnected = connected;
+    if (!connected) {
+      for (const waiters of this.commandWaiters.values()) for (const wake of waiters) wake();
+      this.commandWaiters.clear();
+    }
+    for (const listener of this.streamStateListeners) {
+      try { listener(connected); } catch { /* isolated subscriber */ }
+    }
+  }
+  private waitForCommand(commandId: string, timeoutMs: number): Promise<void> {
+    return new Promise((resolve) => {
+      let waiters = this.commandWaiters.get(commandId);
+      if (!waiters) {
+        waiters = new Set();
+        this.commandWaiters.set(commandId, waiters);
+      }
+      const finish = () => {
+        clearTimeout(timer);
+        const current = this.commandWaiters.get(commandId);
+        current?.delete(finish);
+        if (current && current.size === 0) this.commandWaiters.delete(commandId);
+        resolve();
+      };
+      const timer = setTimeout(finish, timeoutMs);
+      waiters.add(finish);
+    });
+  }
+  private requestPull(): void {
+    if (this.closed) return;
+    if (this.retryPullTimer) {
+      clearTimeout(this.retryPullTimer);
+      this.retryPullTimer = undefined;
+    }
+    this.pullRequested = true;
+    if (!this.pulling) void this.pull().catch(() => {});
+  }
   rpc(path: "/snapshot"): Promise<BridgeSnapshot>;
   rpc<T = unknown>(path: string, body?: unknown): Promise<T>;
   async rpc(path: string, body?: unknown): Promise<unknown> {
@@ -292,7 +354,7 @@ export class BridgeGatewaySession {
         this.stopStream = this.ports.subscribeStream({
           cursor: () => this.streamCursor,
           onMessage: (message) => this.handleStreamMessage(message),
-          onDisconnect: () => { this.streamConnected = false; },
+          onDisconnect: () => { this.setStreamConnected(false); },
         });
       }
       await this.pull();
@@ -489,17 +551,25 @@ export class BridgeGatewaySession {
   private handleStreamMessage(message: BridgeStreamMessage): void {
     if (this.closed) return;
     if (message.kind === "hello") {
-      this.streamConnected = true;
       if (this.streamId !== null && this.streamId !== message.streamId) {
         this.streamCursor = 0;
         this.pendingEphemeral.length = 0;
       }
       this.streamId = message.streamId;
-      void this.pull().catch(() => {});
+      this.setStreamConnected(true);
+      this.requestPull();
       return;
     }
     if (message.kind === "outbox") {
-      if (!this.pulling) void this.pull().catch(() => {});
+      if (message.high === 0 || message.high > this.cursor) this.requestPull();
+      return;
+    }
+    if (message.kind === "command") {
+      const waiters = this.commandWaiters.get(message.commandId);
+      if (waiters) {
+        this.commandWaiters.delete(message.commandId);
+        for (const wake of waiters) wake();
+      }
       return;
     }
     const event = message.event;
@@ -519,7 +589,7 @@ export class BridgeGatewaySession {
     }
     if (this.pendingEphemeral.length >= 4096) this.pendingEphemeral.shift();
     this.pendingEphemeral.push(event);
-    if (this.cursor < event.afterSeq && !this.pulling) void this.pull().catch(() => {});
+    if (this.cursor < event.afterSeq) this.requestPull();
   }
   private async pollEphemeral(): Promise<void> {
     if (!this.ephemeralStreamSupported || this.streamConnected) return;
@@ -547,37 +617,49 @@ export class BridgeGatewaySession {
   }
   pull(): Promise<void> {
     return (this.pulling ??= (async () => {
-      await this.deliveryChain;
-      await this.pollEphemeral();
       let producerError: BridgeOutboxAckError | BridgeOutboxReadError | undefined;
-      try {
-        await this.ports.inbox.pull();
-      } catch (error) {
-        if (!(error instanceof BridgeOutboxAckError) &&
-            !(error instanceof BridgeOutboxReadError && error.retryable)) throw error;
-        // Another pull can already have committed events to this inbox. A
-        // transient read failure must not hold those events behind the producer.
-        producerError = error;
-      }
-      await this.flushPendingEphemeralThrough(this.cursor);
-      for (;;) {
-        const rows = await this.ports.inbox.read(this.cursor);
-        if (!rows.length) break;
-        for (const row of rows) {
-          await this.flushPendingEphemeralThrough(this.cursor);
-          await this.consume(row);
-          this.cursor = row.seq;
-          await this.flushPendingEphemeralThrough(this.cursor);
+      do {
+        this.pullRequested = false;
+        producerError = undefined;
+        await this.deliveryChain;
+        await this.pollEphemeral();
+        try {
+          await this.ports.inbox.pull();
+        } catch (error) {
+          if (!(error instanceof BridgeOutboxAckError) &&
+              !(error instanceof BridgeOutboxReadError && error.retryable)) throw error;
+          // Another pull can already have committed events to this inbox. A
+          // transient read failure must not hold those events behind the producer.
+          producerError = error;
         }
-      }
-      while (this.pendingEphemeral.some(entry => entry.afterSeq <= this.cursor))
         await this.flushPendingEphemeralThrough(this.cursor);
+        for (;;) {
+          const rows = await this.ports.inbox.read(this.cursor);
+          if (!rows.length) break;
+          for (const row of rows) {
+            await this.flushPendingEphemeralThrough(this.cursor);
+            await this.consume(row);
+            this.cursor = row.seq;
+            await this.flushPendingEphemeralThrough(this.cursor);
+          }
+        }
+        while (this.pendingEphemeral.some(entry => entry.afterSeq <= this.cursor))
+          await this.flushPendingEphemeralThrough(this.cursor);
+      } while (!this.closed && this.pullRequested && !producerError);
+      if (producerError && !this.closed && this.streamConnected && !this.retryPullTimer) {
+        this.retryPullTimer = setTimeout(() => {
+          this.retryPullTimer = undefined;
+          this.requestPull();
+        }, 100);
+        this.retryPullTimer.unref?.();
+      }
       // Preserve read backoff and terminal acknowledgement handling. A retry
       // starts from the committed inbox cursor.
       if (producerError instanceof BridgeOutboxReadError || (producerError && !producerError.retryable))
         throw producerError;
     })().finally(() => {
       this.pulling = undefined;
+      if (!this.closed && this.pullRequested) void this.pull().catch(() => {});
     }));
   }
   /** Latest canonical turn opened on a bridge Thread, if its event was pulled. */
@@ -974,8 +1056,14 @@ export class BridgeGatewaySession {
     }
     const deadline = Date.now() + 35_000;
     while (Date.now() < deadline) {
+      const wait = this.waitForCommand(commandId, this.streamConnected ? 250 : 25);
       const receipt = (await this.rpc(`/command?id=${encodeURIComponent(commandId)}`)) as Receipt;
       if (receipt.state === "accepted") {
+        const current = this.commandWaiters.get(commandId);
+        if (current) {
+          this.commandWaiters.delete(commandId);
+          for (const wake of current) wake();
+        }
         const identities = receipt.identities;
         if (identities?.nativeThreadId !== undefined) {
           this.pinned.add(threadId);
@@ -996,6 +1084,11 @@ export class BridgeGatewaySession {
         return receipt.response && "result" in receipt.response ? receipt.response.result : null;
       }
       if (receipt.state === "rejected" || receipt.state === "unknown") {
+        const current = this.commandWaiters.get(commandId);
+        if (current) {
+          this.commandWaiters.delete(commandId);
+          for (const wake of current) wake();
+        }
         // Native start evidence can precede an ambiguous failure.
         await this.pull().catch(() => {});
         const error =
@@ -1004,15 +1097,22 @@ export class BridgeGatewaySession {
             : { code: -32005, message: "Native outcome unknown; query original command", kind: "unknown-outcome" };
         throw Object.assign(Error(error.message), error, { commandId });
       }
-      await new Promise((resolve) => setTimeout(resolve, 25));
+      await wait;
     }
     throw Object.assign(Error("Native outcome unknown; query original command"), { code: -32005, commandId });
   }
   async close(): Promise<void> {
     this.closed = true;
+    if (this.retryPullTimer) {
+      clearTimeout(this.retryPullTimer);
+      this.retryPullTimer = undefined;
+    }
     this.stopStream?.();
     this.stopStream = undefined;
-    this.streamConnected = false;
+    this.setStreamConnected(false);
+    for (const waiters of this.commandWaiters.values()) for (const wake of waiters) wake();
+    this.commandWaiters.clear();
+    this.streamStateListeners.clear();
     await this.deliveryChain;
     await this.pulling?.catch(() => {});
     await this.ports.inbox.close();

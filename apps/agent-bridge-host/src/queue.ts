@@ -55,7 +55,7 @@ export interface HostQueuePort {
   isIdle(route: string): Promise<boolean>;
   /** Whether the route's generation can be started without explicit recovery. */
   dispatchable(route: string): Promise<boolean>;
-  outboxWritten?(): void;
+  outboxWritten?(high?: number): void;
 }
 
 type HistoryTurn = { id?: string; status?: unknown; items?: unknown };
@@ -119,7 +119,9 @@ export class HostQueue {
     return next;
   }
   private changed(route: string): void {
-    void this.storage.call("queueChanged", { route }).then(() => this.port.outboxWritten?.(), () => {});
+    void this.storage
+      .call<{ high?: number }>("queueChanged", { route })
+      .then((result) => this.port.outboxWritten?.(result?.high), () => {});
   }
   private parts(route: string): [string, string] {
     const [serverId, threadId] = JSON.parse(route) as [string, string];

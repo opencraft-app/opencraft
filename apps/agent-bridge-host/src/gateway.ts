@@ -35,6 +35,8 @@ function subscribeBridgeStream(
         handlers.onMessage({ kind: 'ephemeral', event: parsed as unknown as EphemeralEvent });
       } else if (eventName === 'outbox') {
         handlers.onMessage({ kind: 'outbox', high: typeof parsed.high === 'number' ? parsed.high : 0 });
+      } else if (eventName === 'command' && typeof parsed.commandId === 'string') {
+        handlers.onMessage({ kind: 'command', commandId: parsed.commandId });
       }
     } catch {
       /* ignore malformed SSE frame */
