@@ -28,9 +28,9 @@ export async function startContainerGateway(composition = {}, compositionSha256,
   if (!home.startsWith('/')) throw new Error('Gateway home must be absolute');
   await mkdir(home, { recursive: true, mode: 0o700 });
   process.env.HOME = home;
-  // Codex runs through the Gateway's own Engine Host by default (OPENCRAFT_CODEX_BRIDGE=0 keeps the
-  // legacy path). Its provider takes broker auth from the account Core and reaches the workspace's
-  // native AppServer (Brain) through the codex-native endpoint; native commands still run in Hands.
+  // Codex runs exclusively through the Gateway's own Engine Host. Its provider takes broker auth
+  // from the account Core and reaches the workspace's native AppServer (Brain) through the
+  // codex-native endpoint; native commands still run in Hands.
   const bridgePrograms = await codexBridgePrograms(root, options, process.env, 'runtime/codex-bridge');
   // Brain and Hands owners are workspace endpoints, reached through the configured
   // provider; a missing or unready workspace fails startup like a missing owner did.

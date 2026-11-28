@@ -1,11 +1,15 @@
 import { join } from "node:path";
 import { captureGeneratedOutputs } from "@opencraft/local-agent-host/artifacts/tool-output";
+import { type GeneratedFileReader } from "@opencraft/local-agent-host/artifacts/generated-output";
 import { generatedFileRootsFromEnvironment } from "@opencraft/local-agent-host/artifacts/host-capture";
-import { prepareLocalArtifact } from "@opencraft/local-agent-host/artifacts";
+import { prepareLocalArtifact, type Artifact } from "@opencraft/local-agent-host/artifacts";
 import { LocalAttachmentStagingService } from "@opencraft/local-agent-host/attachments/local-staging";
 import { OPENCRAFT_ATTACHMENT_STAGING_EXTENSION, type AttachmentRef } from "@opencraft/appserver-protocol";
 import { OpenCraftMessageAttachments } from "./opencraft-message-attachments.js";
-import { projectThreadAttachmentResult } from "./thread-message-attachment-projection.js";
+import {
+  projectThreadAttachmentNotification,
+  projectThreadAttachmentResult,
+} from "./thread-message-attachment-projection.js";
 import type { CodexHostService } from "./codex-host-services.js";
 
 type Value = Record<string, unknown>;
@@ -26,6 +30,9 @@ export interface CodexAttachmentsOptions {
   readonly artifactDirectory?: string;
   /** Native Codex's home, where it saves generated files. */
   readonly codexHome?: () => Promise<string | undefined>;
+  /** Optional Hands file-owner artifact preparation and generated-file reader on split servers. */
+  readonly prepareArtifact?: (artifact: Artifact, owner: string, signal?: AbortSignal) => Promise<Artifact>;
+  readonly readGeneratedFile?: GeneratedFileReader;
 }
 
 export interface CodexAttachmentsService extends CodexHostService {
@@ -33,6 +40,8 @@ export interface CodexAttachmentsService extends CodexHostService {
   prepareInput(threadId: string, clientId: string | undefined, input: readonly unknown[]): Promise<unknown[]>;
   /** For Thread routing: recorded attachments on history results. */
   projectHistory(method: string, params: Value, result: unknown): unknown;
+  /** For Thread routing: recorded attachments on live notifications. */
+  projectNotification(frame: Value): Value;
 }
 
 /**
@@ -61,12 +70,10 @@ export function codexAttachmentsService(options: CodexAttachmentsOptions): Codex
         continue;
       }
       const owner = JSON.stringify(["thread", threadId]);
-      const delivered = await prepareLocalArtifact(
-        await staging.artifact(ref, owner, lifetime.signal),
-        staging.catalog,
-        owner,
-        lifetime.signal,
-      );
+      const stagedArtifact = await staging.artifact(ref, owner, lifetime.signal);
+      const delivered = options.prepareArtifact
+        ? await options.prepareArtifact(stagedArtifact, owner, lifetime.signal)
+        : await prepareLocalArtifact(stagedArtifact, staging.catalog, owner, lifetime.signal);
       if (!attachments.some((existing) => existing.id === ref.id)) attachments.push(ref);
       // Codex keeps a mention for display but does not give it to the model; the
       // locator text does, and its placeholder hides it from the shared projector.
@@ -90,9 +97,17 @@ export function codexAttachmentsService(options: CodexAttachmentsOptions): Codex
     if (item.type === "imageGeneration" && item.result === null && item.imageDimensions && item.historyDetail) return;
     const operation = (async () => {
       const home = await options.codexHome?.().catch(() => undefined);
-      await captureGeneratedOutputs(staging.catalog, "codex-generated", threadId, item, undefined, lifetime.signal, {
-        savedPathRoots: [...(home ? [home] : []), ...generatedFileRootsFromEnvironment()],
-      });
+      await captureGeneratedOutputs(
+        staging.catalog,
+        "codex-generated",
+        threadId,
+        item,
+        options.readGeneratedFile,
+        lifetime.signal,
+        {
+          savedPathRoots: [...(home ? [home] : []), ...generatedFileRootsFromEnvironment()],
+        },
+      );
     })().catch(() =>
       console.warn(
         "[codex-host-services]",
@@ -130,9 +145,13 @@ export function codexAttachmentsService(options: CodexAttachmentsOptions): Codex
     },
     prepareInput,
     projectHistory: (method, params, result) => projectThreadAttachmentResult(messages, method, params, result),
+    projectNotification: (frame) =>
+      projectThreadAttachmentNotification({ list: (threadId, clientId) => messages.peek(threadId, clientId) }, frame),
+    storage: () => [{ name: "opencraft-message-attachments", outcome: messages.outcome }],
     close: async () => {
       lifetime.abort();
       await Promise.allSettled([...outputs]);
+      await staging.close();
       messages.close();
     },
   };

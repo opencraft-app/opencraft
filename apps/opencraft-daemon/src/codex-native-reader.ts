@@ -150,6 +150,11 @@ export class CodexNativeReader {
     return this.send(await this.open(), method, params);
   }
 
+  /** Runtime owner health (executionIncarnation, callbackIncarnation) without opening a second control client. */
+  health(signal?: AbortSignal) {
+    return this.readHealth(signal, "native");
+  }
+
   close(): void {
     this.closed = true;
     this.socket?.close();

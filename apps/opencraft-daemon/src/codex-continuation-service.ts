@@ -45,6 +45,7 @@ export interface CodexContinuationOptions {
 
 export interface CodexContinuationService extends CodexHostService {
   counts(): { capacityRetries: number; activeGoals: number };
+  snapshot(threadId: string): ReturnType<InterruptedTurnRecovery["snapshot"]>;
 }
 
 /**
@@ -316,6 +317,7 @@ export function codexContinuationService(options: CodexContinuationOptions): Cod
       }
     },
     counts: () => ({ capacityRetries: retry.pendingThreadIds().length, activeGoals: activeGoals.size }),
+    snapshot: (threadId: string) => recovery.snapshot(threadId),
     close: async () => {
       closed = true;
       for (const timer of goalTimers.values()) clearTimeout(timer);
