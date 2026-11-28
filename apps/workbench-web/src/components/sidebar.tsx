@@ -416,25 +416,36 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   const selectedRoot = tree.rootByIdentity.get(selection) ?? selection;
   const containsSelected = (rows: readonly SidebarThread[]) => rows.some(thread => identity(thread) === selectedRoot);
   const selectedInMine = containsSelected(taskFlow.mine);
-  const [accessScope, setAccessScope] = useState<"recent" | "private">(() => (selectedInMine ? "private" : "recent"));
+  const [accessScope, setAccessScope] = useState<"recent" | "private">(() => (activeDraftKey !== undefined ? "recent" : selectedInMine ? "private" : "recent"));
   const lastSelectionForScope = useRef(selection);
+  const lastActiveDraftKeyForScope = useRef<string | undefined>(activeDraftKey);
   useLayoutEffect(() => {
+    const draftChanged = lastActiveDraftKeyForScope.current !== activeDraftKey;
+    lastActiveDraftKeyForScope.current = activeDraftKey;
     const selectionChanged = lastSelectionForScope.current !== selection;
     lastSelectionForScope.current = selection;
-    if (activeDraftKey !== undefined) {
+    if (selectionChanged && (selectedInMine || matchingById.has(selection))) {
+      setAccessScope(selectedInMine ? "private" : "recent");
+    } else if (draftChanged && activeDraftKey !== undefined) {
       setAccessScope("recent");
+    }
+  }, [activeDraftKey, selection, selectedInMine, matchingById]);
+  const sharedMatchCount = matching.filter(thread => thread.accessMode !== "private").length + matchingDraftRows.length;
+  const searching = Boolean(needle);
+  const wasSearchingForScope = useRef(searching);
+  useLayoutEffect(() => {
+    const previouslySearching = wasSearchingForScope.current;
+    wasSearchingForScope.current = searching;
+    if (!searching) {
+      if (!previouslySearching) return;
+      if (activeDraftKey !== undefined) setAccessScope("recent");
+      else if (selectedInMine) setAccessScope("private");
+      else if (matchingById.has(selection)) setAccessScope("recent");
       return;
     }
-    if (!selectionChanged) return;
-    if (selectedInMine) setAccessScope("private");
-    else if (matchingById.has(selection)) setAccessScope("recent");
-  }, [activeDraftKey, selection, selectedInMine, matchingById]);
-  const sharedMatchCount = matching.length - taskFlow.mine.length + matchingDraftRows.length;
-  useLayoutEffect(() => {
-    if (!needle) return;
     if (accessScope === "recent" && sharedMatchCount === 0 && taskFlow.mine.length > 0) setAccessScope("private");
     else if (accessScope === "private" && taskFlow.mine.length === 0 && sharedMatchCount > 0) setAccessScope("recent");
-  }, [needle, accessScope, sharedMatchCount, taskFlow.mine.length]);
+  }, [searching, accessScope, sharedMatchCount, taskFlow.mine.length, activeDraftKey, selectedInMine, matchingById, selection]);
   const hasSharedSiblings = Boolean(groupedSections) || taskFlow.scheduled.length > 0
     || taskFlow.attention.length > 0 || taskFlow.pinned.length > 0 || nativeProjects.length > 0;
   const flatRecent = !hasSharedSiblings;
@@ -750,7 +761,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
                 label: (
                   <span className="sidebar-access-switcher__option">
                     <span>{text("sidebar.flow.recent", "Recent")}</span>
-                    {hasRecentSummary ? <SidebarActivitySummary id={`${rowIdPrefix}-summary-recent`} counts={recentSummary} /> : null}
+                    {hasRecentSummary ? <SidebarActivitySummary id={`${rowIdPrefix}-scope-summary-recent`} counts={recentSummary} /> : null}
                   </span>
                 ),
               },

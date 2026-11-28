@@ -73,7 +73,12 @@
 // (signed-in person partition, failure backoff) and the import stub. Before the
 // split the same feature measured 1,231,435 B. Reserve 216 B for content-hash
 // variance; JS/CSS/chunk limits and every demand-only boundary are unchanged.
-export const startupResourceBudget = Object.freeze({ javascript: 3_700_000, css: 734_000, gzip: 1_230_900 });
+// Sidebar 16px alignment, Recent/Private SegmentedControl switcher and
+// gesture-scoped end-pull measure 1,232,064 B gzip against the 1,230,684 B main
+// baseline (+1,380 B) because the switcher and alignment tokens render on first
+// paint. Reserve 436 B for content-hash variance; JS/CSS/chunk limits and every
+// demand-only boundary are unchanged.
+export const startupResourceBudget = Object.freeze({ javascript: 3_700_000, css: 734_000, gzip: 1_232_500 });
 export const startupJavaScriptChunkBudget = 120;
 export const requiredStartupModule = /\/(?:apps\/workbench-web\/src\/(?:workbench-entry|main)\.tsx?|plugins\/(?:builtin-agents|headless-model-services)\/src\/runtime-entry\.tsx?|plugins\/builtin-agents\/src\/index\.tsx?)$/;
 /** Trusted build owners may add roots and exclusions without relaxing core limits. */
