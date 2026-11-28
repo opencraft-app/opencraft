@@ -351,7 +351,7 @@
     "test:browser-service": "node --import tsx --test tests/browser/browser-state-store.test.mjs tests/browser/remote-browser-session.test.mjs tests/browser/remote-browser-owner.test.mjs tests/browser/remote-browser-automation-requests.test.mjs tests/browser/browser-capabilities.test.ts tests/browser/browser-metadata-merge.test.ts tests/browser/remote-browser-metadata-sync.test.ts tests/browser/offline-remote-storage.test.ts tests/browser/remote-browser-metadata-limits.test.ts tests/browser/browser-execution-grant.test.ts tests/identity/browser-execution-context.test.ts tests/execution/session-capabilities.test.ts tests/execution/capability-content.test.ts tests/execution/dsh-capability-output.test.mjs",
     "ci:test:runtime": "node scripts/ci/test-environment.mjs",
     "maintenance:local-runtime": "node scripts/maintenance/prune-local-runtime.mjs",
-    "test:local-runtime": "node --test tests/maintenance/prune-local-runtime.test.mjs",
+    "test:local-runtime": "node --test tests/maintenance/prune-local-runtime.test.mjs tests/maintenance/artifact-workspace.test.mjs",
     "smoke:image-metadata-preview": "tsx scripts/smoke/resources/smoke-image-metadata-preview.ts",
     "smoke:offline-startup-continuity": "tsx scripts/smoke/resources/smoke-offline-startup-continuity.ts",
     "smoke:queue-delivery-retry": "tsx scripts/smoke/conversation/smoke-queue-steer-shortcut.ts",

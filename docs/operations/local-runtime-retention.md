@@ -70,3 +70,65 @@ For an existing installation, restore only the selected role with
 only when boot startup is wanted. Do not replay every historical unit or restore
 archived configuration over a newer deployment. Reinstalling into an external
 state root remains the preferred path for a new deployment.
+
+## Compose releases and completed acceptance artifacts
+
+A source build's temporary-output default does not control an operator's explicit
+copy/download destination. Compose release trees and acceptance copies therefore
+need their own lifecycle, even inside an otherwise retained owner directory.
+
+The cleaner inspects `.local/<owner>/compose/releases` (and the equivalent under
+an audited root) separately from the owner's configuration. It keeps `current`
+and `previous` symlink targets. Before publishing a new `current`, record the old
+current as `previous`; run cleanup after acceptance. For older installations
+without `previous`, the newest other release is retained as a rollback fallback.
+A missing, invalid or broken pointer keeps all releases until the owner repairs
+it. Other symlink targets, credentials, process references, Docker bind mounts
+and explicit protected roots also keep a release. The containing owner directory
+is retained. Within a managed release's `artifacts/dsh-runtime/node_modules`,
+SDK implementation/type/source-map filenames containing `token` or `credential`
+and the bundled provider token-plan data are dependency source, not private
+credential files. `.env`, key/PEM files, other credential/token data files and
+protected directory names retain their protection there too. This bounds ordinary deployment history to two copies without
+relocating a live bind mount or invalidating a stopped deployment's recovery.
+New deployments should still use an external state root.
+
+A workbook is not disposable. The cleaner only reclaims acceptance artifacts
+explicitly listed by their owner after acceptance has finished. In a direct
+child stage of `.local/steward`, write `.opencraft-disposable.json`:
+
+```json
+{"version":1,"paths":["official-image/container-amd64-REVISION.zip","ready-package","reviewed-package"]}
+```
+
+List only re-downloadable archives and reproducible staging copies. Keep the
+verification receipt (artifact ID, source revision, digest and acceptance result),
+workbook, requirements, Git history, recovery data and credentials outside these
+paths. Do not declare unfinished acceptance or the sole rollback copy disposable.
+Relative paths cannot escape the stage or traverse symlinked parents; missing
+paths make repeated cleanup harmless. The usual credential, protected-directory,
+process, container and operator-root checks still apply. A protected parent root
+also protects these children: narrow an obsolete blanket operator root to the
+actual recovery dependencies before expecting granular cleanup to reclaim them.
+Owner pointers, declarations and process references are checked again before
+removal. An inaccessible Docker daemon retains candidates rather than assuming
+its mounts are absent; a host without Docker uses `/proc` alone.
+
+Prefer a temporary workspace for new downloads and acceptance copies:
+
+```sh
+node scripts/maintenance/artifact-workspace.mjs -- sh -eu -c '
+  archive="$OPENCRAFT_ARTIFACT_WORKSPACE/container-amd64.zip"
+  gh api "repos/$REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" > "$archive"
+  printf "%s  %s\n" "$EXPECTED_SHA256" "$archive" | sha256sum -c -
+  # Run acceptance here; save the small verification receipt outside this workspace.
+'
+```
+
+The command exports `OPENCRAFT_ARTIFACT_WORKSPACE` in the OS temporary directory
+and removes it on success, command failure, or a handled SIGINT/SIGTERM. Build
+preview/ready/reviewed copies there too and keep all their consumers inside the
+command's lifetime. Installed releases and asynchronous installers must retain
+an independently owned copy before this command exits. SIGKILL or a host crash
+cannot run cleanup; abandoned temporary directories can be removed after checking
+references. No service is restarted or stopped by either maintenance command.
