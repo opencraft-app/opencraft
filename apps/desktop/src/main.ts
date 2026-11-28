@@ -59,11 +59,13 @@ import {
   dialog,
   ipcMain,
   nativeTheme,
+  powerSaveBlocker,
   shell,
   session,
   type MessagePortMain,
   type WebContents,
 } from "electron";
+import { DesktopPowerSaveCoordinator } from "./power-save-coordinator.js";
 import {
   CONNECT_APP_HOST_MESSAGE,
   isConnectAppHostMessage,
@@ -106,6 +108,13 @@ let accountAttachment: DesktopAccountAttachment | null = null;
 let rendererOrigin: string | null = null;
 let daemonManager: OpenCraftDaemonClientManager | null = null;
 const daemonBridges = new Set<{ close(): void }>();
+let daemonBridgeSequence = 0;
+const desktopPowerSave = new DesktopPowerSaveCoordinator({
+  start: () => powerSaveBlocker.start("prevent-app-suspension"),
+  stop: (id) => {
+    if (powerSaveBlocker.isStarted(id)) powerSaveBlocker.stop(id);
+  },
+});
 let sqliteDebugReader!: SqliteDebugReader;
 let desktopClientStorage!: BorrowedDatabase;
 let uiPreferences!: DesktopUiPreferenceStore;
@@ -487,13 +496,16 @@ async function connectRendererToDaemon(
     return;
   }
   let closed = false;
+  const bridgeId = ++daemonBridgeSequence;
   let closeBridge = (): void => {};
   const receiveRenderer = (event: Electron.MessageEvent) => daemon.send(event.data);
   const unsubscribeDaemon = daemon.subscribeMessage((payload) => {
+    desktopPowerSave.observeDaemonPayload(bridgeId, payload);
     if (!closed) nativePort.postMessage(payload);
   });
   const unsubscribeDaemonClose = daemon.subscribeClose((error) => {
     if (closed) return;
+    desktopPowerSave.releaseBridge(bridgeId);
     nativePort.postMessage({
       type: "fatal",
       error: {
@@ -508,6 +520,7 @@ async function connectRendererToDaemon(
     close() {
       if (closed) return;
       closed = true;
+      desktopPowerSave.releaseBridge(bridgeId);
       daemonBridges.delete(bridge);
       nativePort.off("message", receiveRenderer);
       unsubscribeDaemon();
@@ -778,6 +791,7 @@ const lifecycle = new DesktopLifecycle({
   showDock: async () => { if (process.platform === "darwin") await app.dock?.show(); },
   hideDock: () => { if (process.platform === "darwin") app.dock?.hide(); },
   stopRuntime: async () => {
+    desktopPowerSave.close();
     desktopServers.close();
     desktopLocale.dispose();
     await nativeSpeech.close();

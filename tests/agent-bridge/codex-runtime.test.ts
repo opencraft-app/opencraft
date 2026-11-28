@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CodexBridge } from '../../apps/agent-bridge-host/src/codex.js';
-import { CodexBridgeRuntime } from '../../apps/agent-bridge-host/src/codex-runtime.js';
+import { CodexBridgeRuntime, MAX_COALESCED_STREAM_BYTES } from '../../apps/agent-bridge-host/src/codex-runtime.js';
 import { CodexOwnerConnection } from '../../apps/agent-bridge-host/src/codex-owner.js';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -332,4 +332,75 @@ test('Codex Bridge accepts compiled Skill input and text over 64 KiB within the 
   ];
   await bridge.start('public', { input });
   assert.deepEqual(calls, [{ method: 'turn/start', params: { threadId: 'native', summary: 'auto', input } }]);
+});
+
+test('CodexBridgeRuntime coalesces micro-window text and command output deltas as notifications and flushes synchronously before structural events', async () => {
+  const frames: any[] = [];
+  const runtime = new CodexBridgeRuntime({
+    async request() { return {}; },
+    resolve() {},
+  }, frame => frames.push(frame), false, 25);
+  runtime.adapter.bind('public', 'native');
+
+  runtime.notification('turn/started', { threadId: 'native', turn: { id: 't1' } });
+  runtime.notification('item/started', {
+    threadId: 'native', turnId: 't1',
+    item: { id: 'msg-1', type: 'agentMessage', text: '' },
+  });
+  assert.equal(frames.length, 2, 'structural events emit immediately with durable request ids');
+  assert.equal(typeof frames[0].id, 'string');
+  assert.equal(typeof frames[1].id, 'string');
+
+  // Burst of 5 text deltas + reasoning section deltas + command output deltas within one micro-window.
+  for (const part of ['Hello', ', ', 'coalesced', ' ', 'world!']) {
+    runtime.notification('item/agentMessage/delta', { threadId: 'native', turnId: 't1', itemId: 'msg-1', delta: part });
+  }
+  runtime.notification('item/reasoning/textDelta', { threadId: 'native', turnId: 't1', itemId: 'rsn-1', delta: 'step-a', contentIndex: 0 });
+  runtime.notification('item/reasoning/textDelta', { threadId: 'native', turnId: 't1', itemId: 'rsn-1', delta: '+b', contentIndex: 0 });
+  runtime.notification('item/reasoning/textDelta', { threadId: 'native', turnId: 't1', itemId: 'rsn-1', delta: 'sec-1', contentIndex: 1 });
+  runtime.notification('item/commandExecution/outputDelta', { threadId: 'native', turnId: 't1', itemId: 'cmd-1', delta: 'line 1\n' });
+  runtime.notification('item/commandExecution/outputDelta', { threadId: 'native', turnId: 't1', itemId: 'cmd-1', delta: 'line 2\n' });
+
+  assert.equal(frames.length, 2, 'deltas stay buffered inside the active micro-window');
+
+  // A structural completion flushes every buffered stream synchronously ahead of item.close.
+  runtime.notification('item/completed', {
+    threadId: 'native', turnId: 't1',
+    item: { id: 'msg-1', type: 'agentMessage', text: 'Hello, coalesced world!' },
+  });
+  assert.equal(frames.length, 5);
+  assert.equal(frames[2].id, undefined, 'coalesced textDelta frame is a lightweight JSON-RPC notification');
+  assert.equal(frames[2].method, 'thread/delta');
+  assert.deepEqual(
+    frames[2].params.deltas.map((d: any) => [d.nativeKey, d.channel, d.contentIndex ?? null, d.text]),
+    [
+      ['msg-1', 'agentMessage', null, 'Hello, coalesced world!'],
+      ['rsn-1', 'reasoning', 0, 'step-a+b'],
+      ['rsn-1', 'reasoning', 1, 'sec-1'],
+    ],
+  );
+  assert.equal(frames[3].id, undefined, 'coalesced outputDelta frame is a lightweight JSON-RPC notification');
+  assert.deepEqual(frames[3].params, {
+    threadId: 'public',
+    method: 'item/commandExecution/outputDelta',
+    params: { threadId: 'public', turnId: 't1', itemId: 'cmd-1', delta: 'line 1\nline 2\n' },
+  });
+  assert.equal(frames[4].method, 'thread/delta');
+  assert.equal(frames[4].params.deltas[0].op, 'item.close', 'structural close arrives strictly after flushed deltas');
+  assert.equal(typeof frames[4].id, 'string');
+
+  // Timer-driven flush without a trailing structural event, plus byte-cap immediate flush.
+  runtime.notification('item/agentMessage/delta', { threadId: 'native', turnId: 't1', itemId: 'msg-2', delta: 'timer-' });
+  runtime.notification('item/agentMessage/delta', { threadId: 'native', turnId: 't1', itemId: 'msg-2', delta: 'flush' });
+  await new Promise(resolve => setTimeout(resolve, 40));
+  assert.equal(frames.at(-1).params.deltas[0].text, 'timer-flush');
+
+  const halfCap = 'x'.repeat(Math.floor(MAX_COALESCED_STREAM_BYTES / 2) + 16);
+  const beforeCap = frames.length;
+  runtime.notification('item/commandExecution/outputDelta', { threadId: 'native', turnId: 't1', itemId: 'cmd-2', delta: halfCap });
+  assert.equal(frames.length, beforeCap);
+  runtime.notification('item/commandExecution/outputDelta', { threadId: 'native', turnId: 't1', itemId: 'cmd-2', delta: halfCap });
+  assert.equal(frames.length, beforeCap + 1, 'exceeding MAX_COALESCED_STREAM_BYTES flushes prior chunk immediately');
+  runtime.close();
+  assert.equal(frames.length, beforeCap + 2, 'close() flushes any remaining buffered chunk');
 });
