@@ -295,10 +295,12 @@ export class UserRelayDO {
         now,
       });
       if (!redeemed) return json(403, { error: "invalid_or_expired_pairing_code" });
+      const machine = this.#store.listMachines().find((m) => m.machineId === body.machineId);
       return json(200, {
         actorId: profile.actorId,
         sessionEpoch: profile.sessionEpoch,
         approvalRequired: redeemed.approvalRequired,
+        ...(machine?.displayName ? { displayName: machine.displayName } : {}),
       });
     }
 
@@ -389,7 +391,11 @@ export class UserRelayDO {
         }),
       );
       if (!syncRes.ok) return json(502, { error: "machine_grant_sync_failed" });
-      return json(200, { grant: claimed });
+      const machine = this.#store.listMachines().find((m) => m.machineId === claimed.machineId);
+      return json(200, {
+        grant: claimed,
+        ...(machine?.displayName ? { machineDisplayName: machine.displayName } : {}),
+      });
     }
 
     if (request.method === "POST" && url.pathname === "/shares/revoke") {

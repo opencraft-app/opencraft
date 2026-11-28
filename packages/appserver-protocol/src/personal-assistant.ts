@@ -11,10 +11,26 @@ export interface PersonalAssistantBinding {
 }
 export type BotEnvironment = {kind:'local'} | {kind:'sandbox';backendId:string;templateId:string};
 export interface BotEnvironmentCatalog {local:boolean;templates:{backendId:string;id:string;name:string}[]}
+export type AssistantCardinality = 'singleton-per-human' | 'multi';
+export type AssistantPresetId = 'personal-assistant';
+export interface AssistantPreset {
+  readonly id: AssistantPresetId;
+  readonly cardinality: AssistantCardinality;
+  readonly defaultEnvironment: BotEnvironment;
+}
+export const BUILTIN_ASSISTANT_PRESETS: readonly AssistantPreset[] = [
+  {
+    id: 'personal-assistant',
+    cardinality: 'singleton-per-human',
+    defaultEnvironment: { kind: 'local' },
+  },
+];
 export interface PersonalAssistant {
   name?: string;
   duties?: string;
   isDefault?: boolean;
+  presetId?: AssistantPresetId | null;
+  cardinality?: AssistantCardinality;
   paused?: boolean;
   configRevision?: number;
   environment?: BotEnvironment;
@@ -26,6 +42,7 @@ export interface PersonalAssistant {
   model: PersonalAssistantModelSelection | null;
   modelRevision: number;
 }
+export type AssistantActor = PersonalAssistant;
 export interface PersonalAssistantModelSelection { providerId: string; modelId: string }
 export interface PersonalAssistantModelOption extends PersonalAssistantModelSelection { label: string }
 export interface PersonalAssistantModelCatalog { models: PersonalAssistantModelOption[]; available: boolean }
@@ -51,6 +68,7 @@ export interface PersonalAssistantRuntimeState {
   reception?: { queued: number; running: number };
 }
 export interface PersonalAssistantStatus { assistant: PersonalAssistant | null; channelId?: string | null; runtime: PersonalAssistantRuntimeState }
+export type AssistantActorStatus = PersonalAssistantStatus;
 /** Public methods. Thread writes require a separately granted execution profile. */
 export interface AssistantThreadProfile { id:string; revision:number; source:string; enabled:boolean }
 export interface AssistantMemoryItem {
@@ -70,7 +88,12 @@ export type AssistantMemoryResponse =
  |{action:'set'|'forget';key:string;revision:number};
 export interface PersonalAssistantMethodMap {
   'opencraft/personal-assistant/bots/list':{params:Record<string,never>;result:{bots:PersonalAssistantStatus[]}};
-  'opencraft/personal-assistant/bots/create':{params:{name:string;duties:string;environment:BotEnvironment;clientRequestId:string};result:PersonalAssistantStatus};
+  'opencraft/personal-assistant/bots/create':{
+    params:
+      | {presetId:AssistantPresetId;name?:string;duties?:string;environment?:BotEnvironment;clientRequestId:string}
+      | {presetId?:undefined;name:string;duties:string;environment:BotEnvironment;clientRequestId:string};
+    result:PersonalAssistantStatus;
+  };
   'opencraft/personal-assistant/bots/update':{params:{botId:string;name:string;duties:string;environment:BotEnvironment;expectedRevision:number};result:PersonalAssistantStatus};
   'opencraft/personal-assistant/bots/pause':{params:{botId:string;paused:boolean;expectedRevision:number};result:PersonalAssistantStatus};
   'opencraft/personal-assistant/environments':{params:Record<string,never>;result:BotEnvironmentCatalog};

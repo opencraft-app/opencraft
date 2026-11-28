@@ -229,6 +229,42 @@ function getStoredSession(sessionKey: string): StoredCloudRelaySession | null {
   return inMemorySessions.get(sessionKey) ?? readStoredSessions()[sessionKey] ?? null;
 }
 
+export function listStoredCloudRelaySessions(): readonly StoredCloudRelaySession[] {
+  const merged = new Map<string, StoredCloudRelaySession>();
+  for (const [k, v] of Object.entries(readStoredSessions())) {
+    if (v && typeof v.machineId === "string") merged.set(k, v);
+  }
+  for (const [k, v] of inMemorySessions.entries()) {
+    merged.set(k, v);
+  }
+  return [...merged.values()].sort((a, b) => (b.pairedAt ?? 0) - (a.pairedAt ?? 0));
+}
+
+export async function disconnectAllCloudRelaySessions(store: HostConnectionProfileStore): Promise<void> {
+  clearPersonalHubSession();
+  inMemorySessions.clear();
+  try {
+    window.localStorage.removeItem(SESSIONS_STORAGE_KEY);
+    window.sessionStorage.removeItem("opencraft.hub-entered-session");
+  } catch {
+    // Restricted storage
+  }
+  const relayProfiles = store
+    .getSnapshot()
+    .profiles.filter((p) => p.providerId === CLOUD_RELAY_PROVIDER_ID);
+  for (const p of relayProfiles) {
+    await store.remove(p.hostId).catch(() => undefined);
+  }
+}
+
+export function isPasskeyUserCancelledOrNotFound(error: unknown): boolean {
+  if (!error) return false;
+  const name = (error as { name?: unknown }).name;
+  if (name === "NotAllowedError" || name === "AbortError") return true;
+  const msg = error instanceof Error ? error.message : String(error);
+  return /cancelled|canceled|not allowed|timed out/iu.test(msg);
+}
+
 function inferBrowserDeviceLabel(): string {
   const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
   if (/iPhone/iu.test(ua)) return "iPhone Browser";
@@ -561,6 +597,7 @@ export async function redeemCloudRelayUrl(
       const body = (await res.json().catch(() => ({}))) as {
         actorId?: string;
         token?: string;
+        displayName?: string;
         status?: string;
         shortCode?: string;
         error?: string;
@@ -568,13 +605,17 @@ export async function redeemCloudRelayUrl(
       if (!res.ok || !body.actorId || !body.token) {
         throw new Error(body.error ?? `Pairing failed (${res.status})`);
       }
+      const resolvedName =
+        typeof body.displayName === "string" && body.displayName.trim()
+          ? body.displayName.trim()
+          : `Mac (${entry.machineId.slice(0, 6)})`;
       const session: StoredCloudRelaySession = {
         sessionKey: `relay:${entry.machineId}`,
         relayOrigin: entry.relayOrigin,
         machineId: entry.machineId,
         token: body.token,
         actorId: body.actorId,
-        displayName: `Remote Mac (${entry.machineId.slice(0, 6)})`,
+        displayName: resolvedName,
         allowExecution: true,
         pairedAt: Date.now(),
       };
@@ -618,19 +659,27 @@ export async function redeemCloudRelayUrl(
     const claimed = (await claimRes.json().catch(() => ({}))) as {
       actorId?: string;
       token?: string;
-      grant?: { grantId: string; machineId: string; allowExecution: boolean };
+      machineDisplayName?: string;
+      grant?: { grantId: string; machineId: string; allowExecution: boolean; label?: string };
       error?: string;
     };
     if (!claimRes.ok || !claimed.actorId || !claimed.token || !claimed.grant) {
       throw new Error(claimed.error ?? `Share link could not be claimed (${claimRes.status})`);
     }
+    const resolvedShareName =
+      (typeof claimed.machineDisplayName === "string" && claimed.machineDisplayName.trim()) ||
+      (typeof claimed.grant.label === "string" &&
+      claimed.grant.label.trim() &&
+      claimed.grant.label.trim() !== "Shared Agent"
+        ? claimed.grant.label.trim()
+        : `Workstation (${claimed.grant.machineId.slice(0, 6)})`);
     const session: StoredCloudRelaySession = {
       sessionKey: `relay-share:${claimed.grant.grantId}`,
       relayOrigin: entry.relayOrigin,
       machineId: claimed.grant.machineId,
       token: claimed.token,
       actorId: claimed.actorId,
-      displayName: `Shared Workstation (${claimed.grant.machineId.slice(0, 6)})`,
+      displayName: resolvedShareName,
       allowExecution: claimed.grant.allowExecution === true,
       grantId: claimed.grant.grantId,
       pairedAt: Date.now(),

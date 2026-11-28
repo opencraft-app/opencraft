@@ -909,6 +909,7 @@ export interface MachineAuthorityDocument {
   readonly revoked: boolean;
   readonly generation: number;
   readonly approvedDevices: Readonly<Record<string, ApprovedDeviceEntry>>;
+  readonly revokedDevices?: Readonly<Record<string, number>>;
   readonly pendingApprovals: Readonly<Record<string, PendingDeviceApproval>>;
   readonly grants: Readonly<Record<string, MachineGrantProjection>>;
   readonly directRoutes: readonly DirectRouteCandidate[];
@@ -988,6 +989,7 @@ export class MachineRelayAuthority {
         revoked: false,
         generation: prev?.generation ?? 0,
         approvedDevices: prev?.approvedDevices ?? {},
+        ...(prev?.revokedDevices ? { revokedDevices: prev.revokedDevices } : {}),
         pendingApprovals: prev?.pendingApprovals ?? {},
         grants: prev?.grants ?? {},
         directRoutes: prev?.directRoutes ?? [],
@@ -1016,7 +1018,10 @@ export class MachineRelayAuthority {
           approvedAt: input.now,
         },
       };
+      const nextRevoked: Record<string, number> = { ...(prev.revokedDevices ?? {}) };
+      delete nextRevoked[input.ownerDeviceThumbprint];
       if (input.approvedBrowserThumbprint) {
+        delete nextRevoked[input.approvedBrowserThumbprint];
         nextApproved[input.approvedBrowserThumbprint] = {
           thumbprint: input.approvedBrowserThumbprint,
           label: (input.approvedBrowserLabel ?? "Personal Hub Browser").slice(0, 128),
@@ -1029,6 +1034,7 @@ export class MachineRelayAuthority {
         ownerDeviceThumbprint: input.ownerDeviceThumbprint,
         displayName: input.displayName?.trim().slice(0, 128) || prev.displayName,
         approvedDevices: nextApproved,
+        revokedDevices: nextRevoked,
       };
       return { result: { prevOwnerActorId, doc: next }, next };
     });
@@ -1081,31 +1087,48 @@ export class MachineRelayAuthority {
     readonly thumbprint: string;
     readonly label: string;
     readonly forceApprove: boolean;
+    readonly clearRevocation?: boolean;
     readonly ownerBootstrap?: boolean;
     readonly shortCode: string;
     readonly now: number;
   }): Promise<
     | { readonly status: "approved" }
+    | { readonly status: "revoked" }
     | { readonly status: "pending_approval"; readonly shortCode: string; readonly expiresAt: number }
   > {
     type RegistrationOutcome =
       | { readonly status: "approved" }
+      | { readonly status: "revoked" }
       | { readonly status: "pending_approval"; readonly shortCode: string; readonly expiresAt: number };
     return this.#mutate<RegistrationOutcome>((prev) => {
       if (!prev || prev.revoked) throw new Error("Machine is unavailable");
+      const nextRevoked: Record<string, number> = { ...(prev.revokedDevices ?? {}) };
+      if (input.clearRevocation === true || input.ownerBootstrap === true) {
+        delete nextRevoked[input.thumbprint];
+      } else if (nextRevoked[input.thumbprint]) {
+        return { result: { status: "revoked" as const } };
+      }
       if (
         prev.approvedDevices[input.thumbprint] ||
         input.ownerBootstrap === true ||
         (!prev.approvalRequired && input.forceApprove)
       ) {
+        const existing = prev.approvedDevices[input.thumbprint];
         const entry: ApprovedDeviceEntry = {
           thumbprint: input.thumbprint,
-          label: input.label.slice(0, 128) || "Paired Device",
-          approvedAt: input.now,
+          label:
+            existing && input.label === "Personal Hub Browser"
+              ? existing.label
+              : input.label.slice(0, 128) || "Paired Device",
+          approvedAt: existing?.approvedAt ?? input.now,
         };
         return {
           result: { status: "approved" as const },
-          next: { ...prev, approvedDevices: { ...prev.approvedDevices, [input.thumbprint]: entry } },
+          next: {
+            ...prev,
+            approvedDevices: { ...prev.approvedDevices, [input.thumbprint]: entry },
+            revokedDevices: nextRevoked,
+          },
         };
       }
       const cleaned: Record<string, PendingDeviceApproval> = {};
@@ -1121,7 +1144,7 @@ export class MachineRelayAuthority {
       };
       return {
         result: { status: "pending_approval" as const, shortCode: input.shortCode, expiresAt },
-        next: { ...prev, pendingApprovals: cleaned },
+        next: { ...prev, pendingApprovals: cleaned, revokedDevices: nextRevoked },
       };
     });
   }
@@ -1133,6 +1156,8 @@ export class MachineRelayAuthority {
       const pending = prev.pendingApprovals[normalized];
       if (!pending || pending.expiresAt <= now) return { result: null };
       const { [normalized]: _done, ...restPending } = prev.pendingApprovals;
+      const nextRevoked: Record<string, number> = { ...(prev.revokedDevices ?? {}) };
+      delete nextRevoked[pending.thumbprint];
       const approved: ApprovedDeviceEntry = {
         thumbprint: pending.thumbprint,
         label: pending.label,
@@ -1144,6 +1169,30 @@ export class MachineRelayAuthority {
           ...prev,
           pendingApprovals: restPending,
           approvedDevices: { ...prev.approvedDevices, [approved.thumbprint]: approved },
+          revokedDevices: nextRevoked,
+        },
+      };
+    });
+  }
+
+  async revokeDevice(thumbprint: string, now: number): Promise<boolean> {
+    return this.#mutate((prev) => {
+      if (!prev || prev.revoked) return { result: false };
+      if (prev.ownerDeviceThumbprint && thumbprint === prev.ownerDeviceThumbprint) {
+        return { result: false };
+      }
+      const { [thumbprint]: removedApproved, ...restApproved } = prev.approvedDevices;
+      const restPending: Record<string, PendingDeviceApproval> = {};
+      for (const [code, item] of Object.entries(prev.pendingApprovals)) {
+        if (item.thumbprint !== thumbprint) restPending[code] = item;
+      }
+      return {
+        result: Boolean(removedApproved || prev.revokedDevices?.[thumbprint] === undefined),
+        next: {
+          ...prev,
+          approvedDevices: restApproved,
+          pendingApprovals: restPending,
+          revokedDevices: { ...(prev.revokedDevices ?? {}), [thumbprint]: now },
         },
       };
     });
@@ -1190,6 +1239,9 @@ export class MachineRelayAuthority {
     | { readonly allowed: false; readonly status: 403 | 404; readonly error: string } {
     if (!doc || doc.revoked) return { allowed: false, status: 404, error: "machine_unavailable" };
     if (caller.actorId === doc.ownerActorId) {
+      if (caller.deviceThumbprint && doc.revokedDevices?.[caller.deviceThumbprint]) {
+        return { allowed: false, status: 403, error: "device_revoked" };
+      }
       const hasPendingForDevice = caller.deviceThumbprint
         ? Object.values(doc.pendingApprovals).some((p) => p.thumbprint === caller.deviceThumbprint)
         : false;

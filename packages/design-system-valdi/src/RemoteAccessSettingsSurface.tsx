@@ -22,6 +22,13 @@ export type RemoteAccessPendingApprovalItem = {
   readonly expiresLabel: string;
 };
 
+export type RemoteAccessApprovedDeviceItem = {
+  readonly thumbprint: string;
+  readonly label: string;
+  readonly detailLabel: string;
+  readonly active: boolean;
+};
+
 export type RemoteAccessActiveShareItem = {
   readonly grantId: string;
   readonly permissionLabel: string;
@@ -56,6 +63,16 @@ export type RemoteAccessSettingsProps = {
   pairingCopied?: boolean;
   refreshQrLabel: string;
 
+  // Sleep Protection (Desktop powerSaveBlocker)
+  sleepProtectionTitle?: string;
+  sleepProtectionDescription?: string;
+  sleepProtectionStatusLabel?: string;
+  sleepProtectionActive?: boolean;
+  sleepProtectionMode?: "ac" | "always" | "off";
+  sleepModeAcLabel?: string;
+  sleepModeAlwaysLabel?: string;
+  sleepModeOffLabel?: string;
+
   // Connection & Advanced Details
   advancedGroupTitle: string;
   statusTitle: string;
@@ -78,13 +95,19 @@ export type RemoteAccessSettingsProps = {
   hubTitle: string;
   hubDescription: string;
   hubActionLabel: string;
+  hubRebindActionLabel?: string;
   claimingHub?: boolean;
 
-  // Pending 6-digit Approvals Group
+  // Pending 6-digit Approvals Group & Authorized Devices
   approvalsGroupTitle: string;
   approvalsGroupDescription: string;
   approveButtonLabel: string;
   pendingApprovals: readonly RemoteAccessPendingApprovalItem[];
+  devicesGroupTitle?: string;
+  devicesGroupDescription?: string;
+  devicesEmptyText?: string;
+  revokeDeviceLabel?: string;
+  approvedDevices?: readonly RemoteAccessApprovedDeviceItem[];
 
   // Collaborator Share Group
   shareGroupTitle: string;
@@ -112,13 +135,16 @@ export type RemoteAccessSettingsProps = {
   onRefreshRoutes: () => void;
   onCopyPairingUrl: () => void;
   onRefreshQr: () => void;
+  onChangeSleepProtectionMode?: (mode: "ac" | "always" | "off") => void;
   onChangeRequireApproval: (next: boolean) => void;
   onApproveDevice: (shortCode: string) => void;
+  onRevokeDevice?: (thumbprint: string) => void;
   onChangeShareMode: (mode: "view" | "exec") => void;
   onCreateShare: () => void;
   onCopyShareUrl: (url: string) => void;
   onRevokeShare: (grantId: string) => void;
   onHubAction: () => void;
+  onHubRebindAction?: () => void;
   onDismissNotice?: () => void;
   onHaptic?: (style: string) => void;
 };
@@ -374,6 +400,41 @@ export class RemoteAccessSettingsSurface extends StatefulComponent<RemoteAccessS
                 {this.renderCompactQr(dark, vm.qrSvgDataUri, vm.qrMatrix, vm.refreshQrLabel, vm.onRefreshQr)}
               </view>
             </view>
+
+            {vm.sleepProtectionTitle &&
+            vm.onChangeSleepProtectionMode &&
+            vm.sleepModeAcLabel &&
+            vm.sleepModeAlwaysLabel &&
+            vm.sleepModeOffLabel ? (
+              <view width="100%">
+                <SettingsFormRow
+                  title={
+                    vm.sleepProtectionStatusLabel
+                      ? `${vm.sleepProtectionTitle} · ${vm.sleepProtectionStatusLabel}`
+                      : vm.sleepProtectionTitle
+                  }
+                  description={vm.sleepProtectionDescription}
+                  divider={true}
+                  touch={vm.touch}
+                  dark={dark}
+                >
+                  <SegmentedControl
+                    id="oc-relay-sleep-protection"
+                    label={vm.sleepProtectionTitle}
+                    value={vm.sleepProtectionMode ?? "ac"}
+                    options={[
+                      { id: "ac", title: vm.sleepModeAcLabel },
+                      { id: "always", title: vm.sleepModeAlwaysLabel },
+                      { id: "off", title: vm.sleepModeOffLabel },
+                    ]}
+                    compact={true}
+                    touch={vm.touch}
+                    dark={dark}
+                    onChange={(next) => vm.onChangeSleepProtectionMode?.(next as "ac" | "always" | "off")}
+                  />
+                </SettingsFormRow>
+              </view>
+            ) : null}
           </view>
         )}
       </SettingsGroup>
@@ -382,20 +443,38 @@ export class RemoteAccessSettingsSurface extends StatefulComponent<RemoteAccessS
       {vm.enabled && (
         <SettingsGroup title="" touch={vm.touch} dark={dark}>
           <SettingsFormRow title={vm.hubTitle} description={vm.hubDescription} touch={vm.touch} dark={dark}>
-            <Button
-              id="oc-relay-hub-action"
-              title={vm.hubActionLabel}
-              variant={vm.hubClaimed ? "quiet" : "secondary"}
-              size="sm"
-              leadingIcon={vm.hubClaimed ? "external" : "key"}
-              disabled={Boolean(vm.claimingHub || vm.busy)}
-              touch={vm.touch}
-              dark={dark}
-              onPress={() => {
-                triggerHaptic("selection");
-                vm.onHubAction();
-              }}
-            />
+            <view flexDirection="row" alignItems="center" gap={8}>
+              {vm.hubClaimed && vm.hubRebindActionLabel && vm.onHubRebindAction ? (
+                <Button
+                  id="oc-relay-hub-rebind"
+                  title={vm.hubRebindActionLabel}
+                  variant="secondary"
+                  size="sm"
+                  leadingIcon="key"
+                  disabled={Boolean(vm.claimingHub || vm.busy)}
+                  touch={vm.touch}
+                  dark={dark}
+                  onPress={() => {
+                    triggerHaptic("selection");
+                    vm.onHubRebindAction?.();
+                  }}
+                />
+              ) : null}
+              <Button
+                id="oc-relay-hub-action"
+                title={vm.hubActionLabel}
+                variant={vm.hubClaimed ? "quiet" : "secondary"}
+                size="sm"
+                leadingIcon={vm.hubClaimed ? "external" : "key"}
+                disabled={Boolean(vm.claimingHub || vm.busy)}
+                touch={vm.touch}
+                dark={dark}
+                onPress={() => {
+                  triggerHaptic("selection");
+                  vm.onHubAction();
+                }}
+              />
+            </view>
           </SettingsFormRow>
         </SettingsGroup>
       )}
@@ -456,6 +535,81 @@ export class RemoteAccessSettingsSurface extends StatefulComponent<RemoteAccessS
               </view>
             </view>;
           })}
+        </SettingsGroup>
+      )}
+
+      {/* Authorized External Devices (Instant Single-Device Revocation) */}
+      {vm.enabled && vm.devicesGroupTitle && vm.onRevokeDevice && (
+        <SettingsGroup
+          title={vm.devicesGroupTitle}
+          description={vm.devicesGroupDescription}
+          touch={vm.touch}
+          dark={dark}
+        >
+          {!vm.approvedDevices || vm.approvedDevices.length === 0 ? (
+            <view
+              minHeight={m.sizes.rowMinHeight}
+              paddingLeft={m.sizes.rowPaddingX}
+              paddingRight={m.sizes.rowPaddingX}
+              paddingTop={12}
+              paddingBottom={12}
+              justifyContent="center"
+            >
+              <label value={vm.devicesEmptyText ?? ""} font={m.fonts.detail} color={c.muted} numberOfLines={0} />
+            </view>
+          ) : (
+            <view width="100%">
+              {vm.approvedDevices.forEach((dev, idx) => {
+                <view key={dev.thumbprint} width="100%">
+                  {idx > 0 && <view height={0.5} marginLeft={16} marginRight={16} backgroundColor={c.border} />}
+                  <view
+                    minHeight={m.sizes.rowMinHeight}
+                    paddingLeft={m.sizes.rowPaddingX}
+                    paddingRight={m.sizes.rowPaddingX}
+                    paddingTop={11}
+                    paddingBottom={11}
+                    flexDirection="row"
+                    alignItems="center"
+                    justifyContent="space-between"
+                    gap={12}
+                  >
+                    <view flexDirection="row" alignItems="center" gap={10} flexGrow={1} flexShrink={1} minWidth={0}>
+                      <view
+                        width={8}
+                        height={8}
+                        borderRadius={4}
+                        backgroundColor={dev.active ? c.success : c.disabled}
+                        flexShrink={0}
+                        accessibilityNavigation="ignored"
+                      />
+                      <view flexGrow={1} flexShrink={1} minWidth={0} gap={2}>
+                        <label value={dev.label} font={m.fonts.rowTitle} color={c.ink} numberOfLines={1} />
+                        <label
+                          value={dev.detailLabel}
+                          font={m.fonts.detail}
+                          color={dev.active ? c.success : c.muted}
+                          numberOfLines={1}
+                        />
+                      </view>
+                    </view>
+                    <Button
+                      id={`oc-relay-revoke-device-${dev.thumbprint}`}
+                      title={vm.revokeDeviceLabel ?? ""}
+                      variant="danger"
+                      size="sm"
+                      disabled={Boolean(vm.busy)}
+                      touch={vm.touch}
+                      dark={dark}
+                      onPress={() => {
+                        triggerHaptic("light");
+                        vm.onRevokeDevice?.(dev.thumbprint);
+                      }}
+                    />
+                  </view>
+                </view>;
+              })}
+            </view>
+          )}
         </SettingsGroup>
       )}
 

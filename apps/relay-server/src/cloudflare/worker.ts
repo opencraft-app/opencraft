@@ -586,7 +586,10 @@ export default {
           ),
         );
         if (!claimRes.ok) return claimRes;
-        const claimed = (await claimRes.json()) as { grant: Record<string, unknown> };
+        const claimed = (await claimRes.json()) as {
+          grant: Record<string, unknown>;
+          machineDisplayName?: string;
+        };
         const now = Date.now();
         const token = await issueRelaySessionToken(env.OPENCRAFT_RELAY_SIGNING_KEY, {
           sub: granteeActorId,
@@ -603,6 +606,7 @@ export default {
             token,
             deviceThumbprint: guestThumbprint,
             grant: claimed.grant,
+            ...(claimed.machineDisplayName ? { machineDisplayName: claimed.machineDisplayName } : {}),
           },
           { "set-cookie": sessionCookieHeader(token, env.OPENCRAFT_RELAY_ORIGIN) },
         );
@@ -847,6 +851,33 @@ export default {
           ),
         );
 
+        // Explicit WebAuthn re-verification restores access on any previously revoked Personal Hub machine
+        const summaryRes = await userStub(env, record.actorId, hint).fetch(
+          new Request("https://user-relay.internal/summary", internalInit("GET")),
+        );
+        if (summaryRes.ok) {
+          const sum = (await summaryRes.json()) as {
+            machines?: ReadonlyArray<{ machineId: string; approvalRequired: boolean }>;
+          };
+          await Promise.all(
+            (sum.machines ?? []).map((m) =>
+              machineStub(env, m.machineId)
+                .fetch(
+                  new Request(
+                    "https://machine-relay.internal/internal/register-device",
+                    internalInit("POST", {
+                      thumbprint: deviceThumbprint,
+                      label: record.label || "Passkey Browser",
+                      forceApprove: !m.approvalRequired,
+                      clearRevocation: true,
+                    }),
+                  ),
+                )
+                .catch(() => undefined),
+            ),
+          );
+        }
+
         const now = Date.now();
         const token = await issueRelaySessionToken(env.OPENCRAFT_RELAY_SIGNING_KEY, {
           sub: profile.actorId,
@@ -1071,6 +1102,7 @@ export default {
           actorId: string;
           sessionEpoch: number;
           approvalRequired: boolean;
+          displayName?: string;
         };
         const now = Date.now();
         const token = await issueRelaySessionToken(env.OPENCRAFT_RELAY_SIGNING_KEY, {
@@ -1089,6 +1121,7 @@ export default {
                 thumbprint,
                 label: typeof body.deviceLabel === "string" ? body.deviceLabel : "Mobile Device",
                 forceApprove: !redeemed.approvalRequired,
+                clearRevocation: true,
               }),
             ),
           );
@@ -1098,6 +1131,7 @@ export default {
             {
               actorId: redeemed.actorId,
               machineId: body.machineId,
+              ...(redeemed.displayName ? { displayName: redeemed.displayName } : {}),
               token,
               deviceThumbprint: thumbprint,
               ...devBody,
@@ -1107,7 +1141,13 @@ export default {
         }
         return json(
           200,
-          { actorId: redeemed.actorId, machineId: body.machineId, token, status: "approved" },
+          {
+            actorId: redeemed.actorId,
+            machineId: body.machineId,
+            ...(redeemed.displayName ? { displayName: redeemed.displayName } : {}),
+            token,
+            status: "approved",
+          },
           { "set-cookie": sessionCookieHeader(token, env.OPENCRAFT_RELAY_ORIGIN) },
         );
       }
@@ -1144,11 +1184,11 @@ export default {
           }>;
         };
 
-        const enrichedMachines = await Promise.all(
+        const enrichedMachinesRaw = await Promise.all(
           summary.machines.map(async (m) => {
             try {
               if (caller.deviceThumbprint && !m.approvalRequired) {
-                await machineStub(env, m.machineId).fetch(
+                const regRes = await machineStub(env, m.machineId).fetch(
                   new Request(
                     "https://machine-relay.internal/internal/register-device",
                     internalInit("POST", {
@@ -1158,6 +1198,7 @@ export default {
                     }),
                   ),
                 );
+                if (regRes.status === 403) return null;
               }
               const inspRes = await machineStub(env, m.machineId).fetch(
                 new Request("https://machine-relay.internal/internal/inspect", internalInit("GET")),
@@ -1183,6 +1224,7 @@ export default {
             return { ...m, online: false, activeWatchers: 0, directRoutesCount: 0 };
           }),
         );
+        const enrichedMachines = enrichedMachinesRaw.filter((m): m is NonNullable<typeof m> => m !== null);
 
         return json(200, {
           actorId,
@@ -1303,6 +1345,20 @@ export default {
           new Request(
             "https://machine-relay.internal/internal/approve-device",
             internalInit("POST", { actorId, shortCode: body.shortCode }),
+          ),
+        );
+      }
+
+      const revokeDevMatch = /^\/__opencraft_cloud\/machines\/([0-9a-f-]{36})\/revoke-device$/u.exec(pathname);
+      if (revokeDevMatch && request.method === "POST") {
+        const body = (await request.json().catch(() => ({}))) as { thumbprint?: unknown };
+        if (typeof body.thumbprint !== "string" || !body.thumbprint.trim()) {
+          return json(400, { error: "invalid_device_thumbprint" });
+        }
+        return machineStub(env, revokeDevMatch[1]!).fetch(
+          new Request(
+            "https://machine-relay.internal/internal/revoke-device",
+            internalInit("POST", { actorId, thumbprint: body.thumbprint.trim() }),
           ),
         );
       }

@@ -238,6 +238,8 @@ export async function createWebWorkbenchApplicationSupervisor(
         window.sessionStorage.setItem("opencraft.pending-claim-href", initialBrowserEntryHref);
         window.history.replaceState(null, "", "/");
       } catch { /* Restricted storage */ }
+      const { openCloudRelayStandalonePortal } = await import("./cloud-relay-banner-state");
+      openCloudRelayStandalonePortal();
     }
     const rawBootstrapLocation = readWorkbenchBootstrapLocation(
       new URL(window.location.href), window.history.state, options.navigationMode,
@@ -374,6 +376,7 @@ export async function createWebWorkbenchApplicationSupervisor(
         window.localStorage.getItem("opencraft.cloud-relay.hub-session.v1") !== null;
     } catch { /* Restricted storage */ }
     const hasRelayEntryOrStoredSessions =
+      (platform === "web" && document.getElementById("opencraft-deployment-config") !== null) ||
       window.location.pathname.startsWith("/pair") ||
       window.location.pathname.startsWith("/s/") ||
       hasStoredRelaySessions ||
@@ -721,18 +724,25 @@ export async function createWebWorkbenchApplicationSupervisor(
     }).opencraftDesktop?.relay;
     if (isRelayEntryUrl || (platform === "electron" && desktopRelayBridge)) {
       const loadRelayClient = () => import("./cloud-relay-client");
-      const activatePairedSession = async (session: import("./cloud-relay-client").StoredCloudRelaySession, reloadIfHostless: boolean) => {
+      let relayBootstrapCompleted = false;
+      const activatePairedSession = async (
+        session: import("./cloud-relay-client").StoredCloudRelaySession,
+        isBrowserEntry: boolean,
+      ) => {
         const mod = await loadRelayClient();
-        const hadEnabledHost = hostProfiles.getSnapshot().profiles.some((p) => p.enabled);
         const nextHostId = await mod.provisionCloudRelaySessionProfiles(hostProfiles, session);
         setLocalPreference("opencraft.active-host-id", nextHostId);
-        if (reloadIfHostless && !hadEnabledHost) {
+        try {
+          window.sessionStorage.setItem("opencraft.hub-entered-session", "1");
+        } catch {}
+        if (isBrowserEntry && relayBootstrapCompleted) {
           window.location.reload();
         }
       };
       if (isRelayEntryUrl) {
         const mod = await loadRelayClient();
         await mod.redeemCloudRelayUrl(initialBrowserEntryHref, (session) => activatePairedSession(session, true));
+        relayBootstrapCompleted = true;
       }
       if (platform === "electron" && desktopRelayBridge) {
         const queuedPairUrls = await desktopRelayBridge.consumePairUrls?.().catch(() => [] as const) ?? [];

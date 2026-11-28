@@ -74,6 +74,8 @@ export {
   type AssetLibraryItem,
   type AssetTabId,
   type AssetsSurfaceProps,
+  type AssistantActorCardItem,
+  type AssistantPresetCardItem,
   type AssistantsSurfaceProps,
   type ChatSettingsProps,
   type ColorTokens,
@@ -113,6 +115,8 @@ export {
   type TokenUsageBarItem,
   type TokenUsageDashboardProps,
   type TokenUsageDiagnosticStatItem,
+  type TokenUsageGatewayRequestItem,
+  type TokenUsageGatewaySection,
   type TokenUsageHeatmapCell,
   type TokenUsageHeatmapWeek,
   type TokenUsageLedgerMetricItem,
@@ -239,52 +243,58 @@ input {
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.02);
 }
 
-.oc-apple-stage {
-  min-height: 100dvh;
-  background:
-    radial-gradient(900px 420px at 50% 0%, rgb(255 255 255 / 0.88), transparent 72%),
-    #f5f5f7 !important;
-}
-
-.oc-apple-stage.oc-dark {
-  background:
-    radial-gradient(900px 460px at 50% -6%, rgb(255 255 255 / 0.045), transparent 70%),
-    #0b0b0d !important;
-}
-
 .oc-apple-sheet {
+  border-radius: 26px !important;
   box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.92),
-    0 24px 64px -14px rgb(0 0 0 / 0.075),
+    0 24px 64px -14px rgb(0 0 0 / 0.08),
     0 4px 16px -2px rgb(0 0 0 / 0.035);
 }
 
 .oc-apple-sheet.oc-dark {
+  border-radius: 26px !important;
   box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.09),
-    0 28px 72px -12px rgb(0 0 0 / 0.62),
+    0 28px 72px -12px rgb(0 0 0 / 0.65),
     0 6px 20px -2px rgb(0 0 0 / 0.42);
 }
 
 .oc-apple-emblem {
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.95),
-    0 6px 16px -4px rgb(0 0 0 / 0.07);
+  border-radius: 16px !important;
+  box-shadow: 0 6px 16px -4px rgb(0 0 0 / 0.07);
 }
 
 .oc-apple-emblem.oc-dark {
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.12),
-    0 8px 20px -4px rgb(0 0 0 / 0.48);
+  border-radius: 16px !important;
+  box-shadow: 0 8px 20px -4px rgb(0 0 0 / 0.48);
 }
 
-.oc-apple-input-capsule:focus-within {
-  box-shadow: 0 0 0 3px rgb(0 113 227 / 0.18);
-  border-color: rgb(0 113 227 / 0.45) !important;
+.oc-apple-capsule,
+.oc-apple-input-capsule,
+.oc-apple-input-capsule .oc-pill-button {
+  border-radius: 999px !important;
 }
 
+.oc-apple-input-capsule input,
+.oc-apple-input-capsule input:focus,
 .oc-apple-input-capsule input:focus-visible {
   outline: none !important;
+  box-shadow: none !important;
+}
+
+:host-context(:root:not([data-touch-interaction])) .oc-apple-input-capsule:has(input:focus-visible) {
+  outline: 1.5px solid var(--color-border-focus, rgb(29 29 31 / 0.28));
+  outline-offset: -1.5px;
+}
+
+:host-context(:root:not([data-touch-interaction])) .oc-apple-sheet.oc-dark .oc-apple-input-capsule:has(input:focus-visible) {
+  outline: 1.5px solid var(--color-border-focus, rgb(245 245 247 / 0.34));
+  outline-offset: -1.5px;
+}
+
+@media (forced-colors: active) {
+  .oc-apple-input-capsule:has(input:focus-visible) {
+    outline: 1.5px solid Highlight !important;
+    outline-offset: -1.5px;
+  }
 }
 
 .oc-cold-skeleton {

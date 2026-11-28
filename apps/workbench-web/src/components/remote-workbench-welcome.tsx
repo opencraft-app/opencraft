@@ -1,4 +1,14 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { defineMessages } from "@opencraft/i18n";
 import { useIntl } from "@opencraft/i18n/react";
 import { isTouchPresentation, subscribeTouchPresentation } from "@opencraft/design-system-web/input-presentation";
@@ -13,10 +23,12 @@ import {
 import type {
   ParsedClaimTicketPreview,
   PersonalHubOverview,
+  StoredCloudRelaySession,
   StoredPersonalHubSession,
 } from "../runtime/cloud-relay-client";
 import { requestMobileHaptic } from "../runtime/mobile-valdi-bridge";
 import { setLocalPreference } from "../runtime/workbench-application-services";
+import "./desktop-welcome.scss";
 
 function useTouchPresentationState(): boolean {
   return useSyncExternalStore(
@@ -27,11 +39,37 @@ function useTouchPresentationState(): boolean {
   );
 }
 
+function hasExplicitStoredThemePreference(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return (
+      window.localStorage.getItem("opencraft.appearance-theme") !== null ||
+      window.localStorage.getItem("vela.appearance-theme") !== null
+    );
+  } catch {
+    return false;
+  }
+}
+
+function useSystemPrefersDark(): boolean {
+  return useSyncExternalStore(
+    (onStoreChange) => {
+      if (typeof window === "undefined" || !window.matchMedia) return () => undefined;
+      const mq = window.matchMedia("(prefers-color-scheme: dark)");
+      mq.addEventListener("change", onStoreChange);
+      return () => mq.removeEventListener("change", onStoreChange);
+    },
+    () => (typeof window !== "undefined" && window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)").matches : false),
+    () => false,
+  );
+}
+
 const remoteWelcomeMessages = defineMessages({
   title: { id: "remoteWelcome.title", defaultMessage: "Connect Your Computer" },
   subtitle: {
     id: "remoteWelcome.subtitle",
-    defaultMessage: "Agents run locally on your own machine. Verify once to work directly from this browser.",
+    defaultMessage:
+      "Agents run locally on your Mac or PC. Open Settings → Remote Control on your computer to scan or bind a Passkey.",
   },
   hubMachinesTitle: { id: "remoteWelcome.hubMachinesTitle", defaultMessage: "My Computers" },
   hubMachineCount: {
@@ -46,13 +84,25 @@ const remoteWelcomeMessages = defineMessages({
   hubSignIn: { id: "remoteWelcome.hubSignIn", defaultMessage: "Sign in with Passkey" },
   hubRefresh: { id: "remoteWelcome.hubRefresh", defaultMessage: "Refresh" },
   hubSignOut: { id: "remoteWelcome.hubSignOut", defaultMessage: "Sign out" },
+  disconnectBrowser: { id: "remoteWelcome.disconnectBrowser", defaultMessage: "Disconnect" },
+  backToWorkspace: { id: "remoteWelcome.backToWorkspace", defaultMessage: "Back to Workspace" },
   hubEmptyMachines: {
     id: "remoteWelcome.hubEmptyMachines",
     defaultMessage: "No computers bound yet. Open OpenCraft Desktop → Settings → Remote Control → Bind Passkey.",
   },
   hubMachineOnline: { id: "remoteWelcome.hubMachineOnline", defaultMessage: "Online" },
   hubMachineOffline: { id: "remoteWelcome.hubMachineOffline", defaultMessage: "Offline" },
+  hubMachinePaired: { id: "remoteWelcome.hubMachinePaired", defaultMessage: "Paired" },
   hubOpenWorkspace: { id: "remoteWelcome.hubOpenWorkspace", defaultMessage: "Open Workspace" },
+  passkeyNotFoundTitle: {
+    id: "remoteWelcome.passkeyNotFoundTitle",
+    defaultMessage: "No Passkey found on this device",
+  },
+  passkeyNotFoundDesc: {
+    id: "remoteWelcome.passkeyNotFoundDesc",
+    defaultMessage:
+      "First time here? On your computer, open OpenCraft → Settings → Remote Control to scan the QR code or bind a Passkey.",
+  },
   threadRunning: { id: "remoteWelcome.threadRunning", defaultMessage: "Running" },
   threadWaiting: { id: "remoteWelcome.threadWaiting", defaultMessage: "Needs confirmation" },
   threadFailed: { id: "remoteWelcome.threadFailed", defaultMessage: "Failed" },
@@ -115,9 +165,19 @@ const LazyValdiRemoteWelcome = lazy(async () => {
   return { default: RemoteWelcomeMount };
 });
 
-export function RemoteWorkbenchWelcome({ hostProfiles }: { readonly hostProfiles: HostConnectionProfileStore }) {
+export function RemoteWorkbenchWelcome({
+  hostProfiles,
+  hasConnectedHost = false,
+  onClosePortal,
+}: {
+  readonly hostProfiles: HostConnectionProfileStore;
+  readonly hasConnectedHost?: boolean;
+  readonly onClosePortal?: () => void;
+}) {
   const intl = useIntl();
   const appearance = useAppearanceTheme();
+  const systemPrefersDark = useSystemPrefersDark();
+  const effectiveDark = hasExplicitStoredThemePreference() ? appearance.resolvedTheme === "dark" : systemPrefersDark;
   const touch = useTouchPresentationState();
   const pairingState = useSyncExternalStore(
     subscribeCloudRelayPairingState,
@@ -130,12 +190,14 @@ export function RemoteWorkbenchWelcome({ hostProfiles }: { readonly hostProfiles
   const [passkeyBusy, setPasskeyBusy] = useState(false);
   const [hubSession, setHubSession] = useState<StoredPersonalHubSession | null>(null);
   const [hubOverview, setHubOverview] = useState<PersonalHubOverview | null>(null);
+  const [localPairedSessions, setLocalPairedSessions] = useState<readonly StoredCloudRelaySession[]>([]);
   const [claimPreview, setClaimPreview] = useState<ParsedClaimTicketPreview | null>(null);
   const [linkValue, setLinkValue] = useState("");
   const [connectingLink, setConnectingLink] = useState(false);
   const [serverValue, setServerValue] = useState("");
   const [connectingServer, setConnectingServer] = useState(false);
   const [localError, setLocalError] = useState<string | undefined>(undefined);
+  const [passkeyGuideVisible, setPasskeyGuideVisible] = useState(false);
 
   useEffect(() => {
     const node = containerRef.current;
@@ -148,6 +210,18 @@ export function RemoteWorkbenchWelcome({ hostProfiles }: { readonly hostProfiles
     return () => observer.disconnect();
   }, []);
 
+  const enterSelectedHost = useCallback(
+    (hostId: string) => {
+      setLocalPreference("opencraft.active-host-id", hostId);
+      try {
+        window.sessionStorage.setItem("opencraft.hub-entered-session", "1");
+      } catch {}
+      onClosePortal?.();
+      window.location.reload();
+    },
+    [onClosePortal],
+  );
+
   const refreshHubAndMaybeEnter = useCallback(
     async (session: StoredPersonalHubSession, autoEnterOnline: boolean, preferredMachineId?: string) => {
       const mod = await import("../runtime/cloud-relay-client");
@@ -159,14 +233,19 @@ export function RemoteWorkbenchWelcome({ hostProfiles }: { readonly hostProfiles
       }
       setHubOverview(overview);
       const onlineCount = overview.machines.filter((m) => m.online).length;
-      if (autoEnterOnline && (preferredMachineId || onlineCount === 1)) {
+      if (autoEnterOnline && !hasConnectedHost && (preferredMachineId || onlineCount === 1)) {
         const chosen = await mod.activateHubMachineInWorkbench(hostProfiles, session, overview, preferredMachineId);
         if (chosen) {
-          setLocalPreference("opencraft.active-host-id", chosen);
+          enterSelectedHost(chosen);
+        }
+      } else if (preferredMachineId && hasConnectedHost) {
+        const chosen = await mod.activateHubMachineInWorkbench(hostProfiles, session, overview, preferredMachineId);
+        if (chosen) {
+          enterSelectedHost(chosen);
         }
       }
     },
-    [hostProfiles],
+    [enterSelectedHost, hasConnectedHost, hostProfiles],
   );
 
   useEffect(() => {
@@ -174,6 +253,7 @@ export function RemoteWorkbenchWelcome({ hostProfiles }: { readonly hostProfiles
     void import("../runtime/cloud-relay-client").then(async (mod) => {
       if (cancelled) return;
       setPasskeySupported(mod.isWebAuthnPasskeySupported());
+      setLocalPairedSessions(mod.listStoredCloudRelaySessions());
       let rawClaimHref = window.location.href;
       try {
         const stashed = window.sessionStorage.getItem("opencraft.pending-claim-href");
@@ -192,13 +272,13 @@ export function RemoteWorkbenchWelcome({ hostProfiles }: { readonly hostProfiles
       const existingHub = mod.readStoredPersonalHubSession();
       if (existingHub) {
         setHubSession(existingHub);
-        await refreshHubAndMaybeEnter(existingHub, !claim).catch(() => undefined);
+        await refreshHubAndMaybeEnter(existingHub, !claim && !hasConnectedHost).catch(() => undefined);
       }
     });
     return () => {
       cancelled = true;
     };
-  }, [refreshHubAndMaybeEnter]);
+  }, [hasConnectedHost, refreshHubAndMaybeEnter]);
 
   const executeClaimAndRefresh = useCallback(
     async (session: StoredPersonalHubSession, claim: ParsedClaimTicketPreview | null) => {
@@ -218,6 +298,7 @@ export function RemoteWorkbenchWelcome({ hostProfiles }: { readonly hostProfiles
     if (passkeyBusy) return;
     setPasskeyBusy(true);
     setLocalError(undefined);
+    setPasskeyGuideVisible(false);
     try {
       const mod = await import("../runtime/cloud-relay-client");
       const relayOrigin = claimPreview?.relayOrigin ?? "https://relay.opencraft.app";
@@ -225,7 +306,14 @@ export function RemoteWorkbenchWelcome({ hostProfiles }: { readonly hostProfiles
       setHubSession(session);
       await executeClaimAndRefresh(session, claimPreview);
     } catch (err) {
-      setLocalError(err instanceof Error ? err.message : String(err));
+      const mod = await import("../runtime/cloud-relay-client");
+      if (mod.isPasskeyUserCancelledOrNotFound(err)) {
+        if (!claimPreview) {
+          setPasskeyGuideVisible(true);
+        }
+      } else {
+        setLocalError(err instanceof Error ? err.message : String(err));
+      }
     } finally {
       setPasskeyBusy(false);
     }
@@ -235,6 +323,7 @@ export function RemoteWorkbenchWelcome({ hostProfiles }: { readonly hostProfiles
     if (passkeyBusy) return;
     setPasskeyBusy(true);
     setLocalError(undefined);
+    setPasskeyGuideVisible(false);
     try {
       const mod = await import("../runtime/cloud-relay-client");
       const relayOrigin = claimPreview?.relayOrigin ?? "https://relay.opencraft.app";
@@ -242,7 +331,10 @@ export function RemoteWorkbenchWelcome({ hostProfiles }: { readonly hostProfiles
       setHubSession(session);
       await executeClaimAndRefresh(session, claimPreview);
     } catch (err) {
-      setLocalError(err instanceof Error ? err.message : String(err));
+      const mod = await import("../runtime/cloud-relay-client");
+      if (!mod.isPasskeyUserCancelledOrNotFound(err)) {
+        setLocalError(err instanceof Error ? err.message : String(err));
+      }
     } finally {
       setPasskeyBusy(false);
     }
@@ -276,21 +368,33 @@ export function RemoteWorkbenchWelcome({ hostProfiles }: { readonly hostProfiles
 
   const handleHubSignOut = useCallback(async () => {
     const mod = await import("../runtime/cloud-relay-client");
-    mod.clearPersonalHubSession();
+    await mod.disconnectAllCloudRelaySessions(hostProfiles);
     setHubSession(null);
     setHubOverview(null);
-  }, []);
+    setLocalPairedSessions([]);
+    if (hasConnectedHost) {
+      onClosePortal?.();
+      window.location.reload();
+    }
+  }, [hasConnectedHost, hostProfiles, onClosePortal]);
 
   const handleConnectHubMachine = useCallback(
     async (machineId: string) => {
-      if (!hubSession || !hubOverview) return;
       const mod = await import("../runtime/cloud-relay-client");
-      const chosen = await mod.activateHubMachineInWorkbench(hostProfiles, hubSession, hubOverview, machineId);
-      if (chosen) {
-        setLocalPreference("opencraft.active-host-id", chosen);
+      if (hubSession && hubOverview && hubOverview.machines.some((m) => m.machineId === machineId)) {
+        const chosen = await mod.activateHubMachineInWorkbench(hostProfiles, hubSession, hubOverview, machineId);
+        if (chosen) {
+          enterSelectedHost(chosen);
+        }
+        return;
+      }
+      const paired = localPairedSessions.find((s) => s.machineId === machineId || s.sessionKey === machineId);
+      if (paired) {
+        const nextHostId = await mod.provisionCloudRelaySessionProfiles(hostProfiles, paired);
+        enterSelectedHost(nextHostId);
       }
     },
-    [hostProfiles, hubOverview, hubSession],
+    [enterSelectedHost, hostProfiles, hubOverview, hubSession, localPairedSessions],
   );
 
   const handleSubmitLink = useCallback(async () => {
@@ -298,6 +402,7 @@ export function RemoteWorkbenchWelcome({ hostProfiles }: { readonly hostProfiles
     if (!raw || connectingLink) return;
     setConnectingLink(true);
     setLocalError(undefined);
+    setPasskeyGuideVisible(false);
     try {
       const mod = await import("../runtime/cloud-relay-client");
       const claim = mod.parseClaimTicketFromUrl(raw);
@@ -308,7 +413,8 @@ export function RemoteWorkbenchWelcome({ hostProfiles }: { readonly hostProfiles
       }
       const session = await mod.redeemCloudRelayUrl(raw, async (readySession) => {
         const nextHostId = await mod.provisionCloudRelaySessionProfiles(hostProfiles, readySession);
-        setLocalPreference("opencraft.active-host-id", nextHostId);
+        setLocalPairedSessions(mod.listStoredCloudRelaySessions());
+        enterSelectedHost(nextHostId);
       });
       const currentBanner = getCloudRelayPairingState();
       if (!session && currentBanner.phase !== "pending_approval" && currentBanner.phase !== "error") {
@@ -319,7 +425,7 @@ export function RemoteWorkbenchWelcome({ hostProfiles }: { readonly hostProfiles
     } finally {
       setConnectingLink(false);
     }
-  }, [connectingLink, hostProfiles, intl, linkValue]);
+  }, [connectingLink, enterSelectedHost, hostProfiles, intl, linkValue]);
 
   const handleSubmitServer = useCallback(() => {
     const raw = serverValue.trim();
@@ -349,49 +455,96 @@ export function RemoteWorkbenchWelcome({ hostProfiles }: { readonly hostProfiles
   const hubSignedIn = hubSession !== null;
 
   const hubMachines = useMemo(() => {
-    if (!hubOverview) return [];
-    const threadsByMachine = new Map<string, PersonalHubOverview["threadIndex"][number][]>();
-    for (const item of hubOverview.threadIndex) {
-      const list = threadsByMachine.get(item.machineId) ?? [];
-      if (list.length < 6) {
-        list.push(item);
-        threadsByMachine.set(item.machineId, list);
+    const items: Array<{
+      machineId: string;
+      displayName: string;
+      online: boolean;
+      statusLabel: string;
+      connectLabel: string;
+      threads: Array<{
+        threadId: string;
+        title: string;
+        statusLabel: string;
+        statusTone: "active" | "waiting" | "danger" | "muted";
+      }>;
+    }> = [];
+    const seenMachineIds = new Set<string>();
+
+    if (hubOverview) {
+      const threadsByMachine = new Map<string, PersonalHubOverview["threadIndex"][number][]>();
+      for (const item of hubOverview.threadIndex) {
+        const list = threadsByMachine.get(item.machineId) ?? [];
+        if (list.length < 6) {
+          list.push(item);
+          threadsByMachine.set(item.machineId, list);
+        }
+      }
+      for (const m of hubOverview.machines) {
+        seenMachineIds.add(m.machineId);
+        items.push({
+          machineId: m.machineId,
+          displayName: m.displayName,
+          online: m.online,
+          statusLabel: m.online
+            ? intl.formatMessage(remoteWelcomeMessages.hubMachineOnline)
+            : intl.formatMessage(remoteWelcomeMessages.hubMachineOffline),
+          connectLabel: intl.formatMessage(remoteWelcomeMessages.hubOpenWorkspace),
+          threads: (threadsByMachine.get(m.machineId) ?? []).map((t) => ({
+            threadId: t.threadId,
+            title: t.title,
+            statusLabel:
+              t.status === "running"
+                ? intl.formatMessage(remoteWelcomeMessages.threadRunning)
+                : t.status === "waiting"
+                  ? intl.formatMessage(remoteWelcomeMessages.threadWaiting)
+                  : t.status === "failed"
+                    ? intl.formatMessage(remoteWelcomeMessages.threadFailed)
+                    : intl.formatMessage(remoteWelcomeMessages.threadIdle),
+            statusTone:
+              t.status === "running"
+                ? ("active" as const)
+                : t.status === "waiting"
+                  ? ("waiting" as const)
+                  : t.status === "failed"
+                    ? ("danger" as const)
+                    : ("muted" as const),
+          })),
+        });
       }
     }
-    return hubOverview.machines.map((m) => ({
-      machineId: m.machineId,
-      displayName: m.displayName,
-      online: m.online,
-      statusLabel: m.online
-        ? intl.formatMessage(remoteWelcomeMessages.hubMachineOnline)
-        : intl.formatMessage(remoteWelcomeMessages.hubMachineOffline),
-      connectLabel: intl.formatMessage(remoteWelcomeMessages.hubOpenWorkspace),
-      threads: (threadsByMachine.get(m.machineId) ?? []).map((t) => ({
-        threadId: t.threadId,
-        title: t.title,
-        statusLabel:
-          t.status === "running"
-            ? intl.formatMessage(remoteWelcomeMessages.threadRunning)
-            : t.status === "waiting"
-              ? intl.formatMessage(remoteWelcomeMessages.threadWaiting)
-              : t.status === "failed"
-                ? intl.formatMessage(remoteWelcomeMessages.threadFailed)
-                : intl.formatMessage(remoteWelcomeMessages.threadIdle),
-        statusTone:
-          t.status === "running"
-            ? ("active" as const)
-            : t.status === "waiting"
-              ? ("waiting" as const)
-              : t.status === "failed"
-                ? ("danger" as const)
-                : ("muted" as const),
-      })),
-    }));
-  }, [hubOverview, intl]);
+
+    // Also include QR-paired or collaborator-shared sessions when browsing from Connected Workbench
+    if (!hubSignedIn && hasConnectedHost) {
+      for (const s of localPairedSessions) {
+        const key = s.grantId ? s.sessionKey : s.machineId;
+        if (seenMachineIds.has(key) || seenMachineIds.has(s.machineId)) continue;
+        seenMachineIds.add(key);
+        items.push({
+          machineId: key,
+          displayName: s.displayName,
+          online: true,
+          statusLabel: intl.formatMessage(remoteWelcomeMessages.hubMachinePaired),
+          connectLabel: intl.formatMessage(remoteWelcomeMessages.hubOpenWorkspace),
+          threads: [],
+        });
+      }
+    }
+
+    return items;
+  }, [hasConnectedHost, hubOverview, hubSignedIn, intl, localPairedSessions]);
+
+  useLayoutEffect(() => {
+    const stage = containerRef.current?.closest(".remote-welcome-standalone-stage");
+    if (!(stage instanceof HTMLElement)) return;
+    stage.dataset.standaloneDark = effectiveDark ? "true" : "false";
+    return () => {
+      delete stage.dataset.standaloneDark;
+    };
+  }, [effectiveDark]);
 
   const viewModel = useMemo(
     (): import("@opencraft/design-system-web/valdi").RemoteWorkbenchWelcomeProps => ({
-      dark: appearance.resolvedTheme === "dark",
+      dark: effectiveDark,
       touch,
       narrow,
       title: intl.formatMessage(remoteWelcomeMessages.title),
@@ -408,7 +561,10 @@ export function RemoteWorkbenchWelcome({ hostProfiles }: { readonly hostProfiles
       hubAddDeviceHint: intl.formatMessage(remoteWelcomeMessages.hubAddDeviceHint),
       hubPasteTempLinkLabel: intl.formatMessage(remoteWelcomeMessages.hubPasteTempLink),
       hubRefreshLabel: intl.formatMessage(remoteWelcomeMessages.hubRefresh),
-      hubSignOutLabel: intl.formatMessage(remoteWelcomeMessages.hubSignOut),
+      hubSignOutLabel: hubSignedIn
+        ? intl.formatMessage(remoteWelcomeMessages.hubSignOut)
+        : intl.formatMessage(remoteWelcomeMessages.disconnectBrowser),
+      backToWorkspaceLabel: hasConnectedHost ? intl.formatMessage(remoteWelcomeMessages.backToWorkspace) : undefined,
       hubEmptyMachinesText: intl.formatMessage(remoteWelcomeMessages.hubEmptyMachines),
       hubMachines,
       claimMachineName: claimPreview?.displayName,
@@ -432,6 +588,8 @@ export function RemoteWorkbenchWelcome({ hostProfiles }: { readonly hostProfiles
       pendingCodeTitle: intl.formatMessage(remoteWelcomeMessages.pendingTitle),
       pendingCodeDetail: intl.formatMessage(remoteWelcomeMessages.pendingDetail),
       pendingShortCode,
+      infoTitle: passkeyGuideVisible ? intl.formatMessage(remoteWelcomeMessages.passkeyNotFoundTitle) : undefined,
+      infoMessage: passkeyGuideVisible ? intl.formatMessage(remoteWelcomeMessages.passkeyNotFoundDesc) : undefined,
       errorMessage,
       serverDisclosureTitle: intl.formatMessage(remoteWelcomeMessages.serverDisclosure),
       serverAddressLabel: intl.formatMessage(remoteWelcomeMessages.serverAddress),
@@ -451,12 +609,24 @@ export function RemoteWorkbenchWelcome({ hostProfiles }: { readonly hostProfiles
       },
       onDismissClaim: () => {
         setClaimPreview(null);
+        if (hasConnectedHost) onClosePortal?.();
       },
       onHubRefresh: () => {
         void handleHubRefresh();
       },
       onHubSignOut: () => {
         void handleHubSignOut();
+      },
+      onBackToWorkspace: hasConnectedHost
+        ? () => {
+            try {
+              window.sessionStorage.setItem("opencraft.hub-entered-session", "1");
+            } catch {}
+            onClosePortal?.();
+          }
+        : undefined,
+      onDismissInfo: () => {
+        setPasskeyGuideVisible(false);
       },
       onConnectHubMachine: (id) => {
         void handleConnectHubMachine(id);
@@ -481,10 +651,10 @@ export function RemoteWorkbenchWelcome({ hostProfiles }: { readonly hostProfiles
       onHaptic: handleHaptic,
     }),
     [
-      appearance.resolvedTheme,
       claimPreview,
       connectingLink,
       connectingServer,
+      effectiveDark,
       errorMessage,
       handleConfirmClaimCurrentHub,
       handleConnectHubMachine,
@@ -496,14 +666,17 @@ export function RemoteWorkbenchWelcome({ hostProfiles }: { readonly hostProfiles
       handlePasskeySignIn,
       handleSubmitLink,
       handleSubmitServer,
+      hasConnectedHost,
       hubMachines,
       hubSignedIn,
       intl,
       linkValue,
       localError,
       narrow,
+      onClosePortal,
       pairingState.phase,
       passkeyBusy,
+      passkeyGuideVisible,
       passkeySupported,
       pendingShortCode,
       serverValue,

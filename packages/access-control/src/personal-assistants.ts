@@ -77,7 +77,8 @@ export class PersonalAssistants {
       .all(String(r.owner_human_id),String(r.actor_id),String(r.actor_id),String(r.owner_human_id))) this.service.channels.changed({channelId:String(channel.id),directory:true});
   }
   private value(r: Row): PersonalAssistant {
-    return {name:this.service.actors.get(String(r.actor_id))?.displayName??'Assistant',duties:String(r.duties??''),isDefault:r.is_default!==0,paused:!!r.paused||r.state!=='claimed'||this.service.actors.get(String(r.owner_human_id))?.generation!==r.owner_generation,configRevision:Number(r.config_revision??0),environment:JSON.parse(String(r.environment_json??'{"kind":"local"}')), binding: {serverId:this.service.actors.authority,botId:String(r.bot_id),assignmentId:String(r.assignment_id),
+    const isDefault = r.is_default !== 0;
+    return {name:this.service.actors.get(String(r.actor_id))?.displayName??'Assistant',duties:String(r.duties??''),isDefault,presetId:isDefault?'personal-assistant':null,cardinality:isDefault?'singleton-per-human':'multi',paused:!!r.paused||r.state!=='claimed'||this.service.actors.get(String(r.owner_human_id))?.generation!==r.owner_generation,configRevision:Number(r.config_revision??0),environment:JSON.parse(String(r.environment_json??'{"kind":"local"}')), binding: {serverId:this.service.actors.authority,botId:String(r.bot_id),assignmentId:String(r.assignment_id),
       owner:{kind:'human',id:String(r.owner_human_id)}}, actorId:String(r.actor_id),state:(this.service.actors.get(String(r.owner_human_id))?.generation===r.owner_generation?r.state:'revoked') as PersonalAssistant['state'],createdAt:Number(r.created_at),
       model:r.model_selection ? JSON.parse(String(r.model_selection)) : null, modelRevision:Number(r.model_revision ?? 0) };
   }
@@ -160,29 +161,66 @@ export class PersonalAssistants {
     const templateId=bounded(v.templateId);if(!/^[a-zA-Z0-9_-]{1,128}$/u.test(templateId))fail('invalid_input',400);
     return {kind:'sandbox',backendId:v.backendId,templateId};
   }
+  private retireCredentials(c: ActorContext, actorId: string): string[] {
+    const ids = this.db.prepare('SELECT id FROM actor_credentials WHERE actor_id=? AND enabled=1').all(actorId).map(v => String(v.id));
+    for (const id of ids) this.service.actors.revokeCredential(id, c.actorId);
+    return ids;
+  }
+  private insertAssistant(
+    c: ActorContext,
+    created: Actor[],
+    input: { name: string; isDefault: boolean; duties: string; environment: Record<string, unknown>; key: string | null; fingerprint: string | null },
+  ) {
+    const actor = this.service.actors.createSession(input.name, c.actorId);
+    created.push(actor);
+    const id = randomUUID();
+    this.db
+      .prepare("INSERT INTO personal_assistants(bot_id,actor_id,owner_human_id,owner_generation,assignment_id,epoch,state,created_at,is_default,duties,environment_json,create_key,create_fingerprint) VALUES(?,?,?,?,?,?,'claimed',?,?,?,?,?,?)")
+      .run(id, actor.id, c.actorId, c.generation, randomUUID(), randomUUID(), this.service.now(), input.isDefault ? 1 : 0, input.duties, JSON.stringify(input.environment), input.key, input.fingerprint);
+    const row = this.owned(c, id)!;
+    this.audit(c, row, input.isDefault ? 'claim' : 'create');
+    return this.status(row);
+  }
+  private resumeSingleton(c: ActorContext, existing: Row) {
+    if (!this.service.actors.get(String(existing.actor_id))?.enabled) fail();
+    if (existing.state === 'revoked' || existing.paused || existing.owner_generation !== c.generation) {
+      this.db
+        .prepare("UPDATE personal_assistants SET state='claimed',paused=0,credential_id=NULL,owner_generation=?,epoch=? WHERE bot_id=?")
+        .run(c.generation, randomUUID(), String(existing.bot_id));
+      const resumed = this.owned(c, undefined)!;
+      this.audit(c, resumed, 'claim');
+      this.notifyPair(resumed);
+      return this.status(resumed);
+    }
+    return this.status(existing);
+  }
   private botCommand(c:ActorContext,op:string,p:Record<string,unknown>,created:Actor[]){
     this.human(c);
     if(op==='bots/list'){
       fields(p,[]);return {bots:this.db.prepare('SELECT * FROM personal_assistants WHERE owner_human_id=? ORDER BY is_default DESC,created_at,bot_id').all(c.actorId).map(r=>this.status(r))};
     }
     if(op==='bots/create'){
-      fields(p,['name','duties','environment','clientRequestId']);
-      const name=bounded(p.name).trim();if(!name||name.length>80)fail('invalid_input',400);
-      if(typeof p.duties!=='string'||p.duties.length>2000||/[\x00-\x08\x0b\x0c\x0e-\x1f]/u.test(p.duties))fail('invalid_input',400);
-      const environment=this.environment(p.environment),key=bounded(p.clientRequestId);
-      const fingerprint=sha256Hex(JSON.stringify([name,p.duties,environment]));
+      fields(p,['presetId','name','duties','environment','clientRequestId']);
+      const isSingletonPreset=p.presetId!==undefined;
+      if(isSingletonPreset&&p.presetId!=='personal-assistant')fail('invalid_input',400);
+      const rawName=isSingletonPreset&&p.name===undefined?'Personal assistant':bounded(p.name);
+      const name=rawName.trim();if(!name||name.length>80)fail('invalid_input',400);
+      const duties=isSingletonPreset&&p.duties===undefined?'':p.duties;
+      if(typeof duties!=='string'||duties.length>2000||/[\x00-\x08\x0b\x0c\x0e-\x1f]/u.test(duties))fail('invalid_input',400);
+      const environment=isSingletonPreset&&p.environment===undefined?{kind:'local'}:this.environment(p.environment),key=bounded(p.clientRequestId);
+      if(isSingletonPreset){
+        const existing=this.owned(c,undefined);
+        if(existing)return this.resumeSingleton(c,existing);
+      }
+      const fingerprint=sha256Hex(JSON.stringify([p.presetId??null,name,duties,environment]));
       const prior=this.db.prepare('SELECT * FROM personal_assistants WHERE owner_human_id=? AND create_key=?').get(c.actorId,key);
       if(prior){if(prior.create_fingerprint!==fingerprint||prior.owner_generation!==c.generation)fail('idempotency_key_reused',409);return this.status(prior);}
       if(Number(this.db.prepare('SELECT count(*) AS n FROM personal_assistants WHERE owner_human_id=?').get(c.actorId)!.n)>=32)fail('assistant_limit',409);
-      const actor=this.service.actors.createSession(name,c.actorId);created.push(actor);
-      const id=randomUUID();
-      this.db.prepare("INSERT INTO personal_assistants(bot_id,actor_id,owner_human_id,owner_generation,assignment_id,epoch,state,created_at,is_default,duties,environment_json,create_key,create_fingerprint) VALUES(?,?,?,?,?,?,'claimed',?,0,?,?,?,?)")
-        .run(id,actor.id,c.actorId,c.generation,randomUUID(),randomUUID(),this.service.now(),p.duties,JSON.stringify(environment),key,fingerprint);
-      const row=this.owned(c,id)!;this.audit(c,row,'create');return this.status(row);
+      return this.insertAssistant(c,created,{name,isDefault:isSingletonPreset,duties,environment,key,fingerprint});
     }
     fields(p,op==='bots/update'?['botId','name','duties','environment','expectedRevision']:['botId','paused','expectedRevision']);
     const r=this.owned(c,bounded(p.botId));
-    if(!r||op==='bots/update'&&(r.state!=='claimed'||r.owner_generation!==c.generation))fail();
+    if(!r||op==='bots/update'&&r.owner_generation!==c.generation)fail();
     if(!Number.isSafeInteger(p.expectedRevision)||Number(p.expectedRevision)<0)fail('invalid_input',400);
     if(r.config_revision!==p.expectedRevision)fail('assistant_config_conflict',409);
     if(op==='bots/update'){
@@ -197,8 +235,7 @@ export class PersonalAssistants {
       if(!!r.paused===p.paused&&r.state==='claimed'&&r.owner_generation===c.generation)return this.status(r);
       this.db.prepare("UPDATE personal_assistants SET paused=?,state=CASE WHEN ?=0 THEN 'claimed' ELSE state END,owner_generation=CASE WHEN ?=0 THEN ? ELSE owner_generation END,config_revision=config_revision+1,epoch=?,credential_id=NULL WHERE bot_id=?").run(Number(p.paused),Number(p.paused),Number(p.paused),c.generation,randomUUID(),String(r.bot_id));
     }
-    const retiredCredentials=this.db.prepare('SELECT id FROM actor_credentials WHERE actor_id=? AND enabled=1').all(String(r.actor_id)).map(v=>String(v.id));
-    for(const id of retiredCredentials)this.service.actors.revokeCredential(id,c.actorId);
+    const retiredCredentials=this.retireCredentials(c,String(r.actor_id));
     const updated=this.owned(c,p.botId)!;this.audit(c,updated,op);this.notifyPair(updated);
     for(const channel of this.db.prepare('SELECT channel_id FROM actor_channel_members WHERE actor_id=?').all(String(r.actor_id)))this.service.channels.changed({channelId:String(channel.channel_id),directory:true});return {...this.status(updated),retiredCredentials};
   }
@@ -214,30 +251,17 @@ export class PersonalAssistants {
         return {channel:this.service.openChannelDirect(c,String(r.actor_id))};
       }
       if (op==='claim') {
-        if (!r) {
-          const actor=this.service.actors.createSession('Personal assistant',c.actorId);
-          created.push(actor);
-          this.db.prepare("INSERT INTO personal_assistants(bot_id,actor_id,owner_human_id,owner_generation,assignment_id,epoch,state,created_at) VALUES(?,?,?,?,?,?,'claimed',?)")
-            .run(randomUUID(),actor.id,c.actorId,c.generation,randomUUID(),randomUUID(),this.service.now());
-          r=this.owned(c,p.botId)!;
-          this.audit(c,r,'claim');
-        } else if (r.state==='revoked' || r.paused || r.owner_generation!==c.generation) {
-          // Explicit reclaim preserves resource/memory identity, retires in-flight authority.
-          if (!this.service.actors.get(String(r.actor_id))?.enabled) fail();
-          this.db.prepare("UPDATE personal_assistants SET state='claimed',paused=0,credential_id=NULL,owner_generation=?,epoch=? WHERE bot_id=?")
-            .run(c.generation,randomUUID(),String(r.bot_id));
-          r=this.owned(c,p.botId)!;
-          this.audit(c,r,'claim');
-          this.notifyPair(r);
-        }
-      } else if (op==='revoke' && r && r.state!=='revoked') {
+        return r
+          ? this.resumeSingleton(c, r)
+          : this.insertAssistant(c, created, { name: 'Personal assistant', isDefault: true, duties: '', environment: { kind: 'local' }, key: null, fingerprint: null });
+      }
+      if (op==='revoke' && r && r.state!=='revoked') {
         this.db.prepare("UPDATE personal_assistants SET state='revoked',credential_id=NULL,epoch=? WHERE bot_id=?").run(randomUUID(),String(r.bot_id));
         r=this.owned(c,p.botId)!;
         this.audit(c,r,'revoke');
         this.notifyPair(r);
       }
-      const channel=r?this.db.prepare('SELECT id FROM actor_channels WHERE owner_id=? AND peer_id=?').get(c.actorId,String(r.actor_id)):null;
-      return {assistant:r?this.value(r):null,channelId:channel?String(channel.id):null};
+      return this.status(r??null);
     }
     const r=this.row(c), authority=this.readAuthority(c), owner=authority.context;
     if(op==='authorize'){fields(p,[]);return this.access(c,r);}

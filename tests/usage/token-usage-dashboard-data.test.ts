@@ -8,6 +8,8 @@ import {
   modelShare,
   formatModelLabel,
   formatStateLabel,
+  resolveTokenUsageLedgerCapability,
+  TokenUsageReplicaStore,
 } from "../../apps/workbench-web/src/components/token-usage-dashboard-data.js";
 
 test("compactTokens formats numbers in compact K/M/B with decimals and sign", () => {
@@ -114,14 +116,76 @@ test("modelShare, formatModelLabel and formatStateLabel provide reliable present
   assert.equal(modelShare("0", "1000"), 0);
   assert.equal(modelShare("100", "0"), 0);
 
-  const copy = (cn: string, en: string) => cn;
-  assert.equal(formatModelLabel(JSON.stringify(["openai", "gpt-4o"]), copy), "openai / gpt-4o");
-  assert.equal(formatModelLabel(JSON.stringify([null, null]), copy), "未知提供方 / 未知模型");
-  assert.equal(formatModelLabel("invalid-json", copy), "未知模型");
+  const modelLabels = { unknownProvider: "未知提供方", unknownModel: "未知模型" };
+  assert.equal(formatModelLabel(JSON.stringify(["openai", "gpt-4o"]), modelLabels), "openai / gpt-4o");
+  assert.equal(formatModelLabel(JSON.stringify([null, null]), modelLabels), "未知提供方 / 未知模型");
+  assert.equal(formatModelLabel("invalid-json", modelLabels), "未知模型");
 
-  assert.equal(formatStateLabel("settled", copy), "已结算");
-  assert.equal(formatStateLabel("provisional", copy), "暂定");
-  assert.equal(formatStateLabel("custom-state", copy), "custom-state");
+  const stateLabels = {
+    settled: "已结算",
+    provisional: "暂定",
+    pending: "待归属",
+    system: "系统",
+    unknown: "未知",
+  };
+  assert.equal(formatStateLabel("settled", stateLabels), "已结算");
+  assert.equal(formatStateLabel("provisional", stateLabels), "暂定");
+  assert.equal(formatStateLabel("custom-state", stateLabels), "custom-state");
+});
+
+test("resolveTokenUsageLedgerCapability distinguishes unsettled handshake, unsupported host, and supported ledger", () => {
+  assert.deepEqual(resolveTokenUsageLedgerCapability(undefined), {
+    supported: false,
+    settled: false,
+    timezone: null,
+  });
+  assert.deepEqual(resolveTokenUsageLedgerCapability(null), {
+    supported: false,
+    settled: true,
+    timezone: null,
+  });
+  assert.deepEqual(resolveTokenUsageLedgerCapability({ query: false }), {
+    supported: false,
+    settled: true,
+    timezone: null,
+  });
+  assert.deepEqual(resolveTokenUsageLedgerCapability({ query: true, timezone: "Asia/Shanghai" }), {
+    supported: true,
+    settled: true,
+    timezone: "Asia/Shanghai",
+  });
+});
+
+test("TokenUsageReplicaStore preserves stale-while-revalidate snapshots per scope and ignores stale revisions", () => {
+  const store = new TokenUsageReplicaStore();
+  const base = {
+    serverId: "srv-1",
+    canQueryTeam: false,
+    scope: "self" as const,
+    actorId: "human://local/1",
+    asOf: 1000,
+    snapshotRevision: 4,
+    timezone: "UTC",
+    policyVersion: "equal-turn-v1",
+    view: "threads" as const,
+    coverage: { enabled: true, enabledAt: 100, partial: false, openGaps: 0, missingUsage: 0, unknownModelTurns: 0 },
+    summary: { tokens: "1200", allocatedTokens: "1200", turns: 2, categories: { settled: "1200" } },
+    daily: [],
+    models: [],
+    rows: [],
+    nextCursor: null,
+  };
+  store.writeLedger("actor-a", "local", "q-7d", base);
+  assert.equal(store.readLedger("actor-a", "local", "q-7d")?.snapshotRevision, 4);
+  // Switching filter key falls back to latestLedger for stale-while-revalidate continuity.
+  assert.equal(store.readLedger("actor-a", "local", "q-30d")?.snapshotRevision, 4);
+  // Older revision never overwrites newer state.
+  store.writeLedger("actor-a", "local", "q-7d", { ...base, snapshotRevision: 3, summary: { ...base.summary, tokens: "99" } });
+  assert.equal(store.readLedger("actor-a", "local", "q-7d")?.summary.tokens, "1200");
+  // Other account scopes remain strictly isolated.
+  assert.equal(store.readLedger("actor-b", "local", "q-7d"), null);
+  store.clearScope("actor-a");
+  assert.equal(store.readLedger("actor-a", "local", "q-7d"), null);
 });
 
 

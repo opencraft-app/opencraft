@@ -1259,9 +1259,10 @@ export class Collaboration {
       const host=this.assistantHost;
       if(method.endsWith('/create')||method.endsWith('/update')){
         await this.communicate(context,'opencraft/personal-assistant/bots/list',{});
-        if(!params.environment||typeof params.environment!=='object')throw new CollaborationError(400,'invalid_input');
-        if(host?.validateEnvironment)await host.validateEnvironment(params.environment as import('@opencraft/appserver-protocol').BotEnvironment,context);
-        else if(JSON.stringify(params.environment)!==JSON.stringify({kind:'local'}))throw new CollaborationError(503,'assistant_environment_unavailable');
+        const requestedEnvironment=method.endsWith('/create')&&params.presetId==='personal-assistant'&&params.environment===undefined?{kind:'local'}:params.environment;
+        if(!requestedEnvironment||typeof requestedEnvironment!=='object')throw new CollaborationError(400,'invalid_input');
+        if(host?.validateEnvironment)await host.validateEnvironment(requestedEnvironment as import('@opencraft/appserver-protocol').BotEnvironment,context);
+        else if(JSON.stringify(requestedEnvironment)!==JSON.stringify({kind:'local'}))throw new CollaborationError(503,'assistant_environment_unavailable');
         if(this.assistantHost!==host)throw new CollaborationError(409,'assistant_changed');
       }
       const result=await this.communicate(context,method,params);

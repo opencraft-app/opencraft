@@ -102,6 +102,33 @@ export const remoteAccessMessages = defineMessages({
     defaultMessage: "Open my.opencraft.app on your phone or another Mac to connect directly with Touch ID or Face ID.",
   },
   hubOpenAction: { id: "settings.remoteAccess.hubOpenAction", defaultMessage: "Open my.opencraft.app" },
+  hubRebindAction: { id: "settings.remoteAccess.hubRebindAction", defaultMessage: "Rebind Passkey" },
+  sleepTitle: { id: "settings.remoteAccess.sleepTitle", defaultMessage: "Prevent automatic sleep" },
+  sleepDescription: {
+    id: "settings.remoteAccess.sleepDescription",
+    defaultMessage:
+      "Display can still turn off normally. Closing a laptop lid without an external display still sleeps per OS hardware rules.",
+  },
+  sleepModeAc: { id: "settings.remoteAccess.sleepModeAc", defaultMessage: "On Power" },
+  sleepModeAlways: { id: "settings.remoteAccess.sleepModeAlways", defaultMessage: "Always" },
+  sleepModeOff: { id: "settings.remoteAccess.sleepModeOff", defaultMessage: "Off" },
+  sleepStatusActive: { id: "settings.remoteAccess.sleepStatusActive", defaultMessage: "Keeping system awake" },
+  sleepStatusBatteryPaused: {
+    id: "settings.remoteAccess.sleepStatusBatteryPaused",
+    defaultMessage: "On battery · sleep allowed",
+  },
+  devicesGroupTitle: { id: "settings.remoteAccess.devicesGroupTitle", defaultMessage: "Authorized devices" },
+  devicesGroupDescription: {
+    id: "settings.remoteAccess.devicesGroupDescription",
+    defaultMessage: "Phones and browsers connected via QR or Passkey. Removing a device disconnects it immediately.",
+  },
+  devicesEmpty: {
+    id: "settings.remoteAccess.devicesEmpty",
+    defaultMessage: "No external devices authorized yet.",
+  },
+  deviceActiveNow: { id: "settings.remoteAccess.deviceActiveNow", defaultMessage: "Connected now" },
+  deviceApprovedAt: { id: "settings.remoteAccess.deviceApprovedAt", defaultMessage: "Authorized {time}" },
+  revokeDevice: { id: "settings.remoteAccess.revokeDevice", defaultMessage: "Remove" },
 });
 
 interface DesktopRelayBridge {
@@ -136,6 +163,15 @@ interface RelayStatusSnapshot {
     readonly label: string;
     readonly expiresAt: number;
   }>;
+  readonly approvedDevices?: ReadonlyArray<{
+    readonly thumbprint: string;
+    readonly label: string;
+    readonly approvedAt: number;
+    readonly activeStreams: number;
+  }>;
+  readonly sleepProtectionMode?: "ac" | "always" | "off";
+  readonly sleepBlockerActive?: boolean;
+  readonly onBattery?: boolean;
   readonly activeShares?: ReadonlyArray<{
     readonly grantId: string;
     readonly allowExecution: boolean;
@@ -338,6 +374,33 @@ export function RemoteAccessSettings({ resolvedTheme }: { readonly resolvedTheme
     }
   }, []);
 
+  const handleRevokeDevice = useCallback(async (thumbprint: string) => {
+    const bridge = getDesktopRelayBridge();
+    if (!bridge) return;
+    setBusy(true);
+    setErrorMessage(undefined);
+    try {
+      const next = (await bridge.invoke("revoke-device", { thumbprint })) as RelayStatusSnapshot;
+      setStatus(next);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  const handleChangeSleepProtection = useCallback(async (mode: "ac" | "always" | "off") => {
+    const bridge = getDesktopRelayBridge();
+    if (!bridge) return;
+    setErrorMessage(undefined);
+    try {
+      const next = (await bridge.invoke("set-sleep-protection", { mode })) as RelayStatusSnapshot;
+      setStatus(next);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    }
+  }, []);
+
   const handleCreateShare = useCallback(async () => {
     const bridge = getDesktopRelayBridge();
     if (!bridge) return;
@@ -391,6 +454,20 @@ export function RemoteAccessSettings({ resolvedTheme }: { readonly resolvedTheme
       setClaimingHub(false);
     }
   }, [status?.hubClaimed]);
+
+  const handleHubRebindAction = useCallback(async () => {
+    const bridge = getDesktopRelayBridge();
+    if (!bridge) return;
+    setClaimingHub(true);
+    setErrorMessage(undefined);
+    try {
+      await bridge.invoke("open-claim-url");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setClaimingHub(false);
+    }
+  }, []);
 
   const pairingUrl = status?.latestInvite?.httpsPairingUrl ?? "";
   const isDark = resolvedTheme === "dark";
@@ -457,6 +534,21 @@ export function RemoteAccessSettings({ resolvedTheme }: { readonly resolvedTheme
       qrMatrix: qrArtifacts.matrix,
       pairingCopied,
       refreshQrLabel: intl.formatMessage(remoteAccessMessages.refreshQr),
+      sleepProtectionTitle: intl.formatMessage(remoteAccessMessages.sleepTitle),
+      sleepProtectionDescription: intl.formatMessage(remoteAccessMessages.sleepDescription),
+      sleepProtectionStatusLabel:
+        status?.sleepProtectionMode === "off"
+          ? undefined
+          : status?.sleepBlockerActive
+            ? intl.formatMessage(remoteAccessMessages.sleepStatusActive)
+            : status?.sleepProtectionMode === "ac" && status?.onBattery
+              ? intl.formatMessage(remoteAccessMessages.sleepStatusBatteryPaused)
+              : undefined,
+      sleepProtectionActive: Boolean(status?.sleepBlockerActive),
+      sleepProtectionMode: status?.sleepProtectionMode ?? "ac",
+      sleepModeAcLabel: intl.formatMessage(remoteAccessMessages.sleepModeAc),
+      sleepModeAlwaysLabel: intl.formatMessage(remoteAccessMessages.sleepModeAlways),
+      sleepModeOffLabel: intl.formatMessage(remoteAccessMessages.sleepModeOff),
       advancedGroupTitle: intl.formatMessage(remoteAccessMessages.advancedGroupTitle),
       statusTitle: status?.connected
         ? intl.formatMessage(remoteAccessMessages.statusConnected)
@@ -494,6 +586,9 @@ export function RemoteAccessSettings({ resolvedTheme }: { readonly resolvedTheme
       hubActionLabel: status?.hubClaimed
         ? intl.formatMessage(remoteAccessMessages.hubOpenAction)
         : intl.formatMessage(remoteAccessMessages.hubClaimAction),
+      hubRebindActionLabel: status?.hubClaimed
+        ? intl.formatMessage(remoteAccessMessages.hubRebindAction)
+        : undefined,
       claimingHub,
       approvalsGroupTitle: intl.formatMessage(remoteAccessMessages.approvalsGroupTitle),
       approvalsGroupDescription: intl.formatMessage(remoteAccessMessages.approvalsGroupDescription),
@@ -504,6 +599,21 @@ export function RemoteAccessSettings({ resolvedTheme }: { readonly resolvedTheme
         expiresLabel: intl.formatMessage(remoteAccessMessages.expiresAtLabel, {
           time: new Date(item.expiresAt).toLocaleTimeString(),
         }),
+      })),
+      devicesGroupTitle: intl.formatMessage(remoteAccessMessages.devicesGroupTitle),
+      devicesGroupDescription: intl.formatMessage(remoteAccessMessages.devicesGroupDescription),
+      devicesEmptyText: intl.formatMessage(remoteAccessMessages.devicesEmpty),
+      revokeDeviceLabel: intl.formatMessage(remoteAccessMessages.revokeDevice),
+      approvedDevices: (status?.approvedDevices ?? []).map((dev) => ({
+        thumbprint: dev.thumbprint,
+        label: dev.label,
+        active: dev.activeStreams > 0,
+        detailLabel:
+          dev.activeStreams > 0
+            ? intl.formatMessage(remoteAccessMessages.deviceActiveNow)
+            : intl.formatMessage(remoteAccessMessages.deviceApprovedAt, {
+                time: new Date(dev.approvedAt).toLocaleString(),
+              }),
       })),
       shareGroupTitle: intl.formatMessage(remoteAccessMessages.shareGroupTitle),
       shareGroupDescription: intl.formatMessage(remoteAccessMessages.shareGroupDescription),
@@ -543,11 +653,17 @@ export function RemoteAccessSettings({ resolvedTheme }: { readonly resolvedTheme
       onRefreshQr: () => {
         void handleRefreshQr();
       },
+      onChangeSleepProtectionMode: (mode: "ac" | "always" | "off") => {
+        void handleChangeSleepProtection(mode);
+      },
       onChangeRequireApproval: (next: boolean) => {
         void handleChangeRequireApproval(next);
       },
       onApproveDevice: (shortCode: string) => {
         void handleApproveDevice(shortCode);
+      },
+      onRevokeDevice: (thumbprint: string) => {
+        void handleRevokeDevice(thumbprint);
       },
       onChangeShareMode: setShareMode,
       onCreateShare: () => {
@@ -559,6 +675,9 @@ export function RemoteAccessSettings({ resolvedTheme }: { readonly resolvedTheme
       },
       onHubAction: () => {
         void handleHubAction();
+      },
+      onHubRebindAction: () => {
+        void handleHubRebindAction();
       },
       onDismissNotice: () => setNoticeMessage(undefined),
       onHaptic: handleHaptic,
@@ -573,13 +692,16 @@ export function RemoteAccessSettings({ resolvedTheme }: { readonly resolvedTheme
       handleApproveDevice,
       handleChangeDeviceName,
       handleChangeRequireApproval,
+      handleChangeSleepProtection,
       handleCopyPairingUrl,
       handleCopyShareUrl,
       handleCreateShare,
       handleHaptic,
       handleHubAction,
+      handleHubRebindAction,
       handleRefreshQr,
       handleRefreshRoutes,
+      handleRevokeDevice,
       handleSubmitDeviceName,
       handleToggleEnabled,
       intl,

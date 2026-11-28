@@ -4,7 +4,10 @@ import { useIntl } from "@opencraft/i18n/react";
 import {
   dismissCloudRelayPairingState,
   getCloudRelayPairingState,
+  getCloudRelayStandalonePortalOpen,
+  openCloudRelayStandalonePortal,
   subscribeCloudRelayPairingState,
+  subscribeCloudRelayStandalonePortal,
 } from "../runtime/cloud-relay-banner-state";
 
 const pairingOverlayMessages = defineMessages({
@@ -23,6 +26,14 @@ const pairingOverlayMessages = defineMessages({
   connected: {
     id: "cloudRelay.pairing.connected",
     defaultMessage: "Remote workstation connected.",
+  },
+  offlineTitle: {
+    id: "cloudRelay.pairing.offlineTitle",
+    defaultMessage: "Computer is offline or reconnecting",
+  },
+  switchComputer: {
+    id: "remoteWelcome.hubMachinesTitle",
+    defaultMessage: "My Computers",
   },
   dismiss: {
     id: "cloudRelay.pairing.dismiss",
@@ -49,16 +60,21 @@ const LazyValdiPairingBanner = lazy(async () => {
   return { default: PairingBannerMount };
 });
 
-export function CloudRelayPairingOverlay() {
+export function CloudRelayPairingOverlay({ isHostless = false }: { readonly isHostless?: boolean } = {}) {
   const intl = useIntl();
   const state = useSyncExternalStore(
     subscribeCloudRelayPairingState,
     getCloudRelayPairingState,
     getCloudRelayPairingState,
   );
+  const portalOpen = useSyncExternalStore(
+    subscribeCloudRelayStandalonePortal,
+    getCloudRelayStandalonePortalOpen,
+    getCloudRelayStandalonePortalOpen,
+  );
 
   const viewModel = useMemo((): ValdiBannerViewModel | null => {
-    if (state.phase === "idle") return null;
+    if (state.phase === "idle" || portalOpen || isHostless) return null;
     const dark =
       typeof document !== "undefined"
         ? document.documentElement.dataset.theme === "dark" ||
@@ -92,6 +108,20 @@ export function CloudRelayPairingOverlay() {
         dark,
       };
     }
+    if (state.phase === "offline") {
+      return {
+        id: "oc-cloud-relay-pairing-banner",
+        tone: "info",
+        title: intl.formatMessage(pairingOverlayMessages.offlineTitle),
+        actionTitle: intl.formatMessage(pairingOverlayMessages.switchComputer),
+        onAction: () => {
+          dismissCloudRelayPairingState();
+          openCloudRelayStandalonePortal();
+        },
+        onDismiss: dismissCloudRelayPairingState,
+        dark,
+      };
+    }
     return {
       id: "oc-cloud-relay-pairing-banner",
       tone: "danger",
@@ -100,7 +130,7 @@ export function CloudRelayPairingOverlay() {
       onAction: dismissCloudRelayPairingState,
       dark,
     };
-  }, [intl, state]);
+  }, [intl, isHostless, portalOpen, state]);
 
   if (!viewModel) return null;
 

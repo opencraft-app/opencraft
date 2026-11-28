@@ -93,6 +93,29 @@ export type TokenUsageDiagnosticStatItem = {
   readonly value: string;
 };
 
+export type TokenUsageGatewayRequestItem = {
+  readonly id: string;
+  readonly title: string;
+  readonly subtitle: string;
+  readonly detail: string;
+};
+
+export type TokenUsageGatewaySection = {
+  readonly title: string;
+  readonly subtitle: string;
+  readonly budgetLabel?: string;
+  readonly budgetDetail?: string;
+  readonly budgetProgress?: number;
+  readonly budgetWarning?: boolean;
+  readonly statusMessage?: string;
+  readonly metrics: readonly TokenUsageLedgerMetricItem[];
+  readonly requestsTitle?: string;
+  readonly requestsEmptyText?: string;
+  readonly requests?: readonly TokenUsageGatewayRequestItem[];
+  readonly manageModelsLabel?: string;
+  readonly onManageModels?: () => void;
+};
+
 export type TokenUsageLedgerSection = {
   readonly scopeLabel: string;
   readonly scopeValue: string;
@@ -169,6 +192,7 @@ export type TokenUsageDashboardProps = {
   loadingText?: string;
   errorMessage?: string;
   localUsage?: TokenUsageLocalSection;
+  gatewayBudget?: TokenUsageGatewaySection;
   ledger?: TokenUsageLedgerSection;
   onRefresh: () => void;
   onHaptic?: (style: string) => void;
@@ -868,6 +892,100 @@ export class TokenUsageDashboardSurface extends StatefulComponent<TokenUsageDash
     </view>;
   }
 
+  private renderGatewayBudget(gateway: TokenUsageGatewaySection, dark: boolean, narrow: boolean, touch?: boolean): void {
+    const c = themeColors(dark);
+    const m = themeMetrics(touch);
+
+    <view width="100%" gap={20}>
+      <SettingsGroup title={gateway.title} description={gateway.subtitle} touch={touch} dark={dark}>
+        <view width="100%" padding={16} gap={14}>
+          {gateway.manageModelsLabel && gateway.onManageModels && (
+            <view width="100%" flexDirection="row" justifyContent="flex-end">
+              <Button
+                id="oc-usage-gateway-manage-models"
+                title={gateway.manageModelsLabel}
+                variant="secondary"
+                size="sm"
+                touch={touch}
+                dark={dark}
+                onPress={gateway.onManageModels}
+              />
+            </view>
+          )}
+
+          {gateway.budgetLabel && gateway.budgetProgress !== undefined ? (
+            <ProgressBar
+              id="oc-usage-gateway-budget-bar"
+              label={gateway.budgetLabel}
+              progress={gateway.budgetProgress}
+              detail={gateway.budgetDetail}
+              tone={gateway.budgetWarning ? "warning" : "accent"}
+              touch={touch}
+              dark={dark}
+            />
+          ) : gateway.statusMessage ? (
+            <label value={gateway.statusMessage} font={m.fonts.detail} color={c.muted} numberOfLines={0} />
+          ) : null}
+
+          {gateway.metrics.length > 0 && (
+            <view width="100%" flexDirection="row" flexWrap="wrap" gap={8}>
+              {gateway.metrics.forEach((cell) => {
+                <view
+                  key={cell.id}
+                  flexGrow={1}
+                  flexBasis={narrow ? 140 : 120}
+                  minWidth={112}
+                  paddingLeft={12}
+                  paddingRight={12}
+                  paddingTop={12}
+                  paddingBottom={12}
+                  borderRadius={10}
+                  backgroundColor={c.recessed}
+                  borderWidth={0.5}
+                  borderColor={c.border}
+                  gap={3}
+                >
+                  <label value={cell.value} font={systemSemiboldFont(18)} color={c.ink} numberOfLines={1} />
+                  <label value={cell.label} font={m.fonts.detail} color={c.muted} numberOfLines={1} />
+                  <label value={cell.detail} font={m.fonts.caption} color={c.disabled} numberOfLines={1} />
+                </view>;
+              })}
+            </view>
+          )}
+        </view>
+
+        {gateway.requestsTitle && (
+          <view width="100%">
+            <view height={0.5} marginLeft={16} marginRight={16} backgroundColor={c.border} />
+            <view width="100%" paddingLeft={16} paddingRight={16} paddingTop={12} paddingBottom={8}>
+              <label value={gateway.requestsTitle} font={m.fonts.caption} color={c.muted} numberOfLines={1} />
+            </view>
+            {gateway.requests && gateway.requests.length > 0 ? (
+              <view width="100%">
+                {gateway.requests.forEach((req, idx) => {
+                  <SettingsListItem
+                    key={req.id}
+                    id={`oc-gateway-req-${req.id}`}
+                    title={req.title}
+                    description={req.subtitle}
+                    metadata={req.detail}
+                    divider={idx > 0}
+                    touch={touch}
+                    dark={dark}
+                  />;
+                })}
+              </view>
+            ) : gateway.requestsEmptyText ? (
+              <view width="100%" paddingLeft={16} paddingRight={16} paddingTop={4} paddingBottom={16}>
+                <label value={gateway.requestsEmptyText} font={m.fonts.body} color={c.muted} numberOfLines={0} />
+              </view>
+            ) : null}
+          </view>
+        )}
+      </SettingsGroup>
+    </view>;
+  }
+
   onRender(): void {
     const vm = this.viewModel;
     const dark = Boolean(vm.dark);
@@ -906,13 +1024,26 @@ export class TokenUsageDashboardSurface extends StatefulComponent<TokenUsageDash
           <Banner id="oc-token-usage-error" tone="danger" title={vm.errorMessage} touch={vm.touch} dark={dark} />
         )}
 
-        {vm.loading && !vm.localUsage && !vm.ledger && vm.loadingText && (
-          <view width="100%" paddingTop={8}>
-            <label value={vm.loadingText} font={m.fonts.body} color={c.muted} numberOfLines={1} />
+        {vm.loading && !vm.localUsage && !vm.gatewayBudget && !vm.ledger && (
+          <view
+            class="oc-cold-skeleton"
+            width="100%"
+            minHeight={132}
+            borderRadius={m.radii.card}
+            backgroundColor={c.surface}
+            borderWidth={0.5}
+            borderColor={c.border}
+            padding={16}
+            gap={12}
+          >
+            <view width="38%" height={13} borderRadius={6} backgroundColor={c.recessed} />
+            <view width="72%" height={11} borderRadius={5} backgroundColor={c.recessed} />
+            <view width="54%" height={11} borderRadius={5} backgroundColor={c.recessed} />
           </view>
         )}
 
         {vm.localUsage && this.renderLocalUsage(vm.localUsage, dark, vm.touch)}
+        {vm.gatewayBudget && this.renderGatewayBudget(vm.gatewayBudget, dark, Boolean(vm.narrow), vm.touch)}
         {vm.ledger && this.renderLedger(vm.ledger, dark, Boolean(vm.narrow), vm.touch)}
       </view>
     </view>;

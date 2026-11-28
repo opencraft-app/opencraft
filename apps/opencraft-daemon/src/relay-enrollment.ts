@@ -69,6 +69,13 @@ export interface DaemonRelayPendingApproval {
   readonly expiresAt: number;
 }
 
+export interface DaemonRelayApprovedDevice {
+  readonly thumbprint: string;
+  readonly label: string;
+  readonly approvedAt: number;
+  readonly activeStreams: number;
+}
+
 export interface DaemonRelayActiveShareSummary {
   readonly grantId: string;
   readonly machineId: string;
@@ -91,6 +98,7 @@ export interface DaemonRelayStatus {
   readonly advertisedRoutes: readonly DirectRouteCandidate[];
   readonly latestInvite?: DaemonRelayPairingInvite | null;
   readonly pendingApprovals?: readonly DaemonRelayPendingApproval[];
+  readonly approvedDevices?: readonly DaemonRelayApprovedDevice[];
   readonly activeShares?: readonly DaemonRelayActiveShareSummary[];
   readonly planTier?: "free" | "pro" | "team";
   readonly machineLimit?: number;
@@ -110,10 +118,14 @@ export interface DaemonRelayEnrollmentServiceOptions {
 class RelayStreamAppHostPort implements AppHostServerPort {
   readonly #listeners = new Set<(message: unknown) => void>();
 
-  constructor(private readonly stream: RelayMuxWsStream) {}
+  constructor(
+    private readonly stream: RelayMuxWsStream,
+    private readonly onOutboundMessage?: (message: unknown) => void,
+  ) {}
 
   postMessage(message: Parameters<AppHostServerPort["postMessage"]>[0]): void {
     this.stream.sendText(JSON.stringify(message));
+    this.onOutboundMessage?.(message);
   }
 
   subscribe(listener: (message: unknown) => void): () => void {
@@ -275,6 +287,13 @@ export class DaemonRelayEnrollmentService {
   #advertisedRoutes: readonly DirectRouteCandidate[] = [];
   #latestInvite: DaemonRelayPairingInvite | null = null;
   readonly #knownShareUrls = new Map<string, string>();
+  #lastThreads: readonly {
+    readonly threadId: string;
+    readonly title: string;
+    readonly status: "idle" | "running" | "waiting" | "failed";
+    readonly updatedAt: number;
+  }[] = [];
+  #threadSyncTimer: ReturnType<typeof setTimeout> | null = null;
   #closed = false;
 
   constructor(private readonly options: DaemonRelayEnrollmentServiceOptions) {
@@ -315,6 +334,7 @@ export class DaemonRelayEnrollmentService {
     }
 
     let pendingApprovals: readonly DaemonRelayPendingApproval[] = [];
+    let approvedDevices: readonly DaemonRelayApprovedDevice[] = [];
     let activeShares: readonly DaemonRelayActiveShareSummary[] = [];
     let planTier: "free" | "pro" | "team" | undefined;
     let machineLimit: number | undefined;
@@ -392,8 +412,10 @@ export class DaemonRelayEnrollmentService {
         const inspected = (await inspectRes.json()) as {
           ownerActorId?: string | null;
           pendingApprovals?: readonly DaemonRelayPendingApproval[];
+          approvedDevices?: readonly DaemonRelayApprovedDevice[];
         };
         pendingApprovals = inspected.pendingApprovals ?? [];
+        approvedDevices = inspected.approvedDevices ?? [];
         if (
           inspected.ownerActorId &&
           inspected.ownerActorId !== state.actorId &&
@@ -425,6 +447,9 @@ export class DaemonRelayEnrollmentService {
               };
               this.#state = updated;
               await this.#writePrivateEnrollment(updated).catch(() => undefined);
+              if (this.#lastThreads.length > 0) {
+                void this.publishThreadIndex(this.#lastThreads);
+              }
             }
           }
         }
@@ -437,6 +462,7 @@ export class DaemonRelayEnrollmentService {
       ...this.status(),
       latestInvite,
       pendingApprovals,
+      approvedDevices,
       activeShares,
       ...(planTier ? { planTier } : {}),
       ...(machineLimit !== undefined ? { machineLimit } : {}),
@@ -760,6 +786,20 @@ export class DaemonRelayEnrollmentService {
     return { thumbprint: body.thumbprint };
   }
 
+  async revokeApprovedDevice(thumbprint: string): Promise<void> {
+    const state = this.#requireEnrolled();
+    const url = `${state.relayOrigin}/__opencraft_cloud/machines/${state.machineId}/revoke-device`;
+    const res = await this.#fetch(url, {
+      method: "POST",
+      headers: await this.#authHeaders(state, "POST", url, true),
+      body: JSON.stringify({ thumbprint }),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error ?? `Device revocation failed (${res.status})`);
+    }
+  }
+
   async createShare(
     options: {
       readonly allowExecution?: boolean;
@@ -883,18 +923,24 @@ export class DaemonRelayEnrollmentService {
       readonly updatedAt: number;
     }[],
   ): Promise<void> {
+    const normalized = threads.slice(0, 15);
+    this.#lastThreads = normalized;
     const state = this.#state;
     if (!state) return;
     const url = `${state.relayOrigin}/__opencraft_cloud/machines/${state.machineId}/thread-index`;
     await this.#fetch(url, {
       method: "POST",
       headers: await this.#authHeaders(state, "POST", url, true),
-      body: JSON.stringify({ threads: threads.slice(0, 15) }),
+      body: JSON.stringify({ threads: normalized }),
     }).catch(() => undefined);
   }
 
   async unenroll(): Promise<void> {
     const state = this.#state;
+    if (this.#threadSyncTimer) {
+      clearTimeout(this.#threadSyncTimer);
+      this.#threadSyncTimer = null;
+    }
     this.#mux?.close();
     this.#mux = null;
     this.#state = null;
@@ -913,6 +959,10 @@ export class DaemonRelayEnrollmentService {
 
   close(): void {
     this.#closed = true;
+    if (this.#threadSyncTimer) {
+      clearTimeout(this.#threadSyncTimer);
+      this.#threadSyncTimer = null;
+    }
     this.#mux?.close();
     this.#mux = null;
   }
@@ -981,8 +1031,60 @@ export class DaemonRelayEnrollmentService {
     });
   }
 
+  #observeOutboundAppHostMessage(message: unknown): void {
+    if (!message || typeof message !== "object" || Array.isArray(message)) return;
+    const rec = message as { type?: unknown; frame?: unknown };
+    if (rec.type !== "host/message" || typeof rec.frame !== "string" || !rec.frame.includes('"updatedAt"')) return;
+    try {
+      const rpc = JSON.parse(rec.frame) as { result?: { data?: unknown } };
+      const rows = rpc?.result?.data;
+      if (!Array.isArray(rows) || rows.length === 0) return;
+      const mapped: {
+        threadId: string;
+        title: string;
+        status: "idle" | "running" | "waiting" | "failed";
+        updatedAt: number;
+      }[] = [];
+      for (const item of rows.slice(0, 15)) {
+        if (!item || typeof item !== "object") continue;
+        const r = item as Record<string, unknown>;
+        if (typeof r.id !== "string" || typeof r.updatedAt !== "number") continue;
+        const title =
+          (typeof r.name === "string" && r.name.trim()) ||
+          (typeof r.title === "string" && r.title.trim()) ||
+          (typeof r.preview === "string" && r.preview.trim()) ||
+          "Untitled";
+        const rawStatus =
+          r.status && typeof r.status === "object"
+            ? (r.status as { type?: unknown }).type
+            : typeof r.status === "string"
+              ? r.status
+              : "idle";
+        const status: "idle" | "running" | "waiting" | "failed" =
+          rawStatus === "active" || rawStatus === "running" || rawStatus === "inProgress"
+            ? "running"
+            : rawStatus === "waiting" || rawStatus === "pendingApproval"
+              ? "waiting"
+              : rawStatus === "error" || rawStatus === "failed" || rawStatus === "systemError"
+                ? "failed"
+                : "idle";
+        const updatedAt = r.updatedAt < 1e11 ? Math.round(r.updatedAt * 1000) : Math.round(r.updatedAt);
+        mapped.push({ threadId: r.id, title: title.slice(0, 140), status, updatedAt });
+      }
+      if (mapped.length === 0) return;
+      if (this.#threadSyncTimer) clearTimeout(this.#threadSyncTimer);
+      this.#threadSyncTimer = setTimeout(() => {
+        this.#threadSyncTimer = null;
+        if (!this.#closed) void this.publishThreadIndex(mapped);
+      }, 2500);
+      this.#threadSyncTimer.unref?.();
+    } catch {
+      // Ignore unrelated JSON-RPC frames
+    }
+  }
+
   #bridgeAppHostStream(stream: RelayMuxWsStream, actorId: string, scope: MuxAccessScope): void {
-    const port = new RelayStreamAppHostPort(stream);
+    const port = new RelayStreamAppHostPort(stream, (msg) => this.#observeOutboundAppHostMessage(msg));
     let connection: ReturnType<Pick<AppHostServer, "accept">["accept"]> | null = null;
     stream.onText((text) => {
       let parsed: unknown;

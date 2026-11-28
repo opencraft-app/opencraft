@@ -35,9 +35,9 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 )), __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: !0 }), mod);
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/ValdiWebWorker.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/ValdiWebWorker.js
 var require_ValdiWebWorker = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/ValdiWebWorker.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/ValdiWebWorker.js"(exports, module) {
     module.path = "web_renderer/src/ValdiWebWorker";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.createValdiWebWorker = exports.registerValdiWebWorker = void 0;
@@ -78,9 +78,9 @@ var require_ValdiWebWorker = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/WebRendererRoot.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/WebRendererRoot.js
 var require_WebRendererRoot = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/WebRendererRoot.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/WebRendererRoot.js"(exports, module) {
     module.path = "web_renderer/src/WebRendererRoot";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.setWebRendererLayoutDirection = exports.registerWebRendererLayoutRoot = exports.createIsolatedWebRendererRoot = void 0;
@@ -137,9 +137,9 @@ var require_WebRendererRoot = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/tracing/ValdiWebTracing.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/tracing/ValdiWebTracing.js
 var require_ValdiWebTracing = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/tracing/ValdiWebTracing.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/tracing/ValdiWebTracing.js"(exports, module) {
     module.path = "web_renderer/src/tracing/ValdiWebTracing";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.valdiWebTraceArguments = exports.valdiWebTraceName = exports.makeValdiWebTraceProxy = exports.instantValdiWebTrace = exports.endValdiWebTrace = exports.beginValdiWebTrace = exports.isValdiWebTracingEnabled = exports.setValdiWebTracing = void 0;
@@ -220,9 +220,9 @@ var require_ValdiWebTracing = __commonJS({
   }
 });
 
-// ../../../private/var/folders/fq/706fv_6x1mg9bds7n27srsgw0000gn/T/opencraft-valdi-web-entry-S02GxH/path-browserify-shim.cjs
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/path-browserify-shim.cjs
 var require_path_browserify_shim = __commonJS({
-  "../../../private/var/folders/fq/706fv_6x1mg9bds7n27srsgw0000gn/T/opencraft-valdi-web-entry-S02GxH/path-browserify-shim.cjs"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/path-browserify-shim.cjs"(exports, module) {
     function parts(value) {
       return String(value || "").split("/").filter(Boolean);
     }
@@ -243,9 +243,9 @@ var require_path_browserify_shim = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/core/Palette.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/core/Palette.js
 var require_Palette = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/core/Palette.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/core/Palette.js"(exports, module) {
     module.path = "web_renderer/src/core/Palette";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.COLOR_PALETTE_MANAGER = exports.ColorPaletteManager = void 0;
@@ -290,9 +290,9 @@ var require_Palette = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/utils/cssScanner.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/utils/cssScanner.js
 var require_cssScanner = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/utils/cssScanner.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/utils/cssScanner.js"(exports, module) {
     module.path = "web_renderer/src/utils/cssScanner";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.parseCssFunction = exports.parseCssFunctionCall = exports.consumeLiteral = exports.readPreviousWhitespaceSeparatedToken = exports.readWhitespaceSeparatedToken = exports.isPlainCssNumber = exports.readCssNumber = exports.consumeCssNumber = exports.trimCssEndIndex = exports.trimCssStartIndex = exports.skipTrailingCssWhitespace = exports.skipCssWhitespace = exports.isCssWhitespaceCode = exports.isAsciiAlphaCode = exports.isAsciiDigitCode = void 0;
@@ -466,9 +466,9 @@ var require_cssScanner = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/utils/assetSource.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/utils/assetSource.js
 var require_assetSource = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/utils/assetSource.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/utils/assetSource.js"(exports, module) {
     module.path = "web_renderer/src/utils/assetSource";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.resolveRenderableAssetSource = exports.resolveAssetSourceUrl = void 0;
@@ -540,9 +540,9 @@ var require_assetSource = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/native/coreutils/web/Base64Native.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/native/coreutils/web/Base64Native.js
 var require_Base64Native = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/native/coreutils/web/Base64Native.js"(exports) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/native/coreutils/web/Base64Native.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.decodeFromBase64 = exports.encodeToBase64 = void 0;
@@ -580,16 +580,16 @@ var require_Base64Native = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/coreutils/src/Base64Native.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/coreutils/src/Base64Native.js
 var require_Base64Native2 = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/coreutils/src/Base64Native.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/coreutils/src/Base64Native.js"(exports, module) {
     module.exports = require_Base64Native();
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/coreutils/src/Base64.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/coreutils/src/Base64.js
 var require_Base64 = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/coreutils/src/Base64.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/coreutils/src/Base64.js"(exports, module) {
     module.path = "coreutils/src/Base64";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.Base64 = void 0;
@@ -615,9 +615,9 @@ var require_Base64 = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/utils/imageSource.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/utils/imageSource.js
 var require_imageSource = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/utils/imageSource.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/utils/imageSource.js"(exports, module) {
     module.path = "web_renderer/src/utils/imageSource";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.svgViewBoxIntrinsicSize = exports.decodeTextDataUrl = exports.detectImageMimeType = void 0;
@@ -691,9 +691,9 @@ var require_imageSource = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/LayoutObserverController.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/LayoutObserverController.js
 var require_LayoutObserverController = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/LayoutObserverController.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/LayoutObserverController.js"(exports, module) {
     module.path = "web_renderer/src/LayoutObserverController";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.LayoutObserverController = exports.measureElementFrame = void 0;
@@ -949,9 +949,9 @@ var require_LayoutObserverController = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/VisibilityObserverController.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/VisibilityObserverController.js
 var require_VisibilityObserverController = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/VisibilityObserverController.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/VisibilityObserverController.js"(exports, module) {
     module.path = "web_renderer/src/VisibilityObserverController";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.VisibilityObserverController = void 0;
@@ -1071,9 +1071,9 @@ var require_VisibilityObserverController = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/AnimationOptions.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/AnimationOptions.js
 var require_AnimationOptions = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/AnimationOptions.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/AnimationOptions.js"(exports, module) {
     module.path = "valdi_core/src/AnimationOptions";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.SPRING_DEFAULT_DAMPING = exports.SPRING_DEFAULT_STIFFNESS = exports.AnimationAppearance = exports.AnimationCurve = void 0;
@@ -1099,9 +1099,9 @@ var require_AnimationOptions = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/animations/AnimationTimingFunctions.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/animations/AnimationTimingFunctions.js
 var require_AnimationTimingFunctions = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/animations/AnimationTimingFunctions.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/animations/AnimationTimingFunctions.js"(exports, module) {
     module.path = "web_renderer/src/animations/AnimationTimingFunctions";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.makeAnimationTimingFunction = void 0;
@@ -1147,9 +1147,9 @@ var require_AnimationTimingFunctions = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/animations/AnimationController.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/animations/AnimationController.js
 var require_AnimationController = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/animations/AnimationController.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/animations/AnimationController.js"(exports, module) {
     module.path = "web_renderer/src/animations/AnimationController";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.AnimationController = void 0;
@@ -1293,9 +1293,9 @@ var require_AnimationController = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/animations/Animator.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/animations/Animator.js
 var require_Animator = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/animations/Animator.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/animations/Animator.js"(exports, module) {
     module.path = "web_renderer/src/animations/Animator";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.Animator = void 0;
@@ -1379,9 +1379,9 @@ var require_Animator = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/utils/cssFunction.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/utils/cssFunction.js
 var require_cssFunction = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/utils/cssFunction.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/utils/cssFunction.js"(exports, module) {
     module.path = "web_renderer/src/utils/cssFunction";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.parseCssFunction = void 0;
@@ -1392,9 +1392,9 @@ var require_cssFunction = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/attributes/AttributeApplierHelpers.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/attributes/AttributeApplierHelpers.js
 var require_AttributeApplierHelpers = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/attributes/AttributeApplierHelpers.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/attributes/AttributeApplierHelpers.js"(exports, module) {
     module.path = "web_renderer/src/attributes/AttributeApplierHelpers";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.resolveValdiGradientAngles = exports.parseOptionalCssLength = exports.parseCssLength = exports.parseString = exports.parseBoolean = exports.parseNumber = void 0;
@@ -1489,9 +1489,9 @@ var require_AttributeApplierHelpers = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/attributes/AttributesBinder.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/attributes/AttributesBinder.js
 var require_AttributesBinder = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/attributes/AttributesBinder.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/attributes/AttributesBinder.js"(exports, module) {
     module.path = "web_renderer/src/attributes/AttributesBinder";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.AttributesBinder = exports.MIN_VISIBLE_CHANGE_PIXEL = exports.MIN_VISIBLE_CHANGE_COLOR = exports.MIN_VISIBLE_CHANGE_ALPHA = void 0;
@@ -1687,9 +1687,9 @@ var require_AttributesBinder = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/animations/KeyAnimation.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/animations/KeyAnimation.js
 var require_KeyAnimation = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/animations/KeyAnimation.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/animations/KeyAnimation.js"(exports, module) {
     module.path = "web_renderer/src/animations/KeyAnimation";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.KeyAnimation = void 0;
@@ -1718,9 +1718,9 @@ var require_KeyAnimation = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/animations/LayoutAnimation.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/animations/LayoutAnimation.js
 var require_LayoutAnimation = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/animations/LayoutAnimation.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/animations/LayoutAnimation.js"(exports, module) {
     module.path = "web_renderer/src/animations/LayoutAnimation";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.captureLayoutSnapshot = exports.LayoutAnimation = exports.LayoutAnimationPass = void 0;
@@ -1930,9 +1930,9 @@ var require_LayoutAnimation = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/ViewElementState.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/ViewElementState.js
 var require_ViewElementState = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/ViewElementState.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/ViewElementState.js"(exports, module) {
     module.path = "web_renderer/src/elements/ViewElementState";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.setViewPaintElement = exports.getViewPaintElement = exports.getViewPresentationState = void 0;
@@ -1962,9 +1962,9 @@ var require_ViewElementState = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/attributes/BorderRadiusAttribute.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/attributes/BorderRadiusAttribute.js
 var require_BorderRadiusAttribute = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/attributes/BorderRadiusAttribute.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/attributes/BorderRadiusAttribute.js"(exports, module) {
     module.path = "web_renderer/src/attributes/BorderRadiusAttribute";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.createBorderRadiusAttributeApplier = void 0;
@@ -2139,9 +2139,9 @@ var require_BorderRadiusAttribute = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/core/ElementClass.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/core/ElementClass.js
 var require_ElementClass = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/core/ElementClass.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/core/ElementClass.js"(exports, module) {
     module.path = "web_renderer/src/core/ElementClass";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.ElementClass = void 0;
@@ -2180,9 +2180,9 @@ var require_ElementClass = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/styles/parseFontStyle.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/styles/parseFontStyle.js
 var require_parseFontStyle = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/styles/parseFontStyle.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/styles/parseFontStyle.js"(exports, module) {
     module.path = "web_renderer/src/styles/parseFontStyle";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.parseFontStyle = exports.isWeightToken = void 0;
@@ -2261,9 +2261,9 @@ var require_parseFontStyle = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/ElementClassSupport.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/ElementClassSupport.js
 var require_ElementClassSupport = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/ElementClassSupport.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/ElementClassSupport.js"(exports, module) {
     module.path = "web_renderer/src/elements/ElementClassSupport";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.srcAttributeApplier = exports.resolveRenderableSrc = exports.borderAttributeApplier = exports.setFont = exports.replaceEventListener = exports.setApplierCleanup = exports.applyFontString = exports.SYSTEM_FONT_FAMILY = exports.createBaseLayoutItemElement = exports.createBaseElement = exports.getActiveElement = exports.assignStyles = void 0;
@@ -2397,9 +2397,9 @@ var require_ElementClassSupport = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/BlurElementClass.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/BlurElementClass.js
 var require_BlurElementClass = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/BlurElementClass.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/BlurElementClass.js"(exports, module) {
     module.path = "web_renderer/src/elements/BlurElementClass";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.BlurElementClass = void 0;
@@ -2462,9 +2462,9 @@ var require_BlurElementClass = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/WebViewClassRegistry.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/WebViewClassRegistry.js
 var require_WebViewClassRegistry = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/WebViewClassRegistry.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/WebViewClassRegistry.js"(exports, module) {
     module.path = "web_renderer/src/WebViewClassRegistry";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.getWebViewClassFactory = exports.registerWebViewClass = exports.getRegistry = exports.addRegistrationCallback = void 0;
@@ -2514,9 +2514,9 @@ var require_WebViewClassRegistry = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/CustomViewElementClass.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/CustomViewElementClass.js
 var require_CustomViewElementClass = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/CustomViewElementClass.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/CustomViewElementClass.js"(exports, module) {
     module.path = "web_renderer/src/elements/CustomViewElementClass";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.CustomViewElementClass = void 0;
@@ -2606,9 +2606,9 @@ var require_CustomViewElementClass = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/DatePickerElementClass.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/DatePickerElementClass.js
 var require_DatePickerElementClass = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/DatePickerElementClass.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/DatePickerElementClass.js"(exports, module) {
     module.path = "web_renderer/src/elements/DatePickerElementClass";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.DatePickerElementClass = void 0;
@@ -2624,9 +2624,9 @@ var require_DatePickerElementClass = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/GlassElementClass.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/GlassElementClass.js
 var require_GlassElementClass = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/GlassElementClass.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/GlassElementClass.js"(exports, module) {
     module.path = "web_renderer/src/elements/GlassElementClass";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.GlassElementClass = void 0;
@@ -2673,9 +2673,9 @@ var require_GlassElementClass = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/utils/cssColor.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/utils/cssColor.js
 var require_cssColor = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/utils/cssColor.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/utils/cssColor.js"(exports, module) {
     module.path = "web_renderer/src/utils/cssColor";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.applyCssColorOpacity = exports.parseCssColor = void 0;
@@ -2761,9 +2761,9 @@ var require_cssColor = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/utils/imageFilterOperations.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/utils/imageFilterOperations.js
 var require_imageFilterOperations = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/utils/imageFilterOperations.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/utils/imageFilterOperations.js"(exports, module) {
     module.path = "web_renderer/src/utils/imageFilterOperations";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.applyTintToImageData = exports.applyColorMatrixToImageData = exports.parseImageFilterOperations = void 0;
@@ -2835,9 +2835,9 @@ var require_imageFilterOperations = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/CanvasImageRenderer.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/CanvasImageRenderer.js
 var require_CanvasImageRenderer = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/CanvasImageRenderer.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/CanvasImageRenderer.js"(exports, module) {
     module.path = "web_renderer/src/elements/CanvasImageRenderer";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.CanvasImageRenderer = exports.isRtlForImage = exports.isQuarterTurnRotation = exports.calculateObjectFitDrawSize = exports.getImageDisplaySize = exports.getImageLogicalSize = exports.getDecodedImageSize = exports.WEB_IMAGE_NATURAL_SCALE = void 0;
@@ -2922,9 +2922,9 @@ var require_CanvasImageRenderer = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/ImageElement.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/ImageElement.js
 var require_ImageElement = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/ImageElement.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/ImageElement.js"(exports, module) {
     module.path = "web_renderer/src/elements/ImageElement";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.ImageElement = void 0;
@@ -3122,9 +3122,9 @@ var require_ImageElement = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/ImageElementClass.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/ImageElementClass.js
 var require_ImageElementClass = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/ImageElementClass.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/ImageElementClass.js"(exports, module) {
     module.path = "web_renderer/src/elements/ImageElementClass";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.ImageElementClass = void 0;
@@ -3285,9 +3285,9 @@ var require_ImageElementClass = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/utils/TextAnimationTypes.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/utils/TextAnimationTypes.js
 var require_TextAnimationTypes = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/utils/TextAnimationTypes.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/utils/TextAnimationTypes.js"(exports, module) {
     module.path = "web_renderer/src/utils/TextAnimationTypes";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.normalizeTextAnimationTransform = exports.isTextAnimationAttachmentSpan = exports.markTextAnimationAttachmentSpan = exports.textAnimationTransformForSpan = exports.setTextAnimationTransform = void 0;
@@ -3332,9 +3332,9 @@ var require_TextAnimationTypes = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/utils/TextAnimationController.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/utils/TextAnimationController.js
 var require_TextAnimationController = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/utils/TextAnimationController.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/utils/TextAnimationController.js"(exports, module) {
     module.path = "web_renderer/src/utils/TextAnimationController";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.TextAnimationParticipant = exports.TextAnimationGroupController = exports.easeOutTextAnimationProgress = void 0;
@@ -3695,9 +3695,9 @@ var require_TextAnimationController = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/utils/TextAnimationRegistry.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/utils/TextAnimationRegistry.js
 var require_TextAnimationRegistry = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/utils/TextAnimationRegistry.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/utils/TextAnimationRegistry.js"(exports, module) {
     module.path = "web_renderer/src/utils/TextAnimationRegistry";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.unregisterTextAnimationParticipant = exports.registerTextAnimationParticipant = exports.setTextAnimationGroupFlushMultiplier = exports.setTextAnimationGroupFlushDurationThreshold = exports.unregisterTextAnimationGroup = exports.registerTextAnimationGroup = void 0;
@@ -3762,9 +3762,9 @@ var require_TextAnimationRegistry = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/utils/parseAttributedText.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/utils/parseAttributedText.js
 var require_parseAttributedText = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/utils/parseAttributedText.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/utils/parseAttributedText.js"(exports, module) {
     module.path = "web_renderer/src/utils/parseAttributedText";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.registerAttributedTextLayouts = exports.unregisterAttributedTextLayouts = exports.dispatchAttributedTextLayouts = exports.renderAttributedText = exports.ParsedAttributedText = exports.isAttributedText = void 0;
@@ -4027,9 +4027,9 @@ var require_parseAttributedText = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/utils/textStyle.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/utils/textStyle.js
 var require_textStyle = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/utils/textStyle.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/utils/textStyle.js"(exports, module) {
     module.path = "web_renderer/src/utils/textStyle";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.textShadowCssValue = void 0;
@@ -4056,9 +4056,9 @@ var require_textStyle = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/LabelElementClass.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/LabelElementClass.js
 var require_LabelElementClass = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/LabelElementClass.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/LabelElementClass.js"(exports, module) {
     module.path = "web_renderer/src/elements/LabelElementClass";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.LabelElementClass = void 0;
@@ -4231,9 +4231,9 @@ var require_LabelElementClass = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/LayoutElementClass.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/LayoutElementClass.js
 var require_LayoutElementClass = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/LayoutElementClass.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/LayoutElementClass.js"(exports, module) {
     module.path = "web_renderer/src/elements/LayoutElementClass";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.LayoutElementClass = void 0;
@@ -4413,9 +4413,9 @@ var require_LayoutElementClass = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/styles/scrollbar.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/styles/scrollbar.js
 var require_scrollbar = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/styles/scrollbar.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/styles/scrollbar.js"(exports, module) {
     module.path = "web_renderer/src/styles/scrollbar";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.injectScrollbarStyles = void 0;
@@ -4441,9 +4441,9 @@ var require_scrollbar = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/ScrollElementClass.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/ScrollElementClass.js
 var require_ScrollElementClass = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/ScrollElementClass.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/ScrollElementClass.js"(exports, module) {
     module.path = "web_renderer/src/elements/ScrollElementClass";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.ScrollElementClass = void 0;
@@ -4742,9 +4742,9 @@ var require_ScrollElementClass = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/GeometricPath.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/GeometricPath.js
 var require_GeometricPath = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/GeometricPath.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/GeometricPath.js"(exports, module) {
     module.path = "valdi_core/src/GeometricPath";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.visitGeometricPath = exports.GeometricPathBuilder = void 0;
@@ -4887,9 +4887,9 @@ var require_GeometricPath = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/utils/geometricPath.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/utils/geometricPath.js
 var require_geometricPath = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/utils/geometricPath.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/utils/geometricPath.js"(exports, module) {
     module.path = "web_renderer/src/utils/geometricPath";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.geometricPathToSvgPath = exports.isGeometricPathValue = void 0;
@@ -4956,9 +4956,9 @@ var require_geometricPath = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/ShapeElementClass.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/ShapeElementClass.js
 var require_ShapeElementClass = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/ShapeElementClass.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/ShapeElementClass.js"(exports, module) {
     module.path = "web_renderer/src/elements/ShapeElementClass";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.ShapeElementClass = void 0;
@@ -5063,9 +5063,9 @@ var require_ShapeElementClass = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/SpinnerElementClass.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/SpinnerElementClass.js
 var require_SpinnerElementClass = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/SpinnerElementClass.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/SpinnerElementClass.js"(exports, module) {
     module.path = "web_renderer/src/elements/SpinnerElementClass";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.SpinnerElementClass = void 0;
@@ -5156,9 +5156,9 @@ var require_SpinnerElementClass = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/TextAnimationGroupElementClass.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/TextAnimationGroupElementClass.js
 var require_TextAnimationGroupElementClass = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/TextAnimationGroupElementClass.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/TextAnimationGroupElementClass.js"(exports, module) {
     module.path = "web_renderer/src/elements/TextAnimationGroupElementClass";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.TextAnimationGroupElementClass = void 0;
@@ -5194,9 +5194,9 @@ var require_TextAnimationGroupElementClass = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/TextFieldElementClass.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/TextFieldElementClass.js
 var require_TextFieldElementClass = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/TextFieldElementClass.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/TextFieldElementClass.js"(exports, module) {
     module.path = "web_renderer/src/elements/TextFieldElementClass";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.TextFieldElementClass = void 0;
@@ -5410,9 +5410,9 @@ var require_TextFieldElementClass = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/TextViewElementClass.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/TextViewElementClass.js
 var require_TextViewElementClass = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/TextViewElementClass.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/TextViewElementClass.js"(exports, module) {
     module.path = "web_renderer/src/elements/TextViewElementClass";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.TextViewElementClass = void 0;
@@ -5769,9 +5769,9 @@ var require_TextViewElementClass = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/VideoElementClass.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/VideoElementClass.js
 var require_VideoElementClass = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/VideoElementClass.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/VideoElementClass.js"(exports, module) {
     module.path = "web_renderer/src/elements/VideoElementClass";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.VideoElementClass = void 0;
@@ -5835,9 +5835,9 @@ var require_VideoElementClass = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/styles/touchAreaExtension.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/styles/touchAreaExtension.js
 var require_touchAreaExtension = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/styles/touchAreaExtension.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/styles/touchAreaExtension.js"(exports, module) {
     module.path = "web_renderer/src/styles/touchAreaExtension";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.injectTouchAreaStyles = void 0;
@@ -5863,9 +5863,9 @@ var require_touchAreaExtension = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/ViewElementAttributes.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/ViewElementAttributes.js
 var require_ViewElementAttributes = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/ViewElementAttributes.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/ViewElementAttributes.js"(exports, module) {
     module.path = "web_renderer/src/elements/ViewElementAttributes";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.viewCompositeAttributes = exports.buildViewAttributeAppliers = void 0;
@@ -6464,9 +6464,9 @@ var require_ViewElementAttributes = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/ViewElementClass.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/ViewElementClass.js
 var require_ViewElementClass = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/ViewElementClass.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/ViewElementClass.js"(exports, module) {
     module.path = "web_renderer/src/elements/ViewElementClass";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.ViewElementClass = void 0;
@@ -6513,9 +6513,9 @@ var require_ViewElementClass = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/WebViewElementClass.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/WebViewElementClass.js
 var require_WebViewElementClass = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/WebViewElementClass.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/WebViewElementClass.js"(exports, module) {
     module.path = "web_renderer/src/elements/WebViewElementClass";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.WebViewElementClass = void 0;
@@ -6552,9 +6552,9 @@ var require_WebViewElementClass = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/ElementClassRegistry.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/ElementClassRegistry.js
 var require_ElementClassRegistry = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/elements/ElementClassRegistry.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/elements/ElementClassRegistry.js"(exports, module) {
     module.path = "web_renderer/src/elements/ElementClassRegistry";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.registerElementClassAlias = exports.getElementClassForViewClass = void 0;
@@ -6604,9 +6604,9 @@ var require_ElementClassRegistry = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/attributes/AttributeOwner.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/attributes/AttributeOwner.js
 var require_AttributeOwner = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/attributes/AttributeOwner.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/attributes/AttributeOwner.js"(exports, module) {
     module.path = "web_renderer/src/attributes/AttributeOwner";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.getNativeOverrideAttributeOwner = exports.getAppearanceAttributeOwner = void 0;
@@ -6628,9 +6628,9 @@ var require_AttributeOwner = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/utils/IndexedRecord.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/utils/IndexedRecord.js
 var require_IndexedRecord = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/utils/IndexedRecord.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/utils/IndexedRecord.js"(exports, module) {
     module.path = "web_renderer/src/utils/IndexedRecord";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.IndexedRecord = void 0;
@@ -6679,9 +6679,9 @@ var require_IndexedRecord = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/attributes/AttributeAnimation.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/attributes/AttributeAnimation.js
 var require_AttributeAnimation = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/attributes/AttributeAnimation.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/attributes/AttributeAnimation.js"(exports, module) {
     module.path = "web_renderer/src/attributes/AttributeAnimation";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.AttributeAnimation = void 0;
@@ -6734,9 +6734,9 @@ var require_AttributeAnimation = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/attributes/AttributesApplier.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/attributes/AttributesApplier.js
 var require_AttributesApplier = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/attributes/AttributesApplier.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/attributes/AttributesApplier.js"(exports, module) {
     module.path = "web_renderer/src/attributes/AttributesApplier";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.AttributesApplier = exports.AttributeSetResult = void 0;
@@ -7092,9 +7092,9 @@ var require_AttributesApplier = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/core/ViewNode.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/core/ViewNode.js
 var require_ViewNode = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/core/ViewNode.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/core/ViewNode.js"(exports, module) {
     module.path = "web_renderer/src/core/ViewNode";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.ViewNode = void 0;
@@ -7555,9 +7555,9 @@ var require_ViewNode = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/core/ViewNodeTree.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/core/ViewNodeTree.js
 var require_ViewNodeTree = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/core/ViewNodeTree.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/core/ViewNodeTree.js"(exports, module) {
     module.path = "web_renderer/src/core/ViewNodeTree";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.ViewNodeTree = void 0;
@@ -7839,16 +7839,16 @@ var require_ViewNodeTree = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/_image_registry.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/_image_registry.js
 var require_image_registry = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/_image_registry.js"() {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/_image_registry.js"() {
     var __r = globalThis.__valdiImageRegistry = globalThis.__valdiImageRegistry || {};
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_test/strings/strings-en.json
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_test/strings/strings-en.json
 var require_strings_en = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_test/strings/strings-en.json"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_test/strings/strings-en.json"(exports, module) {
     module.exports = {
       l10nsvc: "sourcefile",
       my_first: {
@@ -7861,9 +7861,9 @@ var require_strings_en = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_test/strings/strings-fr-FR.json
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_test/strings/strings-fr-FR.json
 var require_strings_fr_FR = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_test/strings/strings-fr-FR.json"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_test/strings/strings-fr-FR.json"(exports, module) {
     module.exports = {
       l10nsvc: "sourcefile",
       my_first: {
@@ -7876,9 +7876,9 @@ var require_strings_fr_FR = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/_module_entry_registry.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/_module_entry_registry.js
 var require_module_entry_registry = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/_module_entry_registry.js"() {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/_module_entry_registry.js"() {
     var __r = globalThis.__valdiModuleEntryRegistry = globalThis.__valdiModuleEntryRegistry || {};
     __r.valdi_test = __r.valdi_test || {};
     __r.valdi_test["strings/strings-en.json"] = function() {
@@ -7891,9 +7891,9 @@ var require_module_entry_registry = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/ModuleLoader.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/ModuleLoader.js
 var require_ModuleLoader = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/ModuleLoader.js"(exports) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/ModuleLoader.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.create = exports.ModuleLoader = void 0;
@@ -8262,9 +8262,9 @@ var require_ModuleLoader = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/Long.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/Long.js
 var require_Long = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/Long.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/Long.js"(exports, module) {
     module.path = "valdi_core/src/Long.js";
     module.exports = Long2;
     function Long2(low, high, unsigned) {
@@ -8620,9 +8620,9 @@ var require_Long = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/tslib.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/tslib.js
 var require_tslib = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/tslib.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/tslib.js"(exports, module) {
     module.path = "valdi_core/src/tslib.js";
     var __extends, __assign, __rest, __decorate, __param, __esDecorate, __runInitializers, __propKey, __setFunctionName, __metadata, __awaiter, __generator, __exportStar, __values, __read, __spread, __spreadArrays, __spreadArray, __await, __asyncGenerator, __asyncDelegator, __asyncValues, __makeTemplateObject, __importStar, __importDefault, __classPrivateFieldGet, __classPrivateFieldSet, __classPrivateFieldIn, __createBinding, __addDisposableResource, __disposeResources;
     (function(factory) {
@@ -8972,9 +8972,9 @@ var require_tslib = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/LazyImport.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/LazyImport.js
 var require_LazyImport = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/LazyImport.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/LazyImport.js"(exports, module) {
     module.path = "valdi_core/src/LazyImport";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.lazyImport = void 0;
@@ -8993,9 +8993,9 @@ var require_LazyImport = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/coreutils/src/ArrayUtils.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/coreutils/src/ArrayUtils.js
 var require_ArrayUtils = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/coreutils/src/ArrayUtils.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/coreutils/src/ArrayUtils.js"(exports, module) {
     module.path = "coreutils/src/ArrayUtils";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.remove = exports.groupBy = exports.exponentialSearch = exports.binarySearchRange = exports.binarySearch = exports.lazyMap = exports.arrayEquals = void 0;
@@ -9096,9 +9096,9 @@ var require_ArrayUtils = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/coreutils/src/Uint8ArrayUtils.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/coreutils/src/Uint8ArrayUtils.js
 var require_Uint8ArrayUtils = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/coreutils/src/Uint8ArrayUtils.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/coreutils/src/Uint8ArrayUtils.js"(exports, module) {
     module.path = "coreutils/src/Uint8ArrayUtils";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.stringToArray = exports.arrayToString = void 0;
@@ -9116,9 +9116,9 @@ var require_Uint8ArrayUtils = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/source_map/src/VLQ.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/source_map/src/VLQ.js
 var require_VLQ = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/source_map/src/VLQ.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/source_map/src/VLQ.js"(exports, module) {
     module.path = "source_map/src/VLQ";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.encode = exports.decode = void 0;
@@ -9167,9 +9167,9 @@ var require_VLQ = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/source_map/src/SourceMap.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/source_map/src/SourceMap.js
 var require_SourceMap = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/source_map/src/SourceMap.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/source_map/src/SourceMap.js"(exports, module) {
     module.path = "source_map/src/SourceMap";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.LineOffsetSourceMap = exports.SourceMap = void 0;
@@ -9266,9 +9266,9 @@ var require_SourceMap = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/source_map/src/StackSymbolicator.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/source_map/src/StackSymbolicator.js
 var require_StackSymbolicator = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/source_map/src/StackSymbolicator.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/source_map/src/StackSymbolicator.js"(exports, module) {
     module.path = "source_map/src/StackSymbolicator";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.symbolicateStack = exports.symbolicateStackWithFrames = exports.symbolicateStackFrames = exports.parseStackFrames = void 0;
@@ -9370,9 +9370,9 @@ var require_StackSymbolicator = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/ModuleLoaderGlobal.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/ModuleLoaderGlobal.js
 var require_ModuleLoaderGlobal = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/ModuleLoaderGlobal.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/ModuleLoaderGlobal.js"(exports, module) {
     module.path = "valdi_core/src/ModuleLoaderGlobal";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.getModuleLoader = void 0;
@@ -9383,9 +9383,9 @@ var require_ModuleLoaderGlobal = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/StackAttribution.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/StackAttribution.js
 var require_StackAttribution = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/StackAttribution.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/StackAttribution.js"(exports, module) {
     module.path = "valdi_core/src/StackAttribution";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.bundleNameFromStackFrames = void 0;
@@ -9412,9 +9412,9 @@ var require_StackAttribution = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/Symbolicator.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/Symbolicator.js
 var require_Symbolicator = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/Symbolicator.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/Symbolicator.js"(exports, module) {
     module.path = "valdi_core/src/Symbolicator";
     var _a;
     Object.defineProperty(exports, "__esModule", { value: !0 });
@@ -9441,9 +9441,9 @@ var require_Symbolicator = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/utils/StringUtils.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/utils/StringUtils.js
 var require_StringUtils = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/utils/StringUtils.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/utils/StringUtils.js"(exports, module) {
     module.path = "valdi_core/src/utils/StringUtils";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.titleCase = exports.debugStringify = exports.capitalize = exports.toCamelCase = void 0;
@@ -9573,9 +9573,9 @@ var require_StringUtils = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/Console.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/Console.js
 var require_Console = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/Console.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/Console.js"(exports, module) {
     module.path = "valdi_core/src/Console";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.Console = void 0;
@@ -9613,9 +9613,9 @@ var require_Console = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/SetTimeout.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/SetTimeout.js
 var require_SetTimeout = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/SetTimeout.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/SetTimeout.js"(exports, module) {
     module.path = "valdi_core/src/SetTimeout";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.setTimeoutConfigurable = exports.setTimeoutInterruptible = exports.setTimeoutUninterruptible = void 0;
@@ -9642,9 +9642,9 @@ var require_SetTimeout = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/Promise.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/Promise.js
 var require_Promise = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/Promise.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/Promise.js"(exports, module) {
     module.path = "valdi_core/src/Promise.js";
     (function(t, r) {
       typeof exports == "object" && typeof module < "u" ? module.exports = r() : typeof define == "function" && define.amd ? define(r) : t.ES6Promise = r();
@@ -9852,9 +9852,9 @@ var require_Promise = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/PromisePolyfill.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/PromisePolyfill.js
 var require_PromisePolyfill = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/PromisePolyfill.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/PromisePolyfill.js"(exports, module) {
     module.path = "valdi_core/src/PromisePolyfill";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.polyfillPromise = exports.arePromiseUtterlyBroken = void 0;
@@ -9891,9 +9891,9 @@ var require_PromisePolyfill = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/TsnHelper.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/TsnHelper.js
 var require_TsnHelper = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/TsnHelper.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/TsnHelper.js"(exports, module) {
     module.path = "valdi_core/src/TsnHelper";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.__tsn_get_async_iterator = exports.__tsn_get_iterator = exports.__tsn_async_generator_helper = exports.__tsn_async_helper = void 0;
@@ -9975,9 +9975,9 @@ var require_TsnHelper = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/PostInit.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/PostInit.js
 var require_PostInit = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/PostInit.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/PostInit.js"(exports, module) {
     module.path = "valdi_core/src/PostInit";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.postInit = void 0;
@@ -10057,9 +10057,9 @@ var require_PostInit = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/native/coreutils/web/UnicodeNative.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/native/coreutils/web/UnicodeNative.js
 var require_UnicodeNative = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/native/coreutils/web/UnicodeNative.js"(exports) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/native/coreutils/web/UnicodeNative.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.decodeIntoString = exports.encodeString = exports.codepointsToStr = exports.strToCodepoints = void 0;
@@ -10211,16 +10211,16 @@ var require_UnicodeNative = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/coreutils/src/unicode/UnicodeNative.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/coreutils/src/unicode/UnicodeNative.js
 var require_UnicodeNative2 = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/coreutils/src/unicode/UnicodeNative.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/coreutils/src/unicode/UnicodeNative.js"(exports, module) {
     module.exports = require_UnicodeNative();
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/coreutils/src/unicode/TextCoding.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/coreutils/src/unicode/TextCoding.js
 var require_TextCoding = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/coreutils/src/unicode/TextCoding.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/coreutils/src/unicode/TextCoding.js"(exports, module) {
     module.path = "coreutils/src/unicode/TextCoding";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.TextEncoder = exports.TextDecoder = void 0;
@@ -10280,9 +10280,9 @@ var require_TextCoding = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/Init.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/Init.js
 var require_Init = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/Init.js"() {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/Init.js"() {
     (function() {
       let valdiGlobalThis = globalThis;
       function loadRootModule(jsEvaluator2, path) {
@@ -10305,16 +10305,16 @@ var require_Init = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/native/valdi_tsx/web/JSX.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/native/valdi_tsx/web/JSX.js
 var require_JSX = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/native/valdi_tsx/web/JSX.js"() {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/native/valdi_tsx/web/JSX.js"() {
     "use strict";
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/native/valdi_core/web/ApplicationBridge.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/native/valdi_core/web/ApplicationBridge.js
 var require_ApplicationBridge = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/native/valdi_core/web/ApplicationBridge.js"(exports) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/native/valdi_core/web/ApplicationBridge.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.getAppVersion = exports.isIntegrationTestEnvironment = exports.isForegrounded = exports.observeKeyboardHeight = exports.observeEnteredForeground = exports.observeEnteredBackground = void 0;
@@ -10352,9 +10352,9 @@ var require_ApplicationBridge = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/native/valdi_core/web/DeviceBridge.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/native/valdi_core/web/DeviceBridge.js
 var require_DeviceBridge = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/native/valdi_core/web/DeviceBridge.js"(exports) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/native/valdi_core/web/DeviceBridge.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.setBackButtonObserver = exports.isWeb = exports.isDesktop = exports.observeDarkMode = exports.observeDisplaySizeChange = exports.observeDisplayInsetChange = exports.performHapticFeedback = exports.getUptimeMs = exports.getTimeZoneDstSecondsFromGMT = exports.getTimeZoneRawSecondsFromGMT = exports.getTimeZoneName = exports.getLocaleUsesMetricSystem = exports.getDeviceLocales = exports.getDisplayBottomInset = exports.getDisplayTopInset = exports.getDisplayRightInset = exports.getDisplayLeftInset = exports.getWindowHeight = exports.getWindowWidth = exports.getDynamicTypeScale = exports.getDisplayScale = exports.getDisplayHeight = exports.getDisplayWidth = exports.getModel = exports.getSystemVersion = exports.getSystemType = exports.copyToClipBoard = void 0;
@@ -10570,9 +10570,9 @@ var require_DeviceBridge = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/native/valdi_core/web/NumberFormatting.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/native/valdi_core/web/NumberFormatting.js
 var require_NumberFormatting = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/native/valdi_core/web/NumberFormatting.js"(exports) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/native/valdi_core/web/NumberFormatting.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.formatNumberWithCurrency = exports.formatNumber = void 0;
@@ -10596,9 +10596,9 @@ var require_NumberFormatting = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/native/valdi_core/web/Strings.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/native/valdi_core/web/Strings.js
 var require_Strings = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/native/valdi_core/web/Strings.js"(exports) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/native/valdi_core/web/Strings.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.getLocalizedString = void 0;
@@ -10609,9 +10609,9 @@ var require_Strings = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/native/file_system/web/FileSystem.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/native/file_system/web/FileSystem.js
 var require_FileSystem = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/native/file_system/web/FileSystem.js"(exports) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/native/file_system/web/FileSystem.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.setFileSystem = exports.fileSystem = void 0;
@@ -10701,9 +10701,9 @@ var require_FileSystem = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/RegisterNativeModules.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/RegisterNativeModules.js
 var require_RegisterNativeModules = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/RegisterNativeModules.js"() {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/RegisterNativeModules.js"() {
     var _cbs = globalThis.__valdiWebViewClassRegistryCallbacks = globalThis.__valdiWebViewClassRegistryCallbacks || [];
     function _registerWebPolyglotViews(views) {
       var registry = globalThis.__valdiWebViewClassRegistry;
@@ -10740,9 +10740,9 @@ var require_RegisterNativeModules = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/ValdiWebRuntime.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/ValdiWebRuntime.js
 var require_ValdiWebRuntime = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/ValdiWebRuntime.js"(exports) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/ValdiWebRuntime.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     var __valdiRuntimeProvider = require_ValdiRuntimeProvider(), ValdiWebWorker_1 = require_ValdiWebWorker(), WebRendererRoot_1 = require_WebRendererRoot(), ValdiWebTracing_1 = require_ValdiWebTracing(), path = require_path_browserify_shim(), cachedColorPaletteManager, cachedResolveAssetSourceUrl, cachedBase64FromByteArray, cachedDetectImageMimeType, cachedGetViewNodeTreeForContextId, valdiGlobalThis = globalThis, originalTimingFunctions = {
@@ -11209,9 +11209,9 @@ var require_ValdiWebRuntime = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/ValdiRuntimeProvider.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/ValdiRuntimeProvider.js
 var require_ValdiRuntimeProvider = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/ValdiRuntimeProvider.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/ValdiRuntimeProvider.js"(exports, module) {
     module.path = "valdi_core/src/ValdiRuntimeProvider";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.getValdiRuntime = void 0;
@@ -11227,9 +11227,9 @@ var require_ValdiRuntimeProvider = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/utils/RenderedVirtualNodeUtils.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/utils/RenderedVirtualNodeUtils.js
 var require_RenderedVirtualNodeUtils = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/utils/RenderedVirtualNodeUtils.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/utils/RenderedVirtualNodeUtils.js"(exports, module) {
     module.path = "valdi_core/src/utils/RenderedVirtualNodeUtils";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.computeUniqueId = exports.toXML = exports.getNodeTag = void 0;
@@ -11283,9 +11283,9 @@ var require_RenderedVirtualNodeUtils = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/CapturedNode.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/CapturedNode.js
 var require_CapturedNode = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/CapturedNode.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/CapturedNode.js"(exports, module) {
     module.path = "valdi_core/src/CapturedNode";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.CapturedRenderedElement = exports.CapturedRenderedVirtualNode = void 0;
@@ -11376,9 +11376,9 @@ var require_CapturedNode = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/ComponentPrototype.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/ComponentPrototype.js
 var require_ComponentPrototype = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/ComponentPrototype.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/ComponentPrototype.js"(exports, module) {
     module.path = "valdi_core/src/ComponentPrototype";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.ComponentPrototype = void 0;
@@ -11397,9 +11397,9 @@ var require_ComponentPrototype = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/utils/Callback.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/utils/Callback.js
 var require_Callback = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/utils/Callback.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/utils/Callback.js"(exports, module) {
     module.path = "valdi_core/src/utils/Callback";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.createReusableCallback = exports.CALLBACK_KEY = exports.OWNER_KEY = void 0;
@@ -11415,9 +11415,9 @@ var require_Callback = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/utils/CallbackInternal.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/utils/CallbackInternal.js
 var require_CallbackInternal = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/utils/CallbackInternal.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/utils/CallbackInternal.js"(exports, module) {
     module.path = "valdi_core/src/utils/CallbackInternal";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.tryReuseCallback = void 0;
@@ -11441,9 +11441,9 @@ var require_CallbackInternal = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/utils/ClassNames.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/utils/ClassNames.js
 var require_ClassNames = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/utils/ClassNames.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/utils/ClassNames.js"(exports, module) {
     module.path = "valdi_core/src/utils/ClassNames";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.classNames = void 0;
@@ -11469,9 +11469,9 @@ var require_ClassNames = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/utils/PropertyList.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/utils/PropertyList.js
 var require_PropertyList = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/utils/PropertyList.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/utils/PropertyList.js"(exports, module) {
     module.path = "valdi_core/src/utils/PropertyList";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.propertyListToObject = exports.hasProperty = exports.removeProperty = exports.enumeratePropertyList = void 0;
@@ -11527,9 +11527,9 @@ var require_PropertyList = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/utils/RendererError.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/utils/RendererError.js
 var require_RendererError = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/utils/RendererError.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/utils/RendererError.js"(exports, module) {
     module.path = "valdi_core/src/utils/RendererError";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.RendererError = void 0;
@@ -11542,9 +11542,9 @@ var require_RendererError = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/utils/Trace.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/utils/Trace.js
 var require_Trace = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/utils/Trace.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/utils/Trace.js"(exports, module) {
     module.path = "valdi_core/src/utils/Trace";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.TraceMethod = exports.Trace = exports.installTraceProxy = exports.trace = exports.instantTraceWithArgs = exports.instantTrace = exports.endTrace = exports.beginTrace = exports.isTracingSupported = exports.stopTraceRecordingWithStats = exports.stopTraceRecording = exports.startTraceRecording = exports.decodeTraceRecordingResultWithNativeStats = exports.decodeLegacyTraceRecordingResult = exports.MAX_SERIALIZED_TRACE_EVENTS_BYTES = void 0;
@@ -11708,9 +11708,9 @@ var require_Trace = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/Renderer.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/Renderer.js
 var require_Renderer = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/Renderer.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/Renderer.js"(exports, module) {
     module.path = "valdi_core/src/Renderer";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.getRenderer = exports.Renderer = void 0;
@@ -13266,9 +13266,9 @@ var require_Renderer = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/ViewFactory.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/ViewFactory.js
 var require_ViewFactory = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/ViewFactory.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/ViewFactory.js"(exports, module) {
     module.path = "web_renderer/src/ViewFactory";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.createViewFactory = exports.WebViewFactory = void 0;
@@ -13285,9 +13285,9 @@ var require_ViewFactory = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/debug/DebuggerValueSnapshot.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/debug/DebuggerValueSnapshot.js
 var require_DebuggerValueSnapshot = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/debug/DebuggerValueSnapshot.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/debug/DebuggerValueSnapshot.js"(exports, module) {
     module.path = "web_renderer/src/debug/DebuggerValueSnapshot";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.captureDebuggerPropertiesSnapshotWithReflectionLimit = exports.captureDebuggerPropertiesSnapshot = void 0;
@@ -13516,9 +13516,9 @@ var require_DebuggerValueSnapshot = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/debug/ComponentHierarchySnapshot.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/debug/ComponentHierarchySnapshot.js
 var require_ComponentHierarchySnapshot = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/debug/ComponentHierarchySnapshot.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/debug/ComponentHierarchySnapshot.js"(exports, module) {
     module.path = "web_renderer/src/debug/ComponentHierarchySnapshot";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.captureComponentHierarchySnapshot = void 0;
@@ -13897,9 +13897,9 @@ var require_ComponentHierarchySnapshot = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/ValdiWebRendererDelegate.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/ValdiWebRendererDelegate.js
 var require_ValdiWebRendererDelegate = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/ValdiWebRendererDelegate.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/ValdiWebRendererDelegate.js"(exports, module) {
     module.path = "web_renderer/src/ValdiWebRendererDelegate";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.ValdiWebRendererDelegate = exports.MAX_WEB_DEBUGGER_SERIALIZED_CHARACTERS = void 0;
@@ -14319,9 +14319,9 @@ var require_ValdiWebRendererDelegate = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/utils/LocationQuery.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/utils/LocationQuery.js
 var require_LocationQuery = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/utils/LocationQuery.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/utils/LocationQuery.js"(exports, module) {
     module.path = "web_renderer/src/utils/LocationQuery";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.hasSingleWebLocationQueryParameter = exports.hasWebLocationQueryParameter = void 0;
@@ -14361,9 +14361,9 @@ var require_LocationQuery = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/debug/WebDebuggerBridge.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/debug/WebDebuggerBridge.js
 var require_WebDebuggerBridge = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/debug/WebDebuggerBridge.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/debug/WebDebuggerBridge.js"(exports, module) {
     module.path = "web_renderer/src/debug/WebDebuggerBridge";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.WebDebuggerBridge = void 0;
@@ -14744,9 +14744,9 @@ var require_WebDebuggerBridge = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/navigation/WebNavigator.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/navigation/WebNavigator.js
 var require_WebNavigator = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/navigation/WebNavigator.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/navigation/WebNavigator.js"(exports, module) {
     module.path = "web_renderer/src/navigation/WebNavigator";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.WebNavigator = exports.WebNavigationHost = void 0;
@@ -15038,9 +15038,9 @@ var require_WebNavigator = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/tracing/ChromeDevToolsTracing.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/tracing/ChromeDevToolsTracing.js
 var require_ChromeDevToolsTracing = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/tracing/ChromeDevToolsTracing.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/tracing/ChromeDevToolsTracing.js"(exports, module) {
     module.path = "web_renderer/src/tracing/ChromeDevToolsTracing";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.createBrowserChromeDevToolsTracing = exports.ChromeDevToolsTracing = void 0;
@@ -15070,9 +15070,9 @@ var require_ChromeDevToolsTracing = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/tracing/WebTracingConfiguration.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/tracing/WebTracingConfiguration.js
 var require_WebTracingConfiguration = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/tracing/WebTracingConfiguration.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/tracing/WebTracingConfiguration.js"(exports, module) {
     module.path = "web_renderer/src/tracing/WebTracingConfiguration";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.configureValdiWebTracingFromLocation = void 0;
@@ -15084,38 +15084,38 @@ var require_WebTracingConfiguration = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/_navigation_registry.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/_navigation_registry.js
 var require_navigation_registry = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/_navigation_registry.js"() {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/_navigation_registry.js"() {
     var __r = globalThis.__valdiNavigationPages = globalThis.__valdiNavigationPages || {};
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/_worker_registry.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/_worker_registry.js
 var require_worker_registry = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/_worker_registry.js"() {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/_worker_registry.js"() {
     var __r = globalThis.__valdiWorkerModules = globalThis.__valdiWorkerModules || {};
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/_web_worker_factories.mjs
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/_web_worker_factories.mjs
 var web_worker_factories_exports = {};
 var import_ValdiWebWorker, registerValdiWebWorker, init_web_worker_factories = __esm({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/_web_worker_factories.mjs"() {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/_web_worker_factories.mjs"() {
     import_ValdiWebWorker = __toESM(require_ValdiWebWorker(), 1), { registerValdiWebWorker } = import_ValdiWebWorker.default;
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/_web_worker_factories.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/_web_worker_factories.js
 var require_web_worker_factories = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/_web_worker_factories.js"() {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/_web_worker_factories.js"() {
     init_web_worker_factories();
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/ValdiWebRenderer.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/ValdiWebRenderer.js
 var require_ValdiWebRenderer = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/web_renderer/src/ValdiWebRenderer.js"(exports) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/web_renderer/src/ValdiWebRenderer.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.ValdiWebRenderer = exports.createViewFactory = void 0;
@@ -15201,9 +15201,9 @@ var require_ValdiWebRenderer = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/StringCache.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/StringCache.js
 var require_StringCache = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/StringCache.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/StringCache.js"(exports, module) {
     module.path = "valdi_core/src/StringCache";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.StringCache = void 0;
@@ -15220,9 +15220,9 @@ var require_StringCache = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/BuildType.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/BuildType.js
 var require_BuildType = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/BuildType.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/BuildType.js"(exports, module) {
     module.path = "valdi_core/src/BuildType";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.isInternalBuild = exports.isDevBuild = exports.isProdBuild = exports.getBuildType = exports.BuildType = void 0;
@@ -15231,7 +15231,7 @@ var require_BuildType = __commonJS({
       BuildType2.Dev = "dev", BuildType2.Gold = "gold", BuildType2.Alpha = "alpha", BuildType2.Prod = "prod";
     })(BuildType || (exports.BuildType = BuildType = {}));
     function getBuildType() {
-      let buildType = (0, ValdiRuntimeProvider_1.getValdiRuntime)()?.buildType;
+      let buildType = (0, ValdiRuntimeProvider_1.getValdiRuntime)().buildType;
       return buildType === void 0 ? BuildType.Dev : buildType;
     }
     exports.getBuildType = getBuildType;
@@ -15252,9 +15252,9 @@ var require_BuildType = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/ComponentPath.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/ComponentPath.js
 var require_ComponentPath = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/ComponentPath.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/ComponentPath.js"(exports, module) {
     module.path = "valdi_core/src/ComponentPath";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.resolveComponentConstructor = exports.parseComponentPath = void 0;
@@ -15297,9 +15297,9 @@ var require_ComponentPath = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/utils/IdentifyableObject.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/utils/IdentifyableObject.js
 var require_IdentifyableObject = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/utils/IdentifyableObject.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/utils/IdentifyableObject.js"(exports, module) {
     module.path = "valdi_core/src/utils/IdentifyableObject";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.getObjectId = exports.setObjectId = void 0;
@@ -15316,9 +15316,9 @@ var require_IdentifyableObject = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/ElementLayoutDispatcher.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/ElementLayoutDispatcher.js
 var require_ElementLayoutDispatcher = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/ElementLayoutDispatcher.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/ElementLayoutDispatcher.js"(exports, module) {
     module.path = "valdi_core/src/ElementLayoutDispatcher";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.ElementLayoutDispatcher = void 0;
@@ -15390,9 +15390,9 @@ var require_ElementLayoutDispatcher = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/Style.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/Style.js
 var require_Style = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/Style.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/Style.js"(exports, module) {
     module.path = "valdi_core/src/Style";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.Style = void 0;
@@ -15427,9 +15427,9 @@ var require_Style = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/utils/Buffer.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/utils/Buffer.js
 var require_Buffer = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/utils/Buffer.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/utils/Buffer.js"(exports, module) {
     module.path = "valdi_core/src/utils/Buffer";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.Buffer = void 0;
@@ -15492,9 +15492,9 @@ var require_Buffer = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/JSXRendererDelegate.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/JSXRendererDelegate.js
 var require_JSXRendererDelegate = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/JSXRendererDelegate.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/JSXRendererDelegate.js"(exports, module) {
     module.path = "valdi_core/src/JSXRendererDelegate";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.JSXRendererDelegate = void 0;
@@ -15722,9 +15722,9 @@ var require_JSXRendererDelegate = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/NodePrototype.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/NodePrototype.js
 var require_NodePrototype = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/NodePrototype.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/NodePrototype.js"(exports, module) {
     module.path = "valdi_core/src/NodePrototype";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.DeferredNodePrototype = exports.NodePrototype = void 0;
@@ -15743,9 +15743,9 @@ var require_NodePrototype = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/debugging/Messages.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/debugging/Messages.js
 var require_Messages = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/debugging/Messages.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/debugging/Messages.js"(exports, module) {
     module.path = "valdi_core/src/debugging/Messages";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.Messages = exports.isAnyResponse = exports.truncatePerformanceTraceError = exports.isPerformanceTraceContextIdWithinLimit = exports.truncateDebuggerString = exports.MAX_PERFORMANCE_TRACE_ERROR_BYTES = exports.MAX_PERFORMANCE_TRACE_CONTEXT_ID_BYTES = exports.MAX_PERFORMANCE_TRACE_MESSAGE_BYTES = void 0;
@@ -15969,9 +15969,9 @@ var require_Messages = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/debugging/DaemonClientManager.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/debugging/DaemonClientManager.js
 var require_DaemonClientManager = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/debugging/DaemonClientManager.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/debugging/DaemonClientManager.js"(exports, module) {
     module.path = "valdi_core/src/debugging/DaemonClientManager";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.DaemonClientManager = exports.ReceivedDaemonClientMessage = void 0;
@@ -16094,9 +16094,9 @@ var require_DaemonClientManager = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/utils/ErrorUtils.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/utils/ErrorUtils.js
 var require_ErrorUtils = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/utils/ErrorUtils.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/utils/ErrorUtils.js"(exports, module) {
     module.path = "valdi_core/src/utils/ErrorUtils";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.toError = void 0;
@@ -16107,9 +16107,9 @@ var require_ErrorUtils = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/JSXBootstrap.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/JSXBootstrap.js
 var require_JSXBootstrap = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/JSXBootstrap.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/JSXBootstrap.js"(exports, module) {
     module.path = "valdi_core/src/JSXBootstrap";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.jsx = void 0;
@@ -16365,9 +16365,9 @@ var require_JSXBootstrap = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/JSX.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/JSX.js
 var require_JSX2 = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/JSX.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/JSX.js"(exports, module) {
     module.path = "valdi_core/src/JSX";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.jsx = void 0;
@@ -16378,9 +16378,9 @@ var require_JSX2 = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/CancellableAnimationPromise.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/CancellableAnimationPromise.js
 var require_CancellableAnimationPromise = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/CancellableAnimationPromise.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/CancellableAnimationPromise.js"(exports, module) {
     module.path = "valdi_core/src/CancellableAnimationPromise";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.CancellableAnimationPromise = void 0;
@@ -16409,9 +16409,9 @@ var require_CancellableAnimationPromise = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/utils/PartialUtils.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/utils/PartialUtils.js
 var require_PartialUtils = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/utils/PartialUtils.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/utils/PartialUtils.js"(exports, module) {
     module.path = "valdi_core/src/utils/PartialUtils";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.mergePartial = void 0;
@@ -16429,17 +16429,17 @@ var require_PartialUtils = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_tsx/src/JSX.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_tsx/src/JSX.js
 var require_JSX3 = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_tsx/src/JSX.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_tsx/src/JSX.js"(exports, module) {
     module.path = "valdi_tsx/src/JSX";
     Object.defineProperty(exports, "__esModule", { value: !0 });
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/Component.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/Component.js
 var require_Component = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/Component.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/Component.js"(exports, module) {
     module.path = "valdi_core/src/Component";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.StatefulComponent = exports.Component = void 0;
@@ -16595,9 +16595,9 @@ var require_Component = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/SystemFont.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/SystemFont.js
 var require_SystemFont = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/valdi_core/src/SystemFont.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/valdi_core/src/SystemFont.js"(exports, module) {
     module.path = "valdi_core/src/SystemFont";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.systemBoldItalicFont = exports.systemSemiboldItalicFont = exports.systemMediumItalicFont = exports.systemItalicFont = exports.systemBoldFont = exports.systemSemiboldFont = exports.systemMediumFont = exports.systemFont = exports.SYSTEM_BOLD_ITALIC_FONT_NAME = exports.SYSTEM_SEMIBOLD_ITALIC_FONT_NAME = exports.SYSTEM_MEDIUM_ITALIC_FONT_NAME = exports.SYSTEM_ITALIC_FONT_NAME = exports.SYSTEM_BOLD_FONT_NAME = exports.SYSTEM_SEMIBOLD_FONT_NAME = exports.SYSTEM_MEDIUM_FONT_NAME = exports.SYSTEM_FONT_NAME = void 0;
@@ -16647,9 +16647,9 @@ var require_SystemFont = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/haptics.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/haptics.js
 var require_haptics = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/haptics.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/haptics.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/haptics";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.registerHapticHandler = exports.triggerHaptic = void 0;
@@ -16665,9 +16665,9 @@ var require_haptics = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/tokens.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/tokens.js
 var require_tokens = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/tokens.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/tokens.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/tokens";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.type = exports.radii = exports.themeMetrics = exports.touchMetrics = exports.desktopMetrics = exports.themeColors = exports.valdiTouch = exports.setValdiTouchDensity = exports.setValdiThemeColors = exports.colors = exports.darkColors = exports.lightColors = void 0;
@@ -16745,7 +16745,7 @@ var require_tokens = __commonJS({
     exports.colors = exports.lightColors;
     var activeLightColors = exports.lightColors, activeDarkColors = exports.darkColors, activeTouchDensity = !1;
     function setValdiThemeColors2(mode, overrides) {
-      mode === "dark" ? activeDarkColors = overrides ? Object.assign(Object.assign({}, exports.darkColors), overrides) : exports.darkColors : activeLightColors = overrides ? Object.assign(Object.assign({}, exports.lightColors), overrides) : exports.lightColors;
+      mode === "dark" ? activeDarkColors = overrides ? { ...exports.darkColors, ...overrides } : exports.darkColors : activeLightColors = overrides ? { ...exports.lightColors, ...overrides } : exports.lightColors;
     }
     exports.setValdiThemeColors = setValdiThemeColors2;
     function setValdiTouchDensity2(touch) {
@@ -16863,9 +16863,9 @@ var require_tokens = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/ActionSheet.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/ActionSheet.js
 var require_ActionSheet = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/ActionSheet.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/ActionSheet.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/ActionSheet";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.ActionSheet = void 0;
@@ -16896,9 +16896,9 @@ var require_ActionSheet = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/Icon.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/Icon.js
 var require_Icon = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/Icon.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/Icon.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/Icon";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.Icon = void 0;
@@ -16942,7 +16942,9 @@ var require_Icon = __commonJS({
       user: '<circle cx="12" cy="7.5" r="3" stroke="black" stroke-width="1.65"/><path d="M5.5 20v-1a6.5 6.5 0 0 1 13 0v1" stroke="black" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"/>',
       chat: '<path d="M7.5 18.6 4 20l1.2-4a8 8 0 1 1 2.3 2.6Z" stroke="black" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"/>',
       bell: '<path d="M7 10a5 5 0 0 1 10 0c0 5 2 5.5 2 7H5c0-1.5 2-2 2-7Zm3 10h4M12 3.5V5" stroke="black" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"/>',
-      puzzle: '<rect x="4.5" y="10.5" width="6" height="9" rx="1.75" stroke="black" stroke-width="1.65"/><rect x="4.5" y="4.5" width="6" height="3" rx="1.25" stroke="black" stroke-width="1.65"/><rect x="13.5" y="4.5" width="6" height="9" rx="1.75" stroke="black" stroke-width="1.65"/><rect x="13.5" y="16.5" width="6" height="3" rx="1.25" stroke="black" stroke-width="1.65"/>'
+      puzzle: '<rect x="4.5" y="10.5" width="6" height="9" rx="1.75" stroke="black" stroke-width="1.65"/><rect x="4.5" y="4.5" width="6" height="3" rx="1.25" stroke="black" stroke-width="1.65"/><rect x="13.5" y="4.5" width="6" height="9" rx="1.75" stroke="black" stroke-width="1.65"/><rect x="13.5" y="16.5" width="6" height="3" rx="1.25" stroke="black" stroke-width="1.65"/>',
+      key: '<circle cx="8" cy="15" r="4.25" stroke="black" stroke-width="1.65"/><path d="M11.1 11.9 19.5 3.5m-2.5 2.5 2.5 2.5M14.5 8.5l2 2" stroke="black" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"/>',
+      lock: '<rect x="5.25" y="10.5" width="13.5" height="9.25" rx="2.75" stroke="black" stroke-width="1.65"/><path d="M8.25 10.5V7.75a3.75 3.75 0 0 1 7.5 0v2.75" stroke="black" stroke-width="1.65" stroke-linecap="round"/>'
     };
     function svgUri(name) {
       let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">${paths[name]}</svg>`;
@@ -16980,7 +16982,9 @@ var require_Icon = __commonJS({
       user: "\u25CB",
       chat: "\u25EF",
       bell: "\u237E",
-      puzzle: "\u2756"
+      puzzle: "\u2756",
+      key: "\u26BF",
+      lock: "\u29BF"
     }, isWeb = typeof globalThis.document < "u";
     function renderNativeVector(name, size, color) {
       if (name === "minus")
@@ -16997,22 +17001,21 @@ var require_Icon = __commonJS({
     }
     var Icon2 = class extends Component_1.Component {
       onRender() {
-        var _a;
         let { name, size = 22, color } = this.viewModel;
         if (isWeb) {
           __Renderer.beginRender(__nodeImage1, void 0), __Renderer.setAttributeString("src", svgUri(name)), __Renderer.setAttributeNumber("width", size), __Renderer.setAttributeNumber("height", size), __Renderer.setAttributeString("tint", color), __Renderer.endRender();
           return;
         }
-        renderNativeVector(name, size, color) || (__Renderer.beginRender(__nodeView33, void 0), __Renderer.setAttributeNumber("width", size), __Renderer.setAttributeNumber("height", size), __Renderer.beginRender(__nodeLabel1, void 0), __Renderer.setAttributeString("value", (_a = nativeGlyphs[name]) !== null && _a !== void 0 ? _a : "\u2022"), __Renderer.setAttributeString("font", (0, SystemFont_1.systemSemiboldFont)(Math.max(12, Math.round(size * 0.85)))), __Renderer.setAttributeString("color", color), __Renderer.endRender(), __Renderer.endRender());
+        renderNativeVector(name, size, color) || (__Renderer.beginRender(__nodeView33, void 0), __Renderer.setAttributeNumber("width", size), __Renderer.setAttributeNumber("height", size), __Renderer.beginRender(__nodeLabel1, void 0), __Renderer.setAttributeString("value", nativeGlyphs[name] ?? "\u2022"), __Renderer.setAttributeString("font", (0, SystemFont_1.systemSemiboldFont)(Math.max(12, Math.round(size * 0.85)))), __Renderer.setAttributeString("color", color), __Renderer.endRender(), __Renderer.endRender());
       }
     };
     exports.Icon = Icon2;
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/Banner.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/Banner.js
 var require_Banner = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/Banner.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/Banner.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/Banner";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.Banner = void 0;
@@ -17031,9 +17034,9 @@ var require_Banner = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/Button.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/Button.js
 var require_Button = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/Button.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/Button.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/Button";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.Button = void 0;
@@ -17053,13 +17056,13 @@ var require_Button = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/SegmentedControl.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/SegmentedControl.js
 var require_SegmentedControl = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/SegmentedControl.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/SegmentedControl.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/SegmentedControl";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.SegmentedControl = void 0;
-    var __Renderer = require_JSX2().jsx, __nodeView1 = __Renderer.makeNodePrototype("view", ["class", "oc-segment-track", "minWidth", 0, "maxWidth", "100%", "flexShrink", 1, "borderWidth", 0.5, "padding", 2.5]), __nodeView2 = __Renderer.makeNodePrototype("view", ["class", "oc-segment-options", "flexDirection", "row", "width", "100%", "minWidth", 0, "flexShrink", 1]), __nodeView3 = __Renderer.makeNodePrototype("view", ["class", "oc-segment-thumb", "position", "absolute", "top", 0, "bottom", 0, "borderWidth", 0.5, "accessibilityNavigation", "ignored"]), __nodeView4 = __Renderer.makeNodePrototype("view", ["class", "oc-segment-option", "accessibilityCategory", "button", "flexGrow", 1, "flexShrink", 1, "minWidth", 0, "paddingLeft", 8, "paddingRight", 8, "paddingTop", 2, "paddingBottom", 2, "justifyContent", "center", "alignItems", "center"]), __nodeLabel1 = __Renderer.makeNodePrototype("label", ["textAlign", "center", "numberOfLines", 1]), Component_1 = require_Component(), SystemFont_1 = require_SystemFont(), haptics_1 = require_haptics(), tokens_1 = require_tokens(), SegmentedControl2 = class extends Component_1.StatefulComponent {
+    var __Renderer = require_JSX2().jsx, __nodeView1 = __Renderer.makeNodePrototype("view", ["class", "oc-segment-track", "maxWidth", "100%", "flexShrink", 1, "borderWidth", 0.5, "padding", 2.5]), __nodeView2 = __Renderer.makeNodePrototype("view", ["class", "oc-segment-options", "flexDirection", "row", "width", "100%", "minWidth", 0, "flexShrink", 1]), __nodeView3 = __Renderer.makeNodePrototype("view", ["class", "oc-segment-thumb", "position", "absolute", "top", 0, "bottom", 0, "borderWidth", 0.5, "accessibilityNavigation", "ignored"]), __nodeView4 = __Renderer.makeNodePrototype("view", ["class", "oc-segment-option", "accessibilityCategory", "button", "flexGrow", 1, "flexShrink", 1, "minWidth", 0, "paddingLeft", 8, "paddingRight", 8, "paddingTop", 2, "paddingBottom", 2, "justifyContent", "center", "alignItems", "center"]), __nodeLabel1 = __Renderer.makeNodePrototype("label", ["textAlign", "center", "numberOfLines", 1]), Component_1 = require_Component(), SystemFont_1 = require_SystemFont(), haptics_1 = require_haptics(), tokens_1 = require_tokens(), SegmentedControl2 = class extends Component_1.StatefulComponent {
       constructor() {
         super(...arguments), this.state = { displayedIndex: 0 };
       }
@@ -17082,8 +17085,8 @@ var require_SegmentedControl = __commonJS({
           for (let i = 0; i < option.title.length; i++)
             units += option.title.charCodeAt(i) > 255 ? 1.85 : 1;
           return Math.max(max, units);
-        }, 0), minOptionWidth = Math.ceil(maxUnits * (fontSize * 0.62) + 22);
-        __Renderer.beginRender(__nodeView1, void 0), __Renderer.setAttributeString("accessibilityId", id), __Renderer.setAttributeString("accessibilityLabel", label), __Renderer.setAttributeNumber("borderRadius", m.radii.segmentTrack), __Renderer.setAttributeString("backgroundColor", c.trackSubtle), __Renderer.setAttributeString("borderColor", c.border), __Renderer.setAttributeNumber("opacity", disabled ? 0.5 : 1), __Renderer.beginRender(__nodeView2, void 0), displayedIndex >= 0 && (__Renderer.beginRender(__nodeView3, void 0), __Renderer.setAttributeString("left", `${displayedIndex * segmentWidth}%`), __Renderer.setAttributeString("width", `${segmentWidth}%`), __Renderer.setAttributeNumber("borderRadius", m.radii.segmentThumb), __Renderer.setAttributeString("backgroundColor", c.segmentThumb), __Renderer.setAttributeString("borderColor", c.border), __Renderer.setAttributeString("boxShadow", dark ? "complex 0 1 2 rgba(0, 0, 0, 0.22)" : "complex 0 1 2 rgba(0, 0, 0, 0.06)"), __Renderer.endRender()), options.forEach((option, index) => {
+        }, 0), minOptionWidth = Math.ceil(maxUnits * (fontSize * 0.62) + 26), naturalTrackWidth = options.length * minOptionWidth + 6;
+        __Renderer.beginRender(__nodeView1, void 0), __Renderer.setAttributeString("accessibilityId", id), __Renderer.setAttributeString("accessibilityLabel", label), __Renderer.setAttributeNumber("minWidth", naturalTrackWidth), __Renderer.setAttributeNumber("borderRadius", m.radii.segmentTrack), __Renderer.setAttributeString("backgroundColor", c.trackSubtle), __Renderer.setAttributeString("borderColor", c.border), __Renderer.setAttributeNumber("opacity", disabled ? 0.5 : 1), __Renderer.beginRender(__nodeView2, void 0), displayedIndex >= 0 && (__Renderer.beginRender(__nodeView3, void 0), __Renderer.setAttributeString("left", `${displayedIndex * segmentWidth}%`), __Renderer.setAttributeString("width", `${segmentWidth}%`), __Renderer.setAttributeNumber("borderRadius", m.radii.segmentThumb), __Renderer.setAttributeString("backgroundColor", c.segmentThumb), __Renderer.setAttributeString("borderColor", c.border), __Renderer.setAttributeString("boxShadow", dark ? "complex 0 1 2 rgba(0, 0, 0, 0.22)" : "complex 0 1 2 rgba(0, 0, 0, 0.06)"), __Renderer.endRender()), options.forEach((option, index) => {
           let selected = option.id === value, optionDisabled = disabled || option.disabled;
           __Renderer.beginRender(__nodeView4, option.id), __Renderer.setAttributeString("accessibilityId", `${id}-${option.id}`), __Renderer.setAttributeString("accessibilityLabel", option.title), __Renderer.setAttribute("accessibilityStateSelected", selected), __Renderer.setAttribute("accessibilityStateDisabled", optionDisabled), __Renderer.setAttributeFunction("onTap", optionDisabled ? void 0 : () => this.selectOption(index, option.id)), __Renderer.setAttributeNumber("flexBasis", minOptionWidth), __Renderer.setAttributeNumber("minHeight", optionHeight), __Renderer.setAttributeNumber("borderRadius", m.radii.segmentThumb), __Renderer.beginRender(__nodeLabel1, void 0), __Renderer.setAttributeString("value", option.title), __Renderer.setAttributeString("font", selected ? (0, SystemFont_1.systemMediumFont)(fontSize) : (0, SystemFont_1.systemFont)(fontSize)), __Renderer.setAttributeString("color", optionDisabled ? c.disabled : selected ? c.ink : c.muted), __Renderer.endRender(), __Renderer.endRender();
         }), __Renderer.endRender(), __Renderer.endRender();
@@ -17093,9 +17096,9 @@ var require_SegmentedControl = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/SettingsGroup.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/SettingsGroup.js
 var require_SettingsGroup = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/SettingsGroup.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/SettingsGroup.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/SettingsGroup";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.SettingsRow = exports.SettingsListItem = exports.SettingsFormRow = exports.SettingsGroup = exports.SettingsPageHeader = void 0;
@@ -17146,9 +17149,9 @@ var require_SettingsGroup = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/AddMachineSurface.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/AddMachineSurface.js
 var require_AddMachineSurface = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/AddMachineSurface.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/AddMachineSurface.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/AddMachineSurface";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.AddMachineSurface = void 0;
@@ -17173,8 +17176,7 @@ var require_AddMachineSurface = __commonJS({
         return (0, tokens_1.themeColors)(this.viewModel.dark);
       }
       onRender() {
-        var _a;
-        let vm = this.viewModel, dark = !!vm.dark, c = this.c, m = (0, tokens_1.themeMetrics)(vm.touch), entered = this.state.entered, glassClass = dark ? "oc-liquid-glass oc-dark" : "oc-liquid-glass", pendingList = (_a = vm.pendingMachines) !== null && _a !== void 0 ? _a : [], osHint = this.state.platformTab === "macos" ? vm.macosHint : vm.linuxHint;
+        let vm = this.viewModel, dark = !!vm.dark, c = this.c, m = (0, tokens_1.themeMetrics)(vm.touch), entered = this.state.entered, glassClass = dark ? "oc-liquid-glass oc-dark" : "oc-liquid-glass", pendingList = vm.pendingMachines ?? [], osHint = this.state.platformTab === "macos" ? vm.macosHint : vm.linuxHint;
         __Renderer.beginRender(__nodeView1, void 0), __Renderer.setAttributeNumber("opacity", entered ? 1 : 0), __Renderer.setAttributeNumber("scaleX", entered ? 1 : 0.98), __Renderer.setAttributeNumber("scaleY", entered ? 1 : 0.98), __Renderer.beginRender(__nodeGlass1, void 0), __Renderer.setAttributeString("class", glassClass), __Renderer.setAttributeString("accessibilityLabel", vm.title), __Renderer.setAttributeNumber("borderRadius", m.radii.modal), __Renderer.setAttributeString("backgroundColor", c.alert), __Renderer.setAttributeString("glassTintColor", c.glassTint), __Renderer.setAttributeString("borderColor", c.glassBorder), __Renderer.setAttributeString("boxShadow", dark ? "complex 0 16 40 rgba(0, 0, 0, 0.38)" : "complex 0 12 34 rgba(24, 24, 28, 0.14)"), __Renderer.beginRender(__nodeView2, void 0), __Renderer.beginRender(__nodeView3, void 0), __Renderer.beginRender(__nodeLabel1, void 0), __Renderer.setAttributeString("value", vm.title), __Renderer.setAttributeString("font", m.fonts.sectionTitle), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel2, void 0), __Renderer.setAttributeString("value", vm.subtitle), __Renderer.setAttributeString("font", m.fonts.detail), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginRender(__nodeView4, void 0), __Renderer.setAttributeString("accessibilityLabel", vm.closeLabel), __Renderer.setAttributeFunction("onTap", () => {
           (0, haptics_1.triggerHaptic)("selection"), vm.onClose();
         }), __Renderer.setAttributeNumber("borderRadius", m.radii.control - 1), __Renderer.setAttributeString("backgroundColor", c.trackSoft), __Renderer.setAttributeString("borderColor", c.border), __Renderer.beginComponent(Icon_1.Icon, __componentIcon1, void 0, void 0), __Renderer.setViewModelProperty("color", c.muted), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginRender(__nodeView5, void 0), __Renderer.beginComponent(SegmentedControl_1.SegmentedControl, __componentSegmentedControl1, void 0, void 0), __Renderer.setViewModelProperty("label", vm.platformLabel), __Renderer.setViewModelProperty("value", this.state.platformTab), __Renderer.setViewModelProperty("options", [
@@ -17191,8 +17193,7 @@ var require_AddMachineSurface = __commonJS({
         }), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent()) : pendingList.length > 0 && (__Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup2, void 0, void 0), __Renderer.setViewModelProperty("title", vm.statusGroupTitle), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
           pendingList.forEach((item, index) => {
             __Renderer.beginRender(__nodeView10, item.id), index > 0 && (__Renderer.beginRender(__nodeView11, void 0), __Renderer.setAttributeString("backgroundColor", c.border), __Renderer.endRender()), __Renderer.beginRender(__nodeView12, void 0), __Renderer.beginRender(__nodeView13, void 0), __Renderer.setAttributeString("backgroundColor", c.accent), __Renderer.endRender(), __Renderer.beginRender(__nodeView14, void 0), __Renderer.beginRender(__nodeLabel6, void 0), __Renderer.setAttributeString("value", item.label || vm.waitingTitle), __Renderer.setAttributeString("font", m.fonts.body), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel7, void 0), __Renderer.setAttributeString("value", item.detail || vm.waitingDetail), __Renderer.setAttributeString("font", m.fonts.detail), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.endRender(), vm.onRevoke && (__Renderer.beginComponent(Button_1.Button, __componentButton3, void 0, void 0), __Renderer.setViewModelProperty("id", `oc-add-machine-revoke-${item.id}`), __Renderer.setViewModelProperty("title", vm.revokeLabel), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => {
-              var _a2;
-              (0, haptics_1.triggerHaptic)("light"), (_a2 = vm.onRevoke) === null || _a2 === void 0 || _a2.call(vm, item.id);
+              (0, haptics_1.triggerHaptic)("light"), vm.onRevoke?.(item.id);
             }), __Renderer.endComponent()), __Renderer.endRender(), __Renderer.endRender();
           });
         }), __Renderer.endComponent()), __Renderer.endRender(), __Renderer.endRender();
@@ -17202,9 +17203,9 @@ var require_AddMachineSurface = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/TextField.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/TextField.js
 var require_TextField = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/TextField.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/TextField.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/TextField";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.TextField = void 0;
@@ -17222,32 +17223,25 @@ var require_TextField = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/AgentReadinessSurface.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/AgentReadinessSurface.js
 var require_AgentReadinessSurface = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/AgentReadinessSurface.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/AgentReadinessSurface.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/AgentReadinessSurface";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.AgentReadinessSurface = void 0;
     var __Renderer = require_JSX2().jsx, __nodeView1 = __Renderer.makeNodePrototype("view", ["width", "100%", "padding", 16, "gap", 12]), __nodeView2 = __Renderer.makeNodePrototype("view", ["width", "100%", "flexDirection", "row", "alignItems", "flex-start", "gap", 12]), __nodeView3 = __Renderer.makeNodePrototype("view", ["width", 36, "height", 36, "flexShrink", 0, "borderWidth", 0.5, "alignItems", "center", "justifyContent", "center", "accessibilityNavigation", "ignored"]), __componentIcon1 = __Renderer.makeComponentPrototype(["size", 18]), __nodeView4 = __Renderer.makeNodePrototype("view", ["flexGrow", 1, "flexShrink", 1, "minWidth", 0, "gap", 4]), __nodeView5 = __Renderer.makeNodePrototype("view", ["width", "100%", "flexDirection", "row", "alignItems", "center", "justifyContent", "space-between", "gap", 8]), __nodeView6 = __Renderer.makeNodePrototype("view", ["flexShrink", 1, "minWidth", 0]), __nodeLabel1 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeView7 = __Renderer.makeNodePrototype("view", ["flexShrink", 0, "paddingLeft", 7, "paddingRight", 7, "paddingTop", 2, "paddingBottom", 2, "borderRadius", 6]), __nodeLabel2 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeView8 = __Renderer.makeNodePrototype("view", ["width", "100%", "minWidth", 0]), __nodeLabel3 = __Renderer.makeNodePrototype("label", ["numberOfLines", 0]), __nodeView9 = __Renderer.makeNodePrototype("view", ["class", "oc-mono", "width", "100%", "minWidth", 0, "paddingTop", 2]), __nodeLabel4 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __componentBanner1 = __Renderer.makeComponentPrototype(["tone", "danger"]), __nodeView10 = __Renderer.makeNodePrototype("view", ["width", "100%", "paddingLeft", 12, "paddingRight", 10, "paddingTop", 8, "paddingBottom", 8, "borderWidth", 0.5, "flexDirection", "row", "alignItems", "center", "justifyContent", "space-between", "gap", 8]), __nodeView11 = __Renderer.makeNodePrototype("view", ["class", "oc-mono", "flexGrow", 1, "minWidth", 0]), __nodeLabel5 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __componentButton1 = __Renderer.makeComponentPrototype(["variant", "ghost", "size", "sm", "leadingIcon", "copy"]), __nodeView12 = __Renderer.makeNodePrototype("view", ["class", "oc-mono", "width", "100%", "gap", 8]), __componentTextField1 = __Renderer.makeComponentPrototype(), __componentButton2 = __Renderer.makeComponentPrototype(["variant", "primary", "size", "sm"]), __nodeView13 = __Renderer.makeNodePrototype("view", ["width", "100%", "flexDirection", "row", "flexWrap", "wrap", "alignItems", "center", "gap", 8]), __componentButton3 = __Renderer.makeComponentPrototype(["variant", "primary", "size", "sm"]), __componentButton4 = __Renderer.makeComponentPrototype(["variant", "secondary", "size", "sm", "leadingIcon", "external"]), __componentButton5 = __Renderer.makeComponentPrototype(["variant", "ghost", "size", "sm"]), Component_1 = require_Component(), Banner_1 = require_Banner(), Button_1 = require_Button(), Icon_1 = require_Icon(), TextField_1 = require_TextField(), tokens_1 = require_tokens(), AgentReadinessSurface2 = class extends Component_1.Component {
       onRender() {
-        var _a, _b;
-        let vm = this.viewModel, c = (0, tokens_1.themeColors)(vm.dark), m = (0, tokens_1.themeMetrics)(vm.touch), baseId = (_a = vm.id) !== null && _a !== void 0 ? _a : "agent-readiness", isRunning = vm.phase === "running", isFailed = vm.phase === "failed", metaParts = [vm.version, vm.account].filter((item) => !!(item && item.trim()));
-        __Renderer.beginRender(__nodeView1, void 0), __Renderer.setAttributeString("accessibilityId", baseId), __Renderer.beginRender(__nodeView2, void 0), __Renderer.beginRender(__nodeView3, void 0), __Renderer.setAttributeNumber("borderRadius", m.radii.iconBox), __Renderer.setAttributeString("backgroundColor", c.recessed), __Renderer.setAttributeString("borderColor", c.border), __Renderer.beginComponent(Icon_1.Icon, __componentIcon1, void 0, void 0), __Renderer.setViewModelProperty("name", isRunning ? "refresh" : (_b = vm.icon) !== null && _b !== void 0 ? _b : "terminal"), __Renderer.setViewModelProperty("color", isFailed ? c.danger : c.ink), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.beginRender(__nodeView4, void 0), __Renderer.beginRender(__nodeView5, void 0), __Renderer.beginRender(__nodeView6, void 0), __Renderer.beginRender(__nodeLabel1, void 0), __Renderer.setAttributeString("value", vm.agentName), __Renderer.setAttributeString("font", m.fonts.rowTitle), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginRender(__nodeView7, void 0), __Renderer.setAttributeString("backgroundColor", isFailed ? c.dangerSurface : c.trackSoft), __Renderer.beginRender(__nodeLabel2, void 0), __Renderer.setAttributeString("value", vm.statusTitle), __Renderer.setAttributeString("font", m.fonts.caption), __Renderer.setAttributeString("color", isFailed ? c.danger : c.muted), __Renderer.endRender(), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginRender(__nodeView8, void 0), __Renderer.beginRender(__nodeLabel3, void 0), __Renderer.setAttributeString("value", vm.description), __Renderer.setAttributeString("font", m.fonts.detail), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.endRender(), metaParts.length > 0 && (__Renderer.beginRender(__nodeView9, void 0), __Renderer.beginRender(__nodeLabel4, void 0), __Renderer.setAttributeString("value", metaParts.join(" \xB7 ")), __Renderer.setAttributeString("font", m.fonts.caption), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.endRender()), __Renderer.endRender(), __Renderer.endRender(), isFailed && vm.errorMessage && (__Renderer.beginComponent(Banner_1.Banner, __componentBanner1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.statusTitle), __Renderer.setViewModelProperty("message", vm.errorMessage), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", vm.dark), __Renderer.endComponent()), vm.userCode && (__Renderer.beginRender(__nodeView10, void 0), __Renderer.setAttributeNumber("borderRadius", m.radii.control), __Renderer.setAttributeString("backgroundColor", c.recessed), __Renderer.setAttributeString("borderColor", c.border), __Renderer.beginRender(__nodeView11, void 0), __Renderer.beginRender(__nodeLabel5, void 0), __Renderer.setAttributeString("value", vm.userCode), __Renderer.setAttributeString("font", m.fonts.control), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.endRender(), vm.copyCodeTitle && vm.onCopyCode && (__Renderer.beginComponent(Button_1.Button, __componentButton1, void 0, void 0), __Renderer.setViewModelProperty("id", `${baseId}-copy-code`), __Renderer.setViewModelProperty("title", vm.copyCodeTitle), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", vm.dark), __Renderer.setViewModelProperty("onPress", vm.onCopyCode), __Renderer.endComponent()), __Renderer.endRender()), vm.awaitingCode && vm.onAuthCodeChange && vm.onSubmitCode && (() => {
-          var _a2, _b2, _c;
-          __Renderer.beginRender(__nodeView12, void 0), __Renderer.beginComponent(TextField_1.TextField, __componentTextField1, void 0, void 0), __Renderer.setViewModelProperty("id", `${baseId}-auth-code`), __Renderer.setViewModelProperty("label", (_a2 = vm.authCodePlaceholder) !== null && _a2 !== void 0 ? _a2 : vm.agentName), __Renderer.setViewModelProperty("value", (_b2 = vm.authCodeValue) !== null && _b2 !== void 0 ? _b2 : ""), __Renderer.setViewModelProperty("placeholder", (_c = vm.authCodePlaceholder) !== null && _c !== void 0 ? _c : ""), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", vm.dark), __Renderer.setViewModelProperty("onChange", vm.onAuthCodeChange), __Renderer.endComponent(), vm.submitCodeTitle && (() => {
-            var _a3;
-            __Renderer.beginComponent(Button_1.Button, __componentButton2, void 0, void 0), __Renderer.setViewModelProperty("id", `${baseId}-submit-code`), __Renderer.setViewModelProperty("title", vm.submitCodeTitle), __Renderer.setViewModelProperty("disabled", !((_a3 = vm.authCodeValue) !== null && _a3 !== void 0 ? _a3 : "").trim()), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", vm.dark), __Renderer.setViewModelProperty("onPress", vm.onSubmitCode), __Renderer.endComponent();
-          })(), __Renderer.endRender();
-        })(), (vm.primaryActionTitle || vm.openLinkTitle || vm.secondaryActionTitle) && (__Renderer.beginRender(__nodeView13, void 0), vm.primaryActionTitle && vm.onPrimaryAction && (__Renderer.beginComponent(Button_1.Button, __componentButton3, void 0, void 0), __Renderer.setViewModelProperty("id", `${baseId}-primary`), __Renderer.setViewModelProperty("title", vm.primaryActionTitle), __Renderer.setViewModelProperty("loading", isRunning && !vm.openLinkTitle), __Renderer.setViewModelProperty("disabled", isRunning && !vm.openLinkTitle), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", vm.dark), __Renderer.setViewModelProperty("onPress", vm.onPrimaryAction), __Renderer.endComponent()), vm.openLinkTitle && vm.onOpenLink && (__Renderer.beginComponent(Button_1.Button, __componentButton4, void 0, void 0), __Renderer.setViewModelProperty("id", `${baseId}-open-link`), __Renderer.setViewModelProperty("title", vm.openLinkTitle), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", vm.dark), __Renderer.setViewModelProperty("onPress", vm.onOpenLink), __Renderer.endComponent()), vm.secondaryActionTitle && vm.onSecondaryAction && (__Renderer.beginComponent(Button_1.Button, __componentButton5, void 0, void 0), __Renderer.setViewModelProperty("id", `${baseId}-secondary`), __Renderer.setViewModelProperty("title", vm.secondaryActionTitle), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", vm.dark), __Renderer.setViewModelProperty("onPress", vm.onSecondaryAction), __Renderer.endComponent()), __Renderer.endRender()), __Renderer.endRender();
+        let vm = this.viewModel, c = (0, tokens_1.themeColors)(vm.dark), m = (0, tokens_1.themeMetrics)(vm.touch), baseId = vm.id ?? "agent-readiness", isRunning = vm.phase === "running", isFailed = vm.phase === "failed", metaParts = [vm.version, vm.account].filter((item) => !!(item && item.trim()));
+        __Renderer.beginRender(__nodeView1, void 0), __Renderer.setAttributeString("accessibilityId", baseId), __Renderer.beginRender(__nodeView2, void 0), __Renderer.beginRender(__nodeView3, void 0), __Renderer.setAttributeNumber("borderRadius", m.radii.iconBox), __Renderer.setAttributeString("backgroundColor", c.recessed), __Renderer.setAttributeString("borderColor", c.border), __Renderer.beginComponent(Icon_1.Icon, __componentIcon1, void 0, void 0), __Renderer.setViewModelProperty("name", isRunning ? "refresh" : vm.icon ?? "terminal"), __Renderer.setViewModelProperty("color", isFailed ? c.danger : c.ink), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.beginRender(__nodeView4, void 0), __Renderer.beginRender(__nodeView5, void 0), __Renderer.beginRender(__nodeView6, void 0), __Renderer.beginRender(__nodeLabel1, void 0), __Renderer.setAttributeString("value", vm.agentName), __Renderer.setAttributeString("font", m.fonts.rowTitle), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginRender(__nodeView7, void 0), __Renderer.setAttributeString("backgroundColor", isFailed ? c.dangerSurface : c.trackSoft), __Renderer.beginRender(__nodeLabel2, void 0), __Renderer.setAttributeString("value", vm.statusTitle), __Renderer.setAttributeString("font", m.fonts.caption), __Renderer.setAttributeString("color", isFailed ? c.danger : c.muted), __Renderer.endRender(), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginRender(__nodeView8, void 0), __Renderer.beginRender(__nodeLabel3, void 0), __Renderer.setAttributeString("value", vm.description), __Renderer.setAttributeString("font", m.fonts.detail), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.endRender(), metaParts.length > 0 && (__Renderer.beginRender(__nodeView9, void 0), __Renderer.beginRender(__nodeLabel4, void 0), __Renderer.setAttributeString("value", metaParts.join(" \xB7 ")), __Renderer.setAttributeString("font", m.fonts.caption), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.endRender()), __Renderer.endRender(), __Renderer.endRender(), isFailed && vm.errorMessage && (__Renderer.beginComponent(Banner_1.Banner, __componentBanner1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.statusTitle), __Renderer.setViewModelProperty("message", vm.errorMessage), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", vm.dark), __Renderer.endComponent()), vm.userCode && (__Renderer.beginRender(__nodeView10, void 0), __Renderer.setAttributeNumber("borderRadius", m.radii.control), __Renderer.setAttributeString("backgroundColor", c.recessed), __Renderer.setAttributeString("borderColor", c.border), __Renderer.beginRender(__nodeView11, void 0), __Renderer.beginRender(__nodeLabel5, void 0), __Renderer.setAttributeString("value", vm.userCode), __Renderer.setAttributeString("font", m.fonts.control), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.endRender(), vm.copyCodeTitle && vm.onCopyCode && (__Renderer.beginComponent(Button_1.Button, __componentButton1, void 0, void 0), __Renderer.setViewModelProperty("id", `${baseId}-copy-code`), __Renderer.setViewModelProperty("title", vm.copyCodeTitle), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", vm.dark), __Renderer.setViewModelProperty("onPress", vm.onCopyCode), __Renderer.endComponent()), __Renderer.endRender()), vm.awaitingCode && vm.onAuthCodeChange && vm.onSubmitCode && (__Renderer.beginRender(__nodeView12, void 0), __Renderer.beginComponent(TextField_1.TextField, __componentTextField1, void 0, void 0), __Renderer.setViewModelProperty("id", `${baseId}-auth-code`), __Renderer.setViewModelProperty("label", vm.authCodePlaceholder ?? vm.agentName), __Renderer.setViewModelProperty("value", vm.authCodeValue ?? ""), __Renderer.setViewModelProperty("placeholder", vm.authCodePlaceholder ?? ""), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", vm.dark), __Renderer.setViewModelProperty("onChange", vm.onAuthCodeChange), __Renderer.endComponent(), vm.submitCodeTitle && (__Renderer.beginComponent(Button_1.Button, __componentButton2, void 0, void 0), __Renderer.setViewModelProperty("id", `${baseId}-submit-code`), __Renderer.setViewModelProperty("title", vm.submitCodeTitle), __Renderer.setViewModelProperty("disabled", !(vm.authCodeValue ?? "").trim()), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", vm.dark), __Renderer.setViewModelProperty("onPress", vm.onSubmitCode), __Renderer.endComponent()), __Renderer.endRender()), (vm.primaryActionTitle || vm.openLinkTitle || vm.secondaryActionTitle) && (__Renderer.beginRender(__nodeView13, void 0), vm.primaryActionTitle && vm.onPrimaryAction && (__Renderer.beginComponent(Button_1.Button, __componentButton3, void 0, void 0), __Renderer.setViewModelProperty("id", `${baseId}-primary`), __Renderer.setViewModelProperty("title", vm.primaryActionTitle), __Renderer.setViewModelProperty("loading", isRunning && !vm.openLinkTitle), __Renderer.setViewModelProperty("disabled", isRunning && !vm.openLinkTitle), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", vm.dark), __Renderer.setViewModelProperty("onPress", vm.onPrimaryAction), __Renderer.endComponent()), vm.openLinkTitle && vm.onOpenLink && (__Renderer.beginComponent(Button_1.Button, __componentButton4, void 0, void 0), __Renderer.setViewModelProperty("id", `${baseId}-open-link`), __Renderer.setViewModelProperty("title", vm.openLinkTitle), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", vm.dark), __Renderer.setViewModelProperty("onPress", vm.onOpenLink), __Renderer.endComponent()), vm.secondaryActionTitle && vm.onSecondaryAction && (__Renderer.beginComponent(Button_1.Button, __componentButton5, void 0, void 0), __Renderer.setViewModelProperty("id", `${baseId}-secondary`), __Renderer.setViewModelProperty("title", vm.secondaryActionTitle), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", vm.dark), __Renderer.setViewModelProperty("onPress", vm.onSecondaryAction), __Renderer.endComponent()), __Renderer.endRender()), __Renderer.endRender();
       }
     };
     exports.AgentReadinessSurface = AgentReadinessSurface2;
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/SelectMenu.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/SelectMenu.js
 var require_SelectMenu = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/SelectMenu.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/SelectMenu.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/SelectMenu";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.SelectMenu = void 0;
@@ -17259,20 +17253,18 @@ var require_SelectMenu = __commonJS({
         return this.viewModel.open !== void 0 ? this.viewModel.open : this.state.internalOpen;
       }
       setOpen(next) {
-        var _a, _b;
-        this.viewModel.open === void 0 && this.setState({ internalOpen: next }), (_b = (_a = this.viewModel).onOpenChange) === null || _b === void 0 || _b.call(_a, next);
+        this.viewModel.open === void 0 && this.setState({ internalOpen: next }), this.viewModel.onOpenChange?.(next);
       }
       onRender() {
-        var _a, _b, _c;
-        let { id, label, value, options, disabled, minWidth = 148, align = "right", touch, dark, onChange } = this.viewModel, c = (0, tokens_1.themeColors)(dark), m = (0, tokens_1.themeMetrics)(touch), open = !disabled && this.isOpen(), selectedOption = (_a = options.find((opt) => opt.id === value)) !== null && _a !== void 0 ? _a : options[0], triggerHeight = m.touch ? 36 : 30, optionFontSize = m.touch ? 14 : 13, maxOptionUnits = options.reduce((max, option) => {
+        let { id, label, value, options, disabled, minWidth = 148, align = "right", touch, dark, onChange } = this.viewModel, c = (0, tokens_1.themeColors)(dark), m = (0, tokens_1.themeMetrics)(touch), open = !disabled && this.isOpen(), selectedOption = options.find((opt) => opt.id === value) ?? options[0], triggerHeight = m.touch ? 36 : 30, optionFontSize = m.touch ? 14 : 13, maxOptionUnits = options.reduce((max, option) => {
           let units = 0;
           for (let i = 0; i < option.title.length; i++)
             units += option.title.charCodeAt(i) > 255 ? 1.85 : 1;
           return Math.max(max, units);
         }, 0), estimatedMenuWidth = Math.ceil(maxOptionUnits * (optionFontSize * 0.64) + 68), menuWidth = Math.min(360, Math.max(minWidth, 176, estimatedMenuWidth)), glassClass = dark ? "oc-liquid-glass oc-dark" : "oc-liquid-glass";
-        __Renderer.beginRender(__nodeView1, void 0), __Renderer.setAttributeNumber("zIndex", open ? 70 : 1), __Renderer.beginRender(__nodeView2, void 0), __Renderer.setAttributeString("accessibilityId", id), __Renderer.setAttributeString("accessibilityLabel", `${label}: ${(_b = selectedOption?.title) !== null && _b !== void 0 ? _b : ""}`), __Renderer.setAttribute("accessibilityStateDisabled", disabled), __Renderer.setAttribute("accessibilityStateSelected", open), __Renderer.setAttributeFunction("onTap", disabled ? void 0 : () => {
+        __Renderer.beginRender(__nodeView1, void 0), __Renderer.setAttributeNumber("zIndex", open ? 70 : 1), __Renderer.beginRender(__nodeView2, void 0), __Renderer.setAttributeString("accessibilityId", id), __Renderer.setAttributeString("accessibilityLabel", `${label}: ${selectedOption?.title ?? ""}`), __Renderer.setAttribute("accessibilityStateDisabled", disabled), __Renderer.setAttribute("accessibilityStateSelected", open), __Renderer.setAttributeFunction("onTap", disabled ? void 0 : () => {
           (0, haptics_1.triggerHaptic)("selection"), this.setOpen(!open);
-        }), __Renderer.setAttributeNumber("minWidth", minWidth), __Renderer.setAttributeNumber("minHeight", triggerHeight), __Renderer.setAttributeNumber("borderRadius", m.radii.control), __Renderer.setAttributeString("backgroundColor", c.trackSubtle), __Renderer.setAttributeString("borderColor", open ? c.accent : c.border), __Renderer.setAttributeNumber("opacity", disabled ? 0.5 : 1), __Renderer.beginRender(__nodeLabel1, void 0), __Renderer.setAttributeString("value", (_c = selectedOption?.title) !== null && _c !== void 0 ? _c : ""), __Renderer.setAttributeString("font", m.fonts.controlCompact), __Renderer.setAttributeString("color", disabled ? c.disabled : c.ink), __Renderer.endRender(), __Renderer.beginComponent(Icon_1.Icon, __componentIcon1, void 0, void 0), __Renderer.setViewModelProperty("name", open ? "chevronUp" : "chevronDown"), __Renderer.setViewModelProperty("color", c.muted), __Renderer.endComponent(), __Renderer.endRender(), open && (__Renderer.beginRender(__nodeGlass1, void 0), __Renderer.setAttributeString("class", `${glassClass} oc-select-menu`), __Renderer.setAttributeNumber("top", triggerHeight + 6), __Renderer.setAttributeNumber("left", align === "left" ? 0 : void 0), __Renderer.setAttributeNumber("right", align === "right" ? 0 : void 0), __Renderer.setAttributeNumber("width", menuWidth), __Renderer.setAttributeNumber("minWidth", menuWidth), __Renderer.setAttributeNumber("borderRadius", m.radii.card - 2), __Renderer.setAttributeString("backgroundColor", c.alert), __Renderer.setAttributeString("glassTintColor", c.glassTint), __Renderer.setAttributeString("borderColor", c.glassBorder), __Renderer.setAttributeString("boxShadow", dark ? "complex 0 14 32 rgba(0, 0, 0, 0.42)" : "complex 0 10 26 rgba(24, 24, 28, 0.12)"), __Renderer.setAttribute("slowClipping", !0), options.forEach((option) => {
+        }), __Renderer.setAttributeNumber("minWidth", minWidth), __Renderer.setAttributeNumber("minHeight", triggerHeight), __Renderer.setAttributeNumber("borderRadius", m.radii.control), __Renderer.setAttributeString("backgroundColor", c.trackSubtle), __Renderer.setAttributeString("borderColor", open ? c.accent : c.border), __Renderer.setAttributeNumber("opacity", disabled ? 0.5 : 1), __Renderer.beginRender(__nodeLabel1, void 0), __Renderer.setAttributeString("value", selectedOption?.title ?? ""), __Renderer.setAttributeString("font", m.fonts.controlCompact), __Renderer.setAttributeString("color", disabled ? c.disabled : c.ink), __Renderer.endRender(), __Renderer.beginComponent(Icon_1.Icon, __componentIcon1, void 0, void 0), __Renderer.setViewModelProperty("name", open ? "chevronUp" : "chevronDown"), __Renderer.setViewModelProperty("color", c.muted), __Renderer.endComponent(), __Renderer.endRender(), open && (__Renderer.beginRender(__nodeGlass1, void 0), __Renderer.setAttributeString("class", `${glassClass} oc-select-menu`), __Renderer.setAttributeNumber("top", triggerHeight + 6), __Renderer.setAttributeNumber("left", align === "left" ? 0 : void 0), __Renderer.setAttributeNumber("right", align === "right" ? 0 : void 0), __Renderer.setAttributeNumber("width", menuWidth), __Renderer.setAttributeNumber("minWidth", menuWidth), __Renderer.setAttributeNumber("borderRadius", m.radii.card - 2), __Renderer.setAttributeString("backgroundColor", c.alert), __Renderer.setAttributeString("glassTintColor", c.glassTint), __Renderer.setAttributeString("borderColor", c.glassBorder), __Renderer.setAttributeString("boxShadow", dark ? "complex 0 14 32 rgba(0, 0, 0, 0.42)" : "complex 0 10 26 rgba(24, 24, 28, 0.12)"), __Renderer.setAttribute("slowClipping", !0), options.forEach((option) => {
           let isSelected = option.id === value, isDisabled = !!option.disabled;
           __Renderer.beginRender(__nodeView3, option.id), __Renderer.setAttributeString("accessibilityId", `${id}-option-${option.id || "default"}`), __Renderer.setAttributeString("accessibilityLabel", option.title), __Renderer.setAttribute("accessibilityStateSelected", isSelected), __Renderer.setAttribute("accessibilityStateDisabled", isDisabled), __Renderer.setAttributeFunction("onTap", isDisabled ? void 0 : () => {
             (0, haptics_1.triggerHaptic)("selection"), this.setOpen(!1), option.id !== value && onChange(option.id);
@@ -17284,9 +17276,9 @@ var require_SelectMenu = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/AppearanceSettingsSurface.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/AppearanceSettingsSurface.js
 var require_AppearanceSettingsSurface = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/AppearanceSettingsSurface.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/AppearanceSettingsSurface.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/AppearanceSettingsSurface";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.AppearanceSettingsSurface = void 0;
@@ -17339,9 +17331,9 @@ var require_AppearanceSettingsSurface = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/EmptyState.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/EmptyState.js
 var require_EmptyState = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/EmptyState.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/EmptyState.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/EmptyState";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.EmptyState = void 0;
@@ -17355,9 +17347,9 @@ var require_EmptyState = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/ArchivedThreadsSurface.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/ArchivedThreadsSurface.js
 var require_ArchivedThreadsSurface = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/ArchivedThreadsSurface.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/ArchivedThreadsSurface.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/ArchivedThreadsSurface";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.ArchivedThreadsSurface = void 0;
@@ -17390,9 +17382,9 @@ var require_ArchivedThreadsSurface = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/Toggle.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/Toggle.js
 var require_Toggle = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/Toggle.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/Toggle.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/Toggle";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.Toggle = void 0;
@@ -17427,9 +17419,9 @@ var require_Toggle = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/ModelServicesSurface.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/ModelServicesSurface.js
 var require_ModelServicesSurface = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/ModelServicesSurface.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/ModelServicesSurface.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/ModelServicesSurface";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.ModelServicesSurface = void 0;
@@ -17449,36 +17441,14 @@ var require_ModelServicesSurface = __commonJS({
           __Renderer.beginRender(__nodeView2, void 0), vm.showManagePlatform && vm.managePlatformLabel && vm.onManagePlatform && (__Renderer.beginComponent(Button_1.Button, __componentButton1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.managePlatformLabel), __Renderer.setViewModelProperty("disabled", vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onManagePlatform), __Renderer.endComponent()), __Renderer.beginComponent(Button_1.Button, __componentButton2, void 0, void 0), __Renderer.setViewModelProperty("title", vm.addLabel), __Renderer.setViewModelProperty("disabled", vm.addDisabled), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onStartAdd), __Renderer.endComponent(), __Renderer.endRender();
         }), __Renderer.endComponent()), vm.errorMessage && (__Renderer.beginComponent(Banner_1.Banner, __componentBanner1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.errorMessage), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
           __Renderer.beginComponent(Button_1.Button, __componentButton3, void 0, void 0), __Renderer.setViewModelProperty("title", vm.tryAgainLabel), __Renderer.setViewModelProperty("disabled", vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onRefresh), __Renderer.endComponent();
-        }), __Renderer.endComponent()), (vm.statusMessage || vm.busy) && (() => {
-          var _a;
-          __Renderer.beginComponent(Banner_1.Banner, __componentBanner2, void 0, void 0), __Renderer.setViewModelProperty("title", vm.busy ? vm.savingText : (_a = vm.statusMessage) !== null && _a !== void 0 ? _a : ""), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent();
-        })(), vm.loading && (__Renderer.beginRender(__nodeView3, void 0), __Renderer.setAttributeNumber("borderRadius", m.radii.card), __Renderer.setAttributeString("backgroundColor", c.surface), __Renderer.setAttributeString("borderColor", c.border), __Renderer.beginRender(__nodeView4, void 0), __Renderer.setAttributeString("backgroundColor", c.recessed), __Renderer.endRender(), __Renderer.beginRender(__nodeView5, void 0), __Renderer.setAttributeString("backgroundColor", c.recessed), __Renderer.endRender(), __Renderer.endRender()), vm.loading || (__Renderer.beginComponent(TextField_1.TextField, __componentTextField1, void 0, void 0), __Renderer.setViewModelProperty("label", vm.searchPlaceholder), __Renderer.setViewModelProperty("value", vm.searchQuery), __Renderer.setViewModelProperty("placeholder", vm.searchPlaceholder), __Renderer.setViewModelProperty("clearTitle", vm.clearSearchLabel), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", vm.onSearchChange), __Renderer.endComponent()), !vm.loading && vm.adding && (__Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.addTitle), __Renderer.setViewModelProperty("clip", !1), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
+        }), __Renderer.endComponent()), (vm.statusMessage || vm.busy) && (__Renderer.beginComponent(Banner_1.Banner, __componentBanner2, void 0, void 0), __Renderer.setViewModelProperty("title", vm.busy ? vm.savingText : vm.statusMessage ?? ""), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent()), vm.loading && (__Renderer.beginRender(__nodeView3, void 0), __Renderer.setAttributeNumber("borderRadius", m.radii.card), __Renderer.setAttributeString("backgroundColor", c.surface), __Renderer.setAttributeString("borderColor", c.border), __Renderer.beginRender(__nodeView4, void 0), __Renderer.setAttributeString("backgroundColor", c.recessed), __Renderer.endRender(), __Renderer.beginRender(__nodeView5, void 0), __Renderer.setAttributeString("backgroundColor", c.recessed), __Renderer.endRender(), __Renderer.endRender()), vm.loading || (__Renderer.beginComponent(TextField_1.TextField, __componentTextField1, void 0, void 0), __Renderer.setViewModelProperty("label", vm.searchPlaceholder), __Renderer.setViewModelProperty("value", vm.searchQuery), __Renderer.setViewModelProperty("placeholder", vm.searchPlaceholder), __Renderer.setViewModelProperty("clearTitle", vm.clearSearchLabel), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", vm.onSearchChange), __Renderer.endComponent()), !vm.loading && vm.adding && (__Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.addTitle), __Renderer.setViewModelProperty("clip", !1), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
           vm.subscriptionAvailable && (__Renderer.beginComponent(SettingsGroup_1.SettingsFormRow, __componentSettingsFormRow1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.connectionMethodLabel), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
             __Renderer.beginComponent(SelectMenu_1.SelectMenu, __componentSelectMenu1, void 0, void 0), __Renderer.setViewModelProperty("label", vm.connectionMethodLabel), __Renderer.setViewModelProperty("value", vm.connectionType), __Renderer.setViewModelProperty("options", vm.connectionTypeOptions), __Renderer.setViewModelProperty("disabled", vm.busy || !!vm.subscriptionLoginCode), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (v) => vm.onConnectionTypeChange(v)), __Renderer.endComponent();
-          }), __Renderer.endComponent()), vm.connectionType === "subscription" && vm.subscriptionAvailable ? (__Renderer.beginRender(__nodeView6, void 0), __Renderer.beginComponent(SettingsGroup_1.SettingsListItem, __componentSettingsListItem1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.subscriptionTitle), __Renderer.setViewModelProperty("description", vm.subscriptionDescription), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent(), vm.subscriptionLoginCode && (__Renderer.beginRender(__nodeView7, void 0), __Renderer.beginComponent(Banner_1.Banner, __componentBanner3, void 0, void 0), __Renderer.setViewModelProperty("title", `${vm.subscriptionLoginCode}${vm.subscriptionLoginHint ? ` \xB7 ${vm.subscriptionLoginHint}` : ""}`), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent(), __Renderer.endRender()), __Renderer.beginRender(__nodeView8, void 0), __Renderer.beginComponent(Button_1.Button, __componentButton4, void 0, void 0), __Renderer.setViewModelProperty("title", vm.cancelLabel), __Renderer.setViewModelProperty("disabled", vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onCancelAdd), __Renderer.endComponent(), vm.onStartSubscription && (__Renderer.beginComponent(Button_1.Button, __componentButton5, void 0, void 0), __Renderer.setViewModelProperty("title", vm.signInAndConnectLabel), __Renderer.setViewModelProperty("disabled", vm.busy || !!vm.subscriptionLoginCode), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onStartSubscription), __Renderer.endComponent()), __Renderer.endRender(), __Renderer.endRender()) : vm.urlRegisterMode ? (() => {
-            var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
-            __Renderer.beginRender(__nodeView9, void 0), __Renderer.beginComponent(TextField_1.TextField, __componentTextField2, void 0, void 0), __Renderer.setViewModelProperty("label", (_a = vm.baseUrlLabel) !== null && _a !== void 0 ? _a : ""), __Renderer.setViewModelProperty("value", (_b = vm.baseUrlValue) !== null && _b !== void 0 ? _b : ""), __Renderer.setViewModelProperty("placeholder", (_c = vm.baseUrlPlaceholder) !== null && _c !== void 0 ? _c : ""), __Renderer.setViewModelProperty("hint", vm.recognizedVendorText), __Renderer.setViewModelProperty("disabled", vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (value) => {
-              var _a2;
-              return (_a2 = vm.onBaseUrlChange) === null || _a2 === void 0 ? void 0 : _a2.call(vm, value);
-            }), __Renderer.endComponent(), __Renderer.beginComponent(TextField_1.TextField, __componentTextField3, void 0, void 0), __Renderer.setViewModelProperty("label", vm.nameLabel), __Renderer.setViewModelProperty("value", vm.nameValue), __Renderer.setViewModelProperty("placeholder", vm.namePlaceholder), __Renderer.setViewModelProperty("disabled", vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", vm.onNameChange), __Renderer.endComponent(), vm.protocolOptions && vm.protocolOptions.length > 0 && (() => {
-              var _a2;
-              __Renderer.beginComponent(SettingsGroup_1.SettingsFormRow, __componentSettingsFormRow2, void 0, void 0), __Renderer.setViewModelProperty("title", (_a2 = vm.protocolLabel) !== null && _a2 !== void 0 ? _a2 : vm.connectionMethodLabel), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
-                var _a3, _b2;
-                __Renderer.beginComponent(SelectMenu_1.SelectMenu, __componentSelectMenu2, void 0, void 0), __Renderer.setViewModelProperty("label", (_a3 = vm.protocolLabel) !== null && _a3 !== void 0 ? _a3 : vm.connectionMethodLabel), __Renderer.setViewModelProperty("value", (_b2 = vm.protocolValue) !== null && _b2 !== void 0 ? _b2 : "openai-completions"), __Renderer.setViewModelProperty("options", vm.protocolOptions), __Renderer.setViewModelProperty("disabled", vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (v) => {
-                  var _a4;
-                  return (_a4 = vm.onProtocolChange) === null || _a4 === void 0 ? void 0 : _a4.call(vm, v);
-                }), __Renderer.endComponent();
-              }), __Renderer.endComponent();
-            })(), __Renderer.beginComponent(TextField_1.TextField, __componentTextField4, void 0, void 0), __Renderer.setViewModelProperty("label", vm.apiKeyLabel), __Renderer.setViewModelProperty("hint", vm.discoverHint), __Renderer.setViewModelProperty("value", vm.apiKeyValue), __Renderer.setViewModelProperty("disabled", vm.busy), __Renderer.setViewModelProperty("rightActionTitle", vm.discoverLabel), __Renderer.setViewModelProperty("rightActionDisabled", vm.busy || vm.discovering || !((_d = vm.baseUrlValue) !== null && _d !== void 0 ? _d : "").trim()), __Renderer.setViewModelProperty("onRightAction", vm.onDiscoverModels), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", vm.onApiKeyChange), __Renderer.endComponent(), vm.modelOptions.length > 0 && (__Renderer.beginComponent(SettingsGroup_1.SettingsFormRow, __componentSettingsFormRow3, void 0, void 0), __Renderer.setViewModelProperty("title", vm.modelLabel), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
-              __Renderer.beginComponent(SelectMenu_1.SelectMenu, __componentSelectMenu3, void 0, void 0), __Renderer.setViewModelProperty("label", vm.modelLabel), __Renderer.setViewModelProperty("value", vm.modelValue), __Renderer.setViewModelProperty("options", vm.modelOptions), __Renderer.setViewModelProperty("disabled", vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", vm.onModelChange), __Renderer.endComponent();
-            }), __Renderer.endComponent()), __Renderer.beginComponent(TextField_1.TextField, __componentTextField5, void 0, void 0), __Renderer.setViewModelProperty("label", (_e = vm.modelIdLabel) !== null && _e !== void 0 ? _e : vm.modelLabel), __Renderer.setViewModelProperty("value", (_f = vm.modelIdValue) !== null && _f !== void 0 ? _f : ""), __Renderer.setViewModelProperty("placeholder", (_g = vm.modelIdPlaceholder) !== null && _g !== void 0 ? _g : ""), __Renderer.setViewModelProperty("disabled", vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (value) => {
-              var _a2;
-              return (_a2 = vm.onModelIdChange) === null || _a2 === void 0 ? void 0 : _a2.call(vm, value);
-            }), __Renderer.endComponent(), __Renderer.beginComponent(TextField_1.TextField, __componentTextField6, void 0, void 0), __Renderer.setViewModelProperty("label", (_h = vm.contextWindowLabel) !== null && _h !== void 0 ? _h : ""), __Renderer.setViewModelProperty("value", (_j = vm.contextWindowValue) !== null && _j !== void 0 ? _j : ""), __Renderer.setViewModelProperty("placeholder", (_k = vm.contextWindowPlaceholder) !== null && _k !== void 0 ? _k : ""), __Renderer.setViewModelProperty("disabled", vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (value) => {
-              var _a2;
-              return (_a2 = vm.onContextWindowChange) === null || _a2 === void 0 ? void 0 : _a2.call(vm, value);
-            }), __Renderer.endComponent(), __Renderer.beginRender(__nodeView10, void 0), __Renderer.beginComponent(Button_1.Button, __componentButton6, void 0, void 0), __Renderer.setViewModelProperty("title", vm.cancelLabel), __Renderer.setViewModelProperty("disabled", vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onCancelAdd), __Renderer.endComponent(), __Renderer.beginComponent(Button_1.Button, __componentButton7, void 0, void 0), __Renderer.setViewModelProperty("title", vm.saveLabel), __Renderer.setViewModelProperty("disabled", vm.saveDisabled), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onSaveConnection), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.endRender();
-          })() : (__Renderer.beginRender(__nodeView11, void 0), __Renderer.beginComponent(TextField_1.TextField, __componentTextField7, void 0, void 0), __Renderer.setViewModelProperty("label", vm.nameLabel), __Renderer.setViewModelProperty("value", vm.nameValue), __Renderer.setViewModelProperty("placeholder", vm.namePlaceholder), __Renderer.setViewModelProperty("disabled", vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", vm.onNameChange), __Renderer.endComponent(), __Renderer.beginComponent(SettingsGroup_1.SettingsFormRow, __componentSettingsFormRow4, void 0, void 0), __Renderer.setViewModelProperty("title", vm.serviceLabel), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
+          }), __Renderer.endComponent()), vm.connectionType === "subscription" && vm.subscriptionAvailable ? (__Renderer.beginRender(__nodeView6, void 0), __Renderer.beginComponent(SettingsGroup_1.SettingsListItem, __componentSettingsListItem1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.subscriptionTitle), __Renderer.setViewModelProperty("description", vm.subscriptionDescription), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent(), vm.subscriptionLoginCode && (__Renderer.beginRender(__nodeView7, void 0), __Renderer.beginComponent(Banner_1.Banner, __componentBanner3, void 0, void 0), __Renderer.setViewModelProperty("title", `${vm.subscriptionLoginCode}${vm.subscriptionLoginHint ? ` \xB7 ${vm.subscriptionLoginHint}` : ""}`), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent(), __Renderer.endRender()), __Renderer.beginRender(__nodeView8, void 0), __Renderer.beginComponent(Button_1.Button, __componentButton4, void 0, void 0), __Renderer.setViewModelProperty("title", vm.cancelLabel), __Renderer.setViewModelProperty("disabled", vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onCancelAdd), __Renderer.endComponent(), vm.onStartSubscription && (__Renderer.beginComponent(Button_1.Button, __componentButton5, void 0, void 0), __Renderer.setViewModelProperty("title", vm.signInAndConnectLabel), __Renderer.setViewModelProperty("disabled", vm.busy || !!vm.subscriptionLoginCode), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onStartSubscription), __Renderer.endComponent()), __Renderer.endRender(), __Renderer.endRender()) : vm.urlRegisterMode ? (__Renderer.beginRender(__nodeView9, void 0), __Renderer.beginComponent(TextField_1.TextField, __componentTextField2, void 0, void 0), __Renderer.setViewModelProperty("label", vm.baseUrlLabel ?? ""), __Renderer.setViewModelProperty("value", vm.baseUrlValue ?? ""), __Renderer.setViewModelProperty("placeholder", vm.baseUrlPlaceholder ?? ""), __Renderer.setViewModelProperty("hint", vm.recognizedVendorText), __Renderer.setViewModelProperty("disabled", vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (value) => vm.onBaseUrlChange?.(value)), __Renderer.endComponent(), __Renderer.beginComponent(TextField_1.TextField, __componentTextField3, void 0, void 0), __Renderer.setViewModelProperty("label", vm.nameLabel), __Renderer.setViewModelProperty("value", vm.nameValue), __Renderer.setViewModelProperty("placeholder", vm.namePlaceholder), __Renderer.setViewModelProperty("disabled", vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", vm.onNameChange), __Renderer.endComponent(), vm.protocolOptions && vm.protocolOptions.length > 0 && (__Renderer.beginComponent(SettingsGroup_1.SettingsFormRow, __componentSettingsFormRow2, void 0, void 0), __Renderer.setViewModelProperty("title", vm.protocolLabel ?? vm.connectionMethodLabel), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
+            __Renderer.beginComponent(SelectMenu_1.SelectMenu, __componentSelectMenu2, void 0, void 0), __Renderer.setViewModelProperty("label", vm.protocolLabel ?? vm.connectionMethodLabel), __Renderer.setViewModelProperty("value", vm.protocolValue ?? "openai-completions"), __Renderer.setViewModelProperty("options", vm.protocolOptions), __Renderer.setViewModelProperty("disabled", vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (v) => vm.onProtocolChange?.(v)), __Renderer.endComponent();
+          }), __Renderer.endComponent()), __Renderer.beginComponent(TextField_1.TextField, __componentTextField4, void 0, void 0), __Renderer.setViewModelProperty("label", vm.apiKeyLabel), __Renderer.setViewModelProperty("hint", vm.discoverHint), __Renderer.setViewModelProperty("value", vm.apiKeyValue), __Renderer.setViewModelProperty("disabled", vm.busy), __Renderer.setViewModelProperty("rightActionTitle", vm.discoverLabel), __Renderer.setViewModelProperty("rightActionDisabled", vm.busy || vm.discovering || !(vm.baseUrlValue ?? "").trim()), __Renderer.setViewModelProperty("onRightAction", vm.onDiscoverModels), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", vm.onApiKeyChange), __Renderer.endComponent(), vm.modelOptions.length > 0 && (__Renderer.beginComponent(SettingsGroup_1.SettingsFormRow, __componentSettingsFormRow3, void 0, void 0), __Renderer.setViewModelProperty("title", vm.modelLabel), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
+            __Renderer.beginComponent(SelectMenu_1.SelectMenu, __componentSelectMenu3, void 0, void 0), __Renderer.setViewModelProperty("label", vm.modelLabel), __Renderer.setViewModelProperty("value", vm.modelValue), __Renderer.setViewModelProperty("options", vm.modelOptions), __Renderer.setViewModelProperty("disabled", vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", vm.onModelChange), __Renderer.endComponent();
+          }), __Renderer.endComponent()), __Renderer.beginComponent(TextField_1.TextField, __componentTextField5, void 0, void 0), __Renderer.setViewModelProperty("label", vm.modelIdLabel ?? vm.modelLabel), __Renderer.setViewModelProperty("value", vm.modelIdValue ?? ""), __Renderer.setViewModelProperty("placeholder", vm.modelIdPlaceholder ?? ""), __Renderer.setViewModelProperty("disabled", vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (value) => vm.onModelIdChange?.(value)), __Renderer.endComponent(), __Renderer.beginComponent(TextField_1.TextField, __componentTextField6, void 0, void 0), __Renderer.setViewModelProperty("label", vm.contextWindowLabel ?? ""), __Renderer.setViewModelProperty("value", vm.contextWindowValue ?? ""), __Renderer.setViewModelProperty("placeholder", vm.contextWindowPlaceholder ?? ""), __Renderer.setViewModelProperty("disabled", vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (value) => vm.onContextWindowChange?.(value)), __Renderer.endComponent(), __Renderer.beginRender(__nodeView10, void 0), __Renderer.beginComponent(Button_1.Button, __componentButton6, void 0, void 0), __Renderer.setViewModelProperty("title", vm.cancelLabel), __Renderer.setViewModelProperty("disabled", vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onCancelAdd), __Renderer.endComponent(), __Renderer.beginComponent(Button_1.Button, __componentButton7, void 0, void 0), __Renderer.setViewModelProperty("title", vm.saveLabel), __Renderer.setViewModelProperty("disabled", vm.saveDisabled), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onSaveConnection), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.endRender()) : (__Renderer.beginRender(__nodeView11, void 0), __Renderer.beginComponent(TextField_1.TextField, __componentTextField7, void 0, void 0), __Renderer.setViewModelProperty("label", vm.nameLabel), __Renderer.setViewModelProperty("value", vm.nameValue), __Renderer.setViewModelProperty("placeholder", vm.namePlaceholder), __Renderer.setViewModelProperty("disabled", vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", vm.onNameChange), __Renderer.endComponent(), __Renderer.beginComponent(SettingsGroup_1.SettingsFormRow, __componentSettingsFormRow4, void 0, void 0), __Renderer.setViewModelProperty("title", vm.serviceLabel), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
             __Renderer.beginComponent(SelectMenu_1.SelectMenu, __componentSelectMenu4, void 0, void 0), __Renderer.setViewModelProperty("label", vm.serviceLabel), __Renderer.setViewModelProperty("value", vm.serviceValue), __Renderer.setViewModelProperty("options", vm.serviceOptions), __Renderer.setViewModelProperty("disabled", vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", vm.onServiceChange), __Renderer.endComponent();
           }), __Renderer.endComponent(), __Renderer.beginComponent(SettingsGroup_1.SettingsFormRow, __componentSettingsFormRow5, void 0, void 0), __Renderer.setViewModelProperty("title", vm.modelLabel), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
             __Renderer.beginComponent(SelectMenu_1.SelectMenu, __componentSelectMenu5, void 0, void 0), __Renderer.setViewModelProperty("label", vm.modelLabel), __Renderer.setViewModelProperty("value", vm.modelValue), __Renderer.setViewModelProperty("options", vm.modelOptions), __Renderer.setViewModelProperty("disabled", vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", vm.onModelChange), __Renderer.endComponent();
@@ -17495,8 +17465,7 @@ var require_ModelServicesSurface = __commonJS({
           vm.selectedConnectionOwned && (__Renderer.beginRender(__nodeView16, void 0), __Renderer.beginComponent(SettingsGroup_1.SettingsListItem, __componentSettingsListItem5, void 0, void 0), __Renderer.setViewModelProperty("title", vm.availableToLabel), __Renderer.setViewModelProperty("description", vm.selectedConnectionScopeText), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
             vm.selectedConnectionSubscription || (__Renderer.beginComponent(Button_1.Button, __componentButton10, void 0, void 0), __Renderer.setViewModelProperty("title", vm.changeLabel), __Renderer.setViewModelProperty("disabled", vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onToggleScope), __Renderer.endComponent());
           }), __Renderer.endComponent(), vm.scopeOpen && vm.scopeOptions && (__Renderer.beginRender(__nodeView17, void 0), __Renderer.beginComponent(SettingsGroup_1.SettingsFormRow, __componentSettingsFormRow6, void 0, void 0), __Renderer.setViewModelProperty("title", vm.availableToLabel), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
-            var _a;
-            __Renderer.beginComponent(SelectMenu_1.SelectMenu, __componentSelectMenu6, void 0, void 0), __Renderer.setViewModelProperty("label", vm.availableToLabel), __Renderer.setViewModelProperty("value", (_a = vm.scopeDraft) !== null && _a !== void 0 ? _a : "personal"), __Renderer.setViewModelProperty("options", vm.scopeOptions), __Renderer.setViewModelProperty("disabled", vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (v) => vm.onScopeDraftChange(v)), __Renderer.endComponent();
+            __Renderer.beginComponent(SelectMenu_1.SelectMenu, __componentSelectMenu6, void 0, void 0), __Renderer.setViewModelProperty("label", vm.availableToLabel), __Renderer.setViewModelProperty("value", vm.scopeDraft ?? "personal"), __Renderer.setViewModelProperty("options", vm.scopeOptions), __Renderer.setViewModelProperty("disabled", vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (v) => vm.onScopeDraftChange(v)), __Renderer.endComponent();
           }), __Renderer.endComponent(), vm.scopeDraft === "team" && vm.scopeAllowOthersLabel && (__Renderer.beginComponent(SettingsGroup_1.SettingsFormRow, __componentSettingsFormRow7, void 0, void 0), __Renderer.setViewModelProperty("title", vm.scopeAllowOthersLabel), __Renderer.setViewModelProperty("description", vm.scopeTeamWarning), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
             __Renderer.beginComponent(Toggle_1.Toggle, __componentToggle1, void 0, void 0), __Renderer.setViewModelProperty("label", vm.scopeAllowOthersLabel), __Renderer.setViewModelProperty("value", !!vm.scopeConsent), __Renderer.setViewModelProperty("disabled", vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", vm.onScopeConsentChange), __Renderer.endComponent();
           }), __Renderer.endComponent()), __Renderer.beginRender(__nodeView18, void 0), __Renderer.beginComponent(Button_1.Button, __componentButton11, void 0, void 0), __Renderer.setViewModelProperty("title", vm.cancelLabel), __Renderer.setViewModelProperty("disabled", vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onToggleScope), __Renderer.endComponent(), __Renderer.beginComponent(Button_1.Button, __componentButton12, void 0, void 0), __Renderer.setViewModelProperty("title", vm.saveLabel), __Renderer.setViewModelProperty("disabled", vm.scopeSaveDisabled), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onSaveScope), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.endRender()), __Renderer.endRender()), vm.endpointValue && (__Renderer.beginComponent(SettingsGroup_1.SettingsListItem, __componentSettingsListItem6, void 0, void 0), __Renderer.setViewModelProperty("title", vm.endpointLabel), __Renderer.setViewModelProperty("description", vm.endpointValue), __Renderer.setViewModelProperty("divider", vm.selectedConnectionOwned), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent()), vm.selectedConnectionOwned && (__Renderer.beginComponent(SettingsGroup_1.SettingsListItem, __componentSettingsListItem7, void 0, void 0), __Renderer.setViewModelProperty("title", vm.disableLabel), __Renderer.setViewModelProperty("description", vm.disableDescription), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
@@ -17509,10 +17478,7 @@ var require_ModelServicesSurface = __commonJS({
         }), __Renderer.endComponent()), __Renderer.endRender()) : (__Renderer.beginComponent(EmptyState_1.EmptyState, __componentEmptyState1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.emptyDirectoryText), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent()), __Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup6, void 0, void 0), __Renderer.setViewModelProperty("title", vm.usageTitle), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
           __Renderer.beginComponent(SettingsGroup_1.SettingsListItem, __componentSettingsListItem9, void 0, void 0), __Renderer.setViewModelProperty("title", vm.usedThisMonthLabel), __Renderer.setViewModelProperty("metadata", vm.usedThisMonthValue), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent(), vm.heldTokensValue && (__Renderer.beginComponent(SettingsGroup_1.SettingsListItem, __componentSettingsListItem10, void 0, void 0), __Renderer.setViewModelProperty("title", vm.heldTokensLabel), __Renderer.setViewModelProperty("metadata", vm.heldTokensValue), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent()), __Renderer.beginComponent(SettingsGroup_1.SettingsListItem, __componentSettingsListItem11, void 0, void 0), __Renderer.setViewModelProperty("title", vm.usageLimitLabel), __Renderer.setViewModelProperty("description", vm.usageLimitDescription), __Renderer.setViewModelProperty("metadata", vm.usageLimitValue), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
             vm.canEditLimit && (__Renderer.beginComponent(Button_1.Button, __componentButton14, void 0, void 0), __Renderer.setViewModelProperty("title", vm.changeLabel), __Renderer.setViewModelProperty("disabled", vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onToggleLimit), __Renderer.endComponent());
-          }), __Renderer.endComponent(), vm.limitOpen && vm.limitMaxLabel && vm.limitSaveLabel && (() => {
-            var _a;
-            __Renderer.beginRender(__nodeView19, void 0), __Renderer.beginComponent(TextField_1.TextField, __componentTextField9, void 0, void 0), __Renderer.setViewModelProperty("label", vm.limitMaxLabel), __Renderer.setViewModelProperty("value", (_a = vm.limitDraft) !== null && _a !== void 0 ? _a : ""), __Renderer.setViewModelProperty("disabled", vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", vm.onLimitDraftChange), __Renderer.endComponent(), __Renderer.beginRender(__nodeView20, void 0), __Renderer.beginComponent(Button_1.Button, __componentButton15, void 0, void 0), __Renderer.setViewModelProperty("title", vm.cancelLabel), __Renderer.setViewModelProperty("disabled", vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onToggleLimit), __Renderer.endComponent(), __Renderer.beginComponent(Button_1.Button, __componentButton16, void 0, void 0), __Renderer.setViewModelProperty("title", vm.limitSaveLabel), __Renderer.setViewModelProperty("disabled", vm.limitSaveDisabled), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onSaveLimit), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.endRender();
-          })();
+          }), __Renderer.endComponent(), vm.limitOpen && vm.limitMaxLabel && vm.limitSaveLabel && (__Renderer.beginRender(__nodeView19, void 0), __Renderer.beginComponent(TextField_1.TextField, __componentTextField9, void 0, void 0), __Renderer.setViewModelProperty("label", vm.limitMaxLabel), __Renderer.setViewModelProperty("value", vm.limitDraft ?? ""), __Renderer.setViewModelProperty("disabled", vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", vm.onLimitDraftChange), __Renderer.endComponent(), __Renderer.beginRender(__nodeView20, void 0), __Renderer.beginComponent(Button_1.Button, __componentButton15, void 0, void 0), __Renderer.setViewModelProperty("title", vm.cancelLabel), __Renderer.setViewModelProperty("disabled", vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onToggleLimit), __Renderer.endComponent(), __Renderer.beginComponent(Button_1.Button, __componentButton16, void 0, void 0), __Renderer.setViewModelProperty("title", vm.limitSaveLabel), __Renderer.setViewModelProperty("disabled", vm.limitSaveDisabled), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onSaveLimit), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.endRender());
         }), __Renderer.endComponent(), __Renderer.endRender()), __Renderer.endRender();
       }
     };
@@ -17520,9 +17486,9 @@ var require_ModelServicesSurface = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/AssetsSurface.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/AssetsSurface.js
 var require_AssetsSurface = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/AssetsSurface.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/AssetsSurface.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/AssetsSurface";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.AssetsSurface = void 0;
@@ -17562,32 +17528,26 @@ ${vm.libraryDetailsTitle}: ${library.compatibleText} \xB7 ${library.verifiedText
           vm.loading ? (__Renderer.beginRender(__nodeView5, void 0), __Renderer.beginRender(__nodeView6, void 0), __Renderer.setAttributeString("backgroundColor", c.recessed), __Renderer.endRender(), __Renderer.beginRender(__nodeView7, void 0), __Renderer.setAttributeString("backgroundColor", c.recessed), __Renderer.endRender(), __Renderer.endRender()) : personalEnvironments.length > 0 ? personalEnvironments.forEach((env, idx) => {
             __Renderer.beginComponent(SettingsGroup_1.SettingsListItem, __componentSettingsListItem4, env.id, void 0), __Renderer.setViewModelProperty("id", `oc-assets-env-${env.id}`), __Renderer.setViewModelProperty("title", env.name), __Renderer.setViewModelProperty("description", env.description), __Renderer.setViewModelProperty("divider", idx > 0), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onOpen", env.editable ? () => vm.onOpenEnvironment(env.id) : void 0), __Renderer.endComponent();
           }) : (__Renderer.beginComponent(EmptyState_1.EmptyState, __componentEmptyState2, void 0, void 0), __Renderer.setViewModelProperty("title", vm.searchQuery.trim() ? vm.noResultsText : vm.emptyEnvironmentText), __Renderer.setViewModelProperty("actionTitle", vm.searchQuery.trim() ? vm.clearFiltersLabel : vm.createEnvironmentLabel), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onAction", vm.searchQuery.trim() ? () => vm.onClearFilters("environments") : vm.createEnvironmentDisabled ? void 0 : vm.onCreateEnvironment), __Renderer.endComponent());
-        }), __Renderer.endComponent(), __Renderer.beginRender(__nodeView8, void 0), __Renderer.beginRender(__nodeView9, void 0), __Renderer.beginRender(__nodeLabel1, void 0), __Renderer.setAttributeString("value", vm.environmentSaveHint), __Renderer.setAttributeString("font", m.fonts.detail), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginComponent(Button_1.Button, __componentButton4, void 0, void 0), __Renderer.setViewModelProperty("title", vm.viewAssistantsLabel), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onViewAssistants), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.endRender()), !vm.editingHere && vm.activeTab === "models" && vm.modelsTab && (__Renderer.beginComponent(ModelServicesSurface_1.ModelServicesSurface, __componentModelServicesSurface1, void 0, void 0), __Renderer.setViewModelProperties(vm.modelsTab), __Renderer.setViewModelProperty("hideHeader", !0), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent()), !vm.editingHere && vm.activeTab === "connections" && (__Renderer.beginRender(__nodeView10, void 0), vm.showConnectionSearch && (__Renderer.beginRender(__nodeView11, void 0), __Renderer.beginRender(__nodeView12, void 0), __Renderer.beginComponent(TextField_1.TextField, __componentTextField2, void 0, void 0), __Renderer.setViewModelProperty("label", vm.searchPlaceholder), __Renderer.setViewModelProperty("value", vm.searchQuery), __Renderer.setViewModelProperty("placeholder", vm.searchPlaceholder), __Renderer.setViewModelProperty("clearTitle", vm.clearFiltersLabel), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", vm.onSearchChange), __Renderer.endComponent(), __Renderer.endRender(), vm.providerFilterOptions && vm.providerFilterOptions.length > 0 && vm.onProviderFilterChange && (() => {
-          var _a;
-          __Renderer.beginComponent(SelectMenu_1.SelectMenu, __componentSelectMenu1, void 0, void 0), __Renderer.setViewModelProperty("label", vm.connectionsTitle), __Renderer.setViewModelProperty("value", (_a = vm.providerFilter) !== null && _a !== void 0 ? _a : "all"), __Renderer.setViewModelProperty("options", vm.providerFilterOptions), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", vm.onProviderFilterChange), __Renderer.endComponent();
-        })(), __Renderer.endRender()), __Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup5, void 0, void 0), __Renderer.setViewModelProperty("title", vm.connectionsTitle), __Renderer.setViewModelProperty("description", vm.codeAccountFooter), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
+        }), __Renderer.endComponent(), __Renderer.beginRender(__nodeView8, void 0), __Renderer.beginRender(__nodeView9, void 0), __Renderer.beginRender(__nodeLabel1, void 0), __Renderer.setAttributeString("value", vm.environmentSaveHint), __Renderer.setAttributeString("font", m.fonts.detail), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginComponent(Button_1.Button, __componentButton4, void 0, void 0), __Renderer.setViewModelProperty("title", vm.viewAssistantsLabel), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onViewAssistants), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.endRender()), !vm.editingHere && vm.activeTab === "models" && vm.modelsTab && (__Renderer.beginComponent(ModelServicesSurface_1.ModelServicesSurface, __componentModelServicesSurface1, void 0, void 0), __Renderer.setViewModelProperties(vm.modelsTab), __Renderer.setViewModelProperty("hideHeader", !0), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent()), !vm.editingHere && vm.activeTab === "connections" && (__Renderer.beginRender(__nodeView10, void 0), vm.showConnectionSearch && (__Renderer.beginRender(__nodeView11, void 0), __Renderer.beginRender(__nodeView12, void 0), __Renderer.beginComponent(TextField_1.TextField, __componentTextField2, void 0, void 0), __Renderer.setViewModelProperty("label", vm.searchPlaceholder), __Renderer.setViewModelProperty("value", vm.searchQuery), __Renderer.setViewModelProperty("placeholder", vm.searchPlaceholder), __Renderer.setViewModelProperty("clearTitle", vm.clearFiltersLabel), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", vm.onSearchChange), __Renderer.endComponent(), __Renderer.endRender(), vm.providerFilterOptions && vm.providerFilterOptions.length > 0 && vm.onProviderFilterChange && (__Renderer.beginComponent(SelectMenu_1.SelectMenu, __componentSelectMenu1, void 0, void 0), __Renderer.setViewModelProperty("label", vm.connectionsTitle), __Renderer.setViewModelProperty("value", vm.providerFilter ?? "all"), __Renderer.setViewModelProperty("options", vm.providerFilterOptions), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", vm.onProviderFilterChange), __Renderer.endComponent()), __Renderer.endRender()), __Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup5, void 0, void 0), __Renderer.setViewModelProperty("title", vm.connectionsTitle), __Renderer.setViewModelProperty("description", vm.codeAccountFooter), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
           vm.loading ? (__Renderer.beginRender(__nodeView13, void 0), __Renderer.beginRender(__nodeView14, void 0), __Renderer.setAttributeString("backgroundColor", c.recessed), __Renderer.endRender(), __Renderer.beginRender(__nodeView15, void 0), __Renderer.setAttributeString("backgroundColor", c.recessed), __Renderer.endRender(), __Renderer.endRender()) : vm.connections.length > 0 ? vm.connections.forEach((conn, idx) => {
             __Renderer.beginComponent(SettingsGroup_1.SettingsListItem, __componentSettingsListItem5, conn.key, void 0), __Renderer.setViewModelProperty("id", `oc-assets-conn-${conn.id}`), __Renderer.setViewModelProperty("icon", conn.kind === "git" ? "link" : "server"), __Renderer.setViewModelProperty("title", conn.name), __Renderer.setViewModelProperty("description", conn.description), __Renderer.setViewModelProperty("divider", idx > 0), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onOpen", conn.disabled ? void 0 : () => vm.onOpenConnection(conn.key)), __Renderer.endComponent();
           }) : (__Renderer.beginComponent(EmptyState_1.EmptyState, __componentEmptyState3, void 0, void 0), __Renderer.setViewModelProperty("title", hasFilter ? vm.noResultsText : vm.emptyConnectionsText), __Renderer.setViewModelProperty("description", hasFilter ? "" : vm.providerAboutText), __Renderer.setViewModelProperty("actionTitle", hasFilter ? vm.clearFiltersLabel : vm.addAccountLabel), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onAction", hasFilter ? () => vm.onClearFilters("connections") : vm.addAccountDisabled ? void 0 : vm.onAddAccount), __Renderer.endComponent());
-        }), __Renderer.endComponent(), vm.envVariablesLabel && vm.onOpenVariables && (() => {
-          var _a;
-          __Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup6, void 0, void 0), __Renderer.setViewModelProperty("title", (_a = vm.envVariablesTitle) !== null && _a !== void 0 ? _a : vm.envVariablesLabel), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
-            __Renderer.beginComponent(SettingsGroup_1.SettingsListItem, __componentSettingsListItem6, void 0, void 0), __Renderer.setViewModelProperty("title", vm.envVariablesLabel), __Renderer.setViewModelProperty("description", vm.envVariablesDescription), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onOpen", vm.onOpenVariables), __Renderer.endComponent();
-          }), __Renderer.endComponent();
-        })(), __Renderer.endRender()), __Renderer.endRender();
+        }), __Renderer.endComponent(), vm.envVariablesLabel && vm.onOpenVariables && (__Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup6, void 0, void 0), __Renderer.setViewModelProperty("title", vm.envVariablesTitle ?? vm.envVariablesLabel), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
+          __Renderer.beginComponent(SettingsGroup_1.SettingsListItem, __componentSettingsListItem6, void 0, void 0), __Renderer.setViewModelProperty("title", vm.envVariablesLabel), __Renderer.setViewModelProperty("description", vm.envVariablesDescription), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onOpen", vm.onOpenVariables), __Renderer.endComponent();
+        }), __Renderer.endComponent()), __Renderer.endRender()), __Renderer.endRender();
       }
     };
     exports.AssetsSurface = AssetsSurface2;
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/AssistantsSurface.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/AssistantsSurface.js
 var require_AssistantsSurface = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/AssistantsSurface.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/AssistantsSurface.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/AssistantsSurface";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.AssistantsSurface = void 0;
-    var __Renderer = require_JSX2().jsx, __nodeView1 = __Renderer.makeNodePrototype("view", ["width", "100%", "gap", 24]), __componentSettingsPageHeader1 = __Renderer.makeComponentPrototype(), __componentSettingsGroup1 = __Renderer.makeComponentPrototype(), __nodeView2 = __Renderer.makeNodePrototype("view", ["width", "100%", "padding", 16, "flexDirection", "row", "alignItems", "center", "justifyContent", "space-between", "gap", 12]), __nodeView3 = __Renderer.makeNodePrototype("view", ["flexGrow", 1, "flexShrink", 1, "minWidth", 0]), __nodeLabel1 = __Renderer.makeNodePrototype("label", ["numberOfLines", 0]), __componentButton1 = __Renderer.makeComponentPrototype(["id", "oc-assistant-managed-create", "variant", "primary", "size", "sm"]), __componentBanner1 = __Renderer.makeComponentPrototype(["id", "oc-assistant-managed-error", "tone", "danger"]), __componentButton2 = __Renderer.makeComponentPrototype(["id", "oc-assistant-managed-retry", "variant", "secondary", "size", "sm"]), __nodeView4 = __Renderer.makeNodePrototype("view", ["class", "oc-cold-skeleton", "width", "100%", "minHeight", 52, "paddingLeft", 16, "paddingRight", 16, "justifyContent", "center"]), __nodeView5 = __Renderer.makeNodePrototype("view", ["width", 180, "height", 12, "borderRadius", 6]), __componentSettingsListItem1 = __Renderer.makeComponentPrototype(["icon", "bot"]), __nodeView6 = __Renderer.makeNodePrototype("view", ["flexDirection", "row", "alignItems", "center", "flexWrap", "wrap", "justifyContent", "flex-end", "gap", 6]), __componentButton3 = __Renderer.makeComponentPrototype(["variant", "secondary", "size", "sm"]), __componentButton4 = __Renderer.makeComponentPrototype(["variant", "secondary", "size", "sm"]), __componentButton5 = __Renderer.makeComponentPrototype(["variant", "secondary", "size", "sm"]), __componentBanner2 = __Renderer.makeComponentPrototype(["id", "oc-assistants-error", "tone", "danger"]), __nodeView7 = __Renderer.makeNodePrototype("view", ["class", "oc-cold-skeleton", "width", "100%"]), __componentSettingsGroup2 = __Renderer.makeComponentPrototype(), __nodeView8 = __Renderer.makeNodePrototype("view", ["width", "100%", "minHeight", 64, "padding", 16, "flexDirection", "row", "alignItems", "center", "justifyContent", "space-between", "gap", 12]), __nodeView9 = __Renderer.makeNodePrototype("view", ["gap", 6, "flexGrow", 1]), __nodeView10 = __Renderer.makeNodePrototype("view", ["width", 96, "height", 13, "borderRadius", 6]), __nodeView11 = __Renderer.makeNodePrototype("view", ["width", 220, "height", 11, "borderRadius", 5]), __nodeView12 = __Renderer.makeNodePrototype("view", ["width", 56, "height", 28, "borderRadius", 8]), __componentSettingsGroup3 = __Renderer.makeComponentPrototype(), __componentSettingsListItem2 = __Renderer.makeComponentPrototype(["id", "oc-assistant-personal", "icon", "bot"]), __nodeView13 = __Renderer.makeNodePrototype("view", ["flexDirection", "row", "alignItems", "center", "flexWrap", "wrap", "justifyContent", "flex-end", "gap", 8]), __componentButton6 = __Renderer.makeComponentPrototype(["id", "oc-assistant-reclaim", "variant", "primary", "size", "sm"]), __componentButton7 = __Renderer.makeComponentPrototype(["id", "oc-assistant-choose-model", "variant", "primary", "size", "sm"]), __componentButton8 = __Renderer.makeComponentPrototype(["id", "oc-assistant-open", "variant", "secondary", "size", "sm"]), __componentButton9 = __Renderer.makeComponentPrototype(["id", "oc-assistant-memory", "size", "sm"]), __componentButton10 = __Renderer.makeComponentPrototype(["id", "oc-assistant-settings", "size", "sm"]), __nodeView14 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __componentSettingsFormRow1 = __Renderer.makeComponentPrototype(["divider", !0]), __componentSelectMenu1 = __Renderer.makeComponentPrototype(["id", "oc-assistant-model-select", "minWidth", 180, "align", "right"]), __nodeView15 = __Renderer.makeNodePrototype("view", ["width", "100%", "padding", 16, "gap", 12, "borderWidth", 0.5]), __nodeLabel2 = __Renderer.makeNodePrototype("label", ["numberOfLines", 0]), __nodeView16 = __Renderer.makeNodePrototype("view", ["flexDirection", "row", "alignItems", "center", "justifyContent", "flex-end", "gap", 8]), __componentButton11 = __Renderer.makeComponentPrototype(["id", "oc-assistant-stop-cancel", "variant", "secondary", "size", "sm"]), __componentButton12 = __Renderer.makeComponentPrototype(["id", "oc-assistant-stop-confirm", "variant", "danger", "size", "sm"]), __nodeView17 = __Renderer.makeNodePrototype("view", ["width", "100%", "padding", 16, "flexDirection", "row", "alignItems", "center", "justifyContent", "flex-end", "gap", 8]), __componentButton13 = __Renderer.makeComponentPrototype(["id", "oc-assistant-retry", "variant", "secondary", "size", "sm"]), __componentButton14 = __Renderer.makeComponentPrototype(["id", "oc-assistant-stop", "variant", "secondary", "size", "sm"]), __componentSettingsGroup4 = __Renderer.makeComponentPrototype(), __componentSettingsListItem3 = __Renderer.makeComponentPrototype(["id", "oc-assistant-hire-row", "icon", "bot"]), __componentButton15 = __Renderer.makeComponentPrototype(["id", "oc-assistant-hire", "variant", "primary", "size", "sm"]), Component_1 = require_Component(), Banner_1 = require_Banner(), Button_1 = require_Button(), haptics_1 = require_haptics(), SelectMenu_1 = require_SelectMenu(), SettingsGroup_1 = require_SettingsGroup(), tokens_1 = require_tokens(), AssistantsSurface2 = class extends Component_1.StatefulComponent {
+    var __Renderer = require_JSX2().jsx, __nodeView1 = __Renderer.makeNodePrototype("view", ["width", "100%", "gap", 24]), __componentSettingsPageHeader1 = __Renderer.makeComponentPrototype(), __componentBanner1 = __Renderer.makeComponentPrototype(["id", "oc-assistants-error", "tone", "danger"]), __componentButton1 = __Renderer.makeComponentPrototype(["id", "oc-assistants-retry", "variant", "secondary", "size", "sm"]), __componentSettingsGroup1 = __Renderer.makeComponentPrototype(), __nodeView2 = __Renderer.makeNodePrototype("view", ["width", "100%", "padding", 16, "flexDirection", "row", "alignItems", "center", "justifyContent", "space-between", "gap", 12]), __nodeView3 = __Renderer.makeNodePrototype("view", ["flexGrow", 1, "flexShrink", 1, "minWidth", 0]), __nodeLabel1 = __Renderer.makeNodePrototype("label", ["numberOfLines", 0]), __componentButton2 = __Renderer.makeComponentPrototype(["id", "oc-assistant-create", "variant", "primary", "size", "sm"]), __nodeView4 = __Renderer.makeNodePrototype("view", ["class", "oc-cold-skeleton", "width", "100%", "minHeight", 64, "padding", 16, "flexDirection", "row", "alignItems", "center", "justifyContent", "space-between", "gap", 12]), __nodeView5 = __Renderer.makeNodePrototype("view", ["gap", 6, "flexGrow", 1]), __nodeView6 = __Renderer.makeNodePrototype("view", ["width", 112, "height", 13, "borderRadius", 6]), __nodeView7 = __Renderer.makeNodePrototype("view", ["width", 220, "height", 11, "borderRadius", 5]), __nodeView8 = __Renderer.makeNodePrototype("view", ["width", 72, "height", 28, "borderRadius", 8]), __nodeView9 = __Renderer.makeNodePrototype("view", ["class", "managed-bots__row", "width", "100%"]), __componentSettingsListItem1 = __Renderer.makeComponentPrototype(["icon", "bot", "divider", !0]), __nodeView10 = __Renderer.makeNodePrototype("view", ["flexDirection", "row", "alignItems", "center", "flexWrap", "wrap", "justifyContent", "flex-end", "gap", 6]), __componentButton3 = __Renderer.makeComponentPrototype(["size", "sm"]), __componentButton4 = __Renderer.makeComponentPrototype(["variant", "secondary", "size", "sm"]), __componentButton5 = __Renderer.makeComponentPrototype(["variant", "secondary", "size", "sm"]), __componentButton6 = __Renderer.makeComponentPrototype(["variant", "secondary", "size", "sm"]), __componentSettingsGroup2 = __Renderer.makeComponentPrototype(), __componentSettingsListItem2 = __Renderer.makeComponentPrototype(["icon", "bot"]), __componentButton7 = __Renderer.makeComponentPrototype(["variant", "primary", "size", "sm"]), Component_1 = require_Component(), Banner_1 = require_Banner(), Button_1 = require_Button(), haptics_1 = require_haptics(), SettingsGroup_1 = require_SettingsGroup(), tokens_1 = require_tokens(), AssistantsSurface2 = class extends Component_1.StatefulComponent {
       constructor() {
         super(...arguments), this.state = {};
       }
@@ -17598,36 +17558,25 @@ var require_AssistantsSurface = __commonJS({
         (0, haptics_1.registerHapticHandler)(this.viewModel.onHaptic);
       }
       onRender() {
-        let vm = this.viewModel, dark = !!vm.dark, c = (0, tokens_1.themeColors)(dark), m = (0, tokens_1.themeMetrics)(vm.touch);
-        __Renderer.beginRender(__nodeView1, void 0), __Renderer.beginComponent(SettingsGroup_1.SettingsPageHeader, __componentSettingsPageHeader1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.title), __Renderer.setViewModelProperty("description", vm.subtitle), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent(), vm.managedTitle && (__Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.managedTitle), __Renderer.setViewModelProperty("description", vm.managedDescription), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
-          vm.managedCreateLabel && vm.onCreateManagedBot && (__Renderer.beginRender(__nodeView2, void 0), __Renderer.beginRender(__nodeView3, void 0), vm.managedEmptyText && (!vm.managedBots || vm.managedBots.length === 0) && !vm.managedLoading && !vm.managedError && (__Renderer.beginRender(__nodeLabel1, void 0), __Renderer.setAttributeString("value", vm.managedEmptyText), __Renderer.setAttributeString("font", m.fonts.detail), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender()), __Renderer.endRender(), __Renderer.beginComponent(Button_1.Button, __componentButton1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.managedCreateLabel), __Renderer.setViewModelProperty("disabled", vm.managedCreateDisabled), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onCreateManagedBot), __Renderer.endComponent(), __Renderer.endRender()), vm.managedError ? (__Renderer.beginComponent(Banner_1.Banner, __componentBanner1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.managedError), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
-            vm.onRetryManagedBots && (__Renderer.beginComponent(Button_1.Button, __componentButton2, void 0, void 0), __Renderer.setViewModelProperty("title", vm.retryLabel), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onRetryManagedBots), __Renderer.endComponent());
-          }), __Renderer.endComponent()) : vm.managedLoading && (!vm.managedBots || vm.managedBots.length === 0) && (__Renderer.beginRender(__nodeView4, void 0), __Renderer.beginRender(__nodeView5, void 0), __Renderer.setAttributeString("backgroundColor", c.recessed), __Renderer.endRender(), __Renderer.endRender()), vm.managedBots && vm.managedBots.length > 0 && vm.managedBots.forEach((bot, idx) => {
-            __Renderer.beginComponent(SettingsGroup_1.SettingsListItem, __componentSettingsListItem1, bot.id, void 0), __Renderer.setViewModelProperty("id", `oc-assistant-managed-${bot.id}`), __Renderer.setViewModelProperty("title", bot.title), __Renderer.setViewModelProperty("description", bot.statusText), __Renderer.setViewModelProperty("divider", idx > 0 || !!vm.managedCreateLabel), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
-              __Renderer.beginRender(__nodeView6, void 0), __Renderer.beginComponent(Button_1.Button, __componentButton3, void 0, void 0), __Renderer.setViewModelProperty("id", `oc-assistant-managed-open-${bot.id}`), __Renderer.setViewModelProperty("title", bot.openLabel), __Renderer.setViewModelProperty("disabled", bot.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => {
-                var _a;
-                return (_a = vm.onOpenManagedBot) === null || _a === void 0 ? void 0 : _a.call(vm, bot.id);
-              }), __Renderer.endComponent(), bot.settingsLabel && vm.onSettingsManagedBot && (__Renderer.beginComponent(Button_1.Button, __componentButton4, void 0, void 0), __Renderer.setViewModelProperty("id", `oc-assistant-managed-settings-${bot.id}`), __Renderer.setViewModelProperty("title", bot.settingsLabel), __Renderer.setViewModelProperty("disabled", bot.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => {
-                var _a;
-                return (_a = vm.onSettingsManagedBot) === null || _a === void 0 ? void 0 : _a.call(vm, bot.id);
-              }), __Renderer.endComponent()), bot.pauseLabel && vm.onTogglePauseManagedBot && (__Renderer.beginComponent(Button_1.Button, __componentButton5, void 0, void 0), __Renderer.setViewModelProperty("id", `oc-assistant-managed-pause-${bot.id}`), __Renderer.setViewModelProperty("title", bot.pauseLabel), __Renderer.setViewModelProperty("disabled", bot.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => {
-                var _a;
-                return (_a = vm.onTogglePauseManagedBot) === null || _a === void 0 ? void 0 : _a.call(vm, bot.id);
-              }), __Renderer.endComponent()), __Renderer.endRender();
+        let vm = this.viewModel, dark = !!vm.dark, c = (0, tokens_1.themeColors)(dark), m = (0, tokens_1.themeMetrics)(vm.touch), showHeader = !!(vm.title || vm.subtitle), showSkeleton = !!(vm.loading && vm.actors.length === 0 && !vm.errorText);
+        __Renderer.beginRender(__nodeView1, void 0), showHeader && (__Renderer.beginComponent(SettingsGroup_1.SettingsPageHeader, __componentSettingsPageHeader1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.title ?? ""), __Renderer.setViewModelProperty("description", vm.subtitle), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent()), vm.errorText && (__Renderer.beginComponent(Banner_1.Banner, __componentBanner1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.errorText), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
+          __Renderer.beginComponent(Button_1.Button, __componentButton1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.retryLabel), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onRetry), __Renderer.endComponent();
+        }), __Renderer.endComponent()), __Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.myAgentsTitle), __Renderer.setViewModelProperty("description", vm.myAgentsDescription), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
+          __Renderer.beginRender(__nodeView2, void 0), __Renderer.beginRender(__nodeView3, void 0), vm.actors.length === 0 && !showSkeleton && !vm.errorText && (__Renderer.beginRender(__nodeLabel1, void 0), __Renderer.setAttributeString("value", vm.emptyMineText), __Renderer.setAttributeString("font", m.fonts.detail), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender()), __Renderer.endRender(), __Renderer.beginComponent(Button_1.Button, __componentButton2, void 0, void 0), __Renderer.setViewModelProperty("title", vm.createLabel), __Renderer.setViewModelProperty("disabled", vm.createDisabled), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onCreateActor), __Renderer.endComponent(), __Renderer.endRender(), showSkeleton && (__Renderer.beginRender(__nodeView4, void 0), __Renderer.beginRender(__nodeView5, void 0), __Renderer.beginRender(__nodeView6, void 0), __Renderer.setAttributeString("backgroundColor", c.recessed), __Renderer.endRender(), __Renderer.beginRender(__nodeView7, void 0), __Renderer.setAttributeString("backgroundColor", c.recessed), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginRender(__nodeView8, void 0), __Renderer.setAttributeString("backgroundColor", c.recessed), __Renderer.endRender(), __Renderer.endRender()), vm.actors.length > 0 && vm.actors.forEach((actor) => {
+            let titleText = actor.badgeText ? `${actor.title} \xB7 ${actor.badgeText}` : actor.title, detailText = actor.dutiesText ? `${actor.statusText}
+${actor.dutiesText}` : actor.statusText, primaryVariant = actor.primaryActionKind === "resume" || actor.primaryActionKind === "choose-model" ? "primary" : "secondary";
+            __Renderer.beginRender(__nodeView9, actor.id), __Renderer.beginComponent(SettingsGroup_1.SettingsListItem, __componentSettingsListItem1, void 0, void 0), __Renderer.setViewModelProperty("id", `oc-assistant-actor-${actor.id}`), __Renderer.setViewModelProperty("title", titleText), __Renderer.setViewModelProperty("description", detailText), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
+              __Renderer.beginRender(__nodeView10, void 0), __Renderer.beginComponent(Button_1.Button, __componentButton3, void 0, void 0), __Renderer.setViewModelProperty("id", `oc-assistant-primary-${actor.id}`), __Renderer.setViewModelProperty("title", actor.primaryActionLabel), __Renderer.setViewModelProperty("variant", primaryVariant), __Renderer.setViewModelProperty("loading", actor.primaryActionKind === "chat" && actor.activeOperation === "open" || actor.primaryActionKind === "resume" && actor.activeOperation === "pause"), __Renderer.setViewModelProperty("disabled", actor.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => vm.onPrimaryAction(actor.id)), __Renderer.endComponent(), __Renderer.beginComponent(Button_1.Button, __componentButton4, void 0, void 0), __Renderer.setViewModelProperty("id", `oc-assistant-memory-${actor.id}`), __Renderer.setViewModelProperty("title", actor.memoryLabel), __Renderer.setViewModelProperty("disabled", actor.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => vm.onOpenMemory(actor.id)), __Renderer.endComponent(), __Renderer.beginComponent(Button_1.Button, __componentButton5, void 0, void 0), __Renderer.setViewModelProperty("id", `oc-assistant-settings-${actor.id}`), __Renderer.setViewModelProperty("title", actor.settingsLabel), __Renderer.setViewModelProperty("disabled", actor.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => vm.onOpenSettings(actor.id)), __Renderer.endComponent(), !actor.paused && actor.pauseLabel && (__Renderer.beginComponent(Button_1.Button, __componentButton6, void 0, void 0), __Renderer.setViewModelProperty("id", `oc-assistant-pause-${actor.id}`), __Renderer.setViewModelProperty("title", actor.pauseLabel), __Renderer.setViewModelProperty("loading", actor.activeOperation === "pause"), __Renderer.setViewModelProperty("disabled", actor.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => vm.onTogglePause(actor.id)), __Renderer.endComponent()), __Renderer.endRender();
+            }), __Renderer.endComponent(), __Renderer.endRender();
+          });
+        }), __Renderer.endComponent(), !showSkeleton && vm.presets.length > 0 && (__Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup2, void 0, void 0), __Renderer.setViewModelProperty("title", vm.availableTitle), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
+          vm.presets.forEach((preset, idx) => {
+            let presetDescription = preset.cardinalityLabel ? `${preset.description}
+${preset.cardinalityLabel}` : preset.description;
+            __Renderer.beginComponent(SettingsGroup_1.SettingsListItem, __componentSettingsListItem2, preset.id, void 0), __Renderer.setViewModelProperty("id", `oc-assistant-preset-${preset.id}`), __Renderer.setViewModelProperty("title", preset.title), __Renderer.setViewModelProperty("description", presetDescription), __Renderer.setViewModelProperty("divider", idx > 0), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
+              __Renderer.beginComponent(Button_1.Button, __componentButton7, void 0, void 0), __Renderer.setViewModelProperty("id", `oc-assistant-hire-${preset.id}`), __Renderer.setViewModelProperty("title", preset.hireLabel), __Renderer.setViewModelProperty("loading", preset.hiring), __Renderer.setViewModelProperty("disabled", preset.disabled), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => vm.onHirePreset(preset.id)), __Renderer.endComponent();
             }), __Renderer.endComponent();
           });
-        }), __Renderer.endComponent()), vm.failedText ? (__Renderer.beginComponent(Banner_1.Banner, __componentBanner2, void 0, void 0), __Renderer.setViewModelProperty("title", vm.failedText), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent()) : vm.loading && (__Renderer.beginRender(__nodeView7, void 0), __Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup2, void 0, void 0), __Renderer.setViewModelProperty("title", vm.availableTitle), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
-          __Renderer.beginRender(__nodeView8, void 0), __Renderer.beginRender(__nodeView9, void 0), __Renderer.beginRender(__nodeView10, void 0), __Renderer.setAttributeString("backgroundColor", c.recessed), __Renderer.endRender(), __Renderer.beginRender(__nodeView11, void 0), __Renderer.setAttributeString("backgroundColor", c.recessed), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginRender(__nodeView12, void 0), __Renderer.setAttributeString("backgroundColor", c.recessed), __Renderer.endRender(), __Renderer.endRender();
-        }), __Renderer.endComponent(), __Renderer.endRender()), vm.assistantPresent ? (__Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup3, void 0, void 0), __Renderer.setViewModelProperty("title", vm.myAgentsTitle), __Renderer.setViewModelProperty("clip", !1), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
-          __Renderer.beginComponent(SettingsGroup_1.SettingsListItem, __componentSettingsListItem2, void 0, void 0), __Renderer.setViewModelProperty("title", vm.personalTitle), __Renderer.setViewModelProperty("description", vm.phaseText), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
-            __Renderer.beginRender(__nodeView13, void 0), vm.claimed ? vm.configRequired && !vm.detailsOpen && !vm.memoryOpen ? (__Renderer.beginComponent(Button_1.Button, __componentButton7, void 0, void 0), __Renderer.setViewModelProperty("title", vm.chooseModelLabel), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onToggleDetails), __Renderer.endComponent()) : (__Renderer.beginComponent(Button_1.Button, __componentButton8, void 0, void 0), __Renderer.setViewModelProperty("title", vm.openLabel), __Renderer.setViewModelProperty("loading", vm.activeAction === "open"), __Renderer.setViewModelProperty("disabled", vm.pending || vm.modelSaving), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onOpenChat), __Renderer.endComponent()) : (__Renderer.beginComponent(Button_1.Button, __componentButton6, void 0, void 0), __Renderer.setViewModelProperty("title", vm.reclaimLabel), __Renderer.setViewModelProperty("loading", vm.activeAction === "claim"), __Renderer.setViewModelProperty("disabled", vm.pending), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onClaim), __Renderer.endComponent()), vm.claimed && (__Renderer.beginComponent(Button_1.Button, __componentButton9, void 0, void 0), __Renderer.setViewModelProperty("title", vm.memoryLabel), __Renderer.setViewModelProperty("variant", vm.memoryOpen ? "primary" : "secondary"), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onToggleMemory), __Renderer.endComponent()), vm.claimed && (__Renderer.beginComponent(Button_1.Button, __componentButton10, void 0, void 0), __Renderer.setViewModelProperty("title", vm.detailsOpen ? vm.closeDetailsLabel : vm.manageLabel), __Renderer.setViewModelProperty("variant", vm.detailsOpen ? "primary" : "secondary"), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onToggleDetails), __Renderer.endComponent()), __Renderer.endRender();
-          }), __Renderer.endComponent(), vm.detailsOpen && vm.claimed && (__Renderer.beginRender(__nodeView14, void 0), __Renderer.beginComponent(SettingsGroup_1.SettingsFormRow, __componentSettingsFormRow1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.modelLabel), __Renderer.setViewModelProperty("description", vm.modelDescription), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
-            __Renderer.beginComponent(SelectMenu_1.SelectMenu, __componentSelectMenu1, void 0, void 0), __Renderer.setViewModelProperty("label", vm.modelLabel), __Renderer.setViewModelProperty("value", vm.selectedModel), __Renderer.setViewModelProperty("options", vm.modelOptions), __Renderer.setViewModelProperty("disabled", vm.modelDisabled), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", vm.onSelectModel), __Renderer.endComponent();
-          }), __Renderer.endComponent(), vm.confirmStop ? (__Renderer.beginRender(__nodeView15, void 0), __Renderer.setAttributeString("borderColor", c.border), __Renderer.beginRender(__nodeLabel2, void 0), __Renderer.setAttributeString("value", vm.stopConfirmText), __Renderer.setAttributeString("font", m.fonts.body), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.beginRender(__nodeView16, void 0), __Renderer.beginComponent(Button_1.Button, __componentButton11, void 0, void 0), __Renderer.setViewModelProperty("title", vm.cancelLabel), __Renderer.setViewModelProperty("disabled", vm.pending), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onCancelStop), __Renderer.endComponent(), __Renderer.beginComponent(Button_1.Button, __componentButton12, void 0, void 0), __Renderer.setViewModelProperty("title", vm.stopConfirmActionLabel), __Renderer.setViewModelProperty("loading", vm.activeAction === "revoke"), __Renderer.setViewModelProperty("disabled", vm.pending || vm.modelSaving), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onConfirmStop), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.endRender()) : (__Renderer.beginRender(__nodeView17, void 0), vm.unavailable && (__Renderer.beginComponent(Button_1.Button, __componentButton13, void 0, void 0), __Renderer.setViewModelProperty("title", vm.retryLabel), __Renderer.setViewModelProperty("disabled", vm.pending || vm.modelSaving), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onRetry), __Renderer.endComponent()), __Renderer.beginComponent(Button_1.Button, __componentButton14, void 0, void 0), __Renderer.setViewModelProperty("title", vm.stopLabel), __Renderer.setViewModelProperty("disabled", vm.pending || vm.modelSaving), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onRequestStop), __Renderer.endComponent(), __Renderer.endRender()), __Renderer.endRender());
-        }), __Renderer.endComponent()) : !vm.loading && !vm.failedText && (__Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup4, void 0, void 0), __Renderer.setViewModelProperty("title", vm.availableTitle), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
-          __Renderer.beginComponent(SettingsGroup_1.SettingsListItem, __componentSettingsListItem3, void 0, void 0), __Renderer.setViewModelProperty("title", vm.personalTitle), __Renderer.setViewModelProperty("description", vm.personalAbout), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
-            __Renderer.beginComponent(Button_1.Button, __componentButton15, void 0, void 0), __Renderer.setViewModelProperty("title", vm.hireLabel), __Renderer.setViewModelProperty("loading", vm.activeAction === "claim"), __Renderer.setViewModelProperty("disabled", vm.pending), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onClaim), __Renderer.endComponent();
-          }), __Renderer.endComponent();
         }), __Renderer.endComponent()), __Renderer.endRender();
       }
     };
@@ -17635,9 +17584,9 @@ var require_AssistantsSurface = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/InboxSurface.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/InboxSurface.js
 var require_InboxSurface = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/InboxSurface.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/InboxSurface.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/InboxSurface";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.InboxEmptySurface = exports.InboxSurface = void 0;
@@ -17652,12 +17601,8 @@ var require_InboxSurface = __commonJS({
         (0, haptics_1.registerHapticHandler)(this.viewModel.onHaptic);
       }
       onRender() {
-        var _a;
         let vm = this.viewModel, dark = !!vm.dark, c = (0, tokens_1.themeColors)(dark), m = (0, tokens_1.themeMetrics)(vm.touch);
-        __Renderer.beginRender(__nodeView1, void 0), __Renderer.beginComponent(SettingsGroup_1.SettingsPageHeader, __componentSettingsPageHeader1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.title), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent(), __Renderer.beginRender(__nodeView2, void 0), __Renderer.beginRender(__nodeView3, void 0), __Renderer.beginRender(__nodeView4, void 0), __Renderer.beginComponent(TextField_1.TextField, __componentTextField1, void 0, void 0), __Renderer.setViewModelProperty("label", vm.searchPlaceholder), __Renderer.setViewModelProperty("value", vm.searchQuery), __Renderer.setViewModelProperty("placeholder", vm.searchPlaceholder), __Renderer.setViewModelProperty("clearTitle", (_a = vm.clearSearchLabel) !== null && _a !== void 0 ? _a : vm.retryLabel), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", vm.onSearchChange), __Renderer.endComponent(), __Renderer.endRender(), vm.showCreateGroup && vm.onCreateGroup && (() => {
-          var _a2;
-          __Renderer.beginComponent(Button_1.Button, __componentButton1, void 0, void 0), __Renderer.setViewModelProperty("title", (_a2 = vm.createGroupLabel) !== null && _a2 !== void 0 ? _a2 : "+"), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onCreateGroup), __Renderer.endComponent();
-        })(), __Renderer.endRender(), __Renderer.beginComponent(SegmentedControl_1.SegmentedControl, __componentSegmentedControl1, void 0, void 0), __Renderer.setViewModelProperty("label", vm.title), __Renderer.setViewModelProperty("value", vm.activeTab), __Renderer.setViewModelProperty("options", [
+        __Renderer.beginRender(__nodeView1, void 0), __Renderer.beginComponent(SettingsGroup_1.SettingsPageHeader, __componentSettingsPageHeader1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.title), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent(), __Renderer.beginRender(__nodeView2, void 0), __Renderer.beginRender(__nodeView3, void 0), __Renderer.beginRender(__nodeView4, void 0), __Renderer.beginComponent(TextField_1.TextField, __componentTextField1, void 0, void 0), __Renderer.setViewModelProperty("label", vm.searchPlaceholder), __Renderer.setViewModelProperty("value", vm.searchQuery), __Renderer.setViewModelProperty("placeholder", vm.searchPlaceholder), __Renderer.setViewModelProperty("clearTitle", vm.clearSearchLabel ?? vm.retryLabel), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", vm.onSearchChange), __Renderer.endComponent(), __Renderer.endRender(), vm.showCreateGroup && vm.onCreateGroup && (__Renderer.beginComponent(Button_1.Button, __componentButton1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.createGroupLabel ?? "+"), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onCreateGroup), __Renderer.endComponent()), __Renderer.endRender(), __Renderer.beginComponent(SegmentedControl_1.SegmentedControl, __componentSegmentedControl1, void 0, void 0), __Renderer.setViewModelProperty("label", vm.title), __Renderer.setViewModelProperty("value", vm.activeTab), __Renderer.setViewModelProperty("options", [
           { id: "groups", title: vm.groupsLabel },
           { id: "work", title: vm.workLabel },
           { id: "members", title: vm.membersLabel }
@@ -17687,9 +17632,9 @@ var require_InboxSurface = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/ChatSettingsSurface.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/ChatSettingsSurface.js
 var require_ChatSettingsSurface = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/ChatSettingsSurface.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/ChatSettingsSurface.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/ChatSettingsSurface";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.ChatSettingsSurface = void 0;
@@ -17719,8 +17664,7 @@ var require_ChatSettingsSurface = __commonJS({
               (0, haptics_1.triggerHaptic)("selection"), vm.onTestNotification();
             }), __Renderer.endComponent();
           }), __Renderer.endComponent()), vm.connectImLabel && vm.onOpenImSettings && (__Renderer.beginComponent(SettingsGroup_1.SettingsRow, __componentSettingsRow1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.connectImLabel), __Renderer.setViewModelProperty("divider", !0), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onSelect", () => {
-            var _a;
-            (0, haptics_1.triggerHaptic)("selection"), (_a = vm.onOpenImSettings) === null || _a === void 0 || _a.call(vm);
+            (0, haptics_1.triggerHaptic)("selection"), vm.onOpenImSettings?.();
           }), __Renderer.endComponent());
         }), __Renderer.endComponent()), __Renderer.endRender(), __Renderer.endRender();
       }
@@ -17729,9 +17673,9 @@ var require_ChatSettingsSurface = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/ConfirmDialog.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/ConfirmDialog.js
 var require_ConfirmDialog = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/ConfirmDialog.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/ConfirmDialog.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/ConfirmDialog";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.ConfirmDialog = void 0;
@@ -17759,9 +17703,9 @@ var require_ConfirmDialog = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/PageControl.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/PageControl.js
 var require_PageControl = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/PageControl.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/PageControl.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/PageControl";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.PageControl = void 0;
@@ -17778,9 +17722,9 @@ var require_PageControl = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/ProgressBar.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/ProgressBar.js
 var require_ProgressBar = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/ProgressBar.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/ProgressBar.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/ProgressBar";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.ProgressBar = void 0;
@@ -17794,9 +17738,9 @@ var require_ProgressBar = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/Slider.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/Slider.js
 var require_Slider = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/Slider.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/Slider.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/Slider";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.Slider = void 0;
@@ -17847,9 +17791,9 @@ var require_Slider = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/Stepper.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/Stepper.js
 var require_Stepper = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/Stepper.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/Stepper.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/Stepper";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.Stepper = void 0;
@@ -17867,9 +17811,9 @@ var require_Stepper = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/StyleLabData.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/StyleLabData.js
 var require_StyleLabData = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/StyleLabData.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/StyleLabData.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/StyleLabData";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.colorSwatches = exports.resolveStyleLabCopy = void 0;
@@ -17888,9 +17832,7 @@ var require_StyleLabData = __commonJS({
       sections: [
         {
           title: "Foundation \u57FA\u7840\u89C4\u8303",
-          items: [
-            { id: "foundation", title: "Tokens & Surface", subtitle: "\u8272\u677F\u3001\u5B57\u9636\u3001\u5706\u89D2\u4E0E\u900F\u660E\u6750\u8D28", icon: "sparkle" }
-          ]
+          items: [{ id: "foundation", title: "Tokens & Surface", subtitle: "\u8272\u677F\u3001\u5B57\u9636\u3001\u5706\u89D2\u4E0E\u900F\u660E\u6750\u8D28", icon: "sparkle" }]
         },
         {
           title: "Controls \u57FA\u7840\u63A7\u4EF6",
@@ -17961,8 +17903,15 @@ var require_StyleLabData = __commonJS({
       endpointGlyphsLabel: "\u663E\u793A\u7AEF\u70B9\u56FE\u6807\uFF08Glyphs\uFF09",
       endpointGlyphsShort: "\u7AEF\u70B9\u56FE\u6807",
       stepValueLabel: (step) => `\u6B65\u957F\uFF1A${step}`,
-      segmentOptions2: [{ id: "overview", title: "\u6982\u89C8" }, { id: "archive", title: "\u5F52\u6863" }],
-      segmentOptions3: [{ id: "overview", title: "\u6982\u89C8" }, { id: "activity", title: "\u6D3B\u52A8" }, { id: "archive", title: "\u5F52\u6863" }],
+      segmentOptions2: [
+        { id: "overview", title: "\u6982\u89C8" },
+        { id: "archive", title: "\u5F52\u6863" }
+      ],
+      segmentOptions3: [
+        { id: "overview", title: "\u6982\u89C8" },
+        { id: "activity", title: "\u6D3B\u52A8" },
+        { id: "archive", title: "\u5F52\u6863" }
+      ],
       segmentLabLabel: "\u5206\u6BB5\u5B9E\u9A8C",
       segmentSelectedText: (val) => `\u5F53\u524D\u9009\u4E2D\uFF1A${val}`,
       segmentCountLabel: "\u5206\u6BB5\u6570\u91CF\uFF082 \u6216 3\uFF09",
@@ -17977,7 +17926,11 @@ var require_StyleLabData = __commonJS({
       tfHideTitle: "\u9690\u85CF",
       tfShowTitle: "\u663E\u793A",
       tfModeHeader: "INSPECTOR \xB7 \u8F93\u5165\u7C7B\u578B",
-      tfModeOptions: [{ id: "default", title: "\u666E\u901A\u6587\u672C" }, { id: "password", title: "\u5BC6\u7801" }, { id: "url", title: "URL" }],
+      tfModeOptions: [
+        { id: "default", title: "\u666E\u901A\u6587\u672C" },
+        { id: "password", title: "\u5BC6\u7801" },
+        { id: "url", title: "URL" }
+      ],
       tfShowErrorLabel: "\u663E\u793A\u9519\u8BEF\u63D0\u793A",
       tfErrorShort: "\u9519\u8BEF\u63D0\u793A",
       tabPreviewItems: (count, badge) => [
@@ -18041,12 +17994,18 @@ var require_StyleLabData = __commonJS({
         overview: {
           title: "\u5DE5\u4F5C\u533A\u6982\u89C8",
           detail: "\u6700\u8FD1\u4FEE\u6539\u7684\u9879\u76EE\u548C\u5F53\u524D\u6210\u5458\u3002",
-          items: [{ title: "\u9879\u76EE\u66F4\u65B0", detail: "2 \u6761\u672A\u8BFB" }, { title: "\u6210\u5458\u52A8\u6001", detail: "\u5DF2\u8BFB" }]
+          items: [
+            { title: "\u9879\u76EE\u66F4\u65B0", detail: "2 \u6761\u672A\u8BFB" },
+            { title: "\u6210\u5458\u52A8\u6001", detail: "\u5DF2\u8BFB" }
+          ]
         },
         activity: {
           title: "\u6700\u8FD1\u6D3B\u52A8",
           detail: "\u67E5\u770B\u9879\u76EE\u66F4\u65B0\u4E0E\u6210\u5458\u64CD\u4F5C\u3002",
-          items: [{ title: "\u539F\u578B\u8349\u7A3F\u5DF2\u66F4\u65B0", detail: "\u4ECA\u5929" }, { title: "\u65B0\u589E\u4E00\u4F4D\u6210\u5458", detail: "\u6628\u5929" }]
+          items: [
+            { title: "\u539F\u578B\u8349\u7A3F\u5DF2\u66F4\u65B0", detail: "\u4ECA\u5929" },
+            { title: "\u65B0\u589E\u4E00\u4F4D\u6210\u5458", detail: "\u6628\u5929" }
+          ]
         },
         archive: {
           title: "\u5F52\u6863\u9879\u76EE",
@@ -18116,16 +18075,36 @@ Mock \u793A\u4F8B\u64CD\u4F5C\uFF0C\u4E0D\u4F1A\u4FEE\u6539\u771F\u5B9E\u914D\u7
         {
           title: "Foundation",
           items: [
-            { id: "foundation", title: "Tokens & Surface", subtitle: "Semantic palette, type scale, radii & surface materials", icon: "sparkle" }
+            {
+              id: "foundation",
+              title: "Tokens & Surface",
+              subtitle: "Semantic palette, type scale, radii & surface materials",
+              icon: "sparkle"
+            }
           ]
         },
         {
           title: "Controls",
           items: [
             { id: "button", title: "Button", subtitle: "Primary, quiet, destructive & disabled states", icon: "plus" },
-            { id: "toggle-stepper", title: "Toggle & Stepper", subtitle: "Spring switch & capsule stepper", icon: "toggle" },
-            { id: "slider", title: "Slider & Progress", subtitle: "Continuous slider, endpoint glyphs & progress bar", icon: "slider" },
-            { id: "segmented", title: "Segmented Control", subtitle: "Capsule switcher with pointer/touch drag", icon: "segmented" },
+            {
+              id: "toggle-stepper",
+              title: "Toggle & Stepper",
+              subtitle: "Spring switch & capsule stepper",
+              icon: "toggle"
+            },
+            {
+              id: "slider",
+              title: "Slider & Progress",
+              subtitle: "Continuous slider, endpoint glyphs & progress bar",
+              icon: "slider"
+            },
+            {
+              id: "segmented",
+              title: "Segmented Control",
+              subtitle: "Capsule switcher with pointer/touch drag",
+              icon: "segmented"
+            },
             { id: "textfield", title: "TextField", subtitle: "Text, password reveal, URL & validation", icon: "textfield" }
           ]
         },
@@ -18134,21 +18113,36 @@ Mock \u793A\u4F8B\u64CD\u4F5C\uFF0C\u4E0D\u4F1A\u4FEE\u6539\u771F\u5B9E\u914D\u7
           items: [
             { id: "tabbar", title: "TabBar", subtitle: "Floating translucent tab bar with badges", icon: "tabbar" },
             { id: "page-control", title: "PageControl", subtitle: "Capsule dot pagination indicator", icon: "pagecontrol" },
-            { id: "settings-group", title: "SettingsGroup", subtitle: "Grouped surface, selection rows & hairlines", icon: "list" }
+            {
+              id: "settings-group",
+              title: "SettingsGroup",
+              subtitle: "Grouped surface, selection rows & hairlines",
+              icon: "list"
+            }
           ]
         },
         {
           title: "Overlays & Feedback",
           items: [
             { id: "banner", title: "Banner", subtitle: "Semantic status banners with actions", icon: "info" },
-            { id: "overlays", title: "ActionSheet & Dialog", subtitle: "Translucent action sheet & modal dialog", icon: "sheet" },
+            {
+              id: "overlays",
+              title: "ActionSheet & Dialog",
+              subtitle: "Translucent action sheet & modal dialog",
+              icon: "sheet"
+            },
             { id: "empty-state", title: "EmptyState", subtitle: "Centered placeholder with primary CTA", icon: "sparkle" }
           ]
         },
         {
           title: "Templates",
           items: [
-            { id: "example", title: "Workspace Settings", subtitle: "Nested navigation, notifications & removal dialog", icon: "home" },
+            {
+              id: "example",
+              title: "Workspace Settings",
+              subtitle: "Nested navigation, notifications & removal dialog",
+              icon: "home"
+            },
             { id: "model", title: "Model Picker", subtitle: "OpenCraft ModelPicker template preview", icon: "gear" }
           ]
         }
@@ -18188,8 +18182,15 @@ Mock \u793A\u4F8B\u64CD\u4F5C\uFF0C\u4E0D\u4F1A\u4FEE\u6539\u771F\u5B9E\u914D\u7
       endpointGlyphsLabel: "Show endpoint glyphs",
       endpointGlyphsShort: "Glyphs",
       stepValueLabel: (step) => `Step: ${step}`,
-      segmentOptions2: [{ id: "overview", title: "Overview" }, { id: "archive", title: "Archive" }],
-      segmentOptions3: [{ id: "overview", title: "Overview" }, { id: "activity", title: "Activity" }, { id: "archive", title: "Archive" }],
+      segmentOptions2: [
+        { id: "overview", title: "Overview" },
+        { id: "archive", title: "Archive" }
+      ],
+      segmentOptions3: [
+        { id: "overview", title: "Overview" },
+        { id: "activity", title: "Activity" },
+        { id: "archive", title: "Archive" }
+      ],
       segmentLabLabel: "Segmented Control",
       segmentSelectedText: (val) => `Selected: ${val}`,
       segmentCountLabel: "Segment count (2 or 3)",
@@ -18204,7 +18205,11 @@ Mock \u793A\u4F8B\u64CD\u4F5C\uFF0C\u4E0D\u4F1A\u4FEE\u6539\u771F\u5B9E\u914D\u7
       tfHideTitle: "Hide",
       tfShowTitle: "Show",
       tfModeHeader: "INSPECTOR \xB7 INPUT MODE",
-      tfModeOptions: [{ id: "default", title: "Text" }, { id: "password", title: "Password" }, { id: "url", title: "URL" }],
+      tfModeOptions: [
+        { id: "default", title: "Text" },
+        { id: "password", title: "Password" },
+        { id: "url", title: "URL" }
+      ],
       tfShowErrorLabel: "Show validation error",
       tfErrorShort: "Error state",
       tabPreviewItems: (count, badge) => [
@@ -18268,12 +18273,18 @@ Mock \u793A\u4F8B\u64CD\u4F5C\uFF0C\u4E0D\u4F1A\u4FEE\u6539\u771F\u5B9E\u914D\u7
         overview: {
           title: "Workspace Overview",
           detail: "Recently updated projects and active members.",
-          items: [{ title: "Project Updates", detail: "2 unread" }, { title: "Team Activity", detail: "Up to date" }]
+          items: [
+            { title: "Project Updates", detail: "2 unread" },
+            { title: "Team Activity", detail: "Up to date" }
+          ]
         },
         activity: {
           title: "Recent Activity",
           detail: "Latest edits and member events.",
-          items: [{ title: "Draft prototype updated", detail: "Today" }, { title: "New member joined", detail: "Yesterday" }]
+          items: [
+            { title: "Draft prototype updated", detail: "Today" },
+            { title: "New member joined", detail: "Yesterday" }
+          ]
         },
         archive: {
           title: "Archived Projects",
@@ -18349,9 +18360,9 @@ Preview only \u2014 real host settings are untouched.`,
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/TabBar.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/TabBar.js
 var require_TabBar = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/TabBar.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/TabBar.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/TabBar";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.TabBar = void 0;
@@ -18386,9 +18397,9 @@ var require_TabBar = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/LabPlaygrounds.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/LabPlaygrounds.js
 var require_LabPlaygrounds = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/LabPlaygrounds.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/LabPlaygrounds.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/LabPlaygrounds";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.LabPlayground = void 0;
@@ -18568,9 +18579,9 @@ var require_LabPlaygrounds = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/Gallery.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/Gallery.js
 var require_Gallery = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/Gallery.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/Gallery.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/Gallery";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.Gallery = void 0;
@@ -18637,10 +18648,10 @@ var require_Gallery = __commonJS({
         };
       }
       onCreate() {
-        (0, haptics_1.registerHapticHandler)(this.viewModel.onHaptic), this.viewModel.dark !== void 0 && this.viewModel.dark !== this.state.lab.dark && this.setState({ lab: Object.assign(Object.assign({}, this.state.lab), { dark: this.viewModel.dark }) });
+        (0, haptics_1.registerHapticHandler)(this.viewModel.onHaptic), this.viewModel.dark !== void 0 && this.viewModel.dark !== this.state.lab.dark && this.setState({ lab: { ...this.state.lab, dark: this.viewModel.dark } });
       }
       onViewModelUpdate(previous) {
-        (0, haptics_1.registerHapticHandler)(this.viewModel.onHaptic), this.viewModel.dark !== void 0 && this.viewModel.dark !== previous?.dark && this.viewModel.dark !== this.state.lab.dark && this.setState({ lab: Object.assign(Object.assign({}, this.state.lab), { dark: this.viewModel.dark }) });
+        (0, haptics_1.registerHapticHandler)(this.viewModel.onHaptic), this.viewModel.dark !== void 0 && this.viewModel.dark !== previous?.dark && this.viewModel.dark !== this.state.lab.dark && this.setState({ lab: { ...this.state.lab, dark: this.viewModel.dark } });
       }
       get t() {
         return (0, StyleLabData_1.resolveStyleLabCopy)(this.viewModel.locale);
@@ -18652,8 +18663,7 @@ var require_Gallery = __commonJS({
         return this.viewModel.layoutMode === "split" ? !0 : this.viewModel.layoutMode === "compact" ? !1 : this.state.viewportWidth >= 760;
       }
       patchLab(patch) {
-        var _a, _b;
-        patch.dark !== void 0 && ((_b = (_a = this.viewModel).onThemeChange) === null || _b === void 0 || _b.call(_a, patch.dark)), this.setState({ lab: Object.assign(Object.assign({}, this.state.lab), patch) });
+        patch.dark !== void 0 && this.viewModel.onThemeChange?.(patch.dark), this.setState({ lab: { ...this.state.lab, ...patch } });
       }
       saveName() {
         let name = this.state.name.trim(), length = Array.from(name).length;
@@ -18664,7 +18674,7 @@ var require_Gallery = __commonJS({
         this.setState({ savedName: name, error: void 0, saved: !0 });
       }
       navigateWithTransition(patch, direction) {
-        this.setState(Object.assign(Object.assign({}, patch), { pageEntered: !1, navDirection: direction, swipeBackX: 0 })), setTimeout(() => {
+        this.setState({ ...patch, pageEntered: !1, navDirection: direction, swipeBackX: 0 }), setTimeout(() => {
           this.isDestroyed() || this.animate({ stiffness: 360, damping: 32 }, () => {
             this.setState({ pageEntered: !0 });
           });
@@ -18691,13 +18701,16 @@ var require_Gallery = __commonJS({
           return;
         }
         if (wide) {
-          this.setState({ view: "controls", detailPage: void 0, lab: Object.assign(Object.assign({}, this.state.lab), { page: id }) });
+          this.setState({ view: "controls", detailPage: void 0, lab: { ...this.state.lab, page: id } });
           return;
         }
-        this.navigateWithTransition({ view: "controls", detailPage: id, lab: Object.assign(Object.assign({}, this.state.lab), { page: id }) }, "forward");
+        this.navigateWithTransition({ view: "controls", detailPage: id, lab: { ...this.state.lab, page: id } }, "forward");
       }
       catalogList(wide) {
-        let t = this.t, activeId = this.state.view === "example" ? "example" : this.state.view === "model" ? "model" : this.state.lab.page, dark = this.state.lab.dark, c = this.c, query = this.state.searchQuery.trim().toLowerCase(), filtered = t.sections.map((section) => Object.assign(Object.assign({}, section), { items: query ? section.items.filter((item) => item.title.toLowerCase().includes(query) || item.subtitle.toLowerCase().includes(query) || item.id.toLowerCase().includes(query)) : section.items })).filter((section) => section.items.length > 0);
+        let t = this.t, activeId = this.state.view === "example" ? "example" : this.state.view === "model" ? "model" : this.state.lab.page, dark = this.state.lab.dark, c = this.c, query = this.state.searchQuery.trim().toLowerCase(), filtered = t.sections.map((section) => ({
+          ...section,
+          items: query ? section.items.filter((item) => item.title.toLowerCase().includes(query) || item.subtitle.toLowerCase().includes(query) || item.id.toLowerCase().includes(query)) : section.items
+        })).filter((section) => section.items.length > 0);
         __Renderer.beginComponent(TextField_1.TextField, __componentTextField1, void 0, void 0), __Renderer.setViewModelProperty("label", t.searchLabel), __Renderer.setViewModelProperty("hideLabel", !0), __Renderer.setViewModelProperty("clearTitle", t.clearLabel), __Renderer.setViewModelProperty("placeholder", t.searchPlaceholder), __Renderer.setViewModelProperty("value", this.state.searchQuery), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (searchQuery) => this.setState({ searchQuery })), __Renderer.endComponent(), filtered.length === 0 && (__Renderer.beginComponent(EmptyState_1.EmptyState, __componentEmptyState1, void 0, void 0), __Renderer.setViewModelProperty("title", t.emptySearchTitle), __Renderer.setViewModelProperty("description", t.emptySearchDescription), __Renderer.setViewModelProperty("actionTitle", t.emptySearchAction), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onAction", () => this.setState({ searchQuery: "" })), __Renderer.endComponent()), filtered.forEach((section) => {
           __Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup1, section.title, void 0), __Renderer.setViewModelProperty("title", section.title), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
             section.items.forEach((item, index) => {
@@ -18717,8 +18730,7 @@ var require_Gallery = __commonJS({
         }), __Renderer.endComponent();
       }
       segmentDemo(sectionTitle) {
-        var _a;
-        let t = this.t, c = this.c, dark = this.state.lab.dark, content = (_a = t.segmentContent[this.state.segment]) !== null && _a !== void 0 ? _a : t.segmentContent.overview;
+        let t = this.t, c = this.c, dark = this.state.lab.dark, content = t.segmentContent[this.state.segment] ?? t.segmentContent.overview;
         __Renderer.beginRender(__nodeView7, void 0), __Renderer.beginRender(__nodeLabel3, void 0), __Renderer.setAttributeString("value", sectionTitle), __Renderer.setAttributeString("color", c.ink), __Renderer.setAttributeString("font", tokens_1.type.section), __Renderer.endRender(), __Renderer.beginComponent(SegmentedControl_1.SegmentedControl, __componentSegmentedControl1, void 0, void 0), __Renderer.setViewModelProperty("label", sectionTitle), __Renderer.setViewModelProperty("value", this.state.segment), __Renderer.setViewModelProperty("options", t.segmentOptions3), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (segment) => this.setState({ segment })), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.beginRender(__nodeView8, void 0), __Renderer.setAttribute("accessibilityStateLiveRegion", !0), __Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup3, void 0, void 0), __Renderer.setViewModelProperty("title", content.title), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
           content.items.forEach((item, index) => {
             __Renderer.beginRender(__nodeView9, item.title), index > 0 && (__Renderer.beginRender(__nodeView10, void 0), __Renderer.setAttributeString("backgroundColor", c.border), __Renderer.endRender()), __Renderer.beginRender(__nodeView11, void 0), __Renderer.beginRender(__nodeLabel4, void 0), __Renderer.setAttributeString("value", item.title), __Renderer.setAttributeString("font", tokens_1.type.body), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel5, void 0), __Renderer.setAttributeString("value", item.detail), __Renderer.setAttributeString("font", tokens_1.type.body), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.endRender(), __Renderer.endRender();
@@ -18740,7 +18752,6 @@ var require_Gallery = __commonJS({
         this.state.setting === "workspace" ? (__Renderer.beginRender(__nodeLabel10, void 0), __Renderer.setAttributeString("value", t.workspaceSettingsTitle), __Renderer.setAttributeString("color", c.ink), __Renderer.setAttributeString("font", tokens_1.type.display), __Renderer.endRender(), this.inputDemo(), this.groupedList(t.preferencesTitle), this.removalDemo(t.projectsGroupTitle)) : (__Renderer.beginRender(__nodeLabel11, void 0), __Renderer.setAttributeString("value", t.notificationsTitle), __Renderer.setAttributeString("color", c.ink), __Renderer.setAttributeString("font", tokens_1.type.display), __Renderer.endRender(), this.segmentDemo(t.notificationViewTitle));
       }
       modelPreviewPage() {
-        var _a, _b, _c;
         let t = this.t, state = this.state, dark = state.lab.dark, c = this.c, catalogByCategory = {
           coding_plan: [
             { title: "Claude 4.5 Sonnet", provider: "Anthropic" },
@@ -18756,10 +18767,9 @@ var require_Gallery = __commonJS({
             { title: "Local vLLM \xB7 Qwen3-32B", provider: "Localhost :8000" },
             { title: "Custom OpenAI Endpoint", provider: "Self-Hosted" }
           ]
-        }, models = (_a = catalogByCategory[state.modelCategory]) !== null && _a !== void 0 ? _a : catalogByCategory.coding_plan, subMeta = `${(_c = (_b = models.find((m) => m.title === state.modelPrimary)) === null || _b === void 0 ? void 0 : _b.provider) !== null && _c !== void 0 ? _c : t.brandTitle} \xB7 ${t.mockPreviewSuffix}`, rightAction = state.revealApiKey ? t.tfHideTitle : t.tfShowTitle, bannerTitle = state.modelTested === "success" ? t.modelCheckPassed : t.modelKeyRequired, bannerMsg = state.modelTested === "success" ? `${state.modelPrimary} \xB7 142 ms` : t.modelMockHint;
+        }, models = catalogByCategory[state.modelCategory] ?? catalogByCategory.coding_plan, subMeta = `${models.find((m) => m.title === state.modelPrimary)?.provider ?? t.brandTitle} \xB7 ${t.mockPreviewSuffix}`, rightAction = state.revealApiKey ? t.tfHideTitle : t.tfShowTitle, bannerTitle = state.modelTested === "success" ? t.modelCheckPassed : t.modelKeyRequired, bannerMsg = state.modelTested === "success" ? `${state.modelPrimary} \xB7 142 ms` : t.modelMockHint;
         __Renderer.beginRender(__nodeLabel12, void 0), __Renderer.setAttributeString("value", t.modelConfigTitle), __Renderer.setAttributeString("color", c.ink), __Renderer.setAttributeString("font", tokens_1.type.display), __Renderer.endRender(), __Renderer.beginRender(__nodeView16, void 0), __Renderer.setAttributeNumber("borderRadius", tokens_1.radii.group), __Renderer.setAttributeString("backgroundColor", c.accentSoft), __Renderer.setAttributeString("borderColor", c.border), __Renderer.beginRender(__nodeLabel13, void 0), __Renderer.setAttributeString("value", t.currentDefaultModel), __Renderer.setAttributeString("color", c.accent), __Renderer.setAttributeString("font", (0, SystemFont_1.systemSemiboldFont)(12)), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel14, void 0), __Renderer.setAttributeString("value", state.modelPrimary), __Renderer.setAttributeString("color", c.ink), __Renderer.setAttributeString("font", (0, SystemFont_1.systemSemiboldFont)(18)), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel15, void 0), __Renderer.setAttributeString("value", subMeta), __Renderer.setAttributeString("color", c.muted), __Renderer.setAttributeString("font", tokens_1.type.detail), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginComponent(SegmentedControl_1.SegmentedControl, __componentSegmentedControl2, void 0, void 0), __Renderer.setViewModelProperty("label", t.modelCategoryLabel), __Renderer.setViewModelProperty("value", state.modelCategory), __Renderer.setViewModelProperty("options", t.modelCategories), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (modelCategory) => {
-          var _a2;
-          let list = (_a2 = catalogByCategory[modelCategory]) !== null && _a2 !== void 0 ? _a2 : catalogByCategory.coding_plan;
+          let list = catalogByCategory[modelCategory] ?? catalogByCategory.coding_plan;
           this.setState({ modelCategory, modelPrimary: list[0].title, modelTested: void 0 });
         }), __Renderer.endComponent(), __Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup5, void 0, void 0), __Renderer.setViewModelProperty("title", t.configuredModelsTitle), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
           models.map((item, index) => {
@@ -18771,8 +18781,7 @@ var require_Gallery = __commonJS({
         }), __Renderer.endComponent(), state.modelTested && (__Renderer.beginComponent(Banner_1.Banner, __componentBanner1, void 0, void 0), __Renderer.setViewModelProperty("tone", state.modelTested === "success" ? "success" : "danger"), __Renderer.setViewModelProperty("title", bannerTitle), __Renderer.setViewModelProperty("message", bannerMsg), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onDismiss", () => this.setState({ modelTested: void 0 })), __Renderer.endComponent()), __Renderer.beginComponent(Button_1.Button, __componentButton1, void 0, void 0), __Renderer.setViewModelProperty("title", t.deleteModelBtn), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => this.setState({ deletingModel: state.modelPrimary })), __Renderer.endComponent();
       }
       exampleToolbar(wide) {
-        var _a;
-        let t = this.t, { setting, confirming, sheetOpen, view } = this.state, safeTop = (_a = this.viewModel.safeAreaTop) !== null && _a !== void 0 ? _a : 0, dark = this.state.lab.dark, c = this.c, navTitle = view === "example" && setting === "notifications" ? t.workspaceSettingsTitle : t.styleLabTitle, backAria = `${t.backPrefix} ${navTitle}`, modalOpen = confirming || sheetOpen || !!this.state.deletingModel;
+        let t = this.t, { setting, confirming, sheetOpen, view } = this.state, safeTop = this.viewModel.safeAreaTop ?? 0, dark = this.state.lab.dark, c = this.c, navTitle = view === "example" && setting === "notifications" ? t.workspaceSettingsTitle : t.styleLabTitle, backAria = `${t.backPrefix} ${navTitle}`, modalOpen = confirming || sheetOpen || !!this.state.deletingModel;
         __Renderer.beginRender(__nodeView18, void 0), __Renderer.setAttributeString("class", dark ? "oc-example-toolbar oc-dark" : "oc-example-toolbar"), __Renderer.setAttributeNumber("left", wide ? 290 : 0), __Renderer.setAttributeNumber("paddingTop", safeTop), __Renderer.setAttributeNumber("opacity", this.state.pageEntered ? 1 : 0), __Renderer.setAttributeNumber("translationY", this.state.pageEntered ? 0 : -6), __Renderer.setAttributeString("accessibilityNavigation", modalOpen ? "ignored" : "auto"), __Renderer.beginRender(__nodeView19, void 0), __Renderer.setAttributeNumber("maxWidth", wide ? 680 : 468), __Renderer.setAttributeNumber("paddingLeft", wide ? 28 : 16), __Renderer.setAttributeNumber("paddingRight", wide ? 28 : 16), __Renderer.beginRender(__nodeView20, void 0), __Renderer.setAttributeNumber("marginLeft", -8), __Renderer.beginRender(__nodeView21, void 0), __Renderer.setAttributeString("accessibilityLabel", backAria), __Renderer.setAttributeFunction("onTap", () => this.popSubpage()), __Renderer.beginComponent(Icon_1.Icon, __componentIcon3, void 0, void 0), __Renderer.setViewModelProperty("color", c.muted), __Renderer.endComponent(), __Renderer.beginRender(__nodeLabel16, void 0), __Renderer.setAttributeString("value", navTitle), __Renderer.setAttributeString("color", c.muted), __Renderer.setAttributeString("font", tokens_1.type.body), __Renderer.endRender(), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel17, void 0), __Renderer.setAttributeString("value", t.brandTitle), __Renderer.setAttributeString("color", c.muted), __Renderer.setAttributeString("font", tokens_1.type.detail), __Renderer.endRender(), __Renderer.endRender(), __Renderer.endRender();
       }
       renderDetailTitle() {
@@ -18783,9 +18792,8 @@ var require_Gallery = __commonJS({
         __Renderer.beginComponent(LabPlaygrounds_1.LabPlayground, __componentLabPlayground1, void 0, void 0), __Renderer.setViewModelProperty("state", this.state.lab), __Renderer.setViewModelProperty("copy", this.t), __Renderer.setViewModelProperty("onPatch", (patch) => this.patchLab(patch)), __Renderer.setViewModelProperty("onOpenDialog", () => this.setState({ confirming: !0 })), __Renderer.setViewModelProperty("onOpenSheet", () => this.setState({ sheetOpen: !0 })), __Renderer.endComponent();
       }
       renderCompact() {
-        var _a, _b, _c, _d;
-        let t = this.t, state = this.state, safeTop = (_a = this.viewModel.safeAreaTop) !== null && _a !== void 0 ? _a : 0, safeBottom = (_b = this.viewModel.safeAreaBottom) !== null && _b !== void 0 ? _b : 0, keyboardHeight = (_c = this.viewModel.keyboardHeight) !== null && _c !== void 0 ? _c : 0, c = this.c, dark = state.lab.dark, subpage = !!state.detailPage || state.view === "example" && state.setting === "notifications", isCatalogRoot = state.view === "controls" && !state.detailPage, modalOpen = state.confirming || state.sheetOpen || !!state.deletingModel, tx = state.pageEntered ? state.swipeBackX : state.navDirection === "forward" ? 38 : state.navDirection === "back" ? -26 : 0, ty = state.pageEntered ? 0 : state.navDirection === "tab" ? 8 : 0, swipeOpacity = state.swipeBackX > 0 ? Math.max(0.28, 1 - state.swipeBackX / 360) : 1, pageOpacity = state.pageEntered ? swipeOpacity : state.navDirection === "tab" ? 0.65 : 0, emblemLetter = "O";
-        __Renderer.beginRender(__nodeScroll1, state.view === "example" ? state.setting : (_d = state.detailPage) !== null && _d !== void 0 ? _d : state.view), __Renderer.setAttribute("scrollEnabled", !modalOpen), __Renderer.setAttribute("touchEnabled", !modalOpen), __Renderer.setAttributeString("accessibilityNavigation", modalOpen ? "ignored" : "auto"), __Renderer.beginRender(__nodeView23, void 0), __Renderer.setAttributeNumber("paddingTop", subpage ? safeTop + 68 : safeTop + 20), __Renderer.setAttributeNumber("paddingBottom", Math.max(safeBottom + 104, keyboardHeight + 24)), __Renderer.setAttributeNumber("gap", subpage ? 24 : 20), __Renderer.setAttributeNumber("translationX", tx), __Renderer.setAttributeNumber("translationY", ty), __Renderer.setAttributeNumber("opacity", pageOpacity), !subpage && (__Renderer.beginRender(__nodeView24, void 0), __Renderer.beginRender(__nodeView25, void 0), __Renderer.beginRender(__nodeView26, void 0), __Renderer.setAttributeString("backgroundColor", c.ink), __Renderer.beginRender(__nodeLabel20, void 0), __Renderer.setAttributeString("value", emblemLetter), __Renderer.setAttributeString("font", (0, SystemFont_1.systemSemiboldFont)(15)), __Renderer.setAttributeString("color", c.canvas), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel21, void 0), __Renderer.setAttributeString("value", t.brandTitle), __Renderer.setAttributeString("font", (0, SystemFont_1.systemSemiboldFont)(15)), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginRender(__nodeView27, void 0), __Renderer.beginRender(__nodeLabel22, void 0), __Renderer.setAttributeString("value", t.darkShort), __Renderer.setAttributeString("font", tokens_1.type.detail), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.beginComponent(Toggle_1.Toggle, __componentToggle1, void 0, void 0), __Renderer.setViewModelProperty("label", t.darkModeLabel), __Renderer.setViewModelProperty("value", dark), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (nextDark) => this.patchLab({ dark: nextDark })), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.endRender()), isCatalogRoot && (__Renderer.beginRender(__nodeView28, void 0), __Renderer.beginRender(__nodeLabel23, void 0), __Renderer.setAttributeString("value", t.styleLabTitle), __Renderer.setAttributeString("color", c.ink), __Renderer.setAttributeString("font", tokens_1.type.display), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel24, void 0), __Renderer.setAttributeString("value", t.styleLabSubtitle), __Renderer.setAttributeString("color", c.muted), __Renderer.setAttributeString("font", tokens_1.type.detail), __Renderer.endRender(), __Renderer.endRender()), state.view === "example" ? this.examplePage() : state.view === "model" ? this.modelPreviewPage() : state.detailPage ? (__Renderer.beginRender(__nodeView29, void 0), this.renderDetailTitle(), this.renderActivePlayground(), __Renderer.endRender()) : this.catalogList(!1), __Renderer.endRender(), __Renderer.endRender(), subpage && this.exampleToolbar(!1), subpage && !modalOpen && (__Renderer.beginRender(__nodeView30, void 0), __Renderer.setAttributeNumber("top", safeTop + 56), __Renderer.setAttributeFunction("onDrag", (event) => {
+        let t = this.t, state = this.state, safeTop = this.viewModel.safeAreaTop ?? 0, safeBottom = this.viewModel.safeAreaBottom ?? 0, keyboardHeight = this.viewModel.keyboardHeight ?? 0, c = this.c, dark = state.lab.dark, subpage = !!state.detailPage || state.view === "example" && state.setting === "notifications", isCatalogRoot = state.view === "controls" && !state.detailPage, modalOpen = state.confirming || state.sheetOpen || !!state.deletingModel, tx = state.pageEntered ? state.swipeBackX : state.navDirection === "forward" ? 38 : state.navDirection === "back" ? -26 : 0, ty = state.pageEntered ? 0 : state.navDirection === "tab" ? 8 : 0, swipeOpacity = state.swipeBackX > 0 ? Math.max(0.28, 1 - state.swipeBackX / 360) : 1, pageOpacity = state.pageEntered ? swipeOpacity : state.navDirection === "tab" ? 0.65 : 0, emblemLetter = "O";
+        __Renderer.beginRender(__nodeScroll1, state.view === "example" ? state.setting : state.detailPage ?? state.view), __Renderer.setAttribute("scrollEnabled", !modalOpen), __Renderer.setAttribute("touchEnabled", !modalOpen), __Renderer.setAttributeString("accessibilityNavigation", modalOpen ? "ignored" : "auto"), __Renderer.beginRender(__nodeView23, void 0), __Renderer.setAttributeNumber("paddingTop", subpage ? safeTop + 68 : safeTop + 20), __Renderer.setAttributeNumber("paddingBottom", Math.max(safeBottom + 104, keyboardHeight + 24)), __Renderer.setAttributeNumber("gap", subpage ? 24 : 20), __Renderer.setAttributeNumber("translationX", tx), __Renderer.setAttributeNumber("translationY", ty), __Renderer.setAttributeNumber("opacity", pageOpacity), !subpage && (__Renderer.beginRender(__nodeView24, void 0), __Renderer.beginRender(__nodeView25, void 0), __Renderer.beginRender(__nodeView26, void 0), __Renderer.setAttributeString("backgroundColor", c.ink), __Renderer.beginRender(__nodeLabel20, void 0), __Renderer.setAttributeString("value", emblemLetter), __Renderer.setAttributeString("font", (0, SystemFont_1.systemSemiboldFont)(15)), __Renderer.setAttributeString("color", c.canvas), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel21, void 0), __Renderer.setAttributeString("value", t.brandTitle), __Renderer.setAttributeString("font", (0, SystemFont_1.systemSemiboldFont)(15)), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginRender(__nodeView27, void 0), __Renderer.beginRender(__nodeLabel22, void 0), __Renderer.setAttributeString("value", t.darkShort), __Renderer.setAttributeString("font", tokens_1.type.detail), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.beginComponent(Toggle_1.Toggle, __componentToggle1, void 0, void 0), __Renderer.setViewModelProperty("label", t.darkModeLabel), __Renderer.setViewModelProperty("value", dark), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (nextDark) => this.patchLab({ dark: nextDark })), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.endRender()), isCatalogRoot && (__Renderer.beginRender(__nodeView28, void 0), __Renderer.beginRender(__nodeLabel23, void 0), __Renderer.setAttributeString("value", t.styleLabTitle), __Renderer.setAttributeString("color", c.ink), __Renderer.setAttributeString("font", tokens_1.type.display), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel24, void 0), __Renderer.setAttributeString("value", t.styleLabSubtitle), __Renderer.setAttributeString("color", c.muted), __Renderer.setAttributeString("font", tokens_1.type.detail), __Renderer.endRender(), __Renderer.endRender()), state.view === "example" ? this.examplePage() : state.view === "model" ? this.modelPreviewPage() : state.detailPage ? (__Renderer.beginRender(__nodeView29, void 0), this.renderDetailTitle(), this.renderActivePlayground(), __Renderer.endRender()) : this.catalogList(!1), __Renderer.endRender(), __Renderer.endRender(), subpage && this.exampleToolbar(!1), subpage && !modalOpen && (__Renderer.beginRender(__nodeView30, void 0), __Renderer.setAttributeNumber("top", safeTop + 56), __Renderer.setAttributeFunction("onDrag", (event) => {
           let dx = Math.max(0, event.deltaX);
           if (event.state === 2) {
             dx > 88 || event.velocityX > 420 ? ((0, haptics_1.triggerHaptic)("light"), this.popSubpage()) : this.animate({ stiffness: 360, damping: 32 }, () => {
@@ -18797,8 +18805,7 @@ var require_Gallery = __commonJS({
         }), __Renderer.endRender()), !subpage && keyboardHeight <= 0 && (__Renderer.beginRender(__nodeView31, void 0), __Renderer.setAttributeNumber("bottom", Math.max(14, safeBottom - 10)), __Renderer.setAttributeString("accessibilityNavigation", modalOpen ? "ignored" : "auto"), __Renderer.beginRender(__nodeView32, void 0), __Renderer.beginComponent(TabBar_1.TabBar, __componentTabBar1, void 0, void 0), __Renderer.setViewModelProperty("label", t.tabBarLabel), __Renderer.setViewModelProperty("items", t.tabs), __Renderer.setViewModelProperty("value", state.view), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (view) => this.navigateWithTransition(view === "example" ? { view, setting: "workspace", detailPage: void 0 } : { view, detailPage: void 0 }, "tab")), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.endRender());
       }
       renderSplit() {
-        var _a, _b, _c;
-        let t = this.t, state = this.state, safeTop = (_a = this.viewModel.safeAreaTop) !== null && _a !== void 0 ? _a : 0, safeBottom = (_b = this.viewModel.safeAreaBottom) !== null && _b !== void 0 ? _b : 0, keyboardHeight = (_c = this.viewModel.keyboardHeight) !== null && _c !== void 0 ? _c : 0, c = this.c, dark = state.lab.dark, inNotifications = state.view === "example" && state.setting === "notifications", modalOpen = state.confirming || state.sheetOpen || !!state.deletingModel, emblemLetter = "O";
+        let t = this.t, state = this.state, safeTop = this.viewModel.safeAreaTop ?? 0, safeBottom = this.viewModel.safeAreaBottom ?? 0, keyboardHeight = this.viewModel.keyboardHeight ?? 0, c = this.c, dark = state.lab.dark, inNotifications = state.view === "example" && state.setting === "notifications", modalOpen = state.confirming || state.sheetOpen || !!state.deletingModel, emblemLetter = "O";
         __Renderer.beginRender(__nodeView33, void 0), __Renderer.beginRender(__nodeView34, void 0), __Renderer.setAttributeString("backgroundColor", c.surface), __Renderer.beginRender(__nodeScroll2, void 0), __Renderer.beginRender(__nodeView35, void 0), __Renderer.setAttributeNumber("paddingTop", safeTop + 20), __Renderer.setAttributeNumber("paddingBottom", Math.max(safeBottom + 28, keyboardHeight + 24)), __Renderer.beginRender(__nodeView36, void 0), __Renderer.beginRender(__nodeView37, void 0), __Renderer.beginRender(__nodeView38, void 0), __Renderer.setAttributeString("backgroundColor", c.ink), __Renderer.beginRender(__nodeLabel25, void 0), __Renderer.setAttributeString("value", emblemLetter), __Renderer.setAttributeString("font", (0, SystemFont_1.systemSemiboldFont)(15)), __Renderer.setAttributeString("color", c.canvas), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel26, void 0), __Renderer.setAttributeString("value", t.styleLabTitle), __Renderer.setAttributeString("font", (0, SystemFont_1.systemSemiboldFont)(18)), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginComponent(Toggle_1.Toggle, __componentToggle2, void 0, void 0), __Renderer.setViewModelProperty("label", t.darkModeLabel), __Renderer.setViewModelProperty("value", dark), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (nextDark) => this.patchLab({ dark: nextDark })), __Renderer.endComponent(), __Renderer.endRender(), this.catalogList(!0), __Renderer.endRender(), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginRender(__nodeView39, void 0), __Renderer.setAttributeString("backgroundColor", c.border), __Renderer.endRender(), __Renderer.beginRender(__nodeView40, void 0), __Renderer.setAttributeString("backgroundColor", c.canvas), __Renderer.beginRender(__nodeScroll3, state.view === "example" ? state.setting : state.view === "model" ? "model" : state.lab.page), __Renderer.setAttribute("scrollEnabled", !modalOpen), __Renderer.setAttribute("touchEnabled", !modalOpen), __Renderer.setAttributeString("accessibilityNavigation", modalOpen ? "ignored" : "auto"), __Renderer.beginRender(__nodeView41, void 0), __Renderer.setAttributeNumber("paddingTop", inNotifications ? safeTop + 70 : safeTop + 26), __Renderer.setAttributeNumber("paddingBottom", Math.max(safeBottom + 48, keyboardHeight + 24)), state.view === "example" ? this.examplePage() : state.view === "model" ? this.modelPreviewPage() : (__Renderer.beginRender(__nodeView42, void 0), this.renderDetailTitle(), this.renderActivePlayground(), __Renderer.endRender()), __Renderer.endRender(), __Renderer.endRender(), inNotifications && this.exampleToolbar(!0), __Renderer.endRender(), __Renderer.endRender();
       }
       onRender() {
@@ -18808,7 +18815,12 @@ var require_Gallery = __commonJS({
         }), wide ? this.renderSplit() : this.renderCompact(), state.confirming && (__Renderer.beginComponent(ConfirmDialog_1.ConfirmDialog, __componentConfirmDialog1, void 0, void 0), __Renderer.setViewModelProperty("title", dlgTitle), __Renderer.setViewModelProperty("message", dlgMsg), __Renderer.setViewModelProperty("cancelTitle", t.cancelBtn), __Renderer.setViewModelProperty("confirmTitle", dlgConfirm), __Renderer.setViewModelProperty("destructive", state.view === "example" ? !0 : state.lab.overlayDestructive), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onCancel", () => this.setState({ confirming: !1 })), __Renderer.setViewModelProperty("onConfirm", () => this.setState(state.view === "example" ? { confirming: !1, removed: !0 } : { confirming: !1 })), __Renderer.endComponent()), state.deletingModel && (__Renderer.beginComponent(ConfirmDialog_1.ConfirmDialog, __componentConfirmDialog2, void 0, void 0), __Renderer.setViewModelProperty("title", t.deleteModelDialogTitle), __Renderer.setViewModelProperty("message", delMsg), __Renderer.setViewModelProperty("cancelTitle", t.cancelBtn), __Renderer.setViewModelProperty("confirmTitle", t.confirmDeleteBtn), __Renderer.setViewModelProperty("destructive", !0), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onCancel", () => this.setState({ deletingModel: void 0 })), __Renderer.setViewModelProperty("onConfirm", () => this.setState({ deletingModel: void 0, modelTested: "success" })), __Renderer.endComponent()), state.sheetOpen && (__Renderer.beginComponent(ActionSheet_1.ActionSheet, __componentActionSheet1, void 0, void 0), __Renderer.setViewModelProperty("title", t.sheetTitle), __Renderer.setViewModelProperty("message", sheetMsg), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("cancelTitle", t.cancelBtn), __Renderer.setViewModelProperty("actions", [
           { id: "duplicate", title: t.sheetDuplicate, onPress: () => this.setState({ sheetOpen: !1 }) },
           { id: "export", title: t.sheetExport, onPress: () => this.setState({ sheetOpen: !1 }) },
-          { id: "delete", title: t.sheetDelete, destructive: state.lab.overlayDestructive, onPress: () => this.setState({ sheetOpen: !1 }) }
+          {
+            id: "delete",
+            title: t.sheetDelete,
+            destructive: state.lab.overlayDestructive,
+            onPress: () => this.setState({ sheetOpen: !1 })
+          }
         ]), __Renderer.setViewModelProperty("onCancel", () => this.setState({ sheetOpen: !1 })), __Renderer.endComponent()), __Renderer.endRender();
       }
     };
@@ -18816,9 +18828,9 @@ var require_Gallery = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/MobileWelcomeSurface.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/MobileWelcomeSurface.js
 var require_MobileWelcomeSurface = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/MobileWelcomeSurface.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/MobileWelcomeSurface.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/MobileWelcomeSurface";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.MobileWelcomeSurface = void 0;
@@ -18836,9 +18848,8 @@ var require_MobileWelcomeSurface = __commonJS({
         return (0, tokens_1.themeColors)(this.viewModel.dark);
       }
       onRender() {
-        var _a, _b, _c, _d, _e;
-        let vm = this.viewModel, dark = !!vm.dark, touch = (_a = vm.touch) !== null && _a !== void 0 ? _a : !0, safeTop = (_b = vm.safeAreaTop) !== null && _b !== void 0 ? _b : 0, safeBottom = (_c = vm.safeAreaBottom) !== null && _c !== void 0 ? _c : 0, c = this.c, m = (0, tokens_1.themeMetrics)(touch), emblem = "O";
-        __Renderer.beginRender(__nodeView1, void 0), __Renderer.setAttributeString("backgroundColor", c.canvas), __Renderer.beginRender(__nodeScroll1, void 0), __Renderer.beginRender(__nodeView2, void 0), __Renderer.setAttributeNumber("paddingTop", safeTop + 36), __Renderer.setAttributeNumber("paddingBottom", safeBottom + 36), __Renderer.beginRender(__nodeView3, void 0), __Renderer.beginRender(__nodeView4, void 0), __Renderer.beginRender(__nodeView5, void 0), __Renderer.setAttributeString("backgroundColor", c.primaryButton), __Renderer.beginRender(__nodeLabel1, void 0), __Renderer.setAttributeString("value", emblem), __Renderer.setAttributeString("font", (0, SystemFont_1.systemSemiboldFont)(15)), __Renderer.setAttributeString("color", c.primaryButtonForeground), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel2, void 0), __Renderer.setAttributeString("value", (_e = (_d = vm.brandLabel) !== null && _d !== void 0 ? _d : vm.heroBadge) !== null && _e !== void 0 ? _e : "OpenCraft"), __Renderer.setAttributeString("font", (0, SystemFont_1.systemSemiboldFont)(15)), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginRender(__nodeView6, void 0), __Renderer.beginRender(__nodeLabel3, void 0), __Renderer.setAttributeString("value", vm.title), __Renderer.setAttributeString("font", (0, SystemFont_1.systemSemiboldFont)(24)), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel4, void 0), __Renderer.setAttributeString("value", vm.subtitle), __Renderer.setAttributeString("font", m.fonts.pageSummary), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.connectGroupTitle), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
+        let vm = this.viewModel, dark = !!vm.dark, touch = vm.touch ?? !0, safeTop = vm.safeAreaTop ?? 0, safeBottom = vm.safeAreaBottom ?? 0, c = this.c, m = (0, tokens_1.themeMetrics)(touch), emblem = "O";
+        __Renderer.beginRender(__nodeView1, void 0), __Renderer.setAttributeString("backgroundColor", c.canvas), __Renderer.beginRender(__nodeScroll1, void 0), __Renderer.beginRender(__nodeView2, void 0), __Renderer.setAttributeNumber("paddingTop", safeTop + 36), __Renderer.setAttributeNumber("paddingBottom", safeBottom + 36), __Renderer.beginRender(__nodeView3, void 0), __Renderer.beginRender(__nodeView4, void 0), __Renderer.beginRender(__nodeView5, void 0), __Renderer.setAttributeString("backgroundColor", c.primaryButton), __Renderer.beginRender(__nodeLabel1, void 0), __Renderer.setAttributeString("value", emblem), __Renderer.setAttributeString("font", (0, SystemFont_1.systemSemiboldFont)(15)), __Renderer.setAttributeString("color", c.primaryButtonForeground), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel2, void 0), __Renderer.setAttributeString("value", vm.brandLabel ?? vm.heroBadge ?? "OpenCraft"), __Renderer.setAttributeString("font", (0, SystemFont_1.systemSemiboldFont)(15)), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginRender(__nodeView6, void 0), __Renderer.beginRender(__nodeLabel3, void 0), __Renderer.setAttributeString("value", vm.title), __Renderer.setAttributeString("font", (0, SystemFont_1.systemSemiboldFont)(24)), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel4, void 0), __Renderer.setAttributeString("value", vm.subtitle), __Renderer.setAttributeString("font", m.fonts.pageSummary), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.connectGroupTitle), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
           __Renderer.beginComponent(SettingsGroup_1.SettingsRow, __componentSettingsRow1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.connectServerTitle), __Renderer.setViewModelProperty("detail", vm.connectServerDetail), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onSelect", vm.onConnect), __Renderer.endComponent(), __Renderer.beginComponent(SettingsGroup_1.SettingsRow, __componentSettingsRow2, void 0, void 0), __Renderer.setViewModelProperty("title", vm.exploreOfflineTitle), __Renderer.setViewModelProperty("detail", vm.exploreOfflineDetail), __Renderer.setViewModelProperty("divider", !0), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onSelect", vm.onExplore), __Renderer.endComponent(), vm.hasSourceSettings && vm.onOpenSourceSettings && (__Renderer.beginComponent(SettingsGroup_1.SettingsRow, __componentSettingsRow3, void 0, void 0), __Renderer.setViewModelProperty("title", vm.sourceSettingsTitle), __Renderer.setViewModelProperty("detail", vm.sourceSettingsDetail), __Renderer.setViewModelProperty("divider", !0), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onSelect", vm.onOpenSourceSettings), __Renderer.endComponent());
         }), __Renderer.endComponent(), __Renderer.beginRender(__nodeView7, void 0), __Renderer.beginComponent(Button_1.Button, __componentButton1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.connectServerTitle), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onConnect), __Renderer.endComponent(), __Renderer.beginComponent(Button_1.Button, __componentButton2, void 0, void 0), __Renderer.setViewModelProperty("title", vm.exploreOfflineTitle), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onExplore), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.endRender(), __Renderer.endRender(), __Renderer.endRender();
       }
@@ -18847,9 +18858,9 @@ var require_MobileWelcomeSurface = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/MobileNativeOverlay.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/MobileNativeOverlay.js
 var require_MobileNativeOverlay = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/MobileNativeOverlay.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/MobileNativeOverlay.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/MobileNativeOverlay";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.MobileNativeOverlay = void 0;
@@ -18869,11 +18880,10 @@ var require_MobileNativeOverlay = __commonJS({
         (0, haptics_1.registerHapticHandler)(this.viewModel.onHaptic), this.syncFromViewModel(previous);
       }
       syncFromViewModel(previous) {
-        var _a, _b, _c;
-        let mode = (_a = this.viewModel.mode) !== null && _a !== void 0 ? _a : "idle", prevMode = (_b = previous?.mode) !== null && _b !== void 0 ? _b : "idle";
+        let mode = this.viewModel.mode ?? "idle", prevMode = previous?.mode ?? "idle";
         (!previous || mode === "source-settings" && prevMode !== "source-settings") && (this.setState({
           remoteSelected: this.viewModel.sourceKind === "self-hosted",
-          draftUrl: (_c = this.viewModel.sourceUrl) !== null && _c !== void 0 ? _c : "",
+          draftUrl: this.viewModel.sourceUrl ?? "",
           sheetEntered: !1
         }), mode === "source-settings" && setTimeout(() => {
           this.isDestroyed() || this.animate({ stiffness: 340, damping: 30 }, () => {
@@ -18887,48 +18897,32 @@ var require_MobileNativeOverlay = __commonJS({
         });
       }
       onRender() {
-        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u;
-        let vm = this.viewModel, mode = (_a = vm.mode) !== null && _a !== void 0 ? _a : "idle", dark = !!vm.dark, c = (0, tokens_1.themeColors)(dark), safeTop = (_b = vm.safeAreaTop) !== null && _b !== void 0 ? _b : 0, safeBottom = (_c = vm.safeAreaBottom) !== null && _c !== void 0 ? _c : 0, keyboard = (_d = vm.keyboardHeight) !== null && _d !== void 0 ? _d : 0;
+        let vm = this.viewModel, mode = vm.mode ?? "idle", dark = !!vm.dark, c = (0, tokens_1.themeColors)(dark), safeTop = vm.safeAreaTop ?? 0, safeBottom = vm.safeAreaBottom ?? 0, keyboard = vm.keyboardHeight ?? 0;
         if (vm.welcomeVisible || mode === "welcome") {
           let welcomeProps = {
             dark,
             safeAreaTop: safeTop,
             safeAreaBottom: safeBottom,
             hasSourceSettings: !0,
-            brandLabel: (_e = vm.welcomeBrandLabel) !== null && _e !== void 0 ? _e : "OpenCraft",
-            title: (_f = vm.welcomeTitle) !== null && _f !== void 0 ? _f : "",
-            subtitle: (_g = vm.welcomeSubtitle) !== null && _g !== void 0 ? _g : "",
-            connectGroupTitle: (_h = vm.welcomeQuickGroup) !== null && _h !== void 0 ? _h : "",
-            connectServerTitle: (_j = vm.welcomeConnectTitle) !== null && _j !== void 0 ? _j : "",
-            connectServerDetail: (_k = vm.welcomeConnectDetail) !== null && _k !== void 0 ? _k : "HTTPS",
-            exploreOfflineTitle: (_l = vm.welcomeExploreTitle) !== null && _l !== void 0 ? _l : "",
-            exploreOfflineDetail: (_m = vm.welcomeExploreDetail) !== null && _m !== void 0 ? _m : "",
-            sourceSettingsTitle: (_o = vm.sourceLabel) !== null && _o !== void 0 ? _o : "",
+            brandLabel: vm.welcomeBrandLabel ?? "OpenCraft",
+            title: vm.welcomeTitle ?? "",
+            subtitle: vm.welcomeSubtitle ?? "",
+            connectGroupTitle: vm.welcomeQuickGroup ?? "",
+            connectServerTitle: vm.welcomeConnectTitle ?? "",
+            connectServerDetail: vm.welcomeConnectDetail ?? "HTTPS",
+            exploreOfflineTitle: vm.welcomeExploreTitle ?? "",
+            exploreOfflineDetail: vm.welcomeExploreDetail ?? "",
+            sourceSettingsTitle: vm.sourceLabel ?? "",
             sourceSettingsDetail: "Host",
-            onConnect: () => {
-              var _a2;
-              return (_a2 = vm.onWelcomeConnect) === null || _a2 === void 0 ? void 0 : _a2.call(vm);
-            },
-            onExplore: () => {
-              var _a2;
-              return (_a2 = vm.onWelcomeExplore) === null || _a2 === void 0 ? void 0 : _a2.call(vm);
-            },
-            onOpenSourceSettings: () => {
-              var _a2;
-              return (_a2 = vm.onOpenSourceSettings) === null || _a2 === void 0 ? void 0 : _a2.call(vm);
-            },
+            onConnect: () => vm.onWelcomeConnect?.(),
+            onExplore: () => vm.onWelcomeExplore?.(),
+            onOpenSourceSettings: () => vm.onOpenSourceSettings?.(),
             onHaptic: vm.onHaptic
           };
           __Renderer.beginComponent(MobileWelcomeSurface_1.MobileWelcomeSurface, __componentMobileWelcomeSurface1, void 0, void 0), __Renderer.setViewModelProperties(welcomeProps), __Renderer.endComponent();
         }
         if (mode === "confirm-dialog" && vm.dialogTitle && vm.dialogConfirmLabel && vm.dialogCancelLabel) {
-          __Renderer.beginComponent(ConfirmDialog_1.ConfirmDialog, __componentConfirmDialog1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.dialogTitle), __Renderer.setViewModelProperty("message", vm.dialogMessage), __Renderer.setViewModelProperty("confirmTitle", vm.dialogConfirmLabel), __Renderer.setViewModelProperty("cancelTitle", vm.dialogCancelLabel), __Renderer.setViewModelProperty("destructive", vm.dialogDestructive), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onCancel", () => {
-            var _a2;
-            return (_a2 = vm.onConfirmResult) === null || _a2 === void 0 ? void 0 : _a2.call(vm, !1);
-          }), __Renderer.setViewModelProperty("onConfirm", () => {
-            var _a2;
-            return (_a2 = vm.onConfirmResult) === null || _a2 === void 0 ? void 0 : _a2.call(vm, !0);
-          }), __Renderer.endComponent();
+          __Renderer.beginComponent(ConfirmDialog_1.ConfirmDialog, __componentConfirmDialog1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.dialogTitle), __Renderer.setViewModelProperty("message", vm.dialogMessage), __Renderer.setViewModelProperty("confirmTitle", vm.dialogConfirmLabel), __Renderer.setViewModelProperty("cancelTitle", vm.dialogCancelLabel), __Renderer.setViewModelProperty("destructive", vm.dialogDestructive), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onCancel", () => vm.onConfirmResult?.(!1)), __Renderer.setViewModelProperty("onConfirm", () => vm.onConfirmResult?.(!0)), __Renderer.endComponent();
           return;
         }
         if (mode === "action-sheet" && vm.sheetCancelLabel && vm.sheetActions && vm.sheetActions.length > 0) {
@@ -18937,45 +18931,31 @@ var require_MobileNativeOverlay = __commonJS({
             title: item.label,
             destructive: item.destructive,
             disabled: item.disabled,
-            onPress: () => {
-              var _a2;
-              return (_a2 = vm.onActionSheetResult) === null || _a2 === void 0 ? void 0 : _a2.call(vm, item.id);
-            }
+            onPress: () => vm.onActionSheetResult?.(item.id)
           }));
-          __Renderer.beginComponent(ActionSheet_1.ActionSheet, __componentActionSheet1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.sheetTitle), __Renderer.setViewModelProperty("message", vm.sheetMessage), __Renderer.setViewModelProperty("cancelTitle", vm.sheetCancelLabel), __Renderer.setViewModelProperty("bottomInset", Math.max(20, safeBottom + 10)), __Renderer.setViewModelProperty("actions", actions), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onCancel", () => {
-            var _a2;
-            return (_a2 = vm.onActionSheetResult) === null || _a2 === void 0 ? void 0 : _a2.call(vm, "");
-          }), __Renderer.endComponent();
+          __Renderer.beginComponent(ActionSheet_1.ActionSheet, __componentActionSheet1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.sheetTitle), __Renderer.setViewModelProperty("message", vm.sheetMessage), __Renderer.setViewModelProperty("cancelTitle", vm.sheetCancelLabel), __Renderer.setViewModelProperty("bottomInset", Math.max(20, safeBottom + 10)), __Renderer.setViewModelProperty("actions", actions), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onCancel", () => vm.onActionSheetResult?.("")), __Renderer.endComponent();
           return;
         }
         if (mode === "source-settings") {
-          let entered = this.state.sheetEntered, bottomInset = Math.max(20, safeBottom + 12, keyboard + 12), sourceTitle = (_p = vm.sourceLabel) !== null && _p !== void 0 ? _p : "", applyTitle = (_q = vm.applyLabel) !== null && _q !== void 0 ? _q : "", cancelTitle = (_r = vm.cancelLabel) !== null && _r !== void 0 ? _r : "";
+          let entered = this.state.sheetEntered, bottomInset = Math.max(20, safeBottom + 12, keyboard + 12), sourceTitle = vm.sourceLabel ?? "", applyTitle = vm.applyLabel ?? "", cancelTitle = vm.cancelLabel ?? "";
           __Renderer.beginRender(__nodeView1, void 0), __Renderer.setAttributeNumber("paddingBottom", bottomInset), __Renderer.beginRender(__nodeView2, void 0), __Renderer.setAttributeString("backgroundColor", c.overlay), __Renderer.setAttributeNumber("opacity", entered ? 1 : 0), __Renderer.setAttributeFunction("onTap", vm.pending ? void 0 : () => {
-            var _a2;
-            (0, haptics_1.triggerHaptic)("selection"), (_a2 = vm.onCloseOverlay) === null || _a2 === void 0 || _a2.call(vm);
+            (0, haptics_1.triggerHaptic)("selection"), vm.onCloseOverlay?.();
           }), __Renderer.endRender(), __Renderer.beginRender(__nodeGlass1, void 0), __Renderer.setAttributeString("class", dark ? "oc-liquid-glass oc-dark" : "oc-liquid-glass"), __Renderer.setAttributeString("accessibilityLabel", sourceTitle), __Renderer.setAttributeNumber("borderRadius", tokens_1.radii.alert), __Renderer.setAttributeString("backgroundColor", c.alert), __Renderer.setAttributeString("glassTintColor", c.glassTint), __Renderer.setAttributeString("borderColor", c.glassBorder), __Renderer.setAttributeString("boxShadow", dark ? "complex 0 18 44 rgba(0, 0, 0, 0.36)" : "complex 0 16 38 rgba(24, 24, 28, 0.14)"), __Renderer.setAttributeNumber("translationY", entered ? 0 : 160), __Renderer.setAttributeNumber("opacity", entered ? 1 : 0), __Renderer.beginRender(__nodeView3, void 0), __Renderer.beginRender(__nodeView4, void 0), __Renderer.setAttributeString("backgroundColor", c.trackOff), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginRender(__nodeView5, void 0), __Renderer.beginRender(__nodeLabel1, void 0), __Renderer.setAttributeString("value", sourceTitle), __Renderer.setAttributeString("font", tokens_1.type.section), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), vm.sourceDescription && (__Renderer.beginRender(__nodeLabel2, void 0), __Renderer.setAttributeString("value", vm.sourceDescription), __Renderer.setAttributeString("font", tokens_1.type.detail), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender()), __Renderer.endRender(), __Renderer.beginComponent(SegmentedControl_1.SegmentedControl, __componentSegmentedControl1, void 0, void 0), __Renderer.setViewModelProperty("label", sourceTitle), __Renderer.setViewModelProperty("value", this.state.remoteSelected ? "self-hosted" : "bundled"), __Renderer.setViewModelProperty("options", [
-            { id: "bundled", title: (_s = vm.bundledLabel) !== null && _s !== void 0 ? _s : "" },
-            { id: "self-hosted", title: (_t = vm.selfHostedLabel) !== null && _t !== void 0 ? _t : "" }
-          ]), __Renderer.setViewModelProperty("disabled", vm.pending), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (id) => this.setState({ remoteSelected: id === "self-hosted" })), __Renderer.endComponent(), this.state.remoteSelected && (() => {
-            var _a2;
-            __Renderer.beginRender(__nodeView6, void 0), __Renderer.beginComponent(TextField_1.TextField, __componentTextField1, void 0, void 0), __Renderer.setViewModelProperty("label", (_a2 = vm.urlLabel) !== null && _a2 !== void 0 ? _a2 : ""), __Renderer.setViewModelProperty("value", this.state.draftUrl), __Renderer.setViewModelProperty("placeholder", vm.urlPlaceholder), __Renderer.setViewModelProperty("clearTitle", vm.clearLabel), __Renderer.setViewModelProperty("disabled", vm.pending), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (value) => this.setState({ draftUrl: value })), __Renderer.setViewModelProperty("onSubmit", () => {
-              var _a3;
-              vm.pending || ((0, haptics_1.triggerHaptic)("medium"), (_a3 = vm.onSaveSource) === null || _a3 === void 0 || _a3.call(vm, "self-hosted", this.state.draftUrl));
-            }), __Renderer.endComponent(), vm.privacyHint && (__Renderer.beginRender(__nodeLabel3, void 0), __Renderer.setAttributeString("value", vm.privacyHint), __Renderer.setAttributeString("font", tokens_1.type.detail), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender()), __Renderer.endRender();
-          })(), vm.sourceError && (__Renderer.beginComponent(Banner_1.Banner, __componentBanner1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.sourceError), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent()), __Renderer.beginRender(__nodeView7, void 0), __Renderer.beginRender(__nodeView8, void 0), __Renderer.beginComponent(Button_1.Button, __componentButton1, void 0, void 0), __Renderer.setViewModelProperty("title", cancelTitle), __Renderer.setViewModelProperty("disabled", vm.pending), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => {
-            var _a2;
-            (0, haptics_1.triggerHaptic)("selection"), (_a2 = vm.onCloseOverlay) === null || _a2 === void 0 || _a2.call(vm);
+            { id: "bundled", title: vm.bundledLabel ?? "" },
+            { id: "self-hosted", title: vm.selfHostedLabel ?? "" }
+          ]), __Renderer.setViewModelProperty("disabled", vm.pending), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (id) => this.setState({ remoteSelected: id === "self-hosted" })), __Renderer.endComponent(), this.state.remoteSelected && (__Renderer.beginRender(__nodeView6, void 0), __Renderer.beginComponent(TextField_1.TextField, __componentTextField1, void 0, void 0), __Renderer.setViewModelProperty("label", vm.urlLabel ?? ""), __Renderer.setViewModelProperty("value", this.state.draftUrl), __Renderer.setViewModelProperty("placeholder", vm.urlPlaceholder), __Renderer.setViewModelProperty("clearTitle", vm.clearLabel), __Renderer.setViewModelProperty("disabled", vm.pending), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (value) => this.setState({ draftUrl: value })), __Renderer.setViewModelProperty("onSubmit", () => {
+            vm.pending || ((0, haptics_1.triggerHaptic)("medium"), vm.onSaveSource?.("self-hosted", this.state.draftUrl));
+          }), __Renderer.endComponent(), vm.privacyHint && (__Renderer.beginRender(__nodeLabel3, void 0), __Renderer.setAttributeString("value", vm.privacyHint), __Renderer.setAttributeString("font", tokens_1.type.detail), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender()), __Renderer.endRender()), vm.sourceError && (__Renderer.beginComponent(Banner_1.Banner, __componentBanner1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.sourceError), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent()), __Renderer.beginRender(__nodeView7, void 0), __Renderer.beginRender(__nodeView8, void 0), __Renderer.beginComponent(Button_1.Button, __componentButton1, void 0, void 0), __Renderer.setViewModelProperty("title", cancelTitle), __Renderer.setViewModelProperty("disabled", vm.pending), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => {
+            (0, haptics_1.triggerHaptic)("selection"), vm.onCloseOverlay?.();
           }), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.beginRender(__nodeView9, void 0), __Renderer.beginComponent(Button_1.Button, __componentButton2, void 0, void 0), __Renderer.setViewModelProperty("title", applyTitle), __Renderer.setViewModelProperty("disabled", vm.pending), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => {
-            var _a2;
-            (0, haptics_1.triggerHaptic)("medium"), (_a2 = vm.onSaveSource) === null || _a2 === void 0 || _a2.call(vm, this.state.remoteSelected ? "self-hosted" : "bundled", this.state.draftUrl);
+            (0, haptics_1.triggerHaptic)("medium"), vm.onSaveSource?.(this.state.remoteSelected ? "self-hosted" : "bundled", this.state.draftUrl);
           }), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.endRender(), __Renderer.endRender(), __Renderer.endRender();
           return;
         }
         if (vm.showFloatingControl && !vm.welcomeVisible && mode !== "welcome") {
           let pressing = this.state.pillPressing;
-          __Renderer.beginRender(__nodeView10, void 0), __Renderer.beginRender(__nodeGlass2, void 0), __Renderer.setAttributeString("accessibilityLabel", (_u = vm.sourceLabel) !== null && _u !== void 0 ? _u : ""), __Renderer.setAttributeFunction("onTouchStart", () => this.setPillPressing(!0)), __Renderer.setAttributeFunction("onTouchEnd", () => this.setPillPressing(!1)), __Renderer.setAttributeFunction("onTap", () => {
-            var _a2;
-            (0, haptics_1.triggerHaptic)("light"), (_a2 = vm.onOpenSourceSettings) === null || _a2 === void 0 || _a2.call(vm);
+          __Renderer.beginRender(__nodeView10, void 0), __Renderer.beginRender(__nodeGlass2, void 0), __Renderer.setAttributeString("accessibilityLabel", vm.sourceLabel ?? ""), __Renderer.setAttributeFunction("onTouchStart", () => this.setPillPressing(!0)), __Renderer.setAttributeFunction("onTouchEnd", () => this.setPillPressing(!1)), __Renderer.setAttributeFunction("onTap", () => {
+            (0, haptics_1.triggerHaptic)("light"), vm.onOpenSourceSettings?.();
           }), __Renderer.setAttributeString("glassTintColor", c.glassTint), __Renderer.setAttributeString("borderColor", c.glassBorder), __Renderer.setAttributeNumber("scaleX", pressing ? 0.92 : 1), __Renderer.setAttributeNumber("scaleY", pressing ? 0.92 : 1), __Renderer.setAttributeString("boxShadow", dark ? "complex 0 6 20 rgba(0, 0, 0, 0.30)" : "complex 0 4 16 rgba(24, 24, 28, 0.12)"), __Renderer.beginComponent(Icon_1.Icon, __componentIcon1, void 0, void 0), __Renderer.setViewModelProperty("color", c.ink), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.endRender();
         }
       }
@@ -18984,9 +18964,9 @@ var require_MobileNativeOverlay = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/PluginsSettingsSurface.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/PluginsSettingsSurface.js
 var require_PluginsSettingsSurface = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/PluginsSettingsSurface.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/PluginsSettingsSurface.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/PluginsSettingsSurface";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.PluginsSettingsSurface = void 0;
@@ -19047,13 +19027,13 @@ var require_PluginsSettingsSurface = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/RemoteAccessSettingsSurface.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/RemoteAccessSettingsSurface.js
 var require_RemoteAccessSettingsSurface = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/RemoteAccessSettingsSurface.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/RemoteAccessSettingsSurface.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/RemoteAccessSettingsSurface";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.RemoteAccessSettingsSurface = void 0;
-    var __Renderer = require_JSX2().jsx, __nodeView1 = __Renderer.makeNodePrototype("view", ["flexShrink", 0, "padding", 8, "borderRadius", 12, "borderWidth", 0.5, "alignItems", "center", "justifyContent", "center", "accessibilityId", "oc-relay-qr-code"]), __nodeImage1 = __Renderer.makeNodePrototype("image", ["objectFit", "contain", "accessibilityNavigation", "ignored"]), __nodeView2 = __Renderer.makeNodePrototype("view", ["justifyContent", "center", "alignItems", "center", "accessibilityNavigation", "ignored"]), __nodeView3 = __Renderer.makeNodePrototype("view", ["flexDirection", "row"]), __nodeView4 = __Renderer.makeNodePrototype("view"), __componentIcon1 = __Renderer.makeComponentPrototype(["name", "grid", "size", 26]), __nodeView5 = __Renderer.makeNodePrototype("view", ["width", "100%", "gap", 24]), __nodeView6 = __Renderer.makeNodePrototype("view", ["width", "100%", "gap", 6]), __nodeLabel1 = __Renderer.makeNodePrototype("label", ["accessibilityCategory", "header", "numberOfLines", 0]), __nodeLabel2 = __Renderer.makeNodePrototype("label", ["numberOfLines", 0]), __componentBanner1 = __Renderer.makeComponentPrototype(["id", "oc-relay-error", "tone", "danger"]), __componentBanner2 = __Renderer.makeComponentPrototype(["id", "oc-relay-notice", "tone", "success"]), __componentSettingsGroup1 = __Renderer.makeComponentPrototype(["title", ""]), __componentSettingsFormRow1 = __Renderer.makeComponentPrototype(), __componentToggle1 = __Renderer.makeComponentPrototype(["id", "oc-relay-enable-toggle"]), __nodeView7 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __nodeView8 = __Renderer.makeNodePrototype("view", ["height", 0.5]), __nodeView9 = __Renderer.makeNodePrototype("view", ["width", "100%", "paddingTop", 18, "paddingBottom", 18, "justifyContent", "space-between", "gap", 20]), __nodeView10 = __Renderer.makeNodePrototype("view", ["flexGrow", 1, "flexShrink", 1, "minWidth", 0, "gap", 10]), __nodeView11 = __Renderer.makeNodePrototype("view", ["flexDirection", "row", "alignItems", "center", "justifyContent", "space-between", "gap", 8]), __nodeLabel3 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeView12 = __Renderer.makeNodePrototype("view", ["flexDirection", "row", "alignItems", "center", "gap", 6]), __nodeView13 = __Renderer.makeNodePrototype("view", ["width", 7, "height", 7, "borderRadius", 3.5, "accessibilityNavigation", "ignored"]), __nodeLabel4 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeView14 = __Renderer.makeNodePrototype("view", ["borderWidth", 0.5, "paddingLeft", 14, "paddingRight", 14, "flexDirection", "row", "alignItems", "center"]), __nodeTextfield1 = __Renderer.makeNodePrototype("textfield", ["accessibilityId", "oc-relay-device-name", "flexGrow", 1, "flexBasis", 0, "minWidth", 0, "contentType", "noSuggestions", "autocapitalization", "none", "autocorrection", "none"]), __nodeView15 = __Renderer.makeNodePrototype("view", ["flexDirection", "row", "flexWrap", "wrap", "alignItems", "center", "gap", 0]), __nodeLabel5 = __Renderer.makeNodePrototype("label", ["numberOfLines", 0]), __nodeView16 = __Renderer.makeNodePrototype("view", ["class", "oc-ghost-button", "accessibilityId", "oc-relay-copy-pair-url", "accessibilityCategory", "button", "paddingTop", 2, "paddingBottom", 2]), __nodeLabel6 = __Renderer.makeNodePrototype("label"), __nodeLabel7 = __Renderer.makeNodePrototype("label"), __nodeView17 = __Renderer.makeNodePrototype("view", ["justifyContent", "center"]), __componentSettingsGroup2 = __Renderer.makeComponentPrototype(["title", ""]), __componentSettingsFormRow2 = __Renderer.makeComponentPrototype(), __componentButton1 = __Renderer.makeComponentPrototype(["id", "oc-relay-hub-action", "size", "sm"]), __componentSettingsGroup3 = __Renderer.makeComponentPrototype(), __nodeView18 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __nodeView19 = __Renderer.makeNodePrototype("view", ["height", 0.5, "marginLeft", 16, "marginRight", 16]), __nodeView20 = __Renderer.makeNodePrototype("view", ["paddingTop", 12, "paddingBottom", 12, "flexDirection", "row", "alignItems", "center", "justifyContent", "space-between", "gap", 12]), __nodeView21 = __Renderer.makeNodePrototype("view", ["flexDirection", "row", "alignItems", "center", "gap", 12, "flexGrow", 1, "flexShrink", 1, "minWidth", 0]), __nodeView22 = __Renderer.makeNodePrototype("view", ["paddingLeft", 10, "paddingRight", 10, "paddingTop", 5, "paddingBottom", 5, "borderRadius", 8, "borderWidth", 0.5]), __nodeLabel8 = __Renderer.makeNodePrototype("label", ["class", "oc-mono"]), __nodeView23 = __Renderer.makeNodePrototype("view", ["flexGrow", 1, "flexShrink", 1, "minWidth", 0, "gap", 2]), __nodeLabel9 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeLabel10 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __componentButton2 = __Renderer.makeComponentPrototype(["variant", "primary", "size", "sm"]), __componentSettingsGroup4 = __Renderer.makeComponentPrototype(), __componentSettingsFormRow3 = __Renderer.makeComponentPrototype(), __nodeView24 = __Renderer.makeNodePrototype("view", ["flexDirection", "row", "alignItems", "center", "gap", 8]), __componentSegmentedControl1 = __Renderer.makeComponentPrototype(["id", "oc-relay-share-mode"]), __componentButton3 = __Renderer.makeComponentPrototype(["id", "oc-relay-create-share", "variant", "secondary", "size", "sm", "leadingIcon", "plus"]), __nodeView25 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __nodeView26 = __Renderer.makeNodePrototype("view", ["height", 0.5, "marginLeft", 16, "marginRight", 16]), __nodeView27 = __Renderer.makeNodePrototype("view", ["paddingTop", 12, "paddingBottom", 12, "flexDirection", "row", "alignItems", "center", "gap", 10]), __nodeView28 = __Renderer.makeNodePrototype("view", ["flexGrow", 1, "flexShrink", 1, "minWidth", 0, "paddingLeft", 12, "paddingRight", 12, "paddingTop", 7, "paddingBottom", 7, "borderWidth", 0.5]), __nodeLabel11 = __Renderer.makeNodePrototype("label", ["class", "oc-mono", "accessibilityId", "oc-relay-latest-share-url", "numberOfLines", 1]), __componentButton4 = __Renderer.makeComponentPrototype(["id", "oc-relay-copy-latest-share", "variant", "secondary", "size", "sm"]), __nodeView29 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __nodeView30 = __Renderer.makeNodePrototype("view", ["height", 0.5, "marginLeft", 16, "marginRight", 16]), __nodeView31 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __nodeView32 = __Renderer.makeNodePrototype("view", ["height", 0.5, "marginLeft", 16, "marginRight", 16]), __nodeView33 = __Renderer.makeNodePrototype("view", ["paddingTop", 10, "paddingBottom", 10, "flexDirection", "row", "alignItems", "center", "justifyContent", "space-between", "gap", 10]), __nodeView34 = __Renderer.makeNodePrototype("view", ["flexGrow", 1, "flexShrink", 1, "minWidth", 0, "gap", 2]), __nodeLabel12 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeLabel13 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeView35 = __Renderer.makeNodePrototype("view", ["flexDirection", "row", "alignItems", "center", "gap", 8]), __componentButton5 = __Renderer.makeComponentPrototype(["variant", "quiet", "size", "sm"]), __componentButton6 = __Renderer.makeComponentPrototype(["variant", "danger", "size", "sm"]), __componentSettingsGroup5 = __Renderer.makeComponentPrototype(["title", ""]), __nodeView36 = __Renderer.makeNodePrototype("view", ["class", "oc-settings-row", "accessibilityId", "oc-relay-advanced-disclosure", "accessibilityCategory", "button", "minHeight", 44, "flexDirection", "row", "alignItems", "center", "justifyContent", "space-between"]), __nodeLabel14 = __Renderer.makeNodePrototype("label"), __componentIcon2 = __Renderer.makeComponentPrototype(["size", 14]), __nodeView37 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __nodeView38 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __componentSettingsFormRow4 = __Renderer.makeComponentPrototype(), __componentToggle2 = __Renderer.makeComponentPrototype(["id", "oc-relay-require-approval"]), __componentSettingsFormRow5 = __Renderer.makeComponentPrototype(), __nodeView39 = __Renderer.makeNodePrototype("view", ["width", "100%", "gap", 6]), __nodeView40 = __Renderer.makeNodePrototype("view", ["paddingLeft", 10, "paddingRight", 10, "paddingTop", 7, "paddingBottom", 7, "borderWidth", 0.5, "flexDirection", "row", "alignItems", "center", "justifyContent", "space-between", "gap", 10]), __nodeLabel15 = __Renderer.makeNodePrototype("label"), __nodeLabel16 = __Renderer.makeNodePrototype("label", ["class", "oc-mono", "flexShrink", 1, "numberOfLines", 1]), __componentButton7 = __Renderer.makeComponentPrototype(["id", "oc-relay-refresh-routes", "variant", "quiet", "size", "sm"]), __nodeView41 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __nodeView42 = __Renderer.makeNodePrototype("view", ["height", 0.5, "marginLeft", 16, "marginRight", 16]), __componentTextField1 = __Renderer.makeComponentPrototype(["id", "oc-relay-custom-origin", "leadingIcon", "server", "contentType", "url", "autocapitalization", "none"]), Component_1 = require_Component(), SystemFont_1 = require_SystemFont(), Banner_1 = require_Banner(), Button_1 = require_Button(), haptics_1 = require_haptics(), Icon_1 = require_Icon(), SegmentedControl_1 = require_SegmentedControl(), SettingsGroup_1 = require_SettingsGroup(), TextField_1 = require_TextField(), Toggle_1 = require_Toggle(), tokens_1 = require_tokens(), isWeb = typeof globalThis.document < "u", RemoteAccessSettingsSurface2 = class extends Component_1.StatefulComponent {
+    var __Renderer = require_JSX2().jsx, __nodeView1 = __Renderer.makeNodePrototype("view", ["flexShrink", 0, "padding", 8, "borderRadius", 12, "borderWidth", 0.5, "alignItems", "center", "justifyContent", "center", "accessibilityId", "oc-relay-qr-code"]), __nodeImage1 = __Renderer.makeNodePrototype("image", ["objectFit", "contain", "accessibilityNavigation", "ignored"]), __nodeView2 = __Renderer.makeNodePrototype("view", ["justifyContent", "center", "alignItems", "center", "accessibilityNavigation", "ignored"]), __nodeView3 = __Renderer.makeNodePrototype("view", ["flexDirection", "row"]), __nodeView4 = __Renderer.makeNodePrototype("view"), __componentIcon1 = __Renderer.makeComponentPrototype(["name", "grid", "size", 26]), __nodeView5 = __Renderer.makeNodePrototype("view", ["width", "100%", "gap", 24]), __nodeView6 = __Renderer.makeNodePrototype("view", ["width", "100%", "gap", 6]), __nodeLabel1 = __Renderer.makeNodePrototype("label", ["accessibilityCategory", "header", "numberOfLines", 0]), __nodeLabel2 = __Renderer.makeNodePrototype("label", ["numberOfLines", 0]), __componentBanner1 = __Renderer.makeComponentPrototype(["id", "oc-relay-error", "tone", "danger"]), __componentBanner2 = __Renderer.makeComponentPrototype(["id", "oc-relay-notice", "tone", "success"]), __componentSettingsGroup1 = __Renderer.makeComponentPrototype(["title", ""]), __componentSettingsFormRow1 = __Renderer.makeComponentPrototype(), __componentToggle1 = __Renderer.makeComponentPrototype(["id", "oc-relay-enable-toggle"]), __nodeView7 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __nodeView8 = __Renderer.makeNodePrototype("view", ["height", 0.5]), __nodeView9 = __Renderer.makeNodePrototype("view", ["width", "100%", "paddingTop", 18, "paddingBottom", 18, "justifyContent", "space-between", "gap", 20]), __nodeView10 = __Renderer.makeNodePrototype("view", ["flexGrow", 1, "flexShrink", 1, "minWidth", 0, "gap", 10]), __nodeView11 = __Renderer.makeNodePrototype("view", ["flexDirection", "row", "alignItems", "center", "justifyContent", "space-between", "gap", 8]), __nodeLabel3 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeView12 = __Renderer.makeNodePrototype("view", ["flexDirection", "row", "alignItems", "center", "gap", 6]), __nodeView13 = __Renderer.makeNodePrototype("view", ["width", 7, "height", 7, "borderRadius", 3.5, "accessibilityNavigation", "ignored"]), __nodeLabel4 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeView14 = __Renderer.makeNodePrototype("view", ["borderWidth", 0.5, "paddingLeft", 14, "paddingRight", 14, "flexDirection", "row", "alignItems", "center"]), __nodeTextfield1 = __Renderer.makeNodePrototype("textfield", ["accessibilityId", "oc-relay-device-name", "flexGrow", 1, "flexBasis", 0, "minWidth", 0, "contentType", "noSuggestions", "autocapitalization", "none", "autocorrection", "none"]), __nodeView15 = __Renderer.makeNodePrototype("view", ["flexDirection", "row", "flexWrap", "wrap", "alignItems", "center", "gap", 0]), __nodeLabel5 = __Renderer.makeNodePrototype("label", ["numberOfLines", 0]), __nodeView16 = __Renderer.makeNodePrototype("view", ["class", "oc-ghost-button", "accessibilityId", "oc-relay-copy-pair-url", "accessibilityCategory", "button", "paddingTop", 2, "paddingBottom", 2]), __nodeLabel6 = __Renderer.makeNodePrototype("label"), __nodeLabel7 = __Renderer.makeNodePrototype("label"), __nodeView17 = __Renderer.makeNodePrototype("view", ["justifyContent", "center"]), __nodeView18 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __componentSettingsFormRow2 = __Renderer.makeComponentPrototype(), __componentSegmentedControl1 = __Renderer.makeComponentPrototype(["id", "oc-relay-sleep-protection"]), __componentSettingsGroup2 = __Renderer.makeComponentPrototype(["title", ""]), __componentSettingsFormRow3 = __Renderer.makeComponentPrototype(), __nodeView19 = __Renderer.makeNodePrototype("view", ["flexDirection", "row", "alignItems", "center", "gap", 8]), __componentButton1 = __Renderer.makeComponentPrototype(["id", "oc-relay-hub-rebind", "variant", "secondary", "size", "sm", "leadingIcon", "key"]), __componentButton2 = __Renderer.makeComponentPrototype(["id", "oc-relay-hub-action", "size", "sm"]), __componentSettingsGroup3 = __Renderer.makeComponentPrototype(), __nodeView20 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __nodeView21 = __Renderer.makeNodePrototype("view", ["height", 0.5, "marginLeft", 16, "marginRight", 16]), __nodeView22 = __Renderer.makeNodePrototype("view", ["paddingTop", 12, "paddingBottom", 12, "flexDirection", "row", "alignItems", "center", "justifyContent", "space-between", "gap", 12]), __nodeView23 = __Renderer.makeNodePrototype("view", ["flexDirection", "row", "alignItems", "center", "gap", 12, "flexGrow", 1, "flexShrink", 1, "minWidth", 0]), __nodeView24 = __Renderer.makeNodePrototype("view", ["paddingLeft", 10, "paddingRight", 10, "paddingTop", 5, "paddingBottom", 5, "borderRadius", 8, "borderWidth", 0.5]), __nodeLabel8 = __Renderer.makeNodePrototype("label", ["class", "oc-mono"]), __nodeView25 = __Renderer.makeNodePrototype("view", ["flexGrow", 1, "flexShrink", 1, "minWidth", 0, "gap", 2]), __nodeLabel9 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeLabel10 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __componentButton3 = __Renderer.makeComponentPrototype(["variant", "primary", "size", "sm"]), __componentSettingsGroup4 = __Renderer.makeComponentPrototype(), __nodeView26 = __Renderer.makeNodePrototype("view", ["paddingTop", 12, "paddingBottom", 12, "justifyContent", "center"]), __nodeLabel11 = __Renderer.makeNodePrototype("label", ["numberOfLines", 0]), __nodeView27 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __nodeView28 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __nodeView29 = __Renderer.makeNodePrototype("view", ["height", 0.5, "marginLeft", 16, "marginRight", 16]), __nodeView30 = __Renderer.makeNodePrototype("view", ["paddingTop", 11, "paddingBottom", 11, "flexDirection", "row", "alignItems", "center", "justifyContent", "space-between", "gap", 12]), __nodeView31 = __Renderer.makeNodePrototype("view", ["flexDirection", "row", "alignItems", "center", "gap", 10, "flexGrow", 1, "flexShrink", 1, "minWidth", 0]), __nodeView32 = __Renderer.makeNodePrototype("view", ["width", 8, "height", 8, "borderRadius", 4, "flexShrink", 0, "accessibilityNavigation", "ignored"]), __nodeView33 = __Renderer.makeNodePrototype("view", ["flexGrow", 1, "flexShrink", 1, "minWidth", 0, "gap", 2]), __nodeLabel12 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeLabel13 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __componentButton4 = __Renderer.makeComponentPrototype(["variant", "danger", "size", "sm"]), __componentSettingsGroup5 = __Renderer.makeComponentPrototype(), __componentSettingsFormRow4 = __Renderer.makeComponentPrototype(), __nodeView34 = __Renderer.makeNodePrototype("view", ["flexDirection", "row", "alignItems", "center", "gap", 8]), __componentSegmentedControl2 = __Renderer.makeComponentPrototype(["id", "oc-relay-share-mode"]), __componentButton5 = __Renderer.makeComponentPrototype(["id", "oc-relay-create-share", "variant", "secondary", "size", "sm", "leadingIcon", "plus"]), __nodeView35 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __nodeView36 = __Renderer.makeNodePrototype("view", ["height", 0.5, "marginLeft", 16, "marginRight", 16]), __nodeView37 = __Renderer.makeNodePrototype("view", ["paddingTop", 12, "paddingBottom", 12, "flexDirection", "row", "alignItems", "center", "gap", 10]), __nodeView38 = __Renderer.makeNodePrototype("view", ["flexGrow", 1, "flexShrink", 1, "minWidth", 0, "paddingLeft", 12, "paddingRight", 12, "paddingTop", 7, "paddingBottom", 7, "borderWidth", 0.5]), __nodeLabel14 = __Renderer.makeNodePrototype("label", ["class", "oc-mono", "accessibilityId", "oc-relay-latest-share-url", "numberOfLines", 1]), __componentButton6 = __Renderer.makeComponentPrototype(["id", "oc-relay-copy-latest-share", "variant", "secondary", "size", "sm"]), __nodeView39 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __nodeView40 = __Renderer.makeNodePrototype("view", ["height", 0.5, "marginLeft", 16, "marginRight", 16]), __nodeView41 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __nodeView42 = __Renderer.makeNodePrototype("view", ["height", 0.5, "marginLeft", 16, "marginRight", 16]), __nodeView43 = __Renderer.makeNodePrototype("view", ["paddingTop", 10, "paddingBottom", 10, "flexDirection", "row", "alignItems", "center", "justifyContent", "space-between", "gap", 10]), __nodeView44 = __Renderer.makeNodePrototype("view", ["flexGrow", 1, "flexShrink", 1, "minWidth", 0, "gap", 2]), __nodeLabel15 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeLabel16 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeView45 = __Renderer.makeNodePrototype("view", ["flexDirection", "row", "alignItems", "center", "gap", 8]), __componentButton7 = __Renderer.makeComponentPrototype(["variant", "quiet", "size", "sm"]), __componentButton8 = __Renderer.makeComponentPrototype(["variant", "danger", "size", "sm"]), __componentSettingsGroup6 = __Renderer.makeComponentPrototype(["title", ""]), __nodeView46 = __Renderer.makeNodePrototype("view", ["class", "oc-settings-row", "accessibilityId", "oc-relay-advanced-disclosure", "accessibilityCategory", "button", "minHeight", 44, "flexDirection", "row", "alignItems", "center", "justifyContent", "space-between"]), __nodeLabel17 = __Renderer.makeNodePrototype("label"), __componentIcon2 = __Renderer.makeComponentPrototype(["size", 14]), __nodeView47 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __nodeView48 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __componentSettingsFormRow5 = __Renderer.makeComponentPrototype(), __componentToggle2 = __Renderer.makeComponentPrototype(["id", "oc-relay-require-approval"]), __componentSettingsFormRow6 = __Renderer.makeComponentPrototype(), __nodeView49 = __Renderer.makeNodePrototype("view", ["width", "100%", "gap", 6]), __nodeView50 = __Renderer.makeNodePrototype("view", ["paddingLeft", 10, "paddingRight", 10, "paddingTop", 7, "paddingBottom", 7, "borderWidth", 0.5, "flexDirection", "row", "alignItems", "center", "justifyContent", "space-between", "gap", 10]), __nodeLabel18 = __Renderer.makeNodePrototype("label"), __nodeLabel19 = __Renderer.makeNodePrototype("label", ["class", "oc-mono", "flexShrink", 1, "numberOfLines", 1]), __componentButton9 = __Renderer.makeComponentPrototype(["id", "oc-relay-refresh-routes", "variant", "quiet", "size", "sm"]), __nodeView51 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __nodeView52 = __Renderer.makeNodePrototype("view", ["height", 0.5, "marginLeft", 16, "marginRight", 16]), __componentTextField1 = __Renderer.makeComponentPrototype(["id", "oc-relay-custom-origin", "leadingIcon", "server", "contentType", "url", "autocapitalization", "none"]), Component_1 = require_Component(), SystemFont_1 = require_SystemFont(), Banner_1 = require_Banner(), Button_1 = require_Button(), haptics_1 = require_haptics(), Icon_1 = require_Icon(), SegmentedControl_1 = require_SegmentedControl(), SettingsGroup_1 = require_SettingsGroup(), TextField_1 = require_TextField(), Toggle_1 = require_Toggle(), tokens_1 = require_tokens(), isWeb = typeof globalThis.document < "u", RemoteAccessSettingsSurface2 = class extends Component_1.StatefulComponent {
       constructor() {
         super(...arguments), this.state = {
           advancedOpen: !1
@@ -19083,48 +19063,62 @@ var require_RemoteAccessSettingsSurface = __commonJS({
             __Renderer.beginComponent(Toggle_1.Toggle, __componentToggle1, void 0, void 0), __Renderer.setViewModelProperty("label", vm.enableTitle), __Renderer.setViewModelProperty("value", vm.enabled), __Renderer.setViewModelProperty("disabled", !!vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (next) => vm.onToggleEnabled(next, vm.customRelayUrl)), __Renderer.endComponent();
           }), __Renderer.endComponent(), vm.enabled && (__Renderer.beginRender(__nodeView7, void 0), __Renderer.beginRender(__nodeView8, void 0), __Renderer.setAttributeNumber("marginLeft", m.sizes.rowPaddingX), __Renderer.setAttributeNumber("marginRight", m.sizes.rowPaddingX), __Renderer.setAttributeString("backgroundColor", c.border), __Renderer.endRender(), __Renderer.beginRender(__nodeView9, void 0), __Renderer.setAttributeNumber("paddingLeft", m.sizes.rowPaddingX), __Renderer.setAttributeNumber("paddingRight", m.sizes.rowPaddingX), __Renderer.setAttributeString("flexDirection", stackedHero ? "column" : "row"), __Renderer.setAttributeString("alignItems", stackedHero ? "stretch" : "center"), __Renderer.beginRender(__nodeView10, void 0), __Renderer.beginRender(__nodeView11, void 0), __Renderer.beginRender(__nodeLabel3, void 0), __Renderer.setAttributeString("value", vm.deviceNameLabel), __Renderer.setAttributeString("font", m.fonts.rowTitle), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.beginRender(__nodeView12, void 0), __Renderer.beginRender(__nodeView13, void 0), __Renderer.setAttributeString("backgroundColor", vm.connected ? c.success : c.warning), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel4, void 0), __Renderer.setAttributeString("value", vm.connected ? vm.statusTitle : vm.statusDetail), __Renderer.setAttributeString("font", m.fonts.caption), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginRender(__nodeView14, void 0), __Renderer.setAttributeNumber("borderRadius", tokens_1.radii.pill), __Renderer.setAttributeString("borderColor", c.border), __Renderer.setAttributeString("backgroundColor", c.recessed), __Renderer.beginRender(__nodeTextfield1, void 0), __Renderer.setAttributeString("accessibilityLabel", vm.deviceNameLabel), __Renderer.setAttributeString("value", vm.deviceName), __Renderer.setAttributeString("placeholder", vm.deviceNamePlaceholder), __Renderer.setAttributeString("placeholderColor", c.disabled), __Renderer.setAttributeNumber("height", pillInputHeight), __Renderer.setAttributeString("color", c.ink), __Renderer.setAttributeString("font", m.fonts.body), __Renderer.setAttribute("enabled", !vm.busy), __Renderer.setAttributeFunction("onChange", (ev) => vm.onChangeDeviceName(ev.text)), __Renderer.setAttributeFunction("onReturn", () => vm.onSubmitDeviceName(vm.deviceName)), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginRender(__nodeView15, void 0), __Renderer.beginRender(__nodeLabel5, void 0), __Renderer.setAttributeString("value", vm.scanInlinePrefix), __Renderer.setAttributeString("font", m.fonts.detail), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.beginRender(__nodeView16, void 0), __Renderer.setAttributeString("accessibilityLabel", vm.copyLinkInlineLabel), __Renderer.setAttribute("accessibilityStateDisabled", !vm.pairingUrl), __Renderer.setAttributeFunction("onTap", vm.pairingUrl ? () => {
             (0, haptics_1.triggerHaptic)("selection"), vm.onCopyPairingUrl();
-          } : void 0), __Renderer.beginRender(__nodeLabel6, void 0), __Renderer.setAttributeString("value", vm.pairingCopied ? vm.copiedInlineLabel : vm.copyLinkInlineLabel), __Renderer.setAttributeString("font", m.fonts.detail), __Renderer.setAttributeString("color", c.accent), __Renderer.endRender(), __Renderer.endRender(), vm.scanInlineSuffix && (__Renderer.beginRender(__nodeLabel7, void 0), __Renderer.setAttributeString("value", vm.scanInlineSuffix), __Renderer.setAttributeString("font", m.fonts.detail), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender()), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginRender(__nodeView17, void 0), __Renderer.setAttributeString("alignItems", stackedHero ? "center" : "flex-end"), this.renderCompactQr(dark, vm.qrSvgDataUri, vm.qrMatrix, vm.refreshQrLabel, vm.onRefreshQr), __Renderer.endRender(), __Renderer.endRender(), __Renderer.endRender());
+          } : void 0), __Renderer.beginRender(__nodeLabel6, void 0), __Renderer.setAttributeString("value", vm.pairingCopied ? vm.copiedInlineLabel : vm.copyLinkInlineLabel), __Renderer.setAttributeString("font", m.fonts.detail), __Renderer.setAttributeString("color", c.accent), __Renderer.endRender(), __Renderer.endRender(), vm.scanInlineSuffix && (__Renderer.beginRender(__nodeLabel7, void 0), __Renderer.setAttributeString("value", vm.scanInlineSuffix), __Renderer.setAttributeString("font", m.fonts.detail), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender()), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginRender(__nodeView17, void 0), __Renderer.setAttributeString("alignItems", stackedHero ? "center" : "flex-end"), this.renderCompactQr(dark, vm.qrSvgDataUri, vm.qrMatrix, vm.refreshQrLabel, vm.onRefreshQr), __Renderer.endRender(), __Renderer.endRender(), vm.sleepProtectionTitle && vm.onChangeSleepProtectionMode && vm.sleepModeAcLabel && vm.sleepModeAlwaysLabel && vm.sleepModeOffLabel && (__Renderer.beginRender(__nodeView18, void 0), __Renderer.beginComponent(SettingsGroup_1.SettingsFormRow, __componentSettingsFormRow2, void 0, void 0), __Renderer.setViewModelProperty("title", vm.sleepProtectionStatusLabel ? `${vm.sleepProtectionTitle} \xB7 ${vm.sleepProtectionStatusLabel}` : vm.sleepProtectionTitle), __Renderer.setViewModelProperty("description", vm.sleepProtectionDescription), __Renderer.setViewModelProperty("divider", !0), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
+            __Renderer.beginComponent(SegmentedControl_1.SegmentedControl, __componentSegmentedControl1, void 0, void 0), __Renderer.setViewModelProperty("label", vm.sleepProtectionTitle), __Renderer.setViewModelProperty("value", vm.sleepProtectionMode ?? "ac"), __Renderer.setViewModelProperty("options", [
+              { id: "ac", title: vm.sleepModeAcLabel },
+              { id: "always", title: vm.sleepModeAlwaysLabel },
+              { id: "off", title: vm.sleepModeOffLabel }
+            ]), __Renderer.setViewModelProperty("compact", !0), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (next) => vm.onChangeSleepProtectionMode?.(next)), __Renderer.endComponent();
+          }), __Renderer.endComponent(), __Renderer.endRender()), __Renderer.endRender());
         }), __Renderer.endComponent(), vm.enabled && (__Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup2, void 0, void 0), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
-          __Renderer.beginComponent(SettingsGroup_1.SettingsFormRow, __componentSettingsFormRow2, void 0, void 0), __Renderer.setViewModelProperty("title", vm.hubTitle), __Renderer.setViewModelProperty("description", vm.hubDescription), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
-            __Renderer.beginComponent(Button_1.Button, __componentButton1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.hubActionLabel), __Renderer.setViewModelProperty("variant", vm.hubClaimed ? "quiet" : "secondary"), __Renderer.setViewModelProperty("leadingIcon", vm.hubClaimed ? "external" : "sparkle"), __Renderer.setViewModelProperty("disabled", !!(vm.claimingHub || vm.busy)), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => {
+          __Renderer.beginComponent(SettingsGroup_1.SettingsFormRow, __componentSettingsFormRow3, void 0, void 0), __Renderer.setViewModelProperty("title", vm.hubTitle), __Renderer.setViewModelProperty("description", vm.hubDescription), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
+            __Renderer.beginRender(__nodeView19, void 0), vm.hubClaimed && vm.hubRebindActionLabel && vm.onHubRebindAction && (__Renderer.beginComponent(Button_1.Button, __componentButton1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.hubRebindActionLabel), __Renderer.setViewModelProperty("disabled", !!(vm.claimingHub || vm.busy)), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => {
+              (0, haptics_1.triggerHaptic)("selection"), vm.onHubRebindAction?.();
+            }), __Renderer.endComponent()), __Renderer.beginComponent(Button_1.Button, __componentButton2, void 0, void 0), __Renderer.setViewModelProperty("title", vm.hubActionLabel), __Renderer.setViewModelProperty("variant", vm.hubClaimed ? "quiet" : "secondary"), __Renderer.setViewModelProperty("leadingIcon", vm.hubClaimed ? "external" : "key"), __Renderer.setViewModelProperty("disabled", !!(vm.claimingHub || vm.busy)), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => {
               (0, haptics_1.triggerHaptic)("selection"), vm.onHubAction();
-            }), __Renderer.endComponent();
+            }), __Renderer.endComponent(), __Renderer.endRender();
           }), __Renderer.endComponent();
         }), __Renderer.endComponent()), vm.enabled && vm.pendingApprovals.length > 0 && (__Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup3, void 0, void 0), __Renderer.setViewModelProperty("title", vm.approvalsGroupTitle), __Renderer.setViewModelProperty("description", vm.approvalsGroupDescription), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
           vm.pendingApprovals.forEach((item, index) => {
-            __Renderer.beginRender(__nodeView18, item.shortCode), index > 0 && (__Renderer.beginRender(__nodeView19, void 0), __Renderer.setAttributeString("backgroundColor", c.border), __Renderer.endRender()), __Renderer.beginRender(__nodeView20, void 0), __Renderer.setAttributeNumber("minHeight", m.sizes.rowMinHeight), __Renderer.setAttributeNumber("paddingLeft", m.sizes.rowPaddingX), __Renderer.setAttributeNumber("paddingRight", m.sizes.rowPaddingX), __Renderer.beginRender(__nodeView21, void 0), __Renderer.beginRender(__nodeView22, void 0), __Renderer.setAttributeString("backgroundColor", c.warningSurface), __Renderer.setAttributeString("borderColor", c.border), __Renderer.beginRender(__nodeLabel8, void 0), __Renderer.setAttributeString("value", item.shortCode), __Renderer.setAttributeString("font", (0, SystemFont_1.systemSemiboldFont)(14)), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginRender(__nodeView23, void 0), __Renderer.beginRender(__nodeLabel9, void 0), __Renderer.setAttributeString("value", item.label), __Renderer.setAttributeString("font", m.fonts.rowTitle), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel10, void 0), __Renderer.setAttributeString("value", item.expiresLabel), __Renderer.setAttributeString("font", m.fonts.detail), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginComponent(Button_1.Button, __componentButton2, void 0, void 0), __Renderer.setViewModelProperty("id", `oc-relay-approve-${item.shortCode}`), __Renderer.setViewModelProperty("title", vm.approveButtonLabel), __Renderer.setViewModelProperty("disabled", !!vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => {
+            __Renderer.beginRender(__nodeView20, item.shortCode), index > 0 && (__Renderer.beginRender(__nodeView21, void 0), __Renderer.setAttributeString("backgroundColor", c.border), __Renderer.endRender()), __Renderer.beginRender(__nodeView22, void 0), __Renderer.setAttributeNumber("minHeight", m.sizes.rowMinHeight), __Renderer.setAttributeNumber("paddingLeft", m.sizes.rowPaddingX), __Renderer.setAttributeNumber("paddingRight", m.sizes.rowPaddingX), __Renderer.beginRender(__nodeView23, void 0), __Renderer.beginRender(__nodeView24, void 0), __Renderer.setAttributeString("backgroundColor", c.warningSurface), __Renderer.setAttributeString("borderColor", c.border), __Renderer.beginRender(__nodeLabel8, void 0), __Renderer.setAttributeString("value", item.shortCode), __Renderer.setAttributeString("font", (0, SystemFont_1.systemSemiboldFont)(14)), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginRender(__nodeView25, void 0), __Renderer.beginRender(__nodeLabel9, void 0), __Renderer.setAttributeString("value", item.label), __Renderer.setAttributeString("font", m.fonts.rowTitle), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel10, void 0), __Renderer.setAttributeString("value", item.expiresLabel), __Renderer.setAttributeString("font", m.fonts.detail), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginComponent(Button_1.Button, __componentButton3, void 0, void 0), __Renderer.setViewModelProperty("id", `oc-relay-approve-${item.shortCode}`), __Renderer.setViewModelProperty("title", vm.approveButtonLabel), __Renderer.setViewModelProperty("disabled", !!vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => {
               (0, haptics_1.triggerHaptic)("medium"), vm.onApproveDevice(item.shortCode);
             }), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.endRender();
           });
-        }), __Renderer.endComponent()), vm.enabled && (__Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup4, void 0, void 0), __Renderer.setViewModelProperty("title", vm.shareGroupTitle), __Renderer.setViewModelProperty("description", vm.shareGroupDescription), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
-          __Renderer.beginComponent(SettingsGroup_1.SettingsFormRow, __componentSettingsFormRow3, void 0, void 0), __Renderer.setViewModelProperty("title", vm.sharePermissionTitle), __Renderer.setViewModelProperty("description", vm.sharePermissionDescription), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
-            __Renderer.beginRender(__nodeView24, void 0), __Renderer.beginComponent(SegmentedControl_1.SegmentedControl, __componentSegmentedControl1, void 0, void 0), __Renderer.setViewModelProperty("label", vm.sharePermissionTitle), __Renderer.setViewModelProperty("value", vm.shareMode), __Renderer.setViewModelProperty("options", [
+        }), __Renderer.endComponent()), vm.enabled && vm.devicesGroupTitle && vm.onRevokeDevice && (__Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup4, void 0, void 0), __Renderer.setViewModelProperty("title", vm.devicesGroupTitle), __Renderer.setViewModelProperty("description", vm.devicesGroupDescription), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
+          !vm.approvedDevices || vm.approvedDevices.length === 0 ? (__Renderer.beginRender(__nodeView26, void 0), __Renderer.setAttributeNumber("minHeight", m.sizes.rowMinHeight), __Renderer.setAttributeNumber("paddingLeft", m.sizes.rowPaddingX), __Renderer.setAttributeNumber("paddingRight", m.sizes.rowPaddingX), __Renderer.beginRender(__nodeLabel11, void 0), __Renderer.setAttributeString("value", vm.devicesEmptyText ?? ""), __Renderer.setAttributeString("font", m.fonts.detail), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.endRender()) : (__Renderer.beginRender(__nodeView27, void 0), vm.approvedDevices.forEach((dev, idx) => {
+            __Renderer.beginRender(__nodeView28, dev.thumbprint), idx > 0 && (__Renderer.beginRender(__nodeView29, void 0), __Renderer.setAttributeString("backgroundColor", c.border), __Renderer.endRender()), __Renderer.beginRender(__nodeView30, void 0), __Renderer.setAttributeNumber("minHeight", m.sizes.rowMinHeight), __Renderer.setAttributeNumber("paddingLeft", m.sizes.rowPaddingX), __Renderer.setAttributeNumber("paddingRight", m.sizes.rowPaddingX), __Renderer.beginRender(__nodeView31, void 0), __Renderer.beginRender(__nodeView32, void 0), __Renderer.setAttributeString("backgroundColor", dev.active ? c.success : c.disabled), __Renderer.endRender(), __Renderer.beginRender(__nodeView33, void 0), __Renderer.beginRender(__nodeLabel12, void 0), __Renderer.setAttributeString("value", dev.label), __Renderer.setAttributeString("font", m.fonts.rowTitle), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel13, void 0), __Renderer.setAttributeString("value", dev.detailLabel), __Renderer.setAttributeString("font", m.fonts.detail), __Renderer.setAttributeString("color", dev.active ? c.success : c.muted), __Renderer.endRender(), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginComponent(Button_1.Button, __componentButton4, void 0, void 0), __Renderer.setViewModelProperty("id", `oc-relay-revoke-device-${dev.thumbprint}`), __Renderer.setViewModelProperty("title", vm.revokeDeviceLabel ?? ""), __Renderer.setViewModelProperty("disabled", !!vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => {
+              (0, haptics_1.triggerHaptic)("light"), vm.onRevokeDevice?.(dev.thumbprint);
+            }), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.endRender();
+          }), __Renderer.endRender());
+        }), __Renderer.endComponent()), vm.enabled && (__Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup5, void 0, void 0), __Renderer.setViewModelProperty("title", vm.shareGroupTitle), __Renderer.setViewModelProperty("description", vm.shareGroupDescription), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
+          __Renderer.beginComponent(SettingsGroup_1.SettingsFormRow, __componentSettingsFormRow4, void 0, void 0), __Renderer.setViewModelProperty("title", vm.sharePermissionTitle), __Renderer.setViewModelProperty("description", vm.sharePermissionDescription), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
+            __Renderer.beginRender(__nodeView34, void 0), __Renderer.beginComponent(SegmentedControl_1.SegmentedControl, __componentSegmentedControl2, void 0, void 0), __Renderer.setViewModelProperty("label", vm.sharePermissionTitle), __Renderer.setViewModelProperty("value", vm.shareMode), __Renderer.setViewModelProperty("options", [
               { id: "view", title: vm.shareViewOnlyLabel },
               { id: "exec", title: vm.shareAllowExecLabel }
-            ]), __Renderer.setViewModelProperty("compact", !0), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (next) => vm.onChangeShareMode(next)), __Renderer.endComponent(), __Renderer.beginComponent(Button_1.Button, __componentButton3, void 0, void 0), __Renderer.setViewModelProperty("title", vm.createShareLabel), __Renderer.setViewModelProperty("disabled", !!(vm.creatingShare || vm.busy)), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => {
+            ]), __Renderer.setViewModelProperty("compact", !0), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (next) => vm.onChangeShareMode(next)), __Renderer.endComponent(), __Renderer.beginComponent(Button_1.Button, __componentButton5, void 0, void 0), __Renderer.setViewModelProperty("title", vm.createShareLabel), __Renderer.setViewModelProperty("disabled", !!(vm.creatingShare || vm.busy)), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => {
               (0, haptics_1.triggerHaptic)("selection"), vm.onCreateShare();
             }), __Renderer.endComponent(), __Renderer.endRender();
-          }), __Renderer.endComponent(), vm.latestShareUrl && (__Renderer.beginRender(__nodeView25, void 0), __Renderer.beginRender(__nodeView26, void 0), __Renderer.setAttributeString("backgroundColor", c.border), __Renderer.endRender(), __Renderer.beginRender(__nodeView27, void 0), __Renderer.setAttributeNumber("paddingLeft", m.sizes.rowPaddingX), __Renderer.setAttributeNumber("paddingRight", m.sizes.rowPaddingX), __Renderer.beginRender(__nodeView28, void 0), __Renderer.setAttributeNumber("borderRadius", tokens_1.radii.pill), __Renderer.setAttributeString("backgroundColor", c.recessed), __Renderer.setAttributeString("borderColor", c.border), __Renderer.beginRender(__nodeLabel11, void 0), __Renderer.setAttributeString("value", vm.latestShareUrl), __Renderer.setAttributeString("font", (0, SystemFont_1.systemFont)(12)), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginComponent(Button_1.Button, __componentButton4, void 0, void 0), __Renderer.setViewModelProperty("title", vm.shareCopied ? vm.copiedShareLabel : vm.copyShareLabel), __Renderer.setViewModelProperty("leadingIcon", vm.shareCopied ? "check" : "copy"), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => {
+          }), __Renderer.endComponent(), vm.latestShareUrl && (__Renderer.beginRender(__nodeView35, void 0), __Renderer.beginRender(__nodeView36, void 0), __Renderer.setAttributeString("backgroundColor", c.border), __Renderer.endRender(), __Renderer.beginRender(__nodeView37, void 0), __Renderer.setAttributeNumber("paddingLeft", m.sizes.rowPaddingX), __Renderer.setAttributeNumber("paddingRight", m.sizes.rowPaddingX), __Renderer.beginRender(__nodeView38, void 0), __Renderer.setAttributeNumber("borderRadius", tokens_1.radii.pill), __Renderer.setAttributeString("backgroundColor", c.recessed), __Renderer.setAttributeString("borderColor", c.border), __Renderer.beginRender(__nodeLabel14, void 0), __Renderer.setAttributeString("value", vm.latestShareUrl), __Renderer.setAttributeString("font", (0, SystemFont_1.systemFont)(12)), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginComponent(Button_1.Button, __componentButton6, void 0, void 0), __Renderer.setViewModelProperty("title", vm.shareCopied ? vm.copiedShareLabel : vm.copyShareLabel), __Renderer.setViewModelProperty("leadingIcon", vm.shareCopied ? "check" : "copy"), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => {
             (0, haptics_1.triggerHaptic)("selection"), vm.latestShareUrl && vm.onCopyShareUrl(vm.latestShareUrl);
-          }), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.endRender()), vm.activeShares.length > 0 && (__Renderer.beginRender(__nodeView29, void 0), __Renderer.beginRender(__nodeView30, void 0), __Renderer.setAttributeString("backgroundColor", c.border), __Renderer.endRender(), vm.activeShares.forEach((share, idx) => {
-            __Renderer.beginRender(__nodeView31, share.grantId), idx > 0 && (__Renderer.beginRender(__nodeView32, void 0), __Renderer.setAttributeString("backgroundColor", c.border), __Renderer.endRender()), __Renderer.beginRender(__nodeView33, void 0), __Renderer.setAttributeNumber("minHeight", m.sizes.rowMinHeight), __Renderer.setAttributeNumber("paddingLeft", m.sizes.rowPaddingX), __Renderer.setAttributeNumber("paddingRight", m.sizes.rowPaddingX), __Renderer.beginRender(__nodeView34, void 0), __Renderer.beginRender(__nodeLabel12, void 0), __Renderer.setAttributeString("value", share.permissionLabel), __Renderer.setAttributeString("font", m.fonts.rowTitle), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel13, void 0), __Renderer.setAttributeString("value", share.expiresLabel), __Renderer.setAttributeString("font", m.fonts.detail), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginRender(__nodeView35, void 0), share.shareUrl && (__Renderer.beginComponent(Button_1.Button, __componentButton5, void 0, void 0), __Renderer.setViewModelProperty("id", `oc-relay-copy-share-${share.grantId}`), __Renderer.setViewModelProperty("title", vm.copyShareLabel), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => {
+          }), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.endRender()), vm.activeShares.length > 0 && (__Renderer.beginRender(__nodeView39, void 0), __Renderer.beginRender(__nodeView40, void 0), __Renderer.setAttributeString("backgroundColor", c.border), __Renderer.endRender(), vm.activeShares.forEach((share, idx) => {
+            __Renderer.beginRender(__nodeView41, share.grantId), idx > 0 && (__Renderer.beginRender(__nodeView42, void 0), __Renderer.setAttributeString("backgroundColor", c.border), __Renderer.endRender()), __Renderer.beginRender(__nodeView43, void 0), __Renderer.setAttributeNumber("minHeight", m.sizes.rowMinHeight), __Renderer.setAttributeNumber("paddingLeft", m.sizes.rowPaddingX), __Renderer.setAttributeNumber("paddingRight", m.sizes.rowPaddingX), __Renderer.beginRender(__nodeView44, void 0), __Renderer.beginRender(__nodeLabel15, void 0), __Renderer.setAttributeString("value", share.permissionLabel), __Renderer.setAttributeString("font", m.fonts.rowTitle), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel16, void 0), __Renderer.setAttributeString("value", share.expiresLabel), __Renderer.setAttributeString("font", m.fonts.detail), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginRender(__nodeView45, void 0), share.shareUrl && (__Renderer.beginComponent(Button_1.Button, __componentButton7, void 0, void 0), __Renderer.setViewModelProperty("id", `oc-relay-copy-share-${share.grantId}`), __Renderer.setViewModelProperty("title", vm.copyShareLabel), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => {
               (0, haptics_1.triggerHaptic)("selection"), share.shareUrl && vm.onCopyShareUrl(share.shareUrl);
-            }), __Renderer.endComponent()), __Renderer.beginComponent(Button_1.Button, __componentButton6, void 0, void 0), __Renderer.setViewModelProperty("id", `oc-relay-revoke-share-${share.grantId}`), __Renderer.setViewModelProperty("title", vm.revokeShareLabel), __Renderer.setViewModelProperty("disabled", !!vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => {
+            }), __Renderer.endComponent()), __Renderer.beginComponent(Button_1.Button, __componentButton8, void 0, void 0), __Renderer.setViewModelProperty("id", `oc-relay-revoke-share-${share.grantId}`), __Renderer.setViewModelProperty("title", vm.revokeShareLabel), __Renderer.setViewModelProperty("disabled", !!vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => {
               (0, haptics_1.triggerHaptic)("light"), vm.onRevokeShare(share.grantId);
             }), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.endRender(), __Renderer.endRender();
           }), __Renderer.endRender());
-        }), __Renderer.endComponent()), __Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup5, void 0, void 0), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
-          __Renderer.beginRender(__nodeView36, void 0), __Renderer.setAttributeString("accessibilityLabel", vm.advancedGroupTitle), __Renderer.setAttributeFunction("onTap", () => {
+        }), __Renderer.endComponent()), __Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup6, void 0, void 0), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
+          __Renderer.beginRender(__nodeView46, void 0), __Renderer.setAttributeString("accessibilityLabel", vm.advancedGroupTitle), __Renderer.setAttributeFunction("onTap", () => {
             (0, haptics_1.triggerHaptic)("selection"), this.setState({ advancedOpen: !this.state.advancedOpen });
-          }), __Renderer.setAttributeNumber("paddingLeft", m.sizes.rowPaddingX), __Renderer.setAttributeNumber("paddingRight", m.sizes.rowPaddingX), __Renderer.beginRender(__nodeLabel14, void 0), __Renderer.setAttributeString("value", vm.advancedGroupTitle), __Renderer.setAttributeString("font", m.fonts.rowTitle), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.beginComponent(Icon_1.Icon, __componentIcon2, void 0, void 0), __Renderer.setViewModelProperty("name", this.state.advancedOpen ? "chevronUp" : "chevronDown"), __Renderer.setViewModelProperty("color", c.muted), __Renderer.endComponent(), __Renderer.endRender(), this.state.advancedOpen && (__Renderer.beginRender(__nodeView37, void 0), vm.enabled && (__Renderer.beginRender(__nodeView38, void 0), __Renderer.beginComponent(SettingsGroup_1.SettingsFormRow, __componentSettingsFormRow4, void 0, void 0), __Renderer.setViewModelProperty("title", vm.requireApprovalTitle), __Renderer.setViewModelProperty("description", vm.requireApprovalDescription), __Renderer.setViewModelProperty("divider", !0), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
+          }), __Renderer.setAttributeNumber("paddingLeft", m.sizes.rowPaddingX), __Renderer.setAttributeNumber("paddingRight", m.sizes.rowPaddingX), __Renderer.beginRender(__nodeLabel17, void 0), __Renderer.setAttributeString("value", vm.advancedGroupTitle), __Renderer.setAttributeString("font", m.fonts.rowTitle), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.beginComponent(Icon_1.Icon, __componentIcon2, void 0, void 0), __Renderer.setViewModelProperty("name", this.state.advancedOpen ? "chevronUp" : "chevronDown"), __Renderer.setViewModelProperty("color", c.muted), __Renderer.endComponent(), __Renderer.endRender(), this.state.advancedOpen && (__Renderer.beginRender(__nodeView47, void 0), vm.enabled && (__Renderer.beginRender(__nodeView48, void 0), __Renderer.beginComponent(SettingsGroup_1.SettingsFormRow, __componentSettingsFormRow5, void 0, void 0), __Renderer.setViewModelProperty("title", vm.requireApprovalTitle), __Renderer.setViewModelProperty("description", vm.requireApprovalDescription), __Renderer.setViewModelProperty("divider", !0), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
             __Renderer.beginComponent(Toggle_1.Toggle, __componentToggle2, void 0, void 0), __Renderer.setViewModelProperty("label", vm.requireApprovalTitle), __Renderer.setViewModelProperty("value", vm.requireApproval), __Renderer.setViewModelProperty("disabled", !!vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (next) => vm.onChangeRequireApproval(next)), __Renderer.endComponent();
-          }), __Renderer.endComponent(), __Renderer.beginComponent(SettingsGroup_1.SettingsFormRow, __componentSettingsFormRow5, void 0, void 0), __Renderer.setViewModelProperty("title", vm.directRoutesTitle), __Renderer.setViewModelProperty("description", vm.directRoutes.length === 0 ? vm.directRoutesEmpty : vm.statusDetail), __Renderer.setViewModelProperty("divider", !0), __Renderer.setViewModelProperty("stacked", vm.directRoutes.length > 0), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
-            vm.directRoutes.length > 0 ? (__Renderer.beginRender(__nodeView39, void 0), vm.directRoutes.forEach((route) => {
-              __Renderer.beginRender(__nodeView40, route.id), __Renderer.setAttributeNumber("borderRadius", m.radii.control), __Renderer.setAttributeString("backgroundColor", c.recessed), __Renderer.setAttributeString("borderColor", c.border), __Renderer.beginRender(__nodeLabel15, void 0), __Renderer.setAttributeString("value", route.kindLabel), __Renderer.setAttributeString("font", m.fonts.caption), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel16, void 0), __Renderer.setAttributeString("value", route.url), __Renderer.setAttributeString("font", (0, SystemFont_1.systemFont)(12)), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.endRender();
-            }), __Renderer.endRender()) : (__Renderer.beginComponent(Button_1.Button, __componentButton7, void 0, void 0), __Renderer.setViewModelProperty("title", vm.refreshRoutesLabel), __Renderer.setViewModelProperty("disabled", !!vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => {
+          }), __Renderer.endComponent(), __Renderer.beginComponent(SettingsGroup_1.SettingsFormRow, __componentSettingsFormRow6, void 0, void 0), __Renderer.setViewModelProperty("title", vm.directRoutesTitle), __Renderer.setViewModelProperty("description", vm.directRoutes.length === 0 ? vm.directRoutesEmpty : vm.statusDetail), __Renderer.setViewModelProperty("divider", !0), __Renderer.setViewModelProperty("stacked", vm.directRoutes.length > 0), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
+            vm.directRoutes.length > 0 ? (__Renderer.beginRender(__nodeView49, void 0), vm.directRoutes.forEach((route) => {
+              __Renderer.beginRender(__nodeView50, route.id), __Renderer.setAttributeNumber("borderRadius", m.radii.control), __Renderer.setAttributeString("backgroundColor", c.recessed), __Renderer.setAttributeString("borderColor", c.border), __Renderer.beginRender(__nodeLabel18, void 0), __Renderer.setAttributeString("value", route.kindLabel), __Renderer.setAttributeString("font", m.fonts.caption), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel19, void 0), __Renderer.setAttributeString("value", route.url), __Renderer.setAttributeString("font", (0, SystemFont_1.systemFont)(12)), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.endRender();
+            }), __Renderer.endRender()) : (__Renderer.beginComponent(Button_1.Button, __componentButton9, void 0, void 0), __Renderer.setViewModelProperty("title", vm.refreshRoutesLabel), __Renderer.setViewModelProperty("disabled", !!vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => {
               (0, haptics_1.triggerHaptic)("light"), vm.onRefreshRoutes();
             }), __Renderer.endComponent());
-          }), __Renderer.endComponent(), __Renderer.endRender()), !vm.enabled && (__Renderer.beginRender(__nodeView41, void 0), __Renderer.beginRender(__nodeView42, void 0), __Renderer.setAttributeString("backgroundColor", c.border), __Renderer.endRender(), __Renderer.beginComponent(TextField_1.TextField, __componentTextField1, void 0, void 0), __Renderer.setViewModelProperty("label", vm.customRelayTitle), __Renderer.setViewModelProperty("value", vm.customRelayUrl), __Renderer.setViewModelProperty("placeholder", vm.customRelayPlaceholder), __Renderer.setViewModelProperty("hint", vm.customRelayHint), __Renderer.setViewModelProperty("inline", !0), __Renderer.setViewModelProperty("disabled", !!vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (val) => vm.onChangeCustomRelayUrl(val)), __Renderer.endComponent(), __Renderer.endRender()), __Renderer.endRender());
+          }), __Renderer.endComponent(), __Renderer.endRender()), !vm.enabled && (__Renderer.beginRender(__nodeView51, void 0), __Renderer.beginRender(__nodeView52, void 0), __Renderer.setAttributeString("backgroundColor", c.border), __Renderer.endRender(), __Renderer.beginComponent(TextField_1.TextField, __componentTextField1, void 0, void 0), __Renderer.setViewModelProperty("label", vm.customRelayTitle), __Renderer.setViewModelProperty("value", vm.customRelayUrl), __Renderer.setViewModelProperty("placeholder", vm.customRelayPlaceholder), __Renderer.setViewModelProperty("hint", vm.customRelayHint), __Renderer.setViewModelProperty("inline", !0), __Renderer.setViewModelProperty("disabled", !!vm.busy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (val) => vm.onChangeCustomRelayUrl(val)), __Renderer.endComponent(), __Renderer.endRender()), __Renderer.endRender());
         }), __Renderer.endComponent(), __Renderer.endRender();
       }
     };
@@ -19132,16 +19126,17 @@ var require_RemoteAccessSettingsSurface = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/RemoteWorkbenchWelcomeSurface.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/RemoteWorkbenchWelcomeSurface.js
 var require_RemoteWorkbenchWelcomeSurface = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/RemoteWorkbenchWelcomeSurface.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/RemoteWorkbenchWelcomeSurface.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/RemoteWorkbenchWelcomeSurface";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.RemoteWorkbenchWelcomeSurface = void 0;
-    var __Renderer = require_JSX2().jsx, __nodeView1 = __Renderer.makeNodePrototype("view", ["flexDirection", "row", "alignItems", "center", "gap", 12]), __nodeView2 = __Renderer.makeNodePrototype("view", ["width", 22, "height", 22, "borderRadius", 11, "borderWidth", 0.5, "alignItems", "center", "justifyContent", "center", "flexShrink", 0]), __nodeLabel1 = __Renderer.makeNodePrototype("label"), __nodeView3 = __Renderer.makeNodePrototype("view", ["flexGrow", 1, "flexShrink", 1, "minWidth", 0]), __nodeLabel2 = __Renderer.makeNodePrototype("label", ["numberOfLines", 0]), __nodeView4 = __Renderer.makeNodePrototype("view", ["width", "100%", "alignItems", "center", "paddingTop", 36, "paddingBottom", 48, "paddingLeft", 20, "paddingRight", 20]), __nodeView5 = __Renderer.makeNodePrototype("view", ["width", "100%", "maxWidth", 580, "gap", 22]), __nodeView6 = __Renderer.makeNodePrototype("view", ["flexDirection", "row", "alignItems", "flex-start", "justifyContent", "space-between", "gap", 12]), __nodeView7 = __Renderer.makeNodePrototype("view", ["flexGrow", 1, "flexShrink", 1, "minWidth", 0, "gap", 12]), __nodeView8 = __Renderer.makeNodePrototype("view", ["width", 42, "height", 42, "borderRadius", 12, "borderWidth", 0.5, "alignItems", "center", "justifyContent", "center"]), __componentIcon1 = __Renderer.makeComponentPrototype(["name", "laptop", "size", 20]), __nodeView9 = __Renderer.makeNodePrototype("view", ["gap", 6]), __nodeLabel3 = __Renderer.makeNodePrototype("label", ["accessibilityCategory", "header", "numberOfLines", 0]), __nodeLabel4 = __Renderer.makeNodePrototype("label", ["numberOfLines", 0]), __nodeView10 = __Renderer.makeNodePrototype("view", ["flexDirection", "row", "alignItems", "center", "gap", 8]), __componentButton1 = __Renderer.makeComponentPrototype(["id", "oc-hub-refresh", "variant", "secondary", "size", "sm", "leadingIcon", "refresh"]), __componentButton2 = __Renderer.makeComponentPrototype(["id", "oc-hub-signout", "variant", "quiet", "size", "sm"]), __componentBanner1 = __Renderer.makeComponentPrototype(["id", "oc-remote-welcome-error", "tone", "danger"]), __componentSettingsGroup1 = __Renderer.makeComponentPrototype(["title", ""]), __nodeView11 = __Renderer.makeNodePrototype("view", ["paddingTop", 18, "paddingBottom", 18, "gap", 14]), __nodeView12 = __Renderer.makeNodePrototype("view", ["gap", 4]), __nodeLabel5 = __Renderer.makeNodePrototype("label", ["numberOfLines", 0]), __nodeLabel6 = __Renderer.makeNodePrototype("label", ["numberOfLines", 0]), __nodeView13 = __Renderer.makeNodePrototype("view", ["flexDirection", "row"]), __componentButton3 = __Renderer.makeComponentPrototype(["id", "oc-claim-confirm-current", "variant", "primary", "size", "md"]), __nodeView14 = __Renderer.makeNodePrototype("view", ["gap", 10]), __componentButton4 = __Renderer.makeComponentPrototype(["id", "oc-claim-signin-passkey", "variant", "primary", "size", "md"]), __componentButton5 = __Renderer.makeComponentPrototype(["id", "oc-claim-create-passkey", "variant", "secondary", "size", "md"]), __componentSettingsGroup2 = __Renderer.makeComponentPrototype(), __nodeView15 = __Renderer.makeNodePrototype("view", ["paddingTop", 16, "paddingBottom", 16]), __nodeLabel7 = __Renderer.makeNodePrototype("label", ["numberOfLines", 0]), __nodeView16 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __nodeView17 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __nodeView18 = __Renderer.makeNodePrototype("view", ["height", 0.5, "marginLeft", 16, "marginRight", 16]), __nodeView19 = __Renderer.makeNodePrototype("view", ["paddingTop", 14, "paddingBottom", 14, "gap", 10]), __nodeView20 = __Renderer.makeNodePrototype("view", ["flexDirection", "row", "alignItems", "center", "justifyContent", "space-between", "gap", 10]), __nodeView21 = __Renderer.makeNodePrototype("view", ["flexDirection", "row", "alignItems", "center", "gap", 8, "flexGrow", 1, "flexShrink", 1, "minWidth", 0]), __nodeView22 = __Renderer.makeNodePrototype("view", ["width", 8, "height", 8, "borderRadius", 4, "flexShrink", 0]), __nodeLabel8 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeLabel9 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __componentButton6 = __Renderer.makeComponentPrototype(["variant", "primary", "size", "sm"]), __nodeView23 = __Renderer.makeNodePrototype("view", ["borderRadius", 10, "borderWidth", 0.5, "paddingLeft", 12, "paddingRight", 12, "paddingTop", 8, "paddingBottom", 8, "gap", 6]), __nodeView24 = __Renderer.makeNodePrototype("view", ["flexDirection", "row", "alignItems", "center", "justifyContent", "space-between", "gap", 10]), __nodeLabel10 = __Renderer.makeNodePrototype("label", ["flexGrow", 1, "flexShrink", 1, "numberOfLines", 1]), __nodeLabel11 = __Renderer.makeNodePrototype("label", ["flexShrink", 0]), __componentSettingsGroup3 = __Renderer.makeComponentPrototype(["title", ""]), __nodeView25 = __Renderer.makeNodePrototype("view", ["paddingTop", 18, "paddingBottom", 18, "gap", 14]), __nodeView26 = __Renderer.makeNodePrototype("view", ["gap", 4]), __nodeLabel12 = __Renderer.makeNodePrototype("label", ["numberOfLines", 0]), __nodeLabel13 = __Renderer.makeNodePrototype("label", ["numberOfLines", 0]), __nodeView27 = __Renderer.makeNodePrototype("view", ["gap", 10]), __componentButton7 = __Renderer.makeComponentPrototype(["id", "oc-hub-passkey-signin", "variant", "primary", "size", "md"]), __componentButton8 = __Renderer.makeComponentPrototype(["id", "oc-hub-passkey-create", "variant", "secondary", "size", "md"]), __componentSettingsGroup4 = __Renderer.makeComponentPrototype(["title", ""]), __nodeView28 = __Renderer.makeNodePrototype("view", ["paddingTop", 18, "paddingBottom", 18, "justifyContent", "space-between", "gap", 16]), __nodeView29 = __Renderer.makeNodePrototype("view", ["flexGrow", 1, "flexShrink", 1, "minWidth", 0, "gap", 4]), __nodeLabel14 = __Renderer.makeNodePrototype("label", ["numberOfLines", 0]), __nodeLabel15 = __Renderer.makeNodePrototype("label", ["numberOfLines", 0]), __nodeView30 = __Renderer.makeNodePrototype("view", ["paddingLeft", 14, "paddingRight", 14, "paddingTop", 8, "paddingBottom", 8, "borderRadius", 10, "borderWidth", 0.5]), __nodeLabel16 = __Renderer.makeNodePrototype("label", ["class", "oc-mono"]), __componentSettingsGroup5 = __Renderer.makeComponentPrototype(["title", ""]), __nodeView31 = __Renderer.makeNodePrototype("view", ["paddingTop", 18, "paddingBottom", 18, "gap", 12]), __nodeView32 = __Renderer.makeNodePrototype("view", ["height", 0.5]), __nodeView33 = __Renderer.makeNodePrototype("view", ["paddingTop", 16, "paddingBottom", 18, "gap", 10]), __nodeLabel17 = __Renderer.makeNodePrototype("label"), __nodeView34 = __Renderer.makeNodePrototype("view", ["gap", 10]), __nodeView35 = __Renderer.makeNodePrototype("view", ["flexGrow", 1, "flexShrink", 1, "minWidth", 0, "borderWidth", 0.5, "paddingLeft", 14, "paddingRight", 14, "flexDirection", "row", "alignItems", "center"]), __nodeTextfield1 = __Renderer.makeNodePrototype("textfield", ["accessibilityId", "oc-remote-welcome-link-input", "flexGrow", 1, "flexBasis", 0, "minWidth", 0, "contentType", "url", "autocapitalization", "none", "autocorrection", "none"]), __componentButton9 = __Renderer.makeComponentPrototype(["id", "oc-remote-welcome-connect", "variant", "primary", "size", "md"]), __nodeView36 = __Renderer.makeNodePrototype("view", ["flexDirection", "row", "flexWrap", "wrap", "alignItems", "center", "paddingTop", 2]), __nodeLabel18 = __Renderer.makeNodePrototype("label"), __nodeView37 = __Renderer.makeNodePrototype("view", ["class", "oc-ghost-button", "accessibilityId", "oc-remote-welcome-download", "accessibilityCategory", "button", "paddingTop", 2, "paddingBottom", 2]), __nodeLabel19 = __Renderer.makeNodePrototype("label"), __componentSettingsGroup6 = __Renderer.makeComponentPrototype(["title", ""]), __nodeView38 = __Renderer.makeNodePrototype("view", ["class", "oc-settings-row", "accessibilityId", "oc-remote-welcome-server-disclosure", "accessibilityCategory", "button", "minHeight", 44, "flexDirection", "row", "alignItems", "center", "justifyContent", "space-between"]), __nodeView39 = __Renderer.makeNodePrototype("view", ["flexDirection", "row", "alignItems", "center", "gap", 10]), __componentIcon2 = __Renderer.makeComponentPrototype(["name", "server", "size", 16]), __nodeLabel20 = __Renderer.makeNodePrototype("label"), __componentIcon3 = __Renderer.makeComponentPrototype(["size", 14]), __nodeView40 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __nodeView41 = __Renderer.makeNodePrototype("view", ["height", 0.5, "marginLeft", 16, "marginRight", 16]), __componentTextField1 = __Renderer.makeComponentPrototype(["id", "oc-remote-welcome-server-url", "contentType", "url", "autocapitalization", "none"]), Component_1 = require_Component(), SystemFont_1 = require_SystemFont(), Banner_1 = require_Banner(), Button_1 = require_Button(), haptics_1 = require_haptics(), Icon_1 = require_Icon(), SettingsGroup_1 = require_SettingsGroup(), TextField_1 = require_TextField(), tokens_1 = require_tokens(), RemoteWorkbenchWelcomeSurface2 = class extends Component_1.StatefulComponent {
+    var __Renderer = require_JSX2().jsx, __nodeView1 = __Renderer.makeNodePrototype("view", ["width", 54, "height", 54, "borderRadius", 16, "borderWidth", 0.5, "alignItems", "center", "justifyContent", "center", "accessibilityNavigation", "ignored"]), __componentIcon1 = __Renderer.makeComponentPrototype(["size", 24]), __nodeView2 = __Renderer.makeNodePrototype("view", ["class", "oc-pill-button oc-apple-capsule", "accessibilityCategory", "button", "paddingTop", 4, "paddingBottom", 4, "flexDirection", "row", "alignItems", "center", "justifyContent", "center", "gap", 7]), __componentIcon2 = __Renderer.makeComponentPrototype(["name", "refresh"]), __componentIcon3 = __Renderer.makeComponentPrototype(), __nodeLabel1 = __Renderer.makeNodePrototype("label", ["textAlign", "center", "numberOfLines", 1]), __nodeView3 = __Renderer.makeNodePrototype("view", ["class", "oc-apple-input-capsule", "width", "100%", "borderWidth", 0.5, "paddingLeft", 16, "paddingRight", 5, "flexDirection", "row", "alignItems", "center", "gap", 8]), __nodeTextfield1 = __Renderer.makeNodePrototype("textfield", ["flexGrow", 1, "flexBasis", 0, "minWidth", 0, "contentType", "url", "autocapitalization", "none", "autocorrection", "none"]), __nodeView4 = __Renderer.makeNodePrototype("view", ["class", "oc-pill-button", "accessibilityCategory", "button", "paddingLeft", 15, "paddingRight", 15, "alignItems", "center", "justifyContent", "center", "flexShrink", 0]), __nodeLabel2 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeView5 = __Renderer.makeNodePrototype("view", ["width", "100%", "borderRadius", 18, "borderWidth", 0.5, "paddingLeft", 16, "paddingRight", 16, "paddingTop", 14, "paddingBottom", 14, "alignItems", "center", "gap", 8]), __nodeLabel3 = __Renderer.makeNodePrototype("label", ["textAlign", "center", "numberOfLines", 0]), __nodeView6 = __Renderer.makeNodePrototype("view", ["paddingLeft", 18, "paddingRight", 18, "paddingTop", 7, "paddingBottom", 7, "borderRadius", 12, "borderWidth", 0.5]), __nodeLabel4 = __Renderer.makeNodePrototype("label", ["class", "oc-mono"]), __nodeLabel5 = __Renderer.makeNodePrototype("label", ["textAlign", "center", "numberOfLines", 0]), __nodeView7 = __Renderer.makeNodePrototype("view", ["width", "100%", "alignItems", "center", "justifyContent", "center", "paddingTop", 28, "paddingBottom", 32, "paddingLeft", 16, "paddingRight", 16]), __nodeView8 = __Renderer.makeNodePrototype("view", ["width", "100%", "borderRadius", 26, "borderWidth", 0.5, "gap", 20]), __nodeView9 = __Renderer.makeNodePrototype("view", ["width", "100%", "gap", 20]), __nodeView10 = __Renderer.makeNodePrototype("view", ["width", "100%", "alignItems", "center", "gap", 14]), __nodeView11 = __Renderer.makeNodePrototype("view", ["paddingLeft", 12, "paddingRight", 12, "paddingTop", 5, "paddingBottom", 5, "borderWidth", 0.5, "flexDirection", "row", "alignItems", "center", "gap", 7]), __nodeView12 = __Renderer.makeNodePrototype("view", ["width", 7, "height", 7, "borderRadius", 3.5]), __nodeLabel6 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeView13 = __Renderer.makeNodePrototype("view", ["width", "100%", "maxWidth", 340, "alignItems", "center", "gap", 7]), __nodeLabel7 = __Renderer.makeNodePrototype("label", ["textAlign", "center", "accessibilityCategory", "header", "numberOfLines", 0]), __nodeLabel8 = __Renderer.makeNodePrototype("label", ["textAlign", "center", "numberOfLines", 0]), __componentBanner1 = __Renderer.makeComponentPrototype(["id", "oc-remote-welcome-error", "tone", "danger"]), __componentBanner2 = __Renderer.makeComponentPrototype(["id", "oc-remote-welcome-info", "tone", "info"]), __nodeView14 = __Renderer.makeNodePrototype("view", ["width", "100%", "gap", 10]), __nodeView15 = __Renderer.makeNodePrototype("view", ["width", "100%", "gap", 10]), __nodeView16 = __Renderer.makeNodePrototype("view", ["width", "100%", "paddingTop", 12, "flexDirection", "row", "alignItems", "center", "justifyContent", "center", "gap", 6]), __componentIcon4 = __Renderer.makeComponentPrototype(["name", "lock", "size", 12]), __nodeLabel9 = __Renderer.makeNodePrototype("label", ["textAlign", "center", "numberOfLines", 0]), __nodeView17 = __Renderer.makeNodePrototype("view", ["class", "oc-ghost-button", "accessibilityId", "oc-claim-cancel", "accessibilityCategory", "button", "paddingLeft", 6, "paddingRight", 6, "paddingTop", 2, "paddingBottom", 2]), __nodeLabel10 = __Renderer.makeNodePrototype("label"), __nodeView18 = __Renderer.makeNodePrototype("view", ["width", "100%", "gap", 15]), __nodeView19 = __Renderer.makeNodePrototype("view", ["width", "100%", "flexDirection", "row", "alignItems", "center"]), __nodeView20 = __Renderer.makeNodePrototype("view", ["class", "oc-ghost-button", "accessibilityId", "oc-hub-back-workspace", "accessibilityCategory", "button", "paddingLeft", 6, "paddingRight", 8, "paddingTop", 3, "paddingBottom", 3, "flexDirection", "row", "alignItems", "center", "gap", 4]), __componentIcon5 = __Renderer.makeComponentPrototype(["name", "arrowLeft", "size", 13]), __nodeLabel11 = __Renderer.makeNodePrototype("label"), __nodeView21 = __Renderer.makeNodePrototype("view", ["width", "100%", "flexDirection", "row", "alignItems", "center", "justifyContent", "space-between", "gap", 8]), __nodeView22 = __Renderer.makeNodePrototype("view", ["flexDirection", "row", "alignItems", "center", "gap", 8, "flexShrink", 1, "minWidth", 0]), __nodeLabel12 = __Renderer.makeNodePrototype("label", ["accessibilityCategory", "header", "numberOfLines", 1]), __nodeView23 = __Renderer.makeNodePrototype("view", ["paddingLeft", 9, "paddingRight", 9, "paddingTop", 3, "paddingBottom", 3, "flexShrink", 0]), __nodeLabel13 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeView24 = __Renderer.makeNodePrototype("view", ["flexDirection", "row", "alignItems", "center", "gap", 4, "flexShrink", 0]), __nodeView25 = __Renderer.makeNodePrototype("view", ["class", "oc-ghost-button", "accessibilityId", "oc-hub-refresh", "accessibilityCategory", "button", "paddingLeft", 9, "paddingRight", 9, "paddingTop", 5, "paddingBottom", 5, "flexDirection", "row", "alignItems", "center", "gap", 5]), __componentIcon6 = __Renderer.makeComponentPrototype(["name", "refresh", "size", 13]), __nodeLabel14 = __Renderer.makeNodePrototype("label"), __nodeView26 = __Renderer.makeNodePrototype("view", ["class", "oc-ghost-button", "accessibilityId", "oc-hub-signout", "accessibilityCategory", "button", "paddingLeft", 9, "paddingRight", 9, "paddingTop", 5, "paddingBottom", 5]), __nodeLabel15 = __Renderer.makeNodePrototype("label"), __nodeView27 = __Renderer.makeNodePrototype("view", ["width", "100%", "height", 0.5]), __componentBanner3 = __Renderer.makeComponentPrototype(["id", "oc-remote-welcome-error", "tone", "danger"]), __componentBanner4 = __Renderer.makeComponentPrototype(["id", "oc-remote-welcome-info", "tone", "info"]), __nodeView28 = __Renderer.makeNodePrototype("view", ["width", "100%", "borderRadius", 16, "paddingLeft", 16, "paddingRight", 16, "paddingTop", 18, "paddingBottom", 18]), __nodeLabel16 = __Renderer.makeNodePrototype("label", ["numberOfLines", 0]), __nodeView29 = __Renderer.makeNodePrototype("view", ["width", "100%", "gap", 10]), __nodeView30 = __Renderer.makeNodePrototype("view", ["width", "100%", "borderRadius", 16, "borderWidth", 0.5, "paddingLeft", 15, "paddingRight", 15, "paddingTop", 13, "paddingBottom", 13, "gap", 10]), __nodeView31 = __Renderer.makeNodePrototype("view", ["flexDirection", "row", "alignItems", "center", "justifyContent", "space-between", "gap", 10]), __nodeView32 = __Renderer.makeNodePrototype("view", ["flexGrow", 1, "flexShrink", 1, "minWidth", 0, "gap", 3]), __nodeView33 = __Renderer.makeNodePrototype("view", ["flexDirection", "row", "alignItems", "center", "gap", 7]), __nodeView34 = __Renderer.makeNodePrototype("view", ["width", 8, "height", 8, "borderRadius", 4, "flexShrink", 0]), __nodeLabel17 = __Renderer.makeNodePrototype("label", ["flexShrink", 1, "numberOfLines", 1]), __nodeLabel18 = __Renderer.makeNodePrototype("label", ["flexShrink", 0]), __nodeView35 = __Renderer.makeNodePrototype("view", ["paddingLeft", 15]), __nodeLabel19 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeView36 = __Renderer.makeNodePrototype("view", ["width", "100%", "paddingLeft", 15, "paddingTop", 6, "gap", 5]), __nodeView37 = __Renderer.makeNodePrototype("view", ["flexDirection", "row", "alignItems", "center", "justifyContent", "space-between", "gap", 10]), __nodeLabel20 = __Renderer.makeNodePrototype("label", ["flexGrow", 1, "flexShrink", 1, "numberOfLines", 1]), __nodeLabel21 = __Renderer.makeNodePrototype("label", ["flexShrink", 0]), __nodeView38 = __Renderer.makeNodePrototype("view", ["width", "100%", "paddingTop", 2]), __nodeView39 = __Renderer.makeNodePrototype("view", ["width", "100%", "height", 0.5]), __nodeView40 = __Renderer.makeNodePrototype("view", ["width", "100%", "flexDirection", "row", "flexWrap", "wrap", "alignItems", "center", "justifyContent", "space-between", "gap", 8]), __nodeLabel22 = __Renderer.makeNodePrototype("label", ["flexShrink", 1, "numberOfLines", 0]), __nodeView41 = __Renderer.makeNodePrototype("view", ["class", "oc-ghost-button", "accessibilityId", "oc-hub-toggle-temp-link", "accessibilityCategory", "button", "paddingLeft", 8, "paddingRight", 8, "paddingTop", 4, "paddingBottom", 4]), __nodeLabel23 = __Renderer.makeNodePrototype("label"), __nodeView42 = __Renderer.makeNodePrototype("view", ["width", "100%", "gap", 20]), __nodeView43 = __Renderer.makeNodePrototype("view", ["width", "100%", "alignItems", "center", "gap", 14]), __nodeView44 = __Renderer.makeNodePrototype("view", ["width", "100%", "maxWidth", 360, "alignItems", "center", "gap", 6]), __nodeLabel24 = __Renderer.makeNodePrototype("label", ["textAlign", "center", "accessibilityCategory", "header", "numberOfLines", 0]), __nodeLabel25 = __Renderer.makeNodePrototype("label", ["textAlign", "center", "numberOfLines", 0]), __componentBanner5 = __Renderer.makeComponentPrototype(["id", "oc-remote-welcome-error", "tone", "danger"]), __componentBanner6 = __Renderer.makeComponentPrototype(["id", "oc-remote-welcome-info", "tone", "info"]), __nodeView45 = __Renderer.makeNodePrototype("view", ["width", "100%", "gap", 18]), __nodeView46 = __Renderer.makeNodePrototype("view", ["width", "100%", "flexDirection", "row", "alignItems", "center", "gap", 12]), __nodeView47 = __Renderer.makeNodePrototype("view", ["height", 0.5, "flexGrow", 1]), __nodeLabel26 = __Renderer.makeNodePrototype("label"), __nodeView48 = __Renderer.makeNodePrototype("view", ["height", 0.5, "flexGrow", 1]), __nodeView49 = __Renderer.makeNodePrototype("view", ["width", "100%", "gap", 10]), __nodeView50 = __Renderer.makeNodePrototype("view", ["width", "100%", "gap", 12, "paddingTop", 2]), __nodeView51 = __Renderer.makeNodePrototype("view", ["width", "100%", "height", 0.5]), __nodeView52 = __Renderer.makeNodePrototype("view", ["width", "100%", "flexDirection", "row", "alignItems", "center", "justifyContent", "space-between", "gap", 8]), __nodeView53 = __Renderer.makeNodePrototype("view", ["class", "oc-ghost-button", "accessibilityId", "oc-remote-welcome-server-disclosure", "accessibilityCategory", "button", "paddingLeft", 8, "paddingRight", 8, "paddingTop", 4, "paddingBottom", 4, "flexDirection", "row", "alignItems", "center", "gap", 4]), __nodeLabel27 = __Renderer.makeNodePrototype("label"), __componentIcon7 = __Renderer.makeComponentPrototype(["size", 11]), __nodeView54 = __Renderer.makeNodePrototype("view", ["class", "oc-ghost-button", "accessibilityId", "oc-remote-welcome-download", "accessibilityCategory", "button", "paddingLeft", 8, "paddingRight", 8, "paddingTop", 4, "paddingBottom", 4, "flexDirection", "row", "alignItems", "center", "gap", 4]), __nodeLabel28 = __Renderer.makeNodePrototype("label"), __componentIcon8 = __Renderer.makeComponentPrototype(["name", "external", "size", 11]), __nodeView55 = __Renderer.makeNodePrototype("view", ["width", "100%", "paddingTop", 2]), Component_1 = require_Component(), SystemFont_1 = require_SystemFont(), Banner_1 = require_Banner(), haptics_1 = require_haptics(), Icon_1 = require_Icon(), tokens_1 = require_tokens(), RemoteWorkbenchWelcomeSurface2 = class extends Component_1.StatefulComponent {
       constructor() {
         super(...arguments), this.state = {
-          serverOpen: !1
+          serverOpen: !1,
+          hubLinkOpen: !1
         };
       }
       onCreate() {
@@ -19150,75 +19145,147 @@ var require_RemoteWorkbenchWelcomeSurface = __commonJS({
       onViewModelUpdate() {
         (0, haptics_1.registerHapticHandler)(this.viewModel.onHaptic);
       }
-      renderStepRow(stepNumber, text, dark, touch) {
-        let c = (0, tokens_1.themeColors)(dark), m = (0, tokens_1.themeMetrics)(touch);
-        __Renderer.beginRender(__nodeView1, void 0), __Renderer.beginRender(__nodeView2, void 0), __Renderer.setAttributeString("backgroundColor", c.trackSoft), __Renderer.setAttributeString("borderColor", c.border), __Renderer.beginRender(__nodeLabel1, void 0), __Renderer.setAttributeString("value", stepNumber), __Renderer.setAttributeString("font", m.fonts.caption), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginRender(__nodeView3, void 0), __Renderer.beginRender(__nodeLabel2, void 0), __Renderer.setAttributeString("value", text), __Renderer.setAttributeString("font", m.fonts.body), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.endRender(), __Renderer.endRender();
+      renderEmblem(icon, dark) {
+        let emblemBg = dark ? "#262629" : "#f5f5f7", emblemBorder = dark ? "rgba(255, 255, 255, 0.11)" : "rgba(0, 0, 0, 0.06)", iconColor = dark ? "#f5f5f7" : "#1d1d1f";
+        __Renderer.beginRender(__nodeView1, void 0), __Renderer.setAttributeString("class", dark ? "oc-apple-emblem oc-dark" : "oc-apple-emblem"), __Renderer.setAttributeString("backgroundColor", emblemBg), __Renderer.setAttributeString("borderColor", emblemBorder), __Renderer.beginComponent(Icon_1.Icon, __componentIcon1, void 0, void 0), __Renderer.setViewModelProperty("name", icon), __Renderer.setViewModelProperty("color", iconColor), __Renderer.endComponent(), __Renderer.endRender();
+      }
+      renderCapsuleAction(opts) {
+        let isDisabled = !!(opts.disabled || opts.loading), minHeight = opts.compact ? opts.touch ? 36 : 32 : opts.touch ? 48 : 44, padX = opts.compact ? 14 : 20, bg = opts.variant === "primary" ? opts.dark ? "#f5f5f7" : "#1d1d1f" : opts.dark ? "#2c2c2e" : "#f2f2f7", fg = opts.variant === "primary" ? opts.dark ? "#141416" : "#ffffff" : opts.dark ? "#f5f5f7" : "#1d1d1f", borderColor = opts.dark ? "rgba(255, 255, 255, 0.09)" : "rgba(0, 0, 0, 0.05)", font = opts.compact ? (0, SystemFont_1.systemMediumFont)(opts.touch ? 13.5 : 12.5) : (0, SystemFont_1.systemMediumFont)(opts.touch ? 15 : 14);
+        __Renderer.beginRender(__nodeView2, void 0), __Renderer.setAttributeString("accessibilityId", opts.id), __Renderer.setAttributeString("accessibilityLabel", opts.title), __Renderer.setAttribute("accessibilityStateDisabled", isDisabled), __Renderer.setAttributeFunction("onTap", isDisabled ? void 0 : () => {
+          (0, haptics_1.triggerHaptic)("selection"), opts.onPress();
+        }), __Renderer.setAttributeNumber("minHeight", minHeight), __Renderer.setAttributeNumber("paddingLeft", padX), __Renderer.setAttributeNumber("paddingRight", padX), __Renderer.setAttributeNumber("borderRadius", tokens_1.radii.pill), __Renderer.setAttributeNumber("borderWidth", opts.variant === "tonal" ? 0.5 : 0), __Renderer.setAttributeString("borderColor", borderColor), __Renderer.setAttributeString("backgroundColor", bg), __Renderer.setAttributeNumber("opacity", isDisabled ? 0.46 : 1), opts.loading ? (__Renderer.beginComponent(Icon_1.Icon, __componentIcon2, void 0, void 0), __Renderer.setViewModelProperty("size", opts.compact ? 13 : 15), __Renderer.setViewModelProperty("color", fg), __Renderer.endComponent()) : opts.icon && (__Renderer.beginComponent(Icon_1.Icon, __componentIcon3, void 0, void 0), __Renderer.setViewModelProperty("name", opts.icon), __Renderer.setViewModelProperty("size", opts.compact ? 13 : 15), __Renderer.setViewModelProperty("color", fg), __Renderer.endComponent()), __Renderer.beginRender(__nodeLabel1, void 0), __Renderer.setAttributeString("value", opts.title), __Renderer.setAttributeString("font", font), __Renderer.setAttributeString("color", fg), __Renderer.endRender(), __Renderer.endRender();
+      }
+      renderUnifiedInputCapsule(opts) {
+        let capsuleBg = opts.dark ? "#2c2c2e" : "#f2f2f7", capsuleBorder = opts.dark ? "rgba(255, 255, 255, 0.09)" : "rgba(0, 0, 0, 0.05)", ink = opts.dark ? "#f5f5f7" : "#1d1d1f", placeholderColor = opts.dark ? "rgba(235, 235, 245, 0.36)" : "rgba(60, 60, 67, 0.42)", outerHeight = opts.touch ? 48 : 44, innerBtnHeight = opts.touch ? 38 : 34, activeBtnBg = opts.dark ? "#f5f5f7" : "#1d1d1f", activeBtnFg = opts.dark ? "#141416" : "#ffffff", idleBtnBg = opts.dark ? "rgba(255, 255, 255, 0.08)" : "rgba(0, 0, 0, 0.06)", idleBtnFg = opts.dark ? "rgba(235, 235, 245, 0.48)" : "rgba(60, 60, 67, 0.48)";
+        __Renderer.beginRender(__nodeView3, void 0), __Renderer.setAttributeNumber("minHeight", outerHeight), __Renderer.setAttributeNumber("borderRadius", tokens_1.radii.pill), __Renderer.setAttributeString("backgroundColor", capsuleBg), __Renderer.setAttributeString("borderColor", capsuleBorder), __Renderer.beginRender(__nodeTextfield1, void 0), __Renderer.setAttributeString("accessibilityId", opts.inputId), __Renderer.setAttributeString("accessibilityLabel", opts.ariaLabel), __Renderer.setAttributeString("value", opts.value), __Renderer.setAttributeString("placeholder", opts.placeholder), __Renderer.setAttributeString("placeholderColor", placeholderColor), __Renderer.setAttributeNumber("height", outerHeight - 4), __Renderer.setAttributeString("color", ink), __Renderer.setAttributeString("font", (0, SystemFont_1.systemFont)(opts.touch ? 14.5 : 13.5)), __Renderer.setAttribute("enabled", !opts.busy), __Renderer.setAttributeFunction("onChange", (ev) => opts.onChange(ev.text)), __Renderer.setAttributeFunction("onReturn", () => {
+          opts.canSubmit && ((0, haptics_1.triggerHaptic)("selection"), opts.onSubmit());
+        }), __Renderer.endRender(), __Renderer.beginRender(__nodeView4, void 0), __Renderer.setAttributeString("accessibilityId", opts.buttonId), __Renderer.setAttributeString("accessibilityLabel", opts.buttonTitle), __Renderer.setAttribute("accessibilityStateDisabled", !opts.canSubmit), __Renderer.setAttributeFunction("onTap", opts.canSubmit ? () => {
+          (0, haptics_1.triggerHaptic)("selection"), opts.onSubmit();
+        } : void 0), __Renderer.setAttributeNumber("minHeight", innerBtnHeight), __Renderer.setAttributeNumber("borderRadius", tokens_1.radii.pill), __Renderer.setAttributeString("backgroundColor", opts.canSubmit ? activeBtnBg : idleBtnBg), __Renderer.beginRender(__nodeLabel2, void 0), __Renderer.setAttributeString("value", opts.buttonTitle), __Renderer.setAttributeString("font", (0, SystemFont_1.systemMediumFont)(opts.touch ? 13.5 : 12.5)), __Renderer.setAttributeString("color", opts.canSubmit ? activeBtnFg : idleBtnFg), __Renderer.endRender(), __Renderer.endRender(), __Renderer.endRender();
+      }
+      renderPendingVerificationCard(dark, touch) {
+        let vm = this.viewModel;
+        if (!vm.pendingShortCode || !vm.pendingCodeTitle)
+          return;
+        let c = (0, tokens_1.themeColors)(dark), boxBg = dark ? "#2c2c2e" : "#f5f5f7", border = dark ? "rgba(255, 255, 255, 0.10)" : "rgba(0, 0, 0, 0.06)", ink = dark ? "#f5f5f7" : "#1d1d1f", muted = dark ? "rgba(235, 235, 245, 0.62)" : "rgba(60, 60, 67, 0.66)";
+        __Renderer.beginRender(__nodeView5, void 0), __Renderer.setAttributeString("backgroundColor", boxBg), __Renderer.setAttributeString("borderColor", border), __Renderer.beginRender(__nodeLabel3, void 0), __Renderer.setAttributeString("value", vm.pendingCodeTitle), __Renderer.setAttributeString("font", (0, SystemFont_1.systemMediumFont)(touch ? 14 : 13)), __Renderer.setAttributeString("color", ink), __Renderer.endRender(), __Renderer.beginRender(__nodeView6, void 0), __Renderer.setAttributeString("backgroundColor", dark ? "#1c1c1e" : "#ffffff"), __Renderer.setAttributeString("borderColor", c.border), __Renderer.beginRender(__nodeLabel4, void 0), __Renderer.setAttributeString("value", vm.pendingShortCode), __Renderer.setAttributeString("font", (0, SystemFont_1.systemSemiboldFont)(20)), __Renderer.setAttributeString("color", ink), __Renderer.endRender(), __Renderer.endRender(), vm.pendingCodeDetail && (__Renderer.beginRender(__nodeLabel5, void 0), __Renderer.setAttributeString("value", vm.pendingCodeDetail), __Renderer.setAttributeString("font", (0, SystemFont_1.systemFont)(12)), __Renderer.setAttributeString("color", muted), __Renderer.endRender()), __Renderer.endRender();
       }
       onRender() {
-        var _a;
-        let vm = this.viewModel, dark = !!vm.dark, c = (0, tokens_1.themeColors)(dark), m = (0, tokens_1.themeMetrics)(vm.touch), stacked = !!vm.narrow, pillHeight = vm.touch ? 40 : 36, canSubmitLink = vm.linkValue.trim().length > 8 && !vm.connectingLink, machines = (_a = vm.hubMachines) !== null && _a !== void 0 ? _a : [];
-        __Renderer.beginRender(__nodeView4, void 0), __Renderer.beginRender(__nodeView5, void 0), __Renderer.beginRender(__nodeView6, void 0), __Renderer.beginRender(__nodeView7, void 0), __Renderer.beginRender(__nodeView8, void 0), __Renderer.setAttributeString("backgroundColor", c.surface), __Renderer.setAttributeString("borderColor", c.border), __Renderer.beginComponent(Icon_1.Icon, __componentIcon1, void 0, void 0), __Renderer.setViewModelProperty("color", c.ink), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.beginRender(__nodeView9, void 0), __Renderer.beginRender(__nodeLabel3, void 0), __Renderer.setAttributeString("value", vm.title), __Renderer.setAttributeString("font", m.fonts.pageTitle), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel4, void 0), __Renderer.setAttributeString("value", vm.subtitle), __Renderer.setAttributeString("font", m.fonts.body), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.endRender(), __Renderer.endRender(), vm.hubSignedIn && (__Renderer.beginRender(__nodeView10, void 0), vm.onHubRefresh && (__Renderer.beginComponent(Button_1.Button, __componentButton1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.hubRefreshLabel), __Renderer.setViewModelProperty("disabled", !!vm.passkeyBusy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => {
-          var _a2;
-          (0, haptics_1.triggerHaptic)("light"), (_a2 = vm.onHubRefresh) === null || _a2 === void 0 || _a2.call(vm);
-        }), __Renderer.endComponent()), vm.onHubSignOut && (__Renderer.beginComponent(Button_1.Button, __componentButton2, void 0, void 0), __Renderer.setViewModelProperty("title", vm.hubSignOutLabel), __Renderer.setViewModelProperty("disabled", !!vm.passkeyBusy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => {
-          var _a2;
-          (0, haptics_1.triggerHaptic)("selection"), (_a2 = vm.onHubSignOut) === null || _a2 === void 0 || _a2.call(vm);
-        }), __Renderer.endComponent()), __Renderer.endRender()), __Renderer.endRender(), vm.errorMessage && (__Renderer.beginComponent(Banner_1.Banner, __componentBanner1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.errorMessage), __Renderer.setViewModelProperty("onDismiss", vm.onDismissError), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent()), vm.claimMachineName && vm.claimBannerTitle && (__Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup1, void 0, void 0), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
-          __Renderer.beginRender(__nodeView11, void 0), __Renderer.setAttributeNumber("paddingLeft", m.sizes.rowPaddingX), __Renderer.setAttributeNumber("paddingRight", m.sizes.rowPaddingX), __Renderer.beginRender(__nodeView12, void 0), __Renderer.beginRender(__nodeLabel5, void 0), __Renderer.setAttributeString("value", vm.claimBannerTitle), __Renderer.setAttributeString("font", m.fonts.rowTitle), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), vm.claimBannerDescription && (__Renderer.beginRender(__nodeLabel6, void 0), __Renderer.setAttributeString("value", vm.claimBannerDescription), __Renderer.setAttributeString("font", m.fonts.detail), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender()), __Renderer.endRender(), vm.hubSignedIn && vm.claimConfirmCurrentHubLabel ? (__Renderer.beginRender(__nodeView13, void 0), __Renderer.beginComponent(Button_1.Button, __componentButton3, void 0, void 0), __Renderer.setViewModelProperty("title", vm.claimConfirmCurrentHubLabel), __Renderer.setViewModelProperty("disabled", !!vm.passkeyBusy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => {
-            var _a2;
-            (0, haptics_1.triggerHaptic)("selection"), (_a2 = vm.onClaimConfirmCurrentHub) === null || _a2 === void 0 || _a2.call(vm);
-          }), __Renderer.endComponent(), __Renderer.endRender()) : vm.passkeySupported && (() => {
-            var _a2, _b;
-            __Renderer.beginRender(__nodeView14, void 0), __Renderer.setAttributeString("flexDirection", stacked ? "column" : "row"), __Renderer.setAttributeString("alignItems", stacked ? "stretch" : "center"), __Renderer.beginComponent(Button_1.Button, __componentButton4, void 0, void 0), __Renderer.setViewModelProperty("title", (_a2 = vm.claimWithExistingPasskeyLabel) !== null && _a2 !== void 0 ? _a2 : vm.hubSignInLabel), __Renderer.setViewModelProperty("disabled", !!vm.passkeyBusy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => {
-              (0, haptics_1.triggerHaptic)("selection"), vm.onPasskeySignIn();
-            }), __Renderer.endComponent(), __Renderer.beginComponent(Button_1.Button, __componentButton5, void 0, void 0), __Renderer.setViewModelProperty("title", (_b = vm.claimWithNewPasskeyLabel) !== null && _b !== void 0 ? _b : vm.hubCreateLabel), __Renderer.setViewModelProperty("disabled", !!vm.passkeyBusy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => {
-              (0, haptics_1.triggerHaptic)("selection"), vm.onPasskeyCreate();
-            }), __Renderer.endComponent(), __Renderer.endRender();
-          })(), __Renderer.endRender();
-        }), __Renderer.endComponent()), vm.hubSignedIn && (__Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup2, void 0, void 0), __Renderer.setViewModelProperty("title", vm.hubCardTitle), __Renderer.setViewModelProperty("description", vm.hubCardDescription), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
-          machines.length === 0 ? (__Renderer.beginRender(__nodeView15, void 0), __Renderer.setAttributeNumber("paddingLeft", m.sizes.rowPaddingX), __Renderer.setAttributeNumber("paddingRight", m.sizes.rowPaddingX), __Renderer.beginRender(__nodeLabel7, void 0), __Renderer.setAttributeString("value", vm.hubEmptyMachinesText), __Renderer.setAttributeString("font", m.fonts.body), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.endRender()) : (__Renderer.beginRender(__nodeView16, void 0), machines.forEach((mach, idx) => {
-            __Renderer.beginRender(__nodeView17, mach.machineId), idx > 0 && (__Renderer.beginRender(__nodeView18, void 0), __Renderer.setAttributeString("backgroundColor", c.border), __Renderer.endRender()), __Renderer.beginRender(__nodeView19, void 0), __Renderer.setAttributeNumber("paddingLeft", m.sizes.rowPaddingX), __Renderer.setAttributeNumber("paddingRight", m.sizes.rowPaddingX), __Renderer.beginRender(__nodeView20, void 0), __Renderer.beginRender(__nodeView21, void 0), __Renderer.beginRender(__nodeView22, void 0), __Renderer.setAttributeString("backgroundColor", mach.online ? c.success : c.disabled), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel8, void 0), __Renderer.setAttributeString("value", mach.displayName), __Renderer.setAttributeString("font", m.fonts.rowTitle), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel9, void 0), __Renderer.setAttributeString("value", mach.statusLabel), __Renderer.setAttributeString("font", m.fonts.caption), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.endRender(), mach.online && mach.connectLabel && vm.onConnectHubMachine && (__Renderer.beginComponent(Button_1.Button, __componentButton6, void 0, void 0), __Renderer.setViewModelProperty("id", `oc-hub-connect-${mach.machineId}`), __Renderer.setViewModelProperty("title", mach.connectLabel), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => {
-              var _a2;
-              (0, haptics_1.triggerHaptic)("selection"), (_a2 = vm.onConnectHubMachine) === null || _a2 === void 0 || _a2.call(vm, mach.machineId);
-            }), __Renderer.endComponent()), __Renderer.endRender(), mach.threads.length > 0 && (__Renderer.beginRender(__nodeView23, void 0), __Renderer.setAttributeString("backgroundColor", c.recessed), __Renderer.setAttributeString("borderColor", c.border), mach.threads.forEach((thread) => {
-              let statusColor = thread.statusTone === "active" ? c.accent : thread.statusTone === "waiting" ? c.warning : thread.statusTone === "danger" ? c.danger : c.muted;
-              __Renderer.beginRender(__nodeView24, thread.threadId), __Renderer.beginRender(__nodeLabel10, void 0), __Renderer.setAttributeString("value", thread.title), __Renderer.setAttributeString("font", m.fonts.detail), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel11, void 0), __Renderer.setAttributeString("value", thread.statusLabel), __Renderer.setAttributeString("font", m.fonts.caption), __Renderer.setAttributeString("color", statusColor), __Renderer.endRender(), __Renderer.endRender();
-            }), __Renderer.endRender()), __Renderer.endRender(), __Renderer.endRender();
-          }), __Renderer.endRender());
-        }), __Renderer.endComponent()), !vm.hubSignedIn && !vm.claimMachineName && vm.passkeySupported && (__Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup3, void 0, void 0), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
-          __Renderer.beginRender(__nodeView25, void 0), __Renderer.setAttributeNumber("paddingLeft", m.sizes.rowPaddingX), __Renderer.setAttributeNumber("paddingRight", m.sizes.rowPaddingX), __Renderer.beginRender(__nodeView26, void 0), __Renderer.beginRender(__nodeLabel12, void 0), __Renderer.setAttributeString("value", vm.hubCardTitle), __Renderer.setAttributeString("font", m.fonts.rowTitle), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel13, void 0), __Renderer.setAttributeString("value", vm.hubCardDescription), __Renderer.setAttributeString("font", m.fonts.detail), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginRender(__nodeView27, void 0), __Renderer.setAttributeString("flexDirection", stacked ? "column" : "row"), __Renderer.setAttributeString("alignItems", stacked ? "stretch" : "center"), __Renderer.beginComponent(Button_1.Button, __componentButton7, void 0, void 0), __Renderer.setViewModelProperty("title", vm.hubSignInLabel), __Renderer.setViewModelProperty("disabled", !!vm.passkeyBusy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => {
-            (0, haptics_1.triggerHaptic)("selection"), vm.onPasskeySignIn();
-          }), __Renderer.endComponent(), __Renderer.beginComponent(Button_1.Button, __componentButton8, void 0, void 0), __Renderer.setViewModelProperty("title", vm.hubCreateLabel), __Renderer.setViewModelProperty("disabled", !!vm.passkeyBusy), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => {
-            (0, haptics_1.triggerHaptic)("selection"), vm.onPasskeyCreate();
-          }), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.endRender();
-        }), __Renderer.endComponent()), vm.pendingShortCode && vm.pendingCodeTitle && (__Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup4, void 0, void 0), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
-          __Renderer.beginRender(__nodeView28, void 0), __Renderer.setAttributeNumber("paddingLeft", m.sizes.rowPaddingX), __Renderer.setAttributeNumber("paddingRight", m.sizes.rowPaddingX), __Renderer.setAttributeString("flexDirection", stacked ? "column" : "row"), __Renderer.setAttributeString("alignItems", stacked ? "flex-start" : "center"), __Renderer.beginRender(__nodeView29, void 0), __Renderer.beginRender(__nodeLabel14, void 0), __Renderer.setAttributeString("value", vm.pendingCodeTitle), __Renderer.setAttributeString("font", m.fonts.rowTitle), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), vm.pendingCodeDetail && (__Renderer.beginRender(__nodeLabel15, void 0), __Renderer.setAttributeString("value", vm.pendingCodeDetail), __Renderer.setAttributeString("font", m.fonts.detail), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender()), __Renderer.endRender(), __Renderer.beginRender(__nodeView30, void 0), __Renderer.setAttributeString("backgroundColor", c.warningSurface), __Renderer.setAttributeString("borderColor", c.border), __Renderer.beginRender(__nodeLabel16, void 0), __Renderer.setAttributeString("value", vm.pendingShortCode), __Renderer.setAttributeString("font", (0, SystemFont_1.systemSemiboldFont)(18)), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.endRender(), __Renderer.endRender();
-        }), __Renderer.endComponent()), __Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup5, void 0, void 0), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
-          __Renderer.beginRender(__nodeView31, void 0), __Renderer.setAttributeNumber("paddingLeft", m.sizes.rowPaddingX), __Renderer.setAttributeNumber("paddingRight", m.sizes.rowPaddingX), this.renderStepRow("1", vm.stepOneText, dark, vm.touch), this.renderStepRow("2", vm.stepTwoText, dark, vm.touch), __Renderer.endRender(), __Renderer.beginRender(__nodeView32, void 0), __Renderer.setAttributeNumber("marginLeft", m.sizes.rowPaddingX), __Renderer.setAttributeNumber("marginRight", m.sizes.rowPaddingX), __Renderer.setAttributeString("backgroundColor", c.border), __Renderer.endRender(), __Renderer.beginRender(__nodeView33, void 0), __Renderer.setAttributeNumber("paddingLeft", m.sizes.rowPaddingX), __Renderer.setAttributeNumber("paddingRight", m.sizes.rowPaddingX), __Renderer.beginRender(__nodeLabel17, void 0), __Renderer.setAttributeString("value", vm.linkLabel), __Renderer.setAttributeString("font", m.fonts.rowTitle), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.beginRender(__nodeView34, void 0), __Renderer.setAttributeString("flexDirection", stacked ? "column" : "row"), __Renderer.setAttributeString("alignItems", stacked ? "stretch" : "center"), __Renderer.beginRender(__nodeView35, void 0), __Renderer.setAttributeNumber("borderRadius", tokens_1.radii.pill), __Renderer.setAttributeString("borderColor", c.border), __Renderer.setAttributeString("backgroundColor", c.recessed), __Renderer.beginRender(__nodeTextfield1, void 0), __Renderer.setAttributeString("accessibilityLabel", vm.linkLabel), __Renderer.setAttributeString("value", vm.linkValue), __Renderer.setAttributeString("placeholder", vm.linkPlaceholder), __Renderer.setAttributeString("placeholderColor", c.disabled), __Renderer.setAttributeNumber("height", pillHeight), __Renderer.setAttributeString("color", c.ink), __Renderer.setAttributeString("font", m.fonts.body), __Renderer.setAttribute("enabled", !vm.connectingLink), __Renderer.setAttributeFunction("onChange", (ev) => vm.onChangeLink(ev.text)), __Renderer.setAttributeFunction("onReturn", () => {
-            canSubmitLink && vm.onSubmitLink();
-          }), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginComponent(Button_1.Button, __componentButton9, void 0, void 0), __Renderer.setViewModelProperty("title", vm.connectingLink ? vm.connectingLabel : vm.connectLinkLabel), __Renderer.setViewModelProperty("disabled", !canSubmitLink), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => {
-            (0, haptics_1.triggerHaptic)("selection"), vm.onSubmitLink();
-          }), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.beginRender(__nodeView36, void 0), __Renderer.beginRender(__nodeLabel18, void 0), __Renderer.setAttributeString("value", vm.downloadPrefix), __Renderer.setAttributeString("font", m.fonts.detail), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.beginRender(__nodeView37, void 0), __Renderer.setAttributeString("accessibilityLabel", vm.downloadActionLabel), __Renderer.setAttributeFunction("onTap", () => {
-            (0, haptics_1.triggerHaptic)("light"), vm.onDownloadDesktop();
-          }), __Renderer.beginRender(__nodeLabel19, void 0), __Renderer.setAttributeString("value", vm.downloadActionLabel), __Renderer.setAttributeString("font", m.fonts.detail), __Renderer.setAttributeString("color", c.accent), __Renderer.endRender(), __Renderer.endRender(), __Renderer.endRender(), __Renderer.endRender();
-        }), __Renderer.endComponent(), __Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup6, void 0, void 0), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
-          __Renderer.beginRender(__nodeView38, void 0), __Renderer.setAttributeString("accessibilityLabel", vm.serverDisclosureTitle), __Renderer.setAttributeFunction("onTap", () => {
-            (0, haptics_1.triggerHaptic)("selection"), this.setState({ serverOpen: !this.state.serverOpen });
-          }), __Renderer.setAttributeNumber("paddingLeft", m.sizes.rowPaddingX), __Renderer.setAttributeNumber("paddingRight", m.sizes.rowPaddingX), __Renderer.beginRender(__nodeView39, void 0), __Renderer.beginComponent(Icon_1.Icon, __componentIcon2, void 0, void 0), __Renderer.setViewModelProperty("color", c.muted), __Renderer.endComponent(), __Renderer.beginRender(__nodeLabel20, void 0), __Renderer.setAttributeString("value", vm.serverDisclosureTitle), __Renderer.setAttributeString("font", m.fonts.rowTitle), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginComponent(Icon_1.Icon, __componentIcon3, void 0, void 0), __Renderer.setViewModelProperty("name", this.state.serverOpen ? "chevronUp" : "chevronDown"), __Renderer.setViewModelProperty("color", c.muted), __Renderer.endComponent(), __Renderer.endRender(), this.state.serverOpen && (__Renderer.beginRender(__nodeView40, void 0), __Renderer.beginRender(__nodeView41, void 0), __Renderer.setAttributeString("backgroundColor", c.border), __Renderer.endRender(), __Renderer.beginComponent(TextField_1.TextField, __componentTextField1, void 0, void 0), __Renderer.setViewModelProperty("label", vm.serverAddressLabel), __Renderer.setViewModelProperty("value", vm.serverValue), __Renderer.setViewModelProperty("placeholder", vm.serverPlaceholder), __Renderer.setViewModelProperty("clearTitle", vm.clearLabel), __Renderer.setViewModelProperty("inline", !0), __Renderer.setViewModelProperty("disabled", !!vm.connectingServer), __Renderer.setViewModelProperty("rightActionTitle", vm.connectServerLabel), __Renderer.setViewModelProperty("rightActionDisabled", !!(vm.connectingServer || !vm.serverValue.trim())), __Renderer.setViewModelProperty("onRightAction", () => {
-            (0, haptics_1.triggerHaptic)("selection"), vm.onSubmitServer();
-          }), __Renderer.setViewModelProperty("onSubmit", () => {
-            vm.serverValue.trim() && !vm.connectingServer && ((0, haptics_1.triggerHaptic)("selection"), vm.onSubmitServer());
-          }), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (val) => vm.onChangeServer(val)), __Renderer.endComponent(), __Renderer.endRender());
-        }), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.endRender();
+        let vm = this.viewModel, dark = !!vm.dark, c = (0, tokens_1.themeColors)(dark), touch = !!vm.touch, sheetBg = dark ? "#1c1c1e" : "#ffffff", sheetBorder = dark ? "rgba(255, 255, 255, 0.10)" : "rgba(0, 0, 0, 0.06)", ink = dark ? "#f5f5f7" : "#1d1d1f", muted = dark ? "rgba(235, 235, 245, 0.62)" : "rgba(60, 60, 67, 0.66)", subtle = dark ? "rgba(235, 235, 245, 0.42)" : "rgba(60, 60, 67, 0.45)", divider = dark ? "rgba(255, 255, 255, 0.08)" : "rgba(0, 0, 0, 0.06)", insetBg = dark ? "#2c2c2e" : "#f5f5f7", appleGreen = dark ? "#30d158" : "#34c759", appleGray = dark ? "#8e8e93" : "#aeaeb2", isClaimMode = !!(vm.claimMachineName && vm.claimBannerTitle), machines = vm.hubMachines ?? [], isHubMode = !isClaimMode && (!!vm.hubSignedIn || machines.length > 0), cardMaxWidth = isHubMode ? 456 : 412, sheetPad = vm.narrow ? 22 : 28, canSubmitLink = vm.linkValue.trim().length > 8 && !vm.connectingLink, canSubmitServer = vm.serverValue.trim().length > 3 && !vm.connectingServer;
+        __Renderer.beginRender(__nodeView7, void 0), __Renderer.setAttributeString("class", dark ? "oc-apple-stage oc-dark" : "oc-apple-stage"), __Renderer.beginRender(__nodeView8, void 0), __Renderer.setAttributeString("class", dark ? "oc-apple-sheet oc-dark" : "oc-apple-sheet"), __Renderer.setAttributeNumber("maxWidth", cardMaxWidth), __Renderer.setAttributeString("backgroundColor", sheetBg), __Renderer.setAttributeString("borderColor", sheetBorder), __Renderer.setAttributeNumber("paddingTop", sheetPad), __Renderer.setAttributeNumber("paddingBottom", sheetPad - 4), __Renderer.setAttributeNumber("paddingLeft", sheetPad), __Renderer.setAttributeNumber("paddingRight", sheetPad), isClaimMode ? (__Renderer.beginRender(__nodeView9, void 0), __Renderer.beginRender(__nodeView10, void 0), __Renderer.beginRender(__nodeView11, void 0), __Renderer.setAttributeNumber("borderRadius", tokens_1.radii.pill), __Renderer.setAttributeString("backgroundColor", insetBg), __Renderer.setAttributeString("borderColor", divider), __Renderer.beginRender(__nodeView12, void 0), __Renderer.setAttributeString("backgroundColor", appleGreen), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel6, void 0), __Renderer.setAttributeString("value", vm.claimMachineName ?? ""), __Renderer.setAttributeString("font", (0, SystemFont_1.systemMediumFont)(12.5)), __Renderer.setAttributeString("color", ink), __Renderer.endRender(), __Renderer.endRender(), this.renderEmblem("key", dark), __Renderer.beginRender(__nodeView13, void 0), __Renderer.beginRender(__nodeLabel7, void 0), __Renderer.setAttributeString("value", vm.claimBannerTitle ?? ""), __Renderer.setAttributeString("font", (0, SystemFont_1.systemSemiboldFont)(touch ? 24 : 23)), __Renderer.setAttributeString("color", ink), __Renderer.endRender(), vm.claimBannerDescription && (__Renderer.beginRender(__nodeLabel8, void 0), __Renderer.setAttributeString("value", vm.claimBannerDescription), __Renderer.setAttributeString("font", (0, SystemFont_1.systemFont)(touch ? 14.5 : 13.5)), __Renderer.setAttributeString("color", muted), __Renderer.endRender()), __Renderer.endRender(), __Renderer.endRender(), vm.errorMessage ? (__Renderer.beginComponent(Banner_1.Banner, __componentBanner1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.errorMessage), __Renderer.setViewModelProperty("onDismiss", vm.onDismissError), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent()) : vm.infoTitle && (__Renderer.beginComponent(Banner_1.Banner, __componentBanner2, void 0, void 0), __Renderer.setViewModelProperty("title", vm.infoTitle), __Renderer.setViewModelProperty("message", vm.infoMessage), __Renderer.setViewModelProperty("onDismiss", vm.onDismissInfo), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent()), __Renderer.beginRender(__nodeView14, void 0), vm.hubSignedIn && vm.claimConfirmCurrentHubLabel ? this.renderCapsuleAction({
+          id: "oc-claim-confirm-current",
+          title: vm.claimConfirmCurrentHubLabel,
+          variant: "primary",
+          icon: "key",
+          disabled: vm.passkeyBusy,
+          loading: vm.passkeyBusy,
+          dark,
+          touch,
+          onPress: () => vm.onClaimConfirmCurrentHub?.()
+        }) : vm.passkeySupported && (__Renderer.beginRender(__nodeView15, void 0), this.renderCapsuleAction({
+          id: "oc-claim-create-passkey",
+          title: vm.claimWithNewPasskeyLabel ?? vm.hubSignInLabel,
+          variant: "primary",
+          icon: "key",
+          disabled: vm.passkeyBusy,
+          loading: vm.passkeyBusy,
+          dark,
+          touch,
+          onPress: () => vm.onPasskeyCreate()
+        }), this.renderCapsuleAction({
+          id: "oc-claim-signin-passkey",
+          title: vm.claimWithExistingPasskeyLabel ?? vm.hubSignInLabel,
+          variant: "tonal",
+          disabled: vm.passkeyBusy,
+          dark,
+          touch,
+          onPress: () => vm.onPasskeySignIn()
+        }), __Renderer.endRender()), __Renderer.endRender(), __Renderer.beginRender(__nodeView16, void 0), __Renderer.setAttributeString("borderColor", divider), __Renderer.beginComponent(Icon_1.Icon, __componentIcon4, void 0, void 0), __Renderer.setViewModelProperty("color", subtle), __Renderer.endComponent(), __Renderer.beginRender(__nodeLabel9, void 0), __Renderer.setAttributeString("value", vm.claimPrivacyHint ?? ""), __Renderer.setAttributeString("font", (0, SystemFont_1.systemFont)(12)), __Renderer.setAttributeString("color", subtle), __Renderer.endRender(), vm.cancelClaimLabel && vm.onDismissClaim && (__Renderer.beginRender(__nodeView17, void 0), __Renderer.setAttributeString("accessibilityLabel", vm.cancelClaimLabel), __Renderer.setAttributeFunction("onTap", () => {
+          (0, haptics_1.triggerHaptic)("light"), vm.onDismissClaim?.();
+        }), __Renderer.beginRender(__nodeLabel10, void 0), __Renderer.setAttributeString("value", vm.cancelClaimLabel), __Renderer.setAttributeString("font", (0, SystemFont_1.systemMediumFont)(12)), __Renderer.setAttributeString("color", muted), __Renderer.endRender(), __Renderer.endRender()), __Renderer.endRender(), __Renderer.endRender()) : isHubMode ? (__Renderer.beginRender(__nodeView18, void 0), vm.backToWorkspaceLabel && vm.onBackToWorkspace && (__Renderer.beginRender(__nodeView19, void 0), __Renderer.beginRender(__nodeView20, void 0), __Renderer.setAttributeString("accessibilityLabel", vm.backToWorkspaceLabel), __Renderer.setAttributeFunction("onTap", () => {
+          (0, haptics_1.triggerHaptic)("light"), vm.onBackToWorkspace?.();
+        }), __Renderer.setAttributeNumber("marginLeft", -6), __Renderer.beginComponent(Icon_1.Icon, __componentIcon5, void 0, void 0), __Renderer.setViewModelProperty("color", muted), __Renderer.endComponent(), __Renderer.beginRender(__nodeLabel11, void 0), __Renderer.setAttributeString("value", vm.backToWorkspaceLabel), __Renderer.setAttributeString("font", (0, SystemFont_1.systemMediumFont)(12.5)), __Renderer.setAttributeString("color", muted), __Renderer.endRender(), __Renderer.endRender(), __Renderer.endRender()), __Renderer.beginRender(__nodeView21, void 0), __Renderer.beginRender(__nodeView22, void 0), __Renderer.beginRender(__nodeLabel12, void 0), __Renderer.setAttributeString("value", vm.hubCardTitle), __Renderer.setAttributeString("font", (0, SystemFont_1.systemSemiboldFont)(touch ? 21 : 20)), __Renderer.setAttributeString("color", ink), __Renderer.endRender(), vm.hubMachineCountLabel && (__Renderer.beginRender(__nodeView23, void 0), __Renderer.setAttributeNumber("borderRadius", tokens_1.radii.pill), __Renderer.setAttributeString("backgroundColor", insetBg), __Renderer.beginRender(__nodeLabel13, void 0), __Renderer.setAttributeString("value", vm.hubMachineCountLabel), __Renderer.setAttributeString("font", (0, SystemFont_1.systemMediumFont)(11.5)), __Renderer.setAttributeString("color", muted), __Renderer.endRender(), __Renderer.endRender()), __Renderer.endRender(), __Renderer.beginRender(__nodeView24, void 0), vm.hubSignedIn && vm.onHubRefresh && (__Renderer.beginRender(__nodeView25, void 0), __Renderer.setAttributeString("accessibilityLabel", vm.hubRefreshLabel), __Renderer.setAttribute("accessibilityStateDisabled", !!vm.passkeyBusy), __Renderer.setAttributeFunction("onTap", vm.passkeyBusy ? void 0 : () => {
+          (0, haptics_1.triggerHaptic)("light"), vm.onHubRefresh?.();
+        }), __Renderer.beginComponent(Icon_1.Icon, __componentIcon6, void 0, void 0), __Renderer.setViewModelProperty("color", muted), __Renderer.endComponent(), __Renderer.beginRender(__nodeLabel14, void 0), __Renderer.setAttributeString("value", vm.hubRefreshLabel), __Renderer.setAttributeString("font", (0, SystemFont_1.systemMediumFont)(12.5)), __Renderer.setAttributeString("color", muted), __Renderer.endRender(), __Renderer.endRender()), vm.onHubSignOut && (__Renderer.beginRender(__nodeView26, void 0), __Renderer.setAttributeString("accessibilityLabel", vm.hubSignOutLabel), __Renderer.setAttribute("accessibilityStateDisabled", !!vm.passkeyBusy), __Renderer.setAttributeFunction("onTap", vm.passkeyBusy ? void 0 : () => {
+          (0, haptics_1.triggerHaptic)("selection"), vm.onHubSignOut?.();
+        }), __Renderer.beginRender(__nodeLabel15, void 0), __Renderer.setAttributeString("value", vm.hubSignOutLabel), __Renderer.setAttributeString("font", (0, SystemFont_1.systemMediumFont)(12.5)), __Renderer.setAttributeString("color", muted), __Renderer.endRender(), __Renderer.endRender()), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginRender(__nodeView27, void 0), __Renderer.setAttributeString("backgroundColor", divider), __Renderer.endRender(), vm.errorMessage ? (__Renderer.beginComponent(Banner_1.Banner, __componentBanner3, void 0, void 0), __Renderer.setViewModelProperty("title", vm.errorMessage), __Renderer.setViewModelProperty("onDismiss", vm.onDismissError), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent()) : vm.infoTitle && (__Renderer.beginComponent(Banner_1.Banner, __componentBanner4, void 0, void 0), __Renderer.setViewModelProperty("title", vm.infoTitle), __Renderer.setViewModelProperty("message", vm.infoMessage), __Renderer.setViewModelProperty("onDismiss", vm.onDismissInfo), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent()), this.renderPendingVerificationCard(dark, touch), machines.length === 0 ? (__Renderer.beginRender(__nodeView28, void 0), __Renderer.setAttributeString("backgroundColor", insetBg), __Renderer.beginRender(__nodeLabel16, void 0), __Renderer.setAttributeString("value", vm.hubEmptyMachinesText), __Renderer.setAttributeString("font", (0, SystemFont_1.systemFont)(13.5)), __Renderer.setAttributeString("color", muted), __Renderer.endRender(), __Renderer.endRender()) : (__Renderer.beginRender(__nodeView29, void 0), machines.forEach((mach) => {
+          __Renderer.beginRender(__nodeView30, mach.machineId), __Renderer.setAttributeString("backgroundColor", insetBg), __Renderer.setAttributeString("borderColor", divider), __Renderer.setAttributeNumber("opacity", mach.online ? 1 : 0.88), __Renderer.beginRender(__nodeView31, void 0), __Renderer.beginRender(__nodeView32, void 0), __Renderer.beginRender(__nodeView33, void 0), __Renderer.beginRender(__nodeView34, void 0), __Renderer.setAttributeString("backgroundColor", mach.online ? appleGreen : appleGray), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel17, void 0), __Renderer.setAttributeString("value", mach.displayName), __Renderer.setAttributeString("font", (0, SystemFont_1.systemSemiboldFont)(touch ? 14.5 : 13.5)), __Renderer.setAttributeString("color", ink), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel18, void 0), __Renderer.setAttributeString("value", mach.statusLabel), __Renderer.setAttributeString("font", (0, SystemFont_1.systemMediumFont)(11.5)), __Renderer.setAttributeString("color", mach.online ? appleGreen : subtle), __Renderer.endRender(), __Renderer.endRender(), mach.online && mach.threads.length > 0 && (__Renderer.beginRender(__nodeView35, void 0), __Renderer.beginRender(__nodeLabel19, void 0), __Renderer.setAttributeString("value", `${mach.threads[0].title} \xB7 ${mach.threads[0].statusLabel}`), __Renderer.setAttributeString("font", (0, SystemFont_1.systemFont)(12)), __Renderer.setAttributeString("color", muted), __Renderer.endRender(), __Renderer.endRender()), __Renderer.endRender(), mach.online && mach.connectLabel && vm.onConnectHubMachine && this.renderCapsuleAction({
+            id: `oc-hub-connect-${mach.machineId}`,
+            title: mach.connectLabel,
+            variant: "primary",
+            compact: !0,
+            dark,
+            touch,
+            onPress: () => vm.onConnectHubMachine?.(mach.machineId)
+          }), __Renderer.endRender(), !mach.online && mach.threads.length > 0 && (__Renderer.beginRender(__nodeView36, void 0), __Renderer.setAttributeString("borderColor", divider), mach.threads.slice(0, 3).forEach((thread) => {
+            let statusColor = thread.statusTone === "active" ? c.accent : thread.statusTone === "waiting" ? c.warning : thread.statusTone === "danger" ? c.danger : subtle;
+            __Renderer.beginRender(__nodeView37, thread.threadId), __Renderer.beginRender(__nodeLabel20, void 0), __Renderer.setAttributeString("value", thread.title), __Renderer.setAttributeString("font", (0, SystemFont_1.systemFont)(12.5)), __Renderer.setAttributeString("color", muted), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel21, void 0), __Renderer.setAttributeString("value", thread.statusLabel), __Renderer.setAttributeString("font", (0, SystemFont_1.systemFont)(11.5)), __Renderer.setAttributeString("color", statusColor), __Renderer.endRender(), __Renderer.endRender();
+          }), __Renderer.endRender()), __Renderer.endRender();
+        }), __Renderer.endRender()), this.state.hubLinkOpen && (__Renderer.beginRender(__nodeView38, void 0), this.renderUnifiedInputCapsule({
+          inputId: "oc-remote-welcome-link-input",
+          buttonId: "oc-remote-welcome-connect",
+          ariaLabel: vm.linkLabel,
+          value: vm.linkValue,
+          placeholder: vm.linkPlaceholder,
+          buttonTitle: vm.connectingLink ? vm.connectingLabel : vm.connectLinkLabel,
+          canSubmit: canSubmitLink,
+          busy: vm.connectingLink,
+          dark,
+          touch,
+          onChange: (val) => vm.onChangeLink(val),
+          onSubmit: () => vm.onSubmitLink()
+        }), __Renderer.endRender()), __Renderer.beginRender(__nodeView39, void 0), __Renderer.setAttributeString("backgroundColor", divider), __Renderer.endRender(), __Renderer.beginRender(__nodeView40, void 0), __Renderer.beginRender(__nodeLabel22, void 0), __Renderer.setAttributeString("value", vm.hubAddDeviceHint ?? ""), __Renderer.setAttributeString("font", (0, SystemFont_1.systemFont)(12)), __Renderer.setAttributeString("color", subtle), __Renderer.endRender(), __Renderer.beginRender(__nodeView41, void 0), __Renderer.setAttributeString("accessibilityLabel", vm.hubPasteTempLinkLabel ?? vm.linkLabel), __Renderer.setAttributeFunction("onTap", () => {
+          (0, haptics_1.triggerHaptic)("selection"), this.setState({ hubLinkOpen: !this.state.hubLinkOpen });
+        }), __Renderer.beginRender(__nodeLabel23, void 0), __Renderer.setAttributeString("value", vm.hubPasteTempLinkLabel ?? vm.linkLabel), __Renderer.setAttributeString("font", (0, SystemFont_1.systemMediumFont)(12)), __Renderer.setAttributeString("color", muted), __Renderer.endRender(), __Renderer.endRender(), __Renderer.endRender(), __Renderer.endRender()) : (__Renderer.beginRender(__nodeView42, void 0), __Renderer.beginRender(__nodeView43, void 0), this.renderEmblem("laptop", dark), __Renderer.beginRender(__nodeView44, void 0), __Renderer.beginRender(__nodeLabel24, void 0), __Renderer.setAttributeString("value", vm.title), __Renderer.setAttributeString("font", (0, SystemFont_1.systemSemiboldFont)(touch ? 24 : 23)), __Renderer.setAttributeString("color", ink), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel25, void 0), __Renderer.setAttributeString("value", vm.subtitle), __Renderer.setAttributeString("font", (0, SystemFont_1.systemFont)(touch ? 14.5 : 13.5)), __Renderer.setAttributeString("color", muted), __Renderer.endRender(), __Renderer.endRender(), __Renderer.endRender(), vm.errorMessage ? (__Renderer.beginComponent(Banner_1.Banner, __componentBanner5, void 0, void 0), __Renderer.setViewModelProperty("title", vm.errorMessage), __Renderer.setViewModelProperty("onDismiss", vm.onDismissError), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent()) : vm.infoTitle && (__Renderer.beginComponent(Banner_1.Banner, __componentBanner6, void 0, void 0), __Renderer.setViewModelProperty("title", vm.infoTitle), __Renderer.setViewModelProperty("message", vm.infoMessage), __Renderer.setViewModelProperty("onDismiss", vm.onDismissInfo), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent()), this.renderPendingVerificationCard(dark, touch), vm.passkeySupported && (__Renderer.beginRender(__nodeView45, void 0), this.renderCapsuleAction({
+          id: "oc-hub-passkey-signin",
+          title: vm.hubSignInLabel,
+          variant: "primary",
+          icon: "key",
+          disabled: vm.passkeyBusy,
+          loading: vm.passkeyBusy,
+          dark,
+          touch,
+          onPress: () => vm.onPasskeySignIn()
+        }), __Renderer.beginRender(__nodeView46, void 0), __Renderer.beginRender(__nodeView47, void 0), __Renderer.setAttributeString("backgroundColor", divider), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel26, void 0), __Renderer.setAttributeString("value", vm.orPasteLinkLabel ?? vm.linkLabel), __Renderer.setAttributeString("font", (0, SystemFont_1.systemFont)(12)), __Renderer.setAttributeString("color", subtle), __Renderer.endRender(), __Renderer.beginRender(__nodeView48, void 0), __Renderer.setAttributeString("backgroundColor", divider), __Renderer.endRender(), __Renderer.endRender(), __Renderer.endRender()), __Renderer.beginRender(__nodeView49, void 0), this.renderUnifiedInputCapsule({
+          inputId: "oc-remote-welcome-link-input",
+          buttonId: "oc-remote-welcome-connect",
+          ariaLabel: vm.linkLabel,
+          value: vm.linkValue,
+          placeholder: vm.linkPlaceholder,
+          buttonTitle: vm.connectingLink ? vm.connectingLabel : vm.connectLinkLabel,
+          canSubmit: canSubmitLink,
+          busy: vm.connectingLink,
+          dark,
+          touch,
+          onChange: (val) => vm.onChangeLink(val),
+          onSubmit: () => vm.onSubmitLink()
+        }), __Renderer.endRender(), __Renderer.beginRender(__nodeView50, void 0), __Renderer.beginRender(__nodeView51, void 0), __Renderer.setAttributeString("backgroundColor", divider), __Renderer.endRender(), __Renderer.beginRender(__nodeView52, void 0), __Renderer.beginRender(__nodeView53, void 0), __Renderer.setAttributeString("accessibilityLabel", vm.serverDisclosureTitle), __Renderer.setAttributeFunction("onTap", () => {
+          (0, haptics_1.triggerHaptic)("selection"), this.setState({ serverOpen: !this.state.serverOpen });
+        }), __Renderer.beginRender(__nodeLabel27, void 0), __Renderer.setAttributeString("value", vm.serverDisclosureTitle), __Renderer.setAttributeString("font", (0, SystemFont_1.systemFont)(12.5)), __Renderer.setAttributeString("color", muted), __Renderer.endRender(), __Renderer.beginComponent(Icon_1.Icon, __componentIcon7, void 0, void 0), __Renderer.setViewModelProperty("name", this.state.serverOpen ? "chevronUp" : "chevronDown"), __Renderer.setViewModelProperty("color", subtle), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.beginRender(__nodeView54, void 0), __Renderer.setAttributeString("accessibilityLabel", vm.downloadActionLabel), __Renderer.setAttributeFunction("onTap", () => {
+          (0, haptics_1.triggerHaptic)("light"), vm.onDownloadDesktop();
+        }), __Renderer.beginRender(__nodeLabel28, void 0), __Renderer.setAttributeString("value", vm.downloadActionLabel), __Renderer.setAttributeString("font", (0, SystemFont_1.systemFont)(12.5)), __Renderer.setAttributeString("color", muted), __Renderer.endRender(), __Renderer.beginComponent(Icon_1.Icon, __componentIcon8, void 0, void 0), __Renderer.setViewModelProperty("color", subtle), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.endRender(), this.state.serverOpen && (__Renderer.beginRender(__nodeView55, void 0), this.renderUnifiedInputCapsule({
+          inputId: "oc-remote-welcome-server-url",
+          buttonId: "oc-remote-welcome-server-submit",
+          ariaLabel: vm.serverAddressLabel,
+          value: vm.serverValue,
+          placeholder: vm.serverPlaceholder,
+          buttonTitle: vm.connectServerLabel,
+          canSubmit: canSubmitServer,
+          busy: vm.connectingServer,
+          dark,
+          touch,
+          onChange: (val) => vm.onChangeServer(val),
+          onSubmit: () => vm.onSubmitServer()
+        }), __Renderer.endRender()), __Renderer.endRender(), __Renderer.endRender()), __Renderer.endRender(), __Renderer.endRender();
       }
     };
     exports.RemoteWorkbenchWelcomeSurface = RemoteWorkbenchWelcomeSurface2;
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/ServerConnectionSurface.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/ServerConnectionSurface.js
 var require_ServerConnectionSurface = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/ServerConnectionSurface.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/ServerConnectionSurface.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/ServerConnectionSurface";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.ServerConnectionSurface = void 0;
@@ -19230,10 +19297,9 @@ var require_ServerConnectionSurface = __commonJS({
         };
       }
       onCreate() {
-        var _a, _b;
         (0, haptics_1.registerHapticHandler)(this.viewModel.onHaptic), this.setState({
-          url: (_a = this.viewModel.initialUrl) !== null && _a !== void 0 ? _a : "",
-          displayName: (_b = this.viewModel.initialName) !== null && _b !== void 0 ? _b : ""
+          url: this.viewModel.initialUrl ?? "",
+          displayName: this.viewModel.initialName ?? ""
         });
       }
       onViewModelUpdate(previous) {
@@ -19249,19 +19315,15 @@ var require_ServerConnectionSurface = __commonJS({
       onRender() {
         let vm = this.viewModel, dark = !!vm.dark, c = this.c, m = (0, tokens_1.themeMetrics)(vm.touch), canSubmit = this.state.url.trim().length > 0 && !vm.pending;
         __Renderer.beginRender(__nodeView1, void 0), __Renderer.setAttributeNumber("paddingLeft", vm.compact ? 4 : 0), __Renderer.setAttributeNumber("paddingRight", vm.compact ? 4 : 0), __Renderer.setAttributeNumber("paddingTop", vm.compact ? 4 : 0), __Renderer.setAttributeNumber("paddingBottom", vm.compact ? 8 : 0), __Renderer.beginRender(__nodeView2, void 0), __Renderer.setAttributeNumber("maxWidth", vm.compact ? 520 : void 0), __Renderer.setAttributeNumber("gap", vm.compact ? 20 : 32), __Renderer.beginRender(__nodeView3, void 0), __Renderer.beginRender(__nodeView4, void 0), __Renderer.beginRender(__nodeLabel1, void 0), __Renderer.setAttributeString("value", vm.title), __Renderer.setAttributeString("font", vm.compact ? m.fonts.sectionTitle : m.fonts.pageTitle), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel2, void 0), __Renderer.setAttributeString("value", vm.subtitle), __Renderer.setAttributeString("font", vm.compact ? m.fonts.detail : m.fonts.pageSummary), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.endRender(), vm.cancelLabel && vm.onCancel && (__Renderer.beginRender(__nodeView5, void 0), __Renderer.setAttributeString("accessibilityLabel", vm.cancelLabel), __Renderer.setAttributeFunction("onTap", vm.pending ? void 0 : () => {
-          var _a;
-          (0, haptics_1.triggerHaptic)("selection"), (_a = vm.onCancel) === null || _a === void 0 || _a.call(vm);
+          (0, haptics_1.triggerHaptic)("selection"), vm.onCancel?.();
         }), __Renderer.setAttributeNumber("borderRadius", m.radii.control - 1), __Renderer.setAttributeString("backgroundColor", c.trackSoft), __Renderer.setAttributeString("borderColor", c.border), __Renderer.beginComponent(Icon_1.Icon, __componentIcon1, void 0, void 0), __Renderer.setViewModelProperty("color", c.muted), __Renderer.endComponent(), __Renderer.endRender()), __Renderer.endRender(), __Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.groupTitle), __Renderer.setViewModelProperty("description", vm.addressHint), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
           __Renderer.beginComponent(TextField_1.TextField, __componentTextField1, void 0, void 0), __Renderer.setViewModelProperty("label", vm.addressLabel), __Renderer.setViewModelProperty("value", this.state.url), __Renderer.setViewModelProperty("placeholder", vm.addressPlaceholder), __Renderer.setViewModelProperty("clearTitle", vm.clearLabel), __Renderer.setViewModelProperty("inline", !0), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("disabled", vm.pending), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (url) => {
-            var _a, _b;
-            this.setState({ url }), (_b = (_a = this.viewModel).onInputChange) === null || _b === void 0 || _b.call(_a);
+            this.setState({ url }), this.viewModel.onInputChange?.();
           }), __Renderer.setViewModelProperty("onSubmit", () => this.submit()), __Renderer.endComponent(), __Renderer.beginRender(__nodeView6, void 0), __Renderer.setAttributeString("backgroundColor", c.border), __Renderer.endRender(), __Renderer.beginComponent(TextField_1.TextField, __componentTextField2, void 0, void 0), __Renderer.setViewModelProperty("label", vm.nameLabel), __Renderer.setViewModelProperty("value", this.state.displayName), __Renderer.setViewModelProperty("placeholder", vm.namePlaceholder), __Renderer.setViewModelProperty("clearTitle", vm.clearLabel), __Renderer.setViewModelProperty("inline", !0), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("disabled", vm.pending), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (displayName) => {
-            var _a, _b;
-            this.setState({ displayName }), (_b = (_a = this.viewModel).onInputChange) === null || _b === void 0 || _b.call(_a);
+            this.setState({ displayName }), this.viewModel.onInputChange?.();
           }), __Renderer.setViewModelProperty("onSubmit", () => this.submit()), __Renderer.endComponent();
         }), __Renderer.endComponent(), vm.error ? (__Renderer.beginComponent(Banner_1.Banner, __componentBanner1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.error), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent()) : vm.connectedMessage ? (__Renderer.beginComponent(Banner_1.Banner, __componentBanner2, void 0, void 0), __Renderer.setViewModelProperty("title", vm.connectedMessage), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent()) : (__Renderer.beginComponent(Banner_1.Banner, __componentBanner3, void 0, void 0), __Renderer.setViewModelProperty("title", vm.privacyTitle), __Renderer.setViewModelProperty("message", vm.privacyMessage), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent()), __Renderer.beginRender(__nodeView7, void 0), __Renderer.setAttributeString("justifyContent", m.touch ? "space-between" : "flex-end"), vm.cancelLabel && vm.onCancel && (__Renderer.beginRender(__nodeView8, void 0), __Renderer.setAttributeNumber("flexGrow", m.touch ? 1 : 0), __Renderer.setAttributeNumber("flexBasis", m.touch ? 0 : void 0), __Renderer.beginComponent(Button_1.Button, __componentButton1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.cancelLabel), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("disabled", vm.pending), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => {
-          var _a;
-          (0, haptics_1.triggerHaptic)("selection"), (_a = vm.onCancel) === null || _a === void 0 || _a.call(vm);
+          (0, haptics_1.triggerHaptic)("selection"), vm.onCancel?.();
         }), __Renderer.endComponent(), __Renderer.endRender()), __Renderer.beginRender(__nodeView9, void 0), __Renderer.setAttributeNumber("flexGrow", m.touch ? 2 : 0), __Renderer.setAttributeNumber("flexBasis", m.touch ? 0 : void 0), __Renderer.beginComponent(Button_1.Button, __componentButton2, void 0, void 0), __Renderer.setViewModelProperty("title", vm.pending ? vm.connectingLabel : vm.connectLabel), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("disabled", !canSubmit), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", () => this.submit()), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.endRender(), __Renderer.endRender(), __Renderer.endRender();
       }
     };
@@ -19269,9 +19331,9 @@ var require_ServerConnectionSurface = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/SidebarDockSurface.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/SidebarDockSurface.js
 var require_SidebarDockSurface = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/SidebarDockSurface.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/SidebarDockSurface.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/SidebarDockSurface";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.TokenUsageSurface = exports.SidebarOrbSurface = exports.SidebarDockSurface = void 0;
@@ -19335,13 +19397,7 @@ var require_SidebarDockSurface = __commonJS({
       }
       onRender() {
         let vm = this.viewModel, dark = !!vm.dark, c = (0, tokens_1.themeColors)(dark), m = (0, tokens_1.themeMetrics)(vm.touch), glassClass = dark ? "oc-liquid-glass oc-dark" : "oc-liquid-glass";
-        __Renderer.beginRender(__nodeView13, void 0), vm.open && (__Renderer.beginRender(__nodeGlass1, void 0), __Renderer.setAttributeString("class", glassClass), __Renderer.setAttributeNumber("borderRadius", m.radii.card - 2), __Renderer.setAttributeString("glassTintColor", c.glassTint), __Renderer.setAttributeString("borderColor", c.glassBorder), __Renderer.setAttributeString("boxShadow", dark ? "complex 0 8 22 rgba(0, 0, 0, 0.30)" : "complex 0 6 18 rgba(24, 24, 28, 0.08)"), __Renderer.setAttributeNumber("opacity", this.state.cardVisible ? 1 : 0), vm.machines && vm.machines.length > 1 && vm.selectedMachineId && vm.onSelectMachine && (() => {
-          var _a;
-          __Renderer.beginComponent(SegmentedControl_1.SegmentedControl, __componentSegmentedControl1, void 0, void 0), __Renderer.setViewModelProperty("label", (_a = vm.machineLabel) !== null && _a !== void 0 ? _a : vm.title), __Renderer.setViewModelProperty("value", vm.selectedMachineId), __Renderer.setViewModelProperty("options", vm.machines), __Renderer.setViewModelProperty("compact", !0), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (id) => {
-            var _a2;
-            return (_a2 = vm.onSelectMachine) === null || _a2 === void 0 ? void 0 : _a2.call(vm, id);
-          }), __Renderer.endComponent();
-        })(), __Renderer.beginRender(__nodeView14, void 0), __Renderer.beginRender(__nodeView15, void 0), __Renderer.beginComponent(SegmentedControl_1.SegmentedControl, __componentSegmentedControl2, void 0, void 0), __Renderer.setViewModelProperty("label", vm.providerLabel), __Renderer.setViewModelProperty("value", vm.selectedProviderId), __Renderer.setViewModelProperty("options", vm.providers), __Renderer.setViewModelProperty("compact", !0), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (id) => vm.onSelectProvider(id)), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.beginRender(__nodeView16, void 0), __Renderer.setAttributeString("accessibilityLabel", vm.refreshLabel), __Renderer.setAttribute("accessibilityStateDisabled", vm.refreshDisabled), __Renderer.setAttributeFunction("onTap", vm.refreshDisabled ? void 0 : () => {
+        __Renderer.beginRender(__nodeView13, void 0), vm.open && (__Renderer.beginRender(__nodeGlass1, void 0), __Renderer.setAttributeString("class", glassClass), __Renderer.setAttributeNumber("borderRadius", m.radii.card - 2), __Renderer.setAttributeString("glassTintColor", c.glassTint), __Renderer.setAttributeString("borderColor", c.glassBorder), __Renderer.setAttributeString("boxShadow", dark ? "complex 0 8 22 rgba(0, 0, 0, 0.30)" : "complex 0 6 18 rgba(24, 24, 28, 0.08)"), __Renderer.setAttributeNumber("opacity", this.state.cardVisible ? 1 : 0), vm.machines && vm.machines.length > 1 && vm.selectedMachineId && vm.onSelectMachine && (__Renderer.beginComponent(SegmentedControl_1.SegmentedControl, __componentSegmentedControl1, void 0, void 0), __Renderer.setViewModelProperty("label", vm.machineLabel ?? vm.title), __Renderer.setViewModelProperty("value", vm.selectedMachineId), __Renderer.setViewModelProperty("options", vm.machines), __Renderer.setViewModelProperty("compact", !0), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (id) => vm.onSelectMachine?.(id)), __Renderer.endComponent()), __Renderer.beginRender(__nodeView14, void 0), __Renderer.beginRender(__nodeView15, void 0), __Renderer.beginComponent(SegmentedControl_1.SegmentedControl, __componentSegmentedControl2, void 0, void 0), __Renderer.setViewModelProperty("label", vm.providerLabel), __Renderer.setViewModelProperty("value", vm.selectedProviderId), __Renderer.setViewModelProperty("options", vm.providers), __Renderer.setViewModelProperty("compact", !0), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (id) => vm.onSelectProvider(id)), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.beginRender(__nodeView16, void 0), __Renderer.setAttributeString("accessibilityLabel", vm.refreshLabel), __Renderer.setAttribute("accessibilityStateDisabled", vm.refreshDisabled), __Renderer.setAttributeFunction("onTap", vm.refreshDisabled ? void 0 : () => {
           (0, haptics_1.triggerHaptic)("light"), vm.onRefresh();
         }), __Renderer.setAttributeNumber("width", m.touch ? 32 : 28), __Renderer.setAttributeNumber("height", m.touch ? 32 : 28), __Renderer.setAttributeNumber("borderRadius", m.radii.control - 1), __Renderer.setAttributeString("backgroundColor", c.trackSoft), __Renderer.setAttributeString("borderColor", c.border), __Renderer.setAttributeNumber("opacity", vm.refreshDisabled ? 0.45 : 1), __Renderer.beginComponent(Icon_1.Icon, __componentIcon4, void 0, void 0), __Renderer.setViewModelProperty("color", c.muted), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.endRender(), (vm.planText || vm.accountText) && (__Renderer.beginRender(__nodeView17, void 0), vm.planText && (__Renderer.beginRender(__nodeView18, void 0), __Renderer.setAttributeString("backgroundColor", c.trackSoft), __Renderer.beginRender(__nodeLabel2, void 0), __Renderer.setAttributeString("value", vm.planText), __Renderer.setAttributeString("font", (0, SystemFont_1.systemSemiboldFont)(10.5)), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.endRender()), vm.accountText && (__Renderer.beginRender(__nodeLabel3, void 0), __Renderer.setAttributeString("value", vm.accountText), __Renderer.setAttributeString("font", (0, SystemFont_1.systemFont)(11)), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender()), __Renderer.endRender()), vm.statusMessage && (__Renderer.beginRender(__nodeLabel4, void 0), __Renderer.setAttributeString("value", vm.statusMessage), __Renderer.setAttributeString("font", m.fonts.detail), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender()), vm.windows.forEach((win) => {
           __Renderer.beginRender(__nodeView19, win.id), __Renderer.beginComponent(ProgressBar_1.ProgressBar, __componentProgressBar1, void 0, void 0), __Renderer.setViewModelProperty("id", `oc-usage-win-${win.id}`), __Renderer.setViewModelProperty("label", win.label), __Renderer.setViewModelProperty("progress", win.progress), __Renderer.setViewModelProperty("detail", win.percentText), __Renderer.setViewModelProperty("tone", win.warning ? "warning" : "accent"), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent(), __Renderer.beginRender(__nodeView20, void 0), __Renderer.beginRender(__nodeLabel5, void 0), __Renderer.setAttributeString("value", win.resetText), __Renderer.setAttributeString("font", (0, SystemFont_1.systemFont)(10.5)), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), win.costText && (__Renderer.beginRender(__nodeLabel6, void 0), __Renderer.setAttributeString("value", win.costText), __Renderer.setAttributeString("font", (0, SystemFont_1.systemFont)(10.5)), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender()), __Renderer.endRender(), __Renderer.endRender();
@@ -19356,9 +19412,9 @@ var require_SidebarDockSurface = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/ShortcutsSettingsSurface.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/ShortcutsSettingsSurface.js
 var require_ShortcutsSettingsSurface = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/ShortcutsSettingsSurface.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/ShortcutsSettingsSurface.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/ShortcutsSettingsSurface";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.ShortcutsSettingsSurface = void 0;
@@ -19378,13 +19434,13 @@ var require_ShortcutsSettingsSurface = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/TokenUsageDashboardSurface.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/TokenUsageDashboardSurface.js
 var require_TokenUsageDashboardSurface = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/TokenUsageDashboardSurface.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/TokenUsageDashboardSurface.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/TokenUsageDashboardSurface";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.TokenUsageDashboardSurface = void 0;
-    var __Renderer = require_JSX2().jsx, __nodeView1 = __Renderer.makeNodePrototype("view", ["width", "100%", "height", 6, "accessibilityNavigation", "ignored"]), __nodeView2 = __Renderer.makeNodePrototype("view", ["height", "100%"]), __nodeView3 = __Renderer.makeNodePrototype("view", ["width", "100%", "gap", 32]), __componentSettingsGroup1 = __Renderer.makeComponentPrototype(["title", ""]), __componentSettingsFormRow1 = __Renderer.makeComponentPrototype(), __componentSegmentedControl1 = __Renderer.makeComponentPrototype(["id", "oc-usage-page-machines"]), __componentSettingsFormRow2 = __Renderer.makeComponentPrototype(), __componentSegmentedControl2 = __Renderer.makeComponentPrototype(["id", "oc-usage-page-providers"]), __componentSettingsGroup2 = __Renderer.makeComponentPrototype(), __nodeView4 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __nodeView5 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __nodeView6 = __Renderer.makeNodePrototype("view", ["height", 0.5, "marginLeft", 16, "marginRight", 16]), __nodeView7 = __Renderer.makeNodePrototype("view", ["width", "100%", "paddingLeft", 16, "paddingRight", 16, "paddingTop", 14, "paddingBottom", 14, "gap", 6]), __componentProgressBar1 = __Renderer.makeComponentPrototype(), __nodeLabel1 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeView8 = __Renderer.makeNodePrototype("view", ["width", "100%", "padding", 16]), __nodeLabel2 = __Renderer.makeNodePrototype("label", ["numberOfLines", 0]), __componentSettingsGroup3 = __Renderer.makeComponentPrototype(), __nodeView9 = __Renderer.makeNodePrototype("view", ["width", "100%", "padding", 16, "gap", 14]), __componentProgressBar2 = __Renderer.makeComponentPrototype(["id", "oc-usage-page-context", "tone", "accent"]), __nodeLabel3 = __Renderer.makeNodePrototype("label", ["numberOfLines", 0]), __nodeView10 = __Renderer.makeNodePrototype("view", ["width", "100%", "flexDirection", "row", "flexWrap", "wrap", "gap", 8]), __nodeView11 = __Renderer.makeNodePrototype("view", ["flexGrow", 1, "flexBasis", 110, "minWidth", 96, "paddingLeft", 12, "paddingRight", 12, "paddingTop", 10, "paddingBottom", 10, "borderRadius", 10, "borderWidth", 0.5, "gap", 3]), __nodeLabel4 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeLabel5 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeLabel6 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __componentBanner1 = __Renderer.makeComponentPrototype(["id", "oc-usage-local-note", "tone", "info"]), __nodeView12 = __Renderer.makeNodePrototype("view", ["width", "100%", "gap", 32]), __componentSettingsGroup4 = __Renderer.makeComponentPrototype(["title", ""]), __nodeView13 = __Renderer.makeNodePrototype("view", ["width", "100%", "paddingLeft", 16, "paddingRight", 16, "paddingTop", 14, "paddingBottom", 14, "flexDirection", "row", "flexWrap", "wrap", "alignItems", "flex-end", "justifyContent", "space-between", "gap", 14]), __nodeView14 = __Renderer.makeNodePrototype("view", ["flexDirection", "row", "flexWrap", "wrap", "alignItems", "flex-end", "gap", 14, "flexGrow", 1, "minWidth", 0]), __nodeView15 = __Renderer.makeNodePrototype("view", ["gap", 5]), __nodeLabel7 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __componentSegmentedControl3 = __Renderer.makeComponentPrototype(["id", "oc-ledger-scope"]), __nodeView16 = __Renderer.makeNodePrototype("view", ["gap", 5]), __nodeLabel8 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __componentSegmentedControl4 = __Renderer.makeComponentPrototype(["id", "oc-ledger-range"]), __nodeView17 = __Renderer.makeNodePrototype("view", ["gap", 5]), __nodeLabel9 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __componentSelectMenu1 = __Renderer.makeComponentPrototype(["id", "oc-ledger-model", "minWidth", 168, "align", "left"]), __nodeView18 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __nodeView19 = __Renderer.makeNodePrototype("view", ["height", 0.5, "marginLeft", 16, "marginRight", 16]), __nodeView20 = __Renderer.makeNodePrototype("view", ["width", "100%", "paddingLeft", 16, "paddingRight", 16, "paddingTop", 12, "paddingBottom", 14, "gap", 12]), __nodeView21 = __Renderer.makeNodePrototype("view", ["flexGrow", 1, "flexBasis", 0, "minWidth", 0]), __componentTextField1 = __Renderer.makeComponentPrototype(["id", "oc-ledger-from"]), __nodeView22 = __Renderer.makeNodePrototype("view", ["flexGrow", 1, "flexBasis", 0, "minWidth", 0]), __componentTextField2 = __Renderer.makeComponentPrototype(["id", "oc-ledger-through"]), __componentSettingsGroup5 = __Renderer.makeComponentPrototype(), __nodeView23 = __Renderer.makeNodePrototype("view", ["width", "100%", "padding", 14, "gap", 12]), __nodeView24 = __Renderer.makeNodePrototype("view", ["alignSelf", "flex-start", "paddingLeft", 8, "paddingRight", 8, "paddingTop", 2, "paddingBottom", 2, "borderRadius", 999]), __nodeLabel10 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeView25 = __Renderer.makeNodePrototype("view", ["width", "100%", "flexDirection", "row", "flexWrap", "wrap", "gap", 8]), __nodeView26 = __Renderer.makeNodePrototype("view", ["flexGrow", 1, "minWidth", 112, "paddingLeft", 12, "paddingRight", 12, "paddingTop", 12, "paddingBottom", 12, "borderRadius", 10, "borderWidth", 0.5, "gap", 3]), __nodeLabel11 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeLabel12 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeLabel13 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeLabel14 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __componentSettingsGroup6 = __Renderer.makeComponentPrototype(["title", ""]), __nodeView27 = __Renderer.makeNodePrototype("view", ["width", "100%", "padding", 16, "gap", 14]), __nodeView28 = __Renderer.makeNodePrototype("view", ["width", "100%", "justifyContent", "space-between", "gap", 12]), __nodeView29 = __Renderer.makeNodePrototype("view", ["gap", 3, "flexShrink", 1, "minWidth", 0]), __nodeLabel15 = __Renderer.makeNodePrototype("label", ["accessibilityCategory", "header"]), __nodeLabel16 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __componentSegmentedControl5 = __Renderer.makeComponentPrototype(["id", "oc-ledger-activity-mode"]), __nodeView30 = __Renderer.makeNodePrototype("view", ["width", "100%", "gap", 8]), __nodeView31 = __Renderer.makeNodePrototype("view", ["width", "100%", "flexDirection", "row", "gap", 8, "alignItems", "flex-start"]), __nodeView32 = __Renderer.makeNodePrototype("view", ["gap", 3, "paddingTop", 2]), __nodeView33 = __Renderer.makeNodePrototype("view", ["height", 12, "justifyContent", "center"]), __nodeLabel17 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeView34 = __Renderer.makeNodePrototype("view", ["flexDirection", "row", "flexWrap", "wrap", "gap", 3, "flexGrow", 1, "minWidth", 0]), __nodeView35 = __Renderer.makeNodePrototype("view", ["gap", 3]), __nodeView36 = __Renderer.makeNodePrototype("view", ["width", 12, "height", 12, "borderRadius", 3]), __nodeLabel18 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeView37 = __Renderer.makeNodePrototype("view", ["width", "100%", "gap", 8]), __nodeView38 = __Renderer.makeNodePrototype("view", ["width", "100%", "flexDirection", "row", "alignItems", "center", "gap", 10]), __nodeView39 = __Renderer.makeNodePrototype("view", ["width", 68, "flexShrink", 0]), __nodeLabel19 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeView40 = __Renderer.makeNodePrototype("view", ["flexGrow", 1, "flexShrink", 1, "minWidth", 0]), __nodeView41 = __Renderer.makeNodePrototype("view", ["width", 68, "flexShrink", 0, "alignItems", "flex-end"]), __nodeLabel20 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __componentSettingsGroup7 = __Renderer.makeComponentPrototype(), __nodeView42 = __Renderer.makeNodePrototype("view", ["width", "100%", "padding", 12, "flexDirection", "row", "flexWrap", "wrap", "gap", 10]), __nodeView43 = __Renderer.makeNodePrototype("view", ["flexGrow", 1, "minWidth", 180, "padding", 12, "borderRadius", 10, "borderWidth", 0.5, "gap", 8]), __nodeView44 = __Renderer.makeNodePrototype("view", ["width", "100%", "flexDirection", "row", "alignItems", "center", "justifyContent", "space-between", "gap", 8]), __nodeLabel21 = __Renderer.makeNodePrototype("label", ["flexShrink", 1, "numberOfLines", 1]), __nodeLabel22 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeLabel23 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeView45 = __Renderer.makeNodePrototype("view", ["width", "100%", "padding", 16]), __nodeLabel24 = __Renderer.makeNodePrototype("label", ["numberOfLines", 0]), __componentSettingsGroup8 = __Renderer.makeComponentPrototype(), __nodeView46 = __Renderer.makeNodePrototype("view", ["width", "100%", "paddingLeft", 16, "paddingRight", 16, "paddingTop", 12, "paddingBottom", 12, "flexDirection", "row", "flexWrap", "wrap", "alignItems", "center", "justifyContent", "space-between", "gap", 10]), __componentButton1 = __Renderer.makeComponentPrototype(["id", "oc-ledger-back", "variant", "secondary", "size", "sm"]), __componentSegmentedControl6 = __Renderer.makeComponentPrototype(["id", "oc-ledger-view"]), __componentButton2 = __Renderer.makeComponentPrototype(["id", "oc-ledger-clear-actor", "variant", "ghost", "size", "sm"]), __nodeView47 = __Renderer.makeNodePrototype("view", ["height", 0.5, "marginLeft", 16, "marginRight", 16]), __nodeView48 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __componentSettingsListItem1 = __Renderer.makeComponentPrototype(), __nodeView49 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __componentSettingsListItem2 = __Renderer.makeComponentPrototype(), __nodeLabel25 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeView50 = __Renderer.makeNodePrototype("view", ["width", "100%", "padding", 16]), __nodeLabel26 = __Renderer.makeNodePrototype("label", ["numberOfLines", 0]), __nodeView51 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __nodeView52 = __Renderer.makeNodePrototype("view", ["height", 0.5, "marginLeft", 16, "marginRight", 16]), __nodeView53 = __Renderer.makeNodePrototype("view", ["width", "100%", "padding", 12, "flexDirection", "row", "justifyContent", "flex-end", "gap", 8]), __componentButton3 = __Renderer.makeComponentPrototype(["id", "oc-ledger-first-page", "variant", "secondary", "size", "sm"]), __componentButton4 = __Renderer.makeComponentPrototype(["id", "oc-ledger-next-page", "variant", "secondary", "size", "sm"]), __componentSettingsGroup9 = __Renderer.makeComponentPrototype(), __nodeView54 = __Renderer.makeNodePrototype("view", ["width", "100%", "padding", 6]), __nodeView55 = __Renderer.makeNodePrototype("view", ["class", "oc-settings-row", "accessibilityId", "oc-ledger-diagnostics-toggle", "accessibilityCategory", "button", "paddingLeft", 10, "paddingRight", 10, "paddingTop", 10, "paddingBottom", 10, "borderRadius", 10, "flexDirection", "row", "alignItems", "center", "justifyContent", "space-between", "gap", 12]), __nodeLabel27 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __componentIcon1 = __Renderer.makeComponentPrototype(["size", 14]), __nodeView56 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __nodeView57 = __Renderer.makeNodePrototype("view", ["height", 0.5, "marginLeft", 16, "marginRight", 16]), __nodeView58 = __Renderer.makeNodePrototype("view", ["width", "100%", "padding", 16, "gap", 12]), __nodeView59 = __Renderer.makeNodePrototype("view", ["width", "100%", "flexDirection", "row", "alignItems", "center", "justifyContent", "space-between", "gap", 12]), __nodeLabel28 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __componentButton5 = __Renderer.makeComponentPrototype(["id", "oc-ledger-toggle-collection", "variant", "secondary", "size", "sm"]), __nodeLabel29 = __Renderer.makeNodePrototype("label", ["numberOfLines", 0]), __componentBanner2 = __Renderer.makeComponentPrototype(["id", "oc-ledger-partial", "tone", "warning"]), __nodeView60 = __Renderer.makeNodePrototype("view", ["width", "100%", "flexDirection", "row", "flexWrap", "wrap", "gap", 8]), __nodeView61 = __Renderer.makeNodePrototype("view", ["paddingLeft", 10, "paddingRight", 10, "paddingTop", 8, "paddingBottom", 8, "borderRadius", 8, "borderWidth", 0.5, "gap", 2]), __nodeLabel30 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeLabel31 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeView62 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __nodeView63 = __Renderer.makeNodePrototype("view", ["position", "absolute", "top", 0, "left", 0, "right", 0, "bottom", 0, "zIndex", 30, "accessibilityNavigation", "ignored"]), __nodeView64 = __Renderer.makeNodePrototype("view", ["width", "100%", "gap", 36]), __componentSettingsPageHeader1 = __Renderer.makeComponentPrototype(), __componentButton6 = __Renderer.makeComponentPrototype(["id", "oc-token-usage-refresh", "variant", "secondary", "size", "sm"]), __componentBanner3 = __Renderer.makeComponentPrototype(["id", "oc-token-usage-error", "tone", "danger"]), __nodeView65 = __Renderer.makeNodePrototype("view", ["width", "100%", "paddingTop", 8]), __nodeLabel32 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), Component_1 = require_Component(), SystemFont_1 = require_SystemFont(), Banner_1 = require_Banner(), Button_1 = require_Button(), haptics_1 = require_haptics(), Icon_1 = require_Icon(), ProgressBar_1 = require_ProgressBar(), SegmentedControl_1 = require_SegmentedControl(), SelectMenu_1 = require_SelectMenu(), SettingsGroup_1 = require_SettingsGroup(), TextField_1 = require_TextField(), tokens_1 = require_tokens(), TokenUsageDashboardSurface2 = class extends Component_1.StatefulComponent {
+    var __Renderer = require_JSX2().jsx, __nodeView1 = __Renderer.makeNodePrototype("view", ["width", "100%", "height", 6, "accessibilityNavigation", "ignored"]), __nodeView2 = __Renderer.makeNodePrototype("view", ["height", "100%"]), __nodeView3 = __Renderer.makeNodePrototype("view", ["width", "100%", "gap", 32]), __componentSettingsGroup1 = __Renderer.makeComponentPrototype(["title", ""]), __componentSettingsFormRow1 = __Renderer.makeComponentPrototype(), __componentSegmentedControl1 = __Renderer.makeComponentPrototype(["id", "oc-usage-page-machines"]), __componentSettingsFormRow2 = __Renderer.makeComponentPrototype(), __componentSegmentedControl2 = __Renderer.makeComponentPrototype(["id", "oc-usage-page-providers"]), __componentSettingsGroup2 = __Renderer.makeComponentPrototype(), __nodeView4 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __nodeView5 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __nodeView6 = __Renderer.makeNodePrototype("view", ["height", 0.5, "marginLeft", 16, "marginRight", 16]), __nodeView7 = __Renderer.makeNodePrototype("view", ["width", "100%", "paddingLeft", 16, "paddingRight", 16, "paddingTop", 14, "paddingBottom", 14, "gap", 6]), __componentProgressBar1 = __Renderer.makeComponentPrototype(), __nodeLabel1 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeView8 = __Renderer.makeNodePrototype("view", ["width", "100%", "padding", 16]), __nodeLabel2 = __Renderer.makeNodePrototype("label", ["numberOfLines", 0]), __componentSettingsGroup3 = __Renderer.makeComponentPrototype(), __nodeView9 = __Renderer.makeNodePrototype("view", ["width", "100%", "padding", 16, "gap", 14]), __componentProgressBar2 = __Renderer.makeComponentPrototype(["id", "oc-usage-page-context", "tone", "accent"]), __nodeLabel3 = __Renderer.makeNodePrototype("label", ["numberOfLines", 0]), __nodeView10 = __Renderer.makeNodePrototype("view", ["width", "100%", "flexDirection", "row", "flexWrap", "wrap", "gap", 8]), __nodeView11 = __Renderer.makeNodePrototype("view", ["flexGrow", 1, "flexBasis", 110, "minWidth", 96, "paddingLeft", 12, "paddingRight", 12, "paddingTop", 10, "paddingBottom", 10, "borderRadius", 10, "borderWidth", 0.5, "gap", 3]), __nodeLabel4 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeLabel5 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeLabel6 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __componentBanner1 = __Renderer.makeComponentPrototype(["id", "oc-usage-local-note", "tone", "info"]), __nodeView12 = __Renderer.makeNodePrototype("view", ["width", "100%", "gap", 32]), __componentSettingsGroup4 = __Renderer.makeComponentPrototype(["title", ""]), __nodeView13 = __Renderer.makeNodePrototype("view", ["width", "100%", "paddingLeft", 16, "paddingRight", 16, "paddingTop", 14, "paddingBottom", 14, "flexDirection", "row", "flexWrap", "wrap", "alignItems", "flex-end", "justifyContent", "space-between", "gap", 14]), __nodeView14 = __Renderer.makeNodePrototype("view", ["flexDirection", "row", "flexWrap", "wrap", "alignItems", "flex-end", "gap", 14, "flexGrow", 1, "minWidth", 0]), __nodeView15 = __Renderer.makeNodePrototype("view", ["gap", 5]), __nodeLabel7 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __componentSegmentedControl3 = __Renderer.makeComponentPrototype(["id", "oc-ledger-scope"]), __nodeView16 = __Renderer.makeNodePrototype("view", ["gap", 5]), __nodeLabel8 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __componentSegmentedControl4 = __Renderer.makeComponentPrototype(["id", "oc-ledger-range"]), __nodeView17 = __Renderer.makeNodePrototype("view", ["gap", 5]), __nodeLabel9 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __componentSelectMenu1 = __Renderer.makeComponentPrototype(["id", "oc-ledger-model", "minWidth", 168, "align", "left"]), __nodeView18 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __nodeView19 = __Renderer.makeNodePrototype("view", ["height", 0.5, "marginLeft", 16, "marginRight", 16]), __nodeView20 = __Renderer.makeNodePrototype("view", ["width", "100%", "paddingLeft", 16, "paddingRight", 16, "paddingTop", 12, "paddingBottom", 14, "gap", 12]), __nodeView21 = __Renderer.makeNodePrototype("view", ["flexGrow", 1, "flexBasis", 0, "minWidth", 0]), __componentTextField1 = __Renderer.makeComponentPrototype(["id", "oc-ledger-from"]), __nodeView22 = __Renderer.makeNodePrototype("view", ["flexGrow", 1, "flexBasis", 0, "minWidth", 0]), __componentTextField2 = __Renderer.makeComponentPrototype(["id", "oc-ledger-through"]), __componentSettingsGroup5 = __Renderer.makeComponentPrototype(), __nodeView23 = __Renderer.makeNodePrototype("view", ["width", "100%", "padding", 14, "gap", 12]), __nodeView24 = __Renderer.makeNodePrototype("view", ["alignSelf", "flex-start", "paddingLeft", 8, "paddingRight", 8, "paddingTop", 2, "paddingBottom", 2, "borderRadius", 999]), __nodeLabel10 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeView25 = __Renderer.makeNodePrototype("view", ["width", "100%", "flexDirection", "row", "flexWrap", "wrap", "gap", 8]), __nodeView26 = __Renderer.makeNodePrototype("view", ["flexGrow", 1, "minWidth", 112, "paddingLeft", 12, "paddingRight", 12, "paddingTop", 12, "paddingBottom", 12, "borderRadius", 10, "borderWidth", 0.5, "gap", 3]), __nodeLabel11 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeLabel12 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeLabel13 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeLabel14 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __componentSettingsGroup6 = __Renderer.makeComponentPrototype(["title", ""]), __nodeView27 = __Renderer.makeNodePrototype("view", ["width", "100%", "padding", 16, "gap", 14]), __nodeView28 = __Renderer.makeNodePrototype("view", ["width", "100%", "justifyContent", "space-between", "gap", 12]), __nodeView29 = __Renderer.makeNodePrototype("view", ["gap", 3, "flexShrink", 1, "minWidth", 0]), __nodeLabel15 = __Renderer.makeNodePrototype("label", ["accessibilityCategory", "header"]), __nodeLabel16 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __componentSegmentedControl5 = __Renderer.makeComponentPrototype(["id", "oc-ledger-activity-mode"]), __nodeView30 = __Renderer.makeNodePrototype("view", ["width", "100%", "gap", 8]), __nodeView31 = __Renderer.makeNodePrototype("view", ["width", "100%", "flexDirection", "row", "gap", 8, "alignItems", "flex-start"]), __nodeView32 = __Renderer.makeNodePrototype("view", ["gap", 3, "paddingTop", 2]), __nodeView33 = __Renderer.makeNodePrototype("view", ["height", 12, "justifyContent", "center"]), __nodeLabel17 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeView34 = __Renderer.makeNodePrototype("view", ["flexDirection", "row", "flexWrap", "wrap", "gap", 3, "flexGrow", 1, "minWidth", 0]), __nodeView35 = __Renderer.makeNodePrototype("view", ["gap", 3]), __nodeView36 = __Renderer.makeNodePrototype("view", ["width", 12, "height", 12, "borderRadius", 3]), __nodeLabel18 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeView37 = __Renderer.makeNodePrototype("view", ["width", "100%", "gap", 8]), __nodeView38 = __Renderer.makeNodePrototype("view", ["width", "100%", "flexDirection", "row", "alignItems", "center", "gap", 10]), __nodeView39 = __Renderer.makeNodePrototype("view", ["width", 68, "flexShrink", 0]), __nodeLabel19 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeView40 = __Renderer.makeNodePrototype("view", ["flexGrow", 1, "flexShrink", 1, "minWidth", 0]), __nodeView41 = __Renderer.makeNodePrototype("view", ["width", 68, "flexShrink", 0, "alignItems", "flex-end"]), __nodeLabel20 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __componentSettingsGroup7 = __Renderer.makeComponentPrototype(), __nodeView42 = __Renderer.makeNodePrototype("view", ["width", "100%", "padding", 12, "flexDirection", "row", "flexWrap", "wrap", "gap", 10]), __nodeView43 = __Renderer.makeNodePrototype("view", ["flexGrow", 1, "minWidth", 180, "padding", 12, "borderRadius", 10, "borderWidth", 0.5, "gap", 8]), __nodeView44 = __Renderer.makeNodePrototype("view", ["width", "100%", "flexDirection", "row", "alignItems", "center", "justifyContent", "space-between", "gap", 8]), __nodeLabel21 = __Renderer.makeNodePrototype("label", ["flexShrink", 1, "numberOfLines", 1]), __nodeLabel22 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeLabel23 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeView45 = __Renderer.makeNodePrototype("view", ["width", "100%", "padding", 16]), __nodeLabel24 = __Renderer.makeNodePrototype("label", ["numberOfLines", 0]), __componentSettingsGroup8 = __Renderer.makeComponentPrototype(), __nodeView46 = __Renderer.makeNodePrototype("view", ["width", "100%", "paddingLeft", 16, "paddingRight", 16, "paddingTop", 12, "paddingBottom", 12, "flexDirection", "row", "flexWrap", "wrap", "alignItems", "center", "justifyContent", "space-between", "gap", 10]), __componentButton1 = __Renderer.makeComponentPrototype(["id", "oc-ledger-back", "variant", "secondary", "size", "sm"]), __componentSegmentedControl6 = __Renderer.makeComponentPrototype(["id", "oc-ledger-view"]), __componentButton2 = __Renderer.makeComponentPrototype(["id", "oc-ledger-clear-actor", "variant", "ghost", "size", "sm"]), __nodeView47 = __Renderer.makeNodePrototype("view", ["height", 0.5, "marginLeft", 16, "marginRight", 16]), __nodeView48 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __componentSettingsListItem1 = __Renderer.makeComponentPrototype(), __nodeView49 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __componentSettingsListItem2 = __Renderer.makeComponentPrototype(), __nodeLabel25 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeView50 = __Renderer.makeNodePrototype("view", ["width", "100%", "padding", 16]), __nodeLabel26 = __Renderer.makeNodePrototype("label", ["numberOfLines", 0]), __nodeView51 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __nodeView52 = __Renderer.makeNodePrototype("view", ["height", 0.5, "marginLeft", 16, "marginRight", 16]), __nodeView53 = __Renderer.makeNodePrototype("view", ["width", "100%", "padding", 12, "flexDirection", "row", "justifyContent", "flex-end", "gap", 8]), __componentButton3 = __Renderer.makeComponentPrototype(["id", "oc-ledger-first-page", "variant", "secondary", "size", "sm"]), __componentButton4 = __Renderer.makeComponentPrototype(["id", "oc-ledger-next-page", "variant", "secondary", "size", "sm"]), __componentSettingsGroup9 = __Renderer.makeComponentPrototype(), __nodeView54 = __Renderer.makeNodePrototype("view", ["width", "100%", "padding", 6]), __nodeView55 = __Renderer.makeNodePrototype("view", ["class", "oc-settings-row", "accessibilityId", "oc-ledger-diagnostics-toggle", "accessibilityCategory", "button", "paddingLeft", 10, "paddingRight", 10, "paddingTop", 10, "paddingBottom", 10, "borderRadius", 10, "flexDirection", "row", "alignItems", "center", "justifyContent", "space-between", "gap", 12]), __nodeLabel27 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __componentIcon1 = __Renderer.makeComponentPrototype(["size", 14]), __nodeView56 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __nodeView57 = __Renderer.makeNodePrototype("view", ["height", 0.5, "marginLeft", 16, "marginRight", 16]), __nodeView58 = __Renderer.makeNodePrototype("view", ["width", "100%", "padding", 16, "gap", 12]), __nodeView59 = __Renderer.makeNodePrototype("view", ["width", "100%", "flexDirection", "row", "alignItems", "center", "justifyContent", "space-between", "gap", 12]), __nodeLabel28 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __componentButton5 = __Renderer.makeComponentPrototype(["id", "oc-ledger-toggle-collection", "variant", "secondary", "size", "sm"]), __nodeLabel29 = __Renderer.makeNodePrototype("label", ["numberOfLines", 0]), __componentBanner2 = __Renderer.makeComponentPrototype(["id", "oc-ledger-partial", "tone", "warning"]), __nodeView60 = __Renderer.makeNodePrototype("view", ["width", "100%", "flexDirection", "row", "flexWrap", "wrap", "gap", 8]), __nodeView61 = __Renderer.makeNodePrototype("view", ["paddingLeft", 10, "paddingRight", 10, "paddingTop", 8, "paddingBottom", 8, "borderRadius", 8, "borderWidth", 0.5, "gap", 2]), __nodeLabel30 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeLabel31 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeView62 = __Renderer.makeNodePrototype("view", ["width", "100%", "gap", 20]), __componentSettingsGroup10 = __Renderer.makeComponentPrototype(), __nodeView63 = __Renderer.makeNodePrototype("view", ["width", "100%", "padding", 16, "gap", 14]), __nodeView64 = __Renderer.makeNodePrototype("view", ["width", "100%", "flexDirection", "row", "justifyContent", "flex-end"]), __componentButton6 = __Renderer.makeComponentPrototype(["id", "oc-usage-gateway-manage-models", "variant", "secondary", "size", "sm"]), __componentProgressBar3 = __Renderer.makeComponentPrototype(["id", "oc-usage-gateway-budget-bar"]), __nodeLabel32 = __Renderer.makeNodePrototype("label", ["numberOfLines", 0]), __nodeView65 = __Renderer.makeNodePrototype("view", ["width", "100%", "flexDirection", "row", "flexWrap", "wrap", "gap", 8]), __nodeView66 = __Renderer.makeNodePrototype("view", ["flexGrow", 1, "minWidth", 112, "paddingLeft", 12, "paddingRight", 12, "paddingTop", 12, "paddingBottom", 12, "borderRadius", 10, "borderWidth", 0.5, "gap", 3]), __nodeLabel33 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeLabel34 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeLabel35 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeView67 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __nodeView68 = __Renderer.makeNodePrototype("view", ["height", 0.5, "marginLeft", 16, "marginRight", 16]), __nodeView69 = __Renderer.makeNodePrototype("view", ["width", "100%", "paddingLeft", 16, "paddingRight", 16, "paddingTop", 12, "paddingBottom", 8]), __nodeLabel36 = __Renderer.makeNodePrototype("label", ["numberOfLines", 1]), __nodeView70 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __componentSettingsListItem3 = __Renderer.makeComponentPrototype(), __nodeView71 = __Renderer.makeNodePrototype("view", ["width", "100%", "paddingLeft", 16, "paddingRight", 16, "paddingTop", 4, "paddingBottom", 16]), __nodeLabel37 = __Renderer.makeNodePrototype("label", ["numberOfLines", 0]), __nodeView72 = __Renderer.makeNodePrototype("view", ["width", "100%"]), __nodeView73 = __Renderer.makeNodePrototype("view", ["position", "absolute", "top", 0, "left", 0, "right", 0, "bottom", 0, "zIndex", 30, "accessibilityNavigation", "ignored"]), __nodeView74 = __Renderer.makeNodePrototype("view", ["width", "100%", "gap", 36]), __componentSettingsPageHeader1 = __Renderer.makeComponentPrototype(), __componentButton7 = __Renderer.makeComponentPrototype(["id", "oc-token-usage-refresh", "variant", "secondary", "size", "sm"]), __componentBanner3 = __Renderer.makeComponentPrototype(["id", "oc-token-usage-error", "tone", "danger"]), __nodeView75 = __Renderer.makeNodePrototype("view", ["class", "oc-cold-skeleton", "width", "100%", "minHeight", 132, "borderWidth", 0.5, "padding", 16, "gap", 12]), __nodeView76 = __Renderer.makeNodePrototype("view", ["width", "38%", "height", 13, "borderRadius", 6]), __nodeView77 = __Renderer.makeNodePrototype("view", ["width", "72%", "height", 11, "borderRadius", 5]), __nodeView78 = __Renderer.makeNodePrototype("view", ["width", "54%", "height", 11, "borderRadius", 5]), Component_1 = require_Component(), SystemFont_1 = require_SystemFont(), Banner_1 = require_Banner(), Button_1 = require_Button(), haptics_1 = require_haptics(), Icon_1 = require_Icon(), ProgressBar_1 = require_ProgressBar(), SegmentedControl_1 = require_SegmentedControl(), SelectMenu_1 = require_SelectMenu(), SettingsGroup_1 = require_SettingsGroup(), TextField_1 = require_TextField(), tokens_1 = require_tokens(), TokenUsageDashboardSurface2 = class extends Component_1.StatefulComponent {
       constructor() {
         super(...arguments), this.state = {
           modelMenuOpen: !1,
@@ -19409,25 +19465,15 @@ var require_TokenUsageDashboardSurface = __commonJS({
       renderLocalUsage(local, dark, touch) {
         let c = (0, tokens_1.themeColors)(dark), m = (0, tokens_1.themeMetrics)(touch);
         __Renderer.beginRender(__nodeView3, void 0), __Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup1, void 0, void 0), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
-          local.machines && local.machines.length > 1 && local.selectedMachineId && local.onSelectMachine && (() => {
-            var _a;
-            __Renderer.beginComponent(SettingsGroup_1.SettingsFormRow, __componentSettingsFormRow1, void 0, void 0), __Renderer.setViewModelProperty("title", (_a = local.machineLabel) !== null && _a !== void 0 ? _a : ""), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
-              var _a2;
-              __Renderer.beginComponent(SegmentedControl_1.SegmentedControl, __componentSegmentedControl1, void 0, void 0), __Renderer.setViewModelProperty("label", (_a2 = local.machineLabel) !== null && _a2 !== void 0 ? _a2 : ""), __Renderer.setViewModelProperty("value", local.selectedMachineId), __Renderer.setViewModelProperty("options", local.machines), __Renderer.setViewModelProperty("compact", !0), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (id) => {
-                var _a3;
-                return (_a3 = local.onSelectMachine) === null || _a3 === void 0 ? void 0 : _a3.call(local, id);
-              }), __Renderer.endComponent();
-            }), __Renderer.endComponent();
-          })(), __Renderer.beginComponent(SettingsGroup_1.SettingsFormRow, __componentSettingsFormRow2, void 0, void 0), __Renderer.setViewModelProperty("title", local.providerLabel), __Renderer.setViewModelProperty("description", [local.planText, local.accountText].filter(Boolean).join(" \xB7 ") || void 0), __Renderer.setViewModelProperty("divider", !!(local.machines && local.machines.length > 1)), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
+          local.machines && local.machines.length > 1 && local.selectedMachineId && local.onSelectMachine && (__Renderer.beginComponent(SettingsGroup_1.SettingsFormRow, __componentSettingsFormRow1, void 0, void 0), __Renderer.setViewModelProperty("title", local.machineLabel ?? ""), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
+            __Renderer.beginComponent(SegmentedControl_1.SegmentedControl, __componentSegmentedControl1, void 0, void 0), __Renderer.setViewModelProperty("label", local.machineLabel ?? ""), __Renderer.setViewModelProperty("value", local.selectedMachineId), __Renderer.setViewModelProperty("options", local.machines), __Renderer.setViewModelProperty("compact", !0), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (id) => local.onSelectMachine?.(id)), __Renderer.endComponent();
+          }), __Renderer.endComponent()), __Renderer.beginComponent(SettingsGroup_1.SettingsFormRow, __componentSettingsFormRow2, void 0, void 0), __Renderer.setViewModelProperty("title", local.providerLabel), __Renderer.setViewModelProperty("description", [local.planText, local.accountText].filter(Boolean).join(" \xB7 ") || void 0), __Renderer.setViewModelProperty("divider", !!(local.machines && local.machines.length > 1)), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
             __Renderer.beginComponent(SegmentedControl_1.SegmentedControl, __componentSegmentedControl2, void 0, void 0), __Renderer.setViewModelProperty("label", local.providerLabel), __Renderer.setViewModelProperty("value", local.selectedProviderId), __Renderer.setViewModelProperty("options", local.providers), __Renderer.setViewModelProperty("compact", !0), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (id) => local.onSelectProvider(id)), __Renderer.endComponent();
           }), __Renderer.endComponent();
         }), __Renderer.endComponent(), __Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup2, void 0, void 0), __Renderer.setViewModelProperty("title", local.quotaGroupTitle), __Renderer.setViewModelProperty("description", local.quotaGroupDescription), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
           local.windows.length > 0 ? (__Renderer.beginRender(__nodeView4, void 0), local.windows.forEach((win, idx) => {
             __Renderer.beginRender(__nodeView5, win.id), idx > 0 && (__Renderer.beginRender(__nodeView6, void 0), __Renderer.setAttributeString("backgroundColor", c.border), __Renderer.endRender()), __Renderer.beginRender(__nodeView7, void 0), __Renderer.beginComponent(ProgressBar_1.ProgressBar, __componentProgressBar1, void 0, void 0), __Renderer.setViewModelProperty("id", `oc-usage-page-win-${win.id}`), __Renderer.setViewModelProperty("label", win.label), __Renderer.setViewModelProperty("progress", win.progress), __Renderer.setViewModelProperty("detail", [win.percentText, win.resetText].filter(Boolean).join(" \xB7 ")), __Renderer.setViewModelProperty("tone", win.warning ? "warning" : "accent"), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent(), win.costText && (__Renderer.beginRender(__nodeLabel1, void 0), __Renderer.setAttributeString("value", win.costText), __Renderer.setAttributeString("font", m.fonts.caption), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender()), __Renderer.endRender(), __Renderer.endRender();
-          }), __Renderer.endRender()) : (() => {
-            var _a;
-            __Renderer.beginRender(__nodeView8, void 0), __Renderer.beginRender(__nodeLabel2, void 0), __Renderer.setAttributeString("value", (_a = local.statusMessage) !== null && _a !== void 0 ? _a : "\u2014"), __Renderer.setAttributeString("font", m.fonts.body), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.endRender();
-          })();
+          }), __Renderer.endRender()) : (__Renderer.beginRender(__nodeView8, void 0), __Renderer.beginRender(__nodeLabel2, void 0), __Renderer.setAttributeString("value", local.statusMessage ?? "\u2014"), __Renderer.setAttributeString("font", m.fonts.body), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.endRender());
         }), __Renderer.endComponent(), __Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup3, void 0, void 0), __Renderer.setViewModelProperty("title", local.conversationGroupTitle), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
           __Renderer.beginRender(__nodeView9, void 0), local.contextLabel && local.contextProgress !== void 0 ? (__Renderer.beginComponent(ProgressBar_1.ProgressBar, __componentProgressBar2, void 0, void 0), __Renderer.setViewModelProperty("label", local.contextLabel), __Renderer.setViewModelProperty("progress", local.contextProgress), __Renderer.setViewModelProperty("detail", local.contextDetail), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent()) : local.conversationFallback && (__Renderer.beginRender(__nodeLabel3, void 0), __Renderer.setAttributeString("value", local.conversationFallback), __Renderer.setAttributeString("font", m.fonts.body), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender()), local.metrics.length > 0 && (__Renderer.beginRender(__nodeView10, void 0), local.metrics.forEach((metric, idx) => {
             __Renderer.beginRender(__nodeView11, `local-metric-${idx}`), __Renderer.setAttributeString("backgroundColor", c.recessed), __Renderer.setAttributeString("borderColor", c.border), __Renderer.beginRender(__nodeLabel4, void 0), __Renderer.setAttributeString("value", metric.label), __Renderer.setAttributeString("font", m.fonts.caption), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel5, void 0), __Renderer.setAttributeString("value", metric.value), __Renderer.setAttributeString("font", (0, SystemFont_1.systemSemiboldFont)(16)), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.endRender();
@@ -19437,89 +19483,69 @@ var require_TokenUsageDashboardSurface = __commonJS({
       renderLedger(ledger, dark, narrow, touch) {
         let c = (0, tokens_1.themeColors)(dark), m = (0, tokens_1.themeMetrics)(touch);
         __Renderer.beginRender(__nodeView12, void 0), __Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup4, void 0, void 0), __Renderer.setViewModelProperty("clip", !this.state.modelMenuOpen), __Renderer.setViewModelProperty("zIndex", this.state.modelMenuOpen ? 50 : 1), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
-          __Renderer.beginRender(__nodeView13, void 0), __Renderer.beginRender(__nodeView14, void 0), ledger.scopeOptions.length > 1 && (__Renderer.beginRender(__nodeView15, void 0), __Renderer.beginRender(__nodeLabel7, void 0), __Renderer.setAttributeString("value", ledger.scopeLabel), __Renderer.setAttributeString("font", m.fonts.caption), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.beginComponent(SegmentedControl_1.SegmentedControl, __componentSegmentedControl3, void 0, void 0), __Renderer.setViewModelProperty("label", ledger.scopeLabel), __Renderer.setViewModelProperty("value", ledger.scopeValue), __Renderer.setViewModelProperty("options", ledger.scopeOptions), __Renderer.setViewModelProperty("compact", !0), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (val) => ledger.onChangeScope(val)), __Renderer.endComponent(), __Renderer.endRender()), __Renderer.beginRender(__nodeView16, void 0), __Renderer.beginRender(__nodeLabel8, void 0), __Renderer.setAttributeString("value", ledger.rangeLabel), __Renderer.setAttributeString("font", m.fonts.caption), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.beginComponent(SegmentedControl_1.SegmentedControl, __componentSegmentedControl4, void 0, void 0), __Renderer.setViewModelProperty("label", ledger.rangeLabel), __Renderer.setViewModelProperty("value", ledger.rangeValue), __Renderer.setViewModelProperty("options", ledger.rangeOptions), __Renderer.setViewModelProperty("compact", !0), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (val) => ledger.onChangeRange(val)), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.beginRender(__nodeView17, void 0), __Renderer.setAttributeNumber("zIndex", this.state.modelMenuOpen ? 70 : 1), __Renderer.beginRender(__nodeLabel9, void 0), __Renderer.setAttributeString("value", ledger.modelLabel), __Renderer.setAttributeString("font", m.fonts.caption), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.beginComponent(SelectMenu_1.SelectMenu, __componentSelectMenu1, void 0, void 0), __Renderer.setViewModelProperty("label", ledger.modelLabel), __Renderer.setViewModelProperty("value", ledger.modelValue), __Renderer.setViewModelProperty("options", ledger.modelOptions), __Renderer.setViewModelProperty("open", this.state.modelMenuOpen), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onOpenChange", (open) => this.setState({ modelMenuOpen: open })), __Renderer.setViewModelProperty("onChange", (val) => ledger.onChangeModel(val)), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.endRender(), __Renderer.endRender(), ledger.customRange && (__Renderer.beginRender(__nodeView18, void 0), __Renderer.beginRender(__nodeView19, void 0), __Renderer.setAttributeString("backgroundColor", c.border), __Renderer.endRender(), __Renderer.beginRender(__nodeView20, void 0), __Renderer.setAttributeString("flexDirection", narrow ? "column" : "row"), __Renderer.beginRender(__nodeView21, void 0), __Renderer.beginComponent(TextField_1.TextField, __componentTextField1, void 0, void 0), __Renderer.setViewModelProperty("label", ledger.customRange.fromLabel), __Renderer.setViewModelProperty("value", ledger.customRange.fromValue), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (val) => {
-            var _a;
-            return (_a = ledger.customRange) === null || _a === void 0 ? void 0 : _a.onChangeFrom(val);
-          }), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.beginRender(__nodeView22, void 0), __Renderer.beginComponent(TextField_1.TextField, __componentTextField2, void 0, void 0), __Renderer.setViewModelProperty("label", ledger.customRange.throughLabel), __Renderer.setViewModelProperty("value", ledger.customRange.throughValue), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (val) => {
-            var _a;
-            return (_a = ledger.customRange) === null || _a === void 0 ? void 0 : _a.onChangeThrough(val);
-          }), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.endRender(), __Renderer.endRender());
-        }), __Renderer.endComponent(), ledger.metrics && ledger.metrics.length > 0 && (() => {
-          var _a;
-          __Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup5, void 0, void 0), __Renderer.setViewModelProperty("title", (_a = ledger.summaryTitle) !== null && _a !== void 0 ? _a : ""), __Renderer.setViewModelProperty("description", ledger.summarySubtitle), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
-            __Renderer.beginRender(__nodeView23, void 0), ledger.partialBadge && (__Renderer.beginRender(__nodeView24, void 0), __Renderer.setAttributeString("backgroundColor", c.warningSurface), __Renderer.beginRender(__nodeLabel10, void 0), __Renderer.setAttributeString("value", ledger.partialBadge), __Renderer.setAttributeString("font", m.fonts.caption), __Renderer.setAttributeString("color", c.warning), __Renderer.endRender(), __Renderer.endRender()), __Renderer.beginRender(__nodeView25, void 0), ledger.metrics.forEach((cell) => {
-              __Renderer.beginRender(__nodeView26, cell.id), __Renderer.setAttributeNumber("flexBasis", narrow ? 140 : 120), __Renderer.setAttributeString("backgroundColor", c.recessed), __Renderer.setAttributeString("borderColor", c.border), __Renderer.beginRender(__nodeLabel11, void 0), __Renderer.setAttributeString("value", cell.value), __Renderer.setAttributeString("font", (0, SystemFont_1.systemSemiboldFont)(20)), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel12, void 0), __Renderer.setAttributeString("value", cell.label), __Renderer.setAttributeString("font", m.fonts.detail), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel13, void 0), __Renderer.setAttributeString("value", cell.detail), __Renderer.setAttributeString("font", m.fonts.caption), __Renderer.setAttributeString("color", c.disabled), __Renderer.endRender(), __Renderer.endRender();
-            }), __Renderer.endRender(), ledger.summaryMeta && (__Renderer.beginRender(__nodeLabel14, void 0), __Renderer.setAttributeString("value", ledger.summaryMeta), __Renderer.setAttributeString("font", m.fonts.caption), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender()), __Renderer.endRender();
-          }), __Renderer.endComponent();
-        })(), ledger.activityTitle && (ledger.heatmapWeeks || ledger.bars) && (__Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup6, void 0, void 0), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
-          __Renderer.beginRender(__nodeView27, void 0), __Renderer.beginRender(__nodeView28, void 0), __Renderer.setAttributeString("flexDirection", narrow ? "column" : "row"), __Renderer.setAttributeString("alignItems", narrow ? "flex-start" : "center"), __Renderer.beginRender(__nodeView29, void 0), __Renderer.beginRender(__nodeLabel15, void 0), __Renderer.setAttributeString("value", ledger.activityTitle), __Renderer.setAttributeString("font", m.fonts.sectionTitle), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), ledger.activitySubtitle && (__Renderer.beginRender(__nodeLabel16, void 0), __Renderer.setAttributeString("value", ledger.activitySubtitle), __Renderer.setAttributeString("font", m.fonts.detail), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender()), __Renderer.endRender(), __Renderer.beginComponent(SegmentedControl_1.SegmentedControl, __componentSegmentedControl5, void 0, void 0), __Renderer.setViewModelProperty("label", ledger.activityTitle), __Renderer.setViewModelProperty("value", ledger.activityMode), __Renderer.setViewModelProperty("options", ledger.activityModeOptions), __Renderer.setViewModelProperty("compact", !0), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (mode) => ledger.onChangeActivityMode(mode)), __Renderer.endComponent(), __Renderer.endRender(), ledger.activityMode === "daily" && ledger.heatmapWeeks ? (() => {
-            var _a, _b;
-            __Renderer.beginRender(__nodeView30, void 0), __Renderer.beginRender(__nodeView31, void 0), ledger.weekdayLabels && (__Renderer.beginRender(__nodeView32, void 0), ledger.weekdayLabels.forEach((day, i) => {
-              __Renderer.beginRender(__nodeView33, `wd-${i}`), __Renderer.beginRender(__nodeLabel17, void 0), __Renderer.setAttributeString("value", day), __Renderer.setAttributeString("font", (0, SystemFont_1.systemSemiboldFont)(10)), __Renderer.setAttributeString("color", c.disabled), __Renderer.endRender(), __Renderer.endRender();
-            }), __Renderer.endRender()), __Renderer.beginRender(__nodeView34, void 0), ledger.heatmapWeeks.forEach((week) => {
-              __Renderer.beginRender(__nodeView35, week.key), week.cells.forEach((cell) => {
-                __Renderer.beginRender(__nodeView36, cell.date), __Renderer.setAttributeString("accessibilityId", `oc-heat-${cell.date}`), __Renderer.setAttributeString("accessibilityLabel", cell.summaryText), __Renderer.setAttributeString("accessibilityCategory", cell.outside ? void 0 : "button"), __Renderer.setAttributeFunction("onTap", cell.outside ? void 0 : () => {
-                  (0, haptics_1.triggerHaptic)("selection"), this.setState({ selectedCellSummary: cell.summaryText });
-                }), __Renderer.setAttributeString("backgroundColor", cell.outside ? "rgba(0,0,0,0)" : this.heatColor(cell.level, dark)), __Renderer.setAttributeNumber("opacity", cell.outside ? 0.25 : 1), __Renderer.endRender();
-              }), __Renderer.endRender();
-            }), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel18, void 0), __Renderer.setAttributeString("value", (_b = (_a = this.state.selectedCellSummary) !== null && _a !== void 0 ? _a : ledger.defaultCellHint) !== null && _b !== void 0 ? _b : ""), __Renderer.setAttributeString("font", m.fonts.caption), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.endRender();
-          })() : ledger.bars && (__Renderer.beginRender(__nodeView37, void 0), ledger.bars.forEach((bar) => {
+          __Renderer.beginRender(__nodeView13, void 0), __Renderer.beginRender(__nodeView14, void 0), ledger.scopeOptions.length > 1 && (__Renderer.beginRender(__nodeView15, void 0), __Renderer.beginRender(__nodeLabel7, void 0), __Renderer.setAttributeString("value", ledger.scopeLabel), __Renderer.setAttributeString("font", m.fonts.caption), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.beginComponent(SegmentedControl_1.SegmentedControl, __componentSegmentedControl3, void 0, void 0), __Renderer.setViewModelProperty("label", ledger.scopeLabel), __Renderer.setViewModelProperty("value", ledger.scopeValue), __Renderer.setViewModelProperty("options", ledger.scopeOptions), __Renderer.setViewModelProperty("compact", !0), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (val) => ledger.onChangeScope(val)), __Renderer.endComponent(), __Renderer.endRender()), __Renderer.beginRender(__nodeView16, void 0), __Renderer.beginRender(__nodeLabel8, void 0), __Renderer.setAttributeString("value", ledger.rangeLabel), __Renderer.setAttributeString("font", m.fonts.caption), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.beginComponent(SegmentedControl_1.SegmentedControl, __componentSegmentedControl4, void 0, void 0), __Renderer.setViewModelProperty("label", ledger.rangeLabel), __Renderer.setViewModelProperty("value", ledger.rangeValue), __Renderer.setViewModelProperty("options", ledger.rangeOptions), __Renderer.setViewModelProperty("compact", !0), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (val) => ledger.onChangeRange(val)), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.beginRender(__nodeView17, void 0), __Renderer.setAttributeNumber("zIndex", this.state.modelMenuOpen ? 70 : 1), __Renderer.beginRender(__nodeLabel9, void 0), __Renderer.setAttributeString("value", ledger.modelLabel), __Renderer.setAttributeString("font", m.fonts.caption), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.beginComponent(SelectMenu_1.SelectMenu, __componentSelectMenu1, void 0, void 0), __Renderer.setViewModelProperty("label", ledger.modelLabel), __Renderer.setViewModelProperty("value", ledger.modelValue), __Renderer.setViewModelProperty("options", ledger.modelOptions), __Renderer.setViewModelProperty("open", this.state.modelMenuOpen), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onOpenChange", (open) => this.setState({ modelMenuOpen: open })), __Renderer.setViewModelProperty("onChange", (val) => ledger.onChangeModel(val)), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.endRender(), __Renderer.endRender(), ledger.customRange && (__Renderer.beginRender(__nodeView18, void 0), __Renderer.beginRender(__nodeView19, void 0), __Renderer.setAttributeString("backgroundColor", c.border), __Renderer.endRender(), __Renderer.beginRender(__nodeView20, void 0), __Renderer.setAttributeString("flexDirection", narrow ? "column" : "row"), __Renderer.beginRender(__nodeView21, void 0), __Renderer.beginComponent(TextField_1.TextField, __componentTextField1, void 0, void 0), __Renderer.setViewModelProperty("label", ledger.customRange.fromLabel), __Renderer.setViewModelProperty("value", ledger.customRange.fromValue), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (val) => ledger.customRange?.onChangeFrom(val)), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.beginRender(__nodeView22, void 0), __Renderer.beginComponent(TextField_1.TextField, __componentTextField2, void 0, void 0), __Renderer.setViewModelProperty("label", ledger.customRange.throughLabel), __Renderer.setViewModelProperty("value", ledger.customRange.throughValue), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (val) => ledger.customRange?.onChangeThrough(val)), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.endRender(), __Renderer.endRender());
+        }), __Renderer.endComponent(), ledger.metrics && ledger.metrics.length > 0 && (__Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup5, void 0, void 0), __Renderer.setViewModelProperty("title", ledger.summaryTitle ?? ""), __Renderer.setViewModelProperty("description", ledger.summarySubtitle), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
+          __Renderer.beginRender(__nodeView23, void 0), ledger.partialBadge && (__Renderer.beginRender(__nodeView24, void 0), __Renderer.setAttributeString("backgroundColor", c.warningSurface), __Renderer.beginRender(__nodeLabel10, void 0), __Renderer.setAttributeString("value", ledger.partialBadge), __Renderer.setAttributeString("font", m.fonts.caption), __Renderer.setAttributeString("color", c.warning), __Renderer.endRender(), __Renderer.endRender()), __Renderer.beginRender(__nodeView25, void 0), ledger.metrics.forEach((cell) => {
+            __Renderer.beginRender(__nodeView26, cell.id), __Renderer.setAttributeNumber("flexBasis", narrow ? 140 : 120), __Renderer.setAttributeString("backgroundColor", c.recessed), __Renderer.setAttributeString("borderColor", c.border), __Renderer.beginRender(__nodeLabel11, void 0), __Renderer.setAttributeString("value", cell.value), __Renderer.setAttributeString("font", (0, SystemFont_1.systemSemiboldFont)(20)), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel12, void 0), __Renderer.setAttributeString("value", cell.label), __Renderer.setAttributeString("font", m.fonts.detail), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel13, void 0), __Renderer.setAttributeString("value", cell.detail), __Renderer.setAttributeString("font", m.fonts.caption), __Renderer.setAttributeString("color", c.disabled), __Renderer.endRender(), __Renderer.endRender();
+          }), __Renderer.endRender(), ledger.summaryMeta && (__Renderer.beginRender(__nodeLabel14, void 0), __Renderer.setAttributeString("value", ledger.summaryMeta), __Renderer.setAttributeString("font", m.fonts.caption), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender()), __Renderer.endRender();
+        }), __Renderer.endComponent()), ledger.activityTitle && (ledger.heatmapWeeks || ledger.bars) && (__Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup6, void 0, void 0), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
+          __Renderer.beginRender(__nodeView27, void 0), __Renderer.beginRender(__nodeView28, void 0), __Renderer.setAttributeString("flexDirection", narrow ? "column" : "row"), __Renderer.setAttributeString("alignItems", narrow ? "flex-start" : "center"), __Renderer.beginRender(__nodeView29, void 0), __Renderer.beginRender(__nodeLabel15, void 0), __Renderer.setAttributeString("value", ledger.activityTitle), __Renderer.setAttributeString("font", m.fonts.sectionTitle), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), ledger.activitySubtitle && (__Renderer.beginRender(__nodeLabel16, void 0), __Renderer.setAttributeString("value", ledger.activitySubtitle), __Renderer.setAttributeString("font", m.fonts.detail), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender()), __Renderer.endRender(), __Renderer.beginComponent(SegmentedControl_1.SegmentedControl, __componentSegmentedControl5, void 0, void 0), __Renderer.setViewModelProperty("label", ledger.activityTitle), __Renderer.setViewModelProperty("value", ledger.activityMode), __Renderer.setViewModelProperty("options", ledger.activityModeOptions), __Renderer.setViewModelProperty("compact", !0), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (mode) => ledger.onChangeActivityMode(mode)), __Renderer.endComponent(), __Renderer.endRender(), ledger.activityMode === "daily" && ledger.heatmapWeeks ? (__Renderer.beginRender(__nodeView30, void 0), __Renderer.beginRender(__nodeView31, void 0), ledger.weekdayLabels && (__Renderer.beginRender(__nodeView32, void 0), ledger.weekdayLabels.forEach((day, i) => {
+            __Renderer.beginRender(__nodeView33, `wd-${i}`), __Renderer.beginRender(__nodeLabel17, void 0), __Renderer.setAttributeString("value", day), __Renderer.setAttributeString("font", (0, SystemFont_1.systemSemiboldFont)(10)), __Renderer.setAttributeString("color", c.disabled), __Renderer.endRender(), __Renderer.endRender();
+          }), __Renderer.endRender()), __Renderer.beginRender(__nodeView34, void 0), ledger.heatmapWeeks.forEach((week) => {
+            __Renderer.beginRender(__nodeView35, week.key), week.cells.forEach((cell) => {
+              __Renderer.beginRender(__nodeView36, cell.date), __Renderer.setAttributeString("accessibilityId", `oc-heat-${cell.date}`), __Renderer.setAttributeString("accessibilityLabel", cell.summaryText), __Renderer.setAttributeString("accessibilityCategory", cell.outside ? void 0 : "button"), __Renderer.setAttributeFunction("onTap", cell.outside ? void 0 : () => {
+                (0, haptics_1.triggerHaptic)("selection"), this.setState({ selectedCellSummary: cell.summaryText });
+              }), __Renderer.setAttributeString("backgroundColor", cell.outside ? "rgba(0,0,0,0)" : this.heatColor(cell.level, dark)), __Renderer.setAttributeNumber("opacity", cell.outside ? 0.25 : 1), __Renderer.endRender();
+            }), __Renderer.endRender();
+          }), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel18, void 0), __Renderer.setAttributeString("value", this.state.selectedCellSummary ?? ledger.defaultCellHint ?? ""), __Renderer.setAttributeString("font", m.fonts.caption), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.endRender()) : ledger.bars && (__Renderer.beginRender(__nodeView37, void 0), ledger.bars.forEach((bar) => {
             __Renderer.beginRender(__nodeView38, bar.key), __Renderer.beginRender(__nodeView39, void 0), __Renderer.beginRender(__nodeLabel19, void 0), __Renderer.setAttributeString("value", bar.label), __Renderer.setAttributeString("font", m.fonts.caption), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.endRender(), __Renderer.beginRender(__nodeView40, void 0), this.renderInlineTrack(bar.progress, c.success, c.trackSoft), __Renderer.endRender(), __Renderer.beginRender(__nodeView41, void 0), __Renderer.beginRender(__nodeLabel20, void 0), __Renderer.setAttributeString("value", bar.valueText), __Renderer.setAttributeString("font", m.fonts.caption), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.endRender(), __Renderer.endRender();
           }), __Renderer.endRender()), __Renderer.endRender();
         }), __Renderer.endComponent()), ledger.modelSectionTitle && (__Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup7, void 0, void 0), __Renderer.setViewModelProperty("title", ledger.modelSectionTitle), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
           ledger.modelCards && ledger.modelCards.length > 0 ? (__Renderer.beginRender(__nodeView42, void 0), ledger.modelCards.forEach((model) => {
             __Renderer.beginRender(__nodeView43, model.key), __Renderer.setAttributeNumber("flexBasis", narrow ? 240 : 210), __Renderer.setAttributeString("backgroundColor", c.recessed), __Renderer.setAttributeString("borderColor", c.border), __Renderer.beginRender(__nodeView44, void 0), __Renderer.beginRender(__nodeLabel21, void 0), __Renderer.setAttributeString("value", model.label), __Renderer.setAttributeString("font", m.fonts.control), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel22, void 0), __Renderer.setAttributeString("value", model.tokensText), __Renderer.setAttributeString("font", m.fonts.controlCompact), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.endRender(), this.renderInlineTrack(model.progress, c.success, c.trackSoft), __Renderer.beginRender(__nodeLabel23, void 0), __Renderer.setAttributeString("value", model.turnsText), __Renderer.setAttributeString("font", m.fonts.caption), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.endRender();
-          }), __Renderer.endRender()) : (() => {
-            var _a;
-            __Renderer.beginRender(__nodeView45, void 0), __Renderer.beginRender(__nodeLabel24, void 0), __Renderer.setAttributeString("value", (_a = ledger.modelEmptyText) !== null && _a !== void 0 ? _a : "\u2014"), __Renderer.setAttributeString("font", m.fonts.body), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.endRender();
-          })();
+          }), __Renderer.endRender()) : (__Renderer.beginRender(__nodeView45, void 0), __Renderer.beginRender(__nodeLabel24, void 0), __Renderer.setAttributeString("value", ledger.modelEmptyText ?? "\u2014"), __Renderer.setAttributeString("font", m.fonts.body), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.endRender());
         }), __Renderer.endComponent()), ledger.detailTitle && (__Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup8, void 0, void 0), __Renderer.setViewModelProperty("title", ledger.detailTitle), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
-          __Renderer.beginRender(__nodeView46, void 0), ledger.backToSummaryLabel && ledger.onBackToSummary ? (__Renderer.beginComponent(Button_1.Button, __componentButton1, void 0, void 0), __Renderer.setViewModelProperty("title", ledger.backToSummaryLabel), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", ledger.onBackToSummary), __Renderer.endComponent()) : ledger.viewOptions && ledger.viewValue && ledger.onChangeView && (() => {
-            var _a;
-            __Renderer.beginComponent(SegmentedControl_1.SegmentedControl, __componentSegmentedControl6, void 0, void 0), __Renderer.setViewModelProperty("label", (_a = ledger.viewLabel) !== null && _a !== void 0 ? _a : ledger.detailTitle), __Renderer.setViewModelProperty("value", ledger.viewValue), __Renderer.setViewModelProperty("options", ledger.viewOptions), __Renderer.setViewModelProperty("compact", !0), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (v) => {
-              var _a2;
-              return (_a2 = ledger.onChangeView) === null || _a2 === void 0 ? void 0 : _a2.call(ledger, v);
-            }), __Renderer.endComponent();
-          })(), ledger.clearActorLabel && ledger.onClearActor && (__Renderer.beginComponent(Button_1.Button, __componentButton2, void 0, void 0), __Renderer.setViewModelProperty("title", ledger.clearActorLabel), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", ledger.onClearActor), __Renderer.endComponent()), __Renderer.endRender(), __Renderer.beginRender(__nodeView47, void 0), __Renderer.setAttributeString("backgroundColor", c.border), __Renderer.endRender(), ledger.turnRows && ledger.turnRows.length > 0 ? (__Renderer.beginRender(__nodeView48, void 0), ledger.turnRows.forEach((turn, idx) => {
+          __Renderer.beginRender(__nodeView46, void 0), ledger.backToSummaryLabel && ledger.onBackToSummary ? (__Renderer.beginComponent(Button_1.Button, __componentButton1, void 0, void 0), __Renderer.setViewModelProperty("title", ledger.backToSummaryLabel), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", ledger.onBackToSummary), __Renderer.endComponent()) : ledger.viewOptions && ledger.viewValue && ledger.onChangeView && (__Renderer.beginComponent(SegmentedControl_1.SegmentedControl, __componentSegmentedControl6, void 0, void 0), __Renderer.setViewModelProperty("label", ledger.viewLabel ?? ledger.detailTitle), __Renderer.setViewModelProperty("value", ledger.viewValue), __Renderer.setViewModelProperty("options", ledger.viewOptions), __Renderer.setViewModelProperty("compact", !0), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onChange", (v) => ledger.onChangeView?.(v)), __Renderer.endComponent()), ledger.clearActorLabel && ledger.onClearActor && (__Renderer.beginComponent(Button_1.Button, __componentButton2, void 0, void 0), __Renderer.setViewModelProperty("title", ledger.clearActorLabel), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", ledger.onClearActor), __Renderer.endComponent()), __Renderer.endRender(), __Renderer.beginRender(__nodeView47, void 0), __Renderer.setAttributeString("backgroundColor", c.border), __Renderer.endRender(), ledger.turnRows && ledger.turnRows.length > 0 ? (__Renderer.beginRender(__nodeView48, void 0), ledger.turnRows.forEach((turn, idx) => {
             __Renderer.beginComponent(SettingsGroup_1.SettingsListItem, __componentSettingsListItem1, turn.key, void 0), __Renderer.setViewModelProperty("id", `oc-turn-${turn.key}`), __Renderer.setViewModelProperty("title", turn.title), __Renderer.setViewModelProperty("description", turn.subtitle), __Renderer.setViewModelProperty("metadata", turn.detail), __Renderer.setViewModelProperty("divider", idx > 0), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent();
           }), __Renderer.endRender()) : ledger.rows && ledger.rows.length > 0 ? (__Renderer.beginRender(__nodeView49, void 0), ledger.rows.forEach((row, idx) => {
-            __Renderer.beginComponent(SettingsGroup_1.SettingsListItem, __componentSettingsListItem2, row.key, void 0), __Renderer.setViewModelProperty("id", `oc-row-${row.key}`), __Renderer.setViewModelProperty("title", row.title), __Renderer.setViewModelProperty("metadata", row.turnsText), __Renderer.setViewModelProperty("divider", idx > 0), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onOpen", row.interactive && ledger.onSelectRow ? () => {
-              var _a;
-              return (_a = ledger.onSelectRow) === null || _a === void 0 ? void 0 : _a.call(ledger, row.key);
-            } : void 0), __Renderer.setUnnamedSlot(() => {
+            __Renderer.beginComponent(SettingsGroup_1.SettingsListItem, __componentSettingsListItem2, row.key, void 0), __Renderer.setViewModelProperty("id", `oc-row-${row.key}`), __Renderer.setViewModelProperty("title", row.title), __Renderer.setViewModelProperty("metadata", row.turnsText), __Renderer.setViewModelProperty("divider", idx > 0), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onOpen", row.interactive && ledger.onSelectRow ? () => ledger.onSelectRow?.(row.key) : void 0), __Renderer.setUnnamedSlot(() => {
               __Renderer.beginRender(__nodeLabel25, void 0), __Renderer.setAttributeString("value", row.tokensText), __Renderer.setAttributeString("font", m.fonts.controlCompact), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender();
             }), __Renderer.endComponent();
-          }), __Renderer.endRender()) : (() => {
-            var _a;
-            __Renderer.beginRender(__nodeView50, void 0), __Renderer.beginRender(__nodeLabel26, void 0), __Renderer.setAttributeString("value", (_a = ledger.detailEmptyText) !== null && _a !== void 0 ? _a : "\u2014"), __Renderer.setAttributeString("font", m.fonts.body), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.endRender();
-          })(), (ledger.firstPageLabel || ledger.nextPageLabel) && (__Renderer.beginRender(__nodeView51, void 0), __Renderer.beginRender(__nodeView52, void 0), __Renderer.setAttributeString("backgroundColor", c.border), __Renderer.endRender(), __Renderer.beginRender(__nodeView53, void 0), ledger.firstPageLabel && ledger.onFirstPage && (__Renderer.beginComponent(Button_1.Button, __componentButton3, void 0, void 0), __Renderer.setViewModelProperty("title", ledger.firstPageLabel), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", ledger.onFirstPage), __Renderer.endComponent()), ledger.nextPageLabel && ledger.onNextPage && (__Renderer.beginComponent(Button_1.Button, __componentButton4, void 0, void 0), __Renderer.setViewModelProperty("title", ledger.nextPageLabel), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", ledger.onNextPage), __Renderer.endComponent()), __Renderer.endRender(), __Renderer.endRender());
+          }), __Renderer.endRender()) : (__Renderer.beginRender(__nodeView50, void 0), __Renderer.beginRender(__nodeLabel26, void 0), __Renderer.setAttributeString("value", ledger.detailEmptyText ?? "\u2014"), __Renderer.setAttributeString("font", m.fonts.body), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.endRender()), (ledger.firstPageLabel || ledger.nextPageLabel) && (__Renderer.beginRender(__nodeView51, void 0), __Renderer.beginRender(__nodeView52, void 0), __Renderer.setAttributeString("backgroundColor", c.border), __Renderer.endRender(), __Renderer.beginRender(__nodeView53, void 0), ledger.firstPageLabel && ledger.onFirstPage && (__Renderer.beginComponent(Button_1.Button, __componentButton3, void 0, void 0), __Renderer.setViewModelProperty("title", ledger.firstPageLabel), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", ledger.onFirstPage), __Renderer.endComponent()), ledger.nextPageLabel && ledger.onNextPage && (__Renderer.beginComponent(Button_1.Button, __componentButton4, void 0, void 0), __Renderer.setViewModelProperty("title", ledger.nextPageLabel), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", ledger.onNextPage), __Renderer.endComponent()), __Renderer.endRender(), __Renderer.endRender());
         }), __Renderer.endComponent()), ledger.diagnosticsTitle && ledger.diagnosticsToggleLabel && (__Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup9, void 0, void 0), __Renderer.setViewModelProperty("title", ledger.diagnosticsTitle), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
           __Renderer.beginRender(__nodeView54, void 0), __Renderer.beginRender(__nodeView55, void 0), __Renderer.setAttributeString("accessibilityLabel", ledger.diagnosticsToggleLabel), __Renderer.setAttribute("accessibilityStateSelected", this.state.diagnosticsOpen), __Renderer.setAttributeFunction("onTap", () => {
             (0, haptics_1.triggerHaptic)("selection"), this.setState({ diagnosticsOpen: !this.state.diagnosticsOpen });
-          }), __Renderer.beginRender(__nodeLabel27, void 0), __Renderer.setAttributeString("value", ledger.diagnosticsToggleLabel), __Renderer.setAttributeString("font", m.fonts.rowTitle), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.beginComponent(Icon_1.Icon, __componentIcon1, void 0, void 0), __Renderer.setViewModelProperty("name", this.state.diagnosticsOpen ? "chevronUp" : "chevronDown"), __Renderer.setViewModelProperty("color", c.muted), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.endRender(), this.state.diagnosticsOpen && (() => {
-            var _a;
-            __Renderer.beginRender(__nodeView56, void 0), __Renderer.beginRender(__nodeView57, void 0), __Renderer.setAttributeString("backgroundColor", c.border), __Renderer.endRender(), __Renderer.beginRender(__nodeView58, void 0), (ledger.collectionStatusText || ledger.collectionActionLabel) && (__Renderer.beginRender(__nodeView59, void 0), ledger.collectionStatusText && (__Renderer.beginRender(__nodeLabel28, void 0), __Renderer.setAttributeString("value", ledger.collectionStatusText), __Renderer.setAttributeString("font", m.fonts.control), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender()), ledger.collectionActionLabel && ledger.onToggleCollection && (__Renderer.beginComponent(Button_1.Button, __componentButton5, void 0, void 0), __Renderer.setViewModelProperty("title", ledger.collectionActionLabel), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", ledger.onToggleCollection), __Renderer.endComponent()), __Renderer.endRender()), (_a = ledger.diagnosticsLines) === null || _a === void 0 || _a.forEach((line, idx) => {
-              __Renderer.beginRender(__nodeLabel29, `diag-${idx}`), __Renderer.setAttributeString("value", line), __Renderer.setAttributeString("font", m.fonts.detail), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender();
-            }), ledger.diagnosticsPartialNotice && (__Renderer.beginComponent(Banner_1.Banner, __componentBanner2, void 0, void 0), __Renderer.setViewModelProperty("title", ledger.diagnosticsPartialNotice), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent()), ledger.categoryStats && ledger.categoryStats.length > 0 && (__Renderer.beginRender(__nodeView60, void 0), ledger.categoryStats.forEach((stat, idx) => {
-              __Renderer.beginRender(__nodeView61, `cat-${idx}`), __Renderer.setAttributeString("backgroundColor", c.recessed), __Renderer.setAttributeString("borderColor", c.border), __Renderer.beginRender(__nodeLabel30, void 0), __Renderer.setAttributeString("value", stat.label), __Renderer.setAttributeString("font", m.fonts.caption), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel31, void 0), __Renderer.setAttributeString("value", stat.value), __Renderer.setAttributeString("font", m.fonts.control), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.endRender();
-            }), __Renderer.endRender()), __Renderer.endRender(), __Renderer.endRender();
-          })();
+          }), __Renderer.beginRender(__nodeLabel27, void 0), __Renderer.setAttributeString("value", ledger.diagnosticsToggleLabel), __Renderer.setAttributeString("font", m.fonts.rowTitle), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.beginComponent(Icon_1.Icon, __componentIcon1, void 0, void 0), __Renderer.setViewModelProperty("name", this.state.diagnosticsOpen ? "chevronUp" : "chevronDown"), __Renderer.setViewModelProperty("color", c.muted), __Renderer.endComponent(), __Renderer.endRender(), __Renderer.endRender(), this.state.diagnosticsOpen && (__Renderer.beginRender(__nodeView56, void 0), __Renderer.beginRender(__nodeView57, void 0), __Renderer.setAttributeString("backgroundColor", c.border), __Renderer.endRender(), __Renderer.beginRender(__nodeView58, void 0), (ledger.collectionStatusText || ledger.collectionActionLabel) && (__Renderer.beginRender(__nodeView59, void 0), ledger.collectionStatusText && (__Renderer.beginRender(__nodeLabel28, void 0), __Renderer.setAttributeString("value", ledger.collectionStatusText), __Renderer.setAttributeString("font", m.fonts.control), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender()), ledger.collectionActionLabel && ledger.onToggleCollection && (__Renderer.beginComponent(Button_1.Button, __componentButton5, void 0, void 0), __Renderer.setViewModelProperty("title", ledger.collectionActionLabel), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", ledger.onToggleCollection), __Renderer.endComponent()), __Renderer.endRender()), ledger.diagnosticsLines?.forEach((line, idx) => {
+            __Renderer.beginRender(__nodeLabel29, `diag-${idx}`), __Renderer.setAttributeString("value", line), __Renderer.setAttributeString("font", m.fonts.detail), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender();
+          }), ledger.diagnosticsPartialNotice && (__Renderer.beginComponent(Banner_1.Banner, __componentBanner2, void 0, void 0), __Renderer.setViewModelProperty("title", ledger.diagnosticsPartialNotice), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent()), ledger.categoryStats && ledger.categoryStats.length > 0 && (__Renderer.beginRender(__nodeView60, void 0), ledger.categoryStats.forEach((stat, idx) => {
+            __Renderer.beginRender(__nodeView61, `cat-${idx}`), __Renderer.setAttributeString("backgroundColor", c.recessed), __Renderer.setAttributeString("borderColor", c.border), __Renderer.beginRender(__nodeLabel30, void 0), __Renderer.setAttributeString("value", stat.label), __Renderer.setAttributeString("font", m.fonts.caption), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel31, void 0), __Renderer.setAttributeString("value", stat.value), __Renderer.setAttributeString("font", m.fonts.control), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.endRender();
+          }), __Renderer.endRender()), __Renderer.endRender(), __Renderer.endRender());
         }), __Renderer.endComponent()), __Renderer.endRender();
+      }
+      renderGatewayBudget(gateway, dark, narrow, touch) {
+        let c = (0, tokens_1.themeColors)(dark), m = (0, tokens_1.themeMetrics)(touch);
+        __Renderer.beginRender(__nodeView62, void 0), __Renderer.beginComponent(SettingsGroup_1.SettingsGroup, __componentSettingsGroup10, void 0, void 0), __Renderer.setViewModelProperty("title", gateway.title), __Renderer.setViewModelProperty("description", gateway.subtitle), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
+          __Renderer.beginRender(__nodeView63, void 0), gateway.manageModelsLabel && gateway.onManageModels && (__Renderer.beginRender(__nodeView64, void 0), __Renderer.beginComponent(Button_1.Button, __componentButton6, void 0, void 0), __Renderer.setViewModelProperty("title", gateway.manageModelsLabel), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", gateway.onManageModels), __Renderer.endComponent(), __Renderer.endRender()), gateway.budgetLabel && gateway.budgetProgress !== void 0 ? (__Renderer.beginComponent(ProgressBar_1.ProgressBar, __componentProgressBar3, void 0, void 0), __Renderer.setViewModelProperty("label", gateway.budgetLabel), __Renderer.setViewModelProperty("progress", gateway.budgetProgress), __Renderer.setViewModelProperty("detail", gateway.budgetDetail), __Renderer.setViewModelProperty("tone", gateway.budgetWarning ? "warning" : "accent"), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent()) : gateway.statusMessage && (__Renderer.beginRender(__nodeLabel32, void 0), __Renderer.setAttributeString("value", gateway.statusMessage), __Renderer.setAttributeString("font", m.fonts.detail), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender()), gateway.metrics.length > 0 && (__Renderer.beginRender(__nodeView65, void 0), gateway.metrics.forEach((cell) => {
+            __Renderer.beginRender(__nodeView66, cell.id), __Renderer.setAttributeNumber("flexBasis", narrow ? 140 : 120), __Renderer.setAttributeString("backgroundColor", c.recessed), __Renderer.setAttributeString("borderColor", c.border), __Renderer.beginRender(__nodeLabel33, void 0), __Renderer.setAttributeString("value", cell.value), __Renderer.setAttributeString("font", (0, SystemFont_1.systemSemiboldFont)(18)), __Renderer.setAttributeString("color", c.ink), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel34, void 0), __Renderer.setAttributeString("value", cell.label), __Renderer.setAttributeString("font", m.fonts.detail), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.beginRender(__nodeLabel35, void 0), __Renderer.setAttributeString("value", cell.detail), __Renderer.setAttributeString("font", m.fonts.caption), __Renderer.setAttributeString("color", c.disabled), __Renderer.endRender(), __Renderer.endRender();
+          }), __Renderer.endRender()), __Renderer.endRender(), gateway.requestsTitle && (__Renderer.beginRender(__nodeView67, void 0), __Renderer.beginRender(__nodeView68, void 0), __Renderer.setAttributeString("backgroundColor", c.border), __Renderer.endRender(), __Renderer.beginRender(__nodeView69, void 0), __Renderer.beginRender(__nodeLabel36, void 0), __Renderer.setAttributeString("value", gateway.requestsTitle), __Renderer.setAttributeString("font", m.fonts.caption), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.endRender(), gateway.requests && gateway.requests.length > 0 ? (__Renderer.beginRender(__nodeView70, void 0), gateway.requests.forEach((req, idx) => {
+            __Renderer.beginComponent(SettingsGroup_1.SettingsListItem, __componentSettingsListItem3, req.id, void 0), __Renderer.setViewModelProperty("id", `oc-gateway-req-${req.id}`), __Renderer.setViewModelProperty("title", req.title), __Renderer.setViewModelProperty("description", req.subtitle), __Renderer.setViewModelProperty("metadata", req.detail), __Renderer.setViewModelProperty("divider", idx > 0), __Renderer.setViewModelProperty("touch", touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent();
+          }), __Renderer.endRender()) : gateway.requestsEmptyText && (__Renderer.beginRender(__nodeView71, void 0), __Renderer.beginRender(__nodeLabel37, void 0), __Renderer.setAttributeString("value", gateway.requestsEmptyText), __Renderer.setAttributeString("font", m.fonts.body), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.endRender()), __Renderer.endRender());
+        }), __Renderer.endComponent(), __Renderer.endRender();
       }
       onRender() {
         let vm = this.viewModel, dark = !!vm.dark, c = (0, tokens_1.themeColors)(dark), m = (0, tokens_1.themeMetrics)(vm.touch);
-        __Renderer.beginRender(__nodeView62, void 0), this.state.modelMenuOpen && (__Renderer.beginRender(__nodeView63, void 0), __Renderer.setAttributeFunction("onTap", () => this.setState({ modelMenuOpen: !1 })), __Renderer.endRender()), __Renderer.beginRender(__nodeView64, void 0), __Renderer.beginComponent(SettingsGroup_1.SettingsPageHeader, __componentSettingsPageHeader1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.title), __Renderer.setViewModelProperty("description", vm.subtitle), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
-          __Renderer.beginComponent(Button_1.Button, __componentButton6, void 0, void 0), __Renderer.setViewModelProperty("title", vm.refreshLabel), __Renderer.setViewModelProperty("disabled", vm.loading), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onRefresh), __Renderer.endComponent();
-        }), __Renderer.endComponent(), vm.errorMessage && (__Renderer.beginComponent(Banner_1.Banner, __componentBanner3, void 0, void 0), __Renderer.setViewModelProperty("title", vm.errorMessage), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent()), vm.loading && !vm.localUsage && !vm.ledger && vm.loadingText && (__Renderer.beginRender(__nodeView65, void 0), __Renderer.beginRender(__nodeLabel32, void 0), __Renderer.setAttributeString("value", vm.loadingText), __Renderer.setAttributeString("font", m.fonts.body), __Renderer.setAttributeString("color", c.muted), __Renderer.endRender(), __Renderer.endRender()), vm.localUsage && this.renderLocalUsage(vm.localUsage, dark, vm.touch), vm.ledger && this.renderLedger(vm.ledger, dark, !!vm.narrow, vm.touch), __Renderer.endRender(), __Renderer.endRender();
+        __Renderer.beginRender(__nodeView72, void 0), this.state.modelMenuOpen && (__Renderer.beginRender(__nodeView73, void 0), __Renderer.setAttributeFunction("onTap", () => this.setState({ modelMenuOpen: !1 })), __Renderer.endRender()), __Renderer.beginRender(__nodeView74, void 0), __Renderer.beginComponent(SettingsGroup_1.SettingsPageHeader, __componentSettingsPageHeader1, void 0, void 0), __Renderer.setViewModelProperty("title", vm.title), __Renderer.setViewModelProperty("description", vm.subtitle), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setUnnamedSlot(() => {
+          __Renderer.beginComponent(Button_1.Button, __componentButton7, void 0, void 0), __Renderer.setViewModelProperty("title", vm.refreshLabel), __Renderer.setViewModelProperty("disabled", vm.loading), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.setViewModelProperty("onPress", vm.onRefresh), __Renderer.endComponent();
+        }), __Renderer.endComponent(), vm.errorMessage && (__Renderer.beginComponent(Banner_1.Banner, __componentBanner3, void 0, void 0), __Renderer.setViewModelProperty("title", vm.errorMessage), __Renderer.setViewModelProperty("touch", vm.touch), __Renderer.setViewModelProperty("dark", dark), __Renderer.endComponent()), vm.loading && !vm.localUsage && !vm.gatewayBudget && !vm.ledger && (__Renderer.beginRender(__nodeView75, void 0), __Renderer.setAttributeNumber("borderRadius", m.radii.card), __Renderer.setAttributeString("backgroundColor", c.surface), __Renderer.setAttributeString("borderColor", c.border), __Renderer.beginRender(__nodeView76, void 0), __Renderer.setAttributeString("backgroundColor", c.recessed), __Renderer.endRender(), __Renderer.beginRender(__nodeView77, void 0), __Renderer.setAttributeString("backgroundColor", c.recessed), __Renderer.endRender(), __Renderer.beginRender(__nodeView78, void 0), __Renderer.setAttributeString("backgroundColor", c.recessed), __Renderer.endRender(), __Renderer.endRender()), vm.localUsage && this.renderLocalUsage(vm.localUsage, dark, vm.touch), vm.gatewayBudget && this.renderGatewayBudget(vm.gatewayBudget, dark, !!vm.narrow, vm.touch), vm.ledger && this.renderLedger(vm.ledger, dark, !!vm.narrow, vm.touch), __Renderer.endRender(), __Renderer.endRender();
       }
     };
     exports.TokenUsageDashboardSurface = TokenUsageDashboardSurface2;
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/VoiceInputSettingsSurface.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/VoiceInputSettingsSurface.js
 var require_VoiceInputSettingsSurface = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/VoiceInputSettingsSurface.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/VoiceInputSettingsSurface.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/VoiceInputSettingsSurface";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.VoiceInputSettingsSurface = void 0;
@@ -19554,9 +19580,9 @@ var require_VoiceInputSettingsSurface = __commonJS({
   }
 });
 
-// ../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/index.js
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/index.js
 var require_src = __commonJS({
-  "../../../private/var/tmp/_bazel_skipzhang/b046a963e92744d3303ecb0b85f6d497/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/apps/opencraft_design_valdi/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/index.js"(exports, module) {
+  "../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/opencraft_valdi_web_npm/src/opencraft_design_valdi/src/index.js"(exports, module) {
     module.path = "opencraft_design_valdi/src/index";
     Object.defineProperty(exports, "__esModule", { value: !0 });
     exports.lightColors = exports.desktopMetrics = exports.darkColors = exports.colors = exports.VoiceInputSettingsSurface = exports.TokenUsageDashboardSurface = exports.Toggle = exports.TextField = exports.TabBar = exports.resolveStyleLabCopy = exports.colorSwatches = exports.Stepper = exports.Slider = exports.ShortcutsSettingsSurface = exports.SettingsRow = exports.SettingsPageHeader = exports.SettingsListItem = exports.SettingsGroup = exports.SettingsFormRow = exports.TokenUsageSurface = exports.SidebarOrbSurface = exports.SidebarDockSurface = exports.ServerConnectionSurface = exports.SelectMenu = exports.SegmentedControl = exports.ProgressBar = exports.RemoteWorkbenchWelcomeSurface = exports.RemoteAccessSettingsSurface = exports.PluginsSettingsSurface = exports.PageControl = exports.ModelServicesSurface = exports.MobileWelcomeSurface = exports.MobileNativeOverlay = exports.LabPlayground = exports.Icon = exports.Gallery = exports.EmptyState = exports.ConfirmDialog = exports.ChatSettingsSurface = exports.Button = exports.Banner = exports.InboxSurface = exports.InboxEmptySurface = exports.AssistantsSurface = exports.AssetsSurface = exports.ArchivedThreadsSurface = exports.AppearanceSettingsSurface = exports.AgentReadinessSurface = exports.AddMachineSurface = exports.ActionSheet = void 0;
@@ -19784,7 +19810,7 @@ var require_src = __commonJS({
   }
 });
 
-// ../../../private/var/folders/fq/706fv_6x1mg9bds7n27srsgw0000gn/T/opencraft-valdi-web-entry-S02GxH/entry.mjs
+// ../.gemini/antigravity/brain/6c7d30a3-967d-4017-ac4e-169a12f9d4b8/scratch/valdi_stage/entry.mjs
 var import_ValdiWebRenderer = __toESM(require_ValdiWebRenderer(), 1), import_src = __toESM(require_src(), 1), ValdiWebRenderer = import_ValdiWebRenderer.default.ValdiWebRenderer, ActionSheet = import_src.default.ActionSheet, AddMachineSurface = import_src.default.AddMachineSurface, AgentReadinessSurface = import_src.default.AgentReadinessSurface, AppearanceSettingsSurface = import_src.default.AppearanceSettingsSurface, ArchivedThreadsSurface = import_src.default.ArchivedThreadsSurface, AssetsSurface = import_src.default.AssetsSurface, AssistantsSurface = import_src.default.AssistantsSurface, InboxEmptySurface = import_src.default.InboxEmptySurface, InboxSurface = import_src.default.InboxSurface, Banner = import_src.default.Banner, Button = import_src.default.Button, ChatSettingsSurface = import_src.default.ChatSettingsSurface, ConfirmDialog = import_src.default.ConfirmDialog, EmptyState = import_src.default.EmptyState, Gallery = import_src.default.Gallery, Icon = import_src.default.Icon, LabPlayground = import_src.default.LabPlayground, MobileNativeOverlay = import_src.default.MobileNativeOverlay, MobileWelcomeSurface = import_src.default.MobileWelcomeSurface, ModelServicesSurface = import_src.default.ModelServicesSurface, PageControl = import_src.default.PageControl, PluginsSettingsSurface = import_src.default.PluginsSettingsSurface, RemoteAccessSettingsSurface = import_src.default.RemoteAccessSettingsSurface, RemoteWorkbenchWelcomeSurface = import_src.default.RemoteWorkbenchWelcomeSurface, ProgressBar = import_src.default.ProgressBar, SegmentedControl = import_src.default.SegmentedControl, SelectMenu = import_src.default.SelectMenu, ServerConnectionSurface = import_src.default.ServerConnectionSurface, SidebarDockSurface = import_src.default.SidebarDockSurface, SidebarOrbSurface = import_src.default.SidebarOrbSurface, TokenUsageSurface = import_src.default.TokenUsageSurface, SettingsFormRow = import_src.default.SettingsFormRow, SettingsGroup = import_src.default.SettingsGroup, SettingsListItem = import_src.default.SettingsListItem, SettingsPageHeader = import_src.default.SettingsPageHeader, SettingsRow = import_src.default.SettingsRow, ShortcutsSettingsSurface = import_src.default.ShortcutsSettingsSurface, Slider = import_src.default.Slider, Stepper = import_src.default.Stepper, colorSwatches = import_src.default.colorSwatches, resolveStyleLabCopy = import_src.default.resolveStyleLabCopy, TabBar = import_src.default.TabBar, TextField = import_src.default.TextField, Toggle = import_src.default.Toggle, TokenUsageDashboardSurface = import_src.default.TokenUsageDashboardSurface, VoiceInputSettingsSurface = import_src.default.VoiceInputSettingsSurface, colors = import_src.default.colors, darkColors = import_src.default.darkColors, desktopMetrics = import_src.default.desktopMetrics, lightColors = import_src.default.lightColors, radii = import_src.default.radii, setValdiThemeColors = import_src.default.setValdiThemeColors, setValdiTouchDensity = import_src.default.setValdiTouchDensity, themeColors = import_src.default.themeColors, themeMetrics = import_src.default.themeMetrics, touchMetrics = import_src.default.touchMetrics, type = import_src.default.type, valdiTouch = import_src.default.valdiTouch, registerHapticHandler = import_src.default.registerHapticHandler, triggerHaptic = import_src.default.triggerHaptic;
 export {
   ActionSheet,

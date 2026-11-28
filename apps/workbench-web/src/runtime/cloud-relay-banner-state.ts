@@ -1,7 +1,8 @@
 export interface CloudRelayPairingBannerState {
-  readonly phase: "idle" | "redeeming" | "pending_approval" | "connected" | "error";
+  readonly phase: "idle" | "redeeming" | "pending_approval" | "connected" | "offline" | "error";
   readonly shortCode?: string;
   readonly machineId?: string;
+  readonly machineName?: string;
   readonly relayOrigin?: string;
   readonly errorMessage?: string;
 }
@@ -25,4 +26,39 @@ export function subscribeCloudRelayPairingState(listener: () => void): () => voi
 
 export function dismissCloudRelayPairingState(): void {
   setCloudRelayPairingState({ phase: "idle" });
+}
+
+let standalonePortalOpen = (() => {
+  try {
+    return (
+      typeof window !== "undefined" &&
+      (window.location.pathname.replace(/\/+$/u, "") === "/claim" ||
+        window.sessionStorage.getItem("opencraft.pending-claim-href") !== null)
+    );
+  } catch {
+    return false;
+  }
+})();
+
+const standalonePortalListeners = new Set<() => void>();
+
+export function getCloudRelayStandalonePortalOpen(): boolean {
+  return standalonePortalOpen;
+}
+
+export function openCloudRelayStandalonePortal(): void {
+  if (standalonePortalOpen) return;
+  standalonePortalOpen = true;
+  for (const listener of standalonePortalListeners) listener();
+}
+
+export function closeCloudRelayStandalonePortal(): void {
+  if (!standalonePortalOpen) return;
+  standalonePortalOpen = false;
+  for (const listener of standalonePortalListeners) listener();
+}
+
+export function subscribeCloudRelayStandalonePortal(listener: () => void): () => void {
+  standalonePortalListeners.add(listener);
+  return () => standalonePortalListeners.delete(listener);
 }

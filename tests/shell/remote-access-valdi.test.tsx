@@ -16,7 +16,7 @@ import {
   UserRelayStore,
 } from "../../apps/relay-server/src/cloudflare/domain.js";
 import { encodeQrMatrix, qrMatrixToSvgDataUri } from "../../apps/workbench-web/src/utils/qr-code.js";
-import { formatPairingUrl, formatShareUrl, parsePairingUrl } from "@opencraft/relay-protocol";
+import { formatPairingUrl, formatShareUrl, parsePairingUrl, solveHashcashPow } from "@opencraft/relay-protocol";
 import { CLOUD_RELAY_SPEC } from "../protocol/workerd/cloud-relay.scenarios.js";
 import { testScenariosOnMiniflare } from "../cloudflare/node-test.js";
 
@@ -435,6 +435,118 @@ testScenariosOnMiniflare("remote-access-p0p1-workerd", [
         assert.equal(overview.threadIndex.length, 1);
         assert.equal(overview.threadIndex[0]?.title, "Ship Passkey Personal Hub");
         assert.equal(overview.threadIndex[0]?.status, "running");
+
+        // 7. QR pairing redeem & collaborator share guest claim both return real machine displayName!
+        const inviteA = await daemonA.createPairingInvite();
+        const parsedPair = parsePairingUrl(inviteA.httpsPairingUrl);
+        assert.ok(parsedPair);
+        const pairRedeemRes = await worker.fetch(`${testRelayOrigin}/__opencraft_cloud/pair/redeem`, {
+          method: "POST",
+          headers: { "content-type": "application/json", origin: testRelayOrigin },
+          body: JSON.stringify({
+            machineId: parsedPair.machineId,
+            code: parsedPair.code,
+            devicePublicKey: browserPubB64,
+            browserLabel: "iPhone Safari",
+          }),
+        });
+        assert.equal(pairRedeemRes.status, 200);
+        const pairRedeemed = (await pairRedeemRes.json()) as { status: string; displayName?: string };
+        assert.equal(pairRedeemed.displayName, "Office-MacBook-Pro");
+
+        const shareCreated = await daemonA.createShare({ allowExecution: false });
+        const powRes = await worker.fetch(`${testRelayOrigin}/__opencraft_cloud/pow/challenge?purpose=redeem`);
+        assert.equal(powRes.status, 200);
+        const powChallenge = (await powRes.json()) as { challenge: string; bits: number };
+        const solvedNonce = await solveHashcashPow(powChallenge.challenge, powChallenge.bits);
+        const guestClaimRes = await worker.fetch(`${testRelayOrigin}/__opencraft_cloud/shares/claim-guest`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            origin: testRelayOrigin,
+            "x-opencraft-pow": `${powChallenge.challenge}:${solvedNonce}`,
+          },
+          body: JSON.stringify({
+            shareToken: shareCreated.shareToken,
+            guestPublicKey: browserPubB64,
+          }),
+        });
+        assert.equal(guestClaimRes.status, 200);
+        const guestClaimed = (await guestClaimRes.json()) as { machineDisplayName?: string };
+        assert.equal(guestClaimed.machineDisplayName, "Office-MacBook-Pro");
+
+        // 8. Authorized devices list excludes Owner Workstation, revokes single browser instantly (403 even when approvalRequired=false), and recovers on fresh QR redeem!
+        const statusBeforeRevoke = await daemonA.inspectDetailedStatus();
+        assert.ok((statusBeforeRevoke.approvedDevices ?? []).length >= 1, "Paired browser must appear in approvedDevices");
+        assert.equal(
+          (statusBeforeRevoke.approvedDevices ?? []).some((d) => d.label === "Owner Workstation"),
+          false,
+          "Owner Workstation sovereign key must never be exposed in external approvedDevices list",
+        );
+        const targetDevice = statusBeforeRevoke.approvedDevices![0]!;
+        const routesUrlA = `${testRelayOrigin}/m/${enrA.machineId}/__routes`;
+        const okRoutesBefore = await worker.fetch(routesUrlA, {
+          method: "GET",
+          headers: {
+            authorization: `Bearer ${loggedIn.token}`,
+            "x-opencraft-dpop": await signDpop("GET", routesUrlA),
+          },
+        });
+        assert.equal(okRoutesBefore.status, 200);
+
+        await daemonA.revokeApprovedDevice(targetDevice.thumbprint);
+        const statusAfterRevoke = await daemonA.inspectDetailedStatus();
+        assert.equal(
+          (statusAfterRevoke.approvedDevices ?? []).some((d) => d.thumbprint === targetDevice.thumbprint),
+          false,
+        );
+
+        // Revoked browser gets 403 on `/__routes` even with valid 30-day Hub JWT and `approvalRequired === false`!
+        const deniedRoutes = await worker.fetch(routesUrlA, {
+          method: "GET",
+          headers: {
+            authorization: `Bearer ${loggedIn.token}`,
+            "x-opencraft-dpop": await signDpop("GET", routesUrlA),
+          },
+        });
+        assert.equal(deniedRoutes.status, 403);
+
+        // Revoked browser's passive `/hub/overview` no longer sees machine A, while machine B stays intact!
+        const overviewAfterRevokeRes = await worker.fetch(overviewUrl, {
+          method: "GET",
+          headers: {
+            authorization: `Bearer ${loggedIn.token}`,
+            "x-opencraft-dpop": await signDpop("GET", overviewUrl),
+          },
+        });
+        const overviewAfterRevoke = (await overviewAfterRevokeRes.json()) as {
+          machines: ReadonlyArray<{ machineId: string }>;
+        };
+        assert.equal(overviewAfterRevoke.machines.some((m) => m.machineId === enrA.machineId), false);
+        assert.equal(overviewAfterRevoke.machines.some((m) => m.machineId === enrB.machineId), true);
+
+        // Fresh QR redeem explicitly clears revocation and restores access!
+        const inviteRecover = await daemonA.createPairingInvite();
+        const parsedRecover = parsePairingUrl(inviteRecover.httpsPairingUrl)!;
+        const recoverRes = await worker.fetch(`${testRelayOrigin}/__opencraft_cloud/pair/redeem`, {
+          method: "POST",
+          headers: { "content-type": "application/json", origin: testRelayOrigin },
+          body: JSON.stringify({
+            machineId: parsedRecover.machineId,
+            code: parsedRecover.code,
+            devicePublicKey: browserPubB64,
+            deviceLabel: "Recovered iPhone",
+          }),
+        });
+        assert.equal(recoverRes.status, 200);
+        const restoredRoutes = await worker.fetch(routesUrlA, {
+          method: "GET",
+          headers: {
+            authorization: `Bearer ${loggedIn.token}`,
+            "x-opencraft-dpop": await signDpop("GET", routesUrlA),
+          },
+        });
+        assert.equal(restoredRoutes.status, 200);
       } finally {
         daemonA.close();
         daemonB.close();

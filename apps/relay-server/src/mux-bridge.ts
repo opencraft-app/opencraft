@@ -24,7 +24,7 @@ function safeEqual(a: string, b: string): boolean {
 
 interface MuxPeerStream {
   readonly flow: MuxStreamFlowControl;
-  readonly duplex: Duplex;
+  duplex: Duplex;
   closed: boolean;
 }
 

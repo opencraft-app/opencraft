@@ -484,6 +484,67 @@ function useHostStateValue<T>(hostId: string, select: (snapshot: ReturnType<AppS
   );
 }
 
+/**
+ * Synchronously reads a Host's negotiated initialize extension without triggering
+ * speculative trial RPCs (`-32601`). Returns `undefined` before handshake completes,
+ * `null` when handshake succeeded and the extension is absent, or the extension record.
+ */
+export function useHostExtensionCapability(
+  hostId: string,
+  extensionKey: string,
+): Readonly<Record<string, unknown>> | null | undefined {
+  const application = useContext(ApplicationRuntimeContext);
+  const registry = application?.registry ?? null;
+  return useSyncExternalStore(
+    useCallback(
+      (listener: () => void) => {
+        if (!registry) return () => {};
+        let runtime = registry.peekRuntime(hostId);
+        let unsubscribe = runtime?.subscribe(listener);
+        const removeRegistry = registry.subscribe(() => {
+          const next = registry.peekRuntime(hostId);
+          if (next !== runtime) {
+            unsubscribe?.();
+            runtime = next;
+            unsubscribe = runtime?.subscribe(listener);
+          }
+          listener();
+        });
+        return () => {
+          removeRegistry();
+          unsubscribe?.();
+        };
+      },
+      [hostId, registry],
+    ),
+    () => {
+      if (!registry) return undefined;
+      const init = registry.peekRuntime(hostId)?.resources.host.getInitializeResult() ?? null;
+      if (!init) return undefined;
+      const ext = init.capabilities?.extensions?.[extensionKey];
+      return ext && typeof ext === "object" ? (ext as Readonly<Record<string, unknown>>) : null;
+    },
+    () => undefined,
+  );
+}
+
+/** Reads the currently leased or most recently touched resident thread on `hostId`, if any. */
+export function useHostActiveThreadId(hostId: string): string | null {
+  return useHostStateValue(
+    hostId,
+    (snapshot) => {
+      const leased = snapshot.residentThreads.find((t) => t.viewLeaseCount > 0);
+      if (leased) return leased.threadId;
+      let latest: (typeof snapshot.residentThreads)[number] | null = null;
+      for (const item of snapshot.residentThreads) {
+        if (!latest || item.touchedAt > latest.touchedAt) latest = item;
+      }
+      return latest?.threadId ?? null;
+    },
+    null,
+  );
+}
+
 export function useConversationScopeRegistry(): ConversationScopeRegistry {
   const value = useContext(ApplicationRuntimeContext);
   if (value === null) throw new Error("AppServerRuntimeProvider is missing");

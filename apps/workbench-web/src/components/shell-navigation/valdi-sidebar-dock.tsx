@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, type ReactNode } from "react";
 import { useValdiTouchDensity } from "../../runtime/valdi-touch-density";
 import { useIntl } from "@opencraft/i18n/react";
 import { useAppearanceTheme } from "../../appearance-theme";
@@ -26,6 +26,10 @@ function mapActionIcon(name: string | undefined): import("@opencraft/design-syst
       return "sparkle";
     case "terminal":
       return "terminal";
+    case "desktop":
+    case "monitor":
+    case "laptop":
+      return "laptop";
     case "server":
       return "server";
     case "settings":

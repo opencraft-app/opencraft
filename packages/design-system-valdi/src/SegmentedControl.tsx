@@ -62,13 +62,14 @@ export class SegmentedControl extends StatefulComponent<Props, State> {
       }
       return Math.max(max, units);
     }, 0);
-    const minOptionWidth = Math.ceil(maxUnits * (fontSize * 0.62) + 22);
+    const minOptionWidth = Math.ceil(maxUnits * (fontSize * 0.62) + 26);
+    const naturalTrackWidth = options.length * minOptionWidth + 6;
 
     <view
       class="oc-segment-track"
       accessibilityId={id}
       accessibilityLabel={label}
-      minWidth={0}
+      minWidth={naturalTrackWidth}
       maxWidth="100%"
       flexShrink={1}
       borderRadius={m.radii.segmentTrack}

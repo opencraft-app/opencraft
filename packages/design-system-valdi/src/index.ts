@@ -15,7 +15,13 @@ export {
   type AssetTabId,
   type AssetsSurfaceProps,
 } from "./AssetsSurface";
-export { AssistantsSurface, type AssistantsSurfaceProps, type ManagedBotItem } from "./AssistantsSurface";
+export {
+  AssistantsSurface,
+  type AssistantActorCardItem,
+  type AssistantPresetCardItem,
+  type AssistantsSurfaceProps,
+  type ManagedBotItem,
+} from "./AssistantsSurface";
 export {
   InboxEmptySurface,
   InboxSurface,

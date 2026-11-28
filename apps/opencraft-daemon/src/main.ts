@@ -432,6 +432,13 @@ export async function startOpenCraftDaemon(options: {
           await relayEnrollment.approvePendingDevice(record.shortCode.trim());
           return relayEnrollment.inspectDetailedStatus({ ensureInvite: false });
         }
+        case "revoke-device": {
+          if (typeof record.thumbprint !== "string" || !record.thumbprint.trim()) {
+            throw new Error("Device thumbprint is required");
+          }
+          await relayEnrollment.revokeApprovedDevice(record.thumbprint.trim());
+          return relayEnrollment.inspectDetailedStatus({ ensureInvite: false });
+        }
         case "create-share":
           return relayEnrollment.createShare({
             allowExecution: record.allowExecution === true,

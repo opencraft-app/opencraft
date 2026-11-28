@@ -200,7 +200,7 @@ interface ActiveHttpEntry {
 interface ActiveDuplexEntry {
   readonly kind: "duplex";
   readonly flow: MuxStreamFlowControl;
-  readonly duplex: Duplex;
+  duplex: Duplex;
   closed: boolean;
 }
 

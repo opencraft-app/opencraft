@@ -258,6 +258,7 @@ import { ComposerExtensionActions } from "./runtime/composer-action-renderers";
 import { useConnectorPresentation } from "./components/connectors/connector-panel";
 import { useExtensionWorkbenchProjection } from "./runtime/extension-workbench-projection";
 import { useAuthenticationPresentation } from "./runtime/use-authentication-presentation";
+import { openCloudRelayStandalonePortal, setCloudRelayPairingState, getCloudRelayPairingState } from "./runtime/cloud-relay-banner-state";
 import {
   FULL_WORKBENCH_PRESENTATION,
   type WorkbenchPresentationPolicy,
@@ -413,6 +414,27 @@ export function App({
       && (current.hostId !== snapshot.hostId || current.threadId !== snapshot.activeThreadId) ? null : current);
   }, [snapshot.hostId, snapshot.activeThreadId]);
   const activeHostConnectionPhase = useHostConnectionPhase(snapshot.hostId);
+  useEffect(() => {
+    if (
+      typeof document === "undefined" ||
+      document.getElementById("opencraft-deployment-config") === null ||
+      !snapshot.hostId.startsWith("relay:")
+    ) {
+      return;
+    }
+    if (snapshot.phase === "ready") {
+      if (getCloudRelayPairingState().phase === "offline") {
+        setCloudRelayPairingState({ phase: "idle" });
+      }
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      if (getCloudRelayPairingState().phase === "idle") {
+        setCloudRelayPairingState({ phase: "offline", machineId: snapshot.hostId.slice(6) });
+      }
+    }, 3500);
+    return () => window.clearTimeout(timer);
+  }, [snapshot.hostId, snapshot.phase]);
   const environmentSnapshot = useSyncExternalStore(
     hostCatalog.environmentDirectory.subscribe,
     hostCatalog.environmentDirectory.getSnapshot,
@@ -765,6 +787,39 @@ export function App({
   const panelPresentationId = conversationViewIdentity.viewId;
   const panelRuntime = useWorkbenchPanelRuntime();
   const ordinaryThreads = useOrdinaryConversationCatalog(multiHostCatalog.threads, panelRuntime.context.sideChats);
+  const lastPublishedRelayIndexRef = useRef("");
+  useEffect(() => {
+    const relayBridge = (
+      globalThis as typeof globalThis & {
+        opencraftDesktop?: { relay?: { invoke: (action: string, payload?: unknown) => Promise<unknown> } };
+      }
+    ).opencraftDesktop?.relay;
+    if (extensionPlatform !== "electron" || !relayBridge) return;
+    const topRows = ordinaryThreads
+      .filter((t) => t.visibility !== "hidden" && (t.connectionHostId === "local" || t.connectionHostId === "local-codex"))
+      .slice(0, 12)
+      .map((t) => ({
+        threadId: t.id,
+        title: (t.title || "Untitled").slice(0, 140),
+        status:
+          t.status === "running"
+            ? ("running" as const)
+            : t.status === "review"
+              ? ("waiting" as const)
+              : t.status === "error"
+                ? ("failed" as const)
+                : ("idle" as const),
+        updatedAt: t.updatedAt < 1e11 ? Math.round(t.updatedAt * 1000) : Math.round(t.updatedAt),
+      }));
+    if (topRows.length === 0) return;
+    const serialized = JSON.stringify(topRows.map((r) => [r.threadId, r.title, r.status]));
+    if (serialized === lastPublishedRelayIndexRef.current) return;
+    const timer = window.setTimeout(() => {
+      lastPublishedRelayIndexRef.current = serialized;
+      void relayBridge.invoke("publish-thread-index", { threads: topRows }).catch(() => undefined);
+    }, 2500);
+    return () => window.clearTimeout(timer);
+  }, [extensionPlatform, ordinaryThreads]);
   const sidebarDrafts = useSidebarDraftRows(conversationScopes, draftSnapshot, multiHostCatalog.threads, serverSpaces);
   const sidebarDraftServerId = legacyDirectServerProjectionFromHost({
     hostId: serverSpaces.hostId, hostKind: activeHost.kind, label: activeHost.label,
@@ -2474,6 +2529,14 @@ export function App({
                 icon: "grid", active: applicationsSelected,
                 onInvoke: () => setSidebarDestination("applications") },
               ...extensionProjection.footerActions, ...workNavigationActions,
+              ...(typeof document !== "undefined" && document.getElementById("opencraft-deployment-config") !== null
+                ? [{
+                    id: "shell.my-computers",
+                    title: intl.formatMessage({ id: "remoteWelcome.hubMachinesTitle", defaultMessage: "My Computers" }),
+                    icon: "desktop",
+                    onInvoke: () => openCloudRelayStandalonePortal(),
+                  }]
+                : []),
               { id: "shell.search", title: intl.formatMessage({ id: "sidebar.search", defaultMessage: "Search conversations" }) + ` (${shortcutLabel("search")})`, icon: "search", onInvoke: () => setConversationSearchOpen(true) },
             ],
             account: extensionProjection.account === null ? null : {

@@ -59,6 +59,8 @@ import {
   dialog,
   ipcMain,
   nativeTheme,
+  powerMonitor,
+  powerSaveBlocker,
   shell,
   session,
   type MessagePortMain,
@@ -439,16 +441,91 @@ const ALLOWED_RELAY_ACTIONS = new Set([
   "disable",
   "pair-invite",
   "approve-device",
+  "revoke-device",
   "create-share",
   "revoke-share",
   "activate-license",
   "refresh-routes",
   "set-device-name",
+  "set-sleep-protection",
   "create-claim-url",
   "open-claim-url",
   "open-hub",
   "publish-thread-index",
 ]);
+
+type RelaySleepProtectionMode = "ac" | "always" | "off";
+const RELAY_SLEEP_PROTECTION_KEY = "relay-sleep-protection-mode";
+let relayEnrolledState = false;
+let relaySleepBlockerId: number | null = null;
+
+function readRelaySleepProtectionMode(): RelaySleepProtectionMode {
+  try {
+    const raw = productStorage?.read(RELAY_SLEEP_PROTECTION_KEY);
+    if (raw === "ac" || raw === "always" || raw === "off") return raw;
+  } catch {}
+  return "ac";
+}
+
+function safeIsOnBatteryPower(): boolean {
+  try {
+    return app.isReady() ? powerMonitor.isOnBatteryPower() : false;
+  } catch {
+    return false;
+  }
+}
+
+function stopRelaySleepBlocker(): void {
+  if (relaySleepBlockerId !== null) {
+    try {
+      if (powerSaveBlocker.isStarted(relaySleepBlockerId)) {
+        powerSaveBlocker.stop(relaySleepBlockerId);
+      }
+    } catch {}
+    relaySleepBlockerId = null;
+  }
+}
+
+function reconcileRelaySleepBlocker(): {
+  readonly sleepProtectionMode: RelaySleepProtectionMode;
+  readonly sleepBlockerActive: boolean;
+  readonly onBattery: boolean;
+} {
+  const mode = readRelaySleepProtectionMode();
+  const onBattery = safeIsOnBatteryPower();
+  const shouldBlock = relayEnrolledState && (mode === "always" || (mode === "ac" && !onBattery));
+  if (shouldBlock) {
+    try {
+      if (relaySleepBlockerId === null || !powerSaveBlocker.isStarted(relaySleepBlockerId)) {
+        relaySleepBlockerId = powerSaveBlocker.start("prevent-app-suspension");
+      }
+    } catch {
+      relaySleepBlockerId = null;
+    }
+  } else {
+    stopRelaySleepBlocker();
+  }
+  const active =
+    relaySleepBlockerId !== null &&
+    (() => {
+      try {
+        return powerSaveBlocker.isStarted(relaySleepBlockerId);
+      } catch {
+        return false;
+      }
+    })();
+  return { sleepProtectionMode: mode, sleepBlockerActive: active, onBattery };
+}
+
+function enrichRelayStatusWithSleepState(result: unknown): unknown {
+  if (!result || typeof result !== "object" || Array.isArray(result)) return result;
+  const rec = result as Record<string, unknown>;
+  if (typeof rec.enrolled === "boolean") {
+    relayEnrolledState = rec.enrolled;
+  }
+  return { ...rec, ...reconcileRelaySleepBlocker() };
+}
+
 ipcMain.handle("opencraft:relay-invoke", async (event, action: unknown, payload: unknown) => {
   if (!trustedLoginCaller(event)) throw new Error("Untrusted relay caller");
   if (typeof action !== "string" || !ALLOWED_RELAY_ACTIONS.has(action)) {
@@ -459,6 +536,16 @@ ipcMain.handle("opencraft:relay-invoke", async (event, action: unknown, payload:
     return { ok: true };
   }
   if (!daemonManager) throw new Error("OpenCraft Daemon is not available");
+  if (action === "set-sleep-protection") {
+    const rec = payload && typeof payload === "object" ? (payload as { mode?: unknown }) : {};
+    const mode = rec.mode;
+    if (mode !== "ac" && mode !== "always" && mode !== "off") {
+      throw new Error("Invalid sleep protection mode");
+    }
+    productStorage.write(RELAY_SLEEP_PROTECTION_KEY, mode);
+    const status = await daemonManager.requestRelay("status", { ensureInvite: false });
+    return enrichRelayStatusWithSleepState(status);
+  }
   if (action === "open-claim-url") {
     const issued = (await daemonManager.requestRelay("create-claim-url", payload)) as {
       claimUrl: string;
@@ -468,7 +555,8 @@ ipcMain.handle("opencraft:relay-invoke", async (event, action: unknown, payload:
     await shell.openExternal(issued.claimUrl);
     return issued;
   }
-  return daemonManager.requestRelay(action, payload);
+  const rawResult = await daemonManager.requestRelay(action, payload);
+  return enrichRelayStatusWithSleepState(rawResult);
 });
 ipcMain.handle("opencraft:relay-consume-pair-urls", (event) => {
   if (!trustedLoginCaller(event)) throw new Error("Untrusted relay caller");
@@ -835,6 +923,7 @@ const lifecycle = new DesktopLifecycle({
   showDock: async () => { if (process.platform === "darwin") await app.dock?.show(); },
   hideDock: () => { if (process.platform === "darwin") app.dock?.hide(); },
   stopRuntime: async () => {
+    stopRelaySleepBlocker();
     desktopServers.close();
     desktopLocale.dispose();
     await nativeSpeech.close();
@@ -945,6 +1034,19 @@ async function bootstrap(): Promise<void> {
     } : {}),
     executable: process.execPath,
   });
+  if (daemonManager) {
+    const onPowerSourceChange = () => {
+      reconcileRelaySleepBlocker();
+    };
+    powerMonitor.on("on-ac", onPowerSourceChange);
+    powerMonitor.on("on-battery", onPowerSourceChange);
+    void daemonManager
+      .requestRelay("status", { ensureInvite: false })
+      .then((res) => {
+        enrichRelayStatusWithSleepState(res);
+      })
+      .catch(() => undefined);
+  }
   let localeOverride: unknown;
   try { localeOverride = JSON.parse(uiPreferences.load("locale.override")?.valueJson ?? '""'); } catch { /* Invalid preferences use system locale. */ }
   await desktopLocale.update({ localeOverride: typeof localeOverride === "string" ? localeOverride : null,

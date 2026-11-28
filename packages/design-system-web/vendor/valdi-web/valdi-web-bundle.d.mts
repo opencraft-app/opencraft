@@ -259,6 +259,13 @@ export type RemoteAccessPendingApprovalItem = {
   readonly expiresLabel: string;
 };
 
+export type RemoteAccessApprovedDeviceItem = {
+  readonly thumbprint: string;
+  readonly label: string;
+  readonly detailLabel: string;
+  readonly active: boolean;
+};
+
 export type RemoteAccessActiveShareItem = {
   readonly grantId: string;
   readonly permissionLabel: string;
@@ -290,6 +297,14 @@ export type RemoteAccessSettingsProps = {
   readonly qrMatrix?: readonly (readonly boolean[])[];
   readonly pairingCopied?: boolean;
   readonly refreshQrLabel: string;
+  readonly sleepProtectionTitle?: string;
+  readonly sleepProtectionDescription?: string;
+  readonly sleepProtectionStatusLabel?: string;
+  readonly sleepProtectionActive?: boolean;
+  readonly sleepProtectionMode?: "ac" | "always" | "off";
+  readonly sleepModeAcLabel?: string;
+  readonly sleepModeAlwaysLabel?: string;
+  readonly sleepModeOffLabel?: string;
   readonly advancedGroupTitle: string;
   readonly statusTitle: string;
   readonly statusDetail: string;
@@ -309,11 +324,17 @@ export type RemoteAccessSettingsProps = {
   readonly hubTitle: string;
   readonly hubDescription: string;
   readonly hubActionLabel: string;
+  readonly hubRebindActionLabel?: string;
   readonly claimingHub?: boolean;
   readonly approvalsGroupTitle: string;
   readonly approvalsGroupDescription: string;
   readonly approveButtonLabel: string;
   readonly pendingApprovals: readonly RemoteAccessPendingApprovalItem[];
+  readonly devicesGroupTitle?: string;
+  readonly devicesGroupDescription?: string;
+  readonly devicesEmptyText?: string;
+  readonly revokeDeviceLabel?: string;
+  readonly approvedDevices?: readonly RemoteAccessApprovedDeviceItem[];
   readonly shareGroupTitle: string;
   readonly shareGroupDescription: string;
   readonly sharePermissionTitle: string;
@@ -337,13 +358,16 @@ export type RemoteAccessSettingsProps = {
   readonly onRefreshRoutes: () => void;
   readonly onCopyPairingUrl: () => void;
   readonly onRefreshQr: () => void;
+  readonly onChangeSleepProtectionMode?: (mode: "ac" | "always" | "off") => void;
   readonly onChangeRequireApproval: (next: boolean) => void;
   readonly onApproveDevice: (shortCode: string) => void;
+  readonly onRevokeDevice?: (thumbprint: string) => void;
   readonly onChangeShareMode: (mode: "view" | "exec") => void;
   readonly onCreateShare: () => void;
   readonly onCopyShareUrl: (url: string) => void;
   readonly onRevokeShare: (grantId: string) => void;
   readonly onHubAction: () => void;
+  readonly onHubRebindAction?: () => void;
   readonly onDismissNotice?: () => void;
   readonly onHaptic?: (style: string) => void;
 };
@@ -382,6 +406,7 @@ export type RemoteWorkbenchWelcomeProps = {
   readonly hubPasteTempLinkLabel?: string;
   readonly hubRefreshLabel: string;
   readonly hubSignOutLabel: string;
+  readonly backToWorkspaceLabel?: string;
   readonly hubEmptyMachinesText: string;
   readonly hubMachines?: readonly HubMachineDirectoryItem[];
   readonly claimMachineName?: string;
@@ -406,6 +431,8 @@ export type RemoteWorkbenchWelcomeProps = {
   readonly pendingCodeTitle?: string;
   readonly pendingCodeDetail?: string;
   readonly pendingShortCode?: string;
+  readonly infoTitle?: string;
+  readonly infoMessage?: string;
   readonly errorMessage?: string;
   readonly serverDisclosureTitle: string;
   readonly serverAddressLabel: string;
@@ -420,6 +447,8 @@ export type RemoteWorkbenchWelcomeProps = {
   readonly onDismissClaim?: () => void;
   readonly onHubRefresh?: () => void;
   readonly onHubSignOut?: () => void;
+  readonly onBackToWorkspace?: () => void;
+  readonly onDismissInfo?: () => void;
   readonly onConnectHubMachine?: (machineId: string) => void;
   readonly onChangeLink: (value: string) => void;
   readonly onSubmitLink: () => void;
@@ -1089,6 +1118,29 @@ export type TokenUsageLedgerSection = {
   readonly onToggleCollection?: () => void;
 };
 
+export type TokenUsageGatewayRequestItem = {
+  readonly id: string;
+  readonly title: string;
+  readonly subtitle: string;
+  readonly detail: string;
+};
+
+export type TokenUsageGatewaySection = {
+  readonly title: string;
+  readonly subtitle: string;
+  readonly budgetLabel?: string;
+  readonly budgetDetail?: string;
+  readonly budgetProgress?: number;
+  readonly budgetWarning?: boolean;
+  readonly statusMessage?: string;
+  readonly metrics: readonly TokenUsageLedgerMetricItem[];
+  readonly requestsTitle?: string;
+  readonly requestsEmptyText?: string;
+  readonly requests?: readonly TokenUsageGatewayRequestItem[];
+  readonly manageModelsLabel?: string;
+  readonly onManageModels?: () => void;
+};
+
 export type TokenUsageDashboardProps = {
   readonly dark?: boolean;
   readonly touch?: boolean;
@@ -1100,6 +1152,7 @@ export type TokenUsageDashboardProps = {
   readonly loadingText?: string;
   readonly errorMessage?: string;
   readonly localUsage?: TokenUsageLocalSection;
+  readonly gatewayBudget?: TokenUsageGatewaySection;
   readonly ledger?: TokenUsageLedgerSection;
   readonly onRefresh: () => void;
   readonly onHaptic?: (style: string) => void;
@@ -1285,78 +1338,58 @@ export type AssetsSurfaceProps = {
 
 export declare const AssetsSurface: ValdiComponentConstructor<AssetsSurfaceProps>;
 
-export type ManagedBotItem = {
+export type AssistantActorCardItem = {
   readonly id: string;
   readonly title: string;
+  readonly badgeText?: string;
   readonly statusText: string;
-  readonly openLabel: string;
-  readonly settingsLabel?: string;
+  readonly dutiesText?: string;
+  readonly paused: boolean;
+  readonly configRequired?: boolean;
+  readonly primaryActionKind: "chat" | "choose-model" | "resume";
+  readonly primaryActionLabel: string;
+  readonly memoryLabel: string;
+  readonly settingsLabel: string;
   readonly pauseLabel?: string;
   readonly busy?: boolean;
+  readonly activeOperation?: "open" | "pause" | "hire" | null;
 };
+
+export type AssistantPresetCardItem = {
+  readonly id: string;
+  readonly title: string;
+  readonly description: string;
+  readonly cardinalityLabel?: string;
+  readonly hireLabel: string;
+  readonly hiring?: boolean;
+  readonly disabled?: boolean;
+};
+
+export type ManagedBotItem = AssistantActorCardItem;
 
 export type AssistantsSurfaceProps = {
   readonly dark?: boolean;
   readonly touch?: boolean;
-  readonly title: string;
-  readonly subtitle: string;
-  readonly managedTitle?: string;
-  readonly managedDescription?: string;
-  readonly managedCreateLabel?: string;
-  readonly managedCreateDisabled?: boolean;
-  readonly managedLoading?: boolean;
-  readonly managedError?: string;
-  readonly managedEmptyText?: string;
-  readonly managedBots?: readonly ManagedBotItem[];
-  readonly onCreateManagedBot?: () => void;
-  readonly onRetryManagedBots?: () => void;
-  readonly onSettingsManagedBot?: (id: string) => void;
-  readonly onTogglePauseManagedBot?: (id: string) => void;
+  readonly title?: string;
+  readonly subtitle?: string;
   readonly loading?: boolean;
-  readonly loadingText: string;
-  readonly failedText?: string;
-  readonly myAgentsTitle: string;
-  readonly availableTitle: string;
-  readonly personalTitle: string;
-  readonly personalAbout: string;
-  readonly assistantPresent: boolean;
-  readonly claimed: boolean;
-  readonly phaseText: string;
-  readonly configRequired?: boolean;
-  readonly unavailable?: boolean;
-  readonly detailsOpen: boolean;
-  readonly memoryOpen: boolean;
-  readonly confirmStop: boolean;
-  readonly pending?: boolean;
-  readonly modelSaving?: boolean;
-  readonly activeAction?: string | null;
-  readonly reclaimLabel: string;
-  readonly chooseModelLabel: string;
-  readonly openLabel: string;
-  readonly memoryLabel: string;
-  readonly manageLabel: string;
-  readonly closeDetailsLabel: string;
-  readonly hireLabel: string;
-  readonly modelLabel: string;
-  readonly modelDescription?: string;
-  readonly selectedModel: string;
-  readonly modelOptions: readonly SelectMenuOption[];
-  readonly modelDisabled?: boolean;
+  readonly errorText?: string;
   readonly retryLabel: string;
-  readonly stopLabel: string;
-  readonly stopConfirmText: string;
-  readonly cancelLabel: string;
-  readonly stopConfirmActionLabel: string;
-  readonly onOpenManagedBot?: (id: string) => void;
-  readonly onClaim: () => void;
-  readonly onOpenChat: () => void;
-  readonly onToggleMemory: () => void;
-  readonly onToggleDetails: () => void;
-  readonly onSelectModel: (value: string) => void;
+  readonly myAgentsTitle: string;
+  readonly myAgentsDescription?: string;
+  readonly createLabel: string;
+  readonly createDisabled?: boolean;
+  readonly emptyMineText: string;
+  readonly actors: readonly AssistantActorCardItem[];
+  readonly availableTitle: string;
+  readonly presets: readonly AssistantPresetCardItem[];
+  readonly onCreateActor: () => void;
   readonly onRetry: () => void;
-  readonly onRequestStop: () => void;
-  readonly onCancelStop: () => void;
-  readonly onConfirmStop: () => void;
+  readonly onHirePreset: (presetId: string) => void;
+  readonly onPrimaryAction: (botId: string) => void;
+  readonly onOpenMemory: (botId: string) => void;
+  readonly onOpenSettings: (botId: string) => void;
+  readonly onTogglePause: (botId: string) => void;
   readonly onHaptic?: (style: string) => void;
 };
 

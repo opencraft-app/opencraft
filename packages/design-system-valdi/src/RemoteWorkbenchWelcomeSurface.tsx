@@ -41,6 +41,7 @@ export type RemoteWorkbenchWelcomeProps = {
   hubPasteTempLinkLabel?: string;
   hubRefreshLabel: string;
   hubSignOutLabel: string;
+  backToWorkspaceLabel?: string;
   hubEmptyMachinesText: string;
   hubMachines?: readonly HubMachineDirectoryItem[];
 
@@ -69,6 +70,8 @@ export type RemoteWorkbenchWelcomeProps = {
   pendingCodeTitle?: string;
   pendingCodeDetail?: string;
   pendingShortCode?: string;
+  infoTitle?: string;
+  infoMessage?: string;
   errorMessage?: string;
 
   // Self-Hosted Server Disclosure
@@ -87,6 +90,8 @@ export type RemoteWorkbenchWelcomeProps = {
   onDismissClaim?: () => void;
   onHubRefresh?: () => void;
   onHubSignOut?: () => void;
+  onBackToWorkspace?: () => void;
+  onDismissInfo?: () => void;
   onConnectHubMachine?: (machineId: string) => void;
   onChangeLink: (value: string) => void;
   onSubmitLink: () => void;
@@ -351,7 +356,6 @@ export class RemoteWorkbenchWelcomeSurface extends StatefulComponent<RemoteWorkb
     const c = themeColors(dark);
     const touch = Boolean(vm.touch);
 
-    const stageBg = dark ? "#0b0b0d" : "#f5f5f7";
     const sheetBg = dark ? "#1c1c1e" : "#ffffff";
     const sheetBorder = dark ? "rgba(255, 255, 255, 0.10)" : "rgba(0, 0, 0, 0.06)";
     const ink = dark ? "#f5f5f7" : "#1d1d1f";
@@ -363,18 +367,16 @@ export class RemoteWorkbenchWelcomeSurface extends StatefulComponent<RemoteWorkb
     const appleGray = dark ? "#8e8e93" : "#aeaeb2";
 
     const isClaimMode = Boolean(vm.claimMachineName && vm.claimBannerTitle);
-    const isHubMode = !isClaimMode && Boolean(vm.hubSignedIn);
+    const machines = vm.hubMachines ?? [];
+    const isHubMode = !isClaimMode && (Boolean(vm.hubSignedIn) || machines.length > 0);
     const cardMaxWidth = isHubMode ? 456 : 412;
     const sheetPad = vm.narrow ? 22 : 28;
     const canSubmitLink = vm.linkValue.trim().length > 8 && !vm.connectingLink;
     const canSubmitServer = vm.serverValue.trim().length > 3 && !vm.connectingServer;
-    const machines = vm.hubMachines ?? [];
 
     <view
       class={dark ? "oc-apple-stage oc-dark" : "oc-apple-stage"}
       width="100%"
-      flexGrow={1}
-      backgroundColor={stageBg}
       alignItems="center"
       justifyContent="center"
       paddingTop={28}
@@ -449,6 +451,16 @@ export class RemoteWorkbenchWelcomeSurface extends StatefulComponent<RemoteWorkb
                 tone="danger"
                 title={vm.errorMessage}
                 onDismiss={vm.onDismissError}
+                touch={touch}
+                dark={dark}
+              />
+            ) : vm.infoTitle ? (
+              <Banner
+                id="oc-remote-welcome-info"
+                tone="info"
+                title={vm.infoTitle}
+                message={vm.infoMessage}
+                onDismiss={vm.onDismissInfo}
                 touch={touch}
                 dark={dark}
               />
@@ -534,8 +546,34 @@ export class RemoteWorkbenchWelcomeSurface extends StatefulComponent<RemoteWorkb
           /* =========================================================
              MODE 2: SIGNED-IN DEVICE PICKER (`我的电脑`)
              ========================================================= */
-          <view width="100%" gap={16}>
-            <view width="100%" flexDirection="row" alignItems="center" justifyContent="space-between" gap={10}>
+          <view width="100%" gap={15}>
+            {vm.backToWorkspaceLabel && vm.onBackToWorkspace ? (
+              <view width="100%" flexDirection="row" alignItems="center">
+                <view
+                  class="oc-ghost-button"
+                  accessibilityId="oc-hub-back-workspace"
+                  accessibilityLabel={vm.backToWorkspaceLabel}
+                  accessibilityCategory="button"
+                  onTap={() => {
+                    triggerHaptic("light");
+                    vm.onBackToWorkspace?.();
+                  }}
+                  marginLeft={-6}
+                  paddingLeft={6}
+                  paddingRight={8}
+                  paddingTop={3}
+                  paddingBottom={3}
+                  flexDirection="row"
+                  alignItems="center"
+                  gap={4}
+                >
+                  <Icon name="arrowLeft" size={13} color={muted} />
+                  <label value={vm.backToWorkspaceLabel} font={systemMediumFont(12.5)} color={muted} />
+                </view>
+              </view>
+            ) : null}
+
+            <view width="100%" flexDirection="row" alignItems="center" justifyContent="space-between" gap={8}>
               <view flexDirection="row" alignItems="center" gap={8} flexShrink={1} minWidth={0}>
                 <label
                   value={vm.hubCardTitle}
@@ -552,6 +590,7 @@ export class RemoteWorkbenchWelcomeSurface extends StatefulComponent<RemoteWorkb
                     paddingBottom={3}
                     borderRadius={radii.pill}
                     backgroundColor={insetBg}
+                    flexShrink={0}
                   >
                     <label
                       value={vm.hubMachineCountLabel}
@@ -563,8 +602,8 @@ export class RemoteWorkbenchWelcomeSurface extends StatefulComponent<RemoteWorkb
                 ) : null}
               </view>
 
-              <view flexDirection="row" alignItems="center" gap={4}>
-                {vm.onHubRefresh ? (
+              <view flexDirection="row" alignItems="center" gap={4} flexShrink={0}>
+                {vm.hubSignedIn && vm.onHubRefresh ? (
                   <view
                     class="oc-ghost-button"
                     accessibilityId="oc-hub-refresh"
@@ -625,6 +664,16 @@ export class RemoteWorkbenchWelcomeSurface extends StatefulComponent<RemoteWorkb
                 tone="danger"
                 title={vm.errorMessage}
                 onDismiss={vm.onDismissError}
+                touch={touch}
+                dark={dark}
+              />
+            ) : vm.infoTitle ? (
+              <Banner
+                id="oc-remote-welcome-info"
+                tone="info"
+                title={vm.infoTitle}
+                message={vm.infoMessage}
+                onDismiss={vm.onDismissInfo}
                 touch={touch}
                 dark={dark}
               />
@@ -813,7 +862,7 @@ export class RemoteWorkbenchWelcomeSurface extends StatefulComponent<RemoteWorkb
             {/* Apple Emblem + Centered Display Title & Calm Subtitle */}
             <view width="100%" alignItems="center" gap={14}>
               {this.renderEmblem("laptop", dark)}
-              <view width="100%" maxWidth={330} alignItems="center" gap={6}>
+              <view width="100%" maxWidth={360} alignItems="center" gap={6}>
                 <label
                   value={vm.title}
                   font={systemSemiboldFont(touch ? 24 : 23)}
@@ -838,6 +887,16 @@ export class RemoteWorkbenchWelcomeSurface extends StatefulComponent<RemoteWorkb
                 tone="danger"
                 title={vm.errorMessage}
                 onDismiss={vm.onDismissError}
+                touch={touch}
+                dark={dark}
+              />
+            ) : vm.infoTitle ? (
+              <Banner
+                id="oc-remote-welcome-info"
+                tone="info"
+                title={vm.infoTitle}
+                message={vm.infoMessage}
+                onDismiss={vm.onDismissInfo}
                 touch={touch}
                 dark={dark}
               />
@@ -884,28 +943,9 @@ export class RemoteWorkbenchWelcomeSurface extends StatefulComponent<RemoteWorkb
                 onChange: (val) => vm.onChangeLink(val),
                 onSubmit: () => vm.onSubmitLink(),
               })}
-
-              {this.state.serverOpen ? (
-                <view width="100%" paddingTop={2}>
-                  {this.renderUnifiedInputCapsule({
-                    inputId: "oc-remote-welcome-server-url",
-                    buttonId: "oc-remote-welcome-server-submit",
-                    ariaLabel: vm.serverAddressLabel,
-                    value: vm.serverValue,
-                    placeholder: vm.serverPlaceholder,
-                    buttonTitle: vm.connectServerLabel,
-                    canSubmit: canSubmitServer,
-                    busy: vm.connectingServer,
-                    dark,
-                    touch,
-                    onChange: (val) => vm.onChangeServer(val),
-                    onSubmit: () => vm.onSubmitServer(),
-                  })}
-                </view>
-              ) : null}
             </view>
 
-            {/* Quiet Hairline Footer */}
+            {/* Quiet Hairline Footer + Contextual Self-Hosted Server Disclosure */}
             <view width="100%" gap={12} paddingTop={2}>
               <view width="100%" height={0.5} backgroundColor={divider} />
               <view width="100%" flexDirection="row" alignItems="center" justifyContent="space-between" gap={8}>
@@ -924,9 +964,10 @@ export class RemoteWorkbenchWelcomeSurface extends StatefulComponent<RemoteWorkb
                   paddingBottom={4}
                   flexDirection="row"
                   alignItems="center"
-                  gap={5}
+                  gap={4}
                 >
                   <label value={vm.serverDisclosureTitle} font={systemFont(12.5)} color={muted} />
+                  <Icon name={this.state.serverOpen ? "chevronUp" : "chevronDown"} size={11} color={subtle} />
                 </view>
 
                 <view
@@ -950,6 +991,25 @@ export class RemoteWorkbenchWelcomeSurface extends StatefulComponent<RemoteWorkb
                   <Icon name="external" size={11} color={subtle} />
                 </view>
               </view>
+
+              {this.state.serverOpen ? (
+                <view width="100%" paddingTop={2}>
+                  {this.renderUnifiedInputCapsule({
+                    inputId: "oc-remote-welcome-server-url",
+                    buttonId: "oc-remote-welcome-server-submit",
+                    ariaLabel: vm.serverAddressLabel,
+                    value: vm.serverValue,
+                    placeholder: vm.serverPlaceholder,
+                    buttonTitle: vm.connectServerLabel,
+                    canSubmit: canSubmitServer,
+                    busy: vm.connectingServer,
+                    dark,
+                    touch,
+                    onChange: (val) => vm.onChangeServer(val),
+                    onSubmit: () => vm.onSubmitServer(),
+                  })}
+                </view>
+              ) : null}
             </view>
           </view>
         )}

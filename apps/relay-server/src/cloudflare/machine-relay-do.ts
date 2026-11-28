@@ -293,14 +293,21 @@ export class MachineRelayDO {
     }
 
     if (url.pathname === "/internal/register-device" && request.method === "POST") {
-      const body = (await request.json()) as { thumbprint: string; label?: string; forceApprove?: boolean };
+      const body = (await request.json()) as {
+        thumbprint: string;
+        label?: string;
+        forceApprove?: boolean;
+        clearRevocation?: boolean;
+      };
       const outcome = await this.#authority.registerDeviceOrQueueApproval({
         thumbprint: body.thumbprint,
         label: body.label ?? "Paired Device",
         forceApprove: body.forceApprove === true,
+        clearRevocation: body.clearRevocation === true,
         shortCode: randomApprovalCode(),
         now,
       });
+      if (outcome.status === "revoked") return json(403, { error: "device_revoked" });
       return json(outcome.status === "approved" ? 200 : 202, outcome);
     }
 
@@ -313,19 +320,79 @@ export class MachineRelayDO {
       return json(200, { ok: true, thumbprint: approved.thumbprint, device: approved });
     }
 
+    if (url.pathname === "/internal/revoke-device" && request.method === "POST") {
+      const body = (await request.json()) as { actorId?: unknown; thumbprint?: unknown };
+      if (typeof body.actorId !== "string" || typeof body.thumbprint !== "string" || !body.thumbprint.trim()) {
+        return json(400, { error: "invalid_revoke_device_request" });
+      }
+      const doc = await this.#authority.read();
+      if (!doc || doc.revoked || doc.ownerActorId !== body.actorId) return json(403, { error: "access_denied" });
+      if (doc.ownerDeviceThumbprint && body.thumbprint === doc.ownerDeviceThumbprint) {
+        return json(400, { error: "cannot_revoke_owner_workstation" });
+      }
+      const removed = await this.#authority.revokeDevice(body.thumbprint, now);
+      const host = this.#liveHost();
+      for (const ws of this.ctx.getWebSockets("client")) {
+        const att = this.#attachment(ws);
+        if (att?.kind === "client" && att.deviceThumbprint === body.thumbprint) {
+          this.#safeClose(ws, 4003, "Device access revoked");
+          if (host && host.generation === att.hostGeneration) {
+            try {
+              sendBinary(
+                host.ws,
+                encodeMuxFrame({
+                  type: MuxFrameType.CLOSE,
+                  streamId: att.streamId,
+                  code: 4003,
+                  reason: "Device revoked",
+                }),
+              );
+            } catch {}
+          }
+        }
+      }
+      this.#notifyAudienceCount(host);
+      return json(200, { ok: true, removed });
+    }
+
     if (url.pathname === "/internal/inspect" && request.method === "GET") {
       const doc = await this.#authority.read();
       const host = this.#liveHost();
+      const activeSockets = this.#activeClientSockets(host?.generation);
+      const streamsByDevice = new Map<string, number>();
+      for (const ws of activeSockets) {
+        const att = this.#attachment(ws);
+        if (att?.kind === "client" && att.deviceThumbprint) {
+          streamsByDevice.set(att.deviceThumbprint, (streamsByDevice.get(att.deviceThumbprint) ?? 0) + 1);
+        }
+      }
+      const approvedDevices = doc
+        ? Object.values(doc.approvedDevices)
+            .filter(
+              (d) =>
+                d.thumbprint !== doc.ownerDeviceThumbprint &&
+                !(doc.revokedDevices && doc.revokedDevices[d.thumbprint]) &&
+                d.label !== "Owner Workstation",
+            )
+            .map((d) => ({
+              thumbprint: d.thumbprint,
+              label: d.label,
+              approvedAt: d.approvedAt,
+              activeStreams: streamsByDevice.get(d.thumbprint) ?? 0,
+            }))
+            .sort((a, b) => (b.activeStreams > 0 ? 1 : 0) - (a.activeStreams > 0 ? 1 : 0) || b.approvedAt - a.approvedAt)
+        : [];
       return json(200, {
         online: host !== null,
         ownerActorId: doc?.ownerActorId ?? null,
         ownerDeviceThumbprint: doc?.ownerDeviceThumbprint ?? null,
         displayName: doc?.displayName ?? "",
         generation: host?.generation ?? doc?.generation ?? null,
-        activeWsStreams: this.#activeClientSockets(host?.generation).length,
+        activeWsStreams: activeSockets.length,
         activeHttpStreams: this.#httpStreams.size,
         directRoutesCount: doc?.directRoutes.length ?? 0,
         pendingApprovals: doc ? Object.values(doc.pendingApprovals).filter((p) => p.expiresAt > now) : [],
+        approvedDevices,
         ...this.#stats,
       });
     }
