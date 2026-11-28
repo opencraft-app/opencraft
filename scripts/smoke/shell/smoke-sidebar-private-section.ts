@@ -20,9 +20,10 @@ const layout=await SidebarLayoutStore.open({load:async()=>null,save:async(_,v)=>
 const initial=[{id:'pin',title:'共享置顶',pinned:true},{id:'recent',title:'共享最近'},
 {id:'private',title:'我的私有',accessMode:'private',pinned:true,parentThreadId:'pin'},
 {id:'private-child',title:'我的私有子会话',accessMode:'private',parentThreadId:'private'},
+{id:'private-scheduled',title:'私有计划任务',accessMode:'private',schedule:{status:'active'}},
 {id:'shared-child',title:'共享派生',parentThreadId:'private'},
 ...Array.from({length:21},(_,i)=>({id:'recent-extra-'+i,title:'共享历史 '+i})),
-...Array.from({length:11},(_,i)=>({id:'mine-'+i,title:'私有历史 '+i,accessMode:'private'}))]
+...Array.from({length:10},(_,i)=>({id:'mine-'+i,title:'私有历史 '+i,accessMode:'private'}))]
 .map((row,i)=>({...row,project:'workspace',status:'ready',updatedAt:Date.now()/1000-i,connectionHostId:'local',connectionHostLabel:'Local',...legacyDirectServerProjectionFromHost({hostId:'local',hostKind:'local',label:'Local'})}));
 let projected=[];
 const listeners=new Set();let snapshot={revision:0,mode:null,modes:[],hideRowBadge:false,notice:null};
@@ -33,7 +34,7 @@ function Fixture(){const[open,setOpen]=useState(true),[rows,setRows]=useState(in
 window.fixture={setRows,setOpen,setActive,setDraftActive,refresh:()=>setRows(v=>v.map(r=>({...r,updatedAt:r.updatedAt+1}))),initial,preferences,projected:()=>projected,
 setPrivate:(id,mode)=>setRows(rows=>rows.map(row=>row.id===id?{...row,accessMode:mode}:row)),
 custom:()=>{snapshot={...snapshot,revision:snapshot.revision+1,mode:'custom'};listeners.forEach(l=>l())}};
-const draftRows=draftActive?[{key:'draft-1',title:'提交中草稿',serverId:'local',active:true,onSelect:()=>{}}]:[];
+const draftRows=draftActive?[{key:'draft-1',title:'私有提交草稿',serverId:'local',active:true,onSelect:()=>{}}]:[];
 return <UiPreferencesProvider runtime={preferences}><AppShell navigation={{settingsActive:false,onOpenSettings:()=>{},account:{snapshot:{phase:'anonymous',name:null,avatarUrl:null},onOpen:()=>{},onRefresh:async()=>{},onSignOut:async()=>{}},actions:[{id:'shell.home',title:'首页',icon:'home',onInvoke:()=>{}}]}} layoutScope='private-section' sidebarOpen={open} sidebarWidth={335} onSidebarCollapse={()=>setOpen(false)} onSidebarExpand={()=>setOpen(true)} onSidebarResizeEnd={()=>{}} windowChrome={{kind:'browser',platform:'linux',safeArea:{left:0,right:0}}} rightPanel={null} rightPanelOpen={false} rightPanelFullWidth={false} onRightPanelOpenChange={()=>{}}
 header={<AppShellHeader title={null} project={null} sidebarOpen={open} rightPanelOpen={false} rightPanelFullWidth={false} showRightPanelAction={false} onToggleSidebar={()=>setOpen(!open)} onToggleRightPanel={()=>{}} onHome={()=>{}} canGoBack={false} canGoForward={false} onBack={()=>{}} onForward={()=>{}} navigationActions={['sidebar-toggle']}/>}
 floatingSidebarHeader={dock=><AppShellNavigationControls hostRole='transient' sidebarOpen={false} canGoBack={false} canGoForward={false} onToggleSidebar={dock} onHome={()=>{}} onBack={()=>{}} onForward={()=>{}} actions={['sidebar-toggle']}/>}
@@ -62,6 +63,7 @@ try {
     assert.equal(await recentOption.getAttribute('aria-checked'),'true');
     assert.equal(await privateOption.getAttribute('aria-checked'),'false');
     assert.deepEqual(await page.locator('.sidebar-thread-group-label').allTextContents(),['置顶','最近']);
+    assert.equal(await page.locator('[data-thread-id="private-scheduled"]').count(),0,'private scheduled thread must not leak into Recent');
     assert.equal(await page.getByRole('tab').count(),0);
     assert.equal(await pin.locator('[data-thread-id="private"]').count(),0);
     assert.equal(await recent.locator('[data-thread-id="shared-child"]').count(),1);
@@ -85,8 +87,12 @@ try {
     await search.fill('');
     await recent.waitFor();
     assert.equal(await recentOption.getAttribute('aria-checked'),'true');
-    // Active draft must switch to Recent on activation, but must not override explicit private selection or catalog refresh.
+    // Activating a draft while on Private switches to Recent; selecting a private thread switches back,
+    // and search filtering hiding/restoring the active draft must not yank Private back to Recent.
+    await activate(privateOption);
+    await mine.waitFor();
     await page.evaluate(()=>(window as any).fixture.setDraftActive(true));
+    await recent.waitFor();
     assert.equal(await recentOption.getAttribute('aria-checked'),'true');
     await page.evaluate(()=>(window as any).fixture.setActive('private'));
     await mine.waitFor();
@@ -94,7 +100,14 @@ try {
     await page.evaluate(()=>(window as any).fixture.refresh());
     await page.waitForTimeout(60);
     assert.equal(await privateOption.getAttribute('aria-checked'),'true');
+    await search.fill('我的私有');
+    assert.equal(await privateOption.getAttribute('aria-checked'),'true');
+    await search.fill('私有');
+    await page.waitForTimeout(60);
+    assert.equal(await privateOption.getAttribute('aria-checked'),'true','filtering draft out and back must not yank Private to Recent');
     await page.evaluate(()=>{(window as any).fixture.setDraftActive(false);});
+    await search.fill('');
+    await mine.waitFor();
     // While a private thread is selected, searching shared-only switches to Recent and clearing restores Private.
     await search.fill('共享最近');
     await recent.waitFor();
@@ -104,25 +117,32 @@ try {
     assert.equal(await privateOption.getAttribute('aria-checked'),'true');
     await page.evaluate(()=>(window as any).fixture.setActive('recent'));
     await recent.waitFor();
+    // Converting the currently active thread between shared and private must automatically switch segments.
+    await page.evaluate(()=>{(window as any).fixture.setPrivate('recent','private')});
+    await mine.waitFor();
+    assert.equal(await privateOption.getAttribute('aria-checked'),'true');
+    await mine.locator('[data-thread-id="recent"]').waitFor();
+    assert.equal(await page.locator('[data-thread-id="recent"]').count(),1);
+    await page.evaluate(()=>{(window as any).fixture.setPrivate('recent','shared')});
+    await recent.waitFor();
+    assert.equal(await recentOption.getAttribute('aria-checked'),'true');
+    await recent.locator('[data-thread-id="recent"]').waitFor({state:'attached'});
     await activate(privateOption);
     await mine.waitFor();
     assert.equal(await privateOption.getAttribute('aria-checked'),'true');
     assert.equal(await mine.locator('[data-thread-id="private"]').count(),1);
+    assert.equal(await mine.locator('[data-thread-id="private-scheduled"]').count(),1);
     assert.equal(await mine.locator('.sidebar-thread-tree').count(),10);
     assert.equal(await mine.locator('.sidebar-activity-item').count(),11);
     await activate(mine.getByRole('button',{name:'查看更多',exact:true}));
     await page.waitForFunction(()=>document.querySelector('[aria-label="私密"]')?.querySelectorAll('.sidebar-thread-tree').length===12);
     assert.equal(await mine.locator('.sidebar-activity-item').count(),13);
-    await page.evaluate(()=>{(window as any).fixture.setPrivate('recent','private')});
-    await mine.locator('[data-thread-id="recent"]').waitFor();
-    assert.equal(await page.locator('[data-thread-id="recent"]').count(),1);
-    await page.evaluate(()=>{(window as any).fixture.setPrivate('recent','shared')});
     await activate(recentOption);
     await recent.locator('[data-thread-id="recent"]').waitFor({state:'attached'});
     await page.screenshot({path:output+'/'+(touch?'touch-dark':'desktop-light')+'.png'});
     await page.evaluate(()=>{(window as any).fixture.custom()});
     await page.getByRole('region',{name:'共享分组',exact:true}).waitFor();
-    assert.ok((await page.evaluate(()=>(window as any).fixture.projected())).every((ref:any)=>!ref.threadId.startsWith('mine-')&&ref.threadId!=='private'&&ref.threadId!=='private-child'));
+    assert.ok((await page.evaluate(()=>(window as any).fixture.projected())).every((ref:any)=>!ref.threadId.startsWith('mine-')&&ref.threadId!=='private'&&ref.threadId!=='private-child'&&ref.threadId!=='private-scheduled'));
     await activate(privateOption);
     assert.equal(await mine.locator('[data-thread-id="private"]').count(),1);
     await page.evaluate(()=>{const f=(window as any).fixture;f.setRows(f.initial.filter((row:any)=>row.accessMode!=='private'))});

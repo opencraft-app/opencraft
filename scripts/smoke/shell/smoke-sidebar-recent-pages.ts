@@ -37,13 +37,19 @@ await scroll.evaluate(el=>{el.scrollTop=0;});await page.waitForTimeout(80);
 const firstRow=await rows.first().elementHandle();
 await page.evaluate(()=>{(window as any).busySeen=false;(window as any).spinnerSeen=false;new MutationObserver(records=>{const footer=document.querySelector('.sidebar-activity-pagination[aria-busy="true"]');if(footer?.querySelector('.is-spinning')&&footer.querySelector('button')?.disabled&&footer.querySelector('button')?.textContent==='')(window as any).spinnerSeen=true;for(const r of records)if((r.target as Element).getAttribute('aria-busy')==='true'||r.oldValue==='true')(window as any).busySeen=true;}).observe(document.querySelector('.sidebar-activity-list')!,{subtree:true,attributes:true,attributeFilter:['aria-busy'],attributeOldValue:true});});
 await scroll.dispatchEvent('wheel',{deltaY:-20});await scroll.dispatchEvent('wheel',{deltaX:80,deltaY:5});await page.waitForTimeout(50);assert.equal(await rows.count(),10);
+// Prior downward wheel or scrollbar pointerdown that did not reach the end must not leave sticky scroll intent.
+await scroll.dispatchEvent('wheel',{deltaY:120});
+await scroll.dispatchEvent('pointerdown',{buttons:1});await scroll.dispatchEvent('pointerup',{buttons:0});
+await page.waitForTimeout(320);
 await scroll.evaluate(el=>{el.scrollTop=el.scrollHeight-el.clientHeight;});await page.waitForTimeout(100);
-assert.equal(await rows.count(),10,'programmatic scrollTop alone does not load');
-// Direct tap or Space activation on Show more must reveal exactly one page (10 -> 20).
+assert.equal(await rows.count(),10,'programmatic scrollTop after completed downward scroll/scrollbar interaction does not load');
+// Even immediately after an unconsumed downward wheel, tapping or Space-activating Show more must reveal exactly one page (10 -> 20).
+await scroll.evaluate(el=>{el.scrollTop=0;});await page.waitForTimeout(40);
+await scroll.dispatchEvent('wheel',{deltaY:120});
 await more.scrollIntoViewIfNeeded();
 if(touch)await more.tap();else{await more.focus();await more.press('Space');}
 await waitRows(20);await page.waitForTimeout(120);
-assert.equal(await rows.count(),20,'tap/Space on Show more loads exactly one page');
+assert.equal(await rows.count(),20,'tap/Space on Show more after downward wheel loads exactly one page');
 await activate(less);await waitRows(10);
 await scroll.evaluate(el=>{el.scrollTop=0;});await page.waitForTimeout(80);
 await page.evaluate(()=>{(window as any).busySeen=false;(window as any).spinnerSeen=false;});

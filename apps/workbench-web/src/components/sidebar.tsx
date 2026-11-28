@@ -383,8 +383,9 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   const needle = query.trim().toLocaleLowerCase();
   const matchingDraftRows = pendingDraftRows.filter(row => (!serverFilter.serverId || row.serverId === serverFilter.serverId)
     && (!needle || row.title.toLocaleLowerCase().includes(needle)));
+  const rawActiveDraftKey = pendingDraftRows.find(row => row.active)?.key;
   const activeDraftKey = matchingDraftRows.find(row => row.active)?.key;
-  const { matching, matchingById, tree, matchingReferences, taskFlow } = useMemo(() => {
+  const { matching, sharedMatching, matchingById, tree, matchingReferences, taskFlow } = useMemo(() => {
     const allowed = new Set((JSON.parse(allowedKeys) as [string, string][]).map(key => JSON.stringify(key)));
     const matching = threads.filter(thread => thread.visibility !== "hidden"
       && (thread.accessMode === "private" || allowed.has(identity(thread)))
@@ -393,7 +394,8 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
     const matchingById = new Map(matching.map(thread => [identity(thread), thread]));
     // Access categories have independent trees: a private child of a shared
     // conversation (or the reverse) remains in its own visible section.
-    const sharedTree = sidebarThreadTree(matching.filter(thread => thread.accessMode !== "private"));
+    const sharedMatching = matching.filter(thread => thread.accessMode !== "private");
+    const sharedTree = sidebarThreadTree(sharedMatching);
     const mineTree = sidebarThreadTree(matching.filter(thread => thread.accessMode === "private"));
     const tree = {
       nodes: new Map([...sharedTree.nodes, ...mineTree.nodes]),
@@ -402,8 +404,8 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
     const roots = sharedTree.roots.map(node => node.thread);
     const rootIds = new Set(roots.map(identity));
     const matchingReferences = references.filter(ref => rootIds.has(JSON.stringify([ref.hostId, ref.threadId])));
-    const taskFlow = { ...groupThreadsByTaskFlow(roots), scheduled: matching.filter(thread => thread.schedule && thread.schedule.status !== "deleted").sort((a, b) => b.updatedAt - a.updatedAt), mine: mineTree.roots.map(node => node.thread) };
-    return { matching, matchingById, tree, matchingReferences, taskFlow };
+    const taskFlow = { ...groupThreadsByTaskFlow(roots), scheduled: sharedMatching.filter(thread => thread.schedule && thread.schedule.status !== "deleted").sort((a, b) => b.updatedAt - a.updatedAt), mine: mineTree.roots.map(node => node.thread) };
+    return { matching, sharedMatching, matchingById, tree, matchingReferences, taskFlow };
   }, [threads, references, allowedKeys, needle, serverFilter.serverId]);
   const selection = pendingHostId !== null && pendingThreadId !== null
     ? identity({ connectionHostId: pendingHostId, id: pendingThreadId })
@@ -416,21 +418,28 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   const selectedRoot = tree.rootByIdentity.get(selection) ?? selection;
   const containsSelected = (rows: readonly SidebarThread[]) => rows.some(thread => identity(thread) === selectedRoot);
   const selectedInMine = containsSelected(taskFlow.mine);
-  const [accessScope, setAccessScope] = useState<"recent" | "private">(() => (activeDraftKey !== undefined ? "recent" : selectedInMine ? "private" : "recent"));
+  const selectedThread = threads.find(thread => thread.visibility !== "hidden" && identity(thread) === selection);
+  const selectedScope: "private" | "recent" | null = selectedThread
+    ? (selectedThread.accessMode === "private" ? "private" : "recent")
+    : null;
+  const [accessScope, setAccessScope] = useState<"recent" | "private">(() => (rawActiveDraftKey !== undefined ? "recent" : selectedScope ?? "recent"));
   const lastSelectionForScope = useRef(selection);
-  const lastActiveDraftKeyForScope = useRef<string | undefined>(activeDraftKey);
+  const lastSelectedScopeForScope = useRef<"private" | "recent" | null>(selectedScope);
+  const lastActiveDraftKeyForScope = useRef<string | undefined>(rawActiveDraftKey);
   useLayoutEffect(() => {
-    const draftChanged = lastActiveDraftKeyForScope.current !== activeDraftKey;
-    lastActiveDraftKeyForScope.current = activeDraftKey;
+    const draftChanged = lastActiveDraftKeyForScope.current !== rawActiveDraftKey;
+    lastActiveDraftKeyForScope.current = rawActiveDraftKey;
     const selectionChanged = lastSelectionForScope.current !== selection;
     lastSelectionForScope.current = selection;
-    if (selectionChanged && (selectedInMine || matchingById.has(selection))) {
-      setAccessScope(selectedInMine ? "private" : "recent");
-    } else if (draftChanged && activeDraftKey !== undefined) {
+    const selectedScopeChanged = selectedScope !== null && lastSelectedScopeForScope.current !== selectedScope;
+    if (selectionChanged || selectedScope !== null) lastSelectedScopeForScope.current = selectedScope;
+    if ((selectionChanged || selectedScopeChanged) && selectedScope !== null) {
+      setAccessScope(selectedScope);
+    } else if (draftChanged && rawActiveDraftKey !== undefined) {
       setAccessScope("recent");
     }
-  }, [activeDraftKey, selection, selectedInMine, matchingById]);
-  const sharedMatchCount = matching.filter(thread => thread.accessMode !== "private").length + matchingDraftRows.length;
+  }, [rawActiveDraftKey, selection, selectedScope]);
+  const sharedMatchCount = sharedMatching.length + matchingDraftRows.length;
   const searching = Boolean(needle);
   const wasSearchingForScope = useRef(searching);
   useLayoutEffect(() => {
@@ -438,14 +447,14 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
     wasSearchingForScope.current = searching;
     if (!searching) {
       if (!previouslySearching) return;
-      if (activeDraftKey !== undefined) setAccessScope("recent");
+      if (rawActiveDraftKey !== undefined) setAccessScope("recent");
       else if (selectedInMine) setAccessScope("private");
       else if (matchingById.has(selection)) setAccessScope("recent");
       return;
     }
     if (accessScope === "recent" && sharedMatchCount === 0 && taskFlow.mine.length > 0) setAccessScope("private");
     else if (accessScope === "private" && taskFlow.mine.length === 0 && sharedMatchCount > 0) setAccessScope("recent");
-  }, [searching, accessScope, sharedMatchCount, taskFlow.mine.length, activeDraftKey, selectedInMine, matchingById, selection]);
+  }, [searching, accessScope, sharedMatchCount, taskFlow.mine.length, rawActiveDraftKey, selectedInMine, matchingById, selection]);
   const hasSharedSiblings = Boolean(groupedSections) || taskFlow.scheduled.length > 0
     || taskFlow.attention.length > 0 || taskFlow.pinned.length > 0 || nativeProjects.length > 0;
   const flatRecent = !hasSharedSiblings;
